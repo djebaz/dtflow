@@ -37,6 +37,7 @@ from dtflow.services.queue_session import (
     expand_items,
     post_queue_control,
     read_queue_list,
+    read_queue_records,
     read_queue_views,
     relaunch_queue,
     remove_queue,
@@ -53,6 +54,7 @@ from dtflow.ui.planning_presenter import (
     DRAW_SPINS,
     NO_LORA,
     parse_lora_set,
+    queue_edit_from_records,
     candidate_counts,
     PlanForm,
     build_plan,
@@ -205,12 +207,14 @@ class QueuePage:
         created_hook: Callable[[], None] = lambda: None,
         choices_source: Callable[[], dict] = dict,
         generate_hook: Callable[[], None] = lambda: None,
+        reuse_hook: Callable[[dict], None] = lambda request: None,
     ):
         self.page = page
         self._runner, self._backend, self._saved = runner, backend_source, saved_source
         self._state, self._request_source, self._activity = Path(state_dir), request_source, activity
         self._simulation, self._created_hook = simulation_source, created_hook
         self._choices, self._generate_hook = choices_source, generate_hook
+        self._reuse_hook = reuse_hook
         self._composing = False
         self.plan_hook: Callable[[], None] = lambda: None  # the Queue popover's trigger follows plan edits
         self._after_generation: list[str] = []  # popover queues waiting for the running single generation (#135)
@@ -943,6 +947,8 @@ class QueuePage:
         menu = QMenu(self.page.queueList)
         relaunch = menu.addMenu("Relaunch")
         self._relaunch_actions(relaunch, queue_id)
+        edit = menu.addAction("Edit as new queue…")
+        edit.triggered.connect(lambda _=False: self.edit_as_new(queue_id))
         remove = menu.addAction("Remove queue…")
         remove.setEnabled(self._removable(self._views.get(queue_id)))
         if menu.exec(self.page.queueList.viewport().mapToGlobal(position)) is remove:
@@ -955,6 +961,12 @@ class QueuePage:
             return
         menu = QMenu(self.page.relaunchQueueButton)
         self._relaunch_actions(menu, self._selected)
+        menu.addSeparator()
+        edit = menu.addAction("Edit as new queue…")
+        edit.setToolTip(
+            "Loads this queue's settings into Generate and the composer to change them and save a new queue."
+        )
+        edit.triggered.connect(lambda _=False, queue_id=self._selected: self.edit_as_new(queue_id))
         menu.exec(at)
 
     def _relaunch_actions(self, menu: QMenu, queue_id: str) -> None:
@@ -975,6 +987,49 @@ class QueuePage:
             if failed_only:
                 action.setToolTip("Failed, cancelled and no-result items only.")
         menu.setToolTipsVisible(True)
+
+    def edit_as_new(self, queue_id: str) -> None:
+        """Load a queue's recorded settings into Generate and the composer; nothing is created until Add or Start."""
+
+        async def work():
+            return queue_edit_from_records(await read_queue_records(self._state, queue_id))
+
+        self._runner.submit(work(), self._edit_loaded)
+
+    def _edit_loaded(self, result, failure) -> None:
+        if failure is not None:
+            shown = Presentation("error", "Not loaded", str(failure))
+            self._message(shown if isinstance(failure, ValidationError) else present_generation_failure(failure))
+            return
+        page, form = self.page, result.form
+        self._reuse_hook(result.base)
+        self.open_composer()
+        page.planModeCombo.setCurrentText(form.mode)
+        page.planPromptsEdit.setPlainText(form.prompts)
+        for edit, text in (
+            (page.planModelsEdit, form.models),
+            (page.planSeedsEdit, form.seeds),
+            (page.planStepsEdit, form.steps),
+            (page.planGuidanceEdit, form.guidance),
+            (page.planSamplersEdit, form.samplers),
+            (page.planSizesEdit, form.sizes),
+            (page.planLoraSetsEdit, form.lora_sets),
+        ):
+            edit.setText(text)
+        page.planLorasEdit.clear()
+        page.planStrengthsEdit.clear()
+        page.planIncrementCheck.setChecked(form.increment)
+        if form.mode == REPEAT:
+            page.queueCountSpinBox.setValue(result.count)
+        self._plan_changed()
+        self.preview()
+        loaded = Presentation(
+            "warning" if result.note else "ok",
+            "Queue loaded",
+            result.note
+            or "Its settings are in Generate and the composer; change them, then Add to queue or Start now.",
+        )
+        self._message(loaded)
 
     def _last_queue(self) -> str | None:
         """The most recently created queue with items, for the empty state's Relaunch last."""

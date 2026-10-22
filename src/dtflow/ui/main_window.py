@@ -323,6 +323,7 @@ class MainWindow:
             created_hook=self.generation.queue_created,
             choices_source=self.generation.plan_choices,
             generate_hook=self._show_generation,
+            reuse_hook=lambda request: self.generation.reuse_saved_request(request, ""),
             activity=self.activity,
         )
         self.generation_page.inpaintModeButton.toggled.connect(lambda _on: self.queue.sync_edit_fields())

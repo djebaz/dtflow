@@ -344,3 +344,86 @@ def summary_text(table: PlanTable) -> str:
     return (
         f"{table.total} items · {table.mode} · {SEED_POLICY_TEXT[table.seed_policy]}{drawn}. Nothing is persisted yet."
     )
+
+
+@dataclass(frozen=True, slots=True)
+class QueueEdit:
+    """What editing a queue as a new one loads: the first item's request for Generate, the plan for the composer."""
+
+    base: dict
+    form: PlanForm
+    count: int  # the Repeat count when the items only differ by seed
+    note: str  # non-empty when the items were not a plain Repeat, Pair or Cross
+
+
+def _distinct(values) -> list:
+    return list(dict.fromkeys(values))
+
+
+def queue_edit_from_records(records) -> QueueEdit:
+    """Read a recorded queue back into Generate values and a composer plan (text-to-image items only).
+
+    Every dimension that differs between items becomes a list of its distinct values in first-seen order; the rest stay
+    with the base request (the first item). Items that are the full product of those lists load as Cross, items that all
+    differ together as Pair, and items that only differ by seed as Repeat. Anything else loads as Cross with a note.
+    """
+    if not records:
+        raise ValidationError("This queue has no recorded items to edit.")
+    if any(record.get("operation", "txt2img") != "txt2img" for record in records):
+        raise ValidationError("Only text-to-image queues can be edited as a new queue.")
+
+    def lora_set(record) -> str:
+        return (
+            " + ".join(lora_set_value(item["identifier"], item["weight"]) for item in record.get("loras", ()))
+            or NO_LORA
+        )
+
+    columns = {
+        "prompts": [record.get("prompt", "") for record in records],
+        "models": [record.get("model_id", "") for record in records],
+        "seeds": [record.get("seed", 0) for record in records],
+        "steps": [record.get("steps", 20) for record in records],
+        "guidance": [record.get("guidance", 7.0) for record in records],
+        "samplers": [record.get("sampler_id", "") for record in records],
+        "sizes": [f"{record.get('width_px', 512)}x{record.get('height_px', 512)}" for record in records],
+        "lora_sets": [lora_set(record) for record in records],
+    }
+    distinct = {name: _distinct(values) for name, values in columns.items()}
+    varying = [name for name, values in distinct.items() if len(values) > 1]
+    count = len(records)
+    seeds = columns["seeds"]
+    increment = count > 1 and seeds == list(range(seeds[0], seeds[0] + count))
+    product = 1
+    for name in varying:
+        product *= len(distinct[name])
+    note = ""
+    if not varying or (varying == ["seeds"] and increment):
+        mode = "Repeat"
+    elif product == count:
+        mode = "Cross"
+    elif all(len(distinct[name]) == count for name in varying):
+        mode = "Pair"
+    else:
+        mode, note = (
+            "Cross",
+            "These items were not a plain Cross or Pair, so the listed values may give a different count.",
+        )
+
+    def text(name: str, separator: str = "; ") -> str:
+        if name not in varying or mode == "Repeat":
+            return ""
+        return separator.join(f"{value:g}" if isinstance(value, float) else str(value) for value in distinct[name])
+
+    form = PlanForm(
+        mode=mode,
+        prompts=text("prompts", "\n"),
+        models=text("models"),
+        seeds=text("seeds"),
+        steps=text("steps"),
+        guidance=text("guidance"),
+        samplers=text("samplers"),
+        sizes=text("sizes"),
+        increment=mode == "Repeat" and increment,
+        lora_sets=text("lora_sets"),
+    )
+    return QueueEdit(dict(records[0]), form, count, note)

@@ -548,7 +548,7 @@
               <string>Relaunch</string>
              </property>
              <property name="toolTip">
-              <string>Runs this queue's items again as a new queue (same or new seeds, all or only failed items). Real, possibly billable generation; this queue is untouched.</string>
+              <string>Runs this queue's items again as a new queue (same or new seeds, all or only failed items), or loads its settings to edit as a new queue. Real, possibly billable generation; this queue is untouched.</string>
              </property>
              <property name="accessibleName">
               <string>Relaunch the queue</string>

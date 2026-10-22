@@ -22,6 +22,7 @@ Changes through the 5.1.0 preparation baseline are consolidated in [DTFlow 5.1.0
 - The Queues composer's LoRA sets use the same checkbox and weight-slider editor: each Add creates one set from the checked LoRAs (starting from Generate's LoRAs, none checked is a set without LoRAs); clicking a set chip edits it in the same editor.
 - The Queues composer's LoRA weights row becomes chips with the same checkbox and weight-slider editor, offering any LoRA (not only those on the Generate form): check a LoRA and press + (or click anywhere on its slider) to collect several weights for it, and Edit… reopens the editor on the current weights, where Apply replaces the chips with one `IDENTIFIER: weight` chip per LoRA and weight. The row lists one line per LoRA with its weights as small chips, and the planner input is unchanged.
 - **Add LoRA** becomes **Edit LoRAs**: a taller editor to check or uncheck LoRAs and set each weight with a 0.0–3.0 slider in 0.05 steps (default 1.0; one mouse-wheel notch moves it by 0.05); Apply or Enter replaces the selection once. Every LoRA starts at 1.0; catalogue weight suggestions now appear only in the tooltip. The mouse wheel over a slider adjusts its weight.
+- **Edit as new queue…** in the Queues Relaunch menu and the list's context menu loads a text-to-image queue into Generate and the composer (the dimensions that differ between its items become Cross, Pair or Repeat chips), so it can be changed and saved as a new queue.
 
 ## Fixed
 
