@@ -1759,9 +1759,19 @@ class QueuePage:
         self._schedule_preview()
         self.plan_hook()
 
+    @staticmethod
+    def _column_title(name: str) -> str:
+        """A preview column header without the ``lora_weight.`` prefix and the LoRA file extension (full name on hover)."""
+        name = name.removeprefix("lora_weight.")
+        for suffix in (".ckpt", ".safetensors"):
+            name = name.removesuffix(suffix)
+        return name
+
     def _show_table(self, table: PlanTable) -> None:
         self.plan_model.clear()
-        self.plan_model.setHorizontalHeaderLabels(list(table.columns))
+        self.plan_model.setHorizontalHeaderLabels([self._column_title(name) for name in table.columns])
+        for column, name in enumerate(table.columns):
+            self.plan_model.setHeaderData(column, Qt.Orientation.Horizontal, name, Qt.ItemDataRole.ToolTipRole)
         for row in table.rows:
             self.plan_model.appendRow([QStandardItem(cell) for cell in row])
         view = self.page.planTableView
