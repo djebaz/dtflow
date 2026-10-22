@@ -1775,13 +1775,21 @@ class QueuePage:
         for row in table.rows:
             self.plan_model.appendRow([QStandardItem(cell) for cell in row])
         view = self.page.planTableView
-        view.resizeColumnsToContents()
+        # Columns share the panel width (header and cell text elide) instead of widening the table past the panel.
+        header = view.horizontalHeader()
+        header.setMinimumSectionSize(40)
+        header.setTextElideMode(Qt.TextElideMode.ElideRight)
+        for column in range(len(table.columns)):
+            header.setSectionResizeMode(
+                column,
+                header.ResizeMode.ResizeToContents if column == 0 else header.ResizeMode.Stretch,
+            )
+        view.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         # Show every row in full, so the composer scrolls to them instead of a nested scroll inside the table.
         shown = min(len(table.rows), PLAN_TABLE_MAX_ROWS)
         height = (
             view.horizontalHeader().sizeHint().height()
             + shown * view.verticalHeader().defaultSectionSize()
-            + view.horizontalScrollBar().sizeHint().height()
             + 2 * view.frameWidth()
         )
         view.setVerticalScrollBarPolicy(
