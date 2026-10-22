@@ -392,6 +392,52 @@
       "usage_bias": 1,
       "frame_pack": "minimax_h3",
       "fps": 24
+    },
+    "svd_i2v": {
+      "strategy": "video_svd",
+      "channels": 320,
+      "channel_schedule": [
+        320,
+        640,
+        1280,
+        1280
+      ],
+      "input_attention": {
+        "1": [
+          1,
+          1
+        ],
+        "2": [
+          1,
+          1
+        ],
+        "4": [
+          1,
+          1
+        ]
+      },
+      "middle_attention": 1,
+      "output_attention": {
+        "1": [
+          1,
+          1,
+          1
+        ],
+        "2": [
+          1,
+          1,
+          1
+        ],
+        "4": [
+          1,
+          1,
+          1
+        ]
+      },
+      "latent_scale": 8,
+      "default_text_tokens": 77,
+      "usage_bias": 2.5,
+      "frame_pack": "identity"
     }
   }
 }
