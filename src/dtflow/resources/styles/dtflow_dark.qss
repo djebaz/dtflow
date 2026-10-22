@@ -507,6 +507,31 @@ QToolButton#checkpointDetailsButton:disabled {
   background: transparent;
   border-color: transparent;
 }
+/* Compute Units meter: slim, muted fill (0 to 40000). Blue below the limit, red at or above it. */
+QProgressBar#computeUnitsMeter {
+  background-color: ${color.input};
+  border: 1px solid ${color.border};
+  border-radius: ${size.radiusSm};
+  color: ${color.badgeText};
+  font-size: 8pt;
+  font-weight: 500;
+  min-height: 0;
+  text-align: left;
+}
+QProgressBar#computeUnitsMeter::chunk {
+  background-color: #113f63;
+  border-radius: 0;
+}
+QProgressBar#computeUnitsMeter[state="over"] {
+  color: ${color.dangerText};
+}
+QProgressBar#computeUnitsMeter[state="over"]::chunk {
+  background-color: #613c39;
+}
+QProgressBar#computeUnitsMeter[state="unavailable"] {
+  color: ${color.placeholder};
+  font-weight: 400;
+}
 QMenuBar::item:selected,
 QMenu::item:selected {
   background-color: #343434;

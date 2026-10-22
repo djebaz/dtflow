@@ -6,7 +6,9 @@ Changes through the 5.1.0 preparation baseline are consolidated in [DTFlow 5.1.0
 
 ## Added
 
-- Generate checkpoint **Details** inspector combines exact-file Draw Things community technical descriptions, independent DTFlow classification and model-profile suggestions, and last-observed provider availability with per-field provenance. Purely local inspection; no cloud Compute Units estimate or generation behavior change.
+- Generate checkpoint **Details** inspector combines exact-file Draw Things community technical descriptions, independent DTFlow classification and model-profile suggestions, and last-observed provider availability with per-field provenance. Purely local inspection; no generation behavior change.
+- Generate on both Local Draw Things and direct DT+ Cloud shows an offline Compute Units meter for supported text-to-image architectures; Checkpoint details lists the CU value and supported models. Unsupported modifiers, selected unknown LoRAs and missing exact metadata use a base checkpoint estimate when its architecture is known. Architecture constants are now pinned in a versioned JSON registry separate from the community catalogue. Unknown/unsupported checkpoint families and image edits show unavailable. This is not verified server billing, quota or authorization; Windows/Draw Things comparison remains pending.
+- The Compute Units architecture registry additionally includes all six video families represented in the bundled exact-file catalogue (WAN, Hunyuan Video, SVD, LTX 2.3 and MiniMax H3 variants). A separate, read-only Python video estimator requires explicit output frames and relevant conditioning; it is not displayed in the current image-only Generate UI. Source mapping alone does not establish numeric parity with Draw Things or DT+ billing.
 
 - Queue item table with saved-result thumbnails, prompt/model/LoRA/parameter columns, observed durations and an item inspector with Open in Images. No dispatch or database-schema change.
 - Development-mode diagnostics summarize queue thumbnail outcomes/timings and record Open in Images handoff outcomes without prompts, image identities, paths or raw error text.
@@ -22,5 +24,5 @@ Changes through the 5.1.0 preparation baseline are consolidated in [DTFlow 5.1.0
 
 ## Release audit
 
-- PRs: #150, #151, #152.
-- Scope: Post-5.1.0 Queue item-table/inspector delivery and review corrections (#150) and Prepare folder persistence/sequential multi-file preparation (#151) are merged; PR #152 adds checkpoint metadata inspection and compact About sizing correction, pending merge. Scoped acceptance remains separate from source presence; not a published feature release.
+- PRs: #150, #151, #152, #153.
+- Scope: Post-5.1.0 Queue item-table/inspector delivery and review corrections (#150) and Prepare folder persistence/sequential multi-file preparation (#151) are merged; #152 adds checkpoint metadata inspection and compact About sizing correction; #153 adds local Compute Units estimation and its meter for both Local and direct DT+ Cloud, pending merge. Scoped acceptance remains separate from source presence; not a published feature release.
