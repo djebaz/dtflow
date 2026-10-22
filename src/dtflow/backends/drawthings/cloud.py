@@ -97,7 +97,14 @@ class DirectCloudBackend(DrawThingsBackend):
                 "unknown",
                 "failed",
                 "unknown",
-                diagnostics(authentication_code=exc.failure.code),
+                diagnostics(
+                    authentication_code=exc.failure.code,
+                    **{
+                        key: value
+                        for key, value in exc.failure.diagnostics
+                        if key in ("server_message", "http_status", "operation")
+                    },
+                ),
             )
         status = await super().check_connection()
         return replace(status, authentication="ok" if status.authentication != "failed" else "failed")

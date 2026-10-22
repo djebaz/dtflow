@@ -26,6 +26,10 @@ Changes through the 5.1.0 preparation baseline are consolidated in [DTFlow 5.1.0
 
 ## Fixed
 
+- API failures now retain bounded, sanitized server explanations in WARNING logs and shared connection/generation/asset presentation, including HTTP error envelopes and gRPC messages such as throttle-policy rejection. Preserve statuses and uncertainty instead of implying every permission denial is a bad key; never log tokens, prompts, signed URLs or image payloads. No retry/billing behavior changes; source-only delivery, acceptance pending.
+- Prepared-asset dispatch checks preserve the underlying API explanation in the generation warning and inline failure instead of reporting only `prepared_asset_unknown`; local validation reasons remain distinct, and blocked generation is not submitted.
+- Prepared-asset failures identify the affected LoRA by sanitized filename in the inline message and generation WARNING, without paths or private cloud references.
+
 - The Queues composer's preview table shows every row in full instead of a short window with its own scrolling, so every item's values are reached by scrolling the composer. Its LoRA weight columns are titled with the LoRA name only (no `lora_weight.` prefix or file extension; the full name is the header tooltip), and the columns share the composer's width with elided header and cell text instead of scrolling sideways.
 - Krea 2 checkpoints (`krea_2_raw` and `krea_2_turbo`, q6p and q8p) move from the Niche to the Prime catalogue, so the Krea 2 family shows in the Generate Base model list without Include niche models.
 
@@ -35,5 +39,5 @@ Changes through the 5.1.0 preparation baseline are consolidated in [DTFlow 5.1.0
 
 ## Release audit
 
-- PRs: #150, #151, #152, #153.
-- Scope: Post-5.1.0 Queue item-table/inspector delivery and review corrections (#150) and Prepare folder persistence/sequential multi-file preparation (#151) are merged; #152 adds checkpoint metadata inspection and compact About sizing correction; #153 adds local Compute Units estimation and its meter for both Local and direct DT+ Cloud, pending merge. Scoped acceptance remains separate from source presence; not a published feature release.
+- PRs: #150, #151, #152, #153, #154, #156.
+- Scope: Post-5.1.0 Queue item-table/inspector and Prepare delivery (#150/#151), checkpoint metadata inspection (#152), local CU estimation (#153), and Generate/Queues refinements (#154) are merged source. PR #156 adds bounded API response error explanations and WARNING diagnostics, pending merge. Scoped acceptance remains separate from source presence; not a published feature release.
