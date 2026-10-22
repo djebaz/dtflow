@@ -229,13 +229,17 @@ class AssetService:
     async def validate(self, prepared: PreparedAsset) -> None:
         """Dispatch-time guard: require current server validation of the exact reference, or fail without uploading."""
         # Display only the local basename, through shared privacy projection; never the remote reference or path.
-        asset = api_error_data(
-            message=PureWindowsPath(prepared.identifier).name,
-            private=(prepared.remote_id,),
-        ).get("server_message") or "[asset]"
+        asset = (
+            api_error_data(
+                message=PureWindowsPath(prepared.identifier).name,
+                private=(prepared.remote_id,),
+            ).get("server_message")
+            or "[asset]"
+        )
         if prepared.backend_id != self.backend.backend_id or prepared.origin != self.backend.origin:
             raise _failure(
-                ErrorCategory.VALIDATION, "prepared_asset_scope",
+                ErrorCategory.VALIDATION,
+                "prepared_asset_scope",
                 f"LoRA {asset}: prepared asset belongs to a different backend scope. Nothing was submitted.",
                 diagnostics=(("asset", asset),),
             )
@@ -244,8 +248,7 @@ class AssetService:
             problem = _failure(
                 ErrorCategory.VALIDATION,
                 "prepared_asset_" + result.status,
-                f"LoRA {asset} is not validated by the server ({result.evidence}); "
-                "nothing was uploaded or submitted.",
+                f"LoRA {asset} is not validated by the server ({result.evidence}); nothing was uploaded or submitted.",
             )
             details = {"validation_reason": result.evidence}
             if cause is not None:

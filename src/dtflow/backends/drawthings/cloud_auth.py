@@ -149,7 +149,8 @@ class CloudAuth:
                 "cloud_http_deadline",
                 "Cloud authentication deadline exceeded.",
                 timeout_phase="authentication",
-                operation="/sdk/token", transport="http",
+                operation="/sdk/token",
+                transport="http",
             ) from None
 
     async def _load_token(self) -> str:
@@ -168,9 +169,14 @@ class CloudAuth:
         expires = started + lifetime
         if expires <= self._clock():
             raise api_error(
-                ErrorCategory.AUTHENTICATION, "cloud_token_expired", "Cloud token arrived expired.",
-                operation="/sdk/token", transport="http", elapsed_ms=reply.elapsed_ms,
-                diagnostics=diagnostics(http_status=200), response=self._response_data(reply),
+                ErrorCategory.AUTHENTICATION,
+                "cloud_token_expired",
+                "Cloud token arrived expired.",
+                operation="/sdk/token",
+                transport="http",
+                elapsed_ms=reply.elapsed_ms,
+                diagnostics=diagnostics(http_status=200),
+                response=self._response_data(reply),
             )
         if self._closed:
             raise error(ErrorCategory.CONNECTIVITY, "cloud_auth_closed", "Cloud authentication client is closed.")
@@ -206,8 +212,11 @@ class CloudAuth:
         """POST authenticated JSON and return a validated object without exposing response contents."""
         token = await self.token()
         private = tuple(
-            item[key] for item in payload.get("files", ()) if isinstance(item, dict)
-            for key in ("file", "sha256") if isinstance(item.get(key), str)
+            item[key]
+            for item in payload.get("files", ())
+            if isinstance(item, dict)
+            for key in ("file", "sha256")
+            if isinstance(item.get(key), str)
         )
         reply = await self._post(path, payload, token=token, private=private)
         try:
@@ -220,18 +229,23 @@ class CloudAuth:
         already = data.get("alreadyExists") if isinstance(data, dict) else None
         if isinstance(already, dict):
             private += tuple(value for value in already.values() if isinstance(value, str))
-        return CloudJSONResponse(decoded, {**self._response_data(reply, private=private), "elapsed_ms": round(reply.elapsed_ms)})
+        return CloudJSONResponse(
+            decoded, {**self._response_data(reply, private=private), "elapsed_ms": round(reply.elapsed_ms)}
+        )
 
     def _response_data(self, reply: _HTTPReply, *, private=()) -> dict:
-        return api_error_data(
-            body=reply.body, headers=reply.headers, private=(*private, self._key, self._token)
-        )
+        return api_error_data(body=reply.body, headers=reply.headers, private=(*private, self._key, self._token))
 
     def _invalid_reply(self, path: str, reply: _HTTPReply, code: str, *, private=()) -> BackendError:
         return api_error(
-            ErrorCategory.PROTOCOL, code, "Cloud response is invalid.",
-            operation=path, transport="http", elapsed_ms=reply.elapsed_ms,
-            response=self._response_data(reply, private=private), diagnostics=diagnostics(http_status=200),
+            ErrorCategory.PROTOCOL,
+            code,
+            "Cloud response is invalid.",
+            operation=path,
+            transport="http",
+            elapsed_ms=reply.elapsed_ms,
+            response=self._response_data(reply, private=private),
+            diagnostics=diagnostics(http_status=200),
         )
 
     async def _post(self, path: str, payload: dict, *, token: str | None = None, private=()) -> _HTTPReply:
@@ -274,10 +288,14 @@ class CloudAuth:
                             "cloud_http_rejected",
                             "Cloud authentication HTTP request was rejected.",
                             diagnostics=diagnostics(http_status=response.status_code, operation=path),
-                            operation=path, transport="http", elapsed_ms=elapsed(),
+                            operation=path,
+                            transport="http",
+                            elapsed_ms=elapsed(),
                             response=api_error_data(
-                                body=bytes(body), headers=response.headers,
-                                private=(*private, self._key, token), truncated=truncated,
+                                body=bytes(body),
+                                headers=response.headers,
+                                private=(*private, self._key, token),
+                                truncated=truncated,
                             ),
                         )
                     body = bytearray()
@@ -287,14 +305,24 @@ class CloudAuth:
                                 ErrorCategory.PROTOCOL,
                                 "cloud_response_limit",
                                 "Cloud authentication response exceeds its limit.",
-                                operation=path, transport="http", elapsed_ms=elapsed(),
+                                operation=path,
+                                transport="http",
+                                elapsed_ms=elapsed(),
                                 diagnostics=diagnostics(http_status=200),
                                 response=api_error_data(headers=response.headers, truncated=True),
                             )
                         body.extend(chunk)
-                    event(log, "backend.api_completed", level=logging.DEBUG,
-                          data={"transport": "http", "operation": path.strip("/").replace("/", "."),
-                                "http_status": 200, "elapsed_ms": elapsed()})
+                    event(
+                        log,
+                        "backend.api_completed",
+                        level=logging.DEBUG,
+                        data={
+                            "transport": "http",
+                            "operation": path.strip("/").replace("/", "."),
+                            "http_status": 200,
+                            "elapsed_ms": elapsed(),
+                        },
+                    )
                     return _HTTPReply(bytes(body), tuple(response.headers.items()), elapsed())
         except (TimeoutError, httpx.TimeoutException):
             raise api_error(
@@ -302,17 +330,23 @@ class CloudAuth:
                 "cloud_http_deadline",
                 "Cloud authentication deadline exceeded.",
                 timeout_phase="authentication",
-                operation=path, transport="http", elapsed_ms=elapsed(),
+                operation=path,
+                transport="http",
+                elapsed_ms=elapsed(),
                 diagnostics=diagnostics(**({"http_status": observed_status} if observed_status is not None else {})),
                 response=api_error_data(headers=observed_headers, truncated=observed_status is not None),
             ) from None
         except httpx.HTTPError as exc:
             raise api_error(
-                ErrorCategory.CONNECTIVITY, "cloud_http_failed", "Cloud authentication HTTP connection failed.",
-                operation=path, transport="http", elapsed_ms=elapsed(),
-                diagnostics=diagnostics(kind=type(exc).__name__, **(
-                    {"http_status": observed_status} if observed_status is not None else {}
-                )),
+                ErrorCategory.CONNECTIVITY,
+                "cloud_http_failed",
+                "Cloud authentication HTTP connection failed.",
+                operation=path,
+                transport="http",
+                elapsed_ms=elapsed(),
+                diagnostics=diagnostics(
+                    kind=type(exc).__name__, **({"http_status": observed_status} if observed_status is not None else {})
+                ),
                 response=api_error_data(headers=observed_headers, truncated=observed_status is not None),
             ) from None
 

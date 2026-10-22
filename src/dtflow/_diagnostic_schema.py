@@ -105,8 +105,14 @@ def api_error_data(*, message=None, body=None, headers=(), private=(), truncated
     hidden.update(json.dumps(value, ensure_ascii=True)[1:-1] for value in tuple(hidden))
     hidden = tuple(sorted(hidden, key=len, reverse=True))
     pairs = tuple(islice(headers.items() if hasattr(headers, "items") else headers, 64))
-    media_type = next((v.split(";", 1)[0].strip().lower() for k, v in pairs
-                       if isinstance(k, str) and k.lower() == "content-type" and isinstance(v, str)), "")
+    media_type = next(
+        (
+            v.split(";", 1)[0].strip().lower()
+            for k, v in pairs
+            if isinstance(k, str) and k.lower() == "content-type" and isinstance(v, str)
+        ),
+        "",
+    )
     nodes = 0
     limited = bool(truncated)
 
@@ -119,13 +125,15 @@ def api_error_data(*, message=None, body=None, headers=(), private=(), truncated
         value = value.encode("utf-8", "replace").decode("utf-8")
         value = re.sub(
             r"(?is)<([\w:.-]*(?:token|secret|password|authorization|key|prompt|blob|base64|image|tensor|url|uri|reference|resource|path|file)[\w:.-]*)\b[^>]*>.*?(?:</\1\s*>|$)",
-            "[redacted]", value,
+            "[redacted]",
+            value,
         )
         for secret in hidden:
             value = value.replace(secret, "[redacted]")
         value = re.sub(
-            r'''(?i)(["']?[\w-]*(?:token|secret|password|authorization|key|prompt|blob|base64|url|uri|reference|file|path|user[_-]?id|nonce|checksum|sha256)[\w-]*["']?\s*[:=]\s*)(?:["'][^"']*(?:["']|$)|[^,\s}]+)''',
-            r"\1[redacted]", value,
+            r"""(?i)(["']?[\w-]*(?:token|secret|password|authorization|key|prompt|blob|base64|url|uri|reference|file|path|user[_-]?id|nonce|checksum|sha256)[\w-]*["']?\s*[:=]\s*)(?:["'][^"']*(?:["']|$)|[^,\s}]+)""",
+            r"\1[redacted]",
+            value,
         )
         value = re.sub(r"https?://[^\s<>\"']+", "[redacted-url]", value, flags=re.IGNORECASE)
         value = re.sub(r"\bdk_[A-Za-z0-9_-]+", "[redacted-key]", value)
@@ -135,7 +143,7 @@ def api_error_data(*, message=None, body=None, headers=(), private=(), truncated
         if len(value) > 2048:
             limited = True
             suffix = " [truncated]"
-            value = value[:2048 - len(suffix)] + suffix
+            value = value[: 2048 - len(suffix)] + suffix
         return value
 
     def value(item, depth=0):
@@ -172,8 +180,10 @@ def api_error_data(*, message=None, body=None, headers=(), private=(), truncated
         return "[omitted non-text detail]"
 
     result = {}
-    if body is not None and media_type and not (
-        media_type.startswith("text/") or media_type.endswith("json") or media_type.endswith("xml")
+    if (
+        body is not None
+        and media_type
+        and not (media_type.startswith("text/") or media_type.endswith("json") or media_type.endswith("xml"))
     ):
         body = "[omitted binary response]"
     if type(body) is bytes:

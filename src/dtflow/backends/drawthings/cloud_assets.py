@@ -103,11 +103,18 @@ async def lookup_lora_assets(
             )
         else:
             results[item.identifier] = LoRABackendAvailability("unknown", "dt_cloud.get_byom_urls", sha256=item.sha256)
-    event(logging.getLogger(__name__), "backend.asset_lookup_summary", level=logging.DEBUG,
-          data={"requested": len(usable), **{
-              name: sum(item.availability == name for item in results.values())
-              for name in ("byom_reusable", "upload_required", "unknown")
-          }})
+    event(
+        logging.getLogger(__name__),
+        "backend.asset_lookup_summary",
+        level=logging.DEBUG,
+        data={
+            "requested": len(usable),
+            **{
+                name: sum(item.availability == name for item in results.values())
+                for name in ("byom_reusable", "upload_required", "unknown")
+            },
+        },
+    )
     return results
 
 
@@ -137,9 +144,13 @@ class AssetUploadPolicy:
 
 def _invalid(code: str = "cloud_byom_response_invalid", *, response=None):
     return api_error(
-        ErrorCategory.PROTOCOL, code, "DT+ LoRA storage response is invalid.",
-        operation="/get_byom_urls", transport="http",
-        response=getattr(response, "error_data", None), diagnostics=diagnostics(http_status=200),
+        ErrorCategory.PROTOCOL,
+        code,
+        "DT+ LoRA storage response is invalid.",
+        operation="/get_byom_urls",
+        transport="http",
+        response=getattr(response, "error_data", None),
+        diagnostics=diagnostics(http_status=200),
     )
 
 
@@ -190,11 +201,18 @@ async def negotiate_lora_asset(auth: CloudAuth, content: AssetContent) -> AssetN
     ):
         raise _invalid(response=response)
     result = AssetNegotiation("upload_required", ticket=_signed_destination(upload.get("url"), response=response))
-    event(logging.getLogger(__name__), "backend.asset_negotiated", level=logging.DEBUG, data={"outcome": "upload_required"})
+    event(
+        logging.getLogger(__name__),
+        "backend.asset_negotiated",
+        level=logging.DEBUG,
+        data={"outcome": "upload_required"},
+    )
     return result
 
 
-def _transfer_error(code: str, outcome: RemoteOutcome, category=ErrorCategory.CONNECTIVITY, *, response=None, elapsed_ms=None, **items):
+def _transfer_error(
+    code: str, outcome: RemoteOutcome, category=ErrorCategory.CONNECTIVITY, *, response=None, elapsed_ms=None, **items
+):
     stage = (
         SubmissionStage.NOT_SUBMITTED if outcome == RemoteOutcome.NOT_STARTED else SubmissionStage.POSSIBLY_SUBMITTED
     )
@@ -205,7 +223,10 @@ def _transfer_error(code: str, outcome: RemoteOutcome, category=ErrorCategory.CO
         stage=stage,
         outcome=outcome,
         diagnostics=diagnostics(**items),
-        operation="asset_storage_put", transport="http", response=response, elapsed_ms=elapsed_ms,
+        operation="asset_storage_put",
+        transport="http",
+        response=response,
+        elapsed_ms=elapsed_ms,
     )
 
 
@@ -280,31 +301,64 @@ async def upload_signed(
                     truncated = True
                 evidence = api_error_data(
                     body=bytes(error_body) if not 200 <= status < 300 else None,
-                    headers=response.headers, private=(ticket.url, content.identifier, content.sha256), truncated=truncated,
+                    headers=response.headers,
+                    private=(ticket.url, content.identifier, content.sha256),
+                    truncated=truncated,
                 )
         if 200 <= status < 300:
-            event(logging.getLogger(__name__), "backend.api_completed", level=logging.DEBUG,
-                  data={"transport": "http", "operation": "asset_storage_put", "http_status": status,
-                        "bytes_yielded": yielded, "elapsed_ms": elapsed()})
+            event(
+                logging.getLogger(__name__),
+                "backend.api_completed",
+                level=logging.DEBUG,
+                data={
+                    "transport": "http",
+                    "operation": "asset_storage_put",
+                    "http_status": status,
+                    "bytes_yielded": yielded,
+                    "elapsed_ms": elapsed(),
+                },
+            )
             return
         if 400 <= status < 500:
             raise _transfer_error(
-                "asset_storage_refused", RemoteOutcome.FAILED, ErrorCategory.REMOTE_REJECTION,
-                http_status=status, response=evidence, elapsed_ms=elapsed(), bytes_yielded=yielded,
+                "asset_storage_refused",
+                RemoteOutcome.FAILED,
+                ErrorCategory.REMOTE_REJECTION,
+                http_status=status,
+                response=evidence,
+                elapsed_ms=elapsed(),
+                bytes_yielded=yielded,
             )
         raise _transfer_error(
-            "asset_storage_error", RemoteOutcome.UNKNOWN, ErrorCategory.REMOTE_REJECTION,
-            http_status=status, response=evidence, elapsed_ms=elapsed(), bytes_yielded=yielded,
+            "asset_storage_error",
+            RemoteOutcome.UNKNOWN,
+            ErrorCategory.REMOTE_REJECTION,
+            http_status=status,
+            response=evidence,
+            elapsed_ms=elapsed(),
+            bytes_yielded=yielded,
         )
     except (httpx.ConnectError, httpx.ConnectTimeout):
         outcome = RemoteOutcome.UNKNOWN if started else RemoteOutcome.NOT_STARTED
-        raise _transfer_error("asset_storage_unreachable", outcome, elapsed_ms=elapsed(), bytes_yielded=yielded) from None
+        raise _transfer_error(
+            "asset_storage_unreachable", outcome, elapsed_ms=elapsed(), bytes_yielded=yielded
+        ) from None
     except (TimeoutError, httpx.TimeoutException):
-        raise _transfer_error("asset_transfer_deadline", RemoteOutcome.UNKNOWN, ErrorCategory.TIMEOUT,
-                              elapsed_ms=elapsed(), bytes_yielded=yielded) from None
+        raise _transfer_error(
+            "asset_transfer_deadline",
+            RemoteOutcome.UNKNOWN,
+            ErrorCategory.TIMEOUT,
+            elapsed_ms=elapsed(),
+            bytes_yielded=yielded,
+        ) from None
     except httpx.HTTPError as exc:
-        raise _transfer_error("asset_transfer_failed", RemoteOutcome.UNKNOWN, elapsed_ms=elapsed(),
-                              kind=type(exc).__name__, bytes_yielded=yielded) from None
+        raise _transfer_error(
+            "asset_transfer_failed",
+            RemoteOutcome.UNKNOWN,
+            elapsed_ms=elapsed(),
+            kind=type(exc).__name__,
+            bytes_yielded=yielded,
+        ) from None
     finally:
         try:
             async with asyncio.timeout(policy.cleanup):

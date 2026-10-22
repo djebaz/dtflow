@@ -216,20 +216,31 @@ class DrawThingsBackend:
                 "unknown",
                 transport_code=exc.failure.code,
                 **({"transport_kind": kind} if kind else {}),
-                **{key: value for key, value in detail.items() if key in ("server_message", "status", "operation", "http_status")},
+                **{
+                    key: value
+                    for key, value in detail.items()
+                    if key in ("server_message", "status", "operation", "http_status")
+                },
             )
         try:
             reply, secret_sent = await self._echo()
         except BackendError as exc:
-            detail = {key: value for key, value in exc.failure.diagnostics
-                      if key in ("server_message", "status", "operation", "http_status")}
+            detail = {
+                key: value
+                for key, value in exc.failure.diagnostics
+                if key in ("server_message", "status", "operation", "http_status")
+            }
             if exc.failure.category == ErrorCategory.AUTHENTICATION:
                 return status("ok", "failed", "unknown", authentication_code=exc.failure.code, **detail)
             return status("failed", "unknown", "unknown", transport_code=exc.failure.code, **detail)
         if reply.shared_secret_missing:
             api_failure(
-                ErrorCategory.AUTHENTICATION, "shared_secret_missing", "Server requires a valid shared secret.",
-                operation="Echo", transport="grpc", diagnostics=diagnostics(status="OK"),
+                ErrorCategory.AUTHENTICATION,
+                "shared_secret_missing",
+                "Server requires a valid shared secret.",
+                operation="Echo",
+                transport="grpc",
+                diagnostics=diagnostics(status="OK"),
             )
             return status(
                 "ok",
@@ -271,7 +282,8 @@ class DrawThingsBackend:
                 "shared_secret_rejected_or_missing",
                 "Server requires a shared secret that was not accepted.",
                 diagnostics=diagnostics(shared_secret="sent" if secret_sent else "not_configured"),
-                operation="Echo", transport="grpc",
+                operation="Echo",
+                transport="grpc",
             )
         self._inventory = build_snapshot(
             self.backend_id,
@@ -307,14 +319,23 @@ class DrawThingsBackend:
         try:
             response = await stub.files_exist(request, timeout=self.timeouts.inventory)
         except Exception as exc:
-            raise BackendError(from_exception(
-                exc, phase="inventory", operation="FilesExist", private=(secret or "", *identifiers),
-                elapsed_ms=(time.monotonic() - began) * 1000,
-            )) from None
+            raise BackendError(
+                from_exception(
+                    exc,
+                    phase="inventory",
+                    operation="FilesExist",
+                    private=(secret or "", *identifiers),
+                    elapsed_ms=(time.monotonic() - began) * 1000,
+                )
+            ) from None
         if len(response.existences) != len(response.files):
             raise api_error(
-                ErrorCategory.PROTOCOL, "file_identity_incomplete", "Server returned incomplete file existence results.",
-                operation="FilesExist", transport="grpc", elapsed_ms=(time.monotonic() - began) * 1000,
+                ErrorCategory.PROTOCOL,
+                "file_identity_incomplete",
+                "Server returned incomplete file existence results.",
+                operation="FilesExist",
+                transport="grpc",
+                elapsed_ms=(time.monotonic() - began) * 1000,
                 diagnostics=diagnostics(result_count=len(response.files), existence_count=len(response.existences)),
             )
         by_name: dict[str, FileIdentity] = {}
@@ -327,7 +348,9 @@ class DrawThingsBackend:
                     "file_hash_invalid",
                     "Server returned an invalid file hash.",
                     diagnostics=diagnostics(result_count=len(response.files)),
-                    operation="FilesExist", transport="grpc", elapsed_ms=(time.monotonic() - began) * 1000,
+                    operation="FilesExist",
+                    transport="grpc",
+                    elapsed_ms=(time.monotonic() - began) * 1000,
                 )
             by_name[str(name)] = FileIdentity(str(name), exists, digest.hex() if digest else None)
         missing = [name for name in identifiers if name not in by_name]
@@ -337,12 +360,23 @@ class DrawThingsBackend:
                 "file_identity_incomplete",
                 "Server omitted requested file identity results.",
                 diagnostics=diagnostics(missing=len(missing)),
-                operation="FilesExist", transport="grpc", elapsed_ms=(time.monotonic() - began) * 1000,
+                operation="FilesExist",
+                transport="grpc",
+                elapsed_ms=(time.monotonic() - began) * 1000,
             )
-        diagnostic_event(log, "backend.api_completed", level=logging.DEBUG,
-                         data={"transport": "grpc", "operation": "FilesExist", "status": "OK",
-                               "requested": len(identifiers), "present": sum(item.exists for item in by_name.values()),
-                               "elapsed_ms": (time.monotonic() - began) * 1000})
+        diagnostic_event(
+            log,
+            "backend.api_completed",
+            level=logging.DEBUG,
+            data={
+                "transport": "grpc",
+                "operation": "FilesExist",
+                "status": "OK",
+                "requested": len(identifiers),
+                "present": sum(item.exists for item in by_name.values()),
+                "elapsed_ms": (time.monotonic() - began) * 1000,
+            },
+        )
         return tuple(by_name[name] for name in identifiers)
 
     async def generate(self, request: ResolvedGenerationRequest, *, on_event: EventSink) -> GenerationResult:
@@ -527,9 +561,18 @@ class DrawThingsBackend:
         except Exception as exc:
             trailers = stream is not None and getattr(stream, "trailing_metadata", None) is not None
             problem = from_exception(
-                exc, phase="generation", operation="GenerateImage", request_id=request.request_id, stage=stage, trailers=trailers,
-                private=(request.prompt, request.negative_prompt, *(item.remote_id for item in request.prepared_assets),
-                         *metadata.values()),
+                exc,
+                phase="generation",
+                operation="GenerateImage",
+                request_id=request.request_id,
+                stage=stage,
+                trailers=trailers,
+                private=(
+                    request.prompt,
+                    request.negative_prompt,
+                    *(item.remote_id for item in request.prepared_assets),
+                    *metadata.values(),
+                ),
                 response_headers=(
                     *(getattr(stream, "initial_metadata", None) or {}).items(),
                     *(getattr(stream, "trailing_metadata", None) or {}).items(),
@@ -539,9 +582,18 @@ class DrawThingsBackend:
             raise BackendError(replace(problem, partial_artifacts=self._partials(finals))) from None
         finally:
             self._active -= 1
-        diagnostic_event(log, "backend.api_completed", level=logging.DEBUG,
-                         data={"transport": "grpc", "operation": "GenerateImage", "status": "OK",
-                               "final_count": len(finals), "elapsed_ms": (time.monotonic() - started) * 1000})
+        diagnostic_event(
+            log,
+            "backend.api_completed",
+            level=logging.DEBUG,
+            data={
+                "transport": "grpc",
+                "operation": "GenerateImage",
+                "status": "OK",
+                "final_count": len(finals),
+                "elapsed_ms": (time.monotonic() - started) * 1000,
+            },
+        )
         server = self._inventory.server_identity if self._inventory is not None else "unknown"
         return GenerationResult(
             request.request_id,
@@ -594,12 +646,14 @@ class DrawThingsBackend:
                 ErrorCategory.PROTOCOL,
                 code,
                 "Received output was rejected.",
-                request.request_id, stage,
+                request.request_id,
+                stage,
                 RemoteOutcome.NOT_STARTED if stage == SubmissionStage.NOT_SUBMITTED else RemoteOutcome.UNKNOWN,
                 terminal_status=terminal,
                 partial_artifacts=self._partials(finals),
                 diagnostics=diagnostics(phase="generation", reason=code),
-                operation="GenerateImage", transport="grpc",
+                operation="GenerateImage",
+                transport="grpc",
             )
         )
 
@@ -654,9 +708,14 @@ class DrawThingsBackend:
             async with asyncio.timeout(self.timeouts.connect):
                 await channel.__connect__()
         except Exception as exc:
-            raise BackendError(from_exception(
-                exc, phase="connect", operation="connect", elapsed_ms=(time.monotonic() - began) * 1000,
-            )) from None
+            raise BackendError(
+                from_exception(
+                    exc,
+                    phase="connect",
+                    operation="connect",
+                    elapsed_ms=(time.monotonic() - began) * 1000,
+                )
+            ) from None
 
     async def _echo(self):
         began = time.monotonic()
@@ -668,13 +727,26 @@ class DrawThingsBackend:
         try:
             reply = await stub.echo(request, timeout=self.timeouts.inventory)
         except Exception as exc:
-            raise BackendError(from_exception(
-                exc, phase="inventory", operation="Echo", private=(secret or "",),
-                elapsed_ms=(time.monotonic() - began) * 1000,
-            )) from None
-        diagnostic_event(log, "backend.api_completed", level=logging.DEBUG,
-                         data={"transport": "grpc", "operation": "Echo", "status": "OK",
-                               "elapsed_ms": (time.monotonic() - began) * 1000})
+            raise BackendError(
+                from_exception(
+                    exc,
+                    phase="inventory",
+                    operation="Echo",
+                    private=(secret or "",),
+                    elapsed_ms=(time.monotonic() - began) * 1000,
+                )
+            ) from None
+        diagnostic_event(
+            log,
+            "backend.api_completed",
+            level=logging.DEBUG,
+            data={
+                "transport": "grpc",
+                "operation": "Echo",
+                "status": "OK",
+                "elapsed_ms": (time.monotonic() - began) * 1000,
+            },
+        )
         self._remember_specs(reply)
         return reply, bool(secret)
 

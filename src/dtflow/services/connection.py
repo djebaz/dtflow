@@ -124,7 +124,8 @@ def present_generation_failure(exc: Exception) -> Presentation:
             if api and asset:
                 detail = f"LoRA {asset} — {detail}"
             return Presentation(
-                "error", "Prepared asset not validated",
+                "error",
+                "Prepared asset not validated",
                 f"{detail} Nothing was uploaded or submitted." if api else detail,
             )
         detail = _api_explanation(failure) if api else failure.code

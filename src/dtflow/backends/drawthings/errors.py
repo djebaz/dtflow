@@ -65,10 +65,15 @@ def api_failure(*args, operation: str, transport: str, response=None, elapsed_ms
         diagnostics=diagnostics(**details),
     )
     event(
-        log, "backend.api_failed", level=logging.WARNING,
+        log,
+        "backend.api_failed",
+        level=logging.WARNING,
         data={
-            **details, "code": problem.code, "category": problem.category.value,
-            "submission_stage": problem.submission_stage.value, "remote_outcome": problem.remote_outcome.value,
+            **details,
+            "code": problem.code,
+            "category": problem.category.value,
+            "submission_stage": problem.submission_stage.value,
+            "remote_outcome": problem.remote_outcome.value,
             **({"request_id": problem.request_id} if problem.request_id else {}),
         },
     )

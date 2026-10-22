@@ -96,8 +96,15 @@ def failure_fields(failure: BaseException) -> dict:
         fields["category"] = str(getattr(category, "value", category))
         details = dict(getattr(detail, "diagnostics", ()))
         for key in (
-            "transport", "operation", "http_status", "status", "server_message",
-            "cause_code", "cause_category", "validation_reason", "asset",
+            "transport",
+            "operation",
+            "http_status",
+            "status",
+            "server_message",
+            "cause_code",
+            "cause_category",
+            "validation_reason",
+            "asset",
         ):
             if key in details:
                 fields[key] = details[key]
