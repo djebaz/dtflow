@@ -31,7 +31,7 @@
 - [x] Preserve HTTP/gRPC error evidence through backend-neutral failures and WARNING events, including malformed HTTP 200 responses.
 - [x] Present sanitized server explanations without inventing credential, throttle reset, billing or remote-execution conclusions.
 - [x] Synchronize architecture, desktop guide, preview definitions, status and unreleased notes.
-- [ ] Commit/push implementation and update the new PR; do not merge.
+- [x] Commit/push implementation (`b9f144b`) to PR #156; do not merge. PR description records source-only delivery and owner acceptance.
 
 ## Decisions
 
