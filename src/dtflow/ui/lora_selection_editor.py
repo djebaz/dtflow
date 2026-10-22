@@ -188,10 +188,9 @@ def edit_lora_selection(
 
     # A loaded request may repeat an identifier; the last weight wins, as when the selection is applied.
     current = {item.identifier: item.weight for item in selected}
-    collected: dict[str, list[float]] = {}  # every distinct loaded weight per LoRA, for multi_weight
+    collected: dict[str, list[float]] = {}  # every loaded weight per LoRA, repeats kept (a Pair repeats weights)
     for item in selected:
-        if item.weight not in collected.setdefault(item.identifier, []):
-            collected[item.identifier].append(item.weight)
+        collected.setdefault(item.identifier, []).append(item.weight)
     for name, weight in current.items():
         add_row(name, checked=True, weight=weight)
     for name in dict.fromkeys(candidates):

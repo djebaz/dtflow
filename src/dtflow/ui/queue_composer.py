@@ -364,7 +364,7 @@ class ValueChips(QWidget):
 
     def _replace_values(self, chosen: str | Sequence[str]) -> None:
         values = [chosen] if isinstance(chosen, str) else list(chosen)
-        self._set([v.strip() for v in dict.fromkeys(values) if v.strip()])
+        self._set([v.strip() for v in values if v.strip()])
 
     def _edit_clicked(self, index: int) -> None:
         """Edit one chip in the shared editor: Apply replaces it (an empty result keeps it)."""

@@ -409,8 +409,9 @@ def queue_edit_from_records(records) -> QueueEdit:
     distinct = {name: _distinct(values) for name, values in columns.items()}
     varying = [name for name, values in distinct.items() if len(values) > 1]
     if not varying and not increment and count > 1:
-        varying = ["seeds"]  # identical items: repeat the one seed as a Pair row, as Repeat would step it
-        columns["seeds"], distinct["seeds"] = seeds, _distinct(seeds)
+        # Identical items cannot be a Pair (the planner refuses duplicate rows): load a Repeat, whose seeds step.
+        increment = True
+        note = f"{note} Identical items were loaded as a Repeat; its seeds will step.".strip()
     rows = list(zip(*(columns[name] for name in varying), strict=True)) if varying else []
     product = 1
     for name in varying:
