@@ -13,6 +13,8 @@ Fix DTFlow's unsupported equality requirement between the locally computed SHA-2
 
 ## Action items
 
+- [x] Implement source corrections for the owner-reported pytest failure groups after format commit `8e4ad3e`, retaining that commit and using source-only follow-up review.
+- [ ] Owner rerun establishes the corrected head's pytest result; keep #158 draft until that evidence is reviewed.
 - [x] Accept usable server-returned upload references independently of local checksum equality in negotiation and metadata lookup.
 - [x] Record bounded non-identifying type/length/format/comparison diagnostics before consuming upload evidence.
 - [x] Synchronize contract documentation, preview definitions, status and release notes.
@@ -43,7 +45,7 @@ The owner then supplied the still-active `logs/dtflow-f579bf8480c4.jsonl`. To av
 
 Receipt migration/repair is not part of #158. Dispatch still refuses a saved/current reference mismatch. Existing metadata reconciliation also keeps a confirmed mismatched reference unresolved rather than silently replacing it; explicit preparation remains a separate user action. Do not claim all historic receipts were repaired or infer a need to delete remote assets/re-upload them.
 
-## Merge-preparation review — 2026-10-22
+## Initial merge-preparation review — 2026-10-22 (superseded by owner pytest below)
 
 The initial production review was pinned to PR head `2f93f6ba68090d2100695e09c3031976415f9453`, base `33193340b4cddacde095877b035ca00b441a9a96` and merge-base `c590a72fc2034424f8387d027ec9cd1c09cdf025`. Current `main` is merged into this branch without rewriting published history, preserving #159. No merge to `main` is authorized by this review request.
 
@@ -61,3 +63,15 @@ The initial production review was pinned to PR head `2f93f6ba68090d2100695e09c30
 ### CI and merge boundary
 
 The reviewed-head UI run `39792996010` is tied to `2f93f6b`; its only job was skipped with no executed steps. It is not a green test/render result, and it does not cover later merge-preparation edits. No CI, tests or rendering was manually triggered. Refresh the final PR head/mergeability before any separately authorized squash merge; owner decides whether the disclosed source-only boundary is sufficient.
+
+## Owner pytest failures after formatting — current merge disposition
+
+The owner supplied `Desktop/run.txt` after format commit `8e4ad3eb75e4bf74a687b49e63111725503a8a1d`: **11 failed, 629 passed, 3 skipped in 198.68 seconds**. This supersedes the earlier source-only no-blocker assessment; #158 is returned to draft pending an owner rerun. Raw output remains outside Git, and no real credentials or private request data are copied into documentation.
+
+| Reported failure group | Source correction | Evidence limit |
+| --- | --- | --- |
+| Four local generation tests fail on absent metadata; one service test gets a masking protocol error | Local generation legitimately returns no auth metadata. The exception projection now treats absent metadata as empty without changing the original request or retry behavior. | Source-addressed, not rerun. |
+| Two storage-error and one malformed-BYOM privacy assertions expose compound secret-shaped values; two token/auth refusal privacy assertions expose unknown/unissued credential-shaped values | Shared API text projection conservatively redacts compound credential-shaped atoms while retaining ordinary wording such as `token expired`. Storage error projection additionally excludes every signed-query value, including repeated keys and raw-encoded forms, not just the full URL. | Source-addressed, not a comprehensive privacy guarantee or passing-test result. |
+| One Qt assertion searches an unbroken code in deliberately wrapped label text | Normalize intentional zero-width wrap characters in the existing assertion; leave runtime UI and its uncertainty wording unchanged. | Existing expectation corrected, not executed. |
+
+No tests, syntax/lint validation, renders, package builds or agent live/provider calls were run for these corrections. Preserve the owner's formatting commit and keep all fixes on #158. A new successful owner run and a separately authorized merge remain outstanding.

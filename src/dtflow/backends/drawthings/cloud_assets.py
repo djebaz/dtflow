@@ -340,6 +340,11 @@ async def upload_signed(
         timeout=httpx.Timeout(policy.read, connect=policy.connect, write=policy.write, pool=policy.connect),
     )
     try:
+        destination = httpx.URL(ticket.url)
+        # A storage error may echo an individual signature instead of the full signed URL.
+        query_private = tuple(value for _, value in destination.params.multi_items()) + tuple(
+            part.partition(b"=")[2].decode("ascii") for part in destination.query.split(b"&") if b"=" in part
+        )
         async with asyncio.timeout(policy.total):
             async with client.stream("PUT", ticket.url, content=body(), headers=headers) as response:
                 status = response.status_code
@@ -364,7 +369,12 @@ async def upload_signed(
                 evidence = api_error_data(
                     body=bytes(error_body) if not 200 <= status < 300 else None,
                     headers=response.headers,
-                    private=(ticket.url, content.identifier, content.sha256),
+                    private=(
+                        ticket.url,
+                        content.identifier,
+                        content.sha256,
+                        *query_private,
+                    ),
                     truncated=truncated,
                 )
         if 200 <= status < 300:

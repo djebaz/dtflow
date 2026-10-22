@@ -571,7 +571,7 @@ class DrawThingsBackend:
                     request.prompt,
                     request.negative_prompt,
                     *(item.remote_id for item in request.prepared_assets),
-                    *metadata.values(),
+                    *(metadata or {}).values(),
                 ),
                 response_headers=(
                     *(getattr(stream, "initial_metadata", None) or {}).items(),
