@@ -218,7 +218,7 @@ def _hunyuan(time: int, height: int, width: int, tokens: int, cfg: int, architec
     text_lengths = (tokens, tokens) if cfg > 1 else (0, tokens)
     vec_rows = cfg
     text_rows = sum(text_lengths)
-    fixed = 2 * _dense(vec_rows, 256, c) + 2 * _dense(vec_rows, c, c)
+    fixed = _dense(vec_rows, 256, c) + 2 * _dense(vec_rows, c, c)
     fixed += _dense(vec_rows, 4096, c) + _dense(text_rows, 4096, c)
     for _ in range(2):
         fixed += 4 * _dense(text_rows, 3072, 3072)
@@ -355,6 +355,8 @@ def estimate_video_compute_units(
     has_loras: bool = False,
     causal_frames: int = 0,
     causal_padding: int = 0,
+    strength: float = 1.0,
+    speed_up_with_guidance_embed: bool = False,
 ) -> ComputeUnitEstimate:
     """Estimate one video from explicit parameters without submitting generation.
 
@@ -373,6 +375,12 @@ def estimate_video_compute_units(
         return ComputeUnitEstimate(None, "Video dimensions must be multiples of 64 pixels.")
     if type(guidance) not in (int, float) or not math.isfinite(guidance):
         return ComputeUnitEstimate(None, "Invalid CFG guidance value.")
+    if type(strength) not in (int, float) or not math.isfinite(strength) or strength < 0:
+        return ComputeUnitEstimate(None, "Invalid video strength.")
+    if type(speed_up_with_guidance_embed) is not bool:
+        return ComputeUnitEstimate(None, "Invalid guidance-embedding setting.")
+    if speed_up_with_guidance_embed and spec.get("guidance_embed") is not True:
+        return ComputeUnitEstimate(None, "Guidance embedding is not declared for this checkpoint.")
     if any(type(x) is not int or x < 0 for x in (causal_frames, causal_padding)):
         return ComputeUnitEstimate(None, "Invalid causal frame configuration.")
     if causal_padding and not causal_frames:
@@ -384,14 +392,26 @@ def estimate_video_compute_units(
         return ComputeUnitEstimate(None, "SVD requires image-to-video input.")
     if has_image and strategy == "video_minimax_h3":
         return ComputeUnitEstimate(None, "MiniMax reference-image modifiers require additional metadata.")
+    if has_image and strategy == "video_wan" and not architecture["supports_image"]:
+        return ComputeUnitEstimate(None, "This WAN variant does not count an image-input path.")
 
     width, height = _video_size(width_px, height_px, architecture["latent_scale"])
     time = _effective_frames(num_frames, strategy)
     tokens = spec.get("padded_text_encoding_length") or architecture["default_text_tokens"]
     if type(tokens) is not int or tokens <= 0:
         return ComputeUnitEstimate(None, "Invalid text token metadata.")
-    guidance_embedded = spec.get("guidance_embed") is True
-    cfg = 1 if spec.get("is_consistency_model") is True or guidance_embedded else (2 if guidance != 1 else 1)
+    guidance_embedded = spec.get("guidance_embed") is True and speed_up_with_guidance_embed
+    # SVD has unconditional/conditional guidance within its temporal UNet, not a
+    # duplicated CFG batch; see cfgChannelsAndInputChannels in upstream Sampler.swift.
+    cfg = (
+        1
+        if strategy == "video_svd" or spec.get("is_consistency_model") is True or guidance_embedded
+        else (2 if abs(guidance - 1) > 1e-3 else 1)
+    )
+    if spec.get("modifier") == "editing" and cfg > 1:
+        return ComputeUnitEstimate(None, "Triple-guidance editing needs image guidance input.")
+    if spec.get("version") == "longcat_video_avatar1_5":
+        cfg = 1
 
     if strategy == "video_svd":
         main, fixed = _svd(time, height, width, architecture)
@@ -417,7 +437,8 @@ def estimate_video_compute_units(
         return ComputeUnitEstimate(None, "Unsupported video strategy.")
 
     fixed_factor = 1 if strategy == "video_minimax_h3" else cfg
-    instructions = main * steps * cfg + fixed * fixed_factor
+    # The official estimator applies strength only to the sampled main path.
+    instructions = main * steps * cfg * max(strength, 0.05) + fixed * fixed_factor
     units = math.ceil(instructions * CALIBRATION * architecture["usage_bias"])
     if units <= 0:
         return ComputeUnitEstimate(None, "The video instruction count could not be resolved.")
