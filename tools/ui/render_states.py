@@ -1229,6 +1229,7 @@ def render_active_queue_states(shell, out):
         assert queue._lora_weight_lines() == "offline-style.safetensors: 0.6; 1"
         page.queueComposerScroll.ensureWidgetVisible(page.planLorasEdit)
         snap("queues-42a-composer-lora-weights")
+        shell.generation.lora.set_loras((LoRASelection("offline-style.safetensors", 0.8),))  # offered by the editor
         page.planLorasEdit._add.click()  # the same checkbox+slider editor, limited to Generate's LoRAs
         weight_editor = shell.inline._editor
         row = next(r for r in weight_editor.findChildren(QWidget, "loraSelectionRow"))
@@ -1239,6 +1240,7 @@ def render_active_queue_states(shell, out):
         snap("queues-43a-composer-lora-weights-editor")
         shell.inline.dismiss()
         page.planLorasEdit.clear()
+        shell.generation.lora.set_loras(())
         # #128: random draws from the listed values under one recorded plan seed (the same seed gives the same items).
         page.planStepsEdit.setText("20; 30; 40; 50")
         page.planDrawStepsSpin.setValue(2)
