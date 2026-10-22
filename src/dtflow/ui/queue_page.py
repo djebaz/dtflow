@@ -18,7 +18,7 @@ from time import monotonic
 
 from PySide6.QtCore import QSize, Qt, QTimer, QUrl
 from PySide6.QtGui import QDesktopServices, QIcon, QStandardItem, QStandardItemModel
-from PySide6.QtWidgets import QListWidgetItem, QMenu, QWidget
+from PySide6.QtWidgets import QFormLayout, QListWidgetItem, QMenu, QPlainTextEdit, QWidget
 
 from dtflow.core.models import BackendEvent, LoRASelection, ValidationError
 from dtflow.persistence.settings import SettingsError, load_cloud_concurrency, validate_concurrency
@@ -332,6 +332,7 @@ class QueuePage:
         self._preview_timer.setInterval(PREVIEW_MS)
         self._preview_timer.timeout.connect(self.preview)
         self._configure_dimensions()
+        self._align_plan_labels()
         self._actions_fit = ActionsFit(
             page.queueComposerScroll,
             page.queueComposer.layout().itemAt(0).layout(),  # the title row
@@ -1131,6 +1132,18 @@ class QueuePage:
     @property
     def composing(self) -> bool:
         return self._composing
+
+    def _align_plan_labels(self) -> None:
+        """Sit each composer label on its field's first line: the form layout top-aligns labels, which then read a few
+        pixels above the text of the (padded) input beside them."""
+        form = self.page.planForm
+        for row in range(form.rowCount()):
+            label_item = form.itemAt(row, QFormLayout.ItemRole.LabelRole)
+            field_item = form.itemAt(row, QFormLayout.ItemRole.FieldRole)
+            label = label_item.widget() if label_item is not None else None
+            field = field_item.widget() if field_item is not None else None
+            if label is not None and field is not None:
+                label.setContentsMargins(0, 6 if isinstance(field, QPlainTextEdit) else 3, 0, 0)
 
     def _configure_dimensions(self) -> None:
         page = self.page
