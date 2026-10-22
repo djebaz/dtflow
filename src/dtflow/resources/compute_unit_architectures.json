@@ -271,6 +271,30 @@
       "latent_scale": 8,
       "default_text_tokens": 77,
       "usage_bias": 2.5
+    },
+    "hidream_i1": {
+      "strategy": "hidream_i1",
+      "channels": 2560,
+      "double_layers": 16,
+      "single_layers": 32,
+      "latent_scale": 8,
+      "default_text_tokens": 128,
+      "usage_bias": 1
+    },
+    "wurstchen_v3.0_stage_c": {
+      "strategy": "wurstchen_stage_c",
+      "channels": 2048,
+      "stage2_steps": 10,
+      "latent_scale": 8,
+      "default_text_tokens": 77,
+      "usage_bias": 2.5
+    },
+    "wurstchen_v3.0_stage_b": {
+      "strategy": "wurstchen_stage_b",
+      "channels": 320,
+      "latent_scale": 8,
+      "default_text_tokens": 77,
+      "usage_bias": 2.5
     }
   }
 }
