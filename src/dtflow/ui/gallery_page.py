@@ -112,6 +112,7 @@ MAX_QUERY_ITEMS = gallery_limits.MAX_READ  # GalleryQuery retains its existing p
 THUMBNAIL_SIDE = 600
 THUMBNAIL_CONCURRENCY = 6
 AUTO_REFRESH_MS = 1000  # file-metadata poll only; unchanged polls never rebuild the page
+PUSH_DEBOUNCE_MS = 250  # coalesce in-process change hints before the metadata check
 SNAPSHOT_RECOVERY_GRACE_S = 5  # presentation-only stability grace before a recovered live read hides the warning
 SOURCE_SUMMARY_INTERVAL_S = 60  # minimum spacing of gallery.source_summary per phase; samples keep accumulating
 LOOKAHEAD_SCREENS = 3  # loaded beyond the viewport: at least one batch or this many screens
@@ -653,6 +654,12 @@ class GalleryPage(QObject):
         self.save_timer.setSingleShot(True)
         self.save_timer.setInterval(250)
         self.save_timer.timeout.connect(self._flush_save)
+        # Producers in this process (generation, queue items) push a change hint; the debounce
+        # coalesces bursts and the metadata check still decides whether a read is needed.
+        self.push_timer = QTimer(self)
+        self.push_timer.setSingleShot(True)
+        self.push_timer.setInterval(PUSH_DEBOUNCE_MS)
+        self.push_timer.timeout.connect(self._auto_refresh_tick)
         self.auto_timer = QTimer(self)
         self.auto_timer.setInterval(AUTO_REFRESH_MS)
         self.auto_timer.timeout.connect(self._auto_refresh_tick)
@@ -1443,6 +1450,11 @@ class GalleryPage(QObject):
             self._auto_refresh_tick()
         if active and self._pending_page_jump is not None:
             self._pending_jump_timer.start()
+
+    def notify_changed(self) -> None:
+        """In-process hint that saved outputs changed; polling remains for other processes."""
+        if self._active and self.auto_button.isChecked() and not self.runner.closed:
+            self.push_timer.start()
 
     def _sync_auto_refresh(self) -> None:
         enabled = self.auto_button.isChecked()

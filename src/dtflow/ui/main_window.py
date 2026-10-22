@@ -244,6 +244,7 @@ class MainWindow:
         )
         form.workspaceStack.hide()
         form.rootLayout.addWidget(self.shell)
+        self._last_run_marker = None
         self.progress_strip = ActivityStrip(form)
         # Running progress lives in the visible page's own bar; other pages keep the bottom overlay.
         self.progress_strip.register_dock(
@@ -721,6 +722,11 @@ class MainWindow:
         if self.progress_strip.retired:
             return
         state = self.activity.run_state
+        # Each settled image or finished run pushes a refresh hint to Images (it checks the database cheaply).
+        marker = (self.activity.generating, self.activity.dispatching, state.completed)
+        if marker != self._last_run_marker:
+            self._last_run_marker = marker
+            self.gallery.notify_changed()
         if not (self.activity.generating or self.activity.dispatching):
             self.progress_strip.finish("run")
             return
