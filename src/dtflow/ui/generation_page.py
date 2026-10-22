@@ -1462,8 +1462,9 @@ class GenerationPage:
             result = "unavailable" if estimate.units is None else f"{estimate.units:,}".replace(",", "\u202f") + " CU"
             text += (
                 f"\n\nCompute Units: {result}\n"
-                "Supported models: FLUX.1, FLUX.2 Dev/Klein, Z-Image, Cosmos 2.5, "
-                "Qwen-Image/2.1, Krea 2 and Ideogram 4."
+                "Supported models: SD 1.x/2.x, SDXL/SSD, SD3, FLUX.1/2/3, "
+                "Qwen-Image/2.1, Z-Image, Cosmos 2.5, Krea 2, Ideogram 4, "
+                "HiDream I1/O1, ERNIE, MOSS, PixArt, AuraFlow and Würstchen."
             )
         InlineNotice.information(self.page, "Checkpoint details", text)
 
