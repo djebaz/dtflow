@@ -44,7 +44,7 @@ editor. The sampler chosen before stepping returns on any model that allows it. 
 taller editor that lists the selected LoRAs first (checked, at their weights) and then every
 offered LoRA, each with a checkbox and a 0.0–3.0 weight slider in 0.1 steps (default 1.0).
 Moving a slider checks its LoRA; search filters the list; an exact identifier can be added
-with **Add custom**. **Apply** (or Enter) replaces the whole selection once; unchecking a
+with **Add custom**; text left in that field is added when you apply. **Apply** (or Enter) replaces the whole selection once; unchecking a
 LoRA removes it. New UI selections use one-decimal weights; 0.0 is preserved. A weight loaded
 from a saved request outside the slider range is kept exactly until its slider is moved. Existing imported/saved
 requests retain their recorded weights and existing validation; this does not change the
@@ -146,7 +146,7 @@ With `-x`, the Attempt details box adds development evidence: on failure the err
 
 ## LoRAs and cloud assets
 
-For a classified checkpoint, Edit LoRAs offers the active provider's available bundled/user-defined LoRAs whose known base family and mode metadata are compatible with that checkpoint. User custom metadata may be stored in `.dtflow/catalogue/custom_loras.json`; it is durable user data and does not make an absent provider artifact available. Unknown/raw checkpoints do not receive guessed compatible LoRAs. Choose the exact inventory identifier and a weight together in the one-step inline Add editor (0.0–3.0, 0.1 steps). Shared preflight keeps architecture match/mismatch/unknown, availability and application evidence separate. A confirmed mismatch or missing LoRA stops the request; unknown architecture is reported and allowed, never silently dropped. Generation success does not prove LoRA application. Only whole-model LoRAs on a base model are supported; broader exception rules are not pinned.
+For a classified checkpoint, Edit LoRAs offers the active provider's available bundled/user-defined LoRAs whose known base family and mode metadata are compatible with that checkpoint. User custom metadata may be stored in `.dtflow/catalogue/custom_loras.json`; it is durable user data and does not make an absent provider artifact available. Unknown/raw checkpoints do not receive guessed compatible LoRAs. Check the LoRAs to use and set each weight (0.0–3.0, 0.1 steps) in the Edit LoRAs editor; every LoRA starts at 1.0, and a catalogue or inventory suggestion is shown only in its tooltip. Shared preflight keeps architecture match/mismatch/unknown, availability and application evidence separate. A confirmed mismatch or missing LoRA stops the request; unknown architecture is reported and allowed, never silently dropped. Generation success does not prove LoRA application. Only whole-model LoRAs on a base model are supported; broader exception rules are not pinned.
 
 Trigger prefixes are added only when you explicitly choose that option; otherwise the prompt is unchanged.
 

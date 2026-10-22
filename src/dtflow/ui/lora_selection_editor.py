@@ -86,9 +86,10 @@ def edit_lora_selection(
         rows[name] = row
         return row
 
+    # A loaded request may repeat an identifier; the last weight wins, as when the selection is applied.
     current = {item.identifier: item.weight for item in selected}
-    for item in selected:
-        add_row(item.identifier, checked=True, weight=item.weight)
+    for name, weight in current.items():
+        add_row(name, checked=True, weight=weight)
     for name in dict.fromkeys(candidates):
         if name and name not in current:
             add_row(name, checked=False, weight=DEFAULT_WEIGHT)
@@ -120,6 +121,8 @@ def edit_lora_selection(
     panel = feedback(parent)
 
     def accept() -> None:
+        if editor.loraSelectionCustomIdentifier.text().strip():
+            add_custom()  # an identifier typed but not yet added is part of the selection
         # Display order: the existing selection keeps its order, newly checked LoRAs follow.
         chosen = [(name, weights[name]) for name, row in rows.items() if row.loraSelectionCheck.isChecked()]
         panel.dismiss()
