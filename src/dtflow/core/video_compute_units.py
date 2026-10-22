@@ -458,9 +458,11 @@ def estimate_video_compute_units(
     units = math.ceil(instructions * CALIBRATION * architecture["usage_bias"])
     if units <= 0:
         return ComputeUnitEstimate(None, "The video instruction count could not be resolved.")
+    modifier = spec.get("modifier", "none")
+    base_estimate = has_loras or modifier not in ("none", None, "kontext", "fl2va", "ref2va")
     reason = (
-        "Base checkpoint video estimate; LoRA modifier effects are omitted."
-        if has_loras
+        "Base checkpoint video estimate; unmodelled modifier effects are omitted."
+        if base_estimate
         else "Offline video estimate; not a DT+ billing quote or availability guarantee."
     )
     return ComputeUnitEstimate(units, reason)
