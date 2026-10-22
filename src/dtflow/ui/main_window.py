@@ -399,7 +399,9 @@ class MainWindow:
         form.statusBar().addPermanentWidget(grid_status_group)
         form.statusBar().addPermanentWidget(status_actions)
         self.grid_index_group = grid_status_group
-        grid_status_group.setVisible(form.workspaceStack.currentWidget() is self.images_page)
+        # The slot stays on every tab (only its text hides) so the activity bar has the same room everywhere.
+        grid_status_group.setFixedWidth(70)
+        grid_index.setVisible(form.workspaceStack.currentWidget() is self.images_page)
         self.grid_index_label = grid_index
         self.gallery.grid_position_changed.connect(self._sync_grid_index_status)
         self.logs_button = logs_button
@@ -590,7 +592,7 @@ class MainWindow:
         elif index < len(buttons):
             buttons[index].setChecked(True)
         images_active = self.form.workspaceStack.currentWidget() is self.images_page
-        self.grid_index_group.setVisible(images_active)
+        self.grid_index_label.setVisible(images_active)
         self.gallery.set_active(images_active)
         self._place_export_panel()
         self._responsive_workspace()

@@ -28,8 +28,6 @@ def _load(name, parent):
 
 # Running jobs and routine endings live in the status-bar bar; errors, warnings, partial results,
 # notices and persistent conditions keep the overlay card, which needs room, actions and no expiry.
-# Width of the Images-only grid position item (70 px field) plus its spacing.
-_GRID_GROUP_RESERVE = 78
 _BAR_STATES = {"progress", "success", "stopped"}
 
 _OPERATION_ICONS = {
@@ -229,17 +227,11 @@ class ActivityStrip(QObject):
         message = status.currentMessage()
         left = status.fontMetrics().horizontalAdvance(message) + 24 if message else 12
         right = status.width() - 12
-        grid_group = None
         for child in status.findChildren(QWidget, options=Qt.FindChildOption.FindDirectChildrenOnly):
-            if child.objectName() == "dtflowGridPositionGroup":
-                grid_group = child
             if child is self.bar or not child.isVisible() or child.width() <= 0:
                 continue
             if child.x() > status.width() // 3:
                 right = min(right, child.x() - 8)
-        if grid_group is not None and not grid_group.isVisible():
-            # The Images-only grid position stays reserved so the bar has the same size on every tab.
-            right -= _GRID_GROUP_RESERVE
         width = right - left
         if width < 160 or status.height() < 1:
             return None
