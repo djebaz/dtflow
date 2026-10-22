@@ -14,7 +14,7 @@ Fix DTFlow's unsupported equality requirement between the locally computed SHA-2
 ## Action items
 
 - [x] Implement source corrections for the owner-reported pytest failure groups after format commit `8e4ad3e`, retaining that commit and using source-only follow-up review.
-- [ ] Owner rerun establishes the corrected head's pytest result; keep #158 draft until that evidence is reviewed.
+- [x] Owner reports the corrected source passing pytest and Ruff; record the result and restore #158 to ready for review without merging.
 - [x] Accept usable server-returned upload references independently of local checksum equality in negotiation and metadata lookup.
 - [x] Record bounded non-identifying type/length/format/comparison diagnostics before consuming upload evidence.
 - [x] Synchronize contract documentation, preview definitions, status and release notes.
@@ -64,7 +64,7 @@ The initial production review was pinned to PR head `2f93f6ba68090d2100695e09c30
 
 The reviewed-head UI run `39792996010` is tied to `2f93f6b`; its only job was skipped with no executed steps. It is not a green test/render result, and it does not cover later merge-preparation edits. No CI, tests or rendering was manually triggered. Refresh the final PR head/mergeability before any separately authorized squash merge; owner decides whether the disclosed source-only boundary is sufficient.
 
-## Owner pytest failures after formatting — current merge disposition
+## Owner pytest failures after formatting — corrected by the rerun below
 
 The owner supplied `Desktop/run.txt` after format commit `8e4ad3eb75e4bf74a687b49e63111725503a8a1d`: **11 failed, 629 passed, 3 skipped in 198.68 seconds**. This supersedes the earlier source-only no-blocker assessment; #158 is returned to draft pending an owner rerun. Raw output remains outside Git, and no real credentials or private request data are copied into documentation.
 
@@ -74,4 +74,12 @@ The owner supplied `Desktop/run.txt` after format commit `8e4ad3eb75e4bf74a687b4
 | Two storage-error and one malformed-BYOM privacy assertions expose compound secret-shaped values; two token/auth refusal privacy assertions expose unknown/unissued credential-shaped values | Shared API text projection conservatively redacts compound credential-shaped atoms while retaining ordinary wording such as `token expired`. Storage error projection additionally excludes every signed-query value, including repeated keys and raw-encoded forms, not just the full URL. | Source-addressed, not a comprehensive privacy guarantee or passing-test result. |
 | One Qt assertion searches an unbroken code in deliberately wrapped label text | Normalize intentional zero-width wrap characters in the existing assertion; leave runtime UI and its uncertainty wording unchanged. | Existing expectation corrected, not executed. |
 
-No tests, syntax/lint validation, renders, package builds or agent live/provider calls were run for these corrections. Preserve the owner's formatting commit and keep all fixes on #158. A new successful owner run and a separately authorized merge remain outstanding.
+The agent ran no tests, syntax/lint validation, renders, package builds or live/provider calls for these corrections. The owner's formatting commit is preserved and fixes stay on #158. The later owner rerun below supersedes the pending-rerun status; merge still requires separate authorization.
+
+## Owner passing rerun — current merge disposition
+
+Following correction commit `8edde7813b33accdc51f3ad7c12b806609ae0f78`, the owner reports **640 passed, 3 skipped in 303.91 seconds**, `uv run ruff format .` reports **404 files left unchanged**, and `uv run ruff check .` reports **All checks passed**. At receipt, the clean local branch and remote PR head both identify `8edde78`. This is owner-reported local validation, not an agent rerun or GitHub CI result.
+
+The production/source correction is now supported by the owner's passing suite and lint/format report. Subsequent acceptance-documentation edits do not change Python behavior and were not rerun. Restore #158 from draft to ready for review; do not merge without separate owner authorization. Fresh differing-value provider upload, exhaustive privacy/fault acceptance, UI renders, native Windows/DPI and packaged acceptance remain outside this result.
+
+The owner subsequently authorized squash merge after supplying that passing result. The merge operation must still confirm the final PR head and conflict-free state; this authorization does not expand the runtime/packaged acceptance scope above.
