@@ -114,7 +114,7 @@ RANDOM_INPUTS = (
     *(f"planDraw{suffix}Spin" for suffix in DRAW_SPINS.values()),
 )
 PLAN_INPUTS = (*PLAN_WIDGETS, "planModeCombo", "planIncrementCheck", "queueCountSpinBox", *RANDOM_INPUTS)
-PLAN_TABLE_MAX_ROWS = 12  # the composer preview table shows this many rows in full before it scrolls
+PLAN_TABLE_MAX_ROWS = 1000  # the composer preview table shows its rows in full up to this many; the composer scrolls
 PREVIEW_MS = 250  # the live preview follows edits after this pause, so typing a prompt list stays smooth
 REPEAT = "Repeat"
 FILTER_BUTTONS = {key: f"{key}FilterButton" for key, *_ in FILTERS}
@@ -1766,13 +1766,18 @@ class QueuePage:
             self.plan_model.appendRow([QStandardItem(cell) for cell in row])
         view = self.page.planTableView
         view.resizeColumnsToContents()
-        # Show the rows in full (up to a cap, then the table scrolls) instead of a short window onto them.
+        # Show every row in full, so the composer scrolls to them instead of a nested scroll inside the table.
         shown = min(len(table.rows), PLAN_TABLE_MAX_ROWS)
         height = (
             view.horizontalHeader().sizeHint().height()
             + shown * view.verticalHeader().defaultSectionSize()
             + view.horizontalScrollBar().sizeHint().height()
             + 2 * view.frameWidth()
+        )
+        view.setVerticalScrollBarPolicy(
+            Qt.ScrollBarPolicy.ScrollBarAlwaysOff
+            if len(table.rows) <= PLAN_TABLE_MAX_ROWS
+            else Qt.ScrollBarPolicy.ScrollBarAsNeeded
         )
         view.setMinimumHeight(height)
         view.setMaximumHeight(height)
