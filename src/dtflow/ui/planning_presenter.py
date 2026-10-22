@@ -217,6 +217,14 @@ def candidate_counts(form: PlanForm) -> dict[str, int]:
     }
 
 
+def parse_lora_set(chip: str) -> tuple[tuple[str, float], ...]:
+    """The (identifier, weight) pairs of one LoRA-set chip, for editing it; an unreadable chip has none."""
+    try:
+        return _lora_sets(chip)[0]
+    except (FormError, IndexError):
+        return ()
+
+
 def lora_set_value(identifier: str, weight: float) -> str:
     """The chip text for a one-LoRA set, as ``_lora_sets`` reads it back."""
     return f"{identifier}: {weight:g}"
@@ -336,3 +344,112 @@ def summary_text(table: PlanTable) -> str:
     return (
         f"{table.total} items · {table.mode} · {SEED_POLICY_TEXT[table.seed_policy]}{drawn}. Nothing is persisted yet."
     )
+
+
+@dataclass(frozen=True, slots=True)
+class QueueEdit:
+    """What editing a queue as a new one loads: the first item's request for Generate, the plan for the composer."""
+
+    base: dict
+    form: PlanForm
+    count: int  # the Repeat count when the items only differ by seed
+    note: str  # non-empty when the items were not a plain Repeat, Pair or Cross
+
+
+def _distinct(values) -> list:
+    return list(dict.fromkeys(values))
+
+
+def queue_edit_from_records(records) -> QueueEdit:
+    """Read a recorded queue back into Generate values and a composer plan (text-to-image items only).
+
+    Every dimension that differs between items becomes a list of values; the rest stay with the base request (the
+    first item). Seeds that step by one from the first item are the Increment option, not a list. Items that are
+    exactly the product of the distinct values load as Cross, items that only differ by incrementing seeds as Repeat,
+    and anything else as Pair, whose rows are the items themselves (repeated values included), so the count is kept.
+    """
+    if not records:
+        raise ValidationError("This queue has no recorded items to edit.")
+    if any(record.get("operation", "txt2img") != "txt2img" for record in records):
+        raise ValidationError("Only text-to-image queues can be edited as a new queue.")
+
+    def lora_set(record) -> str:
+        return (
+            " + ".join(lora_set_value(item["identifier"], item["weight"]) for item in record.get("loras", ()))
+            or NO_LORA
+        )
+
+    count = len(records)
+    note = ""
+    prompts = [record.get("prompt", "") for record in records]
+    if any("\n" in prompt for prompt in prompts):
+        prompts = [" ".join(prompt.split()) for prompt in prompts]
+        note = "A prompt with line breaks was joined onto one line."
+    columns = {
+        "prompts": prompts,
+        "models": [record.get("model_id", "") for record in records],
+        "seeds": [record.get("seed", 0) for record in records],
+        "steps": [record.get("steps", 20) for record in records],
+        "guidance": [record.get("guidance", 7.0) for record in records],
+        "samplers": [record.get("sampler_id", "") for record in records],
+        "sizes": [f"{record.get('width_px', 512)}x{record.get('height_px', 512)}" for record in records],
+    }
+    # The same LoRAs in every item that only differ by weight are weights to cross; otherwise whole LoRA sets differ.
+    lora_ids = {tuple(item["identifier"] for item in record.get("loras", ())) for record in records}
+    names = next(iter(lora_ids))
+    if len(lora_ids) == 1 and names and len(set(names)) == len(names):
+        for index, identifier in enumerate(names):
+            columns[f"weight:{identifier}"] = [record["loras"][index]["weight"] for record in records]
+    else:
+        columns["lora_sets"] = [lora_set(record) for record in records]
+    seeds = columns["seeds"]
+    increment = count > 1 and seeds == list(range(seeds[0], seeds[0] + count))
+    if increment:
+        del columns["seeds"]  # the Increment option reproduces them
+    distinct = {name: _distinct(values) for name, values in columns.items()}
+    varying = [name for name, values in distinct.items() if len(values) > 1]
+    if not varying and not increment and count > 1:
+        # Identical items cannot be a Pair (the planner refuses duplicate rows): load a Repeat, whose seeds step.
+        increment = True
+        note = f"{note} Identical items were loaded as a Repeat; its seeds will step.".strip()
+    rows = list(zip(*(columns[name] for name in varying), strict=True)) if varying else []
+    product = 1
+    for name in varying:
+        product *= len(distinct[name])
+    if not varying:
+        mode = "Repeat"
+    elif product == count and len(set(rows)) == count and set(rows) == set(_product(distinct, varying)):
+        mode = "Cross"
+    else:
+        mode = "Pair"
+
+    def text(name: str, separator: str = "; ") -> str:
+        if name not in varying:
+            return ""
+        values = distinct[name] if mode == "Cross" else columns[name]
+        return separator.join(f"{value:g}" if isinstance(value, float) else str(value) for value in values)
+
+    form = PlanForm(
+        mode=mode,
+        prompts=text("prompts", "\n"),
+        models=text("models"),
+        seeds=text("seeds"),
+        steps=text("steps"),
+        guidance=text("guidance"),
+        samplers=text("samplers"),
+        sizes=text("sizes"),
+        increment=increment,
+        lora_sets=text("lora_sets"),
+        loras="\n".join(
+            f"{name.removeprefix('weight:')}: {text(name)}" for name in varying if name.startswith("weight:")
+        ),
+    )
+    return QueueEdit(dict(records[0]), form, count, note)
+
+
+def _product(distinct: dict[str, list], names: list[str]):
+    """Every combination of the distinct values of ``names``, as tuples in ``names`` order."""
+    combos = [()]
+    for name in names:
+        combos = [(*combo, value) for combo in combos for value in distinct[name]]
+    return combos

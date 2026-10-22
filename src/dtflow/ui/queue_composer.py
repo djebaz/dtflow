@@ -5,7 +5,7 @@ user could have typed (``text()``), so ``planning_presenter`` stays the single p
 duplicates and ordering exactly as for CLI plan files.
 """
 
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from math import ceil
 
 from PySide6.QtCore import QEvent, QObject, QPoint, QRect, QSize, Qt, QTimer, Signal
@@ -13,6 +13,7 @@ from PySide6.QtGui import QTextDocument, QTextOption
 from PySide6.QtWidgets import (
     QComboBox,
     QDoubleSpinBox,
+    QLabel,
     QLayout,
     QPushButton,
     QSizePolicy,
@@ -21,6 +22,8 @@ from PySide6.QtWidgets import (
     QWidgetItem,
 )
 
+from dtflow.core.models import LoRASelection
+from dtflow.ui.lora_selection_editor import edit_lora_selection
 from dtflow.ui.search_select import choose_searchable
 
 # Offered size choices besides the Generate size; every value is a multiple of 64, and custom WIDTHxHEIGHT is allowed.
@@ -40,6 +43,9 @@ SIZE_PRESETS = (
 def _noun(title: str) -> str:
     """``Model`` -> ``model`` for running text, keeping acronyms such as ``LoRA set`` as written."""
     return title[:1].lower() + title[1:] if title[1:2].islower() else title
+
+
+GROUP_NAME_WIDTH = 320  # a grouped chip row's name is elided to this width
 
 
 class FlowLayout(QLayout):
@@ -98,6 +104,8 @@ class FlowLayout(QLayout):
         for item in self._items:
             if item.widget() is not None and item.widget().isHidden():
                 continue
+            if item.widget() is not None and item.widget().property("lineBreak") and x > area.x():
+                x, y, line = area.x(), y + line + self.spacing(), 0  # a group starts on its own line
             hint = item.sizeHint()
             if x + hint.width() > area.right() + 1 and line > 0:
                 x, y, line = area.x(), y + line + self.spacing(), 0
@@ -122,6 +130,10 @@ class ValueChips(QWidget):
         self._custom: str | None = None
         self._weights: Callable[[], dict[str, float | None]] | None = None
         self._convert: Callable[[object], str] | None = None
+        self._edit_chip: Callable[[str], Sequence[LoRASelection]] | None = None
+        self._lead = 0
+        self._group: Callable[[str], tuple[str, str]] | None = None
+        self._replace_all = False
         self._layout = FlowLayout(self)
         self._chips: list[QPushButton] = []
         self._input: QWidget | None = None
@@ -157,14 +169,27 @@ class ValueChips(QWidget):
         decimals: int = 1,
         weights: Callable[[], dict[str, float | None]] | None = None,
         convert: Callable[[object], str] | None = None,
+        initial: Callable[[], Sequence[LoRASelection]] | None = None,
+        editor_title: str | None = None,
+        editor_hint: str | None = None,
+        multi_weight: bool = False,
+        edit_chip: Callable[[str], Sequence[LoRASelection]] | None = None,
+        replace_all: bool = False,
+        group: Callable[[str], tuple[str, str]] | None = None,
     ) -> None:
         """``search`` opens the shared searchable editor; ``choice`` is an editable list; ``int``/``float`` a box.
 
-        With ``weights`` the search editor also asks for a weight (the shared LoRA identifier+weight editor) and hands
-        ``(identifier, weight)`` to ``convert``, which returns the chip value.
+        With ``weights`` the search editor is the shared LoRA checkbox+slider editor, starting from ``initial()``; the
+        checked ``(identifier, weight)`` pairs go to ``convert``, which returns the chip value (or several).
+        With ``edit_chip`` each chip opens that editor on its parsed LoRAs and Apply replaces the chip (a separate **×**
+        removes it); with ``replace_all`` **Edit…** opens the editor on every chip and Apply replaces them all.
+        With ``group`` each value splits into (group name, chip text): one line per group, its name then small chips.
         """
         self._kind, self._title, self._options, self._custom = kind, title, options, custom
-        self._weights, self._convert = weights, convert
+        self._weights, self._convert, self._initial = weights, convert, initial
+        self._edit_chip, self._replace_all, self._group = edit_chip, replace_all, group
+        self._lead = 1 if group is not None else 0  # a grouped row keeps its button first, above the LoRA lines
+        self._editor_title, self._editor_hint, self._multi_weight = editor_title, editor_hint, multi_weight
         if self._input is not None:
             self._layout.removeWidget(self._input)
             self._input.deleteLater()
@@ -188,10 +213,18 @@ class ValueChips(QWidget):
             self._layout.removeWidget(self._add)
             self._layout.addWidget(self._input)
             self._layout.addWidget(self._add)
+        if group is not None:
+            self._layout.removeWidget(self._add)
+            self._layout.insertWidget(0, self._add)
         self._add.setEnabled(True)  # preview forms start with every control disabled until a controller wires it
-        self._add.setText("Add" if self._input is not None else "Add…")
-        self._add.setAccessibleName(f"Add {_noun(title)}")
-        self._add.setToolTip(f"Add a {_noun(title)} value; click a value to remove it.")
+        self._add.setText("Add" if self._input is not None else "Edit…" if replace_all else "Add…")
+        self._add.setAccessibleName(f"{'Edit' if replace_all else 'Add'} {_noun(title)}")
+        self._add.setToolTip(
+            f"Edit the {_noun(title)} values; click a value to remove it."
+            if replace_all
+            else f"Add a {_noun(title)} value; click a value to "
+            + ("edit it, or × to remove it." if edit_chip is not None else "remove it.")
+        )
         self.refresh_options()
 
     def refresh_options(self, current: str | None = None) -> None:
@@ -227,6 +260,13 @@ class ValueChips(QWidget):
         if value:
             self._set([*self._values, value])
 
+    def add_values(self, chosen: str | Sequence[str]) -> None:
+        """One chip value, or several at once, skipping repeats of a chip already listed."""
+        values = [chosen] if isinstance(chosen, str) else list(chosen)
+        fresh = [v.strip() for v in dict.fromkeys(values) if v.strip() and v.strip() not in self._values]
+        if fresh:
+            self._set([*self._values, *fresh])
+
     def remove_value(self, index: int) -> None:
         self._set(self._values[:index] + self._values[index + 1 :])
 
@@ -239,16 +279,46 @@ class ValueChips(QWidget):
             chip.hide()
             chip.deleteLater()
         self._chips = []
-        for index, value in enumerate(values):
-            chip = QPushButton(f"{value}  ×", self)
-            chip.setProperty("role", "valueChip")
-            chip.setToolTip(f"Remove {value}")
-            chip.setAccessibleName(f"Remove {_noun(self._title)} {value}")
-            chip.clicked.connect(lambda _=False, i=index: self.remove_value(i))
-            self._layout.insertWidget(index, chip)
-            self._chips.append(chip)
+        order = list(enumerate(values))
+        if self._group is not None:
+            groups: dict[str, list[tuple[int, str]]] = {}
+            for index, value in order:
+                name, short = self._group(value)
+                groups.setdefault(name, []).append((index, short))
+            for name, members in groups.items():
+                label = QLabel(self)
+                label.setObjectName("valueChipsGroupName")
+                label.setProperty("lineBreak", True)
+                label.setMaximumWidth(GROUP_NAME_WIDTH)
+                label.setText(label.fontMetrics().elidedText(name, Qt.TextElideMode.ElideMiddle, GROUP_NAME_WIDTH))
+                label.setToolTip(name)
+                self._layout.insertWidget(self._lead + len(self._chips), label)
+                self._chips.append(label)
+                for index, short in members:
+                    self._add_chip(index, short, values[index])
+        else:
+            for index, value in order:
+                self._add_chip(index, value, value)
         self.updateGeometry()
         self.textChanged.emit()
+
+    def _add_chip(self, index: int, text: str, value: str) -> None:
+        """One chip for ``values[index]``: its text and ×, or (with ``edit_chip``) an edit button plus a separate ×."""
+        if self._edit_chip is not None:
+            edit = QPushButton(text, self)
+            edit.setProperty("role", "valueChip")
+            edit.setToolTip(f"Edit {value}")
+            edit.setAccessibleName(f"Edit {_noun(self._title)} {value}")
+            edit.clicked.connect(lambda _=False, i=index: self._edit_clicked(i))
+            self._layout.insertWidget(self._lead + len(self._chips), edit)
+            self._chips.append(edit)
+        chip = QPushButton("×" if self._edit_chip is not None else f"{text}  ×", self)
+        chip.setProperty("role", "valueChip")
+        chip.setToolTip(f"Remove {value}")
+        chip.setAccessibleName(f"Remove {_noun(self._title)} {value}")
+        chip.clicked.connect(lambda _=False, i=index: self.remove_value(i))
+        self._layout.insertWidget(self._lead + len(self._chips), chip)
+        self._chips.append(chip)
 
     def _add_clicked(self) -> None:
         if isinstance(self._input, QComboBox):
@@ -259,6 +329,13 @@ class ValueChips(QWidget):
             self.add_value(f"{self._input.value():g}")
         else:
             convert = self._convert
+            if self._weights is not None and convert is not None:
+                self._open_editor(
+                    convert,
+                    self._initial() if self._initial is not None else (),
+                    self._replace_values if self._replace_all else self.add_values,
+                )
+                return
             choose_searchable(
                 self,
                 title=f"Add {_noun(self._title)}",
@@ -266,8 +343,40 @@ class ValueChips(QWidget):
                 callback=self.add_value if convert is None else lambda chosen: self.add_value(convert(chosen)),
                 custom_label=self._custom,
                 custom_prompt=f"Exact {_noun(self._title)} identifier",
-                weights=self._weights() if self._weights is not None else None,
             )
+
+    def _open_editor(self, convert, selected, apply) -> None:
+        suggestions = self._weights()
+        edit_lora_selection(
+            self,
+            title=self._editor_title or f"Add a {_noun(self._title)} set",
+            candidates=list(suggestions),
+            selected=selected,
+            suggestions=suggestions,
+            multi_weight=self._multi_weight,
+            callback=lambda chosen: apply(convert(chosen)),
+            hint=self._editor_hint
+            or (
+                "Checked LoRAs form one set for each item; with none checked "
+                "the set has no LoRA. Add several sets to vary them. Enter or Apply applies the set."
+            ),
+        )
+
+    def _replace_values(self, chosen: str | Sequence[str]) -> None:
+        values = [chosen] if isinstance(chosen, str) else list(chosen)
+        self._set([v.strip() for v in values if v.strip()])
+
+    def _edit_clicked(self, index: int) -> None:
+        """Edit one chip in the shared editor: Apply replaces it (an empty result keeps it)."""
+        if self._edit_chip is None or self._convert is None or self._weights is None:
+            return
+
+        def replace(chosen: str | Sequence[str]) -> None:
+            value = chosen if isinstance(chosen, str) else " ".join(chosen)
+            if value.strip() and index < len(self._values):
+                self._set([*self._values[:index], value.strip(), *self._values[index + 1 :]])
+
+        self._open_editor(self._convert, self._edit_chip(self._values[index]), replace)
 
 
 class ActionsFit(QObject):
@@ -346,8 +455,11 @@ class ComposerGridFit(QObject):
             if len(group) == 1:
                 grid.addWidget(group[0], row, col, 1, 2)
             else:
-                grid.addWidget(group[0], row, col)
+                # The label hugs its input on the right; only the input columns take the spare width.
+                grid.addWidget(group[0], row, col, Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
                 grid.addWidget(group[1], row, col + 1)
+        for column in range(columns * 2):
+            grid.setColumnStretch(column, column % 2)
         grid.invalidate()
         grid.parentWidget().updateGeometry()
 

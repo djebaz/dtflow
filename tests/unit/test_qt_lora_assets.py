@@ -13,7 +13,7 @@ import pytest
 pytest.importorskip("pytestqt")
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-from PySide6.QtWidgets import QDoubleSpinBox, QLineEdit, QListWidget  # noqa: E402
+from PySide6.QtWidgets import QCheckBox, QLineEdit, QPushButton, QSlider, QWidget  # noqa: E402
 from support.cloud_assets import DtPlus, lora_file  # noqa: E402
 from support.fake_vault import Vault  # noqa: E402
 
@@ -68,8 +68,10 @@ def settled(window):
 def add_lora(window, qtbot, name, weight=0.5):
     window.generation_page.addLoraButton.click()
     editor = window.inline._editor
-    editor.findChild(QLineEdit, "inlineSelectionIdentifier").setText(name)
-    editor.findChild(QDoubleSpinBox, "inlineSelectionWeight").setValue(weight)
+    editor.findChild(QLineEdit, "loraSelectionCustomIdentifier").setText(name)
+    editor.findChild(QPushButton, "loraSelectionCustomAddButton").click()
+    row = next(r for r in editor.findChildren(QWidget, "loraSelectionRow") if r.property("identifier") == name)
+    row.findChild(QSlider, "loraSelectionSlider").setValue(round(weight * 20))
     window.inline.form.inlineEditorAcceptButton.click()
 
 
@@ -80,13 +82,12 @@ def test_lora_diagnostics_are_rendered_not_computed_and_block_generation(window,
     qtbot.waitUntil(lambda: page.refreshInventoryButton.isEnabled(), timeout=5000)
     page.addLoraButton.click()
     editor = window.inline._editor
-    choices = editor.findChild(QListWidget, "inlineSelectionChoices")
-    assert {choices.item(i).text() for i in range(choices.count())} == {"ok", "bad", "unk"}
-    choices.setCurrentRow(next(i for i in range(choices.count()) if choices.item(i).text() == "ok"))
-    weight = editor.findChild(QDoubleSpinBox, "inlineSelectionWeight")
-    assert weight.value() == 0.7  # inventory suggestion, alongside identifier rather than a second dialog
-    assert (weight.minimum(), weight.maximum(), weight.singleStep(), weight.decimals()) == (0.0, 3.0, 0.1, 1)
-    assert not panel.loras  # selection alone does not commit
+    rows = {r.property("identifier"): r for r in editor.findChildren(QWidget, "loraSelectionRow")}
+    assert set(rows) == {"ok", "bad", "unk"}
+    assert not any(r.findChild(QCheckBox).isChecked() for r in rows.values())
+    assert not panel.loras  # nothing commits until Apply
+    rows["ok"].findChild(QCheckBox).setChecked(True)
+    rows["ok"].findChild(QSlider, "loraSelectionSlider").setValue(14)
     window.inline.form.inlineEditorAcceptButton.click()
     assert panel.loras[0].weight == 0.7
     for name in ("bad", "unk"):
