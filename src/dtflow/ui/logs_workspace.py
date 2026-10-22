@@ -488,6 +488,10 @@ class LogsWorkspace(QObject):
         session.setMinimumContentsLength(28)
         session.setMaximumWidth(320)
         session.currentIndexChanged.connect(lambda _index: self._session_tooltip())
+        for combo in (self.form.logsComponentCombo, self.form.logsEventCombo):
+            combo.currentIndexChanged.connect(
+                lambda _index, combo=combo: combo.setToolTip(combo.currentData() or combo.currentText())
+            )
         # The pane collapses downward into the table split.
         chevron = Path(__file__).parents[1] / "resources" / "images" / "controls" / "chevron-down.svg"
         self.form.logsDetailCollapse.setIcon(QIcon(str(chevron)))
@@ -1056,15 +1060,35 @@ class LogsWorkspace(QObject):
                     combo.addItem(heading, None)
                     combo.model().item(combo.count() - 1).setEnabled(False)
                     for text, value in entries:
-                        combo.addItem("    " + text, value)
+                        label = text.removeprefix("dtflow.") if heading == "Exact events" else text
+                        combo.addItem("    " + label, value)
             else:
                 for choice in options:
-                    combo.addItem(choice, choice)
+                    combo.addItem(choice.removeprefix("dtflow."), choice)
             if current and combo.findData(current) < 0:
                 # Keep an active filter visible even when its name is not (or no longer) listed.
-                combo.addItem(f"{current} (not listed)", current)
+                combo.addItem(f"{current.removeprefix('dtflow.')} (not listed)", current)
+            for index in range(combo.count()):
+                combo.setItemData(
+                    index, combo.itemData(index) or combo.itemText(index), Qt.ItemDataRole.ToolTipRole
+                )
             combo.setCurrentIndex(max(0, combo.findData(current)))
+            combo.setToolTip(combo.currentData() or combo.currentText())
+            self._fit_filter_popup(combo)
             combo.blockSignals(False)
+
+    @staticmethod
+    def _fit_filter_popup(combo):
+        """Expand only the popup, not the filter row; keep exceptionally long labels inspectable."""
+        view = combo.view()
+        view.setTextElideMode(Qt.TextElideMode.ElideNone)
+        view.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        padding = view.verticalScrollBar().sizeHint().width() + 2 * view.frameWidth() + 16
+        width = max(combo.width(), view.sizeHintForColumn(0) + padding)
+        screen = combo.screen()
+        if screen is not None:
+            width = min(width, max(1, screen.availableGeometry().width() - 16))
+        view.setMinimumWidth(width)
 
     def _poll(self):
         if not self.active or self._query_busy:
