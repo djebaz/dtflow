@@ -240,8 +240,9 @@ def estimate_compute_units(
     guidance: float,
     has_loras: bool = False,
     operation: str = "txt2img",
+    base_model: str | None = None,
 ) -> ComputeUnitEstimate:
-    """Estimate one text-to-image output, declining unsupported or ambiguous inputs."""
+    """Estimate one T2I output, using a classified base family when exact metadata is absent."""
     if operation != "txt2img":
         return ComputeUnitEstimate(None, "Image edits are not supported by this estimate.")
     if has_loras:
@@ -249,13 +250,22 @@ def estimate_compute_units(
     if not model_id:
         return ComputeUnitEstimate(None, "Select a checkpoint first.")
     spec = exact_model_spec(model_id)
+    base_estimate = spec is None
     if spec is None:
-        return ComputeUnitEstimate(None, "No published technical spec for this exact file.")
+        # Explicit catalogue classification only; never infer architecture from the filename
+        # or substitute another checkpoint's technical description. Broad FLUX families
+        # use their base architecture, not a claim about the selected variant.
+        version = {"flux_1": "flux1", "flux_2": "flux2"}.get(base_model, base_model)
+        if version not in SUPPORTED:
+            return ComputeUnitEstimate(None, "No supported base architecture is known for this checkpoint.")
+        profile = profile_for(model_id, version)
+        extras = dict(profile.extras) if profile else {}
+        spec = {"version": version, "guidance_embed": "guidance_embed" in extras}
     version = spec.get("version")
     if version not in SUPPORTED:
         return ComputeUnitEstimate(None, "Model architecture not supported by this estimate.")
     if spec.get("modifier", "none") not in TEXT_ONLY_MODIFIERS:
-        return ComputeUnitEstimate(None, "Checkpoint modifier is not supported for text-only calculation.")
+        base_estimate = True  # Count the base architecture without the unsupported modifier.
     if any(type(x) is not int or x <= 0 for x in (width_px, height_px, steps)):
         return ComputeUnitEstimate(None, "Invalid dimensions or steps.")
     if width_px % 64 or height_px % 64 or type(guidance) not in (float, int) or not math.isfinite(guidance):
@@ -301,4 +311,8 @@ def estimate_compute_units(
     units = math.ceil(instruction_units * CALIBRATION)
     if units <= 0:
         return ComputeUnitEstimate(None, "The instruction estimate could not be resolved.")
-    return ComputeUnitEstimate(units, "Local open-source estimate, not a DT+ server quote or billing proof.")
+    if base_estimate:
+        reason = "Base architecture estimate; exact metadata or modifier costs are not included."
+    else:
+        reason = "Local open-source estimate, not a DT+ server quote or billing proof."
+    return ComputeUnitEstimate(units, reason)

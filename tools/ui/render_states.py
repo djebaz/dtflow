@@ -879,8 +879,8 @@ def render_generate_configuration_states(shell, out):
         with patch(units_path, return_value=ComputeUnitEstimate(14250, "Offline fixture estimate.")):
             page.checkpointDetailsButton.click()
         detail = shell.inline.form.inlineTextBrowser.toPlainText()
-        assert "14\u202f250 CU" in detail and "5.14816e-12" in detail
-        assert "not a DT+ server quote" in detail
+        assert "Compute Units: 14\u202f250 CU" in detail and "Supported models:" in detail
+        assert "5.14816e-12" not in detail and "Source: Draw Things ComputeUnits.swift" not in detail
         snap("generate-49a-compute-units-details")
         clear()
         render_inspector_fit_states(shell, out, "generate")

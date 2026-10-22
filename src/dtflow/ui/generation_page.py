@@ -1402,8 +1402,11 @@ class GenerationPage:
     def _compute_units_estimate(self) -> ComputeUnitEstimate:
         """Read the same current form settings for the meter and explicit inspector."""
         page = self.page
+        model_id = page.modelCombo.currentText().strip()
+        entry = self._catalogue.checkpoint(model_id, include_unavailable=True) if model_id else None
         return estimate_compute_units(
-            model_id=page.modelCombo.currentText().strip(),
+            model_id=model_id,
+            base_model=entry.base_model if entry else None,
             width_px=page.widthSpinBox.value(),
             height_px=page.heightSpinBox.value(),
             steps=page.stepsSpinBox.value(),
@@ -1458,23 +1461,9 @@ class GenerationPage:
             estimate = self._compute_units_estimate()
             result = "unavailable" if estimate.units is None else f"{estimate.units:,}".replace(",", "\u202f") + " CU"
             text += (
-                f"\n\nLocal Compute Units estimate: {result}\n{estimate.reason}\n\n"
-                "Source: Draw Things ComputeUnits.swift and architecture-specific InstructionCount functions; "
-                "local Python port, not a DT+ server quote.\n"
-                "The exact-file community metadata selects the architecture, modifiers, token padding and "
-                "guidance rules; it does not contain instruction counts. Those counts come from the "
-                "architecture-specific code, using the current size, steps and guidance plus profile defaults.\n"
-                "General formula: ceil((M × steps × max(strength, 0.05) + C) × 5.14816e-12 × B). "
-                "M is the per-step instruction count and C the fixed count, with effective CFG accounted for "
-                "by each architecture. This text-to-image slice uses strength 1, one output and B = 1. "
-                "Other families, including the 2.5 multiplier families and two-stage Würstchen, are unsupported.\n"
-                "Supported ports: FLUX.1, FLUX.2 Dev/Klein, Z-Image, Cosmos 2.5, Qwen-Image/2.1, "
-                "Krea 2 and Ideogram 4. Edits, selected LoRAs, unsupported modifiers and missing exact "
-                "metadata show unavailable instead of a guessed number.\n"
-                "The meter spans 0–40 000; red means the display limit, not a quota or rejection. "
-                "No provider request or quota lookup is made. This is not a balance, entitlement, billing "
-                "proof or compatibility guarantee. Server policy and effective settings may differ; "
-                "comparison with Draw Things' displayed estimate remains owner acceptance."
+                f"\n\nCompute Units: {result}\n"
+                "Supported models: FLUX.1, FLUX.2 Dev/Klein, Z-Image, Cosmos 2.5, "
+                "Qwen-Image/2.1, Krea 2 and Ideogram 4."
             )
         InlineNotice.information(self.page, "Checkpoint details", text)
 
