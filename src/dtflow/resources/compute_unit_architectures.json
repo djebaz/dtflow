@@ -1,0 +1,95 @@
+{
+  "schema_version": 1,
+  "source_repository": "drawthingsai/draw-things-community",
+  "source_commit": "82bd56c81a313060dceb34092bcf9d671c39a739",
+  "source_file": "Libraries/ModelZoo/Sources/ComputeUnits.swift",
+  "calibration": 5.14816e-12,
+  "architectures": {
+    "flux1": {
+      "strategy": "flux1",
+      "channels": 3072,
+      "double_layers": 19,
+      "single_layers": 38,
+      "latent_scale": 8,
+      "default_text_tokens": 512,
+      "usage_bias": 1
+    },
+    "flux2": {
+      "strategy": "flux2",
+      "channels": 6144,
+      "double_layers": 8,
+      "single_layers": 48,
+      "latent_scale": 8,
+      "default_text_tokens": 512,
+      "usage_bias": 1
+    },
+    "flux2_9b": {
+      "strategy": "flux2",
+      "channels": 4096,
+      "double_layers": 8,
+      "single_layers": 24,
+      "latent_scale": 8,
+      "default_text_tokens": 512,
+      "usage_bias": 1
+    },
+    "flux2_4b": {
+      "strategy": "flux2",
+      "channels": 3072,
+      "double_layers": 5,
+      "single_layers": 20,
+      "latent_scale": 8,
+      "default_text_tokens": 512,
+      "usage_bias": 1
+    },
+    "z_image": {
+      "strategy": "z_image",
+      "channels": 3840,
+      "layers": 30,
+      "include_fixed": true,
+      "latent_scale": 8,
+      "default_text_tokens": 512,
+      "usage_bias": 1
+    },
+    "cosmos2.5_2b": {
+      "strategy": "z_image",
+      "channels": 2048,
+      "layers": 28,
+      "include_fixed": false,
+      "latent_scale": 8,
+      "default_text_tokens": 77,
+      "usage_bias": 1
+    },
+    "qwen_image": {
+      "strategy": "qwen_image",
+      "channels": 3072,
+      "layers": 60,
+      "latent_scale": 8,
+      "default_text_tokens": 512,
+      "usage_bias": 1
+    },
+    "qwen_image_2.1": {
+      "strategy": "qwen_image_2.1",
+      "channels": 4096,
+      "layers": 32,
+      "latent_scale": 4,
+      "default_text_tokens": 512,
+      "usage_bias": 1
+    },
+    "krea_2": {
+      "strategy": "krea_2",
+      "channels": 6144,
+      "layers": 28,
+      "latent_scale": 8,
+      "default_text_tokens": 256,
+      "usage_bias": 1
+    },
+    "ideogram_4": {
+      "strategy": "ideogram_4",
+      "channels": 4608,
+      "layers": 34,
+      "latent_scale": 8,
+      "default_text_tokens": 512,
+      "usage_bias": 1
+    }
+  }
+}
