@@ -325,6 +325,13 @@ The read-only inline inspector combines independently maintained sources:
 - **Provider inventory**: last observed listing status and timestamp, not a guarantee of availability or generation.
 
 A filename suffix, when shown, is a filename observation and does not prove weight format/runtime compatibility.
-Missing descriptions are shown as unknown. Viewing details does not contact a provider, submit a generation,
-modify model selection, or calculate cloud Compute Units. Existing cloud preflight remains authoritative.
+Missing descriptions are shown as unknown. Viewing details does not contact a provider, submit a generation or modify model selection. Existing cloud preflight remains authoritative.
+
+### Local Compute Units estimate
+
+On Local Draw Things and direct DT+ Cloud, the Checkpoint label row includes a read-only meter for one text-to-image output, refreshed from the current checkpoint, dimensions, steps, guidance and LoRA/mode selection. It shows a number with narrow no-break thousands separators, or `unavailable`; fake hides it. Local shows the meter regardless of the Include DT+ Cloud catalogue checkbox. Blue fills a fixed 0–40 000 scale, and at or above 40 000 the full meter becomes red. Red is a display threshold, not a quota, rejection or credit balance. There is no hover tooltip: Checkpoint details shows only the CU value and supported models in its CU section.
+
+The Python port uses architecture-specific Draw Things instruction-count functions, selected by existing exact-file community metadata, plus current settings and DTFlow profile defaults. Supported ports cover FLUX.1, FLUX.2 Dev/Klein, Z-Image, Cosmos 2.5, Qwen-Image/2.1, Krea 2 and Ideogram 4. Unsupported modifiers use the base-architecture count without modifier costs. Missing exact metadata uses an existing catalogue family classification and local profile/default inputs for a base estimate; broad FLUX.1/FLUX.2 classifications select the base architecture, not a specific variant. No filename guessing or sibling technical-spec substitution is used. Unknown/unsupported families, selected LoRAs and image edits still show unavailable. The catalogues remain independent and unchanged; the accessibility description identifies base estimates.
+
+In Local Draw Things mode, the number describes DT+ equivalent complexity if cloud processing is used; it does not indicate that this local request will use DT+ or incur a CU charge. This offline estimate is not verified server billing, remaining credits, request authorization or model compatibility. It does not change generation, cloud authentication, preflight, queue scheduling or saved requests, and makes no provider/quota calls. Windows interaction and comparison against Draw Things' displayed estimate remain owner acceptance gates; source presence is not parity verification. See the [implementation and source provenance](../plans/2026-10-22-compute-units-local-estimate.md).
 

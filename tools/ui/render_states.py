@@ -64,6 +64,7 @@ from support.fake_vault import Vault  # noqa: E402
 from dtflow import gallery_limits  # noqa: E402
 from dtflow._diagnostic_notifications import DiagnosticNotice  # noqa: E402
 from dtflow.backends.fake import FakeBackend  # noqa: E402
+from dtflow.core.compute_units import ComputeUnitEstimate  # noqa: E402
 from dtflow.core.export import ExportResult  # noqa: E402
 from dtflow.core.gallery import GalleryDetail, GalleryItem  # noqa: E402
 from dtflow.core.gallery import GalleryPage as GalleryResults  # noqa: E402
@@ -659,6 +660,7 @@ def render_generate_configuration_states(shell, out):
         form.generationNavigationButton.click()
         shell.shell.leftScroll.verticalScrollBar().setValue(0)
         assert not page.includeCloudCheck.isHidden() and page.simulationBox.isHidden()
+        assert not page.computeUnitsMeter.isHidden()
         snap("generate-20-local-controls")
         snapshot = InventorySnapshot(
             "local",
@@ -852,6 +854,59 @@ def render_generate_configuration_states(shell, out):
         assert "asset-folder" in strip.rows and lora.preparing
         snap("generate-46-prepare-folder-unavailable")
         lora._prepared(record, None)
+        clear()
+        # Compute Units meter (Cloud and Local): calculated fixture value never reads a provider.
+        meter = page.computeUnitsMeter
+        units_path = "dtflow.ui.generation_page.estimate_compute_units"
+        form.backendCombo.setCurrentText("cloud")
+        for value, name, state in (
+            (14250, "generate-47-compute-units-meter", "ok"),
+            (100000, "generate-48-compute-units-over-limit", "over"),
+            (None, "generate-49-compute-units-unavailable", "unavailable"),
+        ):
+            with patch(units_path, return_value=ComputeUnitEstimate(value, "Offline fixture estimate.")):
+                controller._update_compute_units()
+            assert not meter.isHidden() and meter.property("state") == state
+            assert meter.maximum() == 40000 and meter.value() == min(value or 0, 40000)
+            assert meter.toolTip() == ""  # no hover overlay
+            assert (value is None) or str(value)[:2] in meter.format().replace("\u202f", "")
+            shell.shell.leftScroll.verticalScrollBar().setValue(0)
+            snap(name)
+        form.backendCombo.setCurrentText("local")
+        for include_cloud, name in (
+            (False, "generate-49b-compute-units-local"),
+            (True, "generate-49c-compute-units-local-include-cloud"),
+        ):
+            page.includeCloudCheck.setChecked(include_cloud)
+            # The catalogue toggle may rebuild the selector; restore the known
+            # fixture checkpoint before checking both meter and inspector.
+            page.modelCombo.setCurrentText("offline-checkpoint.ckpt")
+            assert page.checkpointDetailsButton.isEnabled()
+            with patch(units_path, return_value=ComputeUnitEstimate(14250, "Offline fixture estimate.")):
+                controller._update_compute_units()
+                assert not meter.isHidden() and meter.property("state") == "ok"
+                assert meter.value() == 14250
+                page.checkpointDetailsButton.click()
+            assert "Compute Units: 14\u202f250 CU" in shell.inline.form.inlineTextBrowser.toPlainText()
+            snap(name)
+            clear()
+        form.backendCombo.setCurrentText("fake")
+        controller._update_compute_units()
+        assert meter.isHidden()
+        form.backendCombo.setCurrentText("cloud")
+        # Backend switches can rebuild the checkpoint selector and clear the local-only
+        # selection. Restore a named offline checkpoint before clicking its details.
+        page.modelCombo.setCurrentText("offline-checkpoint.ckpt")
+        assert page.checkpointDetailsButton.isEnabled(), "Checkpoint details button needs a selected model."
+        with patch(units_path, return_value=ComputeUnitEstimate(14250, "Offline fixture estimate.")):
+            controller._update_compute_units()
+            page.checkpointDetailsButton.click()
+        detail = shell.inline.form.inlineTextBrowser.toPlainText()
+        assert "Compute Units: 14\u202f250 CU" in detail and "Supported models:" in detail, (
+            f"Unexpected checkpoint details for {page.modelCombo.currentText()!r}: {detail!r}"
+        )
+        assert "5.14816e-12" not in detail and "Source: Draw Things ComputeUnits.swift" not in detail
+        snap("generate-49a-compute-units-details")
         clear()
         render_inspector_fit_states(shell, out, "generate")
 

@@ -1,0 +1,443 @@
+{
+  "schema_version": 1,
+  "source_repository": "drawthingsai/draw-things-community",
+  "source_commit": "82bd56c81a313060dceb34092bcf9d671c39a739",
+  "source_file": "Libraries/ModelZoo/Sources/ComputeUnits.swift",
+  "calibration": 5.14816e-12,
+  "architectures": {
+    "flux1": {
+      "strategy": "flux1",
+      "channels": 3072,
+      "double_layers": 19,
+      "single_layers": 38,
+      "latent_scale": 8,
+      "default_text_tokens": 512,
+      "usage_bias": 1
+    },
+    "flux2": {
+      "strategy": "flux2",
+      "channels": 6144,
+      "double_layers": 8,
+      "single_layers": 48,
+      "latent_scale": 8,
+      "default_text_tokens": 512,
+      "usage_bias": 1
+    },
+    "flux2_9b": {
+      "strategy": "flux2",
+      "channels": 4096,
+      "double_layers": 8,
+      "single_layers": 24,
+      "latent_scale": 8,
+      "default_text_tokens": 512,
+      "usage_bias": 1
+    },
+    "flux2_4b": {
+      "strategy": "flux2",
+      "channels": 3072,
+      "double_layers": 5,
+      "single_layers": 20,
+      "latent_scale": 8,
+      "default_text_tokens": 512,
+      "usage_bias": 1
+    },
+    "z_image": {
+      "strategy": "z_image",
+      "channels": 3840,
+      "layers": 30,
+      "include_fixed": true,
+      "latent_scale": 8,
+      "default_text_tokens": 512,
+      "usage_bias": 1
+    },
+    "cosmos2.5_2b": {
+      "strategy": "z_image",
+      "channels": 2048,
+      "layers": 28,
+      "include_fixed": false,
+      "latent_scale": 8,
+      "default_text_tokens": 77,
+      "usage_bias": 1
+    },
+    "qwen_image": {
+      "strategy": "qwen_image",
+      "channels": 3072,
+      "layers": 60,
+      "latent_scale": 8,
+      "default_text_tokens": 512,
+      "usage_bias": 1
+    },
+    "qwen_image_2.1": {
+      "strategy": "qwen_image_2.1",
+      "channels": 4096,
+      "layers": 32,
+      "latent_scale": 4,
+      "default_text_tokens": 512,
+      "usage_bias": 1
+    },
+    "krea_2": {
+      "strategy": "krea_2",
+      "channels": 6144,
+      "layers": 28,
+      "latent_scale": 8,
+      "default_text_tokens": 256,
+      "usage_bias": 1
+    },
+    "ideogram_4": {
+      "strategy": "ideogram_4",
+      "channels": 4608,
+      "layers": 34,
+      "latent_scale": 8,
+      "default_text_tokens": 512,
+      "usage_bias": 1
+    },
+    "sd3": {
+      "strategy": "mmdit",
+      "channels": 1536,
+      "layers": 24,
+      "latent_scale": 8,
+      "default_text_tokens": 77,
+      "usage_bias": 1
+    },
+    "sd3_large": {
+      "strategy": "mmdit",
+      "channels": 2432,
+      "layers": 38,
+      "latent_scale": 8,
+      "default_text_tokens": 77,
+      "usage_bias": 1
+    },
+    "pixart": {
+      "strategy": "pixart",
+      "channels": 1152,
+      "layers": 28,
+      "latent_scale": 8,
+      "default_text_tokens": 77,
+      "usage_bias": 1
+    },
+    "auraflow": {
+      "strategy": "auraflow",
+      "channels": 3072,
+      "double_layers": 4,
+      "single_layers": 32,
+      "latent_scale": 8,
+      "default_text_tokens": 77,
+      "usage_bias": 1
+    },
+    "ernie_image": {
+      "strategy": "ernie",
+      "channels": 4096,
+      "layers": 36,
+      "intermediate_size": 12288,
+      "latent_scale": 8,
+      "default_text_tokens": 512,
+      "usage_bias": 1
+    },
+    "flux3_5b": {
+      "strategy": "flux3",
+      "channels": 3072,
+      "double_layers": 5,
+      "single_layers": 28,
+      "latent_scale": 8,
+      "default_text_tokens": 512,
+      "usage_bias": 1
+    },
+    "moss_image": {
+      "strategy": "moss",
+      "channels": 3072,
+      "layers": 42,
+      "intermediate_size": 8192,
+      "latent_scale": 8,
+      "default_text_tokens": 512,
+      "usage_bias": 1
+    },
+    "hi_dream_o1": {
+      "strategy": "hidream_o1",
+      "channels": 4096,
+      "layers": 36,
+      "intermediate_size": 12288,
+      "latent_scale": 2,
+      "default_text_tokens": 77,
+      "usage_bias": 1
+    },
+    "v1": {
+      "strategy": "unet_v1",
+      "channels": 320,
+      "channel_schedule": [
+        320,
+        640,
+        1280,
+        1280
+      ],
+      "num_repeat": 2,
+      "attention_downsamples": [
+        1,
+        2,
+        4
+      ],
+      "heads_mode": "fixed8",
+      "latent_scale": 8,
+      "default_text_tokens": 77,
+      "usage_bias": 2.5
+    },
+    "v2": {
+      "strategy": "unet_v2",
+      "channels": 320,
+      "channel_schedule": [
+        320,
+        640,
+        1280,
+        1280
+      ],
+      "num_repeat": 2,
+      "attention_downsamples": [
+        1,
+        2,
+        4
+      ],
+      "heads_mode": "channel64",
+      "latent_scale": 8,
+      "default_text_tokens": 77,
+      "usage_bias": 2.5
+    },
+    "sdxl_base_v0.9": {
+      "strategy": "unet_xl",
+      "channels": 320,
+      "channel_schedule": [
+        320,
+        640,
+        1280
+      ],
+      "input_attention": {
+        "2": [
+          2,
+          2
+        ],
+        "4": [
+          10,
+          10
+        ]
+      },
+      "middle_attention": 10,
+      "output_attention": {
+        "2": [
+          2,
+          2,
+          2
+        ],
+        "4": [
+          10,
+          10,
+          10
+        ]
+      },
+      "label_input_channels": 2816,
+      "latent_scale": 8,
+      "default_text_tokens": 77,
+      "usage_bias": 2.5
+    },
+    "ssd_1b": {
+      "strategy": "unet_xl",
+      "channels": 320,
+      "channel_schedule": [
+        320,
+        640,
+        1280
+      ],
+      "input_attention": {
+        "2": [
+          2,
+          2
+        ],
+        "4": [
+          4,
+          4
+        ]
+      },
+      "middle_attention": 0,
+      "output_attention": {
+        "2": [
+          2,
+          1,
+          1
+        ],
+        "4": [
+          4,
+          4,
+          10
+        ]
+      },
+      "label_input_channels": 2816,
+      "latent_scale": 8,
+      "default_text_tokens": 77,
+      "usage_bias": 2.5
+    },
+    "hidream_i1": {
+      "strategy": "hidream_i1",
+      "channels": 2560,
+      "double_layers": 16,
+      "single_layers": 32,
+      "latent_scale": 8,
+      "default_text_tokens": 128,
+      "usage_bias": 1
+    },
+    "wurstchen_v3.0_stage_c": {
+      "strategy": "wurstchen_stage_c",
+      "channels": 2048,
+      "stage2_steps": 10,
+      "latent_scale": 8,
+      "default_text_tokens": 77,
+      "usage_bias": 2.5
+    },
+    "wurstchen_v3.0_stage_b": {
+      "strategy": "wurstchen_stage_b",
+      "channels": 320,
+      "latent_scale": 8,
+      "default_text_tokens": 77,
+      "usage_bias": 2.5
+    },
+    "hunyuan_video": {
+      "strategy": "video_hunyuan",
+      "channels": 3072,
+      "double_layers": 20,
+      "single_layers": 40,
+      "latent_scale": 8,
+      "default_text_tokens": 256,
+      "usage_bias": 1,
+      "frame_pack": "quarter"
+    },
+    "wan_v2.1_1.3b": {
+      "strategy": "video_wan",
+      "channels": 1536,
+      "layers": 30,
+      "intermediate_size": 8960,
+      "output_channels": 16,
+      "latent_scale": 8,
+      "default_text_tokens": 77,
+      "usage_bias": 1,
+      "frame_pack": "quarter",
+      "supports_image": true
+    },
+    "wan_v2.1_14b": {
+      "strategy": "video_wan",
+      "channels": 5120,
+      "layers": 40,
+      "intermediate_size": 13824,
+      "output_channels": 16,
+      "latent_scale": 8,
+      "default_text_tokens": 77,
+      "usage_bias": 1,
+      "frame_pack": "quarter",
+      "supports_image": true
+    },
+    "wan22_5b": {
+      "strategy": "video_wan",
+      "channels": 3072,
+      "layers": 30,
+      "intermediate_size": 14336,
+      "output_channels": 48,
+      "latent_scale": 4,
+      "default_text_tokens": 77,
+      "usage_bias": 1,
+      "frame_pack": "quarter",
+      "supports_image": false
+    },
+    "longcat_video_avatar1_5": {
+      "strategy": "video_wan",
+      "channels": 4096,
+      "layers": 48,
+      "intermediate_size": 11008,
+      "output_channels": 16,
+      "latent_scale": 8,
+      "default_text_tokens": 77,
+      "usage_bias": 1,
+      "frame_pack": "quarter",
+      "supports_image": false
+    },
+    "ltx2": {
+      "strategy": "video_ltx2",
+      "channels": 4096,
+      "audio_channels": 2048,
+      "layers": 48,
+      "latent_scale": 2,
+      "default_text_tokens": 128,
+      "usage_bias": 1,
+      "frame_pack": "eighth",
+      "gated_attention": false,
+      "kv_cache": true,
+      "context_projection": true,
+      "ada_ln_cross": false
+    },
+    "ltx2.3": {
+      "strategy": "video_ltx2",
+      "channels": 4096,
+      "audio_channels": 2048,
+      "layers": 48,
+      "latent_scale": 2,
+      "default_text_tokens": 128,
+      "usage_bias": 1,
+      "frame_pack": "eighth",
+      "gated_attention": true,
+      "kv_cache": false,
+      "context_projection": false,
+      "ada_ln_cross": true
+    },
+    "minimax_h3": {
+      "strategy": "video_minimax_h3",
+      "channels": 5376,
+      "layers": 50,
+      "intermediate_size": 14336,
+      "latent_scale": 4,
+      "default_text_tokens": 512,
+      "usage_bias": 1,
+      "frame_pack": "minimax_h3",
+      "fps": 24
+    },
+    "svd_i2v": {
+      "strategy": "video_svd",
+      "channels": 320,
+      "channel_schedule": [
+        320,
+        640,
+        1280,
+        1280
+      ],
+      "input_attention": {
+        "1": [
+          1,
+          1
+        ],
+        "2": [
+          1,
+          1
+        ],
+        "4": [
+          1,
+          1
+        ]
+      },
+      "middle_attention": 1,
+      "output_attention": {
+        "1": [
+          1,
+          1,
+          1
+        ],
+        "2": [
+          1,
+          1,
+          1
+        ],
+        "4": [
+          1,
+          1,
+          1
+        ]
+      },
+      "latent_scale": 8,
+      "default_text_tokens": 77,
+      "usage_bias": 2.5,
+      "frame_pack": "identity"
+    }
+  }
+}

@@ -25,6 +25,7 @@ from PySide6.QtWidgets import (
 )
 
 from dtflow.composition import BACKENDS
+from dtflow.core.compute_units import ComputeUnitEstimate, estimate_compute_units
 from dtflow.core.model_profiles import has_own_profile, profile_for
 from dtflow.core.models import (
     BackendEvent,
@@ -95,6 +96,7 @@ def failure_fields(failure: BaseException) -> dict:
 
 
 PREVIEW_MIN_HEIGHT = 180
+COMPUTE_UNITS_LIMIT = 40_000  # meter full and red from here up
 RESULT_PATH_ROLE = Qt.ItemDataRole.UserRole
 DISPATCH_REASON = (
     "A queue is running in this window: Generate adds this request behind it as a one-item queue, "
@@ -266,6 +268,16 @@ class GenerationPage:
         page.includeCloudCheck.toggled.connect(self._catalogue_filter_changed)
         page.includeNicheCheck.toggled.connect(self._catalogue_filter_changed)
         page.modelCombo.currentTextChanged.connect(self._catalogue_checkpoint_changed)
+        page.modelCombo.currentTextChanged.connect(self._update_compute_units)
+        for control in (page.widthSpinBox, page.heightSpinBox, page.stepsSpinBox, page.guidanceSpinBox):
+            control.valueChanged.connect(self._update_compute_units)
+        for control in (page.textToImageModeButton, page.inpaintModeButton):
+            control.toggled.connect(self._update_compute_units)
+        page.generationBackendCombo.currentTextChanged.connect(self._update_compute_units)
+        lora_model = page.loraList.model()
+        for signal in (lora_model.rowsInserted, lora_model.rowsRemoved, lora_model.modelReset):
+            signal.connect(self._update_compute_units)
+        page.loraList.itemChanged.connect(self._update_compute_units)
         page.unclassifiedModelsButton.clicked.connect(self._show_unclassified_models)
         page.checkpointDetailsButton.clicked.connect(self.show_checkpoint_details)
         page.checkpointDetailsButton.setEnabled(bool(page.modelCombo.currentText().strip()))
@@ -321,6 +333,7 @@ class GenerationPage:
         self.inpaint.attach(self)
         page.textToImageModeButton.toggled.connect(self._sync_activity)
         page.inpaintModeButton.toggled.connect(self._sync_activity)
+        self._update_compute_units()
 
     def _set_prompt_expanded(self, expanded: bool) -> None:
         """Match prompt height, icon and accessible label to the toggle state."""
@@ -1386,6 +1399,56 @@ class GenerationPage:
         )
         self.lora.set_candidates(entries, prune_selected=prune_selected and entries is not None)
 
+    def _compute_units_estimate(self) -> ComputeUnitEstimate:
+        """Read the same current form settings for the meter and explicit inspector."""
+        page = self.page
+        model_id = page.modelCombo.currentText().strip()
+        entry = self._catalogue.checkpoint(model_id, include_unavailable=True) if model_id else None
+        return estimate_compute_units(
+            model_id=model_id,
+            base_model=entry.base_model if entry else None,
+            width_px=page.widthSpinBox.value(),
+            height_px=page.heightSpinBox.value(),
+            steps=page.stepsSpinBox.value(),
+            guidance=page.guidanceSpinBox.value(),
+            has_loras=bool(self.lora.loras),
+            operation="inpaint" if page.inpaintModeButton.isChecked() else "txt2img",
+        )
+
+    def _update_compute_units(self, *_args) -> None:
+        """Show an offline, non-authoritative DT+ complexity estimate for one T2I image.
+
+        Both Local Draw Things (which may bridge to DT+) and direct Cloud
+        show the estimate. It is not evidence that a local execution uses DT+.
+        The number never enters preflight, dispatch, saved jobs, quota or billing.
+        Changes to cloud credentials and inventory do not trigger a provider call.
+        """
+        meter = self.page.computeUnitsMeter
+        name, _ = self._backend()
+        shown = name in ("local", "cloud")
+        meter.setVisible(shown)
+        if not shown:
+            return
+        estimate = self._compute_units_estimate()
+        units = estimate.units
+        if units is None:
+            state, text, value = "unavailable", "unavailable", 0
+        else:
+            # Full at COMPUTE_UNITS_LIMIT; at or above it the bar stays full and turns red.
+            state = "over" if units >= COMPUTE_UNITS_LIMIT else "ok"
+            text, value = f"{units:,}".replace(",", "\u202f"), min(units, COMPUTE_UNITS_LIMIT)
+        meter.setMaximum(COMPUTE_UNITS_LIMIT)
+        meter.setValue(value)
+        meter.setFormat("\u2002" + text)  # en space: the QSS cannot pad progress-bar text
+        if meter.property("state") != state:
+            meter.setProperty("state", state)
+            meter.style().unpolish(meter)
+            meter.style().polish(meter)
+        # No hover overlay: the reason is exposed to assistive technology only.
+        meter.setAccessibleDescription(
+            f"{estimate.reason} Offline estimate; not a balance, entitlement check or billing quote."
+        )
+
     def show_checkpoint_details(self) -> None:
         """Inspect local catalogue and last-observed provider evidence without dispatch."""
         model_id = self.page.modelCombo.currentText().strip()
@@ -1396,7 +1459,17 @@ class GenerationPage:
             catalogue=self._catalogue,
             inventory=self._inventory_snapshot,
         )
-        InlineNotice.information(self.page, "Checkpoint details", details.as_text())
+        text = details.as_text()
+        if self._backend()[0] in ("local", "cloud"):
+            estimate = self._compute_units_estimate()
+            result = "unavailable" if estimate.units is None else f"{estimate.units:,}".replace(",", "\u202f") + " CU"
+            text += (
+                f"\n\nCompute Units: {result}\n"
+                "Supported models: SD 1.x/2.x, SDXL/SSD, SD3, FLUX.1/2/3, "
+                "Qwen-Image/2.1, Z-Image, Cosmos 2.5, Krea 2, Ideogram 4, "
+                "HiDream I1/O1, ERNIE, MOSS, PixArt, AuraFlow and Würstchen."
+            )
+        InlineNotice.information(self.page, "Checkpoint details", text)
 
     def _show_unclassified_models(self) -> None:
         view = self._catalogue.view()
