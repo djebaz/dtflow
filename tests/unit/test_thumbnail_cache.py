@@ -6,6 +6,7 @@ import subprocess
 from pathlib import Path
 
 import pytest
+from support.network_guard import child_command
 
 from dtflow.persistence import thumbnail_cache as cache
 
@@ -27,14 +28,16 @@ def redirect_directory(link: Path, target: Path, tmp_path: Path) -> None:
         encoding="utf-8",
         newline="\n",
     )
-    result = subprocess.run(
-        [pwsh, "-NoProfile", "-NonInteractive", "-File", str(script), "-Link", str(link), "-Target", str(target)],
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-        timeout=30,
-        check=False,
-    )
+    command = [pwsh, "-NoProfile", "-NonInteractive", "-File", str(script), "-Link", str(link), "-Target", str(target)]
+    with child_command(command):
+        result = subprocess.run(
+            command,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            timeout=30,
+            check=False,
+        )
     assert result.returncode == 0, "Could not create isolated native Windows junction fixture."
     assert link.is_junction()
 
