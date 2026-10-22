@@ -90,6 +90,75 @@
       "latent_scale": 8,
       "default_text_tokens": 512,
       "usage_bias": 1
+    },
+    "sd3": {
+      "strategy": "mmdit",
+      "channels": 1536,
+      "layers": 24,
+      "latent_scale": 8,
+      "default_text_tokens": 77,
+      "usage_bias": 1
+    },
+    "sd3_large": {
+      "strategy": "mmdit",
+      "channels": 2432,
+      "layers": 38,
+      "latent_scale": 8,
+      "default_text_tokens": 77,
+      "usage_bias": 1
+    },
+    "pixart": {
+      "strategy": "pixart",
+      "channels": 1152,
+      "layers": 28,
+      "latent_scale": 8,
+      "default_text_tokens": 77,
+      "usage_bias": 1
+    },
+    "auraflow": {
+      "strategy": "auraflow",
+      "channels": 3072,
+      "double_layers": 4,
+      "single_layers": 32,
+      "latent_scale": 8,
+      "default_text_tokens": 77,
+      "usage_bias": 1
+    },
+    "ernie_image": {
+      "strategy": "ernie",
+      "channels": 4096,
+      "layers": 36,
+      "intermediate_size": 12288,
+      "latent_scale": 8,
+      "default_text_tokens": 512,
+      "usage_bias": 1
+    },
+    "flux3_5b": {
+      "strategy": "flux3",
+      "channels": 3072,
+      "double_layers": 5,
+      "single_layers": 28,
+      "latent_scale": 8,
+      "default_text_tokens": 512,
+      "usage_bias": 1
+    },
+    "moss_image": {
+      "strategy": "moss",
+      "channels": 3072,
+      "layers": 42,
+      "intermediate_size": 8192,
+      "latent_scale": 8,
+      "default_text_tokens": 512,
+      "usage_bias": 1
+    },
+    "hi_dream_o1": {
+      "strategy": "hidream_o1",
+      "channels": 4096,
+      "layers": 36,
+      "intermediate_size": 12288,
+      "latent_scale": 2,
+      "default_text_tokens": 77,
+      "usage_bias": 1
     }
   }
 }
