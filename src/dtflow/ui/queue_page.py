@@ -139,6 +139,7 @@ WIRED_CONTROLS = (
     "earlierQueueButton",
     "laterQueueButton",
     "relaunchQueueButton",
+    "editAsNewQueueButton",
     "emptyRelaunchButton",
     *FILTER_BUTTONS.values(),
     "queueItemsView",
@@ -311,6 +312,7 @@ class QueuePage:
         page.itemOpenImagesButton.clicked.connect(self.open_in_images)
         page.itemRetryButton.clicked.connect(self.retry_item)
         page.emptyRelaunchButton.clicked.connect(self.relaunch_last)
+        page.editAsNewQueueButton.clicked.connect(lambda: self._selected and self.edit_as_new(self._selected))
         page.relaunchQueueButton.clicked.connect(
             lambda: self._relaunch_menu(
                 page.relaunchQueueButton.mapToGlobal(page.relaunchQueueButton.rect().bottomLeft())
@@ -795,7 +797,9 @@ class QueuePage:
         if not removable and feedback(page)._armed and feedback(page)._armed[0] is page.removeQueueButton:
             feedback(page).dismiss()  # the queue started or went away: the pending consent no longer applies
         page.removeQueueButton.setEnabled(removable)
-        page.relaunchQueueButton.setEnabled(view is not None and bool(sum(view["summary"].values())))
+        has_items = view is not None and bool(sum(view["summary"].values()))
+        page.relaunchQueueButton.setEnabled(has_items)
+        page.editAsNewQueueButton.setEnabled(has_items)
         # Saving only persists a paused queue (over a short shared connection while a run owns the state).
         page.createQueueButton.setEnabled(True)
         running = self._live_run()
@@ -961,12 +965,6 @@ class QueuePage:
             return
         menu = QMenu(self.page.relaunchQueueButton)
         self._relaunch_actions(menu, self._selected)
-        menu.addSeparator()
-        edit = menu.addAction("Edit as new queue…")
-        edit.setToolTip(
-            "Loads this queue's settings into Generate and the composer to change them and save a new queue."
-        )
-        edit.triggered.connect(lambda _=False, queue_id=self._selected: self.edit_as_new(queue_id))
         menu.exec(at)
 
     def _relaunch_actions(self, menu: QMenu, queue_id: str) -> None:

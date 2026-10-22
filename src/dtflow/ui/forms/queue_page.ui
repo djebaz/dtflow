@@ -548,10 +548,23 @@
               <string>Relaunch</string>
              </property>
              <property name="toolTip">
-              <string>Runs this queue's items again as a new queue (same or new seeds, all or only failed items), or loads its settings to edit as a new queue. Real, possibly billable generation; this queue is untouched.</string>
+              <string>Runs this queue's items again as a new queue (same or new seeds, all or only failed items). Real, possibly billable generation; this queue is untouched.</string>
              </property>
              <property name="accessibleName">
               <string>Relaunch the queue</string>
+             </property>
+            </widget>
+           </item>
+           <item>
+            <widget class="QPushButton" name="editAsNewQueueButton">
+             <property name="text">
+              <string>Edit as new</string>
+             </property>
+             <property name="toolTip">
+              <string>Loads this queue's settings into Generate and the composer to change them and save a new queue. Nothing is created until Add to queue or Start now; this queue is untouched.</string>
+             </property>
+             <property name="accessibleName">
+              <string>Edit the queue as a new queue</string>
              </property>
             </widget>
            </item>
