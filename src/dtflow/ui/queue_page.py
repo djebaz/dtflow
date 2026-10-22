@@ -1137,6 +1137,7 @@ class QueuePage:
         """Sit each composer label on its field's first line: the form layout top-aligns labels, which then read a few
         pixels above the text of the (padded) input beside them."""
         form = self.page.planForm
+        form.setLabelAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignTop)  # labels sit next to inputs
         for row in range(form.rowCount()):
             label_item = form.itemAt(row, QFormLayout.ItemRole.LabelRole)
             field_item = form.itemAt(row, QFormLayout.ItemRole.FieldRole)

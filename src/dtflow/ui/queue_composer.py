@@ -455,8 +455,11 @@ class ComposerGridFit(QObject):
             if len(group) == 1:
                 grid.addWidget(group[0], row, col, 1, 2)
             else:
-                grid.addWidget(group[0], row, col)
+                # The label hugs its input on the right; only the input columns take the spare width.
+                grid.addWidget(group[0], row, col, Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
                 grid.addWidget(group[1], row, col + 1)
+        for column in range(columns * 2):
+            grid.setColumnStretch(column, column % 2)
         grid.invalidate()
         grid.parentWidget().updateGeometry()
 
