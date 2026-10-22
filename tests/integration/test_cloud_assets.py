@@ -8,7 +8,7 @@ import sqlite3
 import pytest
 from support.cloud_assets import API_KEY, CHUNK, DtPlus, lora_file, settle_loop, sha256
 
-from dtflow.core.models import BackendError, ErrorCategory, RemoteOutcome, ValidationError
+from dtflow.core.models import AssetContent, BackendError, ErrorCategory, RemoteOutcome, ValidationError
 from dtflow.persistence.assets import AssetRegistry
 from dtflow.persistence.store import PersistenceError
 from dtflow.services.assets import AssetService
@@ -284,11 +284,11 @@ async def test_file_changed_during_upload_is_unknown_and_records_no_receipt(tmp_
                     },
                 }
             },
-            "cloud_byom_response_conflict",
+            "exists",
         ),
         ("neither", lambda e: {"data": {}}, "cloud_byom_response_invalid"),
         (
-            "wrong_hash",
+            "different_server_value",
             lambda e: {
                 "data": {
                     "signedUrls": {
@@ -296,7 +296,7 @@ async def test_file_changed_during_upload_is_unknown_and_records_no_receipt(tmp_
                     }
                 }
             },
-            "cloud_byom_response_invalid",
+            "upload_required",
         ),
         (
             "http_url",
@@ -317,10 +317,19 @@ async def test_file_changed_during_upload_is_unknown_and_records_no_receipt(tmp_
         ("not_object", lambda e: {"data": "SIGNED-QUERY-SECRET"}, "cloud_byom_response_invalid"),
     ],
 )
-async def test_malformed_or_conflicting_negotiation_is_a_sanitized_protocol_failure(tmp_path, name, response, code):
+async def test_negotiation_consumes_usable_evidence_or_reports_sanitized_protocol_failure(
+    tmp_path, name, response, code
+):
     cloud, file = DtPlus(), lora_file(tmp_path)
     cloud.response = response
     async with Session(tmp_path / "state", cloud) as session:
+        if code in ("exists", "upload_required"):
+            content = AssetContent("lora", file.name, sha256(file.read_bytes()), file.stat().st_size)
+            result = await session.backend.negotiate_asset(content)
+            assert result.status == code
+            assert not cloud.puts and not await session.registry.list()
+            assert not any(secret in repr(result) for secret in SECRETS)
+            return
         with pytest.raises(BackendError) as caught:
             await session.service.prepare(file)
         (record,) = await session.registry.list()

@@ -1069,9 +1069,7 @@ class LogsWorkspace(QObject):
                 # Keep an active filter visible even when its name is not (or no longer) listed.
                 combo.addItem(f"{current.removeprefix('dtflow.')} (not listed)", current)
             for index in range(combo.count()):
-                combo.setItemData(
-                    index, combo.itemData(index) or combo.itemText(index), Qt.ItemDataRole.ToolTipRole
-                )
+                combo.setItemData(index, combo.itemData(index) or combo.itemText(index), Qt.ItemDataRole.ToolTipRole)
             combo.setCurrentIndex(max(0, combo.findData(current)))
             combo.setToolTip(combo.currentData() or combo.currentText())
             self._fit_filter_popup(combo)

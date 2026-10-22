@@ -5,7 +5,7 @@ import pytest
 
 from dtflow.backends.drawthings.cloud_assets import lookup_lora_assets
 from dtflow.backends.drawthings.cloud_auth import CloudAuth
-from dtflow.core.models import BackendError, Credential, FileIdentity
+from dtflow.core.models import Credential, FileIdentity
 
 
 class Credentials:
@@ -33,7 +33,7 @@ async def test_byom_lookup_classifies_reuse_and_upload_required_without_put():
                         "urls": {
                             "upload.ckpt": response_upload[0]
                             or {
-                                "sha256": "bb" * 32,
+                                "sha256": "cc" * 32,  # server-returned value need not echo the local digest
                                 "url": "https://storage.invalid/SECRET-SIGNED-URL",
                             }
                         }
@@ -52,20 +52,19 @@ async def test_byom_lookup_classifies_reuse_and_upload_required_without_put():
             ),
         )
         for invalid_upload in (
-            {"sha256": "cc" * 32, "url": "https://storage.invalid/SECRET-SIGNED-URL"},
             {"sha256": "bb" * 32, "url": None},
             {"sha256": "bb" * 32},
             "SECRET-SIGNED-URL",
         ):
             response_upload[0] = invalid_upload
-            with pytest.raises(BackendError) as caught:
-                await lookup_lora_assets(auth, (FileIdentity("upload.ckpt", True, "bb" * 32),))
-            assert caught.value.failure.code == "cloud_byom_response_invalid"
-            assert "SECRET-SIGNED-URL" not in str(caught.value) + repr(caught.value.failure)
+            unknown = await lookup_lora_assets(auth, (FileIdentity("upload.ckpt", True, "bb" * 32),))
+            assert unknown["upload.ckpt"].availability == "unknown"
+            assert unknown["upload.ckpt"].reference is None
+            assert "SECRET-SIGNED-URL" not in repr(unknown)
     finally:
         await auth.aclose()
 
     assert result["reuse.ckpt"].availability == "byom_reusable"
     assert result["reuse.ckpt"].reference == ("aa" * 32) + "_remote"
     assert result["upload.ckpt"].availability == "upload_required"
-    assert calls == [("POST", "/sdk/token")] + [("POST", "/get_byom_urls")] * 5
+    assert calls == [("POST", "/sdk/token")] + [("POST", "/get_byom_urls")] * 4
