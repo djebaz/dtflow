@@ -35,6 +35,7 @@
 
 ## Decisions
 
+- Prepared-asset failure messages and `generation.failed` WARNING fields name the affected LoRA using a sanitized basename (`asset`), alongside the API status/message when present. Paths and private remote references are excluded. The existing offline prepared-asset preview definition includes this label; no render or validation was run.
 - Prepared-asset dispatch validation retains the underlying API's projected diagnostics instead of reducing them to `prepared_asset_unknown`. The generation WARNING includes status, safe server message and causal code when available; local reference mismatch remains a local validation reason. No response body is persisted into the asset registry, and generation stays not submitted.
 - The owner's one approved live replay returned `PERMISSION_DENIED` with `user failed to pass throttlePolicy, 24_hour in 500`. Token exchange, BYOM validation and generation authorization returned HTTP 200. The returned authorization identified `plus` and matched the request checksum. This is historical diagnostic motivation, not validation of this implementation.
 - Preserve raw status and safe server explanation independently of DTFlow categories. In particular, `PERMISSION_DENIED` alone must not tell the user their key is wrong.

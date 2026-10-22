@@ -28,6 +28,7 @@ Changes through the 5.1.0 preparation baseline are consolidated in [DTFlow 5.1.0
 
 - API failures now retain bounded, sanitized server explanations in WARNING logs and shared connection/generation/asset presentation, including HTTP error envelopes and gRPC messages such as throttle-policy rejection. Preserve statuses and uncertainty instead of implying every permission denial is a bad key; never log tokens, prompts, signed URLs or image payloads. No retry/billing behavior changes; source-only delivery, acceptance pending.
 - Prepared-asset dispatch checks preserve the underlying API explanation in the generation warning and inline failure instead of reporting only `prepared_asset_unknown`; local validation reasons remain distinct, and blocked generation is not submitted.
+- Prepared-asset failures identify the affected LoRA by sanitized filename in the inline message and generation WARNING, without paths or private cloud references.
 
 - The Queues composer's preview table shows every row in full instead of a short window with its own scrolling, so every item's values are reached by scrolling the composer. Its LoRA weight columns are titled with the LoRA name only (no `lora_weight.` prefix or file extension; the full name is the header tooltip), and the columns share the composer's width with elided header and cell text instead of scrolling sideways.
 - Krea 2 checkpoints (`krea_2_raw` and `krea_2_turbo`, q6p and q8p) move from the Niche to the Prime catalogue, so the Krea 2 family shows in the Generate Base model list without Include niche models.

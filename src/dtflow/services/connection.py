@@ -120,6 +120,9 @@ def present_generation_failure(exc: Exception) -> Presentation:
         api = bool(dict(failure.diagnostics).get("transport"))
         if failure.code.startswith("prepared_asset_"):
             detail = _api_explanation(failure) if api else failure.message
+            asset = dict(failure.diagnostics).get("asset")
+            if api and asset:
+                detail = f"LoRA {asset} — {detail}"
             return Presentation(
                 "error", "Prepared asset not validated",
                 f"{detail} Nothing was uploaded or submitted." if api else detail,

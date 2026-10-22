@@ -2,6 +2,7 @@
 
 ## API response events (PR #156)
 
+- Prepared-asset `generation.failed` warnings include `asset`, a sanitized local LoRA basename, to identify which selected file failed validation without exposing its path or private cloud reference. Inline API errors show the same label beside the observed server status/message.
 - `generation.failed` (WARNING) retains the allowlisted API operation, transport, HTTP/gRPC status and sanitized server message when available. Prepared-asset validation also retains the causal code/category and validation reason; local reference mismatch is not presented as a server response. Full projected error envelopes remain on the backend event, not duplicated into this UI lifecycle event.
 - `backend.api_failed` (WARNING): `transport`, stable `operation`, `code`, `category`, `submission_stage`, `remote_outcome`, optional `request_id`/`elapsed_ms`, HTTP `http_status` or gRPC `status`, sanitized `server_message`, serialized safe `response_body`, allowlisted `header_*`, and explicit `response_truncated`/`details_omitted`/detail type/count evidence when applicable. These are flexible v1 fields, not a new record schema. Only observed evidence is recorded; no response is fabricated for a transport failure.
 - `backend.api_completed` (DEBUG): status/operation/timing and applicable result counts or `bytes_yielded`; no successful body dumps. Yielded upload bytes are not proof that storage received them.

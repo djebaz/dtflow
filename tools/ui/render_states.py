@@ -3805,6 +3805,7 @@ def main():
                 ErrorCategory.VALIDATION, "prepared_asset_unknown",
                 "Prepared asset could not be validated; nothing was uploaded or submitted.",
                 diagnostics=(("transport", "http"), ("operation", "get_byom_urls"),
+                             ("asset", "example_krea2_lora_f16.ckpt"),
                              ("http_status", "503"), ("server_message", "Service temporarily unavailable"),
                              ("cause_code", "cloud_http_rejected"),
                              ("validation_reason", "cloud_http_rejected")),
