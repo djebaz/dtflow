@@ -6,7 +6,9 @@ press: a local stop is reported as a local stop, and a possibly submitted attemp
 """
 
 import asyncio
+import itertools
 import logging
+import math
 import re
 import time
 from collections.abc import Callable
@@ -15,7 +17,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from uuid import uuid4
 
-from PySide6.QtCore import QSize, Qt, QUrl
+from PySide6.QtCore import QSize, Qt, QTimer, QUrl
 from PySide6.QtGui import QDesktopServices, QGuiApplication, QIcon, QPixmap
 from PySide6.QtWidgets import (
     QFileDialog,
@@ -97,6 +99,10 @@ def failure_fields(failure: BaseException) -> dict:
 
 PREVIEW_MIN_HEIGHT = 180
 COMPUTE_UNITS_LIMIT = 40_000  # meter full and red from here up
+COMPUTE_UNITS_METER_STEPS = 1000  # meter resolution; the bar's maximum
+# (units, fill fraction) anchors of the meter scale; see compute_units_fill().
+COMPUTE_UNITS_SCALE = ((100, 0.15), (3_000, 0.5), (COMPUTE_UNITS_LIMIT, 1.0))
+CHECKPOINT_STEP_SETTLE_MS = 600  # LoRA pruning waits until previous/next stepping pauses
 RESULT_PATH_ROLE = Qt.ItemDataRole.UserRole
 DISPATCH_REASON = (
     "A queue is running in this window: Generate adds this request behind it as a one-item queue, "
@@ -154,6 +160,31 @@ FIELD_WIDGETS = (
     "samplerCombo",
     "loraList",
 )
+
+
+def compute_units_fill(units: int) -> float:
+    """Map an estimate to a 0–1 meter fill on a non-linear, monotonic scale.
+
+    Typical estimates sit in the low thousands, so a linear 0–40 000 bar left them almost empty. The scale is linear from
+    0 to 100 (15 %), then logarithmic between anchors: 100 → 15 %, 3 000 → 50 %, 40 000 → 100 %. Anything at or above
+    COMPUTE_UNITS_LIMIT is clamped full.
+    """
+    if units <= 0:
+        return 0.0
+    first_units, first_fill = COMPUTE_UNITS_SCALE[0]
+    if units <= first_units:
+        return first_fill * units / first_units
+    for (low, low_fill), (high, high_fill) in itertools.pairwise(COMPUTE_UNITS_SCALE):
+        if units <= high:
+            return low_fill + (high_fill - low_fill) * math.log(units / low) / math.log(high / low)
+    return 1.0
+
+
+def compute_units_meter_value(units: int) -> int:
+    """Meter position for an estimate; only COMPUTE_UNITS_LIMIT and above fill the bar."""
+    if units >= COMPUTE_UNITS_LIMIT:
+        return COMPUTE_UNITS_METER_STEPS
+    return min(round(compute_units_fill(units) * COMPUTE_UNITS_METER_STEPS), COMPUTE_UNITS_METER_STEPS - 1)
 
 
 def _choose_save(parent: QWidget, directory: Path) -> str:
@@ -215,6 +246,11 @@ class GenerationPage:
         self._catalogue = Catalogue(self._state)
         self._inventory_snapshot: InventorySnapshot | None = None
         self._updating_catalogue = False
+        self._step_settle = QTimer(page)
+        self._step_settle.setSingleShot(True)
+        self._step_settle.setInterval(CHECKPOINT_STEP_SETTLE_MS)
+        self._step_settle.timeout.connect(self._checkpoint_steps_settled)
+        self._step_sampler = ""
         self._forms: dict[str, dict] = {}  # provider -> its remembered form fields (prompts are shared, not stored)
         self._provider: str | None = None
         self._previewed_seed: int | None = None
@@ -280,6 +316,11 @@ class GenerationPage:
         page.loraList.itemChanged.connect(self._update_compute_units)
         page.unclassifiedModelsButton.clicked.connect(self._show_unclassified_models)
         page.checkpointDetailsButton.clicked.connect(self.show_checkpoint_details)
+        page.previousCheckpointButton.clicked.connect(lambda: self._step_checkpoint(-1))
+        page.nextCheckpointButton.clicked.connect(lambda: self._step_checkpoint(1))
+        page.modelCombo.currentIndexChanged.connect(self._sync_checkpoint_steppers)
+        page.modelCombo.model().rowsInserted.connect(self._sync_checkpoint_steppers)
+        page.modelCombo.model().rowsRemoved.connect(self._sync_checkpoint_steppers)
         page.checkpointDetailsButton.setEnabled(bool(page.modelCombo.currentText().strip()))
         for label, scenario in SIMULATED_OUTCOMES:
             page.simulationScenarioCombo.addItem(label, scenario)
@@ -316,6 +357,9 @@ class GenerationPage:
         page.generateButton.setIconSize(QSize(16, 16))
         page.checkpointDetailsButton.setIcon(QIcon(str(icons / "info.svg")))
         page.checkpointDetailsButton.setIconSize(QSize(16, 16))
+        page.previousCheckpointButton.setIcon(QIcon(str(icons / "chevron-left.svg")))
+        page.nextCheckpointButton.setIcon(QIcon(str(icons / "chevron-right.svg")))
+        self._sync_checkpoint_steppers()
         page.expandPromptButton.setIconSize(QSize(16, 16))
         self._set_prompt_expanded(page.expandPromptButton.isChecked())
         page.seedEdit.setToolTip(
@@ -658,7 +702,7 @@ class GenerationPage:
             }
         )
 
-    def reuse_saved_request(self, document: dict, source_identity: str) -> None:
+    def reuse_saved_request(self, document: dict, source_identity: str, *, origin: str = "the selected output") -> None:
         """Populate Generate from one recorded request without dispatching."""
         values = self._saved_request_values(document)
         self._apply(values)
@@ -669,7 +713,7 @@ class GenerationPage:
             Presentation(
                 "ok",
                 "Saved settings loaded",
-                "Generate was populated from the selected output. Nothing was submitted; availability is revalidated on use.",
+                f"Generate was populated from {origin}. Nothing was submitted; availability is revalidated on use.",
             )
         )
 
@@ -771,7 +815,7 @@ class GenerationPage:
             "samplers": list(SAMPLERS),  # every sampler: a plan may cross several models
             "size": f"{page.widthSpinBox.value()}x{page.heightSpinBox.value()}",
             "prompt": page.promptEdit.toPlainText(),  # the template of a prompt variation
-            "loras": dict(self.lora.choices()),  # identifier -> catalogue weight, for LoRA sets
+            "loras": dict(self.lora.all_choices()),  # identifier -> catalogue weight; unfiltered, models may differ
             "receipts": self.lora.confirmed_receipts(),  # bound for LoRA sets that name a custom cloud LoRA
         }
 
@@ -1262,6 +1306,38 @@ class GenerationPage:
         # (for example the previous SDXL pick) to this family's list, where it then shows up in the search.
         combo.setCurrentIndex(combo.findText(current))
 
+    def _step_checkpoint(self, offset: int) -> None:
+        """Select the neighbouring entry of the current checkpoint list, which already reflects the active filters."""
+        combo = self.page.modelCombo
+        if combo.currentIndex() < 0:
+            index = 0 if offset > 0 else combo.count() - 1  # nothing selected: Next takes the first, Previous the last
+        else:
+            index = combo.currentIndex() + offset
+        if not 0 <= index < combo.count():
+            return
+        sampler = self.page.samplerCombo
+        if not self._step_settle.isActive():
+            self._step_sampler = sampler.currentText()
+        # Browsing passes over models the user does not keep: LoRAs are pruned only for the model stepping stops on,
+        # and the sampler chosen before browsing comes back on any model that allows it.
+        self._step_settle.start()
+        combo.setCurrentIndex(index)
+        if self._step_sampler != sampler.currentText() and sampler.findText(self._step_sampler) >= 0:
+            sampler.setCurrentText(self._step_sampler)
+
+    def _checkpoint_steps_settled(self) -> None:
+        if not self._updating_catalogue:
+            self._filter_loras()
+
+    def _sync_checkpoint_steppers(self, *_args) -> None:
+        """Previous/next stop at the ends of the list rather than wrapping."""
+        combo = self.page.modelCombo
+        index, count = combo.currentIndex(), combo.count()
+        # With nothing selected, both are enabled: Next takes the first entry and Previous the last.
+        none = index < 0 and count > 0
+        self.page.previousCheckpointButton.setEnabled(index > 0 or none)
+        self.page.nextCheckpointButton.setEnabled(index + 1 < count)
+
     def _catalogue_domain(self) -> str:
         return self.page.generationDomainCombo.currentData() or "all"
 
@@ -1276,7 +1352,8 @@ class GenerationPage:
     def _catalogue_checkpoint_changed(self, *_args) -> None:
         self.page.checkpointDetailsButton.setEnabled(bool(self.page.modelCombo.currentText().strip()))
         if not self._updating_catalogue:
-            self._filter_loras()
+            # While previous/next stepping is in progress, keep selected LoRAs until it settles.
+            self._filter_loras(prune_selected=not self._step_settle.isActive())
         self._filter_samplers()
 
     def _rebuild_catalogue(
@@ -1434,10 +1511,11 @@ class GenerationPage:
         if units is None:
             state, text, value = "unavailable", "unavailable", 0
         else:
-            # Full at COMPUTE_UNITS_LIMIT; at or above it the bar stays full and turns red.
+            # Non-linear fill (compute_units_fill); at or above COMPUTE_UNITS_LIMIT the bar stays full and turns red.
             state = "over" if units >= COMPUTE_UNITS_LIMIT else "ok"
-            text, value = f"{units:,}".replace(",", "\u202f"), min(units, COMPUTE_UNITS_LIMIT)
-        meter.setMaximum(COMPUTE_UNITS_LIMIT)
+            text = f"{units:,}".replace(",", "\u202f")
+            value = compute_units_meter_value(units)
+        meter.setMaximum(COMPUTE_UNITS_METER_STEPS)
         meter.setValue(value)
         meter.setFormat("\u2002" + text)  # en space: the QSS cannot pad progress-bar text
         if meter.property("state") != state:

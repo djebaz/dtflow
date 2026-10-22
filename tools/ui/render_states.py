@@ -56,7 +56,9 @@ from PySide6.QtWidgets import (  # noqa: E402
     QPushButton,
     QScrollArea,
     QSizePolicy,
+    QSlider,
     QToolButton,
+    QWidget,
 )
 from support.cloud_assets import DtPlus, lora_file  # noqa: E402
 from support.fake_vault import Vault  # noqa: E402
@@ -87,8 +89,9 @@ from dtflow.ui import gallery_page as gallery_ui  # noqa: E402
 from dtflow.ui import lora_panel as lora_ui  # noqa: E402
 from dtflow.ui import main_window as window_ui  # noqa: E402
 from dtflow.ui.activity_strip import activity_strip  # noqa: E402
+from dtflow.ui.planning_presenter import queue_edit_from_records  # noqa: E402
 from dtflow.ui.diagnostic_notice import DiagnosticNoticeReceiver  # noqa: E402
-from dtflow.ui.generation_page import GenerationPage  # noqa: E402
+from dtflow.ui.generation_page import COMPUTE_UNITS_METER_STEPS, GenerationPage, compute_units_meter_value  # noqa: E402
 from dtflow.ui.inline_feedback import InlineNotice  # noqa: E402
 from dtflow.ui.main_window import MainWindow  # noqa: E402
 from dtflow.ui.queue_item_delegate import COL_LORAS, COL_PROMPT, COL_STATUS, wrapped_lines  # noqa: E402
@@ -653,7 +656,7 @@ def render_generate_configuration_states(shell, out):
 
     def reject_selection(parent, **options):
         # Defensive callback failure fixture; the real chooser normally prevents an empty identifier.
-        options["callback"](("", 1.0))
+        options["callback"]([("", 1.0)])
 
     with patch.object(shell.runner, "submit", side_effect=hold_worker):
         form.backendCombo.setCurrentText("local")
@@ -723,24 +726,24 @@ def render_generate_configuration_states(shell, out):
         page.modelCombo.setCurrentText("offline-checkpoint.ckpt")
 
         lora = controller.lora
-        with patch.object(lora, "_candidates", [("offline-style.ckpt", 0.8)]):
+        with patch.object(lora, "_candidates", [("offline-style.ckpt", 0.8), ("offline-detail.ckpt", None)]):
             page.addLoraButton.click()
             editor = shell.inline._editor
             assert editor is not None
-            editor.findChild(QListWidget, "inlineSelectionChoices").setCurrentRow(0)
-            snap("generate-24-lora-weight-editor")
+            rows = {r.property("identifier"): r for r in editor.findChildren(QWidget, "loraSelectionRow")}
+            rows["offline-style.ckpt"].findChild(QSlider, "loraSelectionSlider").setValue(16)  # 0.8; checks it too
+            snap("generate-24-lora-selection-editor")
             clear()
         with patch.object(lora, "_candidates", [("offline-style.ckpt", 4.2)]):
             page.addLoraButton.click()
             editor = shell.inline._editor
             assert editor is not None
-            editor.findChild(QListWidget, "inlineSelectionChoices").setCurrentRow(0)
-            assert any("outside 0.0" in label.text() for label in editor.findChildren(QLabel))
-            snap("generate-25-lora-weight-hint")
+            assert editor.findChildren(QWidget, "loraSelectionRow")
+            snap("generate-25-lora-selection-single")
             clear()
-        with patch.object(lora_ui, "choose_searchable", side_effect=reject_selection):
+        with patch.object(lora_ui, "edit_lora_selection", side_effect=reject_selection):
             page.addLoraButton.click()
-            assert "LoRA not added" in page.compatibilityStatusLabel.text()
+            assert "LoRAs not changed" in page.compatibilityStatusLabel.text()
             snap("generate-26-lora-not-added")
         assert controller._catalogue.view().unclassified_checkpoints
         controller._show_unclassified_models()
@@ -860,6 +863,7 @@ def render_generate_configuration_states(shell, out):
         units_path = "dtflow.ui.generation_page.estimate_compute_units"
         form.backendCombo.setCurrentText("cloud")
         for value, name, state in (
+            (1500, "generate-47a-compute-units-meter-typical", "ok"),
             (14250, "generate-47-compute-units-meter", "ok"),
             (100000, "generate-48-compute-units-over-limit", "over"),
             (None, "generate-49-compute-units-unavailable", "unavailable"),
@@ -867,7 +871,8 @@ def render_generate_configuration_states(shell, out):
             with patch(units_path, return_value=ComputeUnitEstimate(value, "Offline fixture estimate.")):
                 controller._update_compute_units()
             assert not meter.isHidden() and meter.property("state") == state
-            assert meter.maximum() == 40000 and meter.value() == min(value or 0, 40000)
+            expected = compute_units_meter_value(value) if value else 0
+            assert meter.maximum() == COMPUTE_UNITS_METER_STEPS and meter.value() == expected
             assert meter.toolTip() == ""  # no hover overlay
             assert (value is None) or str(value)[:2] in meter.format().replace("\u202f", "")
             shell.shell.leftScroll.verticalScrollBar().setValue(0)
@@ -885,11 +890,25 @@ def render_generate_configuration_states(shell, out):
             with patch(units_path, return_value=ComputeUnitEstimate(14250, "Offline fixture estimate.")):
                 controller._update_compute_units()
                 assert not meter.isHidden() and meter.property("state") == "ok"
-                assert meter.value() == 14250
+                assert meter.value() == compute_units_meter_value(14250)
                 page.checkpointDetailsButton.click()
             assert "Compute Units: 14\u202f250 CU" in shell.inline.form.inlineTextBrowser.toPlainText()
             snap(name)
             clear()
+        # Checkpoint previous/next: both enabled mid-list; Next stops at the last entry.
+        controller._fill_models(["offline-a.ckpt", "offline-b.ckpt", "offline-c.ckpt"])
+        page.modelCombo.setCurrentIndex(-1)
+        assert page.previousCheckpointButton.isEnabled() and page.nextCheckpointButton.isEnabled()
+        page.previousCheckpointButton.click()  # nothing selected: Previous takes the last entry
+        assert page.modelCombo.currentIndex() == 2
+        page.modelCombo.setCurrentIndex(1)
+        assert page.previousCheckpointButton.isEnabled() and page.nextCheckpointButton.isEnabled()
+        shell.shell.leftScroll.verticalScrollBar().setValue(0)
+        snap("generate-49d-checkpoint-steppers")
+        page.nextCheckpointButton.click()
+        assert page.modelCombo.currentIndex() == 2 and not page.nextCheckpointButton.isEnabled()
+        snap("generate-49e-checkpoint-steppers-last")
+        controller._step_settle.stop()
         form.backendCombo.setCurrentText("fake")
         controller._update_compute_units()
         assert meter.isHidden()
@@ -1201,10 +1220,26 @@ def render_active_queue_states(shell, out):
         assert "2 LoRA sets" in page.composerSummaryVariesLabel.text()
         page.queueComposerScroll.ensureWidgetVisible(page.planLoraSetsEdit)
         snap("queues-42-composer-lora-sets")
-        page.planLoraSetsEdit._add.click()  # the shared LoRA identifier+weight editor
+        page.planLoraSetsEdit._add.click()  # the shared LoRA checkbox+slider editor, starting from Generate's LoRAs
         snap("queues-43-composer-lora-set-search")
         shell.inline.dismiss()
         page.planLoraSetsEdit.clear()
+        # LoRA weights to cross: one chip per checked LoRA and weight, grouped per LoRA for the planner.
+        page.planLorasEdit.setText("offline-style.safetensors: 0.6; offline-style.safetensors: 1")
+        queue.preview()
+        assert queue._lora_weight_lines() == "offline-style.safetensors: 0.6; 1"
+        page.queueComposerScroll.ensureWidgetVisible(page.planLorasEdit)
+        snap("queues-42a-composer-lora-weights")
+        page.planLorasEdit._add.click()  # the same editor on the current chips, not limited to Generate's LoRAs
+        weight_editor = shell.inline._editor
+        row = next(r for r in weight_editor.findChildren(QWidget, "loraSelectionRow"))
+        for tick in (12, 16, 20):  # 0.6 and 1.0 are loaded as chips; 0.8 is collected with +
+            row.findChild(QSlider, "loraSelectionSlider").setValue(tick)
+            row.findChild(QToolButton, "loraSelectionAddWeightButton").click()
+        assert len(row.findChildren(QPushButton)) == 3
+        snap("queues-43a-composer-lora-weights-editor")
+        shell.inline.dismiss()
+        page.planLorasEdit.clear()
         # #128: random draws from the listed values under one recorded plan seed (the same seed gives the same items).
         page.planStepsEdit.setText("20; 30; 40; 50")
         page.planDrawStepsSpin.setValue(2)
@@ -1345,6 +1380,54 @@ def render_active_queue_states(shell, out):
             snap("queues-19-inpaint-plan")
         page.planStrengthsEdit.clear()
         page.planModeCombo.setCurrentText("Repeat")
+
+        # Edit as new queue: recorded items load into Generate and the composer as Cross, Pair and Repeat.
+        def recorded(prompt, model, seed, steps=20, loras=()):
+            return {
+                "operation": "txt2img",
+                "prompt": prompt,
+                "model_id": model,
+                "seed": seed,
+                "steps": steps,
+                "guidance": 7.0,
+                "sampler_id": "euler_a",
+                "width_px": 512,
+                "height_px": 512,
+                "loras": [{"identifier": name, "weight": weight} for name, weight in loras],
+            }
+
+        def lora(weight_a, weight_b):
+            return (("style.ckpt", weight_a), ("detail.ckpt", weight_b))
+
+        edits = {
+            "cross": [recorded(p, m, 7, loras=lora(0.8, 0.4)) for p in ("a fox", "an owl") for m in ("m1", "m2")],
+            "pair": [
+                recorded(p, m, 7 + i) for i, (p, m) in enumerate(zip(("a", "b", "c"), ("m1", "m1", "m2"), strict=True))
+            ],
+            "repeat": [recorded("a fox", "m1", 100 + i) for i in range(4)],
+            "weights": [recorded("a fox", "m1", 7, loras=lora(w, v)) for w in (0.6, 1.0) for v in (0.5, 0.7, 0.9)],
+        }
+        for kind, records in edits.items():
+            edit = queue_edit_from_records(records)
+            queue._edit_loaded(edit, None)
+            assert page.planModeCombo.currentText().lower() == edit.form.mode.lower(), kind
+            assert queue.plan_model.rowCount() == (len(records) if edit.form.mode != "Repeat" else 0), kind
+            page.queueComposerScroll.ensureWidgetVisible(page.planModelsEdit)
+            snap(f"queues-67-edit-as-new-{kind}")
+        for name in (
+            "planModelsEdit",
+            "planStepsEdit",
+            "planSamplersEdit",
+            "planSizesEdit",
+            "planLoraSetsEdit",
+            "planLorasEdit",
+        ):
+            getattr(page, name).clear()
+        page.planPromptsEdit.clear()
+        page.planSeedsEdit.clear()
+        page.planIncrementCheck.setChecked(False)
+        page.planModeCombo.setCurrentText("Repeat")
+        shell.generation.lora.set_loras(())
         queue.close_composer()
         queue._sync()
         queue._syncing = True

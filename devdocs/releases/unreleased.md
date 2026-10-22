@@ -16,7 +16,18 @@ Changes through the 5.1.0 preparation baseline are consolidated in [DTFlow 5.1.0
 
 ## Changed
 
+- Generate Compute Units meter uses a non-linear scale (linear to 100 = 15 %, then logarithmic through 3 000 = 50 % to 40 000+ = full; only 40 000+ fills the bar) so typical estimates are readable; the red threshold is unchanged.
+- Generate Checkpoint selector gains small previous/next buttons that step through the current filtered list without opening the editor; they stop at either end (with nothing selected, Next takes the first and Previous the last), keep selected LoRAs and the sampler while browsing, and prune incompatible LoRAs only once stepping pauses.
+- In the Checkpoint search editor and composer choice editors, double-clicking a name or pressing Enter applies it like **Apply**, including with a search filter active; Enter with no match moves the text to the identifier field instead of re-applying the old choice.
+- The Queues composer's LoRA sets use the same checkbox and weight-slider editor: each Add creates one set from the checked LoRAs (starting from Generate's LoRAs, none checked is a set without LoRAs); clicking a set chip edits it in the same editor. Both Queues LoRA editors list every LoRA the backend reports (not filtered by Generate's checkpoint, since a queue may cross several).
+- The Queues composer's LoRA weights row becomes chips with the same checkbox and weight-slider editor, offering any LoRA (not only those on the Generate form): check a LoRA and press + (or click anywhere on its slider) to collect several weights for it, and Edit… reopens the editor on the current weights, where Apply replaces the chips with one `IDENTIFIER: weight` chip per LoRA and weight. The row lists one line per LoRA with its weights as small chips, and the planner input is unchanged.
+- **Add LoRA** becomes **Edit LoRAs**: a taller editor to check or uncheck LoRAs and set each weight with a 0.0–3.0 slider in 0.05 steps (default 1.0; one mouse-wheel notch moves it by 0.05); Apply or Enter replaces the selection once. Every LoRA starts at 1.0; catalogue weight suggestions now appear only in the tooltip. The mouse wheel over a slider adjusts its weight.
+- **Edit as new queue…** (a button beside Relaunch, also in the list's context menu) loads a text-to-image queue into Generate and the composer (the dimensions that differ between its items become Cross, Pair or Repeat chips), so it can be changed and saved as a new queue.
+
 ## Fixed
+
+- The Queues composer's preview table shows every row in full instead of a short window with its own scrolling, so every item's values are reached by scrolling the composer. Its LoRA weight columns are titled with the LoRA name only (no `lora_weight.` prefix or file extension; the full name is the header tooltip), and the columns share the composer's width with elided header and cell text instead of scrolling sideways.
+- Krea 2 checkpoints (`krea_2_raw` and `krea_2_turbo`, q6p and q8p) move from the Niche to the Prime catalogue, so the Krea 2 family shows in the Generate Base model list without Include niche models.
 
 - Restore the status-bar About icon to 16 px within its existing 20 px button, matching the compact checkpoint-details control without padding that squeezes the glyph.
 

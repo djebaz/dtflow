@@ -8,6 +8,7 @@ not DT+ account inventory. Selecting a file through Prepare can upload it withou
 import asyncio
 import logging
 import os
+import re
 from collections.abc import Callable
 from pathlib import Path
 
@@ -27,7 +28,7 @@ from dtflow.services.connection import (
 from dtflow.services.session import check_loras, list_assets, prepare_asset, reconcile_asset, selection_for
 from dtflow.ui.activity_strip import activity_strip
 from dtflow.ui.runner import AsyncRunner
-from dtflow.ui.search_select import choose_searchable
+from dtflow.ui.lora_selection_editor import edit_lora_selection
 
 UPLOAD_NOTICE = (
     "Prepare accepts multiple converted LoRA files and may upload each to DT+ if the server does not already have it. "
@@ -95,7 +96,9 @@ class LoraAssetPanel:
         label.setProperty("state", presentation.level)
         label.style().unpolish(label)
         label.style().polish(label)
-        label.setText(f"{presentation.headline}. {presentation.detail}".strip())
+        text = f"{presentation.headline}. {presentation.detail}".strip()
+        # A wrapping label is as wide as its longest word: let a file name break after "_", "-" and "." inside it.
+        label.setText(re.sub(r"(?<=\w)([_.\-])(?=\w)", "\\1\u200b", text))
 
     def receipt_ids(self) -> tuple[str, ...]:
         selected = {item.identifier for item in self.loras}
@@ -168,7 +171,9 @@ class LoraAssetPanel:
             text = f"{item.identifier} @ {item.weight}"
             if item.identifier in self._receipts:
                 text += f" [receipt {self._receipts[item.identifier][:8]}]"
-            self.page.loraList.addItem(text)
+            entry = QListWidgetItem(text)
+            entry.setToolTip(text)  # a long name is elided in the narrow rail
+            self.page.loraList.addItem(entry)
 
     def choices(self) -> list[tuple[str, float | None]]:
         """(identifier, catalogue weight) of every LoRA offered for selection, custom-LoRA records included."""
@@ -178,32 +183,41 @@ class LoraAssetPanel:
             (record["identifier"], None) for record in self._records.values() if record["identifier"] not in known
         ]
 
+    def all_choices(self) -> list[tuple[str, float | None]]:
+        """Like ``choices`` but every LoRA the backend reports, not only those compatible with the checkpoint (a
+        queue may cross several checkpoints, so the composer cannot filter by one)."""
+        listed = list(getattr(self, "_inventory_candidates", ()))
+        known = {name for name, _ in listed}
+        return listed + [(name, weight) for name, weight in self.choices() if name not in known]
+
     def confirmed_receipts(self) -> dict[str, str]:
         """Identifier -> confirmed local receipt id of the custom LoRAs that can be bound (cloud only)."""
         return {r["identifier"]: asset for asset, r in self._records.items() if r["state"] == "confirmed"}
 
     def add(self) -> None:
+        """Edit the whole selection: check, uncheck and weigh every offered LoRA, then apply once."""
         candidates = self.choices()
 
-        def add_selection(choice):
+        def apply_selection(chosen):
             if self._is_busy():
                 return
             try:
-                selection = LoRASelection(*choice)
+                selection = tuple(LoRASelection(name, weight) for name, weight in chosen)
             except ValidationError as exc:
-                self._show(self.page.compatibilityStatusLabel, Presentation("error", "LoRA not added", str(exc)))
+                self._show(self.page.compatibilityStatusLabel, Presentation("error", "LoRAs not changed", str(exc)))
                 return
-            self.set_loras((*[x for x in self.loras if x.identifier != selection.identifier], selection))
-            self._auto_bind(selection.identifier)
+            before = {item.identifier for item in self.loras}
+            self.set_loras(selection)
+            for item in selection:
+                if item.identifier not in before:
+                    self._auto_bind(item.identifier)
 
-        choose_searchable(
+        edit_lora_selection(
             self.page,
-            title="Add LoRA",
-            items=[name for name, _ in candidates],
-            custom_label="Add custom identifier",
-            custom_prompt="Exact LoRA identifier",
-            weights=dict(candidates),
-            callback=add_selection,
+            candidates=[name for name, _ in candidates],
+            selected=self.loras,
+            suggestions=dict(candidates),
+            callback=apply_selection,
         )
 
     def remove(self) -> None:

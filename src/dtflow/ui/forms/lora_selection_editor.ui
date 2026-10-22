@@ -1,0 +1,85 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ui version="4.0">
+ <class>LoraSelectionEditor</class>
+ <widget class="QWidget" name="loraSelectionEditor">
+  <layout class="QVBoxLayout" name="loraSelectionLayout">
+   <property name="leftMargin"><number>0</number></property>
+   <property name="topMargin"><number>0</number></property>
+   <property name="rightMargin"><number>0</number></property>
+   <property name="bottomMargin"><number>0</number></property>
+   <property name="spacing"><number>6</number></property>
+   <item>
+    <layout class="QHBoxLayout" name="loraSelectionHeaderLayout">
+     <property name="spacing"><number>8</number></property>
+     <item>
+      <widget class="QLineEdit" name="loraSelectionSearch">
+       <property name="placeholderText"><string>Search anywhere in the name…</string></property>
+       <property name="clearButtonEnabled"><bool>true</bool></property>
+       <property name="accessibleName"><string>LoRA search</string></property>
+      </widget>
+     </item>
+     <item>
+      <widget class="QLabel" name="loraSelectionCount">
+       <property name="text"><string>0 selected</string></property>
+       <property name="role" stdset="0"><string>secondary</string></property>
+      </widget>
+     </item>
+    </layout>
+   </item>
+   <item>
+    <widget class="QScrollArea" name="loraSelectionScroll">
+     <property name="widgetResizable"><bool>true</bool></property>
+     <property name="horizontalScrollBarPolicy"><enum>Qt::ScrollBarAlwaysOff</enum></property>
+     <property name="accessibleName"><string>LoRAs</string></property>
+     <widget class="QWidget" name="loraSelectionRows">
+      <layout class="QVBoxLayout" name="loraSelectionRowsLayout">
+       <property name="leftMargin"><number>4</number></property>
+       <property name="topMargin"><number>4</number></property>
+       <property name="rightMargin"><number>4</number></property>
+       <property name="bottomMargin"><number>4</number></property>
+       <property name="spacing"><number>2</number></property>
+       <item>
+        <widget class="QLabel" name="loraSelectionEmpty">
+         <property name="text"><string>No LoRA matches this search.</string></property>
+         <property name="role" stdset="0"><string>secondary</string></property>
+        </widget>
+       </item>
+       <item>
+        <spacer name="loraSelectionRowsSpacer">
+         <property name="orientation"><enum>Qt::Vertical</enum></property>
+         <property name="sizeHint" stdset="0"><size><width>0</width><height>0</height></size></property>
+        </spacer>
+       </item>
+      </layout>
+     </widget>
+    </widget>
+   </item>
+   <item>
+    <layout class="QHBoxLayout" name="loraSelectionCustomLayout">
+     <property name="spacing"><number>6</number></property>
+     <item>
+      <widget class="QLineEdit" name="loraSelectionCustomIdentifier">
+       <property name="placeholderText"><string>Exact LoRA identifier</string></property>
+       <property name="accessibleName"><string>Exact LoRA identifier</string></property>
+      </widget>
+     </item>
+     <item>
+      <widget class="QPushButton" name="loraSelectionCustomAddButton">
+       <property name="text"><string>Add custom</string></property>
+       <property name="toolTip"><string>Add this exact identifier to the list, checked at weight 1.0.</string></property>
+      </widget>
+     </item>
+    </layout>
+   </item>
+   <item>
+    <widget class="QLabel" name="loraSelectionHint">
+     <property name="text"><string>Check the LoRAs to use and set each weight (0.0–3.0). Enter or Apply replaces the selection.</string></property>
+     <property name="wordWrap"><bool>true</bool></property>
+     <property name="role" stdset="0"><string>secondary</string></property>
+    </widget>
+   </item>
+  </layout>
+ </widget>
+ <resources/>
+ <connections/>
+</ui>

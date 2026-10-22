@@ -18,9 +18,9 @@ from time import monotonic
 
 from PySide6.QtCore import QSize, Qt, QTimer, QUrl
 from PySide6.QtGui import QDesktopServices, QIcon, QStandardItem, QStandardItemModel
-from PySide6.QtWidgets import QListWidgetItem, QMenu, QWidget
+from PySide6.QtWidgets import QFormLayout, QListWidgetItem, QMenu, QPlainTextEdit, QWidget
 
-from dtflow.core.models import BackendEvent, ValidationError
+from dtflow.core.models import BackendEvent, LoRASelection, ValidationError
 from dtflow.persistence.settings import SettingsError, load_cloud_concurrency, validate_concurrency
 from dtflow.persistence.store import StateBusyError
 from dtflow.services.connection import Presentation, present_generation_failure
@@ -37,6 +37,7 @@ from dtflow.services.queue_session import (
     expand_items,
     post_queue_control,
     read_queue_list,
+    read_queue_records,
     read_queue_views,
     relaunch_queue,
     remove_queue,
@@ -52,6 +53,8 @@ from dtflow.ui.planning_presenter import (
     ERROR_FIELDS,
     DRAW_SPINS,
     NO_LORA,
+    parse_lora_set,
+    queue_edit_from_records,
     candidate_counts,
     PlanForm,
     build_plan,
@@ -113,6 +116,7 @@ RANDOM_INPUTS = (
     *(f"planDraw{suffix}Spin" for suffix in DRAW_SPINS.values()),
 )
 PLAN_INPUTS = (*PLAN_WIDGETS, "planModeCombo", "planIncrementCheck", "queueCountSpinBox", *RANDOM_INPUTS)
+PLAN_TABLE_MAX_ROWS = 1000  # the composer preview table shows its rows in full up to this many; the composer scrolls
 PREVIEW_MS = 250  # the live preview follows edits after this pause, so typing a prompt list stays smooth
 REPEAT = "Repeat"
 FILTER_BUTTONS = {key: f"{key}FilterButton" for key, *_ in FILTERS}
@@ -135,6 +139,7 @@ WIRED_CONTROLS = (
     "earlierQueueButton",
     "laterQueueButton",
     "relaunchQueueButton",
+    "editAsNewQueueButton",
     "emptyRelaunchButton",
     *FILTER_BUTTONS.values(),
     "queueItemsView",
@@ -146,9 +151,6 @@ CLEAR_TEXT = (
 )
 REMOVE_TEXT = "This queue will be removed from the list. Its attempts and saved images are kept."
 POSTED = "Posted. The dispatch owner applies it at its next poll, or at the next Start if nothing is dispatching."
-
-
-GENERATE_LORAS = "Generate's LoRAs"  # LoRA-set choice: the set currently on the Generate form
 
 
 def _dimension_text(name: str, count: int) -> str:
@@ -206,12 +208,14 @@ class QueuePage:
         created_hook: Callable[[], None] = lambda: None,
         choices_source: Callable[[], dict] = dict,
         generate_hook: Callable[[], None] = lambda: None,
+        reuse_hook: Callable[[dict], None] = lambda request: None,
     ):
         self.page = page
         self._runner, self._backend, self._saved = runner, backend_source, saved_source
         self._state, self._request_source, self._activity = Path(state_dir), request_source, activity
         self._simulation, self._created_hook = simulation_source, created_hook
         self._choices, self._generate_hook = choices_source, generate_hook
+        self._reuse_hook = reuse_hook
         self._composing = False
         self.plan_hook: Callable[[], None] = lambda: None  # the Queue popover's trigger follows plan edits
         self._after_generation: list[str] = []  # popover queues waiting for the running single generation (#135)
@@ -308,6 +312,7 @@ class QueuePage:
         page.itemOpenImagesButton.clicked.connect(self.open_in_images)
         page.itemRetryButton.clicked.connect(self.retry_item)
         page.emptyRelaunchButton.clicked.connect(self.relaunch_last)
+        page.editAsNewQueueButton.clicked.connect(lambda: self._selected and self.edit_as_new(self._selected))
         page.relaunchQueueButton.clicked.connect(
             lambda: self._relaunch_menu(
                 page.relaunchQueueButton.mapToGlobal(page.relaunchQueueButton.rect().bottomLeft())
@@ -327,6 +332,7 @@ class QueuePage:
         self._preview_timer.setInterval(PREVIEW_MS)
         self._preview_timer.timeout.connect(self.preview)
         self._configure_dimensions()
+        self._align_plan_labels()
         self._actions_fit = ActionsFit(
             page.queueComposerScroll,
             page.queueComposer.layout().itemAt(0).layout(),  # the title row
@@ -792,7 +798,9 @@ class QueuePage:
         if not removable and feedback(page)._armed and feedback(page)._armed[0] is page.removeQueueButton:
             feedback(page).dismiss()  # the queue started or went away: the pending consent no longer applies
         page.removeQueueButton.setEnabled(removable)
-        page.relaunchQueueButton.setEnabled(view is not None and bool(sum(view["summary"].values())))
+        has_items = view is not None and bool(sum(view["summary"].values()))
+        page.relaunchQueueButton.setEnabled(has_items)
+        page.editAsNewQueueButton.setEnabled(has_items)
         # Saving only persists a paused queue (over a short shared connection while a run owns the state).
         page.createQueueButton.setEnabled(True)
         running = self._live_run()
@@ -944,6 +952,8 @@ class QueuePage:
         menu = QMenu(self.page.queueList)
         relaunch = menu.addMenu("Relaunch")
         self._relaunch_actions(relaunch, queue_id)
+        edit = menu.addAction("Edit as new queue…")
+        edit.triggered.connect(lambda _=False: self.edit_as_new(queue_id))
         remove = menu.addAction("Remove queue…")
         remove.setEnabled(self._removable(self._views.get(queue_id)))
         if menu.exec(self.page.queueList.viewport().mapToGlobal(position)) is remove:
@@ -976,6 +986,63 @@ class QueuePage:
             if failed_only:
                 action.setToolTip("Failed, cancelled and no-result items only.")
         menu.setToolTipsVisible(True)
+
+    def edit_as_new(self, queue_id: str) -> None:
+        """Load a queue's recorded settings into Generate and the composer; nothing is created until Add or Start."""
+
+        async def work():
+            return queue_edit_from_records(await read_queue_records(self._state, queue_id))
+
+        self._runner.submit(work(), self._edit_loaded)
+
+    def _edit_loaded(self, result, failure) -> None:
+        if failure is not None:
+            shown = Presentation("error", "Not loaded", str(failure))
+            self._message(shown if isinstance(failure, ValidationError) else present_generation_failure(failure))
+            return
+        page, form = self.page, result.form
+        self._reuse_hook(result.base)
+        self.open_composer()
+        page.planModeCombo.setCurrentText(form.mode)
+        page.planPromptsEdit.setPlainText(form.prompts)
+        for edit, text in (
+            (page.planModelsEdit, form.models),
+            (page.planSeedsEdit, form.seeds),
+            (page.planStepsEdit, form.steps),
+            (page.planGuidanceEdit, form.guidance),
+            (page.planSamplersEdit, form.samplers),
+            (page.planSizesEdit, form.sizes),
+            (page.planLoraSetsEdit, form.lora_sets),
+        ):
+            edit.setText(text)
+        chips = [
+            f"{identifier.strip()}: {weight.strip()}"
+            for line in form.loras.splitlines()
+            for identifier, _, weights in [line.rpartition(":")]
+            for weight in weights.split(";")
+        ]
+        page.planLorasEdit.setText("; ".join(chips))  # one chip per LoRA and weight
+        page.planStrengthsEdit.clear()
+        for suffix in DRAW_SPINS.values():  # random draws, prompt variation and edits would change the loaded items
+            getattr(page, f"planDraw{suffix}Spin").setValue(0)
+        page.planVariationCombo.setCurrentIndex(0)
+        page.planShuffleCombo.setCurrentIndex(0)
+        page.planDropSpin.setValue(0)
+        page.planAddSpin.setValue(0)
+        page.planAddPartsEdit.clear()
+        page.planWildcardsEdit.clear()
+        page.planIncrementCheck.setChecked(form.increment)
+        if form.mode == REPEAT:
+            page.queueCountSpinBox.setValue(result.count)
+        self._plan_changed()
+        self.preview()
+        loaded = Presentation(
+            "warning" if result.note else "ok",
+            "Queue loaded",
+            result.note
+            or "Its settings are in Generate and the composer; change them, then Add to queue or Start now.",
+        )
+        self._message(loaded)
 
     def _last_queue(self) -> str | None:
         """The most recently created queue with items, for the empty state's Relaunch last."""
@@ -1074,6 +1141,19 @@ class QueuePage:
     def composing(self) -> bool:
         return self._composing
 
+    def _align_plan_labels(self) -> None:
+        """Sit each composer label on its field's first line: the form layout top-aligns labels, which then read a few
+        pixels above the text of the (padded) input beside them."""
+        form = self.page.planForm
+        form.setLabelAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignTop)  # labels sit next to inputs
+        for row in range(form.rowCount()):
+            label_item = form.itemAt(row, QFormLayout.ItemRole.LabelRole)
+            field_item = form.itemAt(row, QFormLayout.ItemRole.FieldRole)
+            label = label_item.widget() if label_item is not None else None
+            field = field_item.widget() if field_item is not None else None
+            if label is not None and field is not None:
+                label.setContentsMargins(0, 6 if isinstance(field, QPlainTextEdit) else 3, 0, 0)
+
     def _configure_dimensions(self) -> None:
         page = self.page
         page.planModelsEdit.configure(
@@ -1087,33 +1167,88 @@ class QueuePage:
         page.planLoraSetsEdit.configure(
             "search",
             "LoRA",
-            options=self._lora_set_options,
-            custom="Not listed",
             weights=lambda: self._choices().get("loras", {}),
             convert=self._lora_set_chip,
+            initial=self._generate_loras,
+            edit_chip=lambda chip: tuple(LoRASelection(name, weight) for name, weight in parse_lora_set(chip)),
+            editor_title="LoRA set",
+        )
+        page.planLorasEdit.configure(
+            "search",
+            "LoRA weight",
+            weights=lambda: self._choices().get("loras", {}),
+            initial=self._lora_weight_selection,
+            convert=self._lora_weight_chips,
+            editor_title="Edit LoRA weights",
+            multi_weight=True,
+            replace_all=True,
+            group=self._lora_weight_group,
+            editor_hint=(
+                "Check a LoRA and press + or click its slider to collect each weight to try for it (click a weight to drop it). "
+                "A checked LoRA without collected weights uses its slider value. Enter or Apply replaces the weights."
+            ),
         )
 
-    def _lora_set_options(self) -> list[str]:
-        return [NO_LORA, GENERATE_LORAS, *self._choices().get("loras", {})]
+    def _generate_loras(self) -> tuple[LoRASelection, ...]:
+        """The Generate form's LoRAs, which the LoRA-set editor starts from."""
+        try:
+            request, *_ = self._request_source(preview=True)
+        except (FormError, ValidationError):
+            return ()
+        return tuple(request.loras)
+
+    def _lora_weight_chips(self, chosen) -> list[str]:
+        """One ``IDENTIFIER: weight`` chip per checked LoRA."""
+        if any(";" in identifier for identifier, _ in chosen):
+            self._message(Presentation("error", "LoRA not added", "A LoRA weight cannot name an identifier with ';'."))
+            return []
+        return [lora_set_value(identifier, weight) for identifier, weight in chosen]
+
+    def _lora_weight_groups(self) -> dict[str, list[str]]:
+        """The weight chips grouped per LoRA, in the order first added."""
+        grouped: dict[str, list[str]] = {}
+        for chip in self.page.planLorasEdit.values():
+            identifier, separator, weight = chip.rpartition(":")
+            key, value = (identifier.strip(), weight.strip()) if separator else (chip, "")
+            grouped.setdefault(key, []).append(value)
+        return grouped
+
+    @staticmethod
+    def _with_weighted_loras(request, identifiers):
+        """The request with every weighted LoRA present, so the planner can replace its weight (the LoRA need not be
+        on Generate). Added at 1.0; every plan item overrides that weight."""
+        have = {item.identifier for item in request.loras}
+        extra = tuple(LoRASelection(name, 1.0) for name in dict.fromkeys(identifiers) if name not in have)
+        return replace(request, loras=(*request.loras, *extra)) if extra else request
+
+    @staticmethod
+    def _lora_weight_group(chip: str) -> tuple[str, str]:
+        """A weight chip ``IDENTIFIER: weight`` as (LoRA, weight), so a LoRA's weights share one line."""
+        identifier, separator, weight = chip.rpartition(":")
+        return (identifier.strip(), weight.strip()) if separator else (chip, "")
+
+    def _lora_weight_selection(self) -> tuple[LoRASelection, ...]:
+        """Every weight chip as a selection, for the editor to start from (a LoRA may repeat)."""
+        pairs = []
+        for identifier, weights in self._lora_weight_groups().items():
+            for weight in weights:
+                try:
+                    pairs.append(LoRASelection(identifier, float(weight)))
+                except ValueError:
+                    continue
+        return tuple(pairs)
+
+    def _lora_weight_lines(self) -> str:
+        """The weight chips as the planner's lines: one ``IDENTIFIER: w1; w2`` per LoRA, in the order first added."""
+        grouped = self._lora_weight_groups()
+        return "\n".join(f"{key}: {'; '.join(values)}" if values != [""] else key for key, values in grouped.items())
 
     def _lora_set_chip(self, chosen) -> str:
-        """A picked LoRA (with its weight), None, or the Generate form's whole set, as a LoRA-set chip."""
-        identifier, weight = chosen
-        if identifier == NO_LORA:
-            return NO_LORA
-        if ";" in identifier:
+        """The checked (identifier, weight) pairs as one LoRA-set chip; none checked is the set without LoRAs."""
+        if any(";" in identifier for identifier, _ in chosen):
             self._message(Presentation("error", "LoRA not added", "A LoRA set cannot name an identifier with ';'."))
             return ""
-        if identifier == GENERATE_LORAS:
-            try:
-                request, *_ = self._request_source(preview=True)
-            except (FormError, ValidationError):
-                return ""
-            if any(";" in item.identifier for item in request.loras):
-                self._message(Presentation("error", "LoRA not added", "A LoRA set cannot name an identifier with ';'."))
-                return ""
-            return " + ".join(lora_set_value(item.identifier, item.weight) for item in request.loras) or NO_LORA
-        return lora_set_value(identifier, weight)
+        return " + ".join(lora_set_value(identifier, weight) for identifier, weight in chosen) or NO_LORA
 
     def _size_options(self) -> list[str]:
         current = self._choices().get("size")
@@ -1610,14 +1745,18 @@ class QueuePage:
     ):
         request = await bind_prepared(self._state, backend["name"], request, asset_ids)
         receipts = ()
-        sets = dict(plan.dimensions).get("loras") if plan is not None else None
-        if sets and backend["name"] == "cloud":
-            # LoRA sets may name custom cloud LoRAs that are not on Generate: bind their confirmed receipts too.
+        dimensions = dict(plan.dimensions) if plan is not None else {}
+        sets = dimensions.get("loras")
+        weighted = [name.partition(".")[2] for name in dimensions if name.startswith("lora_weight.")]  # chip order
+        if (sets or weighted) and backend["name"] == "cloud":
+            # LoRA sets and weights may name custom cloud LoRAs that are not on Generate: bind their receipts too.
             known = self._choices().get("receipts", {})
-            named = {identifier for chosen in sets for identifier, _ in chosen} - {x.identifier for x in request.loras}
+            named = {identifier for chosen in sets or () for identifier, _ in chosen} | set(weighted)
+            named -= {x.identifier for x in request.loras}
             receipts = await load_prepared(
                 self._state, "cloud", [known[name] for name in sorted(named) if name in known]
             )
+        request = self._with_weighted_loras(request, weighted)
         if job is not None:
             # An Inpaint edit: stage the prepared source and mask once; nothing is sent until Start.
             selection = await asyncio.to_thread(
@@ -1661,7 +1800,7 @@ class QueuePage:
             page.planGuidanceEdit.text(),
             page.planSamplersEdit.text(),
             page.planSizesEdit.text(),
-            page.planLorasEdit.toPlainText(),
+            self._lora_weight_lines(),
             page.planIncrementCheck.isChecked(),
             "" if page.planStrengthsEdit.isHidden() else page.planStrengthsEdit.text(),
             page.planLoraSetsEdit.text(),
@@ -1701,12 +1840,49 @@ class QueuePage:
         self._schedule_preview()
         self.plan_hook()
 
+    @staticmethod
+    def _column_title(name: str) -> str:
+        """A preview column header without the ``lora_weight.`` prefix and the LoRA file extension (full name on hover)."""
+        name = name.removeprefix("lora_weight.")
+        for suffix in (".ckpt", ".safetensors"):
+            name = name.removesuffix(suffix)
+        return name
+
     def _show_table(self, table: PlanTable) -> None:
         self.plan_model.clear()
-        self.plan_model.setHorizontalHeaderLabels(list(table.columns))
+        self.plan_model.setHorizontalHeaderLabels([self._column_title(name) for name in table.columns])
+        for column, name in enumerate(table.columns):
+            self.plan_model.setHeaderData(column, Qt.Orientation.Horizontal, name, Qt.ItemDataRole.ToolTipRole)
         for row in table.rows:
-            self.plan_model.appendRow([QStandardItem(cell) for cell in row])
-        self.page.planTableView.resizeColumnsToContents()
+            cells = [QStandardItem(cell) for cell in row]
+            for item in cells:
+                item.setToolTip(item.text())  # the cells elide to the panel width
+            self.plan_model.appendRow(cells)
+        view = self.page.planTableView
+        # Columns share the panel width (header and cell text elide) instead of widening the table past the panel.
+        header = view.horizontalHeader()
+        header.setMinimumSectionSize(40)
+        header.setTextElideMode(Qt.TextElideMode.ElideRight)
+        for column in range(len(table.columns)):
+            header.setSectionResizeMode(
+                column,
+                header.ResizeMode.ResizeToContents if column == 0 else header.ResizeMode.Stretch,
+            )
+        view.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        # Show every row in full, so the composer scrolls to them instead of a nested scroll inside the table.
+        shown = min(len(table.rows), PLAN_TABLE_MAX_ROWS)
+        height = (
+            view.horizontalHeader().sizeHint().height()
+            + shown * view.verticalHeader().defaultSectionSize()
+            + 2 * view.frameWidth()
+        )
+        view.setVerticalScrollBarPolicy(
+            Qt.ScrollBarPolicy.ScrollBarAlwaysOff
+            if len(table.rows) <= PLAN_TABLE_MAX_ROWS
+            else Qt.ScrollBarPolicy.ScrollBarAsNeeded
+        )
+        view.setMinimumHeight(height)
+        view.setMaximumHeight(height)
         self._sync_preview_table_visibility()
 
     def _plan_for(self, request) -> Plan | None:
@@ -1726,6 +1902,7 @@ class QueuePage:
 
     def _plan_inputs(self, request) -> tuple:
         """Everything the pure planning step needs, read on the GUI thread so a worker can run it."""
+        request = self._with_weighted_loras(request, self._lora_weight_groups())
         return self._plan_form(), request, self._wildcards_dir, self._edit_source() is not None
 
     @staticmethod
