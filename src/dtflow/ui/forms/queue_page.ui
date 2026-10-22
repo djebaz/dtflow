@@ -1231,7 +1231,7 @@
                      <item row="10" column="1">
                       <widget class="ValueChips" name="planLorasEdit">
                        <property name="toolTip">
-                        <string>Weights to try for LoRAs already on the Generate form: pick LoRAs and a weight, add again for more weights. Each LoRA's weights are crossed or paired with the other rows.</string>
+                        <string>Weights to try for any LoRA, on the Generate form or not: pick LoRAs and a weight, add again for more weights. Each LoRA's weights are crossed or paired with the other rows.</string>
                        </property>
                        <property name="accessibleName">
                         <string>Plan LoRA weights</string>

@@ -1091,12 +1091,13 @@ class QueuePage:
         page.planLorasEdit.configure(
             "search",
             "LoRA weight",
-            weights=lambda: {item.identifier: item.weight for item in self._generate_loras()},
+            weights=lambda: self._choices().get("loras", {}),
+            initial=lambda: (),
             convert=self._lora_weight_chips,
             editor_title="Add LoRA weights",
             multi_weight=True,
             editor_hint=(
-                "Check a Generate LoRA and press + to collect each weight to try for it (click a weight to drop it). "
+                "Check a LoRA and press + to collect each weight to try for it (click a weight to drop it). "
                 "A checked LoRA without collected weights uses its slider value. Enter or Apply adds them all."
             ),
         )
@@ -1116,13 +1117,26 @@ class QueuePage:
             return []
         return [lora_set_value(identifier, weight) for identifier, weight in chosen]
 
-    def _lora_weight_lines(self) -> str:
-        """The weight chips as the planner's lines: one ``IDENTIFIER: w1; w2`` per LoRA, in the order first added."""
+    def _lora_weight_groups(self) -> dict[str, list[str]]:
+        """The weight chips grouped per LoRA, in the order first added."""
         grouped: dict[str, list[str]] = {}
         for chip in self.page.planLorasEdit.values():
             identifier, separator, weight = chip.rpartition(":")
             key, value = (identifier.strip(), weight.strip()) if separator else (chip, "")
             grouped.setdefault(key, []).append(value)
+        return grouped
+
+    @staticmethod
+    def _with_weighted_loras(request, identifiers):
+        """The request with every weighted LoRA present, so the planner can replace its weight (the LoRA need not be
+        on Generate). Added at 1.0; every plan item overrides that weight."""
+        have = {item.identifier for item in request.loras}
+        extra = tuple(LoRASelection(name, 1.0) for name in dict.fromkeys(identifiers) if name not in have)
+        return replace(request, loras=(*request.loras, *extra)) if extra else request
+
+    def _lora_weight_lines(self) -> str:
+        """The weight chips as the planner's lines: one ``IDENTIFIER: w1; w2`` per LoRA, in the order first added."""
+        grouped = self._lora_weight_groups()
         return "\n".join(f"{key}: {'; '.join(values)}" if values != [""] else key for key, values in grouped.items())
 
     def _lora_set_chip(self, chosen) -> str:
@@ -1627,14 +1641,18 @@ class QueuePage:
     ):
         request = await bind_prepared(self._state, backend["name"], request, asset_ids)
         receipts = ()
-        sets = dict(plan.dimensions).get("loras") if plan is not None else None
-        if sets and backend["name"] == "cloud":
-            # LoRA sets may name custom cloud LoRAs that are not on Generate: bind their confirmed receipts too.
+        dimensions = dict(plan.dimensions) if plan is not None else {}
+        sets = dimensions.get("loras")
+        weighted = {name.partition(".")[2] for name in dimensions if name.startswith("lora_weight.")}
+        if (sets or weighted) and backend["name"] == "cloud":
+            # LoRA sets and weights may name custom cloud LoRAs that are not on Generate: bind their receipts too.
             known = self._choices().get("receipts", {})
-            named = {identifier for chosen in sets for identifier, _ in chosen} - {x.identifier for x in request.loras}
+            named = {identifier for chosen in sets or () for identifier, _ in chosen} | weighted
+            named -= {x.identifier for x in request.loras}
             receipts = await load_prepared(
                 self._state, "cloud", [known[name] for name in sorted(named) if name in known]
             )
+        request = self._with_weighted_loras(request, sorted(weighted))
         if job is not None:
             # An Inpaint edit: stage the prepared source and mask once; nothing is sent until Start.
             selection = await asyncio.to_thread(
@@ -1743,6 +1761,7 @@ class QueuePage:
 
     def _plan_inputs(self, request) -> tuple:
         """Everything the pure planning step needs, read on the GUI thread so a worker can run it."""
+        request = self._with_weighted_loras(request, self._lora_weight_groups())
         return self._plan_form(), request, self._wildcards_dir, self._edit_source() is not None
 
     @staticmethod
