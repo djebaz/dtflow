@@ -1088,6 +1088,17 @@ class QueuePage:
             convert=self._lora_set_chip,
             initial=self._generate_loras,
         )
+        page.planLorasEdit.configure(
+            "search",
+            "LoRA weight",
+            weights=lambda: {item.identifier: item.weight for item in self._generate_loras()},
+            convert=self._lora_weight_chips,
+            editor_title="Add LoRA weights",
+            editor_hint=(
+                "Check the Generate LoRAs to vary and set the weight to try for each; add again for more weights. "
+                "Enter or Apply adds a weight for every checked LoRA."
+            ),
+        )
 
     def _generate_loras(self) -> tuple[LoRASelection, ...]:
         """The Generate form's LoRAs, which the LoRA-set editor starts from."""
@@ -1096,6 +1107,22 @@ class QueuePage:
         except (FormError, ValidationError):
             return ()
         return tuple(request.loras)
+
+    def _lora_weight_chips(self, chosen) -> list[str]:
+        """One ``IDENTIFIER: weight`` chip per checked LoRA."""
+        if any(";" in identifier for identifier, _ in chosen):
+            self._message(Presentation("error", "LoRA not added", "A LoRA weight cannot name an identifier with ';'."))
+            return []
+        return [lora_set_value(identifier, weight) for identifier, weight in chosen]
+
+    def _lora_weight_lines(self) -> str:
+        """The weight chips as the planner's lines: one ``IDENTIFIER: w1; w2`` per LoRA, in the order first added."""
+        grouped: dict[str, list[str]] = {}
+        for chip in self.page.planLorasEdit.values():
+            identifier, separator, weight = chip.rpartition(":")
+            key, value = (identifier.strip(), weight.strip()) if separator else (chip, "")
+            grouped.setdefault(key, []).append(value)
+        return "\n".join(f"{key}: {'; '.join(values)}" if values != [""] else key for key, values in grouped.items())
 
     def _lora_set_chip(self, chosen) -> str:
         """The checked (identifier, weight) pairs as one LoRA-set chip; none checked is the set without LoRAs."""
@@ -1650,7 +1677,7 @@ class QueuePage:
             page.planGuidanceEdit.text(),
             page.planSamplersEdit.text(),
             page.planSizesEdit.text(),
-            page.planLorasEdit.toPlainText(),
+            self._lora_weight_lines(),
             page.planIncrementCheck.isChecked(),
             "" if page.planStrengthsEdit.isHidden() else page.planStrengthsEdit.text(),
             page.planLoraSetsEdit.text(),

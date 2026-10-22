@@ -160,14 +160,17 @@ class ValueChips(QWidget):
         weights: Callable[[], dict[str, float | None]] | None = None,
         convert: Callable[[object], str] | None = None,
         initial: Callable[[], Sequence[LoRASelection]] | None = None,
+        editor_title: str | None = None,
+        editor_hint: str | None = None,
     ) -> None:
         """``search`` opens the shared searchable editor; ``choice`` is an editable list; ``int``/``float`` a box.
 
         With ``weights`` the search editor is the shared LoRA checkbox+slider editor, starting from ``initial()``; the
-        checked ``(identifier, weight)`` pairs go to ``convert``, which returns the chip value.
+        checked ``(identifier, weight)`` pairs go to ``convert``, which returns the chip value (or several).
         """
         self._kind, self._title, self._options, self._custom = kind, title, options, custom
         self._weights, self._convert, self._initial = weights, convert, initial
+        self._editor_title, self._editor_hint = editor_title, editor_hint
         if self._input is not None:
             self._layout.removeWidget(self._input)
             self._input.deleteLater()
@@ -230,6 +233,13 @@ class ValueChips(QWidget):
         if value:
             self._set([*self._values, value])
 
+    def add_values(self, chosen: str | Sequence[str]) -> None:
+        """One chip value, or several at once, skipping repeats of a chip already listed."""
+        values = [chosen] if isinstance(chosen, str) else list(chosen)
+        fresh = [v.strip() for v in dict.fromkeys(values) if v.strip() and v.strip() not in self._values]
+        if fresh:
+            self._set([*self._values, *fresh])
+
     def remove_value(self, index: int) -> None:
         self._set(self._values[:index] + self._values[index + 1 :])
 
@@ -266,12 +276,13 @@ class ValueChips(QWidget):
                 suggestions = self._weights()
                 edit_lora_selection(
                     self,
-                    title=f"Add a {_noun(self._title)} set",
+                    title=self._editor_title or f"Add a {_noun(self._title)} set",
                     candidates=list(suggestions),
                     selected=self._initial() if self._initial is not None else (),
                     suggestions=suggestions,
-                    callback=lambda chosen: self.add_value(convert(chosen)),
-                    hint=(
+                    callback=lambda chosen: self.add_values(convert(chosen)),
+                    hint=self._editor_hint
+                    or (
                         "Checked LoRAs form one set for each item, starting from Generate's LoRAs; with none checked "
                         "the set has no LoRA. Add several sets to vary them. Enter or Apply adds the set."
                     ),
