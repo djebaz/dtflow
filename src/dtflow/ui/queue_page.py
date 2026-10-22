@@ -726,11 +726,11 @@ class QueuePage:
             detail = "No runnable queue selected."
 
         remaining = None
+        elapsed = eta = ""
         if phase in ("running", "paused"):
             remaining = self._countdown.remaining(view, monotonic())
-            timing = " · ".join(part for part in (elapsed_text(view), eta_text(view, remaining=remaining)) if part)
-            if timing:
-                detail += " " + timing
+            elapsed, eta = elapsed_text(view), eta_text(view, remaining=remaining)
+            if elapsed or eta:
                 if not self._timing_timer.isActive() and not self._runner.closed:
                     self._timing_timer.start()
             else:
@@ -748,6 +748,8 @@ class QueuePage:
                 total=total,
                 queue_id=queue_id if phase != "idle" else None,
                 detail=detail,
+                elapsed=elapsed,
+                eta=eta,
             )
         )
 

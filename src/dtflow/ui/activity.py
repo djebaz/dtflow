@@ -19,6 +19,9 @@ class RunState:
     total: int | None = None
     queue_id: str | None = None
     detail: str = "No runnable queue selected."
+    # Observed time and estimate, kept apart from `detail` so each presentation shows them once.
+    elapsed: str = ""
+    eta: str = ""
 
 
 class Activity:

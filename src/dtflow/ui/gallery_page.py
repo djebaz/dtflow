@@ -862,9 +862,11 @@ class GalleryPage(QObject):
         self._live_mode = 0
         self._live_pressed_mode = 0
         self._syncing_live = False
+        self._live_clicking = False
         self.auto_button.toggled.connect(self._auto_refresh_changed)
-        self.auto_button.pressed.connect(lambda: setattr(self, "_live_pressed_mode", self._live_mode))
-        self.auto_button.clicked.connect(lambda: self._apply_live((self._live_pressed_mode + 1) % 3))
+        self.auto_button.pressed.connect(self._live_pressed)
+        self.auto_button.released.connect(self._live_released)
+        self.auto_button.clicked.connect(self._live_clicked)
         self._sync_live_text()
 
         self.previous_button = self._widget("galleryPreviousButton", QPushButton)
@@ -1612,8 +1614,20 @@ class GalleryPage(QObject):
         self._auto_last_full = now
         self.refresh(preserve=True, trigger="auto")
 
+    def _live_pressed(self) -> None:
+        # A click toggles the checkable button before `clicked`: that transient state must not
+        # be applied, or Auto to Follow would pass through Off.
+        self._live_clicking = True
+        self._live_pressed_mode = self._live_mode
+
+    def _live_released(self) -> None:
+        self._live_clicking = False
+
+    def _live_clicked(self) -> None:
+        self._apply_live((self._live_pressed_mode + 1) % 3)
+
     def _auto_refresh_changed(self, checked: bool) -> None:
-        if not self._syncing_live:
+        if not self._syncing_live and not self._live_clicking:
             self._apply_live(max(1, self._live_mode) if checked else 0)
 
     def _apply_live(self, mode: int) -> None:
@@ -1653,7 +1667,9 @@ class GalleryPage(QObject):
         return bar.value() == 0
 
     def _sync_live_text(self) -> None:
-        if self._live_mode == 2 and self.items and not self._following_newest():
+        if self._live_mode == 2 and self.sort.currentText() not in ("Newest first", ""):
+            state = "Follow (newest only)"
+        elif self._live_mode == 2 and self.items and not self._following_newest():
             state = "Follow (paused)"
         else:
             state = ("Off", "Auto", "Follow")[self._live_mode]
@@ -1662,7 +1678,7 @@ class GalleryPage(QObject):
             self.auto_button.setText(text)
         self.auto_button.setToolTip(
             "Live: Off (manual refresh), Auto (refresh when images change) or Follow (also keep the newest image "
-            "in view). Follow pauses while you inspect older images or scroll away."
+            "in view; newest-first sort only). Follow pauses while you inspect older images or scroll away."
         )
 
     def _follow_applies(self, query: GalleryQuery, page: GalleryPage) -> bool:

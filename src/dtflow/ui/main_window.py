@@ -622,7 +622,9 @@ class MainWindow:
             action=state.action,
             completed=state.completed,
             total=state.total,
-            detail=state.detail,
+            detail=" ".join(
+                part for part in (state.detail, " · ".join(p for p in (state.elapsed, state.eta) if p)) if part
+            ),
         )
 
     def _align_run_control(self) -> None:
@@ -735,7 +737,9 @@ class MainWindow:
                 self.generation.cancel if self.activity.generating else None,
                 stop_text="Stop waiting locally",
             )
-        self.progress_strip.update("run", state.completed or 0, state.total or 0, detail=state.detail)
+        self.progress_strip.update(
+            "run", state.completed or 0, state.total or 0, detail=state.detail, elapsed=state.elapsed, eta=state.eta
+        )
 
     def show(self) -> None:
         apply_native_dark_titlebar(self.form)

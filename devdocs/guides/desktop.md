@@ -50,7 +50,7 @@ from a saved request outside the slider range is kept exactly until its slider i
 requests retain their recorded weights and existing validation; this does not change the
 CLI or provider weight contract.
 
-Running jobs and routine endings (finished, stopped) use one 20 px activity bar in the middle of the status bar, between the version text and the right-hand controls; it adapts to its own width (short title below 520 px, stage text clips first, then ETA, then elapsed; title, count and Stop never drop), shows ✓/■ results with × for six seconds (paused while hovered or focused), and renders nothing when idle. Confirmations, editors, errors, warnings, partial results, notices and snapshot conditions use one thin bottom overlay above content, across tabs;
+Running jobs and routine endings (finished, stopped) use one 20 px activity bar in the middle of the status bar, between the version text and the right-hand controls; it adapts to its own width (short title below 760 px, stage text clips first, then ETA, then elapsed; title, count and Stop never drop), shows ✓/■ results with × for six seconds (paused while hovered or focused), and renders nothing when idle. Only one job shows in the bar (the newest running one, else the newest ending); other jobs, and every job when the bar has no room, keep the overlay row with its own Stop. Confirmations, editors, errors, warnings, partial results, other notices and snapshot conditions use one thin bottom overlay above content, across tabs;
 it is hidden when idle and reserves no empty layout space. Labelled rows distinguish
 concurrent export, Trash, gallery selection and generation/queue work. Unknown totals are
 indeterminate, not guessed percentages; queue counts mean settled items, not sampler steps.
@@ -247,7 +247,7 @@ processes are found by the one-second metadata poll, which costs a full read onl
 database files changed (snapshot/failure recovery keeps its five-second spacing).
 
 The labelled Live button (Auto-refresh) uses Connection's mint/teal colors when On and
-neutral colors when Off; its size, label and refresh behavior are unchanged.
+neutral colors when Off; it is 196 px wide to fit its state label.
 Hover and mouse activation keep the On colors; the blue dashed focus outline is
 reserved for keyboard navigation, matching Connection.
 

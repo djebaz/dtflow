@@ -62,6 +62,7 @@ class ActivityStrip(QObject):
         self.bar.dismiss_requested.connect(self._bar_dismiss)
         self._bar_key = None
         window.statusBar().installEventFilter(self)
+        window.statusBar().messageChanged.connect(lambda _text: QTimer.singleShot(0, self, self._position))
         self._expiry = {}
         self._positioning = False
         self._retired = False
@@ -118,7 +119,11 @@ class ActivityStrip(QObject):
             watched.click()
             return True
         if not self._retired and event.type() in (QEvent.Type.Resize, QEvent.Type.Show, QEvent.Type.LayoutRequest):
-            self._position()
+            if watched is self.window.statusBar():
+                # Child geometry is stale until the status bar has laid itself out.
+                QTimer.singleShot(0, self, self._position)
+            else:
+                self._position()
         return False
 
     def set_editor_dimming(self, enabled: bool) -> None:
@@ -139,78 +144,88 @@ class ActivityStrip(QObject):
 
     def _bar_row(self):
         """The row the bar shows: the newest running job, else the newest routine ending."""
-        rows = [(key, row) for key, row in self.rows.items() if isValid(row) and row.property("inBar")]
+        rows = [(key, row) for key, row in self.rows.items() if isValid(row) and self._in_bar(row)]
         running = [item for item in rows if item[1].property("feedbackState") == "progress"]
         chosen = running or rows
-        return (chosen[-1], len(rows) - 1) if chosen else (None, 0)
+        return chosen[-1] if chosen else (None, None)
 
     def _sync_bar(self):
-        """Move bar-state rows out of the overlay layout (they stay as the model) and present one."""
+        """Present one eligible row in the status bar; every other row stays in the overlay.
+
+        The chosen row remains the data model but leaves the overlay layout. If the bar has no room
+        (a long temporary message, a narrow window) nothing is chosen and the overlay shows it all.
+        """
+        rect = self._bar_rect()
+        key, chosen = self._bar_row() if rect is not None else (None, None)
         layout = self.form.activityRowsLayout
         for row in self.rows.values():
             if not isValid(row):
                 continue
-            wanted = self._in_bar(row)
-            if wanted and not row.property("inBar"):
+            if row is chosen and not row.property("inBar"):
                 layout.removeWidget(row)
                 row.hide()
                 row.setProperty("inBar", True)
-            elif not wanted and row.property("inBar"):
+            elif row is not chosen and row.property("inBar"):
                 row.setProperty("inBar", False)
                 layout.addWidget(row)
                 row.show()
-        chosen, more = self._bar_row()
         if chosen is None:
             self._bar_key = None
             self._bar_timer.stop()
             if isValid(self.bar):
                 self.bar.hide()
             return
-        key, row = chosen
         self._bar_key = key
-        state = row.property("feedbackState")
+        state = chosen.property("feedbackState")
         running = state == "progress"
         now = monotonic()
-        started = row.property("startedAt") or now
-        ended = row.property("endedAt") or now
-        elapsed = (now if running else ended) - started
-        total = row.activityProgress.maximum()
-        done = row.activityProgress.value()
+        started = chosen.property("startedAt")
+        ended = chosen.property("endedAt") or now
+        # A result whose job was started under another key has no known duration: show none.
+        elapsed = ((now if running else ended) - started) if started is not None else None
+        total = chosen.activityProgress.maximum()
+        done = chosen.activityProgress.value()
         known = running and total > 0
+        elapsed_text = "" if elapsed is None else clock(elapsed) if running else f"{clock(elapsed)} total"
         eta = ""
-        if known and 0 < done < total and elapsed >= 3:
+        if known and elapsed is not None and 0 < done < total and elapsed >= 3:
             eta = f"~{clock(elapsed * (total - done) / done)} left"
-        stopping = running and not row.activityStopButton.isHidden() and not row.activityStopButton.isEnabled()
-        detail = row.activityDetail.text()
+        # A job that reports its own timing (queue) overrides the generic elapsed and linear estimate.
+        reported_elapsed, reported_eta = chosen.property("elapsedText") or "", chosen.property("etaText") or ""
+        if running and (reported_elapsed or reported_eta):
+            elapsed_text = reported_elapsed.removeprefix("Elapsed ")
+            eta = reported_eta.split(" (")[0]
+        stop = chosen.activityStopButton
+        stopping = running and not stop.isHidden() and not stop.isEnabled()
+        detail = chosen.activityDetail.text()
         stage = detail if not (running and detail in ("Preparing…", "")) else ("Preparing" if not known else "")
-        label = row.activityLabel.text()
-        extra = f" (+{more} more running or finished)" if more else ""
+        label = chosen.activityLabel.text()
         model = BarModel(
             kind={"progress": "running"}.get(state, state),
             title=label,
-            count=row.activityCount.text() if running and known else "",
+            count=chosen.activityCount.text() if known else "",
             stage=stage,
             fraction=(done / total) if known else None,
-            elapsed=clock(elapsed) if running else f"{clock(elapsed)} total",
+            elapsed=elapsed_text,
             eta=eta,
             stopping=stopping,
-            lifetime=(row.activityLifetimeBar.value() / 6000) if not running and key in self._expiry else None,
-            tooltip=f"{label} · {detail}{extra}" if detail else label + extra,
+            lifetime=(chosen.activityLifetimeBar.value() / 6000) if not running and key in self._expiry else None,
+            tooltip=" · ".join(part for part in (label, detail, reported_eta) if part),
+            stop_label=stop.text(),
+            stop_visible=not stop.isHidden(),
         )
-        self.bar.present(
-            model, stop_enabled=not row.activityStopButton.isHidden() and row.activityStopButton.isEnabled()
-        )
-        self.bar.button.setVisible(not running or not row.activityStopButton.isHidden())
-        self._position_bar()
+        self.bar.present(model, stop_enabled=stop.isEnabled())
+        self.bar.setGeometry(rect)
+        self.bar.show()
+        self.bar.raise_()
         if running:
             self._bar_timer.start()
         else:
             self._bar_timer.stop()
 
-    def _position_bar(self):
-        """Fill the status bar between the version text and the right-hand controls without displacing them."""
+    def _bar_rect(self):
+        """Space between the version text and the right-hand controls, without displacing either."""
         status = self.window.statusBar()
-        height = status.height()
         message = status.currentMessage()
         left = status.fontMetrics().horizontalAdvance(message) + 24 if message else 12
         right = status.width() - 12
@@ -226,12 +241,9 @@ class ActivityStrip(QObject):
             # The Images-only grid position stays reserved so the bar has the same size on every tab.
             right -= _GRID_GROUP_RESERVE
         width = right - left
-        if width < 160 or height < 1:
-            self.bar.hide()
-            return
-        self.bar.setGeometry(left, max(0, (height - self.bar.height()) // 2), width, self.bar.height())
-        self.bar.show()
-        self.bar.raise_()
+        if width < 160 or status.height() < 1:
+            return None
+        return QRect(left, max(0, (status.height() - self.bar.height()) // 2), width, self.bar.height())
 
     @Slot()
     def _bar_stop(self):
@@ -356,7 +368,7 @@ class ActivityStrip(QObject):
         self._position()
         QTimer.singleShot(0, self, self._position)
 
-    def update(self, key, done, total, *, detail=None):
+    def update(self, key, done, total, *, detail=None, elapsed="", eta=""):
         if not self._live():
             return
         row = self.rows.get(key)
@@ -372,6 +384,8 @@ class ActivityStrip(QObject):
                 row.activityDetail.setText(
                     detail if detail is not None else f"{done} of {total} processed" if total else "Working…"
                 )
+            row.setProperty("elapsedText", elapsed)
+            row.setProperty("etaText", eta)
             self._sync_bar()
 
     def complete(self, key, title, text, state="success"):
@@ -382,8 +396,7 @@ class ActivityStrip(QObject):
         started = previous.property("startedAt") if previous is not None and isValid(previous) else None
         self.start(key, title)
         row = self.rows[key]
-        if started is not None:
-            row.setProperty("startedAt", started)
+        row.setProperty("startedAt", started)  # unknown when the job ran under another key
         row.setProperty("endedAt", monotonic())
         row.setProperty("feedbackState", state)
         row.activitySymbol.setText(

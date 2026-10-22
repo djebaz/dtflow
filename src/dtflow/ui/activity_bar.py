@@ -31,6 +31,8 @@ class BarModel:
     stopping: bool = False
     lifetime: float | None = None  # remaining fraction of the result notice, 0..1
     tooltip: str = ""
+    stop_label: str = ""  # what Stop does, from the job ("Stop waiting locally", "Cancel export", ...)
+    stop_visible: bool = True
 
 
 def clock(seconds: float) -> str:
@@ -50,12 +52,13 @@ class _Strip(QWidget):
         self._secondary = QColor(colors["color.secondary"])
         accent = QColor(colors["color.accent"])
         accent.setAlphaF(0.55)
-        self._fills = {
-            "running": accent,
-            "success": QColor(colors["color.statusOkBorder"]),
-            "stopped": QColor(colors["color.statusWarningBorder"]),
-        }
         self._edges = {"success": QColor(colors["color.success"]), "stopped": QColor(colors["color.warning"])}
+        self._fills = {"running": accent}
+        for kind, tone in self._edges.items():
+            # The result tone at 22 % over the track keeps text contrast on both sides.
+            self._fills[kind] = QColor(
+                *(round(0.22 * t + 0.78 * b) for t, b in zip(tone.getRgb()[:3], self._track.getRgb()[:3], strict=True))
+            )
         self.model: BarModel | None = None
         self.setFixedHeight(STRIP_HEIGHT)
 
@@ -88,7 +91,9 @@ class _Strip(QWidget):
                 painter.drawLine(x, height, x + height, 0)
         painter.restore()
         if model.lifetime is not None:
-            painter.fillRect(QRectF(1, height - 3, (width - 2) * max(0.0, min(1.0, model.lifetime)), 2), self._text)
+            line = QColor(self._edges.get(model.kind, self._text))
+            line.setAlphaF(0.8)
+            painter.fillRect(QRectF(1, height - 3, (width - 2) * max(0.0, min(1.0, model.lifetime)), 2), line)
         painter.setPen(QPen(self._edges.get(model.kind, self._border), 1))
         painter.setBrush(Qt.BrushStyle.NoBrush)
         painter.drawRoundedRect(outer, 3, 3)
@@ -156,14 +161,18 @@ class ActivityBar(QWidget):
         self.button = QPushButton("Stop", self)
         self.button.setObjectName("activityBarButton")
         self.button.setFixedHeight(STRIP_HEIGHT)
+        # A mouse click must not leave focus on the button: a focused bar pauses the result countdown.
+        self.button.setFocusPolicy(Qt.FocusPolicy.TabFocus)
         self.button.clicked.connect(self._clicked)
         self._running = True
+        self._visible_button = True
         self.hide()
 
     def _clicked(self) -> None:
         (self.stop_requested if self._running else self.dismiss_requested).emit()
 
     def present(self, model: BarModel, *, stop_enabled: bool = True) -> None:
+        self._visible_button = model.stop_visible or model.kind != "running"
         self.strip.model = model
         self._running = model.kind == "running"
         self.button.setText("Stop" if self._running else "×")
@@ -171,7 +180,10 @@ class ActivityBar(QWidget):
         label = model.tooltip or f"{model.title} {model.count} {model.stage}".strip()
         self.setToolTip(label)
         self.strip.setAccessibleName(label)
-        self.button.setAccessibleName(f"Stop {model.title}" if self._running else f"Dismiss {model.title} result")
+        self.button.setAccessibleName(
+            (model.stop_label or f"Stop {model.title}") if self._running else f"Dismiss {model.title} result"
+        )
+        self.button.setVisible(self._visible_button)
         self.button.setToolTip(self.button.accessibleName())
         self._layout()
         self.strip.update()
@@ -181,7 +193,8 @@ class ActivityBar(QWidget):
         self.button.setFixedWidth(button_width)
         top = (self.height() - STRIP_HEIGHT) // 2
         self.button.move(self.width() - button_width, top)
-        self.strip.setGeometry(0, top, max(0, self.width() - button_width - 8), STRIP_HEIGHT)
+        reserved = button_width + 8 if self._visible_button else 0
+        self.strip.setGeometry(0, top, max(0, self.width() - reserved), STRIP_HEIGHT)
 
     def resizeEvent(self, event) -> None:
         self._layout()
