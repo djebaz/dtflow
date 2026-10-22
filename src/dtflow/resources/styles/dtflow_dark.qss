@@ -1004,29 +1004,35 @@ QWidget#GalleryDetailPage QComboBox:disabled {
   background: ${color.surface};
   border-color: ${color.disabledBorder};
 }
-/* Auto-refresh reuses Connection colors, without changing its labelled geometry. */
-QWidget#GalleryDetailPage QPushButton#galleryAutoRefreshButton {
+/* Auto-refresh and Follow reuse Connection colors, without changing its labelled geometry. */
+QWidget#GalleryDetailPage QPushButton#galleryAutoRefreshButton,
+QWidget#GalleryDetailPage QPushButton#galleryFollowButton {
   background: ${color.input};
   border: 1px solid ${color.border};
   border-radius: ${size.panelRadius};
   color: ${color.secondary};
 }
-QWidget#GalleryDetailPage QPushButton#galleryAutoRefreshButton:hover {
+QWidget#GalleryDetailPage QPushButton#galleryAutoRefreshButton:hover,
+QWidget#GalleryDetailPage QPushButton#galleryFollowButton:hover {
   background: ${color.input};
   border-color: ${color.inputBorderHover};
 }
-QWidget#GalleryDetailPage QPushButton#galleryAutoRefreshButton:checked {
+QWidget#GalleryDetailPage QPushButton#galleryAutoRefreshButton:checked,
+QWidget#GalleryDetailPage QPushButton#galleryFollowButton:checked {
   background: ${color.connectionSurface};
   border-color: ${color.connectionAccent};
   color: ${color.connectionGlyph};
 }
-QWidget#GalleryDetailPage QPushButton#galleryAutoRefreshButton:pressed {
+QWidget#GalleryDetailPage QPushButton#galleryAutoRefreshButton:pressed,
+QWidget#GalleryDetailPage QPushButton#galleryFollowButton:pressed {
   background: ${color.canvas};
 }
-QWidget#GalleryDetailPage QPushButton#galleryAutoRefreshButton[keyboardFocus="true"] {
+QWidget#GalleryDetailPage QPushButton#galleryAutoRefreshButton[keyboardFocus="true"],
+QWidget#GalleryDetailPage QPushButton#galleryFollowButton[keyboardFocus="true"] {
   border: 1px dashed ${color.focus};
 }
-QWidget#GalleryDetailPage QPushButton#galleryAutoRefreshButton:disabled {
+QWidget#GalleryDetailPage QPushButton#galleryAutoRefreshButton:disabled,
+QWidget#GalleryDetailPage QPushButton#galleryFollowButton:disabled {
   background: ${color.surface};
   border: 1px solid ${color.border};
   color: ${color.disabled};
@@ -1665,6 +1671,11 @@ QFrame#inlineFeedback[feedbackState="success"],
 QWidget#activityProgressRow[feedbackState="success"] {
   background: qlineargradient(x1:0, y1:0, x2:1, y2:0, stop:0 ${color.connectionSurface}, stop:1 ${color.surface});
   border-color: ${color.connectionAccent};
+}
+/* Progress docked into a page bar (Images pager, Logs footer) drops the card chrome. */
+QWidget#activityProgressRow[docked="true"] {
+  background: transparent;
+  border: none;
 }
 QLabel#inlineTitleLabel, QLabel#activityLabel {
   background: transparent;

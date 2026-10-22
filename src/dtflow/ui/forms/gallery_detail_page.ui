@@ -291,6 +291,31 @@
            </widget>
           </item>
           <item>
+           <widget class="QPushButton" name="galleryFollowButton">
+            <property name="accessibleName">
+             <string>Follow newest images</string>
+            </property>
+            <property name="text">
+             <string>Follow: Off</string>
+            </property>
+            <property name="toolTip">
+             <string>Keep the newest image in view as new images arrive (newest-first sort). Scrolling or selecting another image pauses it.</string>
+            </property>
+            <property name="minimumSize">
+             <size>
+              <width>116</width>
+              <height>36</height>
+             </size>
+            </property>
+            <property name="maximumSize">
+             <size>
+              <width>116</width>
+              <height>36</height>
+             </size>
+            </property>
+           </widget>
+          </item>
+          <item>
            <widget class="QPushButton" name="galleryRefreshButton">
             <property name="accessibleName">
              <string>Refresh</string>
@@ -804,7 +829,7 @@
      <property name="role" stdset="0"><string>galleryPagerBar</string></property>
      <property name="minimumSize"><size><width>0</width><height>46</height></size></property>
      <property name="maximumSize"><size><width>16777215</width><height>46</height></size></property>
-     <layout class="QHBoxLayout" name="galleryPagerLayout" stretch="0,1,0">
+     <layout class="QHBoxLayout" name="galleryPagerLayout" stretch="0,1,0,0">
       <property name="leftMargin"><number>10</number></property>
       <property name="rightMargin"><number>10</number></property>
       <property name="topMargin"><number>6</number></property>
@@ -838,6 +863,18 @@
          <property name="rightMargin"><number>0</number></property>
          <property name="bottomMargin"><number>0</number></property>
          <property name="spacing"><number>4</number></property>
+        </layout>
+       </widget>
+      </item>
+      <item>
+       <widget class="QWidget" name="galleryPagerProgressDock">
+        <property name="visible"><bool>false</bool></property>
+        <layout class="QHBoxLayout" name="galleryPagerProgressDockLayout">
+         <property name="leftMargin"><number>0</number></property>
+         <property name="topMargin"><number>0</number></property>
+         <property name="rightMargin"><number>0</number></property>
+         <property name="bottomMargin"><number>0</number></property>
+         <property name="spacing"><number>0</number></property>
         </layout>
        </widget>
       </item>
