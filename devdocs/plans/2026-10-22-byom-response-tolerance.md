@@ -11,7 +11,7 @@
 
 - [x] Implement branch-local BYOM consumption and pre-interpretation observation.
 - [x] Synchronize diagnostic architecture, release notes, status and offline preview definitions.
-- [ ] Commit/push a new PR; do not merge.
+- [x] Commit/push implementation (`64df404`) in draft [PR #157](https://github.com/djebaz/dtflow/pull/157); not merged.
 
 ## Decisions
 
