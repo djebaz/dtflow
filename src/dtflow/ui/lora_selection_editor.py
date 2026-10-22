@@ -106,7 +106,7 @@ def edit_lora_selection(
         slider.valueChanged.connect(moved)
         slider.installEventFilter(wheel_step)
         if multi_weight:
-            extra[name] = []
+            extra[name] = list(collected[name]) if len(collected.get(name, ())) > 1 else []
             row.loraSelectionAddWeightButton.setVisible(True)
             row.loraSelectionAddWeightButton.setAccessibleName(f"Add weight for {name}")
 
@@ -138,6 +138,7 @@ def edit_lora_selection(
                 render_chips()
 
             row.loraSelectionAddWeightButton.clicked.connect(add_weight)
+            render_chips()  # several loaded weights start as chips
         check.toggled.connect(lambda _checked: update_count())
         # Rows sit before the "no matches" label and the trailing spacer.
         rows_layout.insertWidget(0 if top else len(rows), row)
@@ -146,6 +147,10 @@ def edit_lora_selection(
 
     # A loaded request may repeat an identifier; the last weight wins, as when the selection is applied.
     current = {item.identifier: item.weight for item in selected}
+    collected: dict[str, list[float]] = {}  # every distinct loaded weight per LoRA, for multi_weight
+    for item in selected:
+        if item.weight not in collected.setdefault(item.identifier, []):
+            collected[item.identifier].append(item.weight)
     for name, weight in current.items():
         add_row(name, checked=True, weight=weight)
     for name in dict.fromkeys(candidates):

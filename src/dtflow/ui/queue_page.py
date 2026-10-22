@@ -52,6 +52,7 @@ from dtflow.ui.planning_presenter import (
     ERROR_FIELDS,
     DRAW_SPINS,
     NO_LORA,
+    parse_lora_set,
     candidate_counts,
     PlanForm,
     build_plan,
@@ -1087,18 +1088,21 @@ class QueuePage:
             weights=lambda: self._choices().get("loras", {}),
             convert=self._lora_set_chip,
             initial=self._generate_loras,
+            edit_chip=lambda chip: tuple(LoRASelection(name, weight) for name, weight in parse_lora_set(chip)),
+            editor_title="LoRA set",
         )
         page.planLorasEdit.configure(
             "search",
             "LoRA weight",
             weights=lambda: self._choices().get("loras", {}),
-            initial=lambda: (),
+            initial=self._lora_weight_selection,
             convert=self._lora_weight_chips,
-            editor_title="Add LoRA weights",
+            editor_title="Edit LoRA weights",
             multi_weight=True,
+            replace_all=True,
             editor_hint=(
                 "Check a LoRA and press + to collect each weight to try for it (click a weight to drop it). "
-                "A checked LoRA without collected weights uses its slider value. Enter or Apply adds them all."
+                "A checked LoRA without collected weights uses its slider value. Enter or Apply replaces the weights."
             ),
         )
 
@@ -1133,6 +1137,17 @@ class QueuePage:
         have = {item.identifier for item in request.loras}
         extra = tuple(LoRASelection(name, 1.0) for name in dict.fromkeys(identifiers) if name not in have)
         return replace(request, loras=(*request.loras, *extra)) if extra else request
+
+    def _lora_weight_selection(self) -> tuple[LoRASelection, ...]:
+        """Every weight chip as a selection, for the editor to start from (a LoRA may repeat)."""
+        pairs = []
+        for identifier, weights in self._lora_weight_groups().items():
+            for weight in weights:
+                try:
+                    pairs.append(LoRASelection(identifier, float(weight)))
+                except ValueError:
+                    continue
+        return tuple(pairs)
 
     def _lora_weight_lines(self) -> str:
         """The weight chips as the planner's lines: one ``IDENTIFIER: w1; w2`` per LoRA, in the order first added."""

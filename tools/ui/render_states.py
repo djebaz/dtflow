@@ -1229,12 +1229,10 @@ def render_active_queue_states(shell, out):
         assert queue._lora_weight_lines() == "offline-style.safetensors: 0.6; 1"
         page.queueComposerScroll.ensureWidgetVisible(page.planLorasEdit)
         snap("queues-42a-composer-lora-weights")
-        page.planLorasEdit._add.click()  # the same checkbox+slider editor, not limited to Generate's LoRAs
+        page.planLorasEdit._add.click()  # the same editor on the current chips, not limited to Generate's LoRAs
         weight_editor = shell.inline._editor
-        weight_editor.findChild(QLineEdit, "loraSelectionCustomIdentifier").setText("offline-style.safetensors")
-        weight_editor.findChild(QPushButton, "loraSelectionCustomAddButton").click()
         row = next(r for r in weight_editor.findChildren(QWidget, "loraSelectionRow"))
-        for tick in (12, 16, 20):  # 0.6, 0.8, 1.0: several weights for one LoRA, collected with +
+        for tick in (12, 16, 20):  # 0.6 and 1.0 are loaded as chips; 0.8 is collected with +
             row.findChild(QSlider, "loraSelectionSlider").setValue(tick)
             row.findChild(QToolButton, "loraSelectionAddWeightButton").click()
         assert len(row.findChildren(QPushButton)) == 3

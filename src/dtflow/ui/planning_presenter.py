@@ -217,6 +217,14 @@ def candidate_counts(form: PlanForm) -> dict[str, int]:
     }
 
 
+def parse_lora_set(chip: str) -> tuple[tuple[str, float], ...]:
+    """The (identifier, weight) pairs of one LoRA-set chip, for editing it; an unreadable chip has none."""
+    try:
+        return _lora_sets(chip)[0]
+    except (FormError, IndexError):
+        return ()
+
+
 def lora_set_value(identifier: str, weight: float) -> str:
     """The chip text for a one-LoRA set, as ``_lora_sets`` reads it back."""
     return f"{identifier}: {weight:g}"

@@ -124,6 +124,8 @@ class ValueChips(QWidget):
         self._custom: str | None = None
         self._weights: Callable[[], dict[str, float | None]] | None = None
         self._convert: Callable[[object], str] | None = None
+        self._edit_chip: Callable[[str], Sequence[LoRASelection]] | None = None
+        self._replace_all = False
         self._layout = FlowLayout(self)
         self._chips: list[QPushButton] = []
         self._input: QWidget | None = None
@@ -163,14 +165,19 @@ class ValueChips(QWidget):
         editor_title: str | None = None,
         editor_hint: str | None = None,
         multi_weight: bool = False,
+        edit_chip: Callable[[str], Sequence[LoRASelection]] | None = None,
+        replace_all: bool = False,
     ) -> None:
         """``search`` opens the shared searchable editor; ``choice`` is an editable list; ``int``/``float`` a box.
 
         With ``weights`` the search editor is the shared LoRA checkbox+slider editor, starting from ``initial()``; the
         checked ``(identifier, weight)`` pairs go to ``convert``, which returns the chip value (or several).
+        With ``edit_chip`` each chip opens that editor on its parsed LoRAs and Apply replaces the chip (a separate **×**
+        removes it); with ``replace_all`` **Edit…** opens the editor on every chip and Apply replaces them all.
         """
         self._kind, self._title, self._options, self._custom = kind, title, options, custom
         self._weights, self._convert, self._initial = weights, convert, initial
+        self._edit_chip, self._replace_all = edit_chip, replace_all
         self._editor_title, self._editor_hint, self._multi_weight = editor_title, editor_hint, multi_weight
         if self._input is not None:
             self._layout.removeWidget(self._input)
@@ -196,9 +203,14 @@ class ValueChips(QWidget):
             self._layout.addWidget(self._input)
             self._layout.addWidget(self._add)
         self._add.setEnabled(True)  # preview forms start with every control disabled until a controller wires it
-        self._add.setText("Add" if self._input is not None else "Add…")
-        self._add.setAccessibleName(f"Add {_noun(title)}")
-        self._add.setToolTip(f"Add a {_noun(title)} value; click a value to remove it.")
+        self._add.setText("Add" if self._input is not None else "Edit…" if replace_all else "Add…")
+        self._add.setAccessibleName(f"{'Edit' if replace_all else 'Add'} {_noun(title)}")
+        self._add.setToolTip(
+            f"Edit the {_noun(title)} values; click a value to remove it."
+            if replace_all
+            else f"Add a {_noun(title)} value; click a value to "
+            + ("edit it, or × to remove it." if edit_chip is not None else "remove it.")
+        )
         self.refresh_options()
 
     def refresh_options(self, current: str | None = None) -> None:
@@ -254,12 +266,21 @@ class ValueChips(QWidget):
             chip.deleteLater()
         self._chips = []
         for index, value in enumerate(values):
-            chip = QPushButton(f"{value}  ×", self)
+            if self._edit_chip is not None:
+                edit = QPushButton(value, self)
+                edit.setProperty("role", "valueChip")
+                edit.setToolTip(f"Edit {value}")
+                edit.setAccessibleName(f"Edit {_noun(self._title)} {value}")
+                edit.clicked.connect(lambda _=False, i=index: self._edit_clicked(i))
+                self._layout.insertWidget(len(self._chips), edit)
+                self._chips.append(edit)
+            label = "×" if self._edit_chip is not None else f"{value}  ×"
+            chip = QPushButton(label, self)
             chip.setProperty("role", "valueChip")
             chip.setToolTip(f"Remove {value}")
             chip.setAccessibleName(f"Remove {_noun(self._title)} {value}")
             chip.clicked.connect(lambda _=False, i=index: self.remove_value(i))
-            self._layout.insertWidget(index, chip)
+            self._layout.insertWidget(len(self._chips), chip)
             self._chips.append(chip)
         self.updateGeometry()
         self.textChanged.emit()
@@ -274,20 +295,10 @@ class ValueChips(QWidget):
         else:
             convert = self._convert
             if self._weights is not None and convert is not None:
-                suggestions = self._weights()
-                edit_lora_selection(
-                    self,
-                    title=self._editor_title or f"Add a {_noun(self._title)} set",
-                    candidates=list(suggestions),
-                    selected=self._initial() if self._initial is not None else (),
-                    suggestions=suggestions,
-                    multi_weight=self._multi_weight,
-                    callback=lambda chosen: self.add_values(convert(chosen)),
-                    hint=self._editor_hint
-                    or (
-                        "Checked LoRAs form one set for each item, starting from Generate's LoRAs; with none checked "
-                        "the set has no LoRA. Add several sets to vary them. Enter or Apply adds the set."
-                    ),
+                self._open_editor(
+                    convert,
+                    self._initial() if self._initial is not None else (),
+                    self._replace_values if self._replace_all else self.add_values,
                 )
                 return
             choose_searchable(
@@ -298,6 +309,39 @@ class ValueChips(QWidget):
                 custom_label=self._custom,
                 custom_prompt=f"Exact {_noun(self._title)} identifier",
             )
+
+    def _open_editor(self, convert, selected, apply) -> None:
+        suggestions = self._weights()
+        edit_lora_selection(
+            self,
+            title=self._editor_title or f"Add a {_noun(self._title)} set",
+            candidates=list(suggestions),
+            selected=selected,
+            suggestions=suggestions,
+            multi_weight=self._multi_weight,
+            callback=lambda chosen: apply(convert(chosen)),
+            hint=self._editor_hint
+            or (
+                "Checked LoRAs form one set for each item; with none checked "
+                "the set has no LoRA. Add several sets to vary them. Enter or Apply applies the set."
+            ),
+        )
+
+    def _replace_values(self, chosen: str | Sequence[str]) -> None:
+        values = [chosen] if isinstance(chosen, str) else list(chosen)
+        self._set([v.strip() for v in dict.fromkeys(values) if v.strip()])
+
+    def _edit_clicked(self, index: int) -> None:
+        """Edit one chip in the shared editor: Apply replaces it (an empty result keeps it)."""
+        if self._edit_chip is None or self._convert is None or self._weights is None:
+            return
+
+        def replace(chosen: str | Sequence[str]) -> None:
+            value = chosen if isinstance(chosen, str) else " ".join(chosen)
+            if value.strip() and index < len(self._values):
+                self._set([*self._values[:index], value.strip(), *self._values[index + 1 :]])
+
+        self._open_editor(self._convert, self._edit_chip(self._values[index]), replace)
 
 
 class ActionsFit(QObject):
