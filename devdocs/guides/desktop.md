@@ -41,7 +41,8 @@ identifier you applied stays at the end of that list until the next catalogue re
 also a stepping target. While you step, selected LoRAs are kept; once stepping pauses (about
 0.6 s) LoRAs incompatible with the model you stopped on are removed, as when picking it in the
 editor. The sampler chosen before stepping returns on any model that allows it. **Add LoRA** shows
-search, identifier and weight together and commits once with **Add**. New UI selections use
+search, identifier and weight together and commits once with **Add** (double-click a name or
+press Enter to add it with the weight shown). New UI selections use
 0.0–3.0 weights in 0.1 steps (one decimal); 0.0 is preserved. A catalogue default outside
 this range starts the editor at 1.0, not a silently clipped default. Existing imported/saved
 requests retain their recorded weights and existing validation; this does not change the

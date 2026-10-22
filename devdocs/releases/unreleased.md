@@ -18,7 +18,7 @@ Changes through the 5.1.0 preparation baseline are consolidated in [DTFlow 5.1.0
 
 - Generate Compute Units meter uses a non-linear scale (linear to 100 = 15 %, then logarithmic through 3 000 = 50 % to 40 000+ = full; only 40 000+ fills the bar) so typical estimates are readable; the red threshold is unchanged.
 - Generate Checkpoint selector gains small previous/next buttons that step through the current filtered list without opening the editor; they stop at either end (with nothing selected, Next takes the first and Previous the last), keep selected LoRAs and the sampler while browsing, and prune incompatible LoRAs only once stepping pauses.
-- In single-choice search editors (Checkpoint, composer choices), double-clicking a name or pressing Enter applies it like **Apply**, including with a search filter active; Enter with no match moves the text to the identifier field instead of re-applying the old choice. Add LoRA keeps its explicit Add step.
+- In search editors (Checkpoint, Add LoRA, composer choices), double-clicking a name or pressing Enter commits it like **Apply**/**Add** (Add uses the weight shown), including with a search filter active; Enter with no match moves the text to the identifier field instead of re-applying the old choice.
 
 ## Fixed
 
