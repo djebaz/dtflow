@@ -1014,7 +1014,13 @@ class QueuePage:
             (page.planLoraSetsEdit, form.lora_sets),
         ):
             edit.setText(text)
-        page.planLorasEdit.clear()
+        chips = [
+            f"{identifier.strip()}: {weight.strip()}"
+            for line in form.loras.splitlines()
+            for identifier, _, weights in [line.rpartition(":")]
+            for weight in weights.split(";")
+        ]
+        page.planLorasEdit.setText("; ".join(chips))  # one chip per LoRA and weight
         page.planStrengthsEdit.clear()
         page.planIncrementCheck.setChecked(form.increment)
         if form.mode == REPEAT:

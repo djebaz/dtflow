@@ -386,8 +386,19 @@ def queue_edit_from_records(records) -> QueueEdit:
         "guidance": [record.get("guidance", 7.0) for record in records],
         "samplers": [record.get("sampler_id", "") for record in records],
         "sizes": [f"{record.get('width_px', 512)}x{record.get('height_px', 512)}" for record in records],
-        "lora_sets": [lora_set(record) for record in records],
     }
+    # The same LoRAs in every item that only differ by weight are weights to cross; otherwise whole LoRA sets differ.
+    lora_ids = {tuple(item["identifier"] for item in record.get("loras", ())) for record in records}
+    weighted = (
+        len(lora_ids) == 1
+        and bool(next(iter(lora_ids)))
+        and len(set(next(iter(lora_ids)))) == len(next(iter(lora_ids)))
+    )
+    if weighted:
+        for index, identifier in enumerate(next(iter(lora_ids))):
+            columns[f"weight:{identifier}"] = [record["loras"][index]["weight"] for record in records]
+    else:
+        columns["lora_sets"] = [lora_set(record) for record in records]
     distinct = {name: _distinct(values) for name, values in columns.items()}
     varying = [name for name, values in distinct.items() if len(values) > 1]
     count = len(records)
@@ -425,5 +436,10 @@ def queue_edit_from_records(records) -> QueueEdit:
         sizes=text("sizes"),
         increment=mode == "Repeat" and increment,
         lora_sets=text("lora_sets"),
+        loras="\n".join(
+            f"{name.removeprefix('weight:')}: {text(name)}"
+            for name in varying
+            if name.startswith("weight:") and mode != "Repeat"
+        ),
     )
     return QueueEdit(dict(records[0]), form, count, note)
