@@ -246,11 +246,6 @@ class MainWindow:
         form.rootLayout.addWidget(self.shell)
         self._last_run_marker = None
         self.progress_strip = ActivityStrip(form)
-        # Running progress lives in the visible page's own bar; other pages keep the bottom overlay.
-        self.progress_strip.register_dock(
-            self.gallery_detail.galleryPagerProgressDock, self.gallery_detail.galleryPagerBar
-        )
-        self.progress_strip.register_dock(self.logs_form.logsProgressDock, self.logs_form)
         self.inline = InlineFeedback(form)
         # Preserve the connection controller's established chrome references.
         for name in (

@@ -15,7 +15,6 @@ Changes through the 5.1.0 preparation baseline are consolidated in [DTFlow 5.1.0
 - Cloud LoRA Prepare remembers its picker folder per runtime and accepts multiple converted `.ckpt` files for sequential preparation. Count-based progress and final summaries distinguish confirmed, failed, unresolved and unstarted files; selected weights are preserved, uncertain files are never automatically retried, and failures emit privacy-safe diagnostics.
 
 - Images gains a **Follow** toggle (on by default, remembered) for Grid, List and Detail like Logs: with the newest-first sort, when a new image arrives while you are on the newest one (scrolled to the top in Grid/List, or showing the newest in Detail) the view moves to the new image. Scrolling away or selecting an older image pauses it implicitly, and turning Follow on jumps to the newest image. Other sorts are unaffected.
-- Running progress (Generate, Queues dispatch, export, trash, Logs export, cache clearing) is shown in the centre of the Images pager bar (between the range and the batch chips, which stay put) or the Logs footer while that page is visible instead of covering it with the bottom overlay. One `ActivityStrip.register_dock` contract lets any page with a bar adopt it; results, warnings and pages without a dock keep the existing overlay. Source only; native Windows/DPI acceptance pending.
 
 ## Changed
 

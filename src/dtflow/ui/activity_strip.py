@@ -5,7 +5,7 @@ from pathlib import Path
 
 from PySide6.QtCore import QEasingCurve, QEvent, QFile, QIODevice, QObject, QPropertyAnimation, QRect, Qt, QTimer, Slot
 from PySide6.QtUiTools import QUiLoader
-from PySide6.QtWidgets import QApplication, QBoxLayout, QFrame, QGraphicsOpacityEffect, QSizePolicy
+from PySide6.QtWidgets import QApplication, QFrame, QGraphicsOpacityEffect
 from shiboken6 import isValid
 
 from dtflow.ui.trash_icon import trash_icon_pixmap
@@ -49,7 +49,6 @@ class ActivityStrip(QObject):
         # Filters and deferred callbacks must disappear with the overlay frame.
         self.setParent(self.form)
         self.rows = {}
-        self.docks = []
         self._expiry = {}
         self._positioning = False
         self._retired = False
@@ -68,81 +67,6 @@ class ActivityStrip(QObject):
         panel.form.destroyed.connect(self._feedback_destroyed)
         self.form.activityRowsLayout.insertWidget(0, panel.form)
         panel.form.hide()
-
-    def register_dock(self, dock, anchor):
-        """Let a page host running-progress rows in `dock` while `anchor` is visible.
-
-        `dock` is an empty Designer container in the page's own bar; `anchor` is any widget
-        whose visibility means that page is showing (the bar or the page root). Results,
-        warnings and pages without a dock keep using the bottom overlay.
-        """
-        if dock.layout() is None:
-            raise ValueError("Activity dock needs a layout.")
-        dock.setMaximumWidth(480)
-        self.docks.append((dock, anchor))
-        anchor.installEventFilter(self)
-
-    def _active_dock(self):
-        self.docks = [(d, a) for d, a in self.docks if isValid(d) and isValid(a)]
-        for dock, anchor in self.docks:
-            if anchor.isVisible():
-                return dock
-        return None
-
-    def _place_rows(self):
-        """Dock progress rows into the visible page bar and move everything else to the overlay."""
-        active = self._active_dock()
-        for row in self.rows.values():
-            if not isValid(row):
-                continue
-            docked = row.parentWidget() is not self.form
-            want = active is not None and row.property("feedbackState") == "progress"
-            if want and row.parentWidget() is active:
-                continue
-            if not want and not docked:
-                continue
-            if docked:
-                row.parentWidget().layout().removeWidget(row)
-            if want:
-                active.layout().addWidget(row)
-            else:
-                self.form.activityRowsLayout.addWidget(row)
-            self._style_docked(row, want)
-        for dock, _anchor in self.docks:
-            dock.setVisible(
-                any(isValid(row) and row.parentWidget() is dock and not row.isHidden() for row in self.rows.values())
-            )
-
-    @staticmethod
-    def _style_docked(row, docked):
-        """A docked row is one compact line inside a page bar; the overlay row keeps its card look."""
-        row.setProperty("docked", docked)
-        row.activitySymbol.setVisible(not docked)
-        # One line: label and detail side by side, clipped (full text stays in tooltips) so two
-        # concurrent jobs never widen the page's minimum width or the 46 px bar.
-        row.activityCopyLayout.setDirection(
-            QBoxLayout.Direction.LeftToRight if docked else QBoxLayout.Direction.TopToBottom
-        )
-        row.activityCopyLayout.setSpacing(8 if docked else 2)
-        horizontal = QSizePolicy.Policy.Ignored if docked else QSizePolicy.Policy.Preferred
-        for label, width in ((row.activityLabel, 150), (row.activityDetail, 230)):
-            label.setWordWrap(not docked)
-            label.setSizePolicy(horizontal, QSizePolicy.Policy.Preferred)
-            label.setMaximumWidth(width if docked else 16777215)
-        row.activityLabel.setToolTip(row.activityLabel.text() if docked else "")
-        row.activityProgress.setMinimumWidth(60 if docked else 90)
-        row.activityProgress.setMaximumWidth(120 if docked else 230)
-        stop = row.activityStopButton
-        if docked and stop.property("fullText") is None:
-            stop.setProperty("fullText", stop.text())
-            stop.setToolTip(stop.text())
-            stop.setText("Stop")
-        elif not docked and stop.property("fullText") is not None:
-            stop.setText(stop.property("fullText"))
-            stop.setProperty("fullText", None)
-        row.activityRowLayout.setContentsMargins(*((0, 0, 0, 0) if docked else (8, 7, 8, 7)))
-        row.style().unpolish(row)
-        row.style().polish(row)
 
     @Slot()
     def _feedback_destroyed(self):
@@ -165,7 +89,6 @@ class ActivityStrip(QObject):
         # The destroyed signal must not call methods on a dying host or form.
         self._expiry.clear()
         self.rows.clear()
-        self.docks.clear()
         self.feedback = None
 
     def eventFilter(self, watched, event):
@@ -177,12 +100,7 @@ class ActivityStrip(QObject):
         ):
             watched.click()
             return True
-        if not self._retired and event.type() in (
-            QEvent.Type.Resize,
-            QEvent.Type.Show,
-            QEvent.Type.Hide,
-            QEvent.Type.LayoutRequest,
-        ):
+        if not self._retired and event.type() in (QEvent.Type.Resize, QEvent.Type.Show, QEvent.Type.LayoutRequest):
             self._position()
         return False
 
@@ -207,14 +125,12 @@ class ActivityStrip(QObject):
             if isValid(self.scrim) and self.scrim.isVisible():
                 self.scrim.setGeometry(self.host.rect())
                 self.scrim.raise_()
-            self._place_rows()
-            overlay_rows = {k: r for k, r in self.rows.items() if isValid(r) and r.parentWidget() is self.form}
             panel = self.feedback
             if panel is not None and not isValid(panel.form):
                 self.feedback = None
                 panel = None
             visible_feedback = panel is not None and not panel.form.isHidden()
-            if not overlay_rows and not visible_feedback:
+            if not self.rows and not visible_feedback:
                 self.form.hide()
                 return
             width = max(1, self.host.width() - 16)
@@ -225,8 +141,8 @@ class ActivityStrip(QObject):
             height = layout.heightForWidth(width) if layout.hasHeightForWidth() else layout.sizeHint().height()
             compact_only = (
                 not visible_feedback
-                and overlay_rows
-                and all(row.property("compactStatus") for row in overlay_rows.values())
+                and self.rows
+                and all(isValid(row) and row.property("compactStatus") for row in self.rows.values())
             )
             height = max(1 if compact_only else 48, height)
             rect = QRect(8, max(0, self.host.height() - height - 8), width, height)
@@ -283,7 +199,6 @@ class ActivityStrip(QObject):
             row.activitySymbol.setText(_OPERATION_ICONS.get(key.split("-")[0], "⋯"))
         row.activityLabel.setText(label)
         row.activityDetail.setText(detail or "Preparing…")
-        row.activityDetail.setToolTip(detail or "")
         row.activityProgress.setAccessibleName(label + " progress")
         row.activityProgress.setRange(0, total)
         row.activityCount.setText(f"0 / {total}" if total else "")
@@ -322,9 +237,9 @@ class ActivityStrip(QObject):
             row.activityProgress.setValue(done)
             row.activityCount.setText(f"{done} / {total}" if total else "")
             if row.activityStopButton.isEnabled() or row.activityStopButton.isHidden():
-                text = detail if detail is not None else f"{done} of {total} processed" if total else "Working…"
-                row.activityDetail.setText(text)
-                row.activityDetail.setToolTip(text)
+                row.activityDetail.setText(
+                    detail if detail is not None else f"{done} of {total} processed" if total else "Working…"
+                )
 
     def complete(self, key, title, text, state="success"):
         """Show a semantic result: success and amber outcomes expire after six seconds."""
@@ -402,9 +317,7 @@ class ActivityStrip(QObject):
         self._expiry.pop(key, None)
         row = self.rows.pop(key, None)
         if row is not None and isValid(row):
-            layout = row.parentWidget().layout() if row.parentWidget() is not None else None
-            if layout is not None:
-                layout.removeWidget(row)
+            self.form.activityRowsLayout.removeWidget(row)
             row.hide()
             row.deleteLater()
         if not self._expiry:

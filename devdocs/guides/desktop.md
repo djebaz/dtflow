@@ -50,7 +50,7 @@ from a saved request outside the slider range is kept exactly until its slider i
 requests retain their recorded weights and existing validation; this does not change the
 CLI or provider weight contract.
 
-Confirmations, editors and results use one thin bottom overlay above content, across tabs. Running progress is docked into the visible page's own bar (centre of the Images pager bar, Logs footer) as one clipped line per job, with full text in tooltips, and falls back to the overlay on pages without a dock;
+Confirmations, editors, progress and results use one thin bottom overlay above content, across tabs;
 it is hidden when idle and reserves no empty layout space. Labelled rows distinguish
 concurrent export, Trash, gallery selection and generation/queue work. Unknown totals are
 indeterminate, not guessed percentages; queue counts mean settled items, not sampler steps.
