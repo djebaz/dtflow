@@ -31,6 +31,14 @@
 - Expand coverage from the 10-version initial T2I slice toward the remaining upstream **image** families, preserving source arithmetic, nontrivial fixed costs, CFG, special scaling, bias 2.5 where required and Würstchen stage-two counts. Port one named strategy at a time; never mark a version supported on the strength of JSON constants alone. Video families require request-specific frame/audio/reference context and an actual DTFlow generation path, so keep them documented but unavailable in the current single-image Generate meter.
 - Audit source and changed diff only. Per owner instruction, **do not add or run tests**, including render fixtures or manual CI. Do not submit provider requests or perform billable operations. Document missing mathematical ports honestly; parity with upstream or server CU is not established merely by static inspection.
 
+## Video Compute Units extension (owner follow-up, 2026-10-22)
+
+- Preserve the existing **text-to-image Generate meter** and generation request contract. Implement an **opt-in, Qt-independent offline video estimator** rather than silently estimating a video from T2I settings.
+- Add source-pinned architecture records and explicit calculation branches for the six current video catalogue versions: `svd_i2v`, `hunyuan_video`, `wan_v2.1_1.3b`, `wan_v2.1_14b`, `ltx2.3`, and `minimax_h3`. Where an upstream family has additional model versions, add only after porting the corresponding actual formula and required inputs.
+- Require explicit width, height, sampling steps, **output frame count**, CFG/guidance, source-image state, and any additional inputs needed by a specific architecture. Frame packing, temporal/audio context, causal sampling and fixed counts must follow the pinned `ComputeUnits.swift` and instruction-count sources; unsupported nondefault behaviors return unavailable rather than guessed numeric costs.
+- Keep video entries and compute strategies distinct from image-only UI. LoRA modifiers without known semantics may use the base checkpoint estimate with disclosed provenance; no external DT+ call, request mutation or billing implication.
+- Preserve the no-add-tests/no-run-tests instruction, including no runtime demonstrations or UI renders. A source-only port is not numeric parity verification with Draw Things or deployed DT+.
+
 ## Review and validation boundary
 
 - As explicitly requested by the owner: **add no tests and run no tests** (including UI renders, the current CI checks and smoke tests).
