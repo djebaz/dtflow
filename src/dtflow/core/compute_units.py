@@ -38,6 +38,9 @@ _REQUIRED_PARAMETERS = {
     "unet_v1": ("channels", "num_repeat"),
     "unet_v2": ("channels", "num_repeat"),
     "unet_xl": ("channels", "middle_attention", "label_input_channels"),
+    "hidream_i1": ("channels", "double_layers", "single_layers"),
+    "wurstchen_stage_c": ("channels", "stage2_steps"),
+    "wurstchen_stage_b": ("channels",),
 }
 
 
@@ -463,6 +466,135 @@ def _unet_xl(height: int, width: int, tokens: int, architecture: dict) -> tuple[
     return main, fixed
 
 
+def _hidream_i1(image: int, tokens: int, architecture: dict) -> tuple[int, int]:
+    """Count HiDream I1's joint/single blocks and routed two-expert MoE."""
+    c = architecture["channels"]
+    double, single = architecture["double_layers"], architecture["single_layers"]
+    text_query, text_kv = 2 * tokens, 3 * tokens
+
+    def moe(rows: int) -> int:
+        routed = rows * 2
+        return _dense(rows, c, 4) + 2 * _dense(routed, c, 6912) + _dense(routed, 6912, c)
+
+    def shared(rows: int, intermediate: int) -> int:
+        return 2 * _dense(rows, c, intermediate) + _dense(rows, intermediate, c)
+
+    joint = (
+        3 * _dense(text_kv, c, c) + _dense(text_query, c, c)
+        + 4 * _dense(image, c, c)
+        + _attention(1, 20, 128, image + text_query, image + text_kv)
+        + shared(text_query, 6912) + shared(image, 3584) + moe(image)
+    )
+
+    def single_block(last: bool) -> int:
+        length = image + text_kv
+        projected = image if last else image + text_query
+        return (
+            3 * _dense(length, c, c) + _dense(projected, c, c)
+            + _attention(1, 20, 128, projected, length)
+            + shared(projected, 3584) + moe(projected)
+        )
+
+    main = _dense(image, 64, c)
+    main += double * joint + (single - 1) * single_block(False) + single_block(True)
+    main += _dense(image, c, 64)
+    fixed = (
+        _dense(1, 256, c) + _dense(1, c, c)
+        + _dense(1, 2048, c) + _dense(1, c, c)
+        + (double + single) * _dense(tokens, 4096, c) + _dense(tokens, 4096, c)
+        + (double * 12 + single * 6 + 2) * _dense(1, c, c)
+    )
+    return main, fixed
+
+
+def _wurstchen_conv(h: int, w: int, output: int, kernel: int, incoming: int, groups: int = 1) -> int:
+    """Count grouped convolutions, including depthwise Würstchen residual layers."""
+    return h * w * output * kernel * kernel * (incoming // groups)
+
+
+def _wurstchen_res(h: int, w: int, channels: int, skip: bool = False) -> int:
+    return (
+        _wurstchen_conv(h, w, channels, 3, channels, groups=channels)
+        + _wurstchen_conv(h, w, channels * 4, 1, channels * (2 if skip else 1))
+        + _wurstchen_conv(h, w, channels, 1, channels * 4)
+    )
+
+
+def _wurstchen_attn(h: int, w: int, channels: int, heads: int, text_length: int) -> int:
+    hw = h * w
+    return (
+        4 * _dense(hw, channels, channels)
+        + _attention(1, heads, channels // heads, hw, hw + text_length)
+    )
+
+
+def _wurstchen_stage_c(h: int, w: int, tokens: int) -> tuple[int, int]:
+    """Compute the 64-block Würstchen Stage C network plus once-only CLIP projections."""
+    c, clip = 2048, tokens + 8
+    timestep = 3 * _dense(1, 64, 2 * c)
+    attn = _wurstchen_attn(h, w, c, 32, clip)
+    base = _wurstchen_res(h, w, c)
+    main = _wurstchen_conv(h, w, c, 1, 16)
+    main += _wurstchen_conv(h, w, c, 1, c)  # Downscaler between two levels.
+    main += (8 + 24) * (base + timestep + attn)
+    main += (24 + 8) * (base + timestep + attn)
+    # First block of the second up level has the skip-enabled residual input.
+    main += _wurstchen_res(h, w, c, True) - base
+    main += _wurstchen_conv(h, w, c, 1, c)  # Upscaler after first up level.
+    main += _wurstchen_conv(h, w, 16, 1, c)
+    fixed = _dense(tokens, 1280, c) + 2 * _dense(1, 1280, c * 4)
+    fixed += 64 * (3 * _dense(clip, c, c))
+    return main, fixed
+
+
+def _wurstchen_stage_b(h: int, w: int) -> tuple[int, int]:
+    """Count Würstchen Stage B including repeated up blocks and fixed mappers."""
+    channels = (320, 640, 1280, 1280)
+    blocks_down, blocks_up = (2, 6, 28, 6), (6, 28, 6, 2)
+    down_attention, up_attention = (False, False, True, True), (True, True, False, False)
+    repeats = (3, 3, 2, 2)
+    h //= 2
+    w //= 2
+    main = _wurstchen_conv(h, w, channels[0], 2, 4)
+    for i, c in enumerate(channels):
+        if i:
+            h //= 2
+            w //= 2
+            main += _wurstchen_conv(h, w, c, 2, channels[i - 1])
+        block = _wurstchen_res(h, w, c) + 2 * _dense(1, 64, 2 * c)
+        if down_attention[i]:
+            block += _wurstchen_attn(h, w, c, 20, 4)
+        main += blocks_down[i] * block
+    for i in range(4):
+        c = channels[3 - i]
+        base = _wurstchen_res(h, w, c) + 2 * _dense(1, 64, 2 * c)
+        if up_attention[i]:
+            base += _wurstchen_attn(h, w, c, 20, 4)
+        for _ in range(repeats[i]):
+            main += blocks_up[i] * base
+            if i > 0:
+                main += _wurstchen_res(h, w, c, True) - _wurstchen_res(h, w, c)
+        if repeats[i] > 1:
+            main += (repeats[i] - 1) * _wurstchen_conv(h, w, c, 1, c)
+        if i < 3:
+            h *= 2
+            w *= 2
+            main += _wurstchen_conv(h, w, channels[2 - i], 2, c)
+    main += _wurstchen_conv(h, w, 16, 1, channels[0])
+
+    # Stage B executes the effnet mapper at H/2 x W/2 and pixels mapper at 8x8.
+    fixed = (
+        _wurstchen_conv(h, w, channels[0] * 4, 1, 16)
+        + _wurstchen_conv(h, w, channels[0], 1, channels[0] * 4)
+        + _wurstchen_conv(8, 8, channels[0] * 4, 1, 3)
+        + _wurstchen_conv(8, 8, channels[0], 1, channels[0] * 4)
+        + _dense(1, 1280, 5120)
+    )
+    # 28+6 down and 6+28 up attention blocks.
+    fixed += 68 * 3 * _dense(4, 1280, 1280)
+    return main, fixed
+
+
 def _mmdit(image: int, tokens: int, architecture: dict, dual_layers: frozenset[int]) -> tuple[int, int]:
     """Count the pinned SD3/SD3-Large MMDiT joint-attention and fixed paths."""
     c, layers = architecture["channels"], architecture["layers"]
@@ -678,7 +810,16 @@ def estimate_compute_units(
     tokens = padded or architecture["default_text_tokens"]
     strategy = architecture["strategy"]
 
-    if strategy == "mmdit":
+    if strategy == "wurstchen_stage_c":
+        raw_h, raw_w = height_px // 64, width_px // 64
+        stage_c_h, stage_c_w = (raw_h * 3 + 1) // 2, (raw_w * 3 + 1) // 2
+        c_main, c_fixed = _wurstchen_stage_c(stage_c_h, stage_c_w, tokens)
+        b_main, b_fixed = _wurstchen_stage_b(raw_h * 16, raw_w * 16)
+        instruction_units = (c_main * steps + b_main * architecture["stage2_steps"] + c_fixed + b_fixed) * cfg
+    elif strategy == "wurstchen_stage_b":
+        main, fixed = _wurstchen_stage_b(height, width)
+        instruction_units = (main * steps + fixed) * cfg
+    elif strategy == "mmdit":
         mmdit = spec.get("mmdit")
         raw_dual = mmdit.get("dual_attention_layers", []) if isinstance(mmdit, dict) else []
         if raw_dual is None:
@@ -723,6 +864,8 @@ def estimate_compute_units(
             main, fixed = _flux3(image, tokens, architecture)
         elif strategy == "hidream_o1":
             main, fixed = _hidream_o1(height * width, tokens, architecture)
+        elif strategy == "hidream_i1":
+            main, fixed = _hidream_i1(image, tokens, architecture)
         else:
             return ComputeUnitEstimate(None, "Unsupported model version.")
         instruction_units = (main * steps + fixed) * cfg
