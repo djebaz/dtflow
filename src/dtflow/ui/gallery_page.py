@@ -113,6 +113,7 @@ THUMBNAIL_SIDE = 600
 THUMBNAIL_CONCURRENCY = 6
 AUTO_REFRESH_MS = 1000  # file-metadata poll only; unchanged polls never rebuild the page
 PUSH_DEBOUNCE_MS = 250  # coalesce in-process change hints before the metadata check
+LIVE_RECOVERY_INTERVAL_S = 5  # full live reads during snapshot/failure episodes keep their original spacing
 SNAPSHOT_RECOVERY_GRACE_S = 5  # presentation-only stability grace before a recovered live read hides the warning
 SOURCE_SUMMARY_INTERVAL_S = 60  # minimum spacing of gallery.source_summary per phase; samples keep accumulating
 LOOKAHEAD_SCREENS = 3  # loaded beyond the viewport: at least one batch or this many screens
@@ -522,6 +523,8 @@ class GalleryPage(QObject):
         self._auto_checking = False
         self._auto_last_full = 0.0
         self._auto_unchanged_polls = 0
+        self._auto_skip_reasons: list[str] = []
+        self._auto_skip_at = 0.0
         self._refresh_failing = False
         self._snapshot_at = None
         self._snapshot_warning_dismissed = False
@@ -1510,7 +1513,9 @@ class GalleryPage(QObject):
         if self._auto_checking:
             reasons.append("signature_check")
         if reasons:
-            if dev_enabled():
+            now = monotonic()
+            if dev_enabled() and (reasons != self._auto_skip_reasons or now - self._auto_skip_at >= 10):
+                self._auto_skip_reasons, self._auto_skip_at = reasons, now
                 measurement(
                     log,
                     "gallery.auto_refresh",
@@ -1522,6 +1527,8 @@ class GalleryPage(QObject):
         # A snapshot/failure episode needs every live retry and its existing
         # two-success recovery semantics; a file-stat hint cannot gate recovery.
         if self._snapshot_at or self._snapshot_warning_episode or self._refresh_failing:
+            if monotonic() - self._auto_last_full < LIVE_RECOVERY_INTERVAL_S:
+                return
             if dev_enabled():
                 measurement(
                     log, "gallery.auto_refresh", action="started", reason="live_recovery", mounted=len(self.items)
@@ -1611,8 +1618,25 @@ class GalleryPage(QObject):
             self._sync_snapshot_warning()
         self._schedule_save()
 
+    def _following_newest(self) -> bool:
+        """True while the view sits on the newest image of a newest-first list (Follow would act)."""
+        if self.offset != 0 or self.sort.currentText() not in ("Newest first", "") or not self.items:
+            return False
+        if self.mode == "Detail":
+            return self.selected_id == self.items[0].identity
+        if self._density_anchor is not None or self._suppress_batch_scroll:
+            return False
+        bar = self.grid_scroll.verticalScrollBar() if self.mode == "Grid" else self.table.verticalScrollBar()
+        return bar.value() == 0
+
     def _sync_follow_text(self) -> None:
-        self.follow_button.setText(f"Follow: {'On' if self.follow_button.isChecked() else 'Off'}")
+        if not self.follow_button.isChecked():
+            state = "Off"
+        else:
+            state = "On" if not self.items or self._following_newest() else "Paused"
+        text = f"Follow: {state}"
+        if self.follow_button.text() != text:
+            self.follow_button.setText(text)
 
     def _follow_changed(self, checked: bool) -> None:
         self._sync_follow_text()
@@ -1631,15 +1655,14 @@ class GalleryPage(QObject):
         """Follow keeps the viewer on the newest image, but only when it is already there.
 
         Scrolling away from the top (Grid, List) or selecting an older image (Detail) pauses
-        it implicitly, so new arrivals never pull the view away from an inspected image.
+        it implicitly (the button reads "Paused"), so new arrivals never pull the view away from
+        an inspected image; it resumes when the view returns to the newest image.
         """
-        if not self.follow_button.isChecked() or query.sort != "newest" or query.offset != 0 or self.offset != 0:
+        if not self.follow_button.isChecked() or query.sort != "newest" or query.offset != 0:
             return False
-        if not self.items or not page.items or self.items[0].identity == page.items[0].identity:
+        if not page.items or (self.items and self.items[0].identity == page.items[0].identity):
             return False
-        if self.mode == "Detail":
-            return self.selected_id == self.items[0].identity
-        return self._scroll["grid" if self.mode == "Grid" else "list"] == 0
+        return self._following_newest()
 
     def _filter_edited(self, *_args) -> None:
         self._cancel_open_output()
@@ -2242,6 +2265,7 @@ class GalleryPage(QObject):
 
     def _sync_pager(self, *, loading: bool = False) -> None:
         """Use the viewport's first visible image, not the fetched window offset."""
+        self._sync_follow_text()
         first, last = self._visible_range()
         self.grid_position_changed.emit(first if self.mode == "Grid" else 0, self.total)
         self.pager.present(

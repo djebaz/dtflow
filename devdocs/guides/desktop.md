@@ -50,7 +50,7 @@ from a saved request outside the slider range is kept exactly until its slider i
 requests retain their recorded weights and existing validation; this does not change the
 CLI or provider weight contract.
 
-Confirmations, editors, progress and results use one thin bottom overlay above content, across tabs;
+Confirmations, editors and results use one thin bottom overlay above content, across tabs. Running progress is docked into the visible page's own bar (centre of the Images pager bar, Logs footer) as one clipped line per job, with full text in tooltips, and falls back to the overlay on pages without a dock;
 it is hidden when idle and reserves no empty layout space. Labelled rows distinguish
 concurrent export, Trash, gallery selection and generation/queue work. Unknown totals are
 indeterminate, not guessed percentages; queue counts mean settled items, not sampler steps.
@@ -234,8 +234,17 @@ only new entries, removals discard departed entries and changed metadata updates
 in place. Retained thumbnails and their in-flight decodes survive insertions and
 reordering; only new images or changed path/size/availability require a thumbnail
 decode. The selected Detail image and zoom/pan stay intact when other outputs
-change. Fully unchanged pages also preserve exact scroll and focus while
+change, except under **Follow** (below). Fully unchanged pages also preserve exact scroll and focus while
 counts/navigation can still update.
+
+**Follow** (on by default, remembered) keeps the newest image in view with the newest-first sort:
+when new images arrive while the view is on the newest one (scrolled to the top in Grid/List,
+showing the newest in Detail, so Detail zoom/pan resets), it moves to the new image. Selecting an
+older image or scrolling away pauses it; the button reads **Follow: Paused** until you return to the
+newest, and turning it on jumps there. Other sorts never follow. New images from generation or
+queue progress in this window are picked up within a fraction of a second; changes made by other
+processes are found by the one-second metadata poll, which costs a full read only when the
+database files changed (snapshot/failure recovery keeps its five-second spacing).
 
 The labelled Auto-refresh toggle uses Connection's mint/teal colors when On and
 neutral colors when Off; its size, label and refresh behavior are unchanged.

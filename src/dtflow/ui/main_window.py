@@ -250,7 +250,7 @@ class MainWindow:
         self.progress_strip.register_dock(
             self.gallery_detail.galleryPagerProgressDock, self.gallery_detail.galleryPagerBar
         )
-        self.progress_strip.register_dock(self.logs_form.logsProgressDock, self.logs_form.logsStatus)
+        self.progress_strip.register_dock(self.logs_form.logsProgressDock, self.logs_form)
         self.inline = InlineFeedback(form)
         # Preserve the connection controller's established chrome references.
         for name in (

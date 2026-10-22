@@ -5,7 +5,7 @@ from pathlib import Path
 
 from PySide6.QtCore import QEasingCurve, QEvent, QFile, QIODevice, QObject, QPropertyAnimation, QRect, Qt, QTimer, Slot
 from PySide6.QtUiTools import QUiLoader
-from PySide6.QtWidgets import QApplication, QFrame, QGraphicsOpacityEffect
+from PySide6.QtWidgets import QApplication, QBoxLayout, QFrame, QGraphicsOpacityEffect, QSizePolicy
 from shiboken6 import isValid
 
 from dtflow.ui.trash_icon import trash_icon_pixmap
@@ -70,13 +70,15 @@ class ActivityStrip(QObject):
         panel.form.hide()
 
     def register_dock(self, dock, anchor):
-        """Let a page host running-progress rows in its own bar while `anchor` is visible.
+        """Let a page host running-progress rows in `dock` while `anchor` is visible.
 
-        `dock` is an empty Designer container inside `anchor`. Results, warnings and
-        pages without a dock keep using the bottom overlay.
+        `dock` is an empty Designer container in the page's own bar; `anchor` is any widget
+        whose visibility means that page is showing (the bar or the page root). Results,
+        warnings and pages without a dock keep using the bottom overlay.
         """
         if dock.layout() is None:
             raise ValueError("Activity dock needs a layout.")
+        dock.setMaximumWidth(480)
         self.docks.append((dock, anchor))
         anchor.installEventFilter(self)
 
@@ -107,16 +109,37 @@ class ActivityStrip(QObject):
                 self.form.activityRowsLayout.addWidget(row)
             self._style_docked(row, want)
         for dock, _anchor in self.docks:
-            dock.setVisible(dock.layout().count() > 0)
+            dock.setVisible(
+                any(isValid(row) and row.parentWidget() is dock and not row.isHidden() for row in self.rows.values())
+            )
 
     @staticmethod
     def _style_docked(row, docked):
         """A docked row is one compact line inside a page bar; the overlay row keeps its card look."""
         row.setProperty("docked", docked)
         row.activitySymbol.setVisible(not docked)
-        row.activityLabel.setWordWrap(not docked)
-        row.activityDetail.setWordWrap(not docked)
-        row.activityDetail.setMaximumWidth(260 if docked else 16777215)
+        # One line: label and detail side by side, clipped (full text stays in tooltips) so two
+        # concurrent jobs never widen the page's minimum width or the 46 px bar.
+        row.activityCopyLayout.setDirection(
+            QBoxLayout.Direction.LeftToRight if docked else QBoxLayout.Direction.TopToBottom
+        )
+        row.activityCopyLayout.setSpacing(8 if docked else 2)
+        horizontal = QSizePolicy.Policy.Ignored if docked else QSizePolicy.Policy.Preferred
+        for label, width in ((row.activityLabel, 150), (row.activityDetail, 230)):
+            label.setWordWrap(not docked)
+            label.setSizePolicy(horizontal, QSizePolicy.Policy.Preferred)
+            label.setMaximumWidth(width if docked else 16777215)
+        row.activityLabel.setToolTip(row.activityLabel.text() if docked else "")
+        row.activityProgress.setMinimumWidth(60 if docked else 90)
+        row.activityProgress.setMaximumWidth(120 if docked else 230)
+        stop = row.activityStopButton
+        if docked and stop.property("fullText") is None:
+            stop.setProperty("fullText", stop.text())
+            stop.setToolTip(stop.text())
+            stop.setText("Stop")
+        elif not docked and stop.property("fullText") is not None:
+            stop.setText(stop.property("fullText"))
+            stop.setProperty("fullText", None)
         row.activityRowLayout.setContentsMargins(*((0, 0, 0, 0) if docked else (8, 7, 8, 7)))
         row.style().unpolish(row)
         row.style().polish(row)
@@ -379,7 +402,9 @@ class ActivityStrip(QObject):
         self._expiry.pop(key, None)
         row = self.rows.pop(key, None)
         if row is not None and isValid(row):
-            self.form.activityRowsLayout.removeWidget(row)
+            layout = row.parentWidget().layout() if row.parentWidget() is not None else None
+            if layout is not None:
+                layout.removeWidget(row)
             row.hide()
             row.deleteLater()
         if not self._expiry:
