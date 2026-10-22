@@ -101,7 +101,7 @@ PREVIEW_MIN_HEIGHT = 180
 COMPUTE_UNITS_LIMIT = 40_000  # meter full and red from here up
 COMPUTE_UNITS_METER_STEPS = 1000  # meter resolution; the bar's maximum
 # (units, fill fraction) anchors of the meter scale; see compute_units_fill().
-COMPUTE_UNITS_SCALE = ((700, 0.15), (3_000, 0.5), (COMPUTE_UNITS_LIMIT, 1.0))
+COMPUTE_UNITS_SCALE = ((100, 0.15), (3_000, 0.5), (COMPUTE_UNITS_LIMIT, 1.0))
 CHECKPOINT_STEP_SETTLE_MS = 600  # LoRA pruning waits until previous/next stepping pauses
 RESULT_PATH_ROLE = Qt.ItemDataRole.UserRole
 DISPATCH_REASON = (
@@ -166,7 +166,7 @@ def compute_units_fill(units: int) -> float:
     """Map an estimate to a 0–1 meter fill on a non-linear, monotonic scale.
 
     Typical estimates sit in the low thousands, so a linear 0–40 000 bar left them almost empty. The scale is linear from
-    0 to 700 (15 %), then logarithmic between anchors: 700 → 15 %, 3 000 → 50 %, 40 000 → 100 %. Anything at or above
+    0 to 100 (15 %), then logarithmic between anchors: 100 → 15 %, 3 000 → 50 %, 40 000 → 100 %. Anything at or above
     COMPUTE_UNITS_LIMIT is clamped full.
     """
     if units <= 0:
@@ -1309,7 +1309,10 @@ class GenerationPage:
     def _step_checkpoint(self, offset: int) -> None:
         """Select the neighbouring entry of the current checkpoint list, which already reflects the active filters."""
         combo = self.page.modelCombo
-        index = combo.currentIndex() + offset
+        if combo.currentIndex() < 0:
+            index = 0 if offset > 0 else combo.count() - 1  # nothing selected: Next takes the first, Previous the last
+        else:
+            index = combo.currentIndex() + offset
         if not 0 <= index < combo.count():
             return
         sampler = self.page.samplerCombo
@@ -1330,8 +1333,9 @@ class GenerationPage:
         """Previous/next stop at the ends of the list rather than wrapping."""
         combo = self.page.modelCombo
         index, count = combo.currentIndex(), combo.count()
-        # With nothing selected, Next starts at the first entry.
-        self.page.previousCheckpointButton.setEnabled(index > 0)
+        # With nothing selected, both are enabled: Next takes the first entry and Previous the last.
+        none = index < 0 and count > 0
+        self.page.previousCheckpointButton.setEnabled(index > 0 or none)
         self.page.nextCheckpointButton.setEnabled(index + 1 < count)
 
     def _catalogue_domain(self) -> str:

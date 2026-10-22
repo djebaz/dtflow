@@ -35,7 +35,8 @@ name or pressing Enter applies it like **Apply**; Enter in the search applies th
 match (the current checkpoint when the filter still shows it), or the first match when the
 filter hides it. With no match, Enter moves the search text into the exact-identifier field
 instead of closing. The small previous/next buttons beside the Checkpoint selector step through
-the current filtered list without opening the editor and stop at either end. A custom
+the current filtered list without opening the editor and stop at either end; with no checkpoint selected, Next takes the first entry and
+Previous the last. A custom
 identifier you applied stays at the end of that list until the next catalogue rebuild, so it is
 also a stepping target. While you step, selected LoRAs are kept; once stepping pauses (about
 0.6 s) LoRAs incompatible with the model you stopped on are removed, as when picking it in the
@@ -338,7 +339,7 @@ Missing descriptions are shown as unknown. Viewing details does not contact a pr
 
 ### Local Compute Units estimate
 
-On Local Draw Things and direct DT+ Cloud, the Checkpoint label row includes a read-only meter for one text-to-image output, refreshed from the current checkpoint, dimensions, steps, guidance and LoRA/mode selection. It shows a number with narrow no-break thousands separators, or `unavailable`; fake hides it. Local shows the meter regardless of the Include DT+ Cloud catalogue checkbox. Blue fills a fixed non-linear scale: linear up to 700 (15 %), then logarithmic through 3 000 (50 %) to 40 000 (100 %), so typical estimates are readable. At or above 40 000 the full meter becomes red. Red is a display threshold, not a quota, rejection or credit balance. There is no hover tooltip: Checkpoint details shows only the CU value and supported models in its CU section.
+On Local Draw Things and direct DT+ Cloud, the Checkpoint label row includes a read-only meter for one text-to-image output, refreshed from the current checkpoint, dimensions, steps, guidance and LoRA/mode selection. It shows a number with narrow no-break thousands separators, or `unavailable`; fake hides it. Local shows the meter regardless of the Include DT+ Cloud catalogue checkbox. Blue fills a fixed non-linear scale: linear up to 100 (15 %), then logarithmic through 3 000 (50 %) to 40 000 (100 %), so typical estimates are readable. At or above 40 000 the full meter becomes red. Red is a display threshold, not a quota, rejection or credit balance. There is no hover tooltip: Checkpoint details shows only the CU value and supported models in its CU section.
 
 The Python port uses architecture-specific Draw Things instruction-count functions, selected by existing exact-file community metadata, plus current settings and DTFlow profile defaults. Supported ports cover FLUX.1, FLUX.2 Dev/Klein, Z-Image, Cosmos 2.5, Qwen-Image/2.1, Krea 2 and Ideogram 4. Unsupported modifiers use the base-architecture count without modifier costs. Missing exact metadata uses an existing catalogue family classification and local profile/default inputs for a base estimate; broad FLUX.1/FLUX.2 classifications select the base architecture, not a specific variant. No filename guessing or sibling technical-spec substitution is used. Unknown/unsupported families, selected LoRAs and image edits still show unavailable. The catalogues remain independent and unchanged; the accessibility description identifies base estimates.
 

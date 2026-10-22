@@ -894,6 +894,10 @@ def render_generate_configuration_states(shell, out):
             clear()
         # Checkpoint previous/next: both enabled mid-list; Next stops at the last entry.
         controller._fill_models(["offline-a.ckpt", "offline-b.ckpt", "offline-c.ckpt"])
+        page.modelCombo.setCurrentIndex(-1)
+        assert page.previousCheckpointButton.isEnabled() and page.nextCheckpointButton.isEnabled()
+        page.previousCheckpointButton.click()  # nothing selected: Previous takes the last entry
+        assert page.modelCombo.currentIndex() == 2
         page.modelCombo.setCurrentIndex(1)
         assert page.previousCheckpointButton.isEnabled() and page.nextCheckpointButton.isEnabled()
         shell.shell.leftScroll.verticalScrollBar().setValue(0)
