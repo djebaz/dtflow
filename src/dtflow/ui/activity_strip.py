@@ -28,6 +28,7 @@ def _load(name, parent):
 
 # Running jobs and routine endings live in the status-bar bar; errors, warnings, partial results,
 # notices and persistent conditions keep the overlay card, which needs room, actions and no expiry.
+_RUN_RESULTS = {"generation-result", "queue-result", "queue-message", "queue-quick"}
 _BAR_STATES = {"progress", "success", "stopped"}
 
 _OPERATION_ICONS = {
@@ -59,6 +60,7 @@ class ActivityStrip(QObject):
         self.bar.stop_requested.connect(self._bar_stop)
         self.bar.dismiss_requested.connect(self._bar_dismiss)
         self._bar_key = None
+        self._last_run = None
         window.statusBar().installEventFilter(self)
         window.statusBar().messageChanged.connect(lambda _text: QTimer.singleShot(0, self, self._position))
         self._expiry = {}
@@ -184,7 +186,8 @@ class ActivityStrip(QObject):
         total = chosen.activityProgress.maximum()
         done = chosen.activityProgress.value()
         known = running and total > 0
-        elapsed_text = "" if elapsed is None else clock(elapsed) if running else f"{clock(elapsed)} total"
+        suffix = " total" if str(key).startswith("queue") else ""
+        elapsed_text = "" if elapsed is None else clock(elapsed) if running else clock(elapsed) + suffix
         eta = ""
         if known and elapsed is not None and 0 < done < total and elapsed >= 3:
             eta = f"~{clock(elapsed * (total - done) / done)} left"
@@ -197,12 +200,16 @@ class ActivityStrip(QObject):
         stopping = running and not stop.isHidden() and not stop.isEnabled()
         detail = chosen.activityDetail.text()
         stage = detail if not (running and detail in ("Preparing…", "")) else ("Preparing" if not known else "")
+        reported_stage = chosen.property("stageText") or ""
+        if running and reported_stage:
+            stage = reported_stage
         label = chosen.activityLabel.text()
         model = BarModel(
             kind={"progress": "running"}.get(state, state),
             title=label,
             count=chosen.activityCount.text() if known else "",
             stage=stage,
+            wide=(chosen.property("wideText") or "") if running else "",
             fraction=(done / total) if known else None,
             elapsed=elapsed_text,
             eta=eta,
@@ -225,13 +232,13 @@ class ActivityStrip(QObject):
         """Space between the version text and the right-hand controls, without displacing either."""
         status = self.window.statusBar()
         message = status.currentMessage()
-        left = status.fontMetrics().horizontalAdvance(message) + 24 if message else 12
+        left = status.fontMetrics().horizontalAdvance(message) + 30 if message else 12
         right = status.width() - 12
         for child in status.findChildren(QWidget, options=Qt.FindChildOption.FindDirectChildrenOnly):
             if child is self.bar or not child.isVisible() or child.width() <= 0:
                 continue
             if child.x() > status.width() // 3:
-                right = min(right, child.x() - 8)
+                right = min(right, child.x() - 24)
         width = right - left
         if width < 160 or status.height() < 1:
             return None
@@ -360,7 +367,7 @@ class ActivityStrip(QObject):
         self._position()
         QTimer.singleShot(0, self, self._position)
 
-    def update(self, key, done, total, *, detail=None, elapsed="", eta=""):
+    def update(self, key, done, total, *, detail=None, elapsed="", eta="", stage="", wide=""):
         if not self._live():
             return
         row = self.rows.get(key)
@@ -378,6 +385,8 @@ class ActivityStrip(QObject):
                 )
             row.setProperty("elapsedText", elapsed)
             row.setProperty("etaText", eta)
+            row.setProperty("stageText", stage)
+            row.setProperty("wideText", wide)
             self._sync_bar()
 
     def complete(self, key, title, text, state="success"):
@@ -386,6 +395,13 @@ class ActivityStrip(QObject):
             return
         previous = self.rows.get(key)
         started = previous.property("startedAt") if previous is not None and isValid(previous) else None
+        if (
+            started is None
+            and key in _RUN_RESULTS
+            and self._last_run is not None
+            and monotonic() - self._last_run[1] < 30
+        ):
+            started = self._last_run[0]  # a result right after the "run" job ended reports that job's duration
         self.start(key, title)
         row = self.rows[key]
         row.setProperty("startedAt", started)  # unknown when the job ran under another key
@@ -473,6 +489,8 @@ class ActivityStrip(QObject):
             return
         self._expiry.pop(key, None)
         row = self.rows.pop(key, None)
+        if key == "run" and row is not None and isValid(row) and row.property("startedAt") is not None:
+            self._last_run = (row.property("startedAt"), monotonic())
         if row is not None and isValid(row):
             self.form.activityRowsLayout.removeWidget(row)
             row.hide()

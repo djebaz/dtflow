@@ -469,6 +469,11 @@ QStatusBar {
   background-color: ${color.background};
   color: ${color.menuText};
 }
+/* The status bar carries the quiet version text and the activity bar, both at the small size. */
+QStatusBar {
+  color: ${color.secondary};
+  font-size: 9pt;
+}
 QStatusBar::item {
   border: 0;
 }
@@ -476,6 +481,11 @@ QPushButton#activityBarButton {
   padding: 0 10px;
   min-height: 0;
   border-radius: 3px;
+  font-size: 9pt;
+  font-weight: 500;
+}
+QPushButton#activityBarButton[result="true"] {
+  padding: 0;
 }
 QToolButton#aboutButton {
   border: 0;

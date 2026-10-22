@@ -400,12 +400,13 @@ class MainWindow:
         form.statusBar().addPermanentWidget(status_actions)
         self.grid_index_group = grid_status_group
         # The slot stays on every tab (only its text hides) so the activity bar has the same room everywhere.
-        grid_status_group.setFixedWidth(70)
+        grid_status_group.setFixedSize(70, 20)
         grid_index.setVisible(form.workspaceStack.currentWidget() is self.images_page)
         self.grid_index_label = grid_index
         self.gallery.grid_position_changed.connect(self._sync_grid_index_status)
         self.logs_button = logs_button
         form.statusBar().setSizeGripEnabled(False)
+        form.statusBar().setFixedHeight(24)  # same height on every tab; the activity bar sits at its centre
         form.checkButton.clicked.connect(self.check)
         form.saveKeyButton.clicked.connect(self.save_key)
         form.removeKeyButton.clicked.connect(self.remove_key)
@@ -736,11 +737,18 @@ class MainWindow:
             self.progress_strip.start(
                 "run",
                 label,
-                self.generation.cancel if self.activity.generating else None,
-                stop_text="Stop waiting locally",
+                self.generation.cancel if self.activity.generating else self.queue.cancel,
+                stop_text="Stop waiting locally" if self.activity.generating else "Stop after current image",
             )
         self.progress_strip.update(
-            "run", state.completed or 0, state.total or 0, detail=state.detail, elapsed=state.elapsed, eta=state.eta
+            "run",
+            state.completed or 0,
+            state.total or 0,
+            detail=state.detail,
+            elapsed=state.elapsed,
+            eta=state.eta,
+            stage=state.stage,
+            wide=state.wide,
         )
 
     def show(self) -> None:

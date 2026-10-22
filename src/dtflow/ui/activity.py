@@ -22,6 +22,9 @@ class RunState:
     # Observed time and estimate, kept apart from `detail` so each presentation shows them once.
     elapsed: str = ""
     eta: str = ""
+    # Short and long middle text for the activity bar; empty means use `detail`.
+    stage: str = ""
+    wide: str = ""
 
 
 class Activity:
