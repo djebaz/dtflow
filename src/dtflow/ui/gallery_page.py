@@ -1707,7 +1707,9 @@ class GalleryPage(QObject):
             button.style().polish(button)
         self.auto_button.setText("Live")
         self.auto_button.setIcon(
-            live_dot_icon(self._live_mode >= 1, QColor(self._tokens["color.focus"]), QColor(self._tokens["color.secondary"]))
+            live_dot_icon(
+                self._live_mode >= 1, QColor(self._tokens["color.focus"]), QColor(self._tokens["color.secondary"])
+            )
         )
         self.auto_button.setToolTip(
             "Live updates on. Click to turn off." if self._live_mode else "Live updates off. Click to turn on."
