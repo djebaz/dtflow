@@ -69,13 +69,38 @@ def _architecture_registry() -> dict[str, dict]:
             ):
                 continue
             if not all(
-                type(entry[field]) is int and entry[field] > 0
+                type(entry[field]) is int and (entry[field] >= 0 if field == "middle_attention" else entry[field] > 0)
                 for field in fields
                 if field != "include_fixed"
             ):
                 continue
             if strategy == "z_image" and type(entry["include_fixed"]) is not bool:
                 continue
+            if strategy in {"unet_v1", "unet_v2", "unet_xl"}:
+                schedule = entry.get("channel_schedule")
+                if not isinstance(schedule, list) or len(schedule) < 2 or any(
+                    type(channel) is not int or channel <= 0 for channel in schedule
+                ) or schedule[0] != entry["channels"]:
+                    continue
+                if strategy == "unet_xl":
+                    maps = (("input_attention", 2), ("output_attention", 3))
+                    if any(
+                        not isinstance(entry.get(key), dict)
+                        or any(
+                            not isinstance(ds, str) or not ds.isdecimal()
+                            or not isinstance(depths, list) or len(depths) != count
+                            or any(type(depth) is not int or depth < 0 for depth in depths)
+                            for ds, depths in entry[key].items()
+                        )
+                        for key, count in maps
+                    ):
+                        continue
+                else:
+                    downsamples = entry.get("attention_downsamples")
+                    if not isinstance(downsamples, list) or any(
+                        type(ds) is not int or ds < 1 for ds in downsamples
+                    ) or entry.get("heads_mode") not in ("fixed8", "channel64"):
+                        continue
             if type(entry.get("usage_bias")) not in (int, float) or entry["usage_bias"] not in (1, 2.5):
                 continue
             accepted[name] = entry
@@ -544,7 +569,8 @@ def _flux3(image: int, tokens: int, architecture: dict) -> tuple[int, int]:
     main += (single - 1) * block(seq, seq) + block(seq, image)
     main += _dense(image, c, 128)
     fixed = _dense(tokens, 20480, c)
-    fixed += 2 * (_dense(2, 256, c) + _dense(2, c, c))
+    fixed += _dense(2, 256, c) + _dense(2, c, c)
+    fixed += _dense(1, 256, c) + _dense(1, c, c)
     fixed += 4 * _dense(1, c, 3 * c) + _dense(1, c, 2 * c)
     return main, fixed
 
@@ -613,7 +639,13 @@ def estimate_compute_units(
         # Explicit catalogue classification only; never infer architecture from the filename
         # or substitute another checkpoint's technical description. Broad FLUX families
         # use their base architecture, not a claim about the selected variant.
-        version = {"flux_1": "flux1", "flux_2": "flux2"}.get(base_model, base_model)
+        version = {
+            "flux_1": "flux1",
+            "flux_2": "flux2",
+            "sd_1": "v1",
+            "sd_2": "v2",
+            "sdxl": "sdxl_base_v0.9",
+        }.get(base_model, base_model)
         if version not in SUPPORTED:
             return ComputeUnitEstimate(None, "No supported base architecture is known for this checkpoint.")
         profile = profile_for(model_id, version)
