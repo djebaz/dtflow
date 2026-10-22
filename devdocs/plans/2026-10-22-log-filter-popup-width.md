@@ -11,7 +11,7 @@
 - [x] Implement popup sizing and display-only labels/tooltips through the existing Logs controller.
 - [x] Add offline Component/Event popup preview definitions using real facet population; native popup compositing uses its actual position rather than assuming the custom popup placement API.
 - [x] Synchronize desktop guide, current status and unreleased notes.
-- [ ] Commit/push a separate PR; do not merge.
+- [x] Commit/push implementation (`29e4fb4`) in draft [PR #159](https://github.com/djebaz/dtflow/pull/159); not merged.
 
 ## Evidence and acceptance
 
