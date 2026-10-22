@@ -50,7 +50,7 @@ from a saved request outside the slider range is kept exactly until its slider i
 requests retain their recorded weights and existing validation; this does not change the
 CLI or provider weight contract.
 
-Confirmations, editors, progress and results use one thin bottom overlay above content, across tabs;
+Running jobs and routine endings (finished, stopped) use one 20 px activity bar in the middle of the status bar, between the version text and the right-hand controls; it adapts to its own width (short title below 520 px, stage text clips first, then ETA, then elapsed; title, count and Stop never drop), shows ✓/■ results with × for six seconds (paused while hovered or focused), and renders nothing when idle. Confirmations, editors, errors, warnings, partial results, notices and snapshot conditions use one thin bottom overlay above content, across tabs;
 it is hidden when idle and reserves no empty layout space. Labelled rows distinguish
 concurrent export, Trash, gallery selection and generation/queue work. Unknown totals are
 indeterminate, not guessed percentages; queue counts mean settled items, not sampler steps.
@@ -237,16 +237,16 @@ decode. The selected Detail image and zoom/pan stay intact when other outputs
 change, except under **Follow** (below). Fully unchanged pages also preserve exact scroll and focus while
 counts/navigation can still update.
 
-**Follow** (on by default, remembered) keeps the newest image in view with the newest-first sort:
+The Images **Live** button cycles Off, Auto (refresh) and Follow (refresh and keep the newest image in view with the newest-first sort); it is remembered. Under Follow:
 when new images arrive while the view is on the newest one (scrolled to the top in Grid/List,
 showing the newest in Detail, so Detail zoom/pan resets), it moves to the new image. Selecting an
-older image or scrolling away pauses it; the button reads **Follow: Paused** until you return to the
-newest, and turning it on jumps there. Other sorts never follow. New images from generation or
+older image or scrolling away pauses it; the button reads **Live: Follow (paused)** until you return to the
+newest, and switching to Follow jumps there. Other sorts never follow. New images from generation or
 queue progress in this window are picked up within a fraction of a second; changes made by other
 processes are found by the one-second metadata poll, which costs a full read only when the
 database files changed (snapshot/failure recovery keeps its five-second spacing).
 
-The labelled Auto-refresh toggle uses Connection's mint/teal colors when On and
+The labelled Live button (Auto-refresh) uses Connection's mint/teal colors when On and
 neutral colors when Off; its size, label and refresh behavior are unchanged.
 Hover and mouse activation keep the On colors; the blue dashed focus outline is
 reserved for keyboard navigation, matching Connection.

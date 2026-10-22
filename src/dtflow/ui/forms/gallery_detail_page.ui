@@ -278,38 +278,13 @@
             </property>
             <property name="minimumSize">
              <size>
-              <width>156</width>
+              <width>196</width>
               <height>36</height>
              </size>
             </property>
             <property name="maximumSize">
              <size>
-              <width>156</width>
-              <height>36</height>
-             </size>
-            </property>
-           </widget>
-          </item>
-          <item>
-           <widget class="QPushButton" name="galleryFollowButton">
-            <property name="accessibleName">
-             <string>Follow newest images</string>
-            </property>
-            <property name="text">
-             <string>Follow: Off</string>
-            </property>
-            <property name="toolTip">
-             <string>Keep the newest image in view as new images arrive (newest-first sort). Scrolling or selecting another image pauses it.</string>
-            </property>
-            <property name="minimumSize">
-             <size>
-              <width>128</width>
-              <height>36</height>
-             </size>
-            </property>
-            <property name="maximumSize">
-             <size>
-              <width>128</width>
+              <width>196</width>
               <height>36</height>
              </size>
             </property>

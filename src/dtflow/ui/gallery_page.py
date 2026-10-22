@@ -856,13 +856,16 @@ class GalleryPage(QObject):
         self.auto_button.setEnabled(True)
         self.auto_button.setCheckable(True)
         self.auto_button.installEventFilter(KeyboardFocusGuard(self.auto_button))
+        # One Live button cycles Off, Auto (refresh) and Follow (refresh and keep the newest in view).
+        # Its checked state means "refreshing" so the established On colors and programmatic
+        # setChecked(False/True) keep working.
+        self._live_mode = 0
+        self._live_pressed_mode = 0
+        self._syncing_live = False
         self.auto_button.toggled.connect(self._auto_refresh_changed)
-        self.follow_button = self._widget("galleryFollowButton", QPushButton)
-        self.follow_button.setCheckable(True)
-        self.follow_button.setChecked(True)
-        self.follow_button.installEventFilter(KeyboardFocusGuard(self.follow_button))
-        self.follow_button.toggled.connect(self._follow_changed)
-        self._sync_follow_text()
+        self.auto_button.pressed.connect(lambda: setattr(self, "_live_pressed_mode", self._live_mode))
+        self.auto_button.clicked.connect(lambda: self._apply_live((self._live_pressed_mode + 1) % 3))
+        self._sync_live_text()
 
         self.previous_button = self._widget("galleryPreviousButton", QPushButton)
         self.next_button = self._widget("galleryNextButton", QPushButton)
@@ -1427,8 +1430,8 @@ class GalleryPage(QObject):
                 self.slider.setValue(max(MIN_THUMBNAIL_PERCENT, min(MAX_THUMBNAIL_PERCENT, migrated)))
         selected = document.get("selected")
         self.selected_id = selected if isinstance(selected, str) and selected else None
-        self.auto_button.setChecked(bool(document.get("auto_refresh", True)))
-        self.follow_button.setChecked(bool(document.get("follow", True)))
+        auto = bool(document.get("auto_refresh", True))
+        self._apply_live(0 if not auto else 2 if bool(document.get("follow", True)) else 1)
         scroll = document.get("scroll")
         if isinstance(scroll, dict):
             for name in self._scroll:
@@ -1461,7 +1464,7 @@ class GalleryPage(QObject):
 
     def _sync_auto_refresh(self) -> None:
         enabled = self.auto_button.isChecked()
-        self.auto_button.setText(f"●  Auto-refresh: {'On' if enabled else 'Off'}")
+        self._sync_live_text()
         if enabled and self._active:
             self.auto_timer.start()
         else:
@@ -1609,13 +1612,33 @@ class GalleryPage(QObject):
         self._auto_last_full = now
         self.refresh(preserve=True, trigger="auto")
 
-    def _auto_refresh_changed(self, _checked: bool) -> None:
+    def _auto_refresh_changed(self, checked: bool) -> None:
+        if not self._syncing_live:
+            self._apply_live(max(1, self._live_mode) if checked else 0)
+
+    def _apply_live(self, mode: int) -> None:
+        """Set Live to 0 Off, 1 Auto or 2 Follow; the single place that changes the mode."""
+        previous = self._live_mode
+        self._live_mode = mode
+        self._syncing_live = True
+        try:
+            self.auto_button.setChecked(mode >= 1)
+        finally:
+            self._syncing_live = False
         self._sync_auto_refresh()
-        if not self.auto_button.isChecked() and self._snapshot_live_since is not None:
+        if mode == previous:
+            return
+        if mode == 0 and self._snapshot_live_since is not None:
             # A successful live read already recovered; stopping polling must
             # not leave its presentation waiting for a check that will not run.
             self._end_snapshot_warning_episode()
             self._sync_snapshot_warning()
+        if mode == 2 and not self._restoring and SORT_LABELS.get(self.sort.currentText(), "newest") == "newest":
+            # Turning Follow on goes straight to the newest image in every view.
+            if self.mode == "Detail":
+                self._pending_page_selection = "first"
+            self._page_scroll_target = "start"
+            self.refresh(reset=True, preserve=False, trigger="follow")
         self._schedule_save()
 
     def _following_newest(self) -> bool:
@@ -1629,36 +1652,27 @@ class GalleryPage(QObject):
         bar = self.grid_scroll.verticalScrollBar() if self.mode == "Grid" else self.table.verticalScrollBar()
         return bar.value() == 0
 
-    def _sync_follow_text(self) -> None:
-        if not self.follow_button.isChecked():
-            state = "Off"
+    def _sync_live_text(self) -> None:
+        if self._live_mode == 2 and self.items and not self._following_newest():
+            state = "Follow (paused)"
         else:
-            state = "On" if not self.items or self._following_newest() else "Paused"
-        text = f"Follow: {state}"
-        if self.follow_button.text() != text:
-            self.follow_button.setText(text)
-
-    def _follow_changed(self, checked: bool) -> None:
-        self._sync_follow_text()
-        if self._restoring:
-            return
-        self._schedule_save()
-        if not checked or SORT_LABELS.get(self.sort.currentText(), "newest") != "newest":
-            return
-        # Turning Follow on goes straight to the newest image in every view.
-        if self.mode == "Detail":
-            self._pending_page_selection = "first"
-        self._page_scroll_target = "start"
-        self.refresh(reset=True, preserve=False, trigger="follow")
+            state = ("Off", "Auto", "Follow")[self._live_mode]
+        text = f"●  Live: {state}"
+        if self.auto_button.text() != text:
+            self.auto_button.setText(text)
+        self.auto_button.setToolTip(
+            "Live: Off (manual refresh), Auto (refresh when images change) or Follow (also keep the newest image "
+            "in view). Follow pauses while you inspect older images or scroll away."
+        )
 
     def _follow_applies(self, query: GalleryQuery, page: GalleryPage) -> bool:
         """Follow keeps the viewer on the newest image, but only when it is already there.
 
         Scrolling away from the top (Grid, List) or selecting an older image (Detail) pauses
-        it implicitly (the button reads "Paused"), so new arrivals never pull the view away from
+        it implicitly (the button reads "Follow (paused)"), so new arrivals never pull the view away from
         an inspected image; it resumes when the view returns to the newest image.
         """
-        if not self.follow_button.isChecked() or query.sort != "newest" or query.offset != 0:
+        if self._live_mode != 2 or query.sort != "newest" or query.offset != 0:
             return False
         if not page.items or (self.items and self.items[0].identity == page.items[0].identity):
             return False
@@ -2083,7 +2097,7 @@ class GalleryPage(QObject):
             "gallery.live_access_recovered",
             level=logging.INFO,
             data={
-                "auto_refresh": self.auto_button.isChecked(),
+                "auto_refresh": self._live_mode >= 1,
             },
         )
 
@@ -2265,7 +2279,7 @@ class GalleryPage(QObject):
 
     def _sync_pager(self, *, loading: bool = False) -> None:
         """Use the viewport's first visible image, not the fetched window offset."""
-        self._sync_follow_text()
+        self._sync_live_text()
         first, last = self._visible_range()
         self.grid_position_changed.emit(first if self.mode == "Grid" else 0, self.total)
         self.pager.present(
@@ -4270,8 +4284,8 @@ class GalleryPage(QObject):
             "view": self.mode,
             "thumbnail_scale_percent": self.slider.value(),
             "selected": self.selected_id,
-            "auto_refresh": self.auto_button.isChecked(),
-            "follow": self.follow_button.isChecked(),
+            "auto_refresh": self._live_mode >= 1,
+            "follow": self._live_mode == 2,
             "scroll": dict(self._scroll),
         }
 
