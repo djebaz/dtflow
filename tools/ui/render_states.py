@@ -730,7 +730,7 @@ def render_generate_configuration_states(shell, out):
             editor = shell.inline._editor
             assert editor is not None
             rows = {r.property("identifier"): r for r in editor.findChildren(QWidget, "loraSelectionRow")}
-            rows["offline-style.ckpt"].findChild(QSlider, "loraSelectionSlider").setValue(8)  # checks it too
+            rows["offline-style.ckpt"].findChild(QSlider, "loraSelectionSlider").setValue(16)  # 0.8; checks it too
             snap("generate-24-lora-selection-editor")
             clear()
         with patch.object(lora, "_candidates", [("offline-style.ckpt", 4.2)]):
@@ -1232,7 +1232,7 @@ def render_active_queue_states(shell, out):
         page.planLorasEdit._add.click()  # the same checkbox+slider editor, limited to Generate's LoRAs
         weight_editor = shell.inline._editor
         row = next(r for r in weight_editor.findChildren(QWidget, "loraSelectionRow"))
-        for tick in (6, 8, 10):  # several weights for one LoRA, collected with +
+        for tick in (12, 16, 20):  # 0.6, 0.8, 1.0: several weights for one LoRA, collected with +
             row.findChild(QSlider, "loraSelectionSlider").setValue(tick)
             row.findChild(QToolButton, "loraSelectionAddWeightButton").click()
         assert len(row.findChildren(QPushButton)) == 3

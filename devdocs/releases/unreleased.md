@@ -21,7 +21,7 @@ Changes through the 5.1.0 preparation baseline are consolidated in [DTFlow 5.1.0
 - In the Checkpoint search editor and composer choice editors, double-clicking a name or pressing Enter applies it like **Apply**, including with a search filter active; Enter with no match moves the text to the identifier field instead of re-applying the old choice.
 - The Queues composer's LoRA sets use the same checkbox and weight-slider editor: each Add creates one set from the checked LoRAs (starting from Generate's LoRAs, none checked is a set without LoRAs).
 - The Queues composer's LoRA weights row becomes chips with the same checkbox and weight-slider editor, limited to the Generate form's LoRAs: check a LoRA and press + to collect several weights for it, and Apply creates one `IDENTIFIER: weight` chip per LoRA and weight. The planner input is unchanged.
-- **Add LoRA** becomes **Edit LoRAs**: a taller editor to check or uncheck LoRAs and set each weight with a 0.0–3.0 slider (default 1.0); Apply or Enter replaces the selection once. Every LoRA starts at 1.0; catalogue weight suggestions now appear only in the tooltip. The mouse wheel over a slider adjusts its weight.
+- **Add LoRA** becomes **Edit LoRAs**: a taller editor to check or uncheck LoRAs and set each weight with a 0.0–3.0 slider in 0.05 steps (default 1.0; one mouse-wheel notch moves it by 0.05); Apply or Enter replaces the selection once. Every LoRA starts at 1.0; catalogue weight suggestions now appear only in the tooltip. The mouse wheel over a slider adjusts its weight.
 
 ## Fixed
 

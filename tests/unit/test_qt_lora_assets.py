@@ -71,7 +71,7 @@ def add_lora(window, qtbot, name, weight=0.5):
     editor.findChild(QLineEdit, "loraSelectionCustomIdentifier").setText(name)
     editor.findChild(QPushButton, "loraSelectionCustomAddButton").click()
     row = next(r for r in editor.findChildren(QWidget, "loraSelectionRow") if r.property("identifier") == name)
-    row.findChild(QSlider, "loraSelectionSlider").setValue(round(weight * 10))
+    row.findChild(QSlider, "loraSelectionSlider").setValue(round(weight * 20))
     window.inline.form.inlineEditorAcceptButton.click()
 
 
@@ -87,7 +87,7 @@ def test_lora_diagnostics_are_rendered_not_computed_and_block_generation(window,
     assert not any(r.findChild(QCheckBox).isChecked() for r in rows.values())
     assert not panel.loras  # nothing commits until Apply
     rows["ok"].findChild(QCheckBox).setChecked(True)
-    rows["ok"].findChild(QSlider, "loraSelectionSlider").setValue(7)
+    rows["ok"].findChild(QSlider, "loraSelectionSlider").setValue(14)
     window.inline.form.inlineEditorAcceptButton.click()
     assert panel.loras[0].weight == 0.7
     for name in ("bad", "unk"):

@@ -42,10 +42,10 @@ also a stepping target. While you step, selected LoRAs are kept; once stepping p
 0.6 s) LoRAs incompatible with the model you stopped on are removed, as when picking it in the
 editor. The sampler chosen before stepping returns on any model that allows it. **Edit LoRAs** opens a
 taller editor that lists the selected LoRAs first (checked, at their weights) and then every
-offered LoRA, each with a checkbox and a 0.0–3.0 weight slider in 0.1 steps (default 1.0).
+offered LoRA, each with a checkbox and a 0.0–3.0 weight slider in 0.05 steps (default 1.0); one mouse-wheel notch over a slider moves it by 0.05.
 Moving a slider checks its LoRA; search filters the list; an exact identifier can be added
 with **Add custom**; text left in that field is added when you apply. **Apply** (or Enter) replaces the whole selection once; unchecking a
-LoRA removes it. New UI selections use one-decimal weights; 0.0 is preserved. A weight loaded
+LoRA removes it. New UI selections use weights in 0.05 steps; 0.0 is preserved. A weight loaded
 from a saved request outside the slider range is kept exactly until its slider is moved. The mouse wheel over a slider adjusts its weight (and checks the LoRA). Existing imported/saved
 requests retain their recorded weights and existing validation; this does not change the
 CLI or provider weight contract.

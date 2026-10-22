@@ -3,15 +3,15 @@
 from collections.abc import Callable, Sequence
 from pathlib import Path
 
-from PySide6.QtCore import QFile, QIODevice, Qt
+from PySide6.QtCore import QEvent, QFile, QIODevice, QObject, Qt
 from PySide6.QtGui import QKeySequence, QShortcut
 from PySide6.QtUiTools import QUiLoader
-from PySide6.QtWidgets import QPushButton, QWidget
+from PySide6.QtWidgets import QPushButton, QSlider, QWidget
 
 from dtflow.core.models import LoRASelection
 from dtflow.ui.inline_feedback import feedback
 
-WEIGHT_STEPS = 10  # slider ticks per 1.0 of weight (0.1 steps)
+WEIGHT_STEPS = 20  # slider ticks per 1.0 of weight: 0.05 per tick, per arrow key and per mouse-wheel notch
 DEFAULT_WEIGHT = 1.0
 MIN_LIST_HEIGHT = 220
 LIST_HEIGHT_SHARE = 0.55  # the list may take up to this share of the window height before it scrolls
@@ -30,9 +30,23 @@ def _load(name: str, parent: QWidget | None) -> QWidget:
     return form
 
 
+class _WheelStep(QObject):
+    """One mouse-wheel notch moves a weight slider by exactly one tick (0.05), not Qt's three-line scroll step."""
+
+    def eventFilter(self, watched, event):
+        if event.type() == QEvent.Type.Wheel and isinstance(watched, QSlider):
+            delta = event.angleDelta().y()
+            if delta:
+                watched.setValue(watched.value() + (1 if delta > 0 else -1))
+            event.accept()
+            return True
+        return False
+
+
 def format_weight(weight: float) -> str:
-    """One decimal for slider values; a loaded finer weight keeps its exact digits."""
-    return f"{weight:.1f}" if round(weight, 1) == weight else f"{weight:g}"
+    """Shortest exact digits, at least one decimal (``1.0``, ``0.65``)."""
+    text = f"{weight:g}"
+    return text if "." in text or "e" in text else text + ".0"
 
 
 def edit_lora_selection(
@@ -56,6 +70,7 @@ def edit_lora_selection(
     it); a checked LoRA then yields one pair per collected weight, or one at the slider's weight when none were added.
     """
     editor = _load("lora_selection_editor.ui", None)
+    wheel_step = _WheelStep(editor)
     if hint:
         editor.loraSelectionHint.setText(hint)
     rows_layout = editor.loraSelectionRowsLayout
@@ -84,11 +99,12 @@ def edit_lora_selection(
         label.setText(format_weight(weight))
 
         def moved(value: int) -> None:
-            weights[name] = value / WEIGHT_STEPS
+            weights[name] = round(value / WEIGHT_STEPS, 2)
             label.setText(format_weight(weights[name]))
             check.setChecked(True)  # weighing a LoRA means using it
 
         slider.valueChanged.connect(moved)
+        slider.installEventFilter(wheel_step)
         if multi_weight:
             extra[name] = []
             row.loraSelectionAddWeightButton.setVisible(True)
