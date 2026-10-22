@@ -23,7 +23,7 @@ from dtflow.core.compute_units import (
 from dtflow.core.model_profiles import exact_model_spec
 
 VIDEO_STRATEGIES = frozenset(
-    {"video_hunyuan", "video_wan", "video_ltx2", "video_minimax_h3"}
+    {"video_hunyuan", "video_wan", "video_ltx2", "video_minimax_h3", "video_svd"}
 )
 
 
@@ -34,6 +34,8 @@ def _video_size(width_px: int, height_px: int, scale: int) -> tuple[int, int]:
 
 def _effective_frames(frames: int, strategy: str) -> int:
     """Pack requested output frames exactly as ComputeUnits.swift does."""
+    if strategy == "video_svd":
+        return frames
     if strategy in ("video_wan", "video_hunyuan"):
         return max(1, (frames - 1) // 4 + 1)
     if strategy == "video_ltx2":
@@ -41,6 +43,107 @@ def _effective_frames(frames: int, strategy: str) -> int:
     if strategy == "video_minimax_h3":
         return 1 if frames == 1 else ((max(frames, 5) - 5 + 16) // 17) * 5 + 2
     raise ValueError("Unsupported video frame-packing strategy.")
+
+
+def _svd(time: int, height: int, width: int, architecture: dict) -> tuple[int, int]:
+    """Port temporal UNetXL with one-token SVD conditioning (main and fixed)."""
+    schedule = architecture["channel_schedule"]
+    input_depths = {int(k): v for k, v in architecture["input_attention"].items()}
+    output_depths = {int(k): v for k, v in architecture["output_attention"].items()}
+    emb = schedule[0] * 4
+
+    def conv(h: int, w: int, output: int, kernel: int, incoming: int) -> int:
+        return time * h * w * output * kernel * kernel * incoming
+
+    def res(h: int, w: int, incoming: int, output: int) -> int:
+        result = conv(h, w, output, 3, incoming)
+        result += _dense(time, emb, output) + conv(h, w, output, 3, output)
+        if incoming != output:
+            result += conv(h, w, output, 1, incoming)
+        # Temporal TimeResBlock: two 3x1 convolutions over frames plus time embedding.
+        result += 2 * (time * h * w * output * 3 * output)
+        result += _dense(time, emb, output)
+        return result
+
+    def pos_embed(channels: int) -> int:
+        return _dense(time, channels, 4 * channels) + _dense(time, 4 * channels, channels)
+
+    def spatial(h: int, w: int, channels: int, depth: int) -> tuple[int, int]:
+        if not depth:
+            return 0, 0
+        hw = h * w
+        heads = channels // 64
+        # Spatial projections are shared across transformer depth.
+        main = 2 * conv(h, w, channels, 1, channels) + pos_embed(channels)
+        fixed = pos_embed(channels)
+        rows = time * hw
+        self_spatial = 4 * _dense(rows, channels, channels)
+        self_spatial += _attention(time, heads, 64, hw, hw)
+        feed = 2 * _dense(rows, channels, channels * 4)
+        feed += _dense(rows, channels * 4, channels)
+        spatial_block = self_spatial + feed
+
+        # Each temporal transformer has ff_in, temporal self-attn and ff_out.
+        time_self = 4 * _dense(rows, channels, channels)
+        time_self += _attention(hw, heads, 64, time, time)
+        temporal_block = 2 * feed + time_self
+        main += depth * (spatial_block + temporal_block)
+
+        # For embeddingLength=(1,1), both spatial/temporal fixed paths emit
+        # the one-token to_v + out_proj Dense operations.
+        fixed += depth * 4 * _dense(time, channels, channels)
+        return main, fixed
+
+    def layer(h: int, w: int, incoming: int, channels: int, depth: int) -> tuple[int, int]:
+        main = res(h, w, incoming, channels)
+        transformer, fixed = spatial(h, w, channels, depth)
+        return main + transformer, fixed
+
+    main = (
+        _dense(time, schedule[0], emb) + _dense(time, emb, emb)
+        + _dense(time, 2816, emb) + _dense(time, emb, emb)
+        + conv(height, width, schedule[0], 3, 4)
+    )
+    fixed = 0
+    h, w, ds = height, width, 1
+    previous = schedule[0]
+    skip_channels = [schedule[0]]
+    for index, channels in enumerate(schedule):
+        for depth in input_depths.get(ds, [0, 0]):
+            additional, static = layer(h, w, previous, channels, depth)
+            main += additional
+            fixed += static
+            previous = channels
+            skip_channels.append(channels)
+        if index < len(schedule) - 1:
+            h //= 2
+            w //= 2
+            main += conv(h, w, channels, 3, channels)
+            skip_channels.append(channels)
+            ds *= 2
+
+    main += res(h, w, previous, previous)
+    middle_depth = architecture["middle_attention"]
+    if middle_depth:
+        transformer, static = spatial(h, w, previous, middle_depth)
+        main += transformer + res(h, w, previous, previous)
+        fixed += static
+
+    out = previous
+    for index in range(len(schedule) - 1, -1, -1):
+        channels = schedule[index]
+        h = height // (2 ** index)
+        w = width // (2 ** index)
+        for layer_index, depth in enumerate(output_depths.get(2 ** index, [0, 0, 0])):
+            skip_channels_count = skip_channels.pop()
+            additional, static = layer(h, w, out + skip_channels_count, channels, depth)
+            main += additional
+            fixed += static
+            out = channels
+            if index > 0 and layer_index == 2:
+                main += conv(h * 2, w * 2, channels, 3, channels)
+    main += conv(height, width, 4, 3, schedule[0])
+    return main, fixed
 
 
 def _wan(
@@ -277,6 +380,8 @@ def estimate_video_compute_units(
     strategy = architecture["strategy"]
     if (causal_frames or causal_padding) and strategy != "video_wan":
         return ComputeUnitEstimate(None, "Causal inference is unsupported for this architecture.")
+    if strategy == "video_svd" and not has_image:
+        return ComputeUnitEstimate(None, "SVD requires image-to-video input.")
     if has_image and strategy == "video_minimax_h3":
         return ComputeUnitEstimate(None, "MiniMax reference-image modifiers require additional metadata.")
 
@@ -288,7 +393,9 @@ def estimate_video_compute_units(
     guidance_embedded = spec.get("guidance_embed") is True
     cfg = 1 if spec.get("is_consistency_model") is True or guidance_embedded else (2 if guidance != 1 else 1)
 
-    if strategy == "video_wan":
+    if strategy == "video_svd":
+        main, fixed = _svd(time, height, width, architecture)
+    elif strategy == "video_wan":
         inject_image = has_image and architecture["supports_image"]
         main, fixed = _wan(
             time=time,
