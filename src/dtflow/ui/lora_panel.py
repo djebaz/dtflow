@@ -178,6 +178,13 @@ class LoraAssetPanel:
             (record["identifier"], None) for record in self._records.values() if record["identifier"] not in known
         ]
 
+    def all_choices(self) -> list[tuple[str, float | None]]:
+        """Like ``choices`` but every LoRA the backend reports, not only those compatible with the checkpoint (a
+        queue may cross several checkpoints, so the composer cannot filter by one)."""
+        listed = list(getattr(self, "_inventory_candidates", ()))
+        known = {name for name, _ in listed}
+        return listed + [(name, weight) for name, weight in self.choices() if name not in known]
+
     def confirmed_receipts(self) -> dict[str, str]:
         """Identifier -> confirmed local receipt id of the custom LoRAs that can be bound (cloud only)."""
         return {r["identifier"]: asset for asset, r in self._records.items() if r["state"] == "confirmed"}

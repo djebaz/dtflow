@@ -815,7 +815,7 @@ class GenerationPage:
             "samplers": list(SAMPLERS),  # every sampler: a plan may cross several models
             "size": f"{page.widthSpinBox.value()}x{page.heightSpinBox.value()}",
             "prompt": page.promptEdit.toPlainText(),  # the template of a prompt variation
-            "loras": dict(self.lora.choices()),  # identifier -> catalogue weight, for LoRA sets
+            "loras": dict(self.lora.all_choices()),  # identifier -> catalogue weight; unfiltered, models may differ
             "receipts": self.lora.confirmed_receipts(),  # bound for LoRA sets that name a custom cloud LoRA
         }
 
