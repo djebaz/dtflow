@@ -9,26 +9,72 @@ quote, credit balance, hardware benchmark, compatibility check, or request permi
 
 from __future__ import annotations
 
+import json
 import math
 from dataclasses import dataclass
+from functools import cache
+from pathlib import Path
 
 from dtflow.core.model_profiles import exact_model_spec, profile_for
 
 CALIBRATION = 5.14816e-12
-SUPPORTED = frozenset(
-    {
-        "flux1",
-        "flux2",
-        "flux2_4b",
-        "flux2_9b",
-        "z_image",
-        "cosmos2.5_2b",
-        "qwen_image",
-        "qwen_image_2.1",
-        "krea_2",
-        "ideogram_4",
-    }
-)
+_REGISTRY_FILE = Path(__file__).parents[1] / "resources" / "compute_unit_architectures.json"
+_SOURCE_COMMIT = "82bd56c81a313060dceb34092bcf9d671c39a739"
+_REQUIRED_PARAMETERS = {
+    "flux1": ("channels", "double_layers", "single_layers"),
+    "flux2": ("channels", "double_layers", "single_layers"),
+    "z_image": ("channels", "layers", "include_fixed"),
+    "qwen_image": ("channels", "layers"),
+    "qwen_image_2.1": ("channels", "layers"),
+    "krea_2": ("channels", "layers"),
+    "ideogram_4": ("channels", "layers"),
+}
+
+
+@cache
+def _architecture_registry() -> dict[str, dict]:
+    """Load pinned instruction parameters; fail closed on missing or invalid entries."""
+    try:
+        document = json.loads(_REGISTRY_FILE.read_text(encoding="utf-8"))
+        if (
+            document.get("schema_version") != 1
+            or document.get("source_commit") != _SOURCE_COMMIT
+            or document.get("calibration") != CALIBRATION
+        ):
+            return {}
+        entries = document["architectures"]
+        if not isinstance(entries, dict):
+            return {}
+        accepted = {}
+        for name, entry in entries.items():
+            if not isinstance(name, str) or not isinstance(entry, dict):
+                continue
+            strategy = entry.get("strategy")
+            fields = _REQUIRED_PARAMETERS.get(strategy)
+            if fields is None or any(field not in entry for field in fields):
+                continue
+            if not all(
+                type(entry.get(field)) is int and entry[field] > 0
+                for field in ("channels", "latent_scale", "default_text_tokens")
+            ):
+                continue
+            if not all(
+                type(entry[field]) is int and entry[field] > 0
+                for field in fields
+                if field != "include_fixed"
+            ):
+                continue
+            if strategy == "z_image" and type(entry["include_fixed"]) is not bool:
+                continue
+            if type(entry.get("usage_bias")) not in (int, float) or entry["usage_bias"] not in (1, 2.5):
+                continue
+            accepted[name] = entry
+        return accepted
+    except (OSError, ValueError, TypeError, KeyError):
+        return {}
+
+
+SUPPORTED = frozenset(_architecture_registry())
 TEXT_ONLY_MODIFIERS = frozenset({"none", "kontext", "kontext_kv"})
 
 
@@ -50,8 +96,9 @@ def _patches(count: int, channels: int, inputs: int) -> int:
     return count * channels * 4 * inputs
 
 
-def _flux1(image: int, tokens: int, embed: bool) -> tuple[int, int]:
-    c, double, single = 3072, 19, 38
+def _flux1(image: int, tokens: int, embed: bool, architecture: dict) -> tuple[int, int]:
+    c = architecture["channels"]
+    double, single = architecture["double_layers"], architecture["single_layers"]
     seq = image + tokens
     attn = _attention(1, c // 128, 128, seq, seq)
     main = _patches(image, c, 16) + double * (12 * _dense(seq, c, c) + attn)
@@ -74,12 +121,9 @@ def _flux1(image: int, tokens: int, embed: bool) -> tuple[int, int]:
     return main, fixed
 
 
-def _flux2(image: int, tokens: int, version: str, embed: bool) -> tuple[int, int]:
-    c, (double, single) = {
-        "flux2": (6144, (8, 48)),
-        "flux2_9b": (4096, (8, 24)),
-        "flux2_4b": (3072, (5, 20)),
-    }[version]
+def _flux2(image: int, tokens: int, embed: bool, architecture: dict) -> tuple[int, int]:
+    c = architecture["channels"]
+    double, single = architecture["double_layers"], architecture["single_layers"]
     seq = image + tokens
     attn = _attention(1, c // 128, 128, seq, seq)
     main = _patches(image, c, 32)
@@ -115,7 +159,7 @@ def _z_block(keys: int, queries: int, c: int, segments: tuple[int, ...] = ()) ->
     return count
 
 
-def _z_image(image: int, tokens: int, c: int, layers: int) -> tuple[int, int]:
+def _z_image(image: int, tokens: int, c: int, layers: int, include_fixed: bool) -> tuple[int, int]:
     rounded = (image + 31) // 32 * 32
     seq = rounded + tokens
     main = (
@@ -125,7 +169,7 @@ def _z_image(image: int, tokens: int, c: int, layers: int) -> tuple[int, int]:
         + _z_block(seq, image, c)
         + _dense(image, c, 64)
     )
-    if c != 3840:  # Cosmos 2.5 shares this main path but has no fixed path.
+    if not include_fixed:  # Cosmos 2.5 shares the main path without the fixed text encoder.
         return main, 0
     rt = (tokens + 31) // 32 * 32
     fixed = (
@@ -138,12 +182,12 @@ def _z_image(image: int, tokens: int, c: int, layers: int) -> tuple[int, int]:
     return main, fixed
 
 
-def _qwen21(count: int, tokens: int, steps: int, cfg: int) -> tuple[int, int]:
-    c = 4096
+def _qwen21(count: int, tokens: int, steps: int, cfg: int, architecture: dict) -> tuple[int, int]:
+    c, layers = architecture["channels"], architecture["layers"]
     rows = cfg * count
     main = (
         _dense(rows, 64, c)
-        + 32 * (4 * _dense(rows, c, c) + 3 * _dense(rows, c, 12288) + _attention(cfg, 32, 128, count, count + tokens))
+        + layers * (4 * _dense(rows, c, c) + 3 * _dense(rows, c, 12288) + _attention(cfg, 32, 128, count, count + tokens))
         + _dense(rows, c, 64)
     )
     text = cfg * tokens
@@ -151,14 +195,14 @@ def _qwen21(count: int, tokens: int, steps: int, cfg: int) -> tuple[int, int]:
         2 * _dense(text, c, c)
         + _dense(cfg * (steps + 1), 256, c)
         + 6 * _dense(cfg * (steps + 1), c, c)
-        + 31 * (4 * _dense(text, c, c) + 3 * _dense(text, c, 12288) + _attention(cfg, 32, 128, tokens, tokens))
+        + (layers - 1) * (4 * _dense(text, c, c) + 3 * _dense(text, c, 12288) + _attention(cfg, 32, 128, tokens, tokens))
         + 2 * _dense(text, c, c)
     )
     return main, fixed
 
 
-def _qwen(image: int, tokens: int) -> tuple[int, int]:
-    c, layers = 3072, 60
+def _qwen(image: int, tokens: int, architecture: dict) -> tuple[int, int]:
+    c, layers = architecture["channels"], architecture["layers"]
     seq = image + tokens
     attn = _attention(1, c // 128, 128, seq, seq)
     main = _patches(image, c, 16)
@@ -189,8 +233,8 @@ def _krea_block(
     return count
 
 
-def _krea(image: int, tokens: int, cfg: int) -> tuple[int, int]:
-    c, layers = 6144, 28
+def _krea(image: int, tokens: int, cfg: int, architecture: dict) -> tuple[int, int]:
+    c, layers = architecture["channels"], architecture["layers"]
     seq = image + tokens
     main = (
         _dense(image, 64, c)
@@ -211,8 +255,8 @@ def _krea(image: int, tokens: int, cfg: int) -> tuple[int, int]:
     return main * cfg, fusion + fixed_per_batch * cfg
 
 
-def _ideogram(image: int, tokens: int) -> tuple[int, int]:
-    c, layers = 4608, 34
+def _ideogram(image: int, tokens: int, architecture: dict) -> tuple[int, int]:
+    c, layers = architecture["channels"], architecture["layers"]
     seq = image + tokens
 
     def block(query: int) -> int:
@@ -260,7 +304,8 @@ def estimate_compute_units(
         extras = dict(profile.extras) if profile else {}
         spec = {"version": version, "guidance_embed": "guidance_embed" in extras}
     version = spec.get("version")
-    if version not in SUPPORTED:
+    architecture = _architecture_registry().get(version)
+    if architecture is None:
         return ComputeUnitEstimate(None, "Model architecture not supported by this estimate.")
     if spec.get("modifier", "none") not in TEXT_ONLY_MODIFIERS:
         base_estimate = True  # Count the base architecture without the unsupported modifier.
@@ -276,37 +321,37 @@ def estimate_compute_units(
     cfg = 1 if spec.get("is_consistency_model") is True or guidance_embed else (2 if abs(guidance - 1) > 1e-3 else 1)
     # Draw Things' GenerationConfiguration.startWidth is the pixel dimension / 64.
     # Qwen-Image 2.1 then scales it by 4; all other supported families by 8.
-    scale = 4 if version == "qwen_image_2.1" else 8
+    scale = architecture["latent_scale"]
     height, width = height_px // 64 * scale, width_px // 64 * scale
     image = height // 2 * (width // 2)
     padded = spec.get("padded_text_encoding_length")
     if padded is not None and (type(padded) is not int or padded < 0):
         return ComputeUnitEstimate(None, "Invalid published token-length metadata.")
-    tokens = padded or (256 if version == "krea_2" else 77 if version == "cosmos2.5_2b" else 512)
+    tokens = padded or architecture["default_text_tokens"]
 
     if version == "qwen_image_2.1":
-        main, fixed = _qwen21(height * width, tokens, steps, cfg)
+        main, fixed = _qwen21(height * width, tokens, steps, cfg, architecture)
         instruction_units = main * steps + fixed
     elif version == "krea_2":
-        main, fixed = _krea(image, tokens, cfg)  # includes CFG and once-only text fusion
+        main, fixed = _krea(image, tokens, cfg, architecture)  # includes CFG and once-only text fusion
         instruction_units = main * steps + fixed
     else:
         if version == "flux1":
-            main, fixed = _flux1(image, tokens, guidance_embed)
+            main, fixed = _flux1(image, tokens, guidance_embed, architecture)
         elif version in {"flux2", "flux2_4b", "flux2_9b"}:
-            main, fixed = _flux2(image, tokens, version, guidance_embed)
-        elif version == "z_image":
-            main, fixed = _z_image(image, tokens, 3840, 30)
-        elif version == "cosmos2.5_2b":
-            main, fixed = _z_image(image, tokens, 2048, 28)
+            main, fixed = _flux2(image, tokens, guidance_embed, architecture)
+        elif architecture["strategy"] == "z_image":
+            main, fixed = _z_image(
+                image, tokens, architecture["channels"], architecture["layers"], architecture["include_fixed"]
+            )
         elif version == "qwen_image":
-            main, fixed = _qwen(image, tokens)
+            main, fixed = _qwen(image, tokens, architecture)
         elif version == "ideogram_4":
-            main, fixed = _ideogram(image, tokens)
+            main, fixed = _ideogram(image, tokens, architecture)
         else:
             return ComputeUnitEstimate(None, "Unsupported model version.")
         instruction_units = (main * steps + fixed) * cfg
-    units = math.ceil(instruction_units * CALIBRATION)
+    units = math.ceil(instruction_units * CALIBRATION * architecture["usage_bias"])
     if units <= 0:
         return ComputeUnitEstimate(None, "The instruction estimate could not be resolved.")
     if base_estimate:
