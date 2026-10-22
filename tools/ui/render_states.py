@@ -1219,7 +1219,7 @@ def render_active_queue_states(shell, out):
         assert "2 LoRA sets" in page.composerSummaryVariesLabel.text()
         page.queueComposerScroll.ensureWidgetVisible(page.planLoraSetsEdit)
         snap("queues-42-composer-lora-sets")
-        page.planLoraSetsEdit._add.click()  # the shared LoRA identifier+weight editor
+        page.planLoraSetsEdit._add.click()  # the shared LoRA checkbox+slider editor, starting from Generate's LoRAs
         snap("queues-43-composer-lora-set-search")
         shell.inline.dismiss()
         page.planLoraSetsEdit.clear()

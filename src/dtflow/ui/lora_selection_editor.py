@@ -42,6 +42,8 @@ def edit_lora_selection(
     selected: Sequence[LoRASelection],
     callback: Callable[[list[tuple[str, float]]], None],
     suggestions: dict[str, float | None] | None = None,
+    title: str = "Edit LoRAs",
+    hint: str | None = None,
 ) -> None:
     """Show every offered LoRA with a checkbox and a 0.0–3.0 weight slider; Apply replaces the selection once.
 
@@ -50,6 +52,8 @@ def edit_lora_selection(
     pairs in list order.
     """
     editor = _load("lora_selection_editor.ui", None)
+    if hint:
+        editor.loraSelectionHint.setText(hint)
     rows_layout = editor.loraSelectionRowsLayout
     empty = editor.loraSelectionEmpty
     suggestions = suggestions or {}
@@ -146,5 +150,5 @@ def edit_lora_selection(
     content = editor.loraSelectionRows.sizeHint().height() + 2 * editor.loraSelectionScroll.frameWidth()
     limit = max(MIN_LIST_HEIGHT, int(window.height() * LIST_HEIGHT_SHARE))
     editor.loraSelectionScroll.setMinimumHeight(min(content, limit))
-    panel.editor("Edit LoRAs", editor, "Apply", accept, primary=True)
+    panel.editor(title, editor, "Apply", accept, primary=True)
     editor.loraSelectionSearch.setFocus()

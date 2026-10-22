@@ -20,7 +20,7 @@ from PySide6.QtCore import QSize, Qt, QTimer, QUrl
 from PySide6.QtGui import QDesktopServices, QIcon, QStandardItem, QStandardItemModel
 from PySide6.QtWidgets import QListWidgetItem, QMenu, QWidget
 
-from dtflow.core.models import BackendEvent, ValidationError
+from dtflow.core.models import BackendEvent, LoRASelection, ValidationError
 from dtflow.persistence.settings import SettingsError, load_cloud_concurrency, validate_concurrency
 from dtflow.persistence.store import StateBusyError
 from dtflow.services.connection import Presentation, present_generation_failure
@@ -146,9 +146,6 @@ CLEAR_TEXT = (
 )
 REMOVE_TEXT = "This queue will be removed from the list. Its attempts and saved images are kept."
 POSTED = "Posted. The dispatch owner applies it at its next poll, or at the next Start if nothing is dispatching."
-
-
-GENERATE_LORAS = "Generate's LoRAs"  # LoRA-set choice: the set currently on the Generate form
 
 
 def _dimension_text(name: str, count: int) -> str:
@@ -1087,33 +1084,25 @@ class QueuePage:
         page.planLoraSetsEdit.configure(
             "search",
             "LoRA",
-            options=self._lora_set_options,
-            custom="Not listed",
             weights=lambda: self._choices().get("loras", {}),
             convert=self._lora_set_chip,
+            initial=self._generate_loras,
         )
 
-    def _lora_set_options(self) -> list[str]:
-        return [NO_LORA, GENERATE_LORAS, *self._choices().get("loras", {})]
+    def _generate_loras(self) -> tuple[LoRASelection, ...]:
+        """The Generate form's LoRAs, which the LoRA-set editor starts from."""
+        try:
+            request, *_ = self._request_source(preview=True)
+        except (FormError, ValidationError):
+            return ()
+        return tuple(request.loras)
 
     def _lora_set_chip(self, chosen) -> str:
-        """A picked LoRA (with its weight), None, or the Generate form's whole set, as a LoRA-set chip."""
-        identifier, weight = chosen
-        if identifier == NO_LORA:
-            return NO_LORA
-        if ";" in identifier:
+        """The checked (identifier, weight) pairs as one LoRA-set chip; none checked is the set without LoRAs."""
+        if any(";" in identifier for identifier, _ in chosen):
             self._message(Presentation("error", "LoRA not added", "A LoRA set cannot name an identifier with ';'."))
             return ""
-        if identifier == GENERATE_LORAS:
-            try:
-                request, *_ = self._request_source(preview=True)
-            except (FormError, ValidationError):
-                return ""
-            if any(";" in item.identifier for item in request.loras):
-                self._message(Presentation("error", "LoRA not added", "A LoRA set cannot name an identifier with ';'."))
-                return ""
-            return " + ".join(lora_set_value(item.identifier, item.weight) for item in request.loras) or NO_LORA
-        return lora_set_value(identifier, weight)
+        return " + ".join(lora_set_value(identifier, weight) for identifier, weight in chosen) or NO_LORA
 
     def _size_options(self) -> list[str]:
         current = self._choices().get("size")

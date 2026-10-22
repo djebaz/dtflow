@@ -5,7 +5,7 @@ user could have typed (``text()``), so ``planning_presenter`` stays the single p
 duplicates and ordering exactly as for CLI plan files.
 """
 
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from math import ceil
 
 from PySide6.QtCore import QEvent, QObject, QPoint, QRect, QSize, Qt, QTimer, Signal
@@ -21,6 +21,8 @@ from PySide6.QtWidgets import (
     QWidgetItem,
 )
 
+from dtflow.core.models import LoRASelection
+from dtflow.ui.lora_selection_editor import edit_lora_selection
 from dtflow.ui.search_select import choose_searchable
 
 # Offered size choices besides the Generate size; every value is a multiple of 64, and custom WIDTHxHEIGHT is allowed.
@@ -157,14 +159,15 @@ class ValueChips(QWidget):
         decimals: int = 1,
         weights: Callable[[], dict[str, float | None]] | None = None,
         convert: Callable[[object], str] | None = None,
+        initial: Callable[[], Sequence[LoRASelection]] | None = None,
     ) -> None:
         """``search`` opens the shared searchable editor; ``choice`` is an editable list; ``int``/``float`` a box.
 
-        With ``weights`` the search editor also asks for a weight (the shared LoRA identifier+weight editor) and hands
-        ``(identifier, weight)`` to ``convert``, which returns the chip value.
+        With ``weights`` the search editor is the shared LoRA checkbox+slider editor, starting from ``initial()``; the
+        checked ``(identifier, weight)`` pairs go to ``convert``, which returns the chip value.
         """
         self._kind, self._title, self._options, self._custom = kind, title, options, custom
-        self._weights, self._convert = weights, convert
+        self._weights, self._convert, self._initial = weights, convert, initial
         if self._input is not None:
             self._layout.removeWidget(self._input)
             self._input.deleteLater()
@@ -259,6 +262,21 @@ class ValueChips(QWidget):
             self.add_value(f"{self._input.value():g}")
         else:
             convert = self._convert
+            if self._weights is not None and convert is not None:
+                suggestions = self._weights()
+                edit_lora_selection(
+                    self,
+                    title=f"Add a {_noun(self._title)} set",
+                    candidates=list(suggestions),
+                    selected=self._initial() if self._initial is not None else (),
+                    suggestions=suggestions,
+                    callback=lambda chosen: self.add_value(convert(chosen)),
+                    hint=(
+                        "Checked LoRAs form one set for each item, starting from Generate's LoRAs; with none checked "
+                        "the set has no LoRA. Add several sets to vary them. Enter or Apply adds the set."
+                    ),
+                )
+                return
             choose_searchable(
                 self,
                 title=f"Add {_noun(self._title)}",
@@ -266,7 +284,6 @@ class ValueChips(QWidget):
                 callback=self.add_value if convert is None else lambda chosen: self.add_value(convert(chosen)),
                 custom_label=self._custom,
                 custom_prompt=f"Exact {_noun(self._title)} identifier",
-                weights=self._weights() if self._weights is not None else None,
             )
 
 
