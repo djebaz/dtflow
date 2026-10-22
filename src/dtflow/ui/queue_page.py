@@ -1103,7 +1103,7 @@ class QueuePage:
             replace_all=True,
             group=self._lora_weight_group,
             editor_hint=(
-                "Check a LoRA and press + to collect each weight to try for it (click a weight to drop it). "
+                "Check a LoRA and press + or click its slider to collect each weight to try for it (click a weight to drop it). "
                 "A checked LoRA without collected weights uses its slider value. Enter or Apply replaces the weights."
             ),
         )

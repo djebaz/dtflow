@@ -44,6 +44,41 @@ class _WheelStep(QObject):
         return False
 
 
+class _ClickToAdd(QObject):
+    """Weights editor: a click (or a drag that is released) anywhere on a slider sets that weight and adds it."""
+
+    HANDLE_MARGIN = 8  # px each end of the groove that the handle never reaches
+
+    def __init__(self, parent: QObject, add: Callable[[], None]):
+        super().__init__(parent)
+        self._add = add
+        self._down = False
+
+    @classmethod
+    def _value_at(cls, slider: QSlider, x: float) -> int:
+        span = max(1, slider.width() - 2 * cls.HANDLE_MARGIN)
+        share = min(1.0, max(0.0, (x - cls.HANDLE_MARGIN) / span))
+        return slider.minimum() + round(share * (slider.maximum() - slider.minimum()))
+
+    def eventFilter(self, watched, event):
+        if not isinstance(watched, QSlider):
+            return False
+        kind = event.type()
+        if kind == QEvent.Type.MouseButtonPress and event.button() == Qt.MouseButton.LeftButton:
+            self._down = True
+            watched.setValue(self._value_at(watched, event.position().x()))
+            return True
+        if kind == QEvent.Type.MouseMove and self._down:
+            watched.setValue(self._value_at(watched, event.position().x()))
+            return True
+        if kind == QEvent.Type.MouseButtonRelease and self._down:
+            self._down = False
+            watched.setValue(self._value_at(watched, event.position().x()))
+            self._add()
+            return True
+        return False
+
+
 def format_weight(weight: float) -> str:
     """Shortest exact digits, at least one decimal (``1.0``, ``0.65``)."""
     text = f"{weight:g}"
@@ -68,7 +103,7 @@ def edit_lora_selection(
     pairs in list order.
 
     With ``multi_weight`` each row also has a **+** that collects the slider's weight as a chip (click a chip to drop
-    it); a checked LoRA then yields one pair per collected weight, or one at the slider's weight when none were added.
+    it; clicking or releasing a drag anywhere on the slider does the same); a checked LoRA then yields one pair per collected weight, or one at the slider's weight when none were added.
     """
     editor = _load("lora_selection_editor.ui", None)
     wheel_step = _WheelStep(editor)
@@ -141,6 +176,7 @@ def edit_lora_selection(
                 render_chips()
 
             row.loraSelectionAddWeightButton.clicked.connect(add_weight)
+            slider.installEventFilter(_ClickToAdd(row, add_weight))
             render_chips()  # several loaded weights start as chips
         check.toggled.connect(lambda _checked: update_count())
         # Rows sit before the "no matches" label and the trailing spacer.
