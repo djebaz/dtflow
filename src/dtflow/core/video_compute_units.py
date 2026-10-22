@@ -308,7 +308,9 @@ def _ltx2(time: int, height: int, width: int, tokens: int, architecture: dict) -
     return main, fixed
 
 
-def _minimax_h3(time: int, height: int, width: int, tokens: int, cfg: int, architecture: dict) -> tuple[int, int]:
+def _minimax_h3(
+    time: int, height: int, width: int, tokens: int, cfg: int, reference_tokens: int, architecture: dict
+) -> tuple[int, int]:
     """Count MiniMax H3's video/audio network and its once-only context refinement."""
     c, layers = architecture["channels"], architecture["layers"]
     intermediate = architecture["intermediate_size"]
@@ -316,7 +318,7 @@ def _minimax_h3(time: int, height: int, width: int, tokens: int, cfg: int, archi
     # Swift Double.rounded() uses the nearest integer, ties away from zero.
     audio = 2 * math.floor(packed_frames / architecture["fps"] * 40 + 0.5)
     video = time * (height // 2) * (width // 2)
-    rows = tokens + audio + video
+    rows = tokens + audio + video + reference_tokens
     attention_width = 56 * 128
 
     def transformer(length: int) -> int:
@@ -333,10 +335,11 @@ def _minimax_h3(time: int, height: int, width: int, tokens: int, cfg: int, archi
 
     # This fixed count is NOT multiplied by CFG in upstream ComputeUnits.swift.
     text_lengths = (tokens, tokens) if cfg > 1 else (0, tokens)
-    fixed_rows = 2
+    fixed_rows = 3 if reference_tokens else 2
     fixed = _dense(fixed_rows, 256, c) + _dense(fixed_rows, c, 2688)
     fixed += (layers * 18 + 2) * _dense(fixed_rows, 2688, c)
     fixed += _dense(sum(text_lengths), 5120, c)
+    fixed += _dense(reference_tokens, 96, c)
     for length in text_lengths:
         if length:
             fixed += 2 * transformer(length)
@@ -355,6 +358,7 @@ def estimate_video_compute_units(
     has_loras: bool = False,
     causal_frames: int = 0,
     causal_padding: int = 0,
+    extra_reference_images: int = 0,
     strength: float = 1.0,
     speed_up_with_guidance_embed: bool = False,
 ) -> ComputeUnitEstimate:
@@ -385,13 +389,15 @@ def estimate_video_compute_units(
         return ComputeUnitEstimate(None, "Invalid causal frame configuration.")
     if causal_padding and not causal_frames:
         return ComputeUnitEstimate(None, "Causal padding requires causal inference.")
+    if type(extra_reference_images) is not int or extra_reference_images < 0:
+        return ComputeUnitEstimate(None, "Invalid reference image count.")
     strategy = architecture["strategy"]
     if (causal_frames or causal_padding) and strategy != "video_wan":
         return ComputeUnitEstimate(None, "Causal inference is unsupported for this architecture.")
     if strategy == "video_svd" and not has_image:
         return ComputeUnitEstimate(None, "SVD requires image-to-video input.")
-    if has_image and strategy == "video_minimax_h3":
-        return ComputeUnitEstimate(None, "MiniMax reference-image modifiers require additional metadata.")
+    if extra_reference_images and strategy != "video_minimax_h3":
+        return ComputeUnitEstimate(None, "Additional reference images are not supported for this video family.")
     if has_image and strategy == "video_wan" and not architecture["supports_image"]:
         return ComputeUnitEstimate(None, "This WAN variant does not count an image-input path.")
 
@@ -432,7 +438,17 @@ def estimate_video_compute_units(
     elif strategy == "video_ltx2":
         main, fixed = _ltx2(time, height, width, tokens, architecture)
     elif strategy == "video_minimax_h3":
-        main, fixed = _minimax_h3(time, height, width, tokens, cfg, architecture)
+        modifier = spec.get("modifier", "none")
+        if modifier == "ref2va":
+            references = int(has_image) + extra_reference_images
+        elif modifier == "fl2va":
+            references = 1 + min(extra_reference_images, 1) if has_image else 0
+        elif modifier in ("none", None):
+            references = 0
+        else:
+            return ComputeUnitEstimate(None, "MiniMax reference modifier is unsupported.")
+        reference_length = references * max(1, (height // 2) * (width // 2))
+        main, fixed = _minimax_h3(time, height, width, tokens, cfg, reference_length, architecture)
     else:
         return ComputeUnitEstimate(None, "Unsupported video strategy.")
 
