@@ -3127,38 +3127,6 @@
     ]
   },
   {
-    "file": "krea_2_raw_q6p.ckpt",
-    "base_model": "krea_2",
-    "modes": [
-      "t2i",
-      "i2i"
-    ]
-  },
-  {
-    "file": "krea_2_raw_q8p.ckpt",
-    "base_model": "krea_2",
-    "modes": [
-      "t2i",
-      "i2i"
-    ]
-  },
-  {
-    "file": "krea_2_turbo_q6p.ckpt",
-    "base_model": "krea_2",
-    "modes": [
-      "t2i",
-      "i2i"
-    ]
-  },
-  {
-    "file": "krea_2_turbo_q8p.ckpt",
-    "base_model": "krea_2",
-    "modes": [
-      "t2i",
-      "i2i"
-    ]
-  },
-  {
     "file": "kwai_kolors_1.0_f16.ckpt",
     "base_model": "sdxl",
     "modes": [
