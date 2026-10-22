@@ -131,6 +131,7 @@ class ValueChips(QWidget):
         self._weights: Callable[[], dict[str, float | None]] | None = None
         self._convert: Callable[[object], str] | None = None
         self._edit_chip: Callable[[str], Sequence[LoRASelection]] | None = None
+        self._lead = 0
         self._group: Callable[[str], tuple[str, str]] | None = None
         self._replace_all = False
         self._layout = FlowLayout(self)
@@ -187,6 +188,7 @@ class ValueChips(QWidget):
         self._kind, self._title, self._options, self._custom = kind, title, options, custom
         self._weights, self._convert, self._initial = weights, convert, initial
         self._edit_chip, self._replace_all, self._group = edit_chip, replace_all, group
+        self._lead = 1 if group is not None else 0  # a grouped row keeps its button first, above the LoRA lines
         self._editor_title, self._editor_hint, self._multi_weight = editor_title, editor_hint, multi_weight
         if self._input is not None:
             self._layout.removeWidget(self._input)
@@ -211,6 +213,9 @@ class ValueChips(QWidget):
             self._layout.removeWidget(self._add)
             self._layout.addWidget(self._input)
             self._layout.addWidget(self._add)
+        if group is not None:
+            self._layout.removeWidget(self._add)
+            self._layout.insertWidget(0, self._add)
         self._add.setEnabled(True)  # preview forms start with every control disabled until a controller wires it
         self._add.setText("Add" if self._input is not None else "Edit…" if replace_all else "Add…")
         self._add.setAccessibleName(f"{'Edit' if replace_all else 'Add'} {_noun(title)}")
@@ -287,7 +292,7 @@ class ValueChips(QWidget):
                 label.setMaximumWidth(GROUP_NAME_WIDTH)
                 label.setText(label.fontMetrics().elidedText(name, Qt.TextElideMode.ElideMiddle, GROUP_NAME_WIDTH))
                 label.setToolTip(name)
-                self._layout.insertWidget(len(self._chips), label)
+                self._layout.insertWidget(self._lead + len(self._chips), label)
                 self._chips.append(label)
                 for index, short in members:
                     self._add_chip(index, short, values[index])
@@ -305,14 +310,14 @@ class ValueChips(QWidget):
             edit.setToolTip(f"Edit {value}")
             edit.setAccessibleName(f"Edit {_noun(self._title)} {value}")
             edit.clicked.connect(lambda _=False, i=index: self._edit_clicked(i))
-            self._layout.insertWidget(len(self._chips), edit)
+            self._layout.insertWidget(self._lead + len(self._chips), edit)
             self._chips.append(edit)
         chip = QPushButton("×" if self._edit_chip is not None else f"{text}  ×", self)
         chip.setProperty("role", "valueChip")
         chip.setToolTip(f"Remove {value}")
         chip.setAccessibleName(f"Remove {_noun(self._title)} {value}")
         chip.clicked.connect(lambda _=False, i=index: self.remove_value(i))
-        self._layout.insertWidget(len(self._chips), chip)
+        self._layout.insertWidget(self._lead + len(self._chips), chip)
         self._chips.append(chip)
 
     def _add_clicked(self) -> None:
