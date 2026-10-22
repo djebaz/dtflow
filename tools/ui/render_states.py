@@ -88,7 +88,7 @@ from dtflow.ui import lora_panel as lora_ui  # noqa: E402
 from dtflow.ui import main_window as window_ui  # noqa: E402
 from dtflow.ui.activity_strip import activity_strip  # noqa: E402
 from dtflow.ui.diagnostic_notice import DiagnosticNoticeReceiver  # noqa: E402
-from dtflow.ui.generation_page import COMPUTE_UNITS_METER_STEPS, GenerationPage, compute_units_fill  # noqa: E402
+from dtflow.ui.generation_page import COMPUTE_UNITS_METER_STEPS, GenerationPage, compute_units_meter_value  # noqa: E402
 from dtflow.ui.inline_feedback import InlineNotice  # noqa: E402
 from dtflow.ui.main_window import MainWindow  # noqa: E402
 from dtflow.ui.queue_item_delegate import COL_LORAS, COL_PROMPT, COL_STATUS, wrapped_lines  # noqa: E402
@@ -860,6 +860,7 @@ def render_generate_configuration_states(shell, out):
         units_path = "dtflow.ui.generation_page.estimate_compute_units"
         form.backendCombo.setCurrentText("cloud")
         for value, name, state in (
+            (1500, "generate-47a-compute-units-meter-typical", "ok"),
             (14250, "generate-47-compute-units-meter", "ok"),
             (100000, "generate-48-compute-units-over-limit", "over"),
             (None, "generate-49-compute-units-unavailable", "unavailable"),
@@ -867,7 +868,7 @@ def render_generate_configuration_states(shell, out):
             with patch(units_path, return_value=ComputeUnitEstimate(value, "Offline fixture estimate.")):
                 controller._update_compute_units()
             assert not meter.isHidden() and meter.property("state") == state
-            expected = round(compute_units_fill(value) * COMPUTE_UNITS_METER_STEPS) if value else 0
+            expected = compute_units_meter_value(value) if value else 0
             assert meter.maximum() == COMPUTE_UNITS_METER_STEPS and meter.value() == expected
             assert meter.toolTip() == ""  # no hover overlay
             assert (value is None) or str(value)[:2] in meter.format().replace("\u202f", "")
@@ -886,11 +887,21 @@ def render_generate_configuration_states(shell, out):
             with patch(units_path, return_value=ComputeUnitEstimate(14250, "Offline fixture estimate.")):
                 controller._update_compute_units()
                 assert not meter.isHidden() and meter.property("state") == "ok"
-                assert meter.value() == 14250
+                assert meter.value() == compute_units_meter_value(14250)
                 page.checkpointDetailsButton.click()
             assert "Compute Units: 14\u202f250 CU" in shell.inline.form.inlineTextBrowser.toPlainText()
             snap(name)
             clear()
+        # Checkpoint previous/next: both enabled mid-list; Next stops at the last entry.
+        controller._fill_models(["offline-a.ckpt", "offline-b.ckpt", "offline-c.ckpt"])
+        page.modelCombo.setCurrentIndex(1)
+        assert page.previousCheckpointButton.isEnabled() and page.nextCheckpointButton.isEnabled()
+        shell.shell.leftScroll.verticalScrollBar().setValue(0)
+        snap("generate-49d-checkpoint-steppers")
+        page.nextCheckpointButton.click()
+        assert page.modelCombo.currentIndex() == 2 and not page.nextCheckpointButton.isEnabled()
+        snap("generate-49e-checkpoint-steppers-last")
+        controller._step_settle.stop()
         form.backendCombo.setCurrentText("fake")
         controller._update_compute_units()
         assert meter.isHidden()

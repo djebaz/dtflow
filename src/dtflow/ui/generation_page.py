@@ -17,7 +17,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from uuid import uuid4
 
-from PySide6.QtCore import QSize, Qt, QUrl
+from PySide6.QtCore import QSize, Qt, QTimer, QUrl
 from PySide6.QtGui import QDesktopServices, QGuiApplication, QIcon, QPixmap
 from PySide6.QtWidgets import (
     QFileDialog,
@@ -102,6 +102,7 @@ COMPUTE_UNITS_LIMIT = 40_000  # meter full and red from here up
 COMPUTE_UNITS_METER_STEPS = 1000  # meter resolution; the bar's maximum
 # (units, fill fraction) anchors of the meter scale; see compute_units_fill().
 COMPUTE_UNITS_SCALE = ((700, 0.15), (3_000, 0.5), (COMPUTE_UNITS_LIMIT, 1.0))
+CHECKPOINT_STEP_SETTLE_MS = 600  # LoRA pruning waits until previous/next stepping pauses
 RESULT_PATH_ROLE = Qt.ItemDataRole.UserRole
 DISPATCH_REASON = (
     "A queue is running in this window: Generate adds this request behind it as a one-item queue, "
@@ -179,6 +180,13 @@ def compute_units_fill(units: int) -> float:
     return 1.0
 
 
+def compute_units_meter_value(units: int) -> int:
+    """Meter position for an estimate; only COMPUTE_UNITS_LIMIT and above fill the bar."""
+    if units >= COMPUTE_UNITS_LIMIT:
+        return COMPUTE_UNITS_METER_STEPS
+    return min(round(compute_units_fill(units) * COMPUTE_UNITS_METER_STEPS), COMPUTE_UNITS_METER_STEPS - 1)
+
+
 def _choose_save(parent: QWidget, directory: Path) -> str:
     return QFileDialog.getSaveFileName(
         parent, "Save generation configuration", str(directory / "generation.json"), "JSON (*.json)"
@@ -238,6 +246,11 @@ class GenerationPage:
         self._catalogue = Catalogue(self._state)
         self._inventory_snapshot: InventorySnapshot | None = None
         self._updating_catalogue = False
+        self._step_settle = QTimer(page)
+        self._step_settle.setSingleShot(True)
+        self._step_settle.setInterval(CHECKPOINT_STEP_SETTLE_MS)
+        self._step_settle.timeout.connect(self._checkpoint_steps_settled)
+        self._step_sampler = ""
         self._forms: dict[str, dict] = {}  # provider -> its remembered form fields (prompts are shared, not stored)
         self._provider: str | None = None
         self._previewed_seed: int | None = None
@@ -1297,8 +1310,21 @@ class GenerationPage:
         """Select the neighbouring entry of the current checkpoint list, which already reflects the active filters."""
         combo = self.page.modelCombo
         index = combo.currentIndex() + offset
-        if 0 <= index < combo.count():
-            combo.setCurrentIndex(index)
+        if not 0 <= index < combo.count():
+            return
+        sampler = self.page.samplerCombo
+        if not self._step_settle.isActive():
+            self._step_sampler = sampler.currentText()
+        # Browsing passes over models the user does not keep: LoRAs are pruned only for the model stepping stops on,
+        # and the sampler chosen before browsing comes back on any model that allows it.
+        self._step_settle.start()
+        combo.setCurrentIndex(index)
+        if self._step_sampler != sampler.currentText() and sampler.findText(self._step_sampler) >= 0:
+            sampler.setCurrentText(self._step_sampler)
+
+    def _checkpoint_steps_settled(self) -> None:
+        if not self._updating_catalogue:
+            self._filter_loras()
 
     def _sync_checkpoint_steppers(self, *_args) -> None:
         """Previous/next stop at the ends of the list rather than wrapping."""
@@ -1322,7 +1348,8 @@ class GenerationPage:
     def _catalogue_checkpoint_changed(self, *_args) -> None:
         self.page.checkpointDetailsButton.setEnabled(bool(self.page.modelCombo.currentText().strip()))
         if not self._updating_catalogue:
-            self._filter_loras()
+            # While previous/next stepping is in progress, keep selected LoRAs until it settles.
+            self._filter_loras(prune_selected=not self._step_settle.isActive())
         self._filter_samplers()
 
     def _rebuild_catalogue(
@@ -1483,7 +1510,7 @@ class GenerationPage:
             # Non-linear fill (compute_units_fill); at or above COMPUTE_UNITS_LIMIT the bar stays full and turns red.
             state = "over" if units >= COMPUTE_UNITS_LIMIT else "ok"
             text = f"{units:,}".replace(",", "\u202f")
-            value = round(compute_units_fill(units) * COMPUTE_UNITS_METER_STEPS)
+            value = compute_units_meter_value(units)
         meter.setMaximum(COMPUTE_UNITS_METER_STEPS)
         meter.setValue(value)
         meter.setFormat("\u2002" + text)  # en space: the QSS cannot pad progress-bar text

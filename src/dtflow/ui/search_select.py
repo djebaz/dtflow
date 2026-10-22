@@ -120,10 +120,17 @@ def choose_searchable(
     panel.editor(title, editor, "Add" if weights is not None else "Apply", accept, primary=weights is not None)
     if weights is None:
         # Double-click or Enter applies like the Apply button. Enter in the search applies the highlighted match, or
-        # the first match when the filter hid the previous choice; Enter in the identifier field applies what is typed.
+        # the first match when the filter hid the previous choice, and with no match moves the text to the identifier
+        # field (when custom identifiers are allowed); Enter in the identifier field applies what is typed.
         # Weighted (LoRA) selection keeps one explicit Add step.
         def activate():
-            if search.hasFocus() and choices.currentItem() is None and choices.count():
+            if search.hasFocus() and choices.currentItem() is None:
+                if not choices.count():
+                    # Nothing matches: never re-apply the hidden previous choice. Offer the text as an identifier.
+                    if custom_label:
+                        value.setText(search.text().strip())
+                        value.setFocus()
+                    return
                 choices.setCurrentRow(0)
             accept()
 

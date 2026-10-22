@@ -32,9 +32,14 @@ identity/busy checks, receipt verification and uncertain-upload no-retry policy 
 
 Checkpoint search and exact custom identifiers use one expanded editor. In it, double-clicking a
 name or pressing Enter applies it like **Apply**; Enter in the search applies the highlighted
-match, or the first match when the filter hides the previous choice. The small previous/next
-buttons beside the Checkpoint selector step through the current filtered list without opening
-the editor and stop at either end. **Add LoRA** shows
+match (the current checkpoint when the filter still shows it), or the first match when the
+filter hides it. With no match, Enter moves the search text into the exact-identifier field
+instead of closing. The small previous/next buttons beside the Checkpoint selector step through
+the current filtered list without opening the editor and stop at either end. A custom
+identifier you applied stays at the end of that list until the next catalogue rebuild, so it is
+also a stepping target. While you step, selected LoRAs are kept; once stepping pauses (about
+0.6 s) LoRAs incompatible with the model you stopped on are removed, as when picking it in the
+editor. The sampler chosen before stepping returns on any model that allows it. **Add LoRA** shows
 search, identifier and weight together and commits once with **Add**. New UI selections use
 0.0–3.0 weights in 0.1 steps (one decimal); 0.0 is preserved. A catalogue default outside
 this range starts the editor at 1.0, not a silently clipped default. Existing imported/saved
