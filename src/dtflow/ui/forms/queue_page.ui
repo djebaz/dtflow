@@ -1227,7 +1227,7 @@
                         <string>Plan LoRA sets</string>
                        </property>
                        <property name="toolTip">
-                        <string>Which LoRAs each item uses: a LoRA with its weight, Generate's LoRAs, or None. Replaces Generate's LoRAs per item.</string>
+                        <string>Which LoRAs each item uses: Add… opens the LoRA editor (starting from Generate's LoRAs) for one set; click a set to edit it. None checked is a set without LoRAs. Replaces Generate's LoRAs per item.</string>
                        </property>
                       </widget>
                      </item>

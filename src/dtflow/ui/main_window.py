@@ -323,7 +323,7 @@ class MainWindow:
             created_hook=self.generation.queue_created,
             choices_source=self.generation.plan_choices,
             generate_hook=self._show_generation,
-            reuse_hook=lambda request: self.generation.reuse_saved_request(request, ""),
+            reuse_hook=self._reuse_queue_request,
             activity=self.activity,
         )
         self.generation_page.inpaintModeButton.toggled.connect(lambda _on: self.queue.sync_edit_fields())
@@ -1030,6 +1030,11 @@ class MainWindow:
     def _reuse_output(self, request: dict, identity: str) -> None:
         self.generation.reuse_saved_request(request, identity)
         self._show_generation()
+
+    def _reuse_queue_request(self, request: dict) -> None:
+        """Edit as new queue: a recorded text-to-image item fills Generate, which leaves Inpaint for it."""
+        self.generation_page.textToImageModeButton.setChecked(True)
+        self.generation.reuse_saved_request(request, "", origin="the queue's first item")
 
     def _edit_output(self, path: str) -> None:
         self._show_generation()

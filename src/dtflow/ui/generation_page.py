@@ -702,7 +702,7 @@ class GenerationPage:
             }
         )
 
-    def reuse_saved_request(self, document: dict, source_identity: str) -> None:
+    def reuse_saved_request(self, document: dict, source_identity: str, *, origin: str = "the selected output") -> None:
         """Populate Generate from one recorded request without dispatching."""
         values = self._saved_request_values(document)
         self._apply(values)
@@ -713,7 +713,7 @@ class GenerationPage:
             Presentation(
                 "ok",
                 "Saved settings loaded",
-                "Generate was populated from the selected output. Nothing was submitted; availability is revalidated on use.",
+                f"Generate was populated from {origin}. Nothing was submitted; availability is revalidated on use.",
             )
         )
 

@@ -167,6 +167,8 @@ def edit_lora_selection(
 
             def drop(index: int) -> None:
                 del extra[name][index]
+                if not extra[name]:
+                    check.setChecked(False)  # dropping the last collected weight drops the LoRA
                 render_chips()
 
             def add_weight() -> None:

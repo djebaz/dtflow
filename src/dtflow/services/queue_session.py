@@ -227,7 +227,9 @@ async def relaunch_queue(
 async def read_queue_records(state: Path, queue_id: str) -> tuple[dict[str, Any], ...]:
     """The stored request records of a queue's items in order (read-only), for editing it as a new queue."""
     _, _, items = await asyncio.to_thread(read_queue_requests, Path(state), queue_id)
-    return tuple(record for _, _, record in items if isinstance(record, dict))
+    if any(not isinstance(record, dict) for _, _, record in items):
+        raise ValidationError("Some items' recorded requests are unreadable, so this queue cannot be edited.")
+    return tuple(record for _, _, record in items)
 
 
 async def dispatch_queue(

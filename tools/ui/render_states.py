@@ -89,6 +89,7 @@ from dtflow.ui import gallery_page as gallery_ui  # noqa: E402
 from dtflow.ui import lora_panel as lora_ui  # noqa: E402
 from dtflow.ui import main_window as window_ui  # noqa: E402
 from dtflow.ui.activity_strip import activity_strip  # noqa: E402
+from dtflow.ui.planning_presenter import queue_edit_from_records  # noqa: E402
 from dtflow.ui.diagnostic_notice import DiagnosticNoticeReceiver  # noqa: E402
 from dtflow.ui.generation_page import COMPUTE_UNITS_METER_STEPS, GenerationPage, compute_units_meter_value  # noqa: E402
 from dtflow.ui.inline_feedback import InlineNotice  # noqa: E402
@@ -1379,6 +1380,54 @@ def render_active_queue_states(shell, out):
             snap("queues-19-inpaint-plan")
         page.planStrengthsEdit.clear()
         page.planModeCombo.setCurrentText("Repeat")
+
+        # Edit as new queue: recorded items load into Generate and the composer as Cross, Pair and Repeat.
+        def recorded(prompt, model, seed, steps=20, loras=()):
+            return {
+                "operation": "txt2img",
+                "prompt": prompt,
+                "model_id": model,
+                "seed": seed,
+                "steps": steps,
+                "guidance": 7.0,
+                "sampler_id": "euler_a",
+                "width_px": 512,
+                "height_px": 512,
+                "loras": [{"identifier": name, "weight": weight} for name, weight in loras],
+            }
+
+        def lora(weight_a, weight_b):
+            return (("style.ckpt", weight_a), ("detail.ckpt", weight_b))
+
+        edits = {
+            "cross": [recorded(p, m, 7, loras=lora(0.8, 0.4)) for p in ("a fox", "an owl") for m in ("m1", "m2")],
+            "pair": [
+                recorded(p, m, 7 + i) for i, (p, m) in enumerate(zip(("a", "b", "c"), ("m1", "m1", "m2"), strict=True))
+            ],
+            "repeat": [recorded("a fox", "m1", 100 + i) for i in range(4)],
+            "weights": [recorded("a fox", "m1", 7, loras=lora(w, v)) for w in (0.6, 1.0) for v in (0.5, 0.7, 0.9)],
+        }
+        for kind, records in edits.items():
+            edit = queue_edit_from_records(records)
+            queue._edit_loaded(edit, None)
+            assert page.planModeCombo.currentText().lower() == edit.form.mode.lower(), kind
+            assert queue.plan_model.rowCount() == (len(records) if edit.form.mode != "Repeat" else 0), kind
+            page.queueComposerScroll.ensureWidgetVisible(page.planModelsEdit)
+            snap(f"queues-67-edit-as-new-{kind}")
+        for name in (
+            "planModelsEdit",
+            "planStepsEdit",
+            "planSamplersEdit",
+            "planSizesEdit",
+            "planLoraSetsEdit",
+            "planLorasEdit",
+        ):
+            getattr(page, name).clear()
+        page.planPromptsEdit.clear()
+        page.planSeedsEdit.clear()
+        page.planIncrementCheck.setChecked(False)
+        page.planModeCombo.setCurrentText("Repeat")
+        shell.generation.lora.set_loras(())
         queue.close_composer()
         queue._sync()
         queue._syncing = True

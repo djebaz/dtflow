@@ -1023,6 +1023,14 @@ class QueuePage:
         ]
         page.planLorasEdit.setText("; ".join(chips))  # one chip per LoRA and weight
         page.planStrengthsEdit.clear()
+        for suffix in DRAW_SPINS.values():  # random draws, prompt variation and edits would change the loaded items
+            getattr(page, f"planDraw{suffix}Spin").setValue(0)
+        page.planVariationCombo.setCurrentIndex(0)
+        page.planShuffleCombo.setCurrentIndex(0)
+        page.planDropSpin.setValue(0)
+        page.planAddSpin.setValue(0)
+        page.planAddPartsEdit.clear()
+        page.planWildcardsEdit.clear()
         page.planIncrementCheck.setChecked(form.increment)
         if form.mode == REPEAT:
             page.queueCountSpinBox.setValue(result.count)
@@ -1739,16 +1747,16 @@ class QueuePage:
         receipts = ()
         dimensions = dict(plan.dimensions) if plan is not None else {}
         sets = dimensions.get("loras")
-        weighted = {name.partition(".")[2] for name in dimensions if name.startswith("lora_weight.")}
+        weighted = [name.partition(".")[2] for name in dimensions if name.startswith("lora_weight.")]  # chip order
         if (sets or weighted) and backend["name"] == "cloud":
             # LoRA sets and weights may name custom cloud LoRAs that are not on Generate: bind their receipts too.
             known = self._choices().get("receipts", {})
-            named = {identifier for chosen in sets or () for identifier, _ in chosen} | weighted
+            named = {identifier for chosen in sets or () for identifier, _ in chosen} | set(weighted)
             named -= {x.identifier for x in request.loras}
             receipts = await load_prepared(
                 self._state, "cloud", [known[name] for name in sorted(named) if name in known]
             )
-        request = self._with_weighted_loras(request, sorted(weighted))
+        request = self._with_weighted_loras(request, weighted)
         if job is not None:
             # An Inpaint edit: stage the prepared source and mask once; nothing is sent until Start.
             selection = await asyncio.to_thread(
@@ -1846,7 +1854,10 @@ class QueuePage:
         for column, name in enumerate(table.columns):
             self.plan_model.setHeaderData(column, Qt.Orientation.Horizontal, name, Qt.ItemDataRole.ToolTipRole)
         for row in table.rows:
-            self.plan_model.appendRow([QStandardItem(cell) for cell in row])
+            cells = [QStandardItem(cell) for cell in row]
+            for item in cells:
+                item.setToolTip(item.text())  # the cells elide to the panel width
+            self.plan_model.appendRow(cells)
         view = self.page.planTableView
         # Columns share the panel width (header and cell text elide) instead of widening the table past the panel.
         header = view.horizontalHeader()
