@@ -35,6 +35,9 @@ _REQUIRED_PARAMETERS = {
     "flux3": ("channels", "double_layers", "single_layers"),
     "moss": ("channels", "layers", "intermediate_size"),
     "hidream_o1": ("channels", "layers", "intermediate_size"),
+    "unet_v1": ("channels", "num_repeat"),
+    "unet_v2": ("channels", "num_repeat"),
+    "unet_xl": ("channels", "middle_attention", "label_input_channels"),
 }
 
 
@@ -282,6 +285,159 @@ def _ideogram(image: int, tokens: int, architecture: dict) -> tuple[int, int]:
     return main, fixed
 
 
+def _convolution(height: int, width: int, output_channels: int, kernel: int, input_channels: int) -> int:
+    """Count one single-image convolution using the upstream instruction proxy."""
+    return height * width * output_channels * kernel * kernel * input_channels
+
+
+def _unet_res(height: int, width: int, incoming: int, channels: int, embedding: int) -> int:
+    count = _convolution(height, width, channels, 3, incoming)
+    count += _dense(1, embedding, channels)
+    count += _convolution(height, width, channels, 3, channels)
+    if incoming != channels:
+        count += _convolution(height, width, channels, 1, incoming)
+    return count
+
+
+def _unet_transformer(height: int, width: int, channels: int, heads: int, tokens: int) -> int:
+    """SD1/SD2 transformer: cross-attention K/V projections remain in the main path."""
+    hw = height * width
+    count = 2 * _convolution(height, width, channels, 1, channels)
+    count += 4 * _dense(hw, channels, channels)
+    count += _attention(1, heads, channels // heads, hw, hw)
+    count += 2 * _dense(hw, channels, channels)
+    count += 2 * _dense(tokens, channels, channels)
+    count += _attention(1, heads, channels // heads, hw, tokens)
+    count += 2 * _dense(hw, channels, 4 * channels)
+    count += _dense(hw, 4 * channels, channels)
+    return count
+
+
+def _unet_legacy(height: int, width: int, tokens: int, architecture: dict) -> tuple[int, int]:
+    """Port the upstream SD1/SD2 encoder/middle/decoder UNet instruction count."""
+    channels = architecture["channel_schedule"]
+    repeats = architecture["num_repeat"]
+    attention_ds = frozenset(architecture["attention_downsamples"])
+    emb = channels[0] * 4
+
+    def heads(c: int) -> int:
+        return 8 if architecture["heads_mode"] == "fixed8" else c // 64
+
+    def layer(h: int, w: int, incoming: int, c: int, ds: int) -> int:
+        count = _unet_res(h, w, incoming, c, emb)
+        if ds in attention_ds:
+            count += _unet_transformer(h, w, c, heads(c), tokens)
+        return count
+
+    main = _dense(1, channels[0], emb) + _dense(1, emb, emb)
+    main += _convolution(height, width, channels[0], 3, 4)
+    skips = [(channels[0], height, width)]
+    h, w, ds, previous = height, width, 1, channels[0]
+    for index, channel in enumerate(channels):
+        for _ in range(repeats):
+            main += layer(h, w, previous, channel, ds)
+            previous = channel
+            skips.append((channel, h, w))
+        if index < len(channels) - 1:
+            h //= 2
+            w //= 2
+            main += _convolution(h, w, channel, 3, channel)
+            skips.append((channel, h, w))
+            ds *= 2
+
+    main += _unet_res(h, w, previous, previous, emb)
+    main += _unet_transformer(h, w, previous, heads(previous), tokens)
+    main += _unet_res(h, w, previous, previous, emb)
+
+    out = previous
+    for index in range(len(channels) - 1, -1, -1):
+        channel = channels[index]
+        h = height // (2 ** index)
+        w = width // (2 ** index)
+        ds = 2 ** index
+        for step in range(repeats + 1):
+            skip, _, _ = skips.pop()
+            main += layer(h, w, out + skip, channel, ds)
+            out = channel
+            if index > 0 and step == repeats:
+                main += _convolution(h * 2, w * 2, channel, 3, channel)
+    main += _convolution(height, width, 4, 3, channels[0])
+    return main, 0
+
+
+def _unet_xl(height: int, width: int, tokens: int, architecture: dict) -> tuple[int, int]:
+    """Count SDXL/SSD UNetXL blocks and the separate once-only cross-attention K/V."""
+    channels = architecture["channel_schedule"]
+    emb = channels[0] * 4
+    input_depths = {int(key): value for key, value in architecture["input_attention"].items()}
+    output_depths = {int(key): value for key, value in architecture["output_attention"].items()}
+    middle_depth = architecture["middle_attention"]
+    fixed = 0
+
+    def spatial(h: int, w: int, c: int, depth: int) -> tuple[int, int]:
+        if depth <= 0:
+            return 0, 0
+        hw = h * w
+        heads = c // 64
+        # Two spatial 1x1 projections around all transformer blocks.
+        main_count = 2 * _convolution(h, w, c, 1, c)
+        block = 4 * _dense(hw, c, c) + _attention(1, heads, c // heads, hw, hw)
+        # Cross q/o; cross k/v are computed once in the fixed path.
+        block += 2 * _dense(hw, c, c) + _attention(1, heads, c // heads, hw, tokens)
+        block += 2 * _dense(hw, c, 4 * c) + _dense(hw, 4 * c, c)
+        return main_count + depth * block, depth * 2 * _dense(tokens, c, c)
+
+    def layer(h: int, w: int, incoming: int, c: int, depth: int) -> tuple[int, int]:
+        res = _unet_res(h, w, incoming, c, emb)
+        transformer, text_kv = spatial(h, w, c, depth)
+        return res + transformer, text_kv
+
+    main = (
+        _dense(1, channels[0], emb) + _dense(1, emb, emb)
+        + _dense(1, architecture["label_input_channels"], emb) + _dense(1, emb, emb)
+        + _convolution(height, width, channels[0], 3, 4)
+    )
+    skips = [(channels[0], height, width)]
+    h, w, ds, previous = height, width, 1, channels[0]
+    for index, channel in enumerate(channels):
+        depths = input_depths.get(ds, [0, 0])
+        for depth in depths:
+            block_main, block_fixed = layer(h, w, previous, channel, depth)
+            main += block_main
+            fixed += block_fixed
+            previous = channel
+            skips.append((channel, h, w))
+        if index < len(channels) - 1:
+            h //= 2
+            w //= 2
+            main += _convolution(h, w, channel, 3, channel)
+            skips.append((channel, h, w))
+            ds *= 2
+
+    main += _unet_res(h, w, previous, previous, emb)
+    if middle_depth:
+        block_main, block_fixed = spatial(h, w, previous, middle_depth)
+        main += block_main + _unet_res(h, w, previous, previous, emb)
+        fixed += block_fixed
+
+    out = previous
+    for index in range(len(channels) - 1, -1, -1):
+        channel = channels[index]
+        h = height // (2 ** index)
+        w = width // (2 ** index)
+        depths = output_depths.get(2 ** index, [0, 0, 0])
+        for step, depth in enumerate(depths):
+            skip, _, _ = skips.pop()
+            block_main, block_fixed = layer(h, w, out + skip, channel, depth)
+            main += block_main
+            fixed += block_fixed
+            out = channel
+            if index > 0 and step == 2:
+                main += _convolution(h * 2, w * 2, channel, 3, channel)
+    main += _convolution(height, width, 4, 3, channels[0])
+    return main, fixed
+
+
 def _mmdit(image: int, tokens: int, architecture: dict, dual_layers: frozenset[int]) -> tuple[int, int]:
     """Count the pinned SD3/SD3-Large MMDiT joint-attention and fixed paths."""
     c, layers = architecture["channels"], architecture["layers"]
@@ -521,6 +677,10 @@ def estimate_compute_units(
             main, fixed = _qwen(image, tokens, architecture)
         elif strategy == "ideogram_4":
             main, fixed = _ideogram(image, tokens, architecture)
+        elif strategy in {"unet_v1", "unet_v2"}:
+            main, fixed = _unet_legacy(height, width, tokens, architecture)
+        elif strategy == "unet_xl":
+            main, fixed = _unet_xl(height, width, tokens, architecture)
         elif strategy == "pixart":
             main, fixed = _pixart(image, tokens, architecture)
         elif strategy == "auraflow":
