@@ -41,6 +41,10 @@ _REQUIRED_PARAMETERS = {
     "hidream_i1": ("channels", "double_layers", "single_layers"),
     "wurstchen_stage_c": ("channels", "stage2_steps"),
     "wurstchen_stage_b": ("channels",),
+    "video_hunyuan": ("channels", "double_layers", "single_layers"),
+    "video_wan": ("channels", "layers", "intermediate_size", "output_channels"),
+    "video_ltx2": ("channels", "audio_channels", "layers"),
+    "video_minimax_h3": ("channels", "layers", "intermediate_size", "fps"),
 }
 
 
@@ -104,6 +108,22 @@ def _architecture_registry() -> dict[str, dict]:
                         type(ds) is not int or ds < 1 for ds in downsamples
                     ) or entry.get("heads_mode") not in ("fixed8", "channel64"):
                         continue
+            if strategy.startswith("video_"):
+                pack = {
+                    "video_hunyuan": "quarter",
+                    "video_wan": "quarter",
+                    "video_ltx2": "eighth",
+                    "video_minimax_h3": "minimax_h3",
+                }.get(strategy)
+                if entry.get("frame_pack") != pack:
+                    continue
+                if strategy == "video_wan" and type(entry.get("supports_image")) is not bool:
+                    continue
+                if strategy == "video_ltx2" and any(
+                    type(entry.get(field)) is not bool
+                    for field in ("gated_attention", "kv_cache", "context_projection", "ada_ln_cross")
+                ):
+                    continue
             if type(entry.get("usage_bias")) not in (int, float) or entry["usage_bias"] not in (1, 2.5):
                 continue
             accepted[name] = entry
