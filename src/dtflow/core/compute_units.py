@@ -36,7 +36,7 @@ def _architecture_registry() -> dict[str, dict]:
     """Load pinned instruction parameters; fail closed on missing or invalid entries."""
     try:
         document = json.loads(_REGISTRY_FILE.read_text(encoding="utf-8"))
-        if (
+        if not isinstance(document, dict) or (
             document.get("schema_version") != 1
             or document.get("source_commit") != _SOURCE_COMMIT
             or document.get("calibration") != CALIBRATION
@@ -320,7 +320,7 @@ def estimate_compute_units(
     guidance_embed = spec.get("guidance_embed") is True and extras.get("speed_up_with_guidance_embed") is True
     cfg = 1 if spec.get("is_consistency_model") is True or guidance_embed else (2 if abs(guidance - 1) > 1e-3 else 1)
     # Draw Things' GenerationConfiguration.startWidth is the pixel dimension / 64.
-    # Qwen-Image 2.1 then scales it by 4; all other supported families by 8.
+    # Architecture-specific latent scaling comes from the pinned registry.
     scale = architecture["latent_scale"]
     height, width = height_px // 64 * scale, width_px // 64 * scale
     image = height // 2 * (width // 2)
@@ -328,25 +328,26 @@ def estimate_compute_units(
     if padded is not None and (type(padded) is not int or padded < 0):
         return ComputeUnitEstimate(None, "Invalid published token-length metadata.")
     tokens = padded or architecture["default_text_tokens"]
+    strategy = architecture["strategy"]
 
-    if version == "qwen_image_2.1":
+    if strategy == "qwen_image_2.1":
         main, fixed = _qwen21(height * width, tokens, steps, cfg, architecture)
         instruction_units = main * steps + fixed
-    elif version == "krea_2":
+    elif strategy == "krea_2":
         main, fixed = _krea(image, tokens, cfg, architecture)  # includes CFG and once-only text fusion
         instruction_units = main * steps + fixed
     else:
-        if version == "flux1":
+        if strategy == "flux1":
             main, fixed = _flux1(image, tokens, guidance_embed, architecture)
-        elif version in {"flux2", "flux2_4b", "flux2_9b"}:
+        elif strategy == "flux2":
             main, fixed = _flux2(image, tokens, guidance_embed, architecture)
-        elif architecture["strategy"] == "z_image":
+        elif strategy == "z_image":
             main, fixed = _z_image(
                 image, tokens, architecture["channels"], architecture["layers"], architecture["include_fixed"]
             )
-        elif version == "qwen_image":
+        elif strategy == "qwen_image":
             main, fixed = _qwen(image, tokens, architecture)
-        elif version == "ideogram_4":
+        elif strategy == "ideogram_4":
             main, fixed = _ideogram(image, tokens, architecture)
         else:
             return ComputeUnitEstimate(None, "Unsupported model version.")
@@ -355,7 +356,10 @@ def estimate_compute_units(
     if units <= 0:
         return ComputeUnitEstimate(None, "The instruction estimate could not be resolved.")
     if base_estimate:
-        reason = "Base architecture estimate; unknown LoRA modifiers or missing metadata are not included."
+        if has_loras:
+            reason = "Base checkpoint estimate; selected LoRA modifier effects are not included."
+        else:
+            reason = "Base architecture estimate; exact metadata or checkpoint modifier effects are not included."
     else:
         reason = "Local open-source estimate, not a DT+ server quote or billing proof."
     return ComputeUnitEstimate(units, reason)
