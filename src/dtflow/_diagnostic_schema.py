@@ -135,6 +135,13 @@ def api_error_data(*, message=None, body=None, headers=(), private=(), truncated
             r"\1[redacted]",
             value,
         )
+        # Keep field labels intact until the key/value rule above has hidden their values.
+        # Also hide unissued/unknown compound credential-shaped atoms, but not "token expired".
+        value = re.sub(
+            r"(?i)\b(?=[A-Za-z0-9_-]*[-_])(?:[A-Za-z0-9]+[-_])*(?:token|secret|password|credential|api[_-]key)(?:[-_][A-Za-z0-9]+)*\b",
+            "[redacted]",
+            value,
+        )
         value = re.sub(r"https?://[^\s<>\"']+", "[redacted-url]", value, flags=re.IGNORECASE)
         value = re.sub(r"\bdk_[A-Za-z0-9_-]+", "[redacted-key]", value)
         value = re.sub(r"[A-Za-z0-9_+/=-]{64,}", "[redacted-payload]", value)

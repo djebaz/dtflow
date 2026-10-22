@@ -7,6 +7,8 @@ reach logs, exceptions, receipts or any value that crosses the backend boundary.
 from __future__ import annotations
 
 import asyncio
+import base64
+import binascii
 import hashlib
 import logging
 import math
@@ -64,6 +66,8 @@ async def lookup_lora_assets(
     results: dict[str, LoRABackendAvailability] = {}
     for item in usable:
         reference = already.get(item.sha256)
+        if item.identifier in urls:
+            _observe_upload(urls[item.identifier], item.sha256)
         if _valid_reference(reference):
             results[item.identifier] = LoRABackendAvailability(
                 "byom_reusable", "dt_cloud.get_byom_urls", sha256=item.sha256, reference=reference
@@ -71,8 +75,9 @@ async def lookup_lora_assets(
         elif item.identifier in urls:
             upload = urls[item.identifier]
             results[item.identifier] = LoRABackendAvailability(
-                "upload_required" if _matches_upload(upload, item.sha256) else "unknown",
-                "dt_cloud.get_byom_urls", sha256=item.sha256,
+                "upload_required" if _usable_upload(upload) else "unknown",
+                "dt_cloud.get_byom_urls",
+                sha256=item.sha256,
             )
         else:
             results[item.identifier] = LoRABackendAvailability("unknown", "dt_cloud.get_byom_urls", sha256=item.sha256)
@@ -137,8 +142,11 @@ def _response_branches(response) -> tuple[dict, dict]:
         "backend.byom_response",
         level=logging.INFO,
         data={
-            **getattr(response, "error_data", {}), **fields,
-            "http_status": 200, "operation": "get_byom_urls", "transport": "http",
+            **getattr(response, "error_data", {}),
+            **fields,
+            "http_status": 200,
+            "operation": "get_byom_urls",
+            "transport": "http",
         },
     )
     already = data.get("alreadyExists") if isinstance(data, dict) else None
@@ -153,10 +161,46 @@ def _valid_reference(reference) -> bool:
     return True
 
 
-def _matches_upload(upload, digest: str) -> bool:
-    if not isinstance(upload, dict) or not isinstance(upload.get("sha256"), str):
-        return False
-    return upload["sha256"].strip().lower() == digest and _safe_destination(upload.get("url"))
+def _observe_upload(upload, digest: str) -> None:
+    """Non-identifying evidence only: the server field is not an echoed local checksum contract."""
+    returned = upload.get("sha256") if isinstance(upload, dict) else None
+    evidence = {
+        "operation": "get_byom_urls",
+        "upload_entry_type": type(upload).__name__,
+        "server_checksum_type": type(returned).__name__,
+        "local_checksum_format": "hex_sha256",
+        "local_checksum_length": len(digest),
+        "comparison_required": False,
+    }
+    if isinstance(returned, str):
+        text = returned.strip()
+        encoding = "opaque"
+        matches = False
+        if re.fullmatch(r"[0-9a-fA-F]{64}", text):
+            encoding = "hex_sha256"
+            matches = text.lower() == digest
+        elif len(text) == 44:
+            try:
+                decoded = base64.b64decode(text, validate=True)
+            except (ValueError, binascii.Error):
+                decoded = b""
+            if len(decoded) == 32:
+                encoding = "base64_sha256"
+                matches = decoded.hex() == digest
+        evidence.update(
+            server_checksum_length=len(returned),
+            server_checksum_format=encoding,
+            server_checksum_text_matches_local=text.lower() == digest,
+            server_reference_usable=_valid_reference(returned),
+        )
+        if encoding != "opaque":
+            evidence["server_checksum_decoded_matches_local"] = matches
+    event(logging.getLogger(__name__), "backend.byom_upload_evidence", level=logging.INFO, data=evidence)
+
+
+def _usable_upload(upload) -> bool:
+    # Official LoRAStore forwards this field as serverSha256; it need not equal the request's local digest.
+    return isinstance(upload, dict) and _valid_reference(upload.get("sha256")) and _safe_destination(upload.get("url"))
 
 
 def _safe_destination(value) -> bool:
@@ -197,21 +241,23 @@ async def negotiate_lora_asset(auth: CloudAuth, content: AssetContent) -> AssetN
     already, urls = _response_branches(response)
     reference = already.get(content.sha256)
     upload = urls.get(content.identifier)
+    if content.identifier in urls:
+        _observe_upload(upload, content.sha256)
     if _valid_reference(reference):
         result = AssetNegotiation("exists", reference)
         event(logging.getLogger(__name__), "backend.asset_negotiated", level=logging.DEBUG, data={"outcome": "exists"})
         return result
-    if not _matches_upload(upload, content.sha256):
+    if not _usable_upload(upload):
         reason = "no_matching_asset_entry"
         if not isinstance(response.get("data"), dict):
             reason = "data_not_object"
         elif content.identifier in urls:
-            reason = "upload_entry_missing_checksum_or_safe_destination"
-            if isinstance(upload, dict) and isinstance(upload.get("sha256"), str):
+            reason = "invalid_upload_entry"
+            if isinstance(upload, dict):
                 reason = (
-                    "upload_checksum_mismatch"
-                    if upload["sha256"].strip().lower() != content.sha256
-                    else "unsafe_or_missing_upload_destination"
+                    "unsafe_or_missing_upload_destination"
+                    if _valid_reference(upload.get("sha256"))
+                    else "invalid_server_reference"
                 )
         elif content.sha256 in already:
             reason = "unusable_existing_reference"
@@ -294,6 +340,11 @@ async def upload_signed(
         timeout=httpx.Timeout(policy.read, connect=policy.connect, write=policy.write, pool=policy.connect),
     )
     try:
+        destination = httpx.URL(ticket.url)
+        # A storage error may echo an individual signature instead of the full signed URL.
+        query_private = tuple(value for _, value in destination.params.multi_items()) + tuple(
+            part.partition(b"=")[2].decode("ascii") for part in destination.query.split(b"&") if b"=" in part
+        )
         async with asyncio.timeout(policy.total):
             async with client.stream("PUT", ticket.url, content=body(), headers=headers) as response:
                 status = response.status_code
@@ -318,7 +369,12 @@ async def upload_signed(
                 evidence = api_error_data(
                     body=bytes(error_body) if not 200 <= status < 300 else None,
                     headers=response.headers,
-                    private=(ticket.url, content.identifier, content.sha256),
+                    private=(
+                        ticket.url,
+                        content.identifier,
+                        content.sha256,
+                        *query_private,
+                    ),
                     truncated=truncated,
                 )
         if 200 <= status < 300:

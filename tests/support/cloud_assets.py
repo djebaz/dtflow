@@ -67,7 +67,8 @@ class DtPlus:
         if digest in self.stored:
             data = {"alreadyExists": {digest: self.stored[digest]}}
         else:
-            data = {"signedUrls": {"urls": {name: {"sha256": digest, "url": SIGNED}}}}
+            # The wire response is a private server-returned value, independent of local content identity.
+            data = {"signedUrls": {"urls": {name: {"sha256": "server_" + digest, "url": SIGNED}}}}
         return httpx.Response(200, json={"code": 208, "data": data})
 
     async def storage(self, request: httpx.Request) -> httpx.Response:

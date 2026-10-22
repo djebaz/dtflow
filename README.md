@@ -62,6 +62,8 @@ API failures retain bounded, sanitized server explanations in WARNING logs and o
 
 Cloud LoRA metadata lookup tolerates unusable optional response branches and records safe response structure before interpretation. Local interpretation issues are distinguished from API rejection; unknown asset evidence never authorizes a guessed upload or receipt.
 
+Cloud LoRA uploads keep local content checksums separate from server-returned storage values, following the official client contract; a different returned value alone does not reject preparation. Logs show format/comparison facts without exposing either value.
+
 ### Explicit cloud assets and offline exploration
 
 Prepare one or several converted cloud LoRA files through explicit file selection, remembering the picker folder separately per runtime, and inspect

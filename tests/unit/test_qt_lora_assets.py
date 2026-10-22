@@ -188,7 +188,8 @@ def test_unconfirmed_upload_is_unknown_with_its_code_and_not_retried(window, clo
     page = window.generation_page
     qtbot.waitUntil(lambda: page.assetList.count() == 1, timeout=5000)
     assert page.assetStatusLabel.text().startswith("Outcome unknown")
-    assert "asset_upload_unconfirmed" in page.assetStatusLabel.text() and "not retried" in page.assetStatusLabel.text()
+    visible = page.assetStatusLabel.text().replace("\u200b", "")  # ignore intentional identifier wrapping
+    assert "asset_upload_unconfirmed" in visible and "not retried" in visible
     assert "unknown" in page.assetList.item(0).text() and len(cloud.puts) == 1
 
 

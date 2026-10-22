@@ -842,6 +842,22 @@ def render_generate_configuration_states(shell, out):
         lora._prepared(None, refused)
         snap("generate-37a-api-asset-refused")
         clear()
+        uninterpretable = BackendError(
+            BackendFailure(
+                ErrorCategory.PROTOCOL,
+                "cloud_byom_response_invalid",
+                "DTFlow could not establish the asset status from the DT+ response (invalid_server_reference).",
+                diagnostics=(
+                    ("transport", "http"),
+                    ("http_status", "200"),
+                    ("validation_reason", "invalid_server_reference"),
+                    ("interpretation_message", "The upload offer has no usable server-returned storage value."),
+                ),
+            )
+        )
+        lora._prepared(None, uninterpretable)
+        snap("generate-37b-byom-server-value-unusable")
+        clear()
         lora._listed(None, OSError("Offline fixture"))
         assert "Registry unavailable" in page.assetStatusLabel.text()
         snap("generate-38-asset-registry-unavailable")
@@ -3563,7 +3579,8 @@ def render_logs_states(shell, capture):
             "fixture",
             ["dtflow.backends.drawthings.cloud_assets", "dtflow.persistence.gallery_snapshot"],
             ["backend.byom_upload_evidence", "gallery.snapshot.publication_skipped"],
-            [], [],
+            [],
+            [],
         ),
     )
     for combo, name in (
@@ -3858,16 +3875,24 @@ def main():
             )
             controller._generated(None, asset_unknown)
             capture("generate-11b-prepared-asset-api-explanation")
-            uninterpreted = BackendError(BackendFailure(
-                ErrorCategory.VALIDATION, "prepared_asset_unknown",
-                "DTFlow could not establish the asset status from the DT+ response (no_matching_asset_entry).",
-                diagnostics=(
-                    ("asset", "example_krea2_lora_f16.ckpt"), ("transport", "http"),
-                    ("operation", "get_byom_urls"), ("http_status", "200"),
-                    ("validation_reason", "no_matching_asset_entry"),
-                    ("interpretation_message", "DTFlow could not establish the asset status (no_matching_asset_entry)."),
-                ),
-            ))
+            uninterpreted = BackendError(
+                BackendFailure(
+                    ErrorCategory.VALIDATION,
+                    "prepared_asset_unknown",
+                    "DTFlow could not establish the asset status from the DT+ response (no_matching_asset_entry).",
+                    diagnostics=(
+                        ("asset", "example_krea2_lora_f16.ckpt"),
+                        ("transport", "http"),
+                        ("operation", "get_byom_urls"),
+                        ("http_status", "200"),
+                        ("validation_reason", "no_matching_asset_entry"),
+                        (
+                            "interpretation_message",
+                            "DTFlow could not establish the asset status (no_matching_asset_entry).",
+                        ),
+                    ),
+                )
+            )
             controller._generated(None, uninterpreted)
             capture("generate-11c-local-byom-interpretation")
             strip = shell.progress_strip
