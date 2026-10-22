@@ -16,6 +16,10 @@ Changes through the 5.1.0 preparation baseline are consolidated in [DTFlow 5.1.0
 
 ## Changed
 
+- Generate Compute Units meter uses a non-linear scale (700 ≈ 15 %, 3 000 = 50 %, 40 000+ = full) so typical estimates are readable; the red threshold is unchanged.
+- Generate Checkpoint selector gains small previous/next buttons that step through the current filtered list without opening the editor; they stop at either end.
+- In single-choice search editors (Checkpoint, composer choices), double-clicking a name or pressing Enter applies it like **Apply**, including with a search filter active. Add LoRA keeps its explicit Add step.
+
 ## Fixed
 
 - Restore the status-bar About icon to 16 px within its existing 20 px button, matching the compact checkpoint-details control without padding that squeezes the glyph.

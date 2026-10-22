@@ -273,7 +273,7 @@
                      </size>
                     </property>
                     <property name="maximum">
-                     <number>40000</number>
+                     <number>1000</number>
                     </property>
                     <property name="value">
                      <number>0</number>
@@ -296,10 +296,90 @@
                 </widget>
                </item>
                <item>
-                <widget class="SearchableComboBox" name="modelCombo">
-                 <property name="accessibleName">
-                  <string>Checkpoint</string>
-                 </property>
+                <widget class="QWidget" name="checkpointSelectorRow">
+                 <layout class="QHBoxLayout" name="checkpointSelectorLayout">
+                  <property name="leftMargin">
+                   <number>0</number>
+                  </property>
+                  <property name="topMargin">
+                   <number>0</number>
+                  </property>
+                  <property name="rightMargin">
+                   <number>0</number>
+                  </property>
+                  <property name="bottomMargin">
+                   <number>0</number>
+                  </property>
+                  <property name="spacing">
+                   <number>2</number>
+                  </property>
+                  <item>
+                   <widget class="SearchableComboBox" name="modelCombo">
+                    <property name="sizePolicy">
+                     <sizepolicy hsizetype="Expanding" vsizetype="Fixed"/>
+                    </property>
+                    <property name="accessibleName">
+                     <string>Checkpoint</string>
+                    </property>
+                   </widget>
+                  </item>
+                  <item>
+                   <widget class="QToolButton" name="previousCheckpointButton">
+                    <property name="minimumSize">
+                     <size>
+                      <width>24</width>
+                      <height>24</height>
+                     </size>
+                    </property>
+                    <property name="maximumSize">
+                     <size>
+                      <width>24</width>
+                      <height>16777215</height>
+                     </size>
+                    </property>
+                    <property name="enabled">
+                     <bool>false</bool>
+                    </property>
+                    <property name="autoRaise">
+                     <bool>true</bool>
+                    </property>
+                    <property name="accessibleName">
+                     <string>Previous checkpoint</string>
+                    </property>
+                    <property name="toolTip">
+                     <string>Previous checkpoint in the current list (filters and Include niche models apply).</string>
+                    </property>
+                   </widget>
+                  </item>
+                  <item>
+                   <widget class="QToolButton" name="nextCheckpointButton">
+                    <property name="minimumSize">
+                     <size>
+                      <width>24</width>
+                      <height>24</height>
+                     </size>
+                    </property>
+                    <property name="maximumSize">
+                     <size>
+                      <width>24</width>
+                      <height>16777215</height>
+                     </size>
+                    </property>
+                    <property name="enabled">
+                     <bool>false</bool>
+                    </property>
+                    <property name="autoRaise">
+                     <bool>true</bool>
+                    </property>
+                    <property name="accessibleName">
+                     <string>Next checkpoint</string>
+                    </property>
+                    <property name="toolTip">
+                     <string>Next checkpoint in the current list (filters and Include niche models apply).</string>
+                    </property>
+                   </widget>
+                  </item>
+                 </layout>
                 </widget>
                </item>
               </layout>

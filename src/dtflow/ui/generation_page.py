@@ -6,7 +6,9 @@ press: a local stop is reported as a local stop, and a possibly submitted attemp
 """
 
 import asyncio
+import itertools
 import logging
+import math
 import re
 import time
 from collections.abc import Callable
@@ -97,6 +99,9 @@ def failure_fields(failure: BaseException) -> dict:
 
 PREVIEW_MIN_HEIGHT = 180
 COMPUTE_UNITS_LIMIT = 40_000  # meter full and red from here up
+COMPUTE_UNITS_METER_STEPS = 1000  # meter resolution; the bar's maximum
+# (units, fill fraction) anchors of the meter scale; see compute_units_fill().
+COMPUTE_UNITS_SCALE = ((700, 0.15), (3_000, 0.5), (COMPUTE_UNITS_LIMIT, 1.0))
 RESULT_PATH_ROLE = Qt.ItemDataRole.UserRole
 DISPATCH_REASON = (
     "A queue is running in this window: Generate adds this request behind it as a one-item queue, "
@@ -154,6 +159,24 @@ FIELD_WIDGETS = (
     "samplerCombo",
     "loraList",
 )
+
+
+def compute_units_fill(units: int) -> float:
+    """Map an estimate to a 0–1 meter fill on a non-linear, monotonic scale.
+
+    Typical estimates sit in the low thousands, so a linear 0–40 000 bar left them almost empty. The scale is linear from
+    0 to 700 (15 %), then logarithmic between anchors: 700 → 15 %, 3 000 → 50 %, 40 000 → 100 %. Anything at or above
+    COMPUTE_UNITS_LIMIT is clamped full.
+    """
+    if units <= 0:
+        return 0.0
+    first_units, first_fill = COMPUTE_UNITS_SCALE[0]
+    if units <= first_units:
+        return first_fill * units / first_units
+    for (low, low_fill), (high, high_fill) in itertools.pairwise(COMPUTE_UNITS_SCALE):
+        if units <= high:
+            return low_fill + (high_fill - low_fill) * math.log(units / low) / math.log(high / low)
+    return 1.0
 
 
 def _choose_save(parent: QWidget, directory: Path) -> str:
@@ -280,6 +303,11 @@ class GenerationPage:
         page.loraList.itemChanged.connect(self._update_compute_units)
         page.unclassifiedModelsButton.clicked.connect(self._show_unclassified_models)
         page.checkpointDetailsButton.clicked.connect(self.show_checkpoint_details)
+        page.previousCheckpointButton.clicked.connect(lambda: self._step_checkpoint(-1))
+        page.nextCheckpointButton.clicked.connect(lambda: self._step_checkpoint(1))
+        page.modelCombo.currentIndexChanged.connect(self._sync_checkpoint_steppers)
+        page.modelCombo.model().rowsInserted.connect(self._sync_checkpoint_steppers)
+        page.modelCombo.model().rowsRemoved.connect(self._sync_checkpoint_steppers)
         page.checkpointDetailsButton.setEnabled(bool(page.modelCombo.currentText().strip()))
         for label, scenario in SIMULATED_OUTCOMES:
             page.simulationScenarioCombo.addItem(label, scenario)
@@ -316,6 +344,9 @@ class GenerationPage:
         page.generateButton.setIconSize(QSize(16, 16))
         page.checkpointDetailsButton.setIcon(QIcon(str(icons / "info.svg")))
         page.checkpointDetailsButton.setIconSize(QSize(16, 16))
+        page.previousCheckpointButton.setIcon(QIcon(str(icons / "chevron-left.svg")))
+        page.nextCheckpointButton.setIcon(QIcon(str(icons / "chevron-right.svg")))
+        self._sync_checkpoint_steppers()
         page.expandPromptButton.setIconSize(QSize(16, 16))
         self._set_prompt_expanded(page.expandPromptButton.isChecked())
         page.seedEdit.setToolTip(
@@ -1262,6 +1293,21 @@ class GenerationPage:
         # (for example the previous SDXL pick) to this family's list, where it then shows up in the search.
         combo.setCurrentIndex(combo.findText(current))
 
+    def _step_checkpoint(self, offset: int) -> None:
+        """Select the neighbouring entry of the current checkpoint list, which already reflects the active filters."""
+        combo = self.page.modelCombo
+        index = combo.currentIndex() + offset
+        if 0 <= index < combo.count():
+            combo.setCurrentIndex(index)
+
+    def _sync_checkpoint_steppers(self, *_args) -> None:
+        """Previous/next stop at the ends of the list rather than wrapping."""
+        combo = self.page.modelCombo
+        index, count = combo.currentIndex(), combo.count()
+        # With nothing selected, Next starts at the first entry.
+        self.page.previousCheckpointButton.setEnabled(index > 0)
+        self.page.nextCheckpointButton.setEnabled(index + 1 < count)
+
     def _catalogue_domain(self) -> str:
         return self.page.generationDomainCombo.currentData() or "all"
 
@@ -1434,10 +1480,11 @@ class GenerationPage:
         if units is None:
             state, text, value = "unavailable", "unavailable", 0
         else:
-            # Full at COMPUTE_UNITS_LIMIT; at or above it the bar stays full and turns red.
+            # Non-linear fill (compute_units_fill); at or above COMPUTE_UNITS_LIMIT the bar stays full and turns red.
             state = "over" if units >= COMPUTE_UNITS_LIMIT else "ok"
-            text, value = f"{units:,}".replace(",", "\u202f"), min(units, COMPUTE_UNITS_LIMIT)
-        meter.setMaximum(COMPUTE_UNITS_LIMIT)
+            text = f"{units:,}".replace(",", "\u202f")
+            value = round(compute_units_fill(units) * COMPUTE_UNITS_METER_STEPS)
+        meter.setMaximum(COMPUTE_UNITS_METER_STEPS)
         meter.setValue(value)
         meter.setFormat("\u2002" + text)  # en space: the QSS cannot pad progress-bar text
         if meter.property("state") != state:

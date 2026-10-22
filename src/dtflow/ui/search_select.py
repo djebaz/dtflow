@@ -3,6 +3,7 @@
 from collections.abc import Callable
 
 from PySide6.QtCore import Qt
+from PySide6.QtGui import QKeySequence, QShortcut
 from PySide6.QtWidgets import (
     QComboBox,
     QDoubleSpinBox,
@@ -117,7 +118,20 @@ def choose_searchable(
     search.textChanged.connect(populate)
     choices.currentItemChanged.connect(selected)
     panel.editor(title, editor, "Add" if weights is not None else "Apply", accept, primary=weights is not None)
-    # No double-click/Enter commit: selecting and weight editing are one explicit step.
+    if weights is None:
+        # Double-click or Enter applies like the Apply button. Enter in the search applies the highlighted match, or
+        # the first match when the filter hid the previous choice; Enter in the identifier field applies what is typed.
+        # Weighted (LoRA) selection keeps one explicit Add step.
+        def activate():
+            if search.hasFocus() and choices.currentItem() is None and choices.count():
+                choices.setCurrentRow(0)
+            accept()
+
+        choices.itemDoubleClicked.connect(lambda _item: activate())
+        for key in (Qt.Key.Key_Return, Qt.Key.Key_Enter):
+            shortcut = QShortcut(QKeySequence(key), editor)
+            shortcut.setContext(Qt.ShortcutContext.WidgetWithChildrenShortcut)
+            shortcut.activated.connect(activate)
     populate()
     search.setFocus()
 

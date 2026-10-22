@@ -88,7 +88,7 @@ from dtflow.ui import lora_panel as lora_ui  # noqa: E402
 from dtflow.ui import main_window as window_ui  # noqa: E402
 from dtflow.ui.activity_strip import activity_strip  # noqa: E402
 from dtflow.ui.diagnostic_notice import DiagnosticNoticeReceiver  # noqa: E402
-from dtflow.ui.generation_page import GenerationPage  # noqa: E402
+from dtflow.ui.generation_page import COMPUTE_UNITS_METER_STEPS, GenerationPage, compute_units_fill  # noqa: E402
 from dtflow.ui.inline_feedback import InlineNotice  # noqa: E402
 from dtflow.ui.main_window import MainWindow  # noqa: E402
 from dtflow.ui.queue_item_delegate import COL_LORAS, COL_PROMPT, COL_STATUS, wrapped_lines  # noqa: E402
@@ -867,7 +867,8 @@ def render_generate_configuration_states(shell, out):
             with patch(units_path, return_value=ComputeUnitEstimate(value, "Offline fixture estimate.")):
                 controller._update_compute_units()
             assert not meter.isHidden() and meter.property("state") == state
-            assert meter.maximum() == 40000 and meter.value() == min(value or 0, 40000)
+            expected = round(compute_units_fill(value) * COMPUTE_UNITS_METER_STEPS) if value else 0
+            assert meter.maximum() == COMPUTE_UNITS_METER_STEPS and meter.value() == expected
             assert meter.toolTip() == ""  # no hover overlay
             assert (value is None) or str(value)[:2] in meter.format().replace("\u202f", "")
             shell.shell.leftScroll.verticalScrollBar().setValue(0)
