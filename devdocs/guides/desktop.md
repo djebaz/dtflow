@@ -46,7 +46,7 @@ offered LoRA, each with a checkbox and a 0.0–3.0 weight slider in 0.1 steps (d
 Moving a slider checks its LoRA; search filters the list; an exact identifier can be added
 with **Add custom**; text left in that field is added when you apply. **Apply** (or Enter) replaces the whole selection once; unchecking a
 LoRA removes it. New UI selections use one-decimal weights; 0.0 is preserved. A weight loaded
-from a saved request outside the slider range is kept exactly until its slider is moved. Existing imported/saved
+from a saved request outside the slider range is kept exactly until its slider is moved. The mouse wheel over a slider adjusts its weight (and checks the LoRA). Existing imported/saved
 requests retain their recorded weights and existing validation; this does not change the
 CLI or provider weight contract.
 
