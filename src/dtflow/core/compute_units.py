@@ -28,6 +28,13 @@ _REQUIRED_PARAMETERS = {
     "qwen_image_2.1": ("channels", "layers"),
     "krea_2": ("channels", "layers"),
     "ideogram_4": ("channels", "layers"),
+    "mmdit": ("channels", "layers"),
+    "pixart": ("channels", "layers"),
+    "auraflow": ("channels", "double_layers", "single_layers"),
+    "ernie": ("channels", "layers", "intermediate_size"),
+    "flux3": ("channels", "double_layers", "single_layers"),
+    "moss": ("channels", "layers", "intermediate_size"),
+    "hidream_o1": ("channels", "layers", "intermediate_size"),
 }
 
 
@@ -275,6 +282,159 @@ def _ideogram(image: int, tokens: int, architecture: dict) -> tuple[int, int]:
     return main, fixed
 
 
+def _mmdit(image: int, tokens: int, architecture: dict, dual_layers: frozenset[int]) -> tuple[int, int]:
+    """Count the pinned SD3/SD3-Large MMDiT joint-attention and fixed paths."""
+    c, layers = architecture["channels"], architecture["layers"]
+    total_len = tokens + image
+    main = image * c * 2 * 2 * 16  # Patchify convolution, 16 input channels.
+    fixed = (
+        _dense(1, 256, c)
+        + 2 * _dense(1, c, c)
+        + _dense(1, 2048, c)
+        + _dense(tokens, 4096, c)
+        + 2 * _dense(1, c, c)
+    )
+    for index in range(layers):
+        dual = index in dual_layers
+        context_pre_only = index == layers - 1
+        main += 3 * _dense(tokens, c, c) + 3 * _dense(image, c, c)
+        main += _attention(1, c // 64, 64, total_len, total_len)
+        if dual:
+            main += 3 * _dense(image, c, c)
+            main += _attention(1, c // 64, 64, image, image)
+        if not context_pre_only:
+            main += _dense(tokens, c, c) + _dense(tokens, c, 4 * c) + _dense(tokens, 4 * c, c)
+        main += _dense(image, c, c) + _dense(image, c, 4 * c) + _dense(image, 4 * c, c)
+        if dual:
+            main += _dense(image, c, c)
+        fixed += (2 if context_pre_only else 6) * _dense(1, c, c)
+        fixed += (9 if dual else 6) * _dense(1, c, c)
+    main += _dense(image, c, 64)
+    return main, fixed
+
+
+def _pixart(image: int, tokens: int, architecture: dict) -> tuple[int, int]:
+    """Count PixArt self/cross attention and one-time caption projections."""
+    c, layers = architecture["channels"], architecture["layers"]
+    main = image * c * 2 * 2 * 8
+    for _ in range(layers):
+        main += 6 * _dense(image, c, c)
+        main += _attention(1, 16, c // 16, image, image)
+        main += _attention(1, 16, c // 16, image, tokens)
+        main += _dense(image, c, 4 * c) + _dense(image, 4 * c, c)
+    main += _dense(image, c, 32)
+    fixed = (
+        _dense(1, 256, c) + 7 * _dense(1, c, c)
+        + _dense(tokens, 4096, c) + _dense(tokens, c, c)
+        + layers * 2 * _dense(tokens, c, c)
+    )
+    return main, fixed
+
+
+def _auraflow(image: int, tokens: int, architecture: dict) -> tuple[int, int]:
+    """Count AuraFlow joint/single blocks and fixed context modulation."""
+    c = architecture["channels"]
+    double, single = architecture["double_layers"], architecture["single_layers"]
+    context = tokens + 8
+    seq = image + context
+    intermediate = c * 8 // 3
+    main = image * c * 2 * 2 * 4
+    attention = _attention(1, c // 256, 256, seq, seq)
+    for _ in range(double):
+        main += 4 * _dense(context, c, c) + 4 * _dense(image, c, c) + attention
+        for rows in (context, image):
+            main += 2 * _dense(rows, c, intermediate) + _dense(rows, intermediate, c)
+    for index in range(single):
+        projected = image if index == single - 1 else seq
+        main += 3 * _dense(seq, c, c) + attention + _dense(projected, c, c)
+        main += 2 * _dense(projected, c, intermediate) + _dense(projected, intermediate, c)
+    main += _dense(image, c, 16)
+    fixed = (
+        _dense(1, 256, c) + _dense(1, c, c) + _dense(tokens, 4096, c)
+        + (double * 12 + single * 6 + 2) * _dense(1, c, c)
+    )
+    return main, fixed
+
+
+def _ernie(image: int, tokens: int, architecture: dict, *, include_fixed: bool = True) -> tuple[int, int]:
+    """Count ERNIE blocks, also shared with SeedVR-style DiT variants."""
+    c, layers = architecture["channels"], architecture["layers"]
+    intermediate = architecture["intermediate_size"]
+    seq = image + tokens
+    main = image * c * 128 + 10 * _dense(1, c, c)
+    main += layers * (
+        4 * _dense(seq, c, c)
+        + 2 * _dense(seq, c, intermediate) + _dense(seq, intermediate, c)
+        + _attention(1, c // 128, 128, seq, seq)
+    )
+    main += _dense(image, c, 128)
+    return main, _dense(tokens, 3072, c) if include_fixed else 0
+
+
+def _flux3(image: int, tokens: int, architecture: dict) -> tuple[int, int]:
+    """Count FLUX.3 single-transformer refiners without reference images."""
+    c = architecture["channels"]
+    double, single = architecture["double_layers"], architecture["single_layers"]
+    seq = image + tokens
+
+    def block(length: int, projected: int) -> int:
+        return (
+            3 * _dense(length, c, c) + _dense(projected, c, c)
+            + 2 * _dense(projected, c, 3 * c) + _dense(projected, 3 * c, c)
+            + _attention(1, c // 128, 128, length, length)
+        )
+
+    main = _dense(image, 128, c) + double * (block(tokens, tokens) + block(image, image))
+    main += (single - 1) * block(seq, seq) + block(seq, image)
+    main += _dense(image, c, 128)
+    fixed = _dense(tokens, 20480, c)
+    fixed += 2 * (_dense(2, 256, c) + _dense(2, c, c))
+    fixed += 4 * _dense(1, c, 3 * c) + _dense(1, c, 2 * c)
+    return main, fixed
+
+
+def _moss_block(length: int, projected: int, c: int, intermediate: int) -> int:
+    return (
+        3 * _dense(length, c, c) + _dense(projected, c, c)
+        + 2 * _dense(projected, c, intermediate) + _dense(projected, intermediate, c)
+        + _attention(1, c // 128, 128, length, length)
+    )
+
+
+def _moss(image: int, tokens: int, cfg: int, architecture: dict) -> tuple[int, int]:
+    """Count MOSS image blocks plus CFG-packed, fixed text refinement."""
+    c, layers = architecture["channels"], architecture["layers"]
+    intermediate = architecture["intermediate_size"]
+    seq = image + tokens
+    main = _dense(image, 128, c)
+    main += (layers - 1) * _moss_block(seq, seq, c, intermediate)
+    main += _moss_block(seq, image, c, intermediate) + _dense(image, c, 128)
+    text = tokens * cfg
+    fixed = _dense(text, 4096, c) + 2 * _moss_block(text, text, c, intermediate)
+    fixed += _dense(1, 256, c) + 9 * _dense(1, c, c)
+    return main, fixed
+
+
+def _hidream_o1(image: int, tokens: int, architecture: dict) -> tuple[int, int]:
+    """Count HiDream O1 image/text transformer branches."""
+    c, layers = architecture["channels"], architecture["layers"]
+    intermediate = architecture["intermediate_size"]
+    dynamic = image + 1
+
+    def block(queries: int, keys: int) -> int:
+        return (
+            2 * _dense(queries, c, c) + 2 * _dense(queries, c, 1024)
+            + _attention(1, 32, 128, queries, keys)
+            + 2 * _dense(queries, c, intermediate) + _dense(queries, intermediate, c)
+        )
+
+    main = _dense(image, 3072, 1024) + _dense(image, 1024, c)
+    main += _dense(1, 256, c) + _dense(1, c, c)
+    main += layers * block(dynamic, tokens + dynamic) + _dense(image, c, 3072)
+    fixed = layers * block(tokens, tokens)
+    return main, fixed
+
+
 def estimate_compute_units(
     *,
     model_id: str,
@@ -330,7 +490,19 @@ def estimate_compute_units(
     tokens = padded or architecture["default_text_tokens"]
     strategy = architecture["strategy"]
 
-    if strategy == "qwen_image_2.1":
+    if strategy == "mmdit":
+        mmdit = spec.get("mmdit")
+        raw_dual = mmdit.get("dual_attention_layers", []) if isinstance(mmdit, dict) else []
+        if raw_dual is None:
+            raw_dual = []
+        if not isinstance(raw_dual, list) or any(type(i) is not int or i < 0 or i >= architecture["layers"] for i in raw_dual):
+            return ComputeUnitEstimate(None, "Invalid MMDiT dual-attention metadata.")
+        main, fixed = _mmdit(image, tokens, architecture, frozenset(raw_dual))
+        instruction_units = (main * steps + fixed) * cfg
+    elif strategy == "moss":
+        main, fixed = _moss(image, tokens, cfg, architecture)
+        instruction_units = (main * steps + fixed) * cfg
+    elif strategy == "qwen_image_2.1":
         main, fixed = _qwen21(height * width, tokens, steps, cfg, architecture)
         instruction_units = main * steps + fixed
     elif strategy == "krea_2":
@@ -349,6 +521,16 @@ def estimate_compute_units(
             main, fixed = _qwen(image, tokens, architecture)
         elif strategy == "ideogram_4":
             main, fixed = _ideogram(image, tokens, architecture)
+        elif strategy == "pixart":
+            main, fixed = _pixart(image, tokens, architecture)
+        elif strategy == "auraflow":
+            main, fixed = _auraflow(image, max(256, tokens), architecture)
+        elif strategy == "ernie":
+            main, fixed = _ernie(image, tokens, architecture)
+        elif strategy == "flux3":
+            main, fixed = _flux3(image, tokens, architecture)
+        elif strategy == "hidream_o1":
+            main, fixed = _hidream_o1(height * width, tokens, architecture)
         else:
             return ComputeUnitEstimate(None, "Unsupported model version.")
         instruction_units = (main * steps + fixed) * cfg
