@@ -27,20 +27,24 @@
 ## Action items
 
 - [x] Inventory canonical endpoint call sites and current error-information loss.
-- [ ] Extend the existing central privacy authority with a bounded API-error projection exposed through the public diagnostics API.
-- [ ] Preserve HTTP/gRPC error evidence through backend-neutral failures and WARNING events, including malformed HTTP 200 responses.
-- [ ] Present sanitized server explanations without inventing credential, throttle reset, billing or remote-execution conclusions.
-- [ ] Synchronize architecture, desktop guide, preview definitions, status and unreleased notes.
+- [x] Extend the existing central privacy authority with a bounded API-error projection exposed through the public diagnostics API.
+- [x] Preserve HTTP/gRPC error evidence through backend-neutral failures and WARNING events, including malformed HTTP 200 responses.
+- [x] Present sanitized server explanations without inventing credential, throttle reset, billing or remote-execution conclusions.
+- [x] Synchronize architecture, desktop guide, preview definitions, status and unreleased notes.
 - [ ] Commit/push implementation and update the new PR; do not merge.
 
 ## Decisions
 
+- Prepared-asset dispatch validation retains the underlying API's projected diagnostics instead of reducing them to `prepared_asset_unknown`. The generation WARNING includes status, safe server message and causal code when available; local reference mismatch remains a local validation reason. No response body is persisted into the asset registry, and generation stays not submitted.
 - The owner's one approved live replay returned `PERMISSION_DENIED` with `user failed to pass throttlePolicy, 24_hour in 500`. Token exchange, BYOM validation and generation authorization returned HTTP 200. The returned authorization identified `plus` and matched the request checksum. This is historical diagnostic motivation, not validation of this implementation.
 - Preserve raw status and safe server explanation independently of DTFlow categories. In particular, `PERMISSION_DENIED` alone must not tell the user their key is wrong.
 - All API/transport/protocol failures produce WARNING through the shared logging pipeline. Successful per-call summaries remain DEBUG; existing application lifecycle levels remain distinct. Avoid one warning per stream progress item or duplication at each error-wrapping layer.
 - Error capture is bounded and explicitly marks truncation/omission. JSON/text/XML/HTML errors may be projected after redaction; successful tokens, signed URLs, request blobs and image/binary payloads are never dumped. Unknown binary structured gRPC details are omitted with type/count evidence.
 - Preserve request-specific private values before truncation, in addition to generic key/path/payload redaction. No alternate sink, reader or persistent handler is introduced.
 - No automatic retry or inference that a rejected request was never executed. Existing durable uncertainty remains authoritative.
+- Source review corrections redact sensitive XML elements and overlapping private values longest-first, preserve BYOM request/response private identities across malformed-response handling, emit warnings for expired token/shared-secret/schema refusals, and reject incomplete FilesExist existence arrays instead of inventing missing-file evidence. No executable validation was performed.
+- Preview definitions add `generate-11a-api-throttle-explanation` and `generate-37a-api-asset-refused` through the existing shared presentation paths. Definitions were not rendered or run; no tests were added.
+- Owner additionally requested multiple manually selected credential profiles with a persistent override above environment and legacy saved credentials. This is a separate follow-up; PR #156 changes neither credential storage nor precedence.
 
 ## Open questions
 

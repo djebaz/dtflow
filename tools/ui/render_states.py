@@ -71,7 +71,10 @@ from dtflow.core.export import ExportResult  # noqa: E402
 from dtflow.core.gallery import GalleryDetail, GalleryItem  # noqa: E402
 from dtflow.core.gallery import GalleryPage as GalleryResults  # noqa: E402
 from dtflow.core.image_operations import ImageOperationSupport  # noqa: E402
-from dtflow.core.models import ConnectionStatus, InventoryEntry, InventorySnapshot, LoRASelection, ValidationError  # noqa: E402
+from dtflow.core.models import (  # noqa: E402
+    BackendError, BackendFailure, ConnectionStatus, ErrorCategory, InventoryEntry, InventorySnapshot,
+    LoRASelection, RemoteOutcome, SubmissionStage, ValidationError,
+)
 from dtflow.persistence.cache_coordination import CacheCleanupError  # noqa: E402
 from dtflow.persistence.image_recycle import ReconcileResult  # noqa: E402
 from dtflow.persistence.original_io import OriginalImagesBusyError, OriginalImagesUnavailableError  # noqa: E402
@@ -819,6 +822,13 @@ def render_generate_configuration_states(shell, out):
         lora._prepared(None, OSError("Offline fixture"))
         assert strip.rows["asset"].property("feedbackState") == "error"
         snap("generate-37-asset-failed")
+        clear()
+        refused = BackendError(BackendFailure(
+            ErrorCategory.AUTHENTICATION, "cloud_http_rejected", "not authorized",
+            diagnostics=(("transport", "http"), ("http_status", "403"), ("server_message", "not authorized")),
+        ))
+        lora._prepared(None, refused)
+        snap("generate-37a-api-asset-refused")
         clear()
         lora._listed(None, OSError("Offline fixture"))
         assert "Registry unavailable" in page.assetStatusLabel.text()
@@ -3781,6 +3791,26 @@ def main():
             page.generateButton.click()
             wait_for(settled, timeout=60)
             capture("generate-11-outcome-unknown")
+            throttled = BackendError(BackendFailure(
+                ErrorCategory.AUTHENTICATION, "grpc_permission_denied",
+                "user failed to pass throttlePolicy, 24_hour in 500",
+                submission_stage=SubmissionStage.TERMINAL_OBSERVED, remote_outcome=RemoteOutcome.UNKNOWN,
+                terminal_status="PERMISSION_DENIED",
+                diagnostics=(("transport", "grpc"), ("status", "PERMISSION_DENIED"),
+                             ("server_message", "user failed to pass throttlePolicy, 24_hour in 500")),
+            ))
+            controller._generated(None, throttled)
+            capture("generate-11a-api-throttle-explanation")
+            asset_unknown = BackendError(BackendFailure(
+                ErrorCategory.VALIDATION, "prepared_asset_unknown",
+                "Prepared asset could not be validated; nothing was uploaded or submitted.",
+                diagnostics=(("transport", "http"), ("operation", "get_byom_urls"),
+                             ("http_status", "503"), ("server_message", "Service temporarily unavailable"),
+                             ("cause_code", "cloud_http_rejected"),
+                             ("validation_reason", "cloud_http_rejected")),
+            ))
+            controller._generated(None, asset_unknown)
+            capture("generate-11b-prepared-asset-api-explanation")
             strip = shell.progress_strip
             strip.finish("generation-result")
             page.expandPromptButton.setChecked(True)

@@ -87,13 +87,20 @@ log = logging.getLogger(__name__)
 
 
 def failure_fields(failure: BaseException) -> dict:
-    """Safe diagnostic fields for a failure: the type name, plus the backend's own code and category when it has them."""
+    """Stable failure identity plus an allowlisted summary of backend-projected API evidence."""
     fields = {"reason": type(failure).__name__}
     detail = getattr(failure, "failure", None)
     code, category = getattr(detail, "code", None), getattr(detail, "category", None)
     if code:
         fields["code"] = str(code)
         fields["category"] = str(getattr(category, "value", category))
+        details = dict(getattr(detail, "diagnostics", ()))
+        for key in (
+            "transport", "operation", "http_status", "status", "server_message",
+            "cause_code", "cause_category", "validation_reason",
+        ):
+            if key in details:
+                fields[key] = details[key]
     return fields
 
 

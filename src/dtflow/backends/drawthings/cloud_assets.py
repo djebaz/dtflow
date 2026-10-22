@@ -11,13 +11,15 @@ import hashlib
 import logging
 import math
 import re
+import time
 from dataclasses import dataclass, field
 from pathlib import Path
 
 import httpx
 
 from dtflow.backends.drawthings.cloud_auth import CloudAuth
-from dtflow.backends.drawthings.errors import diagnostics, error
+from dtflow.backends.drawthings.errors import api_error, diagnostics
+from dtflow.diagnostics import api_error_data, event
 from dtflow.core.models import (
     AssetContent,
     AssetNegotiation,
@@ -58,7 +60,7 @@ async def lookup_lora_assets(
     )
 
     def invalid():
-        return error(ErrorCategory.PROTOCOL, "cloud_byom_response_invalid", "DT+ LoRA lookup response is invalid.")
+        return _invalid(response=response)
 
     data = response.get("data")
     if not isinstance(data, dict):
@@ -101,6 +103,11 @@ async def lookup_lora_assets(
             )
         else:
             results[item.identifier] = LoRABackendAvailability("unknown", "dt_cloud.get_byom_urls", sha256=item.sha256)
+    event(logging.getLogger(__name__), "backend.asset_lookup_summary", level=logging.DEBUG,
+          data={"requested": len(usable), **{
+              name: sum(item.availability == name for item in results.values())
+              for name in ("byom_reusable", "upload_required", "unknown")
+          }})
     return results
 
 
@@ -128,14 +135,18 @@ class AssetUploadPolicy:
             raise ValidationError("Upload limits must be positive integers.")
 
 
-def _invalid(code: str = "cloud_byom_response_invalid"):
-    return error(ErrorCategory.PROTOCOL, code, "DT+ LoRA storage response is invalid.")
+def _invalid(code: str = "cloud_byom_response_invalid", *, response=None):
+    return api_error(
+        ErrorCategory.PROTOCOL, code, "DT+ LoRA storage response is invalid.",
+        operation="/get_byom_urls", transport="http",
+        response=getattr(response, "error_data", None), diagnostics=diagnostics(http_status=200),
+    )
 
 
-def _signed_destination(value: object) -> UploadTicket:
+def _signed_destination(value: object, *, response=None) -> UploadTicket:
     url = httpx.URL(value) if isinstance(value, str) and value.strip() else None
     if url is None or url.scheme != "https" or not url.host or url.userinfo or url.fragment:
-        raise _invalid()
+        raise _invalid(response=response)
     return UploadTicket(str(url))
 
 
@@ -150,43 +161,51 @@ async def negotiate_lora_asset(auth: CloudAuth, content: AssetContent) -> AssetN
     )
     data = response.get("data")
     if not isinstance(data, dict):
-        raise _invalid()
+        raise _invalid(response=response)
     already = data.get("alreadyExists") or {}
     signed = data.get("signedUrls") or {}
     if not isinstance(already, dict) or not isinstance(signed, dict):
-        raise _invalid()
+        raise _invalid(response=response)
     urls = signed.get("urls") or {}
     if not isinstance(urls, dict):
-        raise _invalid()
+        raise _invalid(response=response)
     reference = already.get(content.sha256)
     upload = urls.get(content.identifier)
     if (content.sha256 in already) == (content.identifier in urls):
-        raise _invalid("cloud_byom_response_conflict" if content.sha256 in already else "cloud_byom_response_invalid")
+        raise _invalid(
+            "cloud_byom_response_conflict" if content.sha256 in already else "cloud_byom_response_invalid",
+            response=response,
+        )
     if content.sha256 in already:
         try:
-            return AssetNegotiation("exists", reference if isinstance(reference, str) else None)
+            result = AssetNegotiation("exists", reference if isinstance(reference, str) else None)
         except ValidationError:
-            raise _invalid() from None
+            raise _invalid(response=response) from None
+        event(logging.getLogger(__name__), "backend.asset_negotiated", level=logging.DEBUG, data={"outcome": "exists"})
+        return result
     if (
         not isinstance(upload, dict)
         or not isinstance(upload.get("sha256"), str)
         or upload["sha256"].lower() != content.sha256
     ):
-        raise _invalid()
-    return AssetNegotiation("upload_required", ticket=_signed_destination(upload.get("url")))
+        raise _invalid(response=response)
+    result = AssetNegotiation("upload_required", ticket=_signed_destination(upload.get("url"), response=response))
+    event(logging.getLogger(__name__), "backend.asset_negotiated", level=logging.DEBUG, data={"outcome": "upload_required"})
+    return result
 
 
-def _transfer_error(code: str, outcome: RemoteOutcome, category=ErrorCategory.CONNECTIVITY, **items):
+def _transfer_error(code: str, outcome: RemoteOutcome, category=ErrorCategory.CONNECTIVITY, *, response=None, elapsed_ms=None, **items):
     stage = (
         SubmissionStage.NOT_SUBMITTED if outcome == RemoteOutcome.NOT_STARTED else SubmissionStage.POSSIBLY_SUBMITTED
     )
-    return error(
+    return api_error(
         category,
         code,
         "DT+ LoRA storage transfer did not complete.",
         stage=stage,
         outcome=outcome,
         diagnostics=diagnostics(**items),
+        operation="asset_storage_put", transport="http", response=response, elapsed_ms=elapsed_ms,
     )
 
 
@@ -206,9 +225,14 @@ async def upload_signed(
     """
     policy = policy or AssetUploadPolicy()
     started = False
+    yielded = 0
+    began = time.monotonic()
+
+    def elapsed():
+        return (time.monotonic() - began) * 1000
 
     async def body():
-        nonlocal started
+        nonlocal started, yielded
         digest, sent = hashlib.sha256(), 0
         handle = await asyncio.to_thread(path.open, "rb")
         try:
@@ -218,6 +242,7 @@ async def upload_signed(
                 sent += len(chunk)
                 if sent > content.size:
                     raise _transfer_error("asset_changed", RemoteOutcome.UNKNOWN, ErrorCategory.VALIDATION)
+                yielded += len(chunk)
                 yield chunk
             if sent != content.size or digest.hexdigest() != content.sha256:
                 raise _transfer_error("asset_changed", RemoteOutcome.UNKNOWN, ErrorCategory.VALIDATION)
@@ -236,26 +261,50 @@ async def upload_signed(
             async with client.stream("PUT", ticket.url, content=body(), headers=headers) as response:
                 status = response.status_code
                 size = 0
-                async for chunk in response.aiter_bytes():
-                    size += len(chunk)
-                    if size > policy.response_bytes:
-                        break
+                error_body = bytearray()
+                truncated = False
+                try:
+                    async for chunk in response.aiter_bytes():
+                        size += len(chunk)
+                        if not 200 <= status < 300:
+                            remaining = 8192 - len(error_body)
+                            error_body.extend(chunk[:remaining])
+                            if len(chunk) > remaining:
+                                truncated = True
+                                break
+                        if size > policy.response_bytes:
+                            break
+                except (httpx.HTTPError, TimeoutError):
+                    if 200 <= status < 300:
+                        raise
+                    truncated = True
+                evidence = api_error_data(
+                    body=bytes(error_body) if not 200 <= status < 300 else None,
+                    headers=response.headers, private=(ticket.url, content.identifier, content.sha256), truncated=truncated,
+                )
         if 200 <= status < 300:
+            event(logging.getLogger(__name__), "backend.api_completed", level=logging.DEBUG,
+                  data={"transport": "http", "operation": "asset_storage_put", "http_status": status,
+                        "bytes_yielded": yielded, "elapsed_ms": elapsed()})
             return
         if 400 <= status < 500:
             raise _transfer_error(
-                "asset_storage_refused", RemoteOutcome.FAILED, ErrorCategory.REMOTE_REJECTION, http_status=status
+                "asset_storage_refused", RemoteOutcome.FAILED, ErrorCategory.REMOTE_REJECTION,
+                http_status=status, response=evidence, elapsed_ms=elapsed(), bytes_yielded=yielded,
             )
         raise _transfer_error(
-            "asset_storage_error", RemoteOutcome.UNKNOWN, ErrorCategory.REMOTE_REJECTION, http_status=status
+            "asset_storage_error", RemoteOutcome.UNKNOWN, ErrorCategory.REMOTE_REJECTION,
+            http_status=status, response=evidence, elapsed_ms=elapsed(), bytes_yielded=yielded,
         )
     except (httpx.ConnectError, httpx.ConnectTimeout):
         outcome = RemoteOutcome.UNKNOWN if started else RemoteOutcome.NOT_STARTED
-        raise _transfer_error("asset_storage_unreachable", outcome) from None
+        raise _transfer_error("asset_storage_unreachable", outcome, elapsed_ms=elapsed(), bytes_yielded=yielded) from None
     except (TimeoutError, httpx.TimeoutException):
-        raise _transfer_error("asset_transfer_deadline", RemoteOutcome.UNKNOWN, ErrorCategory.TIMEOUT) from None
-    except httpx.HTTPError:
-        raise _transfer_error("asset_transfer_failed", RemoteOutcome.UNKNOWN) from None
+        raise _transfer_error("asset_transfer_deadline", RemoteOutcome.UNKNOWN, ErrorCategory.TIMEOUT,
+                              elapsed_ms=elapsed(), bytes_yielded=yielded) from None
+    except httpx.HTTPError as exc:
+        raise _transfer_error("asset_transfer_failed", RemoteOutcome.UNKNOWN, elapsed_ms=elapsed(),
+                              kind=type(exc).__name__, bytes_yielded=yielded) from None
     finally:
         try:
             async with asyncio.timeout(policy.cleanup):

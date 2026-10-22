@@ -283,6 +283,10 @@ The status bar displays `DTFlow <version> | revision <value> | source: <status>`
 
 ## Logs
 
+API failures emit `backend.api_failed` at WARNING in normal and development modes. Search this event to inspect the endpoint operation, HTTP/gRPC status, sanitized server explanation, bounded error-response evidence, timing and submission/remote-outcome certainty. Successful per-call summaries remain DEBUG. A cloud `PERMISSION_DENIED` may describe throttling or request validation, not just credentials; the server's actual wording is shown when safely available. The ordinary Connection, generation and asset error presentations retain that explanation without dumping response bodies into the overlay. Unknown outcomes still warn that work may have reached the server and are never automatically replayed.
+
+Error bodies are capped at 8 KiB, with 2,048-character text projections and explicit truncation/omission markers. JSON/text/XML/HTML errors are sanitized; oversized/incomplete bodies, binary content and unknown binary gRPC details are omitted. Tokens, authorization headers, signed URLs, request blobs, prompts and image data are excluded. No response can be reconstructed retrospectively from an older generic log entry. See the [endpoint inventory and implementation boundary](../plans/2026-10-22-api-response-diagnostics.md).
+
 The Logs button at the right of the status bar opens the Logs workspace in place of the current page; the same button, the close button or Escape returns to the previous page without stopping running work. Escape first dismisses an active inline notice or confirmation, then the details panel, then More filters, before closing Logs.
 
 - **Sessions.** The selector numbers diagnostic sessions newest first by last write (`#1` is the most recent), with the local last-write time, `this session` for the running app and a short id (full id in the tooltip). Numbers are positions in the current list, not permanent identities.

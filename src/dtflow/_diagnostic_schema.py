@@ -3,11 +3,14 @@
 No Qt, provider, persistence, JSON Schema runtime dependency, or file I/O.
 """
 
+import html
+import json
 import logging
 import math
 import os
 import re
 from datetime import UTC, datetime
+from itertools import islice
 from pathlib import Path
 from time import monotonic_ns
 
@@ -86,6 +89,133 @@ def sanitize(text: str, environ=None) -> str:
 def utc_timestamp(seconds: float | None = None) -> str:
     moment = datetime.now(UTC) if seconds is None else datetime.fromtimestamp(seconds, UTC)
     return moment.isoformat(timespec="milliseconds").replace("+00:00", "Z")
+
+
+def api_error_data(*, message=None, body=None, headers=(), private=(), truncated=False) -> dict:
+    """Project bounded response primitives; never format arbitrary provider objects.
+
+    This supplements, rather than bypasses, normal record capture. Incomplete
+    text is omitted: a cut-off credential cannot safely be exact-match redacted.
+    """
+    private_key = re.compile(
+        r"(?i)(authorization|credential|password|secret|token|api[_-]?key|prompt|base64|payload|blob|"
+        r"image|tensor|content|signed|url|uri|reference|remote_id|user_id|userid|nonce|sha256|checksum|file|path|^key$)"
+    )
+    hidden = {value for value in private if isinstance(value, str) and value}
+    hidden.update(json.dumps(value, ensure_ascii=True)[1:-1] for value in tuple(hidden))
+    hidden = tuple(sorted(hidden, key=len, reverse=True))
+    pairs = tuple(islice(headers.items() if hasattr(headers, "items") else headers, 64))
+    media_type = next((v.split(";", 1)[0].strip().lower() for k, v in pairs
+                       if isinstance(k, str) and k.lower() == "content-type" and isinstance(v, str)), "")
+    nodes = 0
+    limited = bool(truncated)
+
+    def text(value):
+        nonlocal limited
+        if len(value) > 8192:
+            limited = True
+            return "[omitted: text exceeds capture limit]"
+        value = html.unescape(value)
+        value = value.encode("utf-8", "replace").decode("utf-8")
+        value = re.sub(
+            r"(?is)<([\w:.-]*(?:token|secret|password|authorization|key|prompt|blob|base64|image|tensor|url|uri|reference|resource|path|file)[\w:.-]*)\b[^>]*>.*?(?:</\1\s*>|$)",
+            "[redacted]", value,
+        )
+        for secret in hidden:
+            value = value.replace(secret, "[redacted]")
+        value = re.sub(
+            r'''(?i)(["']?[\w-]*(?:token|secret|password|authorization|key|prompt|blob|base64|url|uri|reference|file|path|user[_-]?id|nonce|checksum|sha256)[\w-]*["']?\s*[:=]\s*)(?:["'][^"']*(?:["']|$)|[^,\s}]+)''',
+            r"\1[redacted]", value,
+        )
+        value = re.sub(r"https?://[^\s<>\"']+", "[redacted-url]", value, flags=re.IGNORECASE)
+        value = re.sub(r"\bdk_[A-Za-z0-9_-]+", "[redacted-key]", value)
+        value = re.sub(r"[A-Za-z0-9_+/=-]{64,}", "[redacted-payload]", value)
+        value = sanitize(re.sub(r"<[^>]*>", " ", value))
+        # Redact before shortening, including values that straddle the display boundary.
+        if len(value) > 2048:
+            limited = True
+            suffix = " [truncated]"
+            value = value[:2048 - len(suffix)] + suffix
+        return value
+
+    def value(item, depth=0):
+        nonlocal nodes, limited
+        nodes += 1
+        if nodes > 128 or depth > 6:
+            limited = True
+            return "[omitted: structure exceeds capture limit]"
+        if item is None or type(item) in (bool, int):
+            return item if type(item) is not int or item.bit_length() <= 128 else "[omitted integer]"
+        if type(item) is float:
+            return item if math.isfinite(item) else "[omitted non-finite number]"
+        if type(item) is str:
+            return text(item)
+        if type(item) is dict:
+            result = {}
+            for index, (key, child) in enumerate(item.items()):
+                if index >= 32 or nodes >= 128:
+                    limited = True
+                    break
+                if type(key) is not str:
+                    continue
+                # Dynamic filename/hash keys can themselves be private.
+                safe_key = text(key)
+                if private_key.search(key) or safe_key != key or len(key) > 128:
+                    result[f"redacted_field_{index}"] = "[redacted]"
+                else:
+                    result[key] = value(child, depth + 1)
+            return result
+        if type(item) in (list, tuple):
+            if len(item) > 16:
+                limited = True
+            return [value(child, depth + 1) for child in item[:16]]
+        return "[omitted non-text detail]"
+
+    result = {}
+    if body is not None and media_type and not (
+        media_type.startswith("text/") or media_type.endswith("json") or media_type.endswith("xml")
+    ):
+        body = "[omitted binary response]"
+    if type(body) is bytes:
+        if len(body) > 8192 or truncated:
+            body = "[omitted: response exceeds capture limit]"
+            limited = True
+        else:
+            try:
+                if any(byte < 32 and byte not in (9, 10, 13) for byte in body):
+                    raise UnicodeError
+                body = body.decode("utf-8")
+            except UnicodeError:
+                body = "[omitted binary response]"
+    if type(body) is str and len(body) <= 8192:
+        try:
+            body = json.loads(body)
+        except (ValueError, RecursionError):
+            pass
+    if body is not None:
+        safe_body = value(body)
+        encoded = json.dumps(safe_body, ensure_ascii=False, separators=(",", ":"))
+        if len(encoded.encode("utf-8")) > 8192:
+            result["response_body"] = "[omitted: projected response exceeds capture limit]"
+            limited = True
+        else:
+            result["response_body"] = encoded
+        if message is None and type(body) is dict:
+            error = body.get("error")
+            message = error.get("message") if type(error) is dict else error if type(error) is str else None
+            message = message or body.get("message") or body.get("description")
+        elif message is None and type(body) is str and not limited and not body.startswith("[omitted"):
+            message = body
+    if type(message) is str and message.strip():
+        result["server_message"] = text(message)
+    allowed = {"content-type", "server", "date", "retry-after", "x-request-id", "x-correlation-id", "cf-ray"}
+    for index, (key, item) in enumerate(pairs):
+        if index >= 64:
+            break
+        if type(key) is str and key.lower() in allowed and type(item) is str:
+            result["header_" + key.lower().replace("-", "_")] = text(item)
+    result["response_truncated"] = limited
+    return result
 
 
 class _Snapshot:

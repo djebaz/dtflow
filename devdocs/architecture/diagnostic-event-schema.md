@@ -1,5 +1,13 @@
 # Diagnostic events v1 — contract and legacy migration inventory
 
+## API response events (PR #156)
+
+- `generation.failed` (WARNING) retains the allowlisted API operation, transport, HTTP/gRPC status and sanitized server message when available. Prepared-asset validation also retains the causal code/category and validation reason; local reference mismatch is not presented as a server response. Full projected error envelopes remain on the backend event, not duplicated into this UI lifecycle event.
+- `backend.api_failed` (WARNING): `transport`, stable `operation`, `code`, `category`, `submission_stage`, `remote_outcome`, optional `request_id`/`elapsed_ms`, HTTP `http_status` or gRPC `status`, sanitized `server_message`, serialized safe `response_body`, allowlisted `header_*`, and explicit `response_truncated`/`details_omitted`/detail type/count evidence when applicable. These are flexible v1 fields, not a new record schema. Only observed evidence is recorded; no response is fabricated for a transport failure.
+- `backend.api_completed` (DEBUG): status/operation/timing and applicable result counts or `bytes_yielded`; no successful body dumps. Yielded upload bytes are not proof that storage received them.
+- `backend.asset_lookup_summary` / `backend.asset_negotiated` (DEBUG): fixed lookup outcome counts or the `exists`/`upload_required` branch; no filenames, hashes, URLs or cloud references.
+- The backend emits the API-specific warning before service/UI wrapping. Existing lifecycle events remain distinct; shared API error projection does not introduce another sink or change durable uncertainty. See [the endpoint inventory](../plans/2026-10-22-api-response-diagnostics.md).
+
 **Status (2026-10-19):** writer/producer, shared reader/export, typed-query/benchmark and native Logs source are implemented in PR #105. The inventory was prepared from source, not a certified exhaustive emitted-record audit. `_diagnostic_schema.py` owns runtime record/privacy validation; the JSON Schema documents that contract. See the [delivery audit](../plans/2026-10-19-structured-log-viewer.md), [implementation follow-up #106](https://github.com/djebaz/dtflow/issues/106) and [acceptance follow-up #107](https://github.com/djebaz/dtflow/issues/107).
 
 ## Compact and searchable record contract
