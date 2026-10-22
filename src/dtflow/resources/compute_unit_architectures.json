@@ -159,6 +159,118 @@
       "latent_scale": 2,
       "default_text_tokens": 77,
       "usage_bias": 1
+    },
+    "v1": {
+      "strategy": "unet_v1",
+      "channels": 320,
+      "channel_schedule": [
+        320,
+        640,
+        1280,
+        1280
+      ],
+      "num_repeat": 2,
+      "attention_downsamples": [
+        1,
+        2,
+        4
+      ],
+      "heads_mode": "fixed8",
+      "latent_scale": 8,
+      "default_text_tokens": 77,
+      "usage_bias": 2.5
+    },
+    "v2": {
+      "strategy": "unet_v2",
+      "channels": 320,
+      "channel_schedule": [
+        320,
+        640,
+        1280,
+        1280
+      ],
+      "num_repeat": 2,
+      "attention_downsamples": [
+        1,
+        2,
+        4
+      ],
+      "heads_mode": "channel64",
+      "latent_scale": 8,
+      "default_text_tokens": 77,
+      "usage_bias": 2.5
+    },
+    "sdxl_base_v0.9": {
+      "strategy": "unet_xl",
+      "channels": 320,
+      "channel_schedule": [
+        320,
+        640,
+        1280
+      ],
+      "input_attention": {
+        "2": [
+          2,
+          2
+        ],
+        "4": [
+          10,
+          10
+        ]
+      },
+      "middle_attention": 10,
+      "output_attention": {
+        "2": [
+          2,
+          2,
+          2
+        ],
+        "4": [
+          10,
+          10,
+          10
+        ]
+      },
+      "label_input_channels": 2816,
+      "latent_scale": 8,
+      "default_text_tokens": 77,
+      "usage_bias": 2.5
+    },
+    "ssd_1b": {
+      "strategy": "unet_xl",
+      "channels": 320,
+      "channel_schedule": [
+        320,
+        640,
+        1280
+      ],
+      "input_attention": {
+        "2": [
+          2,
+          2
+        ],
+        "4": [
+          4,
+          4
+        ]
+      },
+      "middle_attention": 0,
+      "output_attention": {
+        "2": [
+          2,
+          1,
+          1
+        ],
+        "4": [
+          4,
+          4,
+          10
+        ]
+      },
+      "label_input_channels": 2816,
+      "latent_scale": 8,
+      "default_text_tokens": 77,
+      "usage_bias": 2.5
     }
   }
 }
