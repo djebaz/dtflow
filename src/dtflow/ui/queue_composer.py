@@ -162,6 +162,7 @@ class ValueChips(QWidget):
         initial: Callable[[], Sequence[LoRASelection]] | None = None,
         editor_title: str | None = None,
         editor_hint: str | None = None,
+        multi_weight: bool = False,
     ) -> None:
         """``search`` opens the shared searchable editor; ``choice`` is an editable list; ``int``/``float`` a box.
 
@@ -170,7 +171,7 @@ class ValueChips(QWidget):
         """
         self._kind, self._title, self._options, self._custom = kind, title, options, custom
         self._weights, self._convert, self._initial = weights, convert, initial
-        self._editor_title, self._editor_hint = editor_title, editor_hint
+        self._editor_title, self._editor_hint, self._multi_weight = editor_title, editor_hint, multi_weight
         if self._input is not None:
             self._layout.removeWidget(self._input)
             self._input.deleteLater()
@@ -280,6 +281,7 @@ class ValueChips(QWidget):
                     candidates=list(suggestions),
                     selected=self._initial() if self._initial is not None else (),
                     suggestions=suggestions,
+                    multi_weight=self._multi_weight,
                     callback=lambda chosen: self.add_values(convert(chosen)),
                     hint=self._editor_hint
                     or (

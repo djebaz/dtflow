@@ -1230,6 +1230,12 @@ def render_active_queue_states(shell, out):
         page.queueComposerScroll.ensureWidgetVisible(page.planLorasEdit)
         snap("queues-42a-composer-lora-weights")
         page.planLorasEdit._add.click()  # the same checkbox+slider editor, limited to Generate's LoRAs
+        weight_editor = shell.inline._editor
+        row = next(r for r in weight_editor.findChildren(QWidget, "loraSelectionRow"))
+        for tick in (6, 8, 10):  # several weights for one LoRA, collected with +
+            row.findChild(QSlider, "loraSelectionSlider").setValue(tick)
+            row.findChild(QToolButton, "loraSelectionAddWeightButton").click()
+        assert len(row.findChildren(QPushButton)) == 3
         snap("queues-43a-composer-lora-weights-editor")
         shell.inline.dismiss()
         page.planLorasEdit.clear()

@@ -1094,9 +1094,10 @@ class QueuePage:
             weights=lambda: {item.identifier: item.weight for item in self._generate_loras()},
             convert=self._lora_weight_chips,
             editor_title="Add LoRA weights",
+            multi_weight=True,
             editor_hint=(
-                "Check the Generate LoRAs to vary and set the weight to try for each; add again for more weights. "
-                "Enter or Apply adds a weight for every checked LoRA."
+                "Check a Generate LoRA and press + to collect each weight to try for it (click a weight to drop it). "
+                "A checked LoRA without collected weights uses its slider value. Enter or Apply adds them all."
             ),
         )
 

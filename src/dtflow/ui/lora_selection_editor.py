@@ -6,7 +6,7 @@ from pathlib import Path
 from PySide6.QtCore import QFile, QIODevice, Qt
 from PySide6.QtGui import QKeySequence, QShortcut
 from PySide6.QtUiTools import QUiLoader
-from PySide6.QtWidgets import QWidget
+from PySide6.QtWidgets import QPushButton, QWidget
 
 from dtflow.core.models import LoRASelection
 from dtflow.ui.inline_feedback import feedback
@@ -44,12 +44,16 @@ def edit_lora_selection(
     suggestions: dict[str, float | None] | None = None,
     title: str = "Edit LoRAs",
     hint: str | None = None,
+    multi_weight: bool = False,
 ) -> None:
     """Show every offered LoRA with a checkbox and a 0.0–3.0 weight slider; Apply replaces the selection once.
 
     Selected LoRAs come first, checked, at their weights. Unchecked LoRAs start at 1.0. A loaded weight outside the
     slider range is kept exactly until its slider is moved. ``callback`` receives the checked (identifier, weight)
     pairs in list order.
+
+    With ``multi_weight`` each row also has a **+** that collects the slider's weight as a chip (click a chip to drop
+    it); a checked LoRA then yields one pair per collected weight, or one at the slider's weight when none were added.
     """
     editor = _load("lora_selection_editor.ui", None)
     if hint:
@@ -58,6 +62,7 @@ def edit_lora_selection(
     empty = editor.loraSelectionEmpty
     suggestions = suggestions or {}
     weights: dict[str, float] = {}
+    extra: dict[str, list[float]] = {}  # multi_weight: the weights collected per LoRA
     rows: dict[str, QWidget] = {}
 
     def update_count() -> None:
@@ -84,6 +89,38 @@ def edit_lora_selection(
             check.setChecked(True)  # weighing a LoRA means using it
 
         slider.valueChanged.connect(moved)
+        if multi_weight:
+            extra[name] = []
+            row.loraSelectionAddWeightButton.setVisible(True)
+            row.loraSelectionAddWeightButton.setAccessibleName(f"Add weight for {name}")
+
+            def render_chips() -> None:
+                host = row.loraSelectionWeightChipsHost
+                chips = row.loraSelectionWeightChips
+                for index in reversed(range(chips.count() - 1)):  # keep the trailing spacer
+                    item = chips.takeAt(index)
+                    if item.widget() is not None:
+                        item.widget().deleteLater()
+                for index, value in enumerate(extra[name]):
+                    chip = QPushButton(f"{format_weight(value)}  ×", host)
+                    chip.setProperty("role", "valueChip")
+                    chip.setToolTip(f"Remove weight {format_weight(value)}")
+                    chip.setAccessibleName(f"Remove weight {format_weight(value)} for {name}")
+                    chip.clicked.connect(lambda _=False, i=index: drop(i))
+                    chips.insertWidget(index, chip)
+                host.setVisible(bool(extra[name]))
+
+            def drop(index: int) -> None:
+                del extra[name][index]
+                render_chips()
+
+            def add_weight() -> None:
+                if weights[name] not in extra[name]:
+                    extra[name].append(weights[name])
+                check.setChecked(True)
+                render_chips()
+
+            row.loraSelectionAddWeightButton.clicked.connect(add_weight)
         check.toggled.connect(lambda _checked: update_count())
         # Rows sit before the "no matches" label and the trailing spacer.
         rows_layout.insertWidget(0 if top else len(rows), row)
@@ -128,7 +165,12 @@ def edit_lora_selection(
         if editor.loraSelectionCustomIdentifier.text().strip():
             add_custom()  # an identifier typed but not yet added is part of the selection
         # Display order: the existing selection keeps its order, newly checked LoRAs follow.
-        chosen = [(name, weights[name]) for name, row in rows.items() if row.loraSelectionCheck.isChecked()]
+        chosen = [
+            (name, value)
+            for name, row in rows.items()
+            if row.loraSelectionCheck.isChecked()
+            for value in (extra.get(name) or [weights[name]])
+        ]
         panel.dismiss()
         callback(chosen)
 
