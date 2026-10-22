@@ -107,7 +107,7 @@ def _api_explanation(failure) -> str:
     """Only backend-projected response text enters ordinary UI error presentation."""
     details = dict(failure.diagnostics)
     code = details.get("http_status") or details.get("status") or failure.code
-    message = details.get("server_message") or failure.message
+    message = details.get("interpretation_message") or details.get("server_message") or failure.message
     return f"{code}: {message}"
 
 

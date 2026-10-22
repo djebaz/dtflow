@@ -59,14 +59,18 @@ def api_failure(*args, operation: str, transport: str, response=None, elapsed_ms
     details["operation"] = operation.strip("/").replace("/", ".")
     if elapsed_ms is not None:
         details["elapsed_ms"] = round(elapsed_ms)
+    interpretation_failed = problem.category == ErrorCategory.PROTOCOL and str(details.get("http_status")) == "200"
+    if interpretation_failed:
+        # Keep DTFlow's interpretation reason distinct from a server message such as "ok".
+        details["interpretation_message"] = problem.message
     problem = replace(
         problem,
-        message=details.get("server_message") or problem.message,
+        message=problem.message if interpretation_failed else details.get("server_message") or problem.message,
         diagnostics=diagnostics(**details),
     )
     event(
         log,
-        "backend.api_failed",
+        "backend.response_unusable" if interpretation_failed else "backend.api_failed",
         level=logging.WARNING,
         data={
             **details,
