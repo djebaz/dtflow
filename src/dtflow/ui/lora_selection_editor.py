@@ -13,6 +13,7 @@ from dtflow.ui.inline_feedback import feedback
 
 WEIGHT_STEPS = 20  # slider ticks per 1.0 of weight: 0.05 per tick, per arrow key and per mouse-wheel notch
 DEFAULT_WEIGHT = 1.0
+CHIP_HEIGHT = 24
 MIN_LIST_HEIGHT = 220
 LIST_HEIGHT_SHARE = 0.55  # the list may take up to this share of the window height before it scrolls
 
@@ -121,10 +122,12 @@ def edit_lora_selection(
                 for index, value in enumerate(extra[name]):
                     chip = QPushButton(f"{format_weight(value)}  ×", host)
                     chip.setProperty("role", "valueChip")
+                    chip.setMinimumHeight(CHIP_HEIGHT)  # the row would otherwise squeeze it to an empty bar
                     chip.setToolTip(f"Remove weight {format_weight(value)}")
                     chip.setAccessibleName(f"Remove weight {format_weight(value)} for {name}")
                     chip.clicked.connect(lambda _=False, i=index: drop(i))
                     chips.insertWidget(index, chip)
+                host.setMinimumHeight(CHIP_HEIGHT + 2 if extra[name] else 0)
                 host.setVisible(bool(extra[name]))
 
             def drop(index: int) -> None:
