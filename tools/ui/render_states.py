@@ -875,11 +875,17 @@ def render_generate_configuration_states(shell, out):
         controller._update_compute_units()
         assert meter.isHidden()
         form.backendCombo.setCurrentText("cloud")
-        controller._update_compute_units()
+        # Backend switches can rebuild the checkpoint selector and clear the local-only
+        # selection. Restore a named offline checkpoint before clicking its details.
+        page.modelCombo.setCurrentText("offline-checkpoint.ckpt")
+        assert page.checkpointDetailsButton.isEnabled(), "Checkpoint details button needs a selected model."
         with patch(units_path, return_value=ComputeUnitEstimate(14250, "Offline fixture estimate.")):
+            controller._update_compute_units()
             page.checkpointDetailsButton.click()
         detail = shell.inline.form.inlineTextBrowser.toPlainText()
-        assert "Compute Units: 14\u202f250 CU" in detail and "Supported models:" in detail
+        assert "Compute Units: 14\u202f250 CU" in detail and "Supported models:" in detail, (
+            f"Unexpected checkpoint details for {page.modelCombo.currentText()!r}: {detail!r}"
+        )
         assert "5.14816e-12" not in detail and "Source: Draw Things ComputeUnits.swift" not in detail
         snap("generate-49a-compute-units-details")
         clear()
