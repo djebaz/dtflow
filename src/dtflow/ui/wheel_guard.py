@@ -7,7 +7,15 @@ scroll area. In a panel that does not scroll the wheel still changes them.
 """
 
 from PySide6.QtCore import QEvent, QObject
-from PySide6.QtWidgets import QAbstractScrollArea, QAbstractSlider, QAbstractSpinBox, QApplication, QComboBox, QWidget
+from PySide6.QtWidgets import (
+    QAbstractScrollArea,
+    QAbstractSlider,
+    QAbstractSpinBox,
+    QApplication,
+    QComboBox,
+    QScrollBar,
+    QWidget,
+)
 
 
 class WheelGuard(QObject):
@@ -23,6 +31,8 @@ class WheelGuard(QObject):
     def eventFilter(self, watched, event):
         if event.type() != QEvent.Type.Wheel or not isinstance(watched, QComboBox | QAbstractSpinBox | QAbstractSlider):
             return False
+        if isinstance(watched, QScrollBar):
+            return False  # scroll bars are sliders too, but they already scroll
         if watched.window() is not self._window:
             return False
         if isinstance(watched, QAbstractSpinBox | QAbstractSlider) and watched.hasFocus():
