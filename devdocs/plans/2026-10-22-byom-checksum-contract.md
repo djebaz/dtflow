@@ -16,7 +16,7 @@ Fix DTFlow's unsupported equality requirement between the locally computed SHA-2
 - [x] Accept usable server-returned upload references independently of local checksum equality in negotiation and metadata lookup.
 - [x] Record bounded non-identifying type/length/format/comparison diagnostics before consuming upload evidence.
 - [x] Synchronize contract documentation, preview definitions, status and release notes.
-- [ ] Commit/push a new PR; do not merge.
+- [x] Commit/push implementation (`6baf6cd`) in draft [PR #158](https://github.com/djebaz/dtflow/pull/158); not merged.
 
 ## Decisions and acceptance
 

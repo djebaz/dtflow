@@ -41,5 +41,5 @@ Changes through the 5.1.0 preparation baseline are consolidated in [DTFlow 5.1.0
 
 ## Release audit
 
-- PRs: #150, #151, #152, #153, #154, #156, #157.
-- Scope: Post-5.1.0 Queue item-table/inspector and Prepare delivery (#150/#151), checkpoint metadata inspection (#152), local CU estimation (#153), Generate/Queues refinements (#154), and bounded API response diagnostics (#156) are merged source. PR #157 adds BYOM branch tolerance and pre-interpretation observations, pending merge. Scoped acceptance remains separate from source presence; not a published feature release.
+- PRs: #150, #151, #152, #153, #154, #156, #157, #158.
+- Scope: Post-5.1.0 Queue item-table/inspector and Prepare delivery (#150/#151), checkpoint metadata inspection (#152), local CU estimation (#153), Generate/Queues refinements (#154), bounded API response diagnostics (#156), and BYOM branch tolerance/pre-interpretation observations (#157) are merged source. PR #158 corrects the local/server upload checksum contract, pending merge. Scoped acceptance remains separate from source presence; not a published feature release.
