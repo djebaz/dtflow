@@ -1340,7 +1340,7 @@
          </size>
         </property>
         <property name="toolTip">
-         <string>Add LoRAs by exact identifier with an explicit weight.</string>
+         <string>Edit the LoRA selection: check or uncheck LoRAs and set each weight.</string>
         </property>
         <property name="accessibleName">
          <string>Selected LoRAs and weights</string>
@@ -1352,7 +1352,7 @@
         <item>
          <widget class="QPushButton" name="addLoraButton">
           <property name="text">
-           <string>Add LoRA</string>
+           <string>Edit LoRAs</string>
           </property>
          </widget>
         </item>

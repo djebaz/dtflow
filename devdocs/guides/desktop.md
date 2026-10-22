@@ -40,11 +40,13 @@ Previous the last. A custom
 identifier you applied stays at the end of that list until the next catalogue rebuild, so it is
 also a stepping target. While you step, selected LoRAs are kept; once stepping pauses (about
 0.6 s) LoRAs incompatible with the model you stopped on are removed, as when picking it in the
-editor. The sampler chosen before stepping returns on any model that allows it. **Add LoRA** shows
-search, identifier and weight together and commits once with **Add** (double-click a name or
-press Enter to add it with the weight shown). New UI selections use
-0.0–3.0 weights in 0.1 steps (one decimal); 0.0 is preserved. A catalogue default outside
-this range starts the editor at 1.0, not a silently clipped default. Existing imported/saved
+editor. The sampler chosen before stepping returns on any model that allows it. **Edit LoRAs** opens a
+taller editor that lists the selected LoRAs first (checked, at their weights) and then every
+offered LoRA, each with a checkbox and a 0.0–3.0 weight slider in 0.1 steps (default 1.0).
+Moving a slider checks its LoRA; search filters the list; an exact identifier can be added
+with **Add custom**. **Apply** (or Enter) replaces the whole selection once; unchecking a
+LoRA removes it. New UI selections use one-decimal weights; 0.0 is preserved. A weight loaded
+from a saved request outside the slider range is kept exactly until its slider is moved. Existing imported/saved
 requests retain their recorded weights and existing validation; this does not change the
 CLI or provider weight contract.
 
@@ -144,7 +146,7 @@ With `-x`, the Attempt details box adds development evidence: on failure the err
 
 ## LoRAs and cloud assets
 
-For a classified checkpoint, Add LoRA offers the active provider's available bundled/user-defined LoRAs whose known base family and mode metadata are compatible with that checkpoint. User custom metadata may be stored in `.dtflow/catalogue/custom_loras.json`; it is durable user data and does not make an absent provider artifact available. Unknown/raw checkpoints do not receive guessed compatible LoRAs. Choose the exact inventory identifier and a weight together in the one-step inline Add editor (0.0–3.0, 0.1 steps). Shared preflight keeps architecture match/mismatch/unknown, availability and application evidence separate. A confirmed mismatch or missing LoRA stops the request; unknown architecture is reported and allowed, never silently dropped. Generation success does not prove LoRA application. Only whole-model LoRAs on a base model are supported; broader exception rules are not pinned.
+For a classified checkpoint, Edit LoRAs offers the active provider's available bundled/user-defined LoRAs whose known base family and mode metadata are compatible with that checkpoint. User custom metadata may be stored in `.dtflow/catalogue/custom_loras.json`; it is durable user data and does not make an absent provider artifact available. Unknown/raw checkpoints do not receive guessed compatible LoRAs. Choose the exact inventory identifier and a weight together in the one-step inline Add editor (0.0–3.0, 0.1 steps). Shared preflight keeps architecture match/mismatch/unknown, availability and application evidence separate. A confirmed mismatch or missing LoRA stops the request; unknown architecture is reported and allowed, never silently dropped. Generation success does not prove LoRA application. Only whole-model LoRAs on a base model are supported; broader exception rules are not pinned.
 
 Trigger prefixes are added only when you explicitly choose that option; otherwise the prompt is unchanged.
 

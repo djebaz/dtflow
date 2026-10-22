@@ -27,7 +27,7 @@ from dtflow.services.connection import (
 from dtflow.services.session import check_loras, list_assets, prepare_asset, reconcile_asset, selection_for
 from dtflow.ui.activity_strip import activity_strip
 from dtflow.ui.runner import AsyncRunner
-from dtflow.ui.search_select import choose_searchable
+from dtflow.ui.lora_selection_editor import edit_lora_selection
 
 UPLOAD_NOTICE = (
     "Prepare accepts multiple converted LoRA files and may upload each to DT+ if the server does not already have it. "
@@ -183,27 +183,29 @@ class LoraAssetPanel:
         return {r["identifier"]: asset for asset, r in self._records.items() if r["state"] == "confirmed"}
 
     def add(self) -> None:
+        """Edit the whole selection: check, uncheck and weigh every offered LoRA, then apply once."""
         candidates = self.choices()
 
-        def add_selection(choice):
+        def apply_selection(chosen):
             if self._is_busy():
                 return
             try:
-                selection = LoRASelection(*choice)
+                selection = tuple(LoRASelection(name, weight) for name, weight in chosen)
             except ValidationError as exc:
-                self._show(self.page.compatibilityStatusLabel, Presentation("error", "LoRA not added", str(exc)))
+                self._show(self.page.compatibilityStatusLabel, Presentation("error", "LoRAs not changed", str(exc)))
                 return
-            self.set_loras((*[x for x in self.loras if x.identifier != selection.identifier], selection))
-            self._auto_bind(selection.identifier)
+            before = {item.identifier for item in self.loras}
+            self.set_loras(selection)
+            for item in selection:
+                if item.identifier not in before:
+                    self._auto_bind(item.identifier)
 
-        choose_searchable(
+        edit_lora_selection(
             self.page,
-            title="Add LoRA",
-            items=[name for name, _ in candidates],
-            custom_label="Add custom identifier",
-            custom_prompt="Exact LoRA identifier",
-            weights=dict(candidates),
-            callback=add_selection,
+            candidates=[name for name, _ in candidates],
+            selected=self.loras,
+            suggestions=dict(candidates),
+            callback=apply_selection,
         )
 
     def remove(self) -> None:

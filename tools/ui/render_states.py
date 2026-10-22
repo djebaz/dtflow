@@ -56,7 +56,9 @@ from PySide6.QtWidgets import (  # noqa: E402
     QPushButton,
     QScrollArea,
     QSizePolicy,
+    QSlider,
     QToolButton,
+    QWidget,
 )
 from support.cloud_assets import DtPlus, lora_file  # noqa: E402
 from support.fake_vault import Vault  # noqa: E402
@@ -653,7 +655,7 @@ def render_generate_configuration_states(shell, out):
 
     def reject_selection(parent, **options):
         # Defensive callback failure fixture; the real chooser normally prevents an empty identifier.
-        options["callback"](("", 1.0))
+        options["callback"]([("", 1.0)])
 
     with patch.object(shell.runner, "submit", side_effect=hold_worker):
         form.backendCombo.setCurrentText("local")
@@ -723,24 +725,24 @@ def render_generate_configuration_states(shell, out):
         page.modelCombo.setCurrentText("offline-checkpoint.ckpt")
 
         lora = controller.lora
-        with patch.object(lora, "_candidates", [("offline-style.ckpt", 0.8)]):
+        with patch.object(lora, "_candidates", [("offline-style.ckpt", 0.8), ("offline-detail.ckpt", None)]):
             page.addLoraButton.click()
             editor = shell.inline._editor
             assert editor is not None
-            editor.findChild(QListWidget, "inlineSelectionChoices").setCurrentRow(0)
-            snap("generate-24-lora-weight-editor")
+            rows = {r.property("identifier"): r for r in editor.findChildren(QWidget, "loraSelectionRow")}
+            rows["offline-style.ckpt"].findChild(QSlider, "loraSelectionSlider").setValue(8)  # checks it too
+            snap("generate-24-lora-selection-editor")
             clear()
         with patch.object(lora, "_candidates", [("offline-style.ckpt", 4.2)]):
             page.addLoraButton.click()
             editor = shell.inline._editor
             assert editor is not None
-            editor.findChild(QListWidget, "inlineSelectionChoices").setCurrentRow(0)
-            assert any("outside 0.0" in label.text() for label in editor.findChildren(QLabel))
-            snap("generate-25-lora-weight-hint")
+            assert editor.findChildren(QWidget, "loraSelectionRow")
+            snap("generate-25-lora-selection-single")
             clear()
-        with patch.object(lora_ui, "choose_searchable", side_effect=reject_selection):
+        with patch.object(lora_ui, "edit_lora_selection", side_effect=reject_selection):
             page.addLoraButton.click()
-            assert "LoRA not added" in page.compatibilityStatusLabel.text()
+            assert "LoRAs not changed" in page.compatibilityStatusLabel.text()
             snap("generate-26-lora-not-added")
         assert controller._catalogue.view().unclassified_checkpoints
         controller._show_unclassified_models()
