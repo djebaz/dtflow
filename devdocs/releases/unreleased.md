@@ -26,6 +26,7 @@ Changes through the 5.1.0 preparation baseline are consolidated in [DTFlow 5.1.0
 
 ## Fixed
 
+- Logs Component and Event dropdown popups fit their entries instead of inheriting the narrow closed-control width. Hide the leading `dtflow.` in Component/exact Event display labels while preserving canonical filtering values and full-name tooltips. Source-only correction; native Windows/DPI acceptance pending.
 - BYOM consumes usable known response branches independently instead of rejecting a successful response because an unused branch is malformed or both known branches are present. Log sanitized response structure before interpretation; distinguish local HTTP 200 interpretation warnings from API rejection. Unknown metadata lookup entries stay unknown; exact-reference/checksum and safe upload checks remain mandatory. Source only, runtime acceptance pending.
 - API failures now retain bounded, sanitized server explanations in WARNING logs and shared connection/generation/asset presentation, including HTTP error envelopes and gRPC messages such as throttle-policy rejection. Preserve statuses and uncertainty instead of implying every permission denial is a bad key; never log tokens, prompts, signed URLs or image payloads. No retry/billing behavior changes; source-only delivery, acceptance pending.
 - Prepared-asset dispatch checks preserve the underlying API explanation in the generation warning and inline failure instead of reporting only `prepared_asset_unknown`; local validation reasons remain distinct, and blocked generation is not submitted.
@@ -40,5 +41,5 @@ Changes through the 5.1.0 preparation baseline are consolidated in [DTFlow 5.1.0
 
 ## Release audit
 
-- PRs: #150, #151, #152, #153, #154, #156, #157.
-- Scope: Post-5.1.0 Queue item-table/inspector and Prepare delivery (#150/#151), checkpoint metadata inspection (#152), local CU estimation (#153), Generate/Queues refinements (#154), and bounded API response diagnostics (#156) are merged source. PR #157 adds BYOM branch tolerance and pre-interpretation observations, pending merge. Scoped acceptance remains separate from source presence; not a published feature release.
+- PRs: #150, #151, #152, #153, #154, #156, #157, #159.
+- Scope: Post-5.1.0 Queue item-table/inspector and Prepare delivery (#150/#151), checkpoint metadata inspection (#152), local CU estimation (#153), Generate/Queues refinements (#154), bounded API response diagnostics (#156), and BYOM branch tolerance/pre-interpretation observations (#157) are merged source. PR #159 improves Logs filter dropdown readability, pending merge and independent of checksum-contract PR #158. Scoped acceptance remains separate from source presence; not a published feature release.

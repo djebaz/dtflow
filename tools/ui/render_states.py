@@ -3557,6 +3557,22 @@ def render_logs_states(shell, capture):
         panel.logsSessionCombo.addItem(session_label(number, sid, written, current=current), sid)
     panel.logsSessionCombo.blockSignals(False)
     capture("logs-02-mixed-severity")
+    shell.logs._populate_filter_values(
+        rows,
+        (
+            "fixture",
+            ["dtflow.backends.drawthings.cloud_assets", "dtflow.persistence.gallery_snapshot"],
+            ["backend.byom_upload_evidence", "gallery.snapshot.publication_skipped"],
+            [], [],
+        ),
+    )
+    for combo, name in (
+        (panel.logsComponentCombo, "logs-15-component-popup-readable"),
+        (panel.logsEventCombo, "logs-16-event-popup-readable"),
+    ):
+        combo.showPopup()
+        capture(name, popup=(combo.view().window(), combo))
+        combo.hidePopup()
 
     # Exercise the shared projection: integer timing chips beside exact raw JSON.
     shell.logs._show_detail(rows[1][0], None)
@@ -3723,7 +3739,7 @@ def main():
         page, controller = shell.generation_page, shell.generation
 
         def capture(name, popup=None):
-            """``popup`` is (widget, anchor): a separate popup window drawn under its anchor, as the user sees it."""
+            """Composite custom anchored popups or native popup windows at their actual position."""
             category = name.split("-", 1)[0]
             if not wants(category):
                 return
@@ -3735,7 +3751,11 @@ def main():
             image = shell.form.grab()
             if popup is not None:
                 widget, anchor = popup
-                at = widget.placement(anchor)
+                at = (
+                    widget.placement(anchor)
+                    if hasattr(widget, "placement")
+                    else shell.form.mapFromGlobal(widget.mapToGlobal(QPoint(0, 0)))
+                )
                 painter = QPainter(image)
                 painter.drawPixmap(at, widget.grab())
                 painter.end()
