@@ -8,7 +8,7 @@ from pathlib import Path
 import pytest
 
 from dtflow.persistence import thumbnail_cache as cache
-from tests.support.network_guard import child_command
+from support.network_guard import child_command
 
 
 def redirect_directory(link: Path, target: Path, tmp_path: Path) -> None:
