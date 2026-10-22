@@ -381,7 +381,7 @@ class GenerationService:
             diagnostic_event(
                 log,
                 "generation.attempt_failed",
-                level=logging.ERROR,
+                level=logging.WARNING if dict(failure.diagnostics).get("transport") else logging.ERROR,
                 data={
                     "code": failure.code,
                     "category": failure.category,

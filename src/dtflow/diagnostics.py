@@ -11,6 +11,17 @@ from time import monotonic_ns
 ATTEMPT: ContextVar[str] = ContextVar("dtflow_attempt", default="-")
 
 
+def api_error_data(*, message=None, body=None, headers=(), private=(), truncated=False) -> dict:
+    """Bounded API error evidence, safe for both public failures and shared logs.
+
+    Privacy stays owned by the shared schema module; integration callers supply
+    only response primitives and known request-specific private strings.
+    """
+    from dtflow._diagnostic_schema import api_error_data as project
+
+    return project(message=message, body=body, headers=headers, private=private, truncated=truncated)
+
+
 def event(
     logger: logging.Logger,
     name: str,

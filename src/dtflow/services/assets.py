@@ -11,7 +11,7 @@ import asyncio
 import hashlib
 import logging
 import os
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 from typing import Protocol
 
 from dtflow.core.models import (
@@ -27,7 +27,7 @@ from dtflow.core.models import (
     ValidationError,
 )
 from dtflow.core.tasks import settle
-from dtflow.diagnostics import event as diagnostic_event
+from dtflow.diagnostics import api_error_data, event as diagnostic_event
 from dtflow.persistence.assets import AssetRegistry
 from dtflow.persistence.store import PersistenceError
 
@@ -38,11 +38,13 @@ CHUNK = 1024 * 1024
 _INFLIGHT: dict[tuple, asyncio.Task] = {}
 
 
-def _failure(category: ErrorCategory, code: str, message: str, outcome=RemoteOutcome.NOT_STARTED) -> BackendError:
+def _failure(
+    category: ErrorCategory, code: str, message: str, outcome=RemoteOutcome.NOT_STARTED, *, diagnostics=()
+) -> BackendError:
     stage = (
         SubmissionStage.NOT_SUBMITTED if outcome == RemoteOutcome.NOT_STARTED else SubmissionStage.POSSIBLY_SUBMITTED
     )
-    return BackendError(BackendFailure(category, code, message, None, stage, outcome))
+    return BackendError(BackendFailure(category, code, message, None, stage, outcome, diagnostics=diagnostics))
 
 
 def _observe(path: Path) -> tuple[os.stat_result, str]:
@@ -204,33 +206,65 @@ class AssetService:
 
     async def check(self, content: AssetContent, expected: str | None) -> AssetReconciliation:
         """Fresh authenticated metadata check; never transfers. ``expected`` is the receipt's remote reference."""
+        result, _ = await self._check(content, expected)
+        return result
+
+    async def _check(
+        self, content: AssetContent, expected: str | None
+    ) -> tuple[AssetReconciliation, BackendFailure | None]:
+        """Retain backend-neutral failure evidence for dispatch without persisting response bodies."""
         try:
             negotiation = await self.backend.negotiate_asset(content)
         except BackendError as exc:
             code = exc.failure.code
             if exc.failure.category in (ErrorCategory.AUTHENTICATION, ErrorCategory.CREDENTIALS):
-                return AssetReconciliation("unavailable", code)
-            return AssetReconciliation("unknown", code)
+                return AssetReconciliation("unavailable", code), exc.failure
+            return AssetReconciliation("unknown", code), exc.failure
         if negotiation.status == "upload_required":
-            return AssetReconciliation("upload_required", "server_has_no_such_file")
+            return AssetReconciliation("upload_required", "server_has_no_such_file"), None
         if expected is not None and negotiation.reference != expected:
-            return AssetReconciliation("unknown", "reference_mismatch", negotiation.reference)
-        return AssetReconciliation("confirmed", "server_validated", negotiation.reference)
+            return AssetReconciliation("unknown", "reference_mismatch", negotiation.reference), None
+        return AssetReconciliation("confirmed", "server_validated", negotiation.reference), None
 
     async def validate(self, prepared: PreparedAsset) -> None:
         """Dispatch-time guard: require current server validation of the exact reference, or fail without uploading."""
+        # Display only the local basename, through shared privacy projection; never the remote reference or path.
+        asset = (
+            api_error_data(
+                message=PureWindowsPath(prepared.identifier).name,
+                private=(prepared.remote_id,),
+            ).get("server_message")
+            or "[asset]"
+        )
         if prepared.backend_id != self.backend.backend_id or prepared.origin != self.backend.origin:
             raise _failure(
-                ErrorCategory.VALIDATION, "prepared_asset_scope", "Prepared asset belongs to a different backend scope."
+                ErrorCategory.VALIDATION,
+                "prepared_asset_scope",
+                f"LoRA {asset}: prepared asset belongs to a different backend scope. Nothing was submitted.",
+                diagnostics=(("asset", asset),),
             )
-        result = await self.check(self._content(prepared), prepared.remote_id)
+        result, cause = await self._check(self._content(prepared), prepared.remote_id)
         if result.status != "confirmed":
-            raise _failure(
+            problem = _failure(
                 ErrorCategory.VALIDATION,
                 "prepared_asset_" + result.status,
-                f"Prepared asset {prepared.identifier!r} is not validated by the server ({result.evidence}); "
-                "nothing was uploaded or submitted.",
+                f"LoRA {asset} is not validated by the server ({result.evidence}); nothing was uploaded or submitted.",
             )
+            details = {"validation_reason": result.evidence}
+            if cause is not None:
+                # Only the adapter's projected evidence crosses this boundary, never provider objects or references.
+                details.update(cause.diagnostics)
+                details["cause_code"] = cause.code
+                details["cause_category"] = cause.category.value
+            details["asset"] = asset
+            raise BackendError(
+                BackendFailure(
+                    problem.failure.category,
+                    problem.failure.code,
+                    problem.failure.message,
+                    diagnostics=tuple(sorted(details.items())),
+                )
+            ) from None
 
     async def reconcile(self, asset_id: str) -> tuple[dict, AssetReconciliation]:
         """Metadata-only server validation of one local record under the current credential; never a PUT."""

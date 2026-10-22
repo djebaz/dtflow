@@ -1,4 +1,4 @@
-"""Scoped DT+ authentication; tokens stay in memory and errors never carry response bodies."""
+"""Scoped DT+ authentication; tokens stay in memory, errors retain only safe response projections."""
 
 from __future__ import annotations
 
@@ -6,16 +6,35 @@ import asyncio
 import base64
 import copy
 import json
+import logging
 import math
 import time
 import uuid
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 import httpx
 
-from dtflow.backends.drawthings.errors import diagnostics, error
-from dtflow.core.models import CredentialProvider, ErrorCategory, ValidationError
+from dtflow.backends.drawthings.errors import api_error, diagnostics, error
+from dtflow.core.models import BackendError, CredentialProvider, ErrorCategory, ValidationError
+from dtflow.diagnostics import api_error_data, event
+
+log = logging.getLogger(__name__)
+
+
+@dataclass(frozen=True, slots=True)
+class _HTTPReply:
+    body: bytes = field(repr=False)
+    headers: tuple[tuple[str, str], ...]
+    elapsed_ms: float
+
+
+class CloudJSONResponse(dict):
+    """Adapter-local JSON plus a bounded, already-redacted projection for schema failures."""
+
+    def __init__(self, data: dict, error_data: dict):
+        super().__init__(data)
+        self.error_data = error_data
 
 
 @dataclass(frozen=True, slots=True)
@@ -38,7 +57,7 @@ def parse_response(body: bytes, *, token_exchange: bool) -> tuple[str, int | Non
     """Validate just the documented success fields, without exposing malformed body contents."""
     try:
         data = json.loads(body)
-    except (ValueError, UnicodeError):
+    except (ValueError, UnicodeError, RecursionError):
         data = None
     field = "shortTermToken" if token_exchange else "gRPCToken"
     token = data.get(field) if isinstance(data, dict) else None
@@ -125,11 +144,13 @@ class CloudAuth:
             async with asyncio.timeout(self._policy.total):
                 return await self._load_token()
         except TimeoutError:
-            raise error(
+            raise api_error(
                 ErrorCategory.TIMEOUT,
                 "cloud_http_deadline",
                 "Cloud authentication deadline exceeded.",
                 timeout_phase="authentication",
+                operation="/sdk/token",
+                transport="http",
             ) from None
 
     async def _load_token(self) -> str:
@@ -140,11 +161,23 @@ class CloudAuth:
                 raise error(ErrorCategory.AUTHENTICATION, "missing_cloud_credentials", "Cloud API key is missing.")
             self._key = credential.secret.strip()
         started = self._clock()
-        body = await self._post("/sdk/token", {"apiKey": self._key, "appCheckType": "none", "appCheckToken": None})
-        token, lifetime = parse_response(body, token_exchange=True)
+        reply = await self._post("/sdk/token", {"apiKey": self._key, "appCheckType": "none", "appCheckToken": None})
+        try:
+            token, lifetime = parse_response(reply.body, token_exchange=True)
+        except BackendError as exc:
+            raise self._invalid_reply("/sdk/token", reply, exc.failure.code) from None
         expires = started + lifetime
         if expires <= self._clock():
-            raise error(ErrorCategory.AUTHENTICATION, "cloud_token_expired", "Cloud token arrived expired.")
+            raise api_error(
+                ErrorCategory.AUTHENTICATION,
+                "cloud_token_expired",
+                "Cloud token arrived expired.",
+                operation="/sdk/token",
+                transport="http",
+                elapsed_ms=reply.elapsed_ms,
+                diagnostics=diagnostics(http_status=200),
+                response=self._response_data(reply),
+            )
         if self._closed:
             raise error(ErrorCategory.CONNECTIVITY, "cloud_auth_closed", "Cloud authentication client is closed.")
         self._token, self._expires = token, expires
@@ -155,7 +188,7 @@ class CloudAuth:
         token = await self.token()
         auth_message = copy.deepcopy(message)
         auth_message.contents = []
-        body = await self._post(
+        reply = await self._post(
             "/authenticate",
             {
                 "blob": base64.b64encode(bytes(auth_message)).decode("ascii"),
@@ -164,64 +197,157 @@ class CloudAuth:
                 "isSandbox": False,
             },
             token=token,
+            private=(message.prompt, message.negative_prompt),
         )
         if self._closed:
             raise error(ErrorCategory.CONNECTIVITY, "cloud_auth_closed", "Cloud authentication client is closed.")
-        return parse_response(body, token_exchange=False)[0]
+        try:
+            return parse_response(reply.body, token_exchange=False)[0]
+        except BackendError as exc:
+            raise self._invalid_reply(
+                "/authenticate", reply, exc.failure.code, private=(message.prompt, message.negative_prompt)
+            ) from None
 
     async def authenticated_json(self, path: str, payload: dict) -> dict:
         """POST authenticated JSON and return a validated object without exposing response contents."""
         token = await self.token()
-        body = await self._post(path, payload, token=token)
+        private = tuple(
+            item[key]
+            for item in payload.get("files", ())
+            if isinstance(item, dict)
+            for key in ("file", "sha256")
+            if isinstance(item.get(key), str)
+        )
+        reply = await self._post(path, payload, token=token, private=private)
         try:
-            decoded = json.loads(body)
-        except (ValueError, UnicodeError) as exc:
-            raise error(ErrorCategory.PROTOCOL, "cloud_response_invalid", "Cloud response is invalid.") from exc
+            decoded = json.loads(reply.body)
+        except (ValueError, UnicodeError, RecursionError):
+            raise self._invalid_reply(path, reply, "cloud_response_invalid", private=private) from None
         if not isinstance(decoded, dict):
-            raise error(ErrorCategory.PROTOCOL, "cloud_response_invalid", "Cloud response is invalid.")
-        return decoded
+            raise self._invalid_reply(path, reply, "cloud_response_invalid", private=private)
+        data = decoded.get("data")
+        already = data.get("alreadyExists") if isinstance(data, dict) else None
+        if isinstance(already, dict):
+            private += tuple(value for value in already.values() if isinstance(value, str))
+        return CloudJSONResponse(
+            decoded, {**self._response_data(reply, private=private), "elapsed_ms": round(reply.elapsed_ms)}
+        )
 
-    async def _post(self, path: str, payload: dict, *, token: str | None = None) -> bytes:
+    def _response_data(self, reply: _HTTPReply, *, private=()) -> dict:
+        return api_error_data(body=reply.body, headers=reply.headers, private=(*private, self._key, self._token))
+
+    def _invalid_reply(self, path: str, reply: _HTTPReply, code: str, *, private=()) -> BackendError:
+        return api_error(
+            ErrorCategory.PROTOCOL,
+            code,
+            "Cloud response is invalid.",
+            operation=path,
+            transport="http",
+            elapsed_ms=reply.elapsed_ms,
+            response=self._response_data(reply, private=private),
+            diagnostics=diagnostics(http_status=200),
+        )
+
+    async def _post(self, path: str, payload: dict, *, token: str | None = None, private=()) -> _HTTPReply:
         if self._closed:
             raise error(ErrorCategory.CONNECTIVITY, "cloud_auth_closed", "Cloud authentication client is closed.")
         headers = {"Content-Type": "application/json", "Accept": "application/json"}
         if token is not None:
             headers["Authorization"] = token
+        started = self._clock()
+        observed_status = None
+        observed_headers = ()
+
+        def elapsed():
+            return (self._clock() - started) * 1000
+
         try:
             async with asyncio.timeout(self._policy.total):
                 async with self._client.stream("POST", self._origin + path, json=payload, headers=headers) as response:
+                    observed_status = response.status_code
+                    observed_headers = tuple(response.headers.items())
                     if response.status_code != 200:
+                        body = bytearray()
+                        truncated = False
+                        try:
+                            async for chunk in response.aiter_bytes():
+                                remaining = 8192 - len(body)
+                                body.extend(chunk[:remaining])
+                                if len(chunk) > remaining:
+                                    truncated = True
+                                    break
+                        except (httpx.HTTPError, TimeoutError):
+                            truncated = True  # Preserve observed HTTP status even if the error body fails.
                         category = (
                             ErrorCategory.AUTHENTICATION
                             if response.status_code in (401, 403)
                             else ErrorCategory.REMOTE_REJECTION
                         )
-                        raise error(
+                        raise api_error(
                             category,
                             "cloud_http_rejected",
                             "Cloud authentication HTTP request was rejected.",
                             diagnostics=diagnostics(http_status=response.status_code, operation=path),
+                            operation=path,
+                            transport="http",
+                            elapsed_ms=elapsed(),
+                            response=api_error_data(
+                                body=bytes(body),
+                                headers=response.headers,
+                                private=(*private, self._key, token),
+                                truncated=truncated,
+                            ),
                         )
                     body = bytearray()
                     async for chunk in response.aiter_bytes():
                         if len(body) + len(chunk) > self._policy.response_bytes:
-                            raise error(
+                            raise api_error(
                                 ErrorCategory.PROTOCOL,
                                 "cloud_response_limit",
                                 "Cloud authentication response exceeds its limit.",
+                                operation=path,
+                                transport="http",
+                                elapsed_ms=elapsed(),
+                                diagnostics=diagnostics(http_status=200),
+                                response=api_error_data(headers=response.headers, truncated=True),
                             )
                         body.extend(chunk)
-                    return bytes(body)
+                    event(
+                        log,
+                        "backend.api_completed",
+                        level=logging.DEBUG,
+                        data={
+                            "transport": "http",
+                            "operation": path.strip("/").replace("/", "."),
+                            "http_status": 200,
+                            "elapsed_ms": elapsed(),
+                        },
+                    )
+                    return _HTTPReply(bytes(body), tuple(response.headers.items()), elapsed())
         except (TimeoutError, httpx.TimeoutException):
-            raise error(
+            raise api_error(
                 ErrorCategory.TIMEOUT,
                 "cloud_http_deadline",
                 "Cloud authentication deadline exceeded.",
                 timeout_phase="authentication",
+                operation=path,
+                transport="http",
+                elapsed_ms=elapsed(),
+                diagnostics=diagnostics(**({"http_status": observed_status} if observed_status is not None else {})),
+                response=api_error_data(headers=observed_headers, truncated=observed_status is not None),
             ) from None
-        except httpx.HTTPError:
-            raise error(
-                ErrorCategory.CONNECTIVITY, "cloud_http_failed", "Cloud authentication HTTP connection failed."
+        except httpx.HTTPError as exc:
+            raise api_error(
+                ErrorCategory.CONNECTIVITY,
+                "cloud_http_failed",
+                "Cloud authentication HTTP connection failed.",
+                operation=path,
+                transport="http",
+                elapsed_ms=elapsed(),
+                diagnostics=diagnostics(
+                    kind=type(exc).__name__, **({"http_status": observed_status} if observed_status is not None else {})
+                ),
+                response=api_error_data(headers=observed_headers, truncated=observed_status is not None),
             ) from None
 
     async def aclose(self) -> None:

@@ -54,6 +54,11 @@ def local_time(at_utc: str) -> str:
 
 def present_status(status: ConnectionStatus) -> Presentation:
     """Map supplied connection evidence to a status line; the network behavior that produced it is tested elsewhere."""
+    details = dict(status.diagnostics)
+    if details.get("server_message"):
+        code = details.get("http_status") or details.get("status")
+        prefix = f"{code}: " if code else ""
+        return Presentation("error", "Connection rejected", prefix + details["server_message"])
     if status.transport == "failed":
         return Presentation("error", "Unreachable", f"Could not reach {status.endpoint}.")
     if status.authentication == "failed":
@@ -64,11 +69,13 @@ def present_status(status: ConnectionStatus) -> Presentation:
 
 
 def present_failure(exc: Exception) -> Presentation:
-    """A check that raised: stable code only, never provider text."""
+    """A check that raised: stable code plus an already-sanitized API explanation."""
     if isinstance(exc, ValidationError):
         return Presentation("error", "Invalid selection", str(exc))
     if isinstance(exc, BackendError):
         failure = exc.failure
+        if dict(failure.diagnostics).get("transport"):
+            return Presentation("error", "Check failed", _api_explanation(failure))
         if failure.category in ("credentials", "authentication"):
             return Presentation("error", "Credentials problem", failure.code)
         return Presentation("error", "Check failed", failure.code)
@@ -96,17 +103,37 @@ UNSUPPORTED_NAMES = (
 )
 
 
+def _api_explanation(failure) -> str:
+    """Only backend-projected response text enters ordinary UI error presentation."""
+    details = dict(failure.diagnostics)
+    code = details.get("http_status") or details.get("status") or failure.code
+    message = details.get("server_message") or failure.message
+    return f"{code}: {message}"
+
+
 def present_generation_failure(exc: Exception) -> Presentation:
-    """A generation that raised: stable codes only; an unknown remote outcome is never shown as a plain failure."""
+    """Show safe API explanations without changing the durable remote-outcome evidence."""
     if isinstance(exc, ValidationError):
         return Presentation("error", "Invalid request", str(exc))
     if isinstance(exc, BackendError):
         failure = exc.failure
+        api = bool(dict(failure.diagnostics).get("transport"))
+        if failure.code.startswith("prepared_asset_"):
+            detail = _api_explanation(failure) if api else failure.message
+            asset = dict(failure.diagnostics).get("asset")
+            if api and asset:
+                detail = f"LoRA {asset} — {detail}"
+            return Presentation(
+                "error",
+                "Prepared asset not validated",
+                f"{detail} Nothing was uploaded or submitted." if api else detail,
+            )
+        detail = _api_explanation(failure) if api else failure.code
         if failure.remote_outcome == RemoteOutcome.UNKNOWN:
             return Presentation(
                 "warning",
                 "Outcome unknown",
-                f"{failure.code}: the request may have reached the server and may still complete. "
+                f"{detail}. The request may have reached the server and may still complete. "
                 "It is not replayed automatically; inspect the attempt before acting.",
             )
         if failure.code == "unsupported_request" and failure.diagnostics:
@@ -120,7 +147,7 @@ def present_generation_failure(exc: Exception) -> Presentation:
             return Presentation(
                 "error", "Request rejected", f"This provider does not offer {names}.{hint} Nothing was dispatched."
             )
-        if failure.category == ErrorCategory.VALIDATION:
+        if failure.category == ErrorCategory.VALIDATION and not api:
             codes = "; ".join(f"{name}: {code}" for name, code in failure.diagnostics)
             return Presentation(
                 "error",
@@ -131,6 +158,9 @@ def present_generation_failure(exc: Exception) -> Presentation:
             return Presentation("error", "Generation not submitted", failure.message)
         if failure.code == "local_save_unavailable":
             return Presentation("error", "Generated image not fully saved", failure.message)
+        if api:
+            # PERMISSION_DENIED also covers throttling and request validation upstream.
+            return Presentation("error", "Backend request failed", detail)
         if failure.category in (ErrorCategory.CREDENTIALS, ErrorCategory.AUTHENTICATION):
             return Presentation("error", "Credentials problem", failure.code)
         return Presentation("error", "Generation failed", failure.code)
@@ -191,12 +221,15 @@ def present_asset_failure(exc: Exception) -> Presentation:
             "warning", "Assets busy", "Another DTFlow process is preparing assets. Nothing was uploaded or changed."
         )
     if isinstance(exc, BackendError) and exc.failure.remote_outcome == RemoteOutcome.UNKNOWN:
+        detail = _api_explanation(exc.failure) if dict(exc.failure.diagnostics).get("transport") else exc.failure.code
         return Presentation(
             "warning",
             "Outcome unknown",
-            f"{exc.failure.code}: the file may have been stored. It is not retried; reconcile the record to check.",
+            f"{detail}. The file may have been stored. It is not retried; reconcile the record to check.",
         )
     if isinstance(exc, BackendError):
+        if dict(exc.failure.diagnostics).get("transport"):
+            return Presentation("error", "Asset action failed", _api_explanation(exc.failure))
         return Presentation("error", "Asset action failed", f"{exc.failure.code}. {exc.failure.message}")
     return present_generation_failure(exc)
 

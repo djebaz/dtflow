@@ -58,6 +58,7 @@ Queue items show saved-result thumbnails, recorded prompts/model/LoRAs, paramete
 ### Searchable application diagnostics
 
 Open **Logs** beside Help to browse application and gallery events in the desktop. Search and filter retained sessions, page through matching records, inspect details, copy evidence or explicitly export CSV/JSONL with progress and Cancel. Follow can be paused for a counted Refresh, and the detail pane closes when clicking elsewhere in Logs. New sessions use one structured JSONL stream; historical text/CSV files stay untouched. See the [Logs guide](devdocs/guides/desktop.md#logs).
+API failures retain bounded, sanitized server explanations in WARNING logs and ordinary error presentation, so a cloud throttle rejection need not appear as a generic credentials problem. Tokens, prompts, signed URLs and image payloads remain excluded; an error message never changes retry or remote-outcome certainty.
 
 ### Explicit cloud assets and offline exploration
 
