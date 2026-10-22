@@ -38,6 +38,7 @@
 - Require explicit width, height, sampling steps, **output frame count**, CFG/guidance, source-image state, and any additional inputs needed by a specific architecture. Frame packing, temporal/audio context, causal sampling and fixed counts must follow the pinned `ComputeUnits.swift` and instruction-count sources; unsupported nondefault behaviors return unavailable rather than guessed numeric costs.
 - Keep video entries and compute strategies distinct from image-only UI. LoRA modifiers without known semantics may use the base checkpoint estimate with disclosed provenance; no external DT+ call, request mutation or billing implication.
 - Preserve the no-add-tests/no-run-tests instruction, including no runtime demonstrations or UI renders. A source-only port is not numeric parity verification with Draw Things or deployed DT+.
+- Source snapshot: the versioned registry has 34 architecture identifiers, of which nine are video strategies. Every one of the 253 exact-file community specifications (201 image and 52 video) resolves to a registry version. **This is source/metadata coverage, not a parity or billability result.** Four other upstream model versions remain unported: Kandinsky 2.1, SDXL Refiner, SeedVR2 3B, and SeedVR2 7B. The video estimator in `src/dtflow/core/video_compute_units.py` requires explicit frame count, dimensions, steps and guidance; it also accepts video strength, image/reference inputs and WAN causal settings as appropriate. Video values are not wired to the current image-only Generate UI.
 
 ## Review and validation boundary
 
