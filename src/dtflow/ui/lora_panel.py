@@ -8,6 +8,7 @@ not DT+ account inventory. Selecting a file through Prepare can upload it withou
 import asyncio
 import logging
 import os
+import re
 from collections.abc import Callable
 from pathlib import Path
 
@@ -95,7 +96,9 @@ class LoraAssetPanel:
         label.setProperty("state", presentation.level)
         label.style().unpolish(label)
         label.style().polish(label)
-        label.setText(f"{presentation.headline}. {presentation.detail}".strip())
+        text = f"{presentation.headline}. {presentation.detail}".strip()
+        # A wrapping label is as wide as its longest word: let a file name break after "_", "-" and "." inside it.
+        label.setText(re.sub(r"(?<=\w)([_.\-])(?=\w)", "\\1\u200b", text))
 
     def receipt_ids(self) -> tuple[str, ...]:
         selected = {item.identifier for item in self.loras}
