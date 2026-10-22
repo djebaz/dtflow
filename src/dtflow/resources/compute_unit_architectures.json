@@ -295,6 +295,103 @@
       "latent_scale": 8,
       "default_text_tokens": 77,
       "usage_bias": 2.5
+    },
+    "hunyuan_video": {
+      "strategy": "video_hunyuan",
+      "channels": 3072,
+      "double_layers": 20,
+      "single_layers": 40,
+      "latent_scale": 8,
+      "default_text_tokens": 256,
+      "usage_bias": 1,
+      "frame_pack": "quarter"
+    },
+    "wan_v2.1_1.3b": {
+      "strategy": "video_wan",
+      "channels": 1536,
+      "layers": 30,
+      "intermediate_size": 8960,
+      "output_channels": 16,
+      "latent_scale": 8,
+      "default_text_tokens": 77,
+      "usage_bias": 1,
+      "frame_pack": "quarter",
+      "supports_image": true
+    },
+    "wan_v2.1_14b": {
+      "strategy": "video_wan",
+      "channels": 5120,
+      "layers": 40,
+      "intermediate_size": 13824,
+      "output_channels": 16,
+      "latent_scale": 8,
+      "default_text_tokens": 77,
+      "usage_bias": 1,
+      "frame_pack": "quarter",
+      "supports_image": true
+    },
+    "wan22_5b": {
+      "strategy": "video_wan",
+      "channels": 3072,
+      "layers": 30,
+      "intermediate_size": 14336,
+      "output_channels": 48,
+      "latent_scale": 4,
+      "default_text_tokens": 77,
+      "usage_bias": 1,
+      "frame_pack": "quarter",
+      "supports_image": false
+    },
+    "longcat_video_avatar1_5": {
+      "strategy": "video_wan",
+      "channels": 4096,
+      "layers": 48,
+      "intermediate_size": 11008,
+      "output_channels": 16,
+      "latent_scale": 8,
+      "default_text_tokens": 77,
+      "usage_bias": 1,
+      "frame_pack": "quarter",
+      "supports_image": false
+    },
+    "ltx2": {
+      "strategy": "video_ltx2",
+      "channels": 4096,
+      "audio_channels": 2048,
+      "layers": 48,
+      "latent_scale": 2,
+      "default_text_tokens": 128,
+      "usage_bias": 1,
+      "frame_pack": "eighth",
+      "gated_attention": false,
+      "kv_cache": true,
+      "context_projection": true,
+      "ada_ln_cross": false
+    },
+    "ltx2.3": {
+      "strategy": "video_ltx2",
+      "channels": 4096,
+      "audio_channels": 2048,
+      "layers": 48,
+      "latent_scale": 2,
+      "default_text_tokens": 128,
+      "usage_bias": 1,
+      "frame_pack": "eighth",
+      "gated_attention": true,
+      "kv_cache": false,
+      "context_projection": false,
+      "ada_ln_cross": true
+    },
+    "minimax_h3": {
+      "strategy": "video_minimax_h3",
+      "channels": 5376,
+      "layers": 50,
+      "intermediate_size": 14336,
+      "latent_scale": 4,
+      "default_text_tokens": 512,
+      "usage_bias": 1,
+      "frame_pack": "minimax_h3",
+      "fps": 24
     }
   }
 }
