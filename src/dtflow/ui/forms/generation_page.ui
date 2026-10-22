@@ -1339,6 +1339,12 @@
           <height>110</height>
          </size>
         </property>
+        <property name="horizontalScrollBarPolicy">
+         <enum>Qt::ScrollBarAlwaysOff</enum>
+        </property>
+        <property name="textElideMode">
+         <enum>Qt::ElideMiddle</enum>
+        </property>
         <property name="toolTip">
          <string>Edit the LoRA selection: check or uncheck LoRAs and set each weight.</string>
         </property>
@@ -1500,6 +1506,12 @@
                 <width>16777215</width>
                 <height>96</height>
                </size>
+              </property>
+              <property name="horizontalScrollBarPolicy">
+               <enum>Qt::ScrollBarAlwaysOff</enum>
+              </property>
+              <property name="textElideMode">
+               <enum>Qt::ElideMiddle</enum>
               </property>
               <property name="accessibleName">
                <string>Known local asset receipts</string>

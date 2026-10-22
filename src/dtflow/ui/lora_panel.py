@@ -171,7 +171,9 @@ class LoraAssetPanel:
             text = f"{item.identifier} @ {item.weight}"
             if item.identifier in self._receipts:
                 text += f" [receipt {self._receipts[item.identifier][:8]}]"
-            self.page.loraList.addItem(text)
+            entry = QListWidgetItem(text)
+            entry.setToolTip(text)  # a long name is elided in the narrow rail
+            self.page.loraList.addItem(entry)
 
     def choices(self) -> list[tuple[str, float | None]]:
         """(identifier, catalogue weight) of every LoRA offered for selection, custom-LoRA records included."""
