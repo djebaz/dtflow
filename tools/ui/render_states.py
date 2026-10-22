@@ -842,6 +842,18 @@ def render_generate_configuration_states(shell, out):
         lora._prepared(None, refused)
         snap("generate-37a-api-asset-refused")
         clear()
+        uninterpretable = BackendError(BackendFailure(
+            ErrorCategory.PROTOCOL, "cloud_byom_response_invalid",
+            "DTFlow could not establish the asset status from the DT+ response (invalid_server_reference).",
+            diagnostics=(
+                ("transport", "http"), ("http_status", "200"),
+                ("validation_reason", "invalid_server_reference"),
+                ("interpretation_message", "The upload offer has no usable server-returned storage value."),
+            ),
+        ))
+        lora._prepared(None, uninterpretable)
+        snap("generate-37b-byom-server-value-unusable")
+        clear()
         lora._listed(None, OSError("Offline fixture"))
         assert "Registry unavailable" in page.assetStatusLabel.text()
         snap("generate-38-asset-registry-unavailable")
