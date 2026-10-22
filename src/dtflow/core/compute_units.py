@@ -86,17 +86,22 @@ def _architecture_registry() -> dict[str, dict]:
                 continue
             if strategy in {"unet_v1", "unet_v2", "unet_xl"}:
                 schedule = entry.get("channel_schedule")
-                if not isinstance(schedule, list) or len(schedule) < 2 or any(
-                    type(channel) is not int or channel <= 0 for channel in schedule
-                ) or schedule[0] != entry["channels"]:
+                if (
+                    not isinstance(schedule, list)
+                    or len(schedule) < 2
+                    or any(type(channel) is not int or channel <= 0 for channel in schedule)
+                    or schedule[0] != entry["channels"]
+                ):
                     continue
                 if strategy == "unet_xl":
                     maps = (("input_attention", 2), ("output_attention", 3))
                     if any(
                         not isinstance(entry.get(key), dict)
                         or any(
-                            not isinstance(ds, str) or not ds.isdecimal()
-                            or not isinstance(depths, list) or len(depths) != count
+                            not isinstance(ds, str)
+                            or not ds.isdecimal()
+                            or not isinstance(depths, list)
+                            or len(depths) != count
                             or any(type(depth) is not int or depth < 0 for depth in depths)
                             for ds, depths in entry[key].items()
                         )
@@ -105,9 +110,11 @@ def _architecture_registry() -> dict[str, dict]:
                         continue
                 else:
                     downsamples = entry.get("attention_downsamples")
-                    if not isinstance(downsamples, list) or any(
-                        type(ds) is not int or ds < 1 for ds in downsamples
-                    ) or entry.get("heads_mode") not in ("fixed8", "channel64"):
+                    if (
+                        not isinstance(downsamples, list)
+                        or any(type(ds) is not int or ds < 1 for ds in downsamples)
+                        or entry.get("heads_mode") not in ("fixed8", "channel64")
+                    ):
                         continue
             if strategy.startswith("video_"):
                 pack = {
@@ -127,8 +134,10 @@ def _architecture_registry() -> dict[str, dict]:
                     if any(
                         not isinstance(entry.get(key), dict)
                         or any(
-                            not isinstance(ds, str) or not ds.isdecimal()
-                            or not isinstance(depths, list) or len(depths) != count
+                            not isinstance(ds, str)
+                            or not ds.isdecimal()
+                            or not isinstance(depths, list)
+                            or len(depths) != count
                             or any(type(depth) is not int or depth < 0 for depth in depths)
                             for ds, depths in entry[key].items()
                         )
@@ -263,7 +272,8 @@ def _qwen21(count: int, tokens: int, steps: int, cfg: int, architecture: dict) -
     rows = cfg * count
     main = (
         _dense(rows, 64, c)
-        + layers * (4 * _dense(rows, c, c) + 3 * _dense(rows, c, 12288) + _attention(cfg, 32, 128, count, count + tokens))
+        + layers
+        * (4 * _dense(rows, c, c) + 3 * _dense(rows, c, 12288) + _attention(cfg, 32, 128, count, count + tokens))
         + _dense(rows, c, 64)
     )
     text = cfg * tokens
@@ -271,7 +281,8 @@ def _qwen21(count: int, tokens: int, steps: int, cfg: int, architecture: dict) -
         2 * _dense(text, c, c)
         + _dense(cfg * (steps + 1), 256, c)
         + 6 * _dense(cfg * (steps + 1), c, c)
-        + (layers - 1) * (4 * _dense(text, c, c) + 3 * _dense(text, c, 12288) + _attention(cfg, 32, 128, tokens, tokens))
+        + (layers - 1)
+        * (4 * _dense(text, c, c) + 3 * _dense(text, c, 12288) + _attention(cfg, 32, 128, tokens, tokens))
         + 2 * _dense(text, c, c)
     )
     return main, fixed
@@ -418,9 +429,9 @@ def _unet_legacy(height: int, width: int, tokens: int, architecture: dict) -> tu
     out = previous
     for index in range(len(channels) - 1, -1, -1):
         channel = channels[index]
-        h = height // (2 ** index)
-        w = width // (2 ** index)
-        ds = 2 ** index
+        h = height // (2**index)
+        w = width // (2**index)
+        ds = 2**index
         for step in range(repeats + 1):
             skip, _, _ = skips.pop()
             main += layer(h, w, out + skip, channel, ds)
@@ -459,8 +470,10 @@ def _unet_xl(height: int, width: int, tokens: int, architecture: dict) -> tuple[
         return res + transformer, text_kv
 
     main = (
-        _dense(1, channels[0], emb) + _dense(1, emb, emb)
-        + _dense(1, architecture["label_input_channels"], emb) + _dense(1, emb, emb)
+        _dense(1, channels[0], emb)
+        + _dense(1, emb, emb)
+        + _dense(1, architecture["label_input_channels"], emb)
+        + _dense(1, emb, emb)
         + _convolution(height, width, channels[0], 3, 4)
     )
     skips = [(channels[0], height, width)]
@@ -489,9 +502,9 @@ def _unet_xl(height: int, width: int, tokens: int, architecture: dict) -> tuple[
     out = previous
     for index in range(len(channels) - 1, -1, -1):
         channel = channels[index]
-        h = height // (2 ** index)
-        w = width // (2 ** index)
-        depths = output_depths.get(2 ** index, [0, 0, 0])
+        h = height // (2**index)
+        w = width // (2**index)
+        depths = output_depths.get(2**index, [0, 0, 0])
         for step, depth in enumerate(depths):
             skip, _, _ = skips.pop()
             block_main, block_fixed = layer(h, w, out + skip, channel, depth)
@@ -518,28 +531,36 @@ def _hidream_i1(image: int, tokens: int, architecture: dict) -> tuple[int, int]:
         return 2 * _dense(rows, c, intermediate) + _dense(rows, intermediate, c)
 
     joint = (
-        3 * _dense(text_kv, c, c) + _dense(text_query, c, c)
+        3 * _dense(text_kv, c, c)
+        + _dense(text_query, c, c)
         + 4 * _dense(image, c, c)
         + _attention(1, 20, 128, image + text_query, image + text_kv)
-        + shared(text_query, 6912) + shared(image, 3584) + moe(image)
+        + shared(text_query, 6912)
+        + shared(image, 3584)
+        + moe(image)
     )
 
     def single_block(last: bool) -> int:
         length = image + text_kv
         projected = image if last else image + text_query
         return (
-            3 * _dense(length, c, c) + _dense(projected, c, c)
+            3 * _dense(length, c, c)
+            + _dense(projected, c, c)
             + _attention(1, 20, 128, projected, length)
-            + shared(projected, 3584) + moe(projected)
+            + shared(projected, 3584)
+            + moe(projected)
         )
 
     main = _dense(image, 64, c)
     main += double * joint + (single - 1) * single_block(False) + single_block(True)
     main += _dense(image, c, 64)
     fixed = (
-        _dense(1, 256, c) + _dense(1, c, c)
-        + _dense(1, 2048, c) + _dense(1, c, c)
-        + (double + single) * _dense(tokens, 4096, c) + _dense(tokens, 4096, c)
+        _dense(1, 256, c)
+        + _dense(1, c, c)
+        + _dense(1, 2048, c)
+        + _dense(1, c, c)
+        + (double + single) * _dense(tokens, 4096, c)
+        + _dense(tokens, 4096, c)
         + (double * 12 + single * 6 + 2) * _dense(1, c, c)
     )
     return main, fixed
@@ -560,10 +581,7 @@ def _wurstchen_res(h: int, w: int, channels: int, skip: bool = False) -> int:
 
 def _wurstchen_attn(h: int, w: int, channels: int, heads: int, text_length: int) -> int:
     hw = h * w
-    return (
-        4 * _dense(hw, channels, channels)
-        + _attention(1, heads, channels // heads, hw, hw + text_length)
-    )
+    return 4 * _dense(hw, channels, channels) + _attention(1, heads, channels // heads, hw, hw + text_length)
 
 
 def _wurstchen_stage_c(h: int, w: int, tokens: int) -> tuple[int, int]:
@@ -638,13 +656,7 @@ def _mmdit(image: int, tokens: int, architecture: dict, dual_layers: frozenset[i
     c, layers = architecture["channels"], architecture["layers"]
     total_len = tokens + image
     main = image * c * 2 * 2 * 16  # Patchify convolution, 16 input channels.
-    fixed = (
-        _dense(1, 256, c)
-        + 2 * _dense(1, c, c)
-        + _dense(1, 2048, c)
-        + _dense(tokens, 4096, c)
-        + 2 * _dense(1, c, c)
-    )
+    fixed = _dense(1, 256, c) + 2 * _dense(1, c, c) + _dense(1, 2048, c) + _dense(tokens, 4096, c) + 2 * _dense(1, c, c)
     for index in range(layers):
         dual = index in dual_layers
         context_pre_only = index == layers - 1
@@ -675,8 +687,10 @@ def _pixart(image: int, tokens: int, architecture: dict) -> tuple[int, int]:
         main += _dense(image, c, 4 * c) + _dense(image, 4 * c, c)
     main += _dense(image, c, 32)
     fixed = (
-        _dense(1, 256, c) + 7 * _dense(1, c, c)
-        + _dense(tokens, 4096, c) + _dense(tokens, c, c)
+        _dense(1, 256, c)
+        + 7 * _dense(1, c, c)
+        + _dense(tokens, 4096, c)
+        + _dense(tokens, c, c)
         + layers * 2 * _dense(tokens, c, c)
     )
     return main, fixed
@@ -701,8 +715,7 @@ def _auraflow(image: int, tokens: int, architecture: dict) -> tuple[int, int]:
         main += 2 * _dense(projected, c, intermediate) + _dense(projected, intermediate, c)
     main += _dense(image, c, 16)
     fixed = (
-        _dense(1, 256, c) + _dense(1, c, c) + _dense(tokens, 4096, c)
-        + (double * 12 + single * 6 + 2) * _dense(1, c, c)
+        _dense(1, 256, c) + _dense(1, c, c) + _dense(tokens, 4096, c) + (double * 12 + single * 6 + 2) * _dense(1, c, c)
     )
     return main, fixed
 
@@ -715,7 +728,8 @@ def _ernie(image: int, tokens: int, architecture: dict, *, include_fixed: bool =
     main = image * c * 128 + 10 * _dense(1, c, c)
     main += layers * (
         4 * _dense(seq, c, c)
-        + 2 * _dense(seq, c, intermediate) + _dense(seq, intermediate, c)
+        + 2 * _dense(seq, c, intermediate)
+        + _dense(seq, intermediate, c)
         + _attention(1, c // 128, 128, seq, seq)
     )
     main += _dense(image, c, 128)
@@ -730,8 +744,10 @@ def _flux3(image: int, tokens: int, architecture: dict) -> tuple[int, int]:
 
     def block(length: int, projected: int) -> int:
         return (
-            3 * _dense(length, c, c) + _dense(projected, c, c)
-            + 2 * _dense(projected, c, 3 * c) + _dense(projected, 3 * c, c)
+            3 * _dense(length, c, c)
+            + _dense(projected, c, c)
+            + 2 * _dense(projected, c, 3 * c)
+            + _dense(projected, 3 * c, c)
             + _attention(1, c // 128, 128, length, length)
         )
 
@@ -747,8 +763,10 @@ def _flux3(image: int, tokens: int, architecture: dict) -> tuple[int, int]:
 
 def _moss_block(length: int, projected: int, c: int, intermediate: int) -> int:
     return (
-        3 * _dense(length, c, c) + _dense(projected, c, c)
-        + 2 * _dense(projected, c, intermediate) + _dense(projected, intermediate, c)
+        3 * _dense(length, c, c)
+        + _dense(projected, c, c)
+        + 2 * _dense(projected, c, intermediate)
+        + _dense(projected, intermediate, c)
         + _attention(1, c // 128, 128, length, length)
     )
 
@@ -775,9 +793,11 @@ def _hidream_o1(image: int, tokens: int, architecture: dict) -> tuple[int, int]:
 
     def block(queries: int, keys: int) -> int:
         return (
-            2 * _dense(queries, c, c) + 2 * _dense(queries, c, 1024)
+            2 * _dense(queries, c, c)
+            + 2 * _dense(queries, c, 1024)
             + _attention(1, 32, 128, queries, keys)
-            + 2 * _dense(queries, c, intermediate) + _dense(queries, intermediate, c)
+            + 2 * _dense(queries, c, intermediate)
+            + _dense(queries, intermediate, c)
         )
 
     main = _dense(image, 3072, 1024) + _dense(image, 1024, c)
@@ -862,7 +882,9 @@ def estimate_compute_units(
         raw_dual = mmdit.get("dual_attention_layers", []) if isinstance(mmdit, dict) else []
         if raw_dual is None:
             raw_dual = []
-        if not isinstance(raw_dual, list) or any(type(i) is not int or i < 0 or i >= architecture["layers"] for i in raw_dual):
+        if not isinstance(raw_dual, list) or any(
+            type(i) is not int or i < 0 or i >= architecture["layers"] for i in raw_dual
+        ):
             return ComputeUnitEstimate(None, "Invalid MMDiT dual-attention metadata.")
         main, fixed = _mmdit(image, tokens, architecture, frozenset(raw_dual))
         instruction_units = (main * steps + fixed) * cfg

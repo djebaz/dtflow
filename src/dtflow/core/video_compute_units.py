@@ -22,9 +22,7 @@ from dtflow.core.compute_units import (
 )
 from dtflow.core.model_profiles import exact_model_spec
 
-VIDEO_STRATEGIES = frozenset(
-    {"video_hunyuan", "video_wan", "video_ltx2", "video_minimax_h3", "video_svd"}
-)
+VIDEO_STRATEGIES = frozenset({"video_hunyuan", "video_wan", "video_ltx2", "video_minimax_h3", "video_svd"})
 
 
 def _video_size(width_px: int, height_px: int, scale: int) -> tuple[int, int]:
@@ -100,8 +98,10 @@ def _svd(time: int, height: int, width: int, architecture: dict) -> tuple[int, i
         return main + transformer, fixed
 
     main = (
-        _dense(time, schedule[0], emb) + _dense(time, emb, emb)
-        + _dense(time, 2816, emb) + _dense(time, emb, emb)
+        _dense(time, schedule[0], emb)
+        + _dense(time, emb, emb)
+        + _dense(time, 2816, emb)
+        + _dense(time, emb, emb)
         + conv(height, width, schedule[0], 3, 4)
     )
     fixed = 0
@@ -132,9 +132,9 @@ def _svd(time: int, height: int, width: int, architecture: dict) -> tuple[int, i
     out = previous
     for index in range(len(schedule) - 1, -1, -1):
         channels = schedule[index]
-        h = height // (2 ** index)
-        w = width // (2 ** index)
-        for layer_index, depth in enumerate(output_depths.get(2 ** index, [0, 0, 0])):
+        h = height // (2**index)
+        w = width // (2**index)
+        for layer_index, depth in enumerate(output_depths.get(2**index, [0, 0, 0])):
             skip_channels_count = skip_channels.pop()
             additional, static = layer(h, w, out + skip_channels_count, channels, depth)
             main += additional
@@ -203,8 +203,12 @@ def _hunyuan(time: int, height: int, width: int, tokens: int, cfg: int, architec
     main = image * c * 4 * 16
 
     joint = (
-        4 * _dense(tokens, c, c) + _dense(tokens, c, c * 4) + _dense(tokens, c * 4, c)
-        + 4 * _dense(image, c, c) + _dense(image, c, c * 4) + _dense(image, c * 4, c)
+        4 * _dense(tokens, c, c)
+        + _dense(tokens, c, c * 4)
+        + _dense(tokens, c * 4, c)
+        + 4 * _dense(image, c, c)
+        + _dense(image, c, c * 4)
+        + _dense(image, c * 4, c)
         + _attention(1, heads, 128, total, total)
     )
     main += double * joint
@@ -302,9 +306,7 @@ def _ltx2(time: int, height: int, width: int, tokens: int, architecture: dict) -
             fixed += _ltx_ada(1, c, 2)
         fixed += _ltx_ada(1, c, 4) + _ltx_ada(1, c, 1)
     if kv:
-        fixed += layers * 2 * (
-            _dense(padded_tokens, cv, cv) + _dense(padded_tokens, ca, ca)
-        )
+        fixed += layers * 2 * (_dense(padded_tokens, cv, cv) + _dense(padded_tokens, ca, ca))
     return main, fixed
 
 
@@ -326,7 +328,8 @@ def _minimax_h3(
             3 * _dense(length, c, attention_width)
             + _attention(1, 56, 128, length, length)
             + _dense(length, attention_width, c)
-            + 2 * _dense(length, c, intermediate) + _dense(length, intermediate, c)
+            + 2 * _dense(length, c, intermediate)
+            + _dense(length, intermediate, c)
         )
 
     main = _dense(video, 96, c) + _dense(audio, 32, c)
