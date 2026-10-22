@@ -22,6 +22,15 @@
 4. **No hover overlay** (owner decision, replaces the earlier tooltip). The CU section in Checkpoint details shows only the CU value and supported models. Formula, derivation and limitations remain in developer documentation, not the overlay. Never present the result as remaining credits, authorization, exact billing, or a guarantee of request acceptance.
 5. Keep the estimate out of the wire request, durable state, billing paths, queue scheduling, preflight and cloud authentication. Preserve the existing Generate behavior.
 
+## Approved extension: architecture registry and LoRA fallback (2026-10-22)
+
+- Keep PR #153 as the implementation branch. Preserve the accepted compact checkpoint meter, inspector, unchanged request/wire behavior and separate community catalogues.
+- Place **versioned, pinned Draw Things architecture parameters** in a new bundled JSON registry. Entries identify supported upstream model versions, named instruction-count strategy, structural constants, latent/text defaults and policy multiplier; Python owns reusable dense/attention/convolution primitives and architecture-specific composition. An entry never substitutes for a missing model-specific formula. The registry is not a new model catalogue and is never transmitted to DT+.
+- Exact-file community descriptions select a model version; a trusted existing family classification may select a **base architecture estimate** without copying a sibling's technical metadata. Quantization must not be used as a cost multiplier. Missing or invalid registry entries must fail safely, not fabricate zero or silently borrow another architecture.
+- **Selected LoRAs must not suppress an otherwise available estimate.** Apply a known, source-confirmed modifier only where metadata and relevant CFG semantics are available; unknown/unclassified LoRAs use the base checkpoint estimate. Mark its provenance as a base estimate in the existing accessible description, not as confirmed billing. Do not assume unknown adapters have zero runtime overhead.
+- Expand coverage from the 10-version initial T2I slice toward the remaining upstream **image** families, preserving source arithmetic, nontrivial fixed costs, CFG, special scaling, bias 2.5 where required and Würstchen stage-two counts. Port one named strategy at a time; never mark a version supported on the strength of JSON constants alone. Video families require request-specific frame/audio/reference context and an actual DTFlow generation path, so keep them documented but unavailable in the current single-image Generate meter.
+- Audit source and changed diff only. Per owner instruction, **do not add or run tests**, including render fixtures or manual CI. Do not submit provider requests or perform billable operations. Document missing mathematical ports honestly; parity with upstream or server CU is not established merely by static inspection.
+
 ## Review and validation boundary
 
 - As explicitly requested by the owner: **add no tests and run no tests** (including UI renders, the current CI checks and smoke tests).
