@@ -245,12 +245,10 @@ def estimate_compute_units(
     """Estimate one T2I output, using a classified base family when exact metadata is absent."""
     if operation != "txt2img":
         return ComputeUnitEstimate(None, "Image edits are not supported by this estimate.")
-    if has_loras:
-        return ComputeUnitEstimate(None, "Selected LoRAs may change sampler modifiers.")
     if not model_id:
         return ComputeUnitEstimate(None, "Select a checkpoint first.")
     spec = exact_model_spec(model_id)
-    base_estimate = spec is None
+    base_estimate = spec is None or has_loras
     if spec is None:
         # Explicit catalogue classification only; never infer architecture from the filename
         # or substitute another checkpoint's technical description. Broad FLUX families
@@ -312,7 +310,7 @@ def estimate_compute_units(
     if units <= 0:
         return ComputeUnitEstimate(None, "The instruction estimate could not be resolved.")
     if base_estimate:
-        reason = "Base architecture estimate; exact metadata or modifier costs are not included."
+        reason = "Base architecture estimate; unknown LoRA modifiers or missing metadata are not included."
     else:
         reason = "Local open-source estimate, not a DT+ server quote or billing proof."
     return ComputeUnitEstimate(units, reason)
