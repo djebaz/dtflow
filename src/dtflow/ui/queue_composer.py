@@ -13,6 +13,7 @@ from PySide6.QtGui import QTextDocument, QTextOption
 from PySide6.QtWidgets import (
     QComboBox,
     QDoubleSpinBox,
+    QLabel,
     QLayout,
     QPushButton,
     QSizePolicy,
@@ -42,6 +43,9 @@ SIZE_PRESETS = (
 def _noun(title: str) -> str:
     """``Model`` -> ``model`` for running text, keeping acronyms such as ``LoRA set`` as written."""
     return title[:1].lower() + title[1:] if title[1:2].islower() else title
+
+
+GROUP_NAME_WIDTH = 320  # a grouped chip row's name is elided to this width
 
 
 class FlowLayout(QLayout):
@@ -100,6 +104,8 @@ class FlowLayout(QLayout):
         for item in self._items:
             if item.widget() is not None and item.widget().isHidden():
                 continue
+            if item.widget() is not None and item.widget().property("lineBreak") and x > area.x():
+                x, y, line = area.x(), y + line + self.spacing(), 0  # a group starts on its own line
             hint = item.sizeHint()
             if x + hint.width() > area.right() + 1 and line > 0:
                 x, y, line = area.x(), y + line + self.spacing(), 0
@@ -125,6 +131,7 @@ class ValueChips(QWidget):
         self._weights: Callable[[], dict[str, float | None]] | None = None
         self._convert: Callable[[object], str] | None = None
         self._edit_chip: Callable[[str], Sequence[LoRASelection]] | None = None
+        self._group: Callable[[str], tuple[str, str]] | None = None
         self._replace_all = False
         self._layout = FlowLayout(self)
         self._chips: list[QPushButton] = []
@@ -167,6 +174,7 @@ class ValueChips(QWidget):
         multi_weight: bool = False,
         edit_chip: Callable[[str], Sequence[LoRASelection]] | None = None,
         replace_all: bool = False,
+        group: Callable[[str], tuple[str, str]] | None = None,
     ) -> None:
         """``search`` opens the shared searchable editor; ``choice`` is an editable list; ``int``/``float`` a box.
 
@@ -174,10 +182,11 @@ class ValueChips(QWidget):
         checked ``(identifier, weight)`` pairs go to ``convert``, which returns the chip value (or several).
         With ``edit_chip`` each chip opens that editor on its parsed LoRAs and Apply replaces the chip (a separate **×**
         removes it); with ``replace_all`` **Edit…** opens the editor on every chip and Apply replaces them all.
+        With ``group`` each value splits into (group name, chip text): one line per group, its name then small chips.
         """
         self._kind, self._title, self._options, self._custom = kind, title, options, custom
         self._weights, self._convert, self._initial = weights, convert, initial
-        self._edit_chip, self._replace_all = edit_chip, replace_all
+        self._edit_chip, self._replace_all, self._group = edit_chip, replace_all, group
         self._editor_title, self._editor_hint, self._multi_weight = editor_title, editor_hint, multi_weight
         if self._input is not None:
             self._layout.removeWidget(self._input)
@@ -265,25 +274,46 @@ class ValueChips(QWidget):
             chip.hide()
             chip.deleteLater()
         self._chips = []
-        for index, value in enumerate(values):
-            if self._edit_chip is not None:
-                edit = QPushButton(value, self)
-                edit.setProperty("role", "valueChip")
-                edit.setToolTip(f"Edit {value}")
-                edit.setAccessibleName(f"Edit {_noun(self._title)} {value}")
-                edit.clicked.connect(lambda _=False, i=index: self._edit_clicked(i))
-                self._layout.insertWidget(len(self._chips), edit)
-                self._chips.append(edit)
-            label = "×" if self._edit_chip is not None else f"{value}  ×"
-            chip = QPushButton(label, self)
-            chip.setProperty("role", "valueChip")
-            chip.setToolTip(f"Remove {value}")
-            chip.setAccessibleName(f"Remove {_noun(self._title)} {value}")
-            chip.clicked.connect(lambda _=False, i=index: self.remove_value(i))
-            self._layout.insertWidget(len(self._chips), chip)
-            self._chips.append(chip)
+        order = list(enumerate(values))
+        if self._group is not None:
+            groups: dict[str, list[tuple[int, str]]] = {}
+            for index, value in order:
+                name, short = self._group(value)
+                groups.setdefault(name, []).append((index, short))
+            for name, members in groups.items():
+                label = QLabel(self)
+                label.setObjectName("valueChipsGroupName")
+                label.setProperty("lineBreak", True)
+                label.setMaximumWidth(GROUP_NAME_WIDTH)
+                label.setText(label.fontMetrics().elidedText(name, Qt.TextElideMode.ElideMiddle, GROUP_NAME_WIDTH))
+                label.setToolTip(name)
+                self._layout.insertWidget(len(self._chips), label)
+                self._chips.append(label)
+                for index, short in members:
+                    self._add_chip(index, short, values[index])
+        else:
+            for index, value in order:
+                self._add_chip(index, value, value)
         self.updateGeometry()
         self.textChanged.emit()
+
+    def _add_chip(self, index: int, text: str, value: str) -> None:
+        """One chip for ``values[index]``: its text and ×, or (with ``edit_chip``) an edit button plus a separate ×."""
+        if self._edit_chip is not None:
+            edit = QPushButton(text, self)
+            edit.setProperty("role", "valueChip")
+            edit.setToolTip(f"Edit {value}")
+            edit.setAccessibleName(f"Edit {_noun(self._title)} {value}")
+            edit.clicked.connect(lambda _=False, i=index: self._edit_clicked(i))
+            self._layout.insertWidget(len(self._chips), edit)
+            self._chips.append(edit)
+        chip = QPushButton("×" if self._edit_chip is not None else f"{text}  ×", self)
+        chip.setProperty("role", "valueChip")
+        chip.setToolTip(f"Remove {value}")
+        chip.setAccessibleName(f"Remove {_noun(self._title)} {value}")
+        chip.clicked.connect(lambda _=False, i=index: self.remove_value(i))
+        self._layout.insertWidget(len(self._chips), chip)
+        self._chips.append(chip)
 
     def _add_clicked(self) -> None:
         if isinstance(self._input, QComboBox):

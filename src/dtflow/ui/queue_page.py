@@ -114,6 +114,7 @@ RANDOM_INPUTS = (
     *(f"planDraw{suffix}Spin" for suffix in DRAW_SPINS.values()),
 )
 PLAN_INPUTS = (*PLAN_WIDGETS, "planModeCombo", "planIncrementCheck", "queueCountSpinBox", *RANDOM_INPUTS)
+PLAN_TABLE_MAX_ROWS = 12  # the composer preview table shows this many rows in full before it scrolls
 PREVIEW_MS = 250  # the live preview follows edits after this pause, so typing a prompt list stays smooth
 REPEAT = "Repeat"
 FILTER_BUTTONS = {key: f"{key}FilterButton" for key, *_ in FILTERS}
@@ -1100,6 +1101,7 @@ class QueuePage:
             editor_title="Edit LoRA weights",
             multi_weight=True,
             replace_all=True,
+            group=self._lora_weight_group,
             editor_hint=(
                 "Check a LoRA and press + to collect each weight to try for it (click a weight to drop it). "
                 "A checked LoRA without collected weights uses its slider value. Enter or Apply replaces the weights."
@@ -1137,6 +1139,12 @@ class QueuePage:
         have = {item.identifier for item in request.loras}
         extra = tuple(LoRASelection(name, 1.0) for name in dict.fromkeys(identifiers) if name not in have)
         return replace(request, loras=(*request.loras, *extra)) if extra else request
+
+    @staticmethod
+    def _lora_weight_group(chip: str) -> tuple[str, str]:
+        """A weight chip ``IDENTIFIER: weight`` as (LoRA, weight), so a LoRA's weights share one line."""
+        identifier, separator, weight = chip.rpartition(":")
+        return (identifier.strip(), weight.strip()) if separator else (chip, "")
 
     def _lora_weight_selection(self) -> tuple[LoRASelection, ...]:
         """Every weight chip as a selection, for the editor to start from (a LoRA may repeat)."""
@@ -1756,7 +1764,18 @@ class QueuePage:
         self.plan_model.setHorizontalHeaderLabels(list(table.columns))
         for row in table.rows:
             self.plan_model.appendRow([QStandardItem(cell) for cell in row])
-        self.page.planTableView.resizeColumnsToContents()
+        view = self.page.planTableView
+        view.resizeColumnsToContents()
+        # Show the rows in full (up to a cap, then the table scrolls) instead of a short window onto them.
+        shown = min(len(table.rows), PLAN_TABLE_MAX_ROWS)
+        height = (
+            view.horizontalHeader().sizeHint().height()
+            + shown * view.verticalHeader().defaultSectionSize()
+            + view.horizontalScrollBar().sizeHint().height()
+            + 2 * view.frameWidth()
+        )
+        view.setMinimumHeight(height)
+        view.setMaximumHeight(height)
         self._sync_preview_table_visibility()
 
     def _plan_for(self, request) -> Plan | None:
