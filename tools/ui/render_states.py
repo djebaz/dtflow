@@ -3594,6 +3594,9 @@ def render_logs_states(shell, capture):
 
     shell._toggle_logs()
     shell.logs.stop()  # no background file reader/polling in offline screenshots
+    assert shell.shell.brandFrame.x() == 0
+    assert shell.logs_form.logsNavigationSlot.y() > shell.logs_form.logsBrandSlot.y()
+    assert shell.shell.quickQueueButton.property("role") != "logsAction"
     # Earlier states leave timed outcome rows; clear them so they do not cover the Logs footer.
     for key in tuple(shell.progress_strip.rows):
         shell.progress_strip.finish(key)
@@ -3604,6 +3607,7 @@ def render_logs_states(shell, capture):
     shell.logs._set_empty(EMPTY_SESSION)
     panel.logsCounter.setText("0 records · pending")
     capture("logs-01-empty")
+    capture("logs-15-shared-header-aligned")
     shell.logs._set_empty(NO_MATCHES)
     panel.logsCounter.setText("0 of 5 matching records · complete")
     capture("logs-08-no-matches")

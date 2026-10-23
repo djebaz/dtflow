@@ -1996,9 +1996,9 @@ QPushButton#galleryLoadingRetryButton:focus {
 /* Logs workspace: one shared stylesheet; no per-widget Qt stylesheets. */
 #LogsWorkspace { background: ${color.background}; color: ${color.text}; }
 /* Logs actions are standard bordered buttons, matching the workspace mockup and QPushButton tokens. */
-#LogsWorkspace QToolButton { font-weight: ${type.weightLabel}; background-color: ${color.button}; border: 1px solid ${color.buttonBorder}; border-radius: ${size.radius}; color: ${color.buttonText}; min-height: 22px; padding: ${size.radius} 10px; }
-#LogsWorkspace QToolButton:hover { background-color: ${color.buttonHover}; border-color: ${color.buttonBorderHover}; }
-#LogsWorkspace QToolButton:pressed { background-color: ${color.buttonPressed}; }
+#LogsWorkspace QToolButton[role="logsAction"] { font-weight: ${type.weightLabel}; background-color: ${color.button}; border: 1px solid ${color.buttonBorder}; border-radius: ${size.radius}; color: ${color.buttonText}; min-height: 22px; padding: ${size.radius} 10px; }
+#LogsWorkspace QToolButton[role="logsAction"]:hover { background-color: ${color.buttonHover}; border-color: ${color.buttonBorderHover}; }
+#LogsWorkspace QToolButton[role="logsAction"]:pressed { background-color: ${color.buttonPressed}; }
 #logsNotice { background: ${color.logNoticeSurface}; color: ${color.warning}; border: 1px solid ${color.statusWarningBorder}; border-radius: ${size.radius}; padding: 6px; }
 #logsTable { background: ${color.surface}; alternate-background-color: ${color.itemSurface}; border: 1px solid ${color.sectionBorder}; gridline-color: ${color.sectionBorder}; selection-background-color: ${color.selection}; selection-color: ${color.selectionText}; }
 #logsTable::item:hover { background: ${color.logRowHover}; }

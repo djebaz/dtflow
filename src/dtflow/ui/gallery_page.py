@@ -950,7 +950,6 @@ class GalleryPage(QObject):
         self._selection_shortcuts: list[QShortcut] = []
         for key, callback in (
             ("Ctrl+A", self._select_all_filtered),
-            ("Escape", self._unselect_all),
             ("Delete", self._request_recycle),
         ):
             shortcut = QShortcut(QKeySequence(key), self.page)
