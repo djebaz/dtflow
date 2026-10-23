@@ -21,7 +21,7 @@ Windows Credential Manager stores a saved cloud API key outside ordinary configu
 Action confirmations and notices stay inside the main window. Confirm changes the original
 button to red for Delete/Clear and mint/teal (matching Auto-refresh ON) otherwise; Cancel stays in the shared bottom overlay. Searchable checkpoint and one-step
 LoRA/weight editors avoid extra windows, while file/folder pickers remain native.
-Confirmations, progress and results share one thin bottom overlay without resizing content. Success and amber warning/partial/stopped overlays fade after six seconds with state-colored countdowns and draining bars, paused by overlay hover or focus; red errors remain until dismissed and informational inspections close with × or a click outside. Essential information stays visible; Export and cloud LoRA Prepare (after file selection) start without a second confirmation. The overlay lifetime only hides its presentation; it never changes saved operation evidence or remote execution state.
+Running work and routine results use a compact status-bar activity bar; confirmations, editors, errors and other notices keep the shared bottom overlay without resizing content. Success and amber warning/partial/stopped overlays fade after six seconds with state-colored countdowns and draining bars, paused by overlay hover or focus; red errors remain until dismissed and informational inspections close with × or a click outside. Essential information stays visible; Export and cloud LoRA Prepare (after file selection) start without a second confirmation. The overlay lifetime only hides its presentation; it never changes saved operation evidence or remote execution state.
 
 ### Image generation and inspection
 
@@ -36,7 +36,7 @@ checkpoint, the Add chooser is narrowed to available LoRAs with known family/mod
 compatibility feedback still distinguishes confirmed mismatches from unknown metadata rather
 than guessing.
 
-Write prompts in a compact two-line field with Generate image in its header; track real steps and Stop waiting locally through the shared overlay while the preview has no duplicate controls. Follow previews in an image-first workspace, then inspect saved results with
+Write prompts in a compact two-line field with Generate image in its header; track real steps and Stop waiting locally through the shared activity bar (or its overlay fallback) while the preview has no duplicate controls. Follow previews in an image-first workspace, then inspect saved results with
 fit, zoom and pan. Output details link images to their generation metadata and provide
 folder/path actions. Save and load generation configurations to reuse a setup.
 
@@ -75,7 +75,7 @@ offline. Fixture images and configurable simulation outcomes require no model in
 The Images tab browses committed saved outputs in Grid, List and Detail views with a
 shared compact header, 25–250% thumbnail scaling (100% uses a 320 px display size), List thumbnails whose width and height follow zoom, and a full-height Detail filmstrip. Grid, List and the filmstrip share one 600 px maximum thumbnail decode per image; the main Detail viewer reads the original saved output at native resolution.
 Positive-prompt search, model/LoRA/date/dimensions/aspect filters, deterministic sorting
-and refresh use the same bounded read-only gallery services as the CLI.
+and refresh use the same bounded read-only gallery services as the CLI. The paired Live and Follow controls enable automatic refresh and optional newest-image following; browsing older images pauses following without disabling refresh.
 When live gallery reads are unavailable across Windows/WSL1, Images can browse the last published read-only snapshot with its timestamp. Publication happens after a generation/queue session and on clean close only when state changed or no snapshot exists; snapshot browsing cannot authorize export, editing or removal. See the [snapshot design and limitations](devdocs/architecture/gallery-snapshot.md).
 Windows and WSL 1 can share one Windows-hosted state: each side shows, copies, opens and exports the other's managed outputs through verified read access without rewriting saved references, and Delete removes eligible managed originals across that boundary through a guarded Windows helper. WSL 2 Windows-drive mounts are not supported yet. See the [desktop guide](devdocs/guides/desktop.md#images) for prerequisites and limitations.
 Detail exposes recorded provenance and safe raw metadata without inventing unavailable values. Saved settings can populate Generate without dispatch, or be explicitly regenerated as a fresh lineage-linked attempt. Draw Things `custom_configs.json` presets are durable and globally imported/exported from Connection, while Generate can save/load named presets. Connection also measures and clears only disposable cache categories; inventory snapshots and source image computations use disk cache, while gallery thumbnails use memory and a disposable disk cache. Cleanup is confirmed and coordinated with active cache operations; saved originals and exported copies are never cache-cleanup targets.

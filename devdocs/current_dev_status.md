@@ -1,9 +1,10 @@
 # Current development status
 
-**Snapshot: 2026-10-22.** Coding orientation against the [initial implementation plan](plans/initial.md), not a release declaration. Repository source and linked evidence are authoritative; implemented code, owner-reported compatibility and final packaged acceptance are distinct.
+**Snapshot: 2026-10-23.** Coding orientation against the [initial implementation plan](plans/initial.md), not a release declaration. Repository source and linked evidence are authoritative; implemented code, owner-reported compatibility and final packaged acceptance are distinct.
 
 ## Release and branch state
 
+- **PR #160 activity-bar parity follow-up:** selection-token fills, upcoming-queue chip, compact counts, 240 px fallback and 450 ms result fade are implemented in source. Offline preview definitions are extended but not rendered; native Windows/DPI acceptance remains pending. See [design refinements](../DESIGN.md#inline-actions-and-shared-progress).
 - **BYOM checksum-contract correction (PR #158, pending merge):** separates local content identity from server-returned upload values and corrects absent local auth metadata, API credential-shaped-value redaction and a wrapped-label assertion. Owner rerun after `8edde78`: **640 passed, 3 skipped**, Ruff format **404 unchanged**, Ruff check **passed**. [Current disposition and evidence](plans/2026-10-22-byom-checksum-contract.md); owner-reported local validation, not agent execution or CI. Fresh differing-value upload and packaged/native acceptance remain separate.
 - **Logs filter readability follow-up:** Component/Event popup lists fit their entries independently of the compact toolbar controls; leading `dtflow.` is display-only hidden with canonical-name tooltips. Filtering and stored records stay unchanged. [Plan](plans/2026-10-22-log-filter-popup-width.md); offline preview definitions added, not rendered or validated.
 - **BYOM tolerance follow-up:** source consumes usable response branches independently, logs safe structure before interpretation and distinguishes HTTP 200 interpretation failures from API rejection. Unknown lookup entries remain unknown; uploads/receipts still need verified evidence. [Plan](plans/2026-10-22-byom-response-tolerance.md); no tests, validation or live calls run.

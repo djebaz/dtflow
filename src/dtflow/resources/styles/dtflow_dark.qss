@@ -469,8 +469,23 @@ QStatusBar {
   background-color: ${color.background};
   color: ${color.menuText};
 }
+/* The status bar carries the quiet version text and the activity bar, both at the small size. */
+QStatusBar {
+  color: ${color.secondary};
+  font-size: 9pt;
+}
 QStatusBar::item {
   border: 0;
+}
+QPushButton#activityBarButton {
+  padding: 0 10px;
+  min-height: 0;
+  border-radius: 3px;
+  font-size: 9pt;
+  font-weight: 500;
+}
+QPushButton#activityBarButton[result="true"] {
+  padding: 0;
 }
 QToolButton#aboutButton {
   border: 0;
@@ -1004,32 +1019,64 @@ QWidget#GalleryDetailPage QComboBox:disabled {
   background: ${color.surface};
   border-color: ${color.disabledBorder};
 }
-/* Auto-refresh reuses Connection colors, without changing its labelled geometry. */
-QWidget#GalleryDetailPage QPushButton#galleryAutoRefreshButton {
-  background: ${color.input};
+/* Live control: two attached buttons. State is the liveState property set by GalleryPage._sync_live_text. */
+QWidget#GalleryDetailPage QPushButton#galleryAutoRefreshButton,
+QWidget#GalleryDetailPage QPushButton#galleryFollowButton {
+  background: ${color.surface};
   border: 1px solid ${color.border};
-  border-radius: ${size.panelRadius};
+  border-radius: ${size.radius};
   color: ${color.secondary};
+  padding: 0;
 }
-QWidget#GalleryDetailPage QPushButton#galleryAutoRefreshButton:hover {
-  background: ${color.input};
+QWidget#GalleryDetailPage QPushButton#galleryAutoRefreshButton {
+  border-top-right-radius: 0;
+  border-bottom-right-radius: 0;
+  padding: 0 10px;
+  text-align: left;
+}
+QWidget#GalleryDetailPage QPushButton#galleryFollowButton {
+  border-left-width: 0;
+  border-top-left-radius: 0;
+  border-bottom-left-radius: 0;
+}
+QWidget#GalleryDetailPage QPushButton#galleryAutoRefreshButton[liveState="live"],
+QWidget#GalleryDetailPage QPushButton#galleryAutoRefreshButton[liveState="following"],
+QWidget#GalleryDetailPage QPushButton#galleryAutoRefreshButton[liveState="paused"] {
+  background: ${color.selection};
+  border-color: ${color.selectionBorder};
+  color: ${color.selectionText};
+}
+QWidget#GalleryDetailPage QPushButton#galleryFollowButton[liveState="live"],
+QWidget#GalleryDetailPage QPushButton#galleryFollowButton[liveState="paused"] {
+  background: ${color.selection};
+  border-color: ${color.selectionBorder};
+}
+QWidget#GalleryDetailPage QPushButton#galleryFollowButton[liveState="following"] {
+  background: ${color.selectionHover};
+  border: 1px solid ${color.focus};
+  color: ${color.selectionText};
+}
+QWidget#GalleryDetailPage QPushButton#galleryAutoRefreshButton:hover,
+QWidget#GalleryDetailPage QPushButton#galleryFollowButton:hover {
   border-color: ${color.inputBorderHover};
 }
-QWidget#GalleryDetailPage QPushButton#galleryAutoRefreshButton:checked {
-  background: ${color.connectionSurface};
-  border-color: ${color.connectionAccent};
-  color: ${color.connectionGlyph};
+QWidget#GalleryDetailPage QPushButton#galleryFollowButton[liveState="following"]:hover {
+  border-color: ${color.focus};
 }
-QWidget#GalleryDetailPage QPushButton#galleryAutoRefreshButton:pressed {
-  background: ${color.canvas};
-}
-QWidget#GalleryDetailPage QPushButton#galleryAutoRefreshButton[keyboardFocus="true"] {
+QWidget#GalleryDetailPage QPushButton#galleryAutoRefreshButton[keyboardFocus="true"],
+QWidget#GalleryDetailPage QPushButton#galleryFollowButton[keyboardFocus="true"] {
   border: 1px dashed ${color.focus};
 }
-QWidget#GalleryDetailPage QPushButton#galleryAutoRefreshButton:disabled {
+QWidget#GalleryDetailPage QPushButton#galleryAutoRefreshButton:disabled,
+QWidget#GalleryDetailPage QPushButton#galleryFollowButton:disabled {
   background: ${color.surface};
   border: 1px solid ${color.border};
   color: ${color.disabled};
+}
+QFrame#liveResumeRing {
+  background: transparent;
+  border: 1px solid ${color.focus};
+  border-radius: ${size.radius};
 }
 QPushButton#galleryRefreshButton {
   background: ${color.surface};

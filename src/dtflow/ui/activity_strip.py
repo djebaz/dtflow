@@ -1,13 +1,15 @@
-"""One thin, Qt-owned bottom overlay for consent, editors, progress and results."""
+"""Qt-owned feedback: running jobs and routine endings in the status bar, everything that needs reading as an overlay."""
 
 import math
+from time import monotonic
 from pathlib import Path
 
 from PySide6.QtCore import QEasingCurve, QEvent, QFile, QIODevice, QObject, QPropertyAnimation, QRect, Qt, QTimer, Slot
 from PySide6.QtUiTools import QUiLoader
-from PySide6.QtWidgets import QApplication, QFrame, QGraphicsOpacityEffect
+from PySide6.QtWidgets import QApplication, QFrame, QGraphicsOpacityEffect, QWidget
 from shiboken6 import isValid
 
+from dtflow.ui.activity_bar import ActivityBar, BarModel, clock
 from dtflow.ui.trash_icon import trash_icon_pixmap
 
 
@@ -23,6 +25,11 @@ def _load(name, parent):
         raise OSError(f"{name} could not be loaded")
     return form
 
+
+# Running jobs and routine endings live in the status-bar bar; errors, warnings, partial results,
+# notices and persistent conditions keep the overlay card, which needs room, actions and no expiry.
+_RUN_RESULTS = {"generation-result", "queue-result", "queue-message", "queue-quick"}
+_BAR_STATES = {"progress", "success", "stopped"}
 
 _OPERATION_ICONS = {
     "export": "⇧",
@@ -49,6 +56,14 @@ class ActivityStrip(QObject):
         # Filters and deferred callbacks must disappear with the overlay frame.
         self.setParent(self.form)
         self.rows = {}
+        self.status_bar = window.statusBar()
+        self.bar = ActivityBar(self.status_bar)
+        self.bar.stop_requested.connect(self._bar_stop)
+        self.bar.dismiss_requested.connect(self._bar_dismiss)
+        self._bar_key = None
+        self._last_run = None
+        self.status_bar.installEventFilter(self)
+        self.status_bar.messageChanged.connect(lambda _text: QTimer.singleShot(0, self, self._position))
         self._expiry = {}
         self._positioning = False
         self._retired = False
@@ -60,6 +75,10 @@ class ActivityStrip(QObject):
         self._notice_timer = QTimer(self.form)
         self._notice_timer.setInterval(100)
         self._notice_timer.timeout.connect(self._tick_notices)
+        # Elapsed time and ETA move once a second while a job runs.
+        self._bar_timer = QTimer(self.form)
+        self._bar_timer.setInterval(1000)
+        self._bar_timer.timeout.connect(self._sync_bar)
         window._activity_strip = self
 
     def mount_feedback(self, panel):
@@ -75,7 +94,9 @@ class ActivityStrip(QObject):
 
     def _live(self) -> bool:
         """Qt can invalidate a child wrapper before its parent's destroyed signal."""
-        return not self._retired and isValid(self.host) and isValid(self.form)
+        return not self._retired and all(
+            isValid(widget) for widget in (self.window, self.host, self.form, self.status_bar, self.bar)
+        )
 
     @property
     def retired(self) -> bool:
@@ -92,16 +113,21 @@ class ActivityStrip(QObject):
         self.feedback = None
 
     def eventFilter(self, watched, event):
+        if not self._live():
+            return False
         if (
-            not self._retired
-            and watched.objectName() == "activityStatusDismissButton"
+            watched.objectName() == "activityStatusDismissButton"
             and event.type() == QEvent.Type.KeyPress
             and event.key() == Qt.Key.Key_Escape
         ):
             watched.click()
             return True
-        if not self._retired and event.type() in (QEvent.Type.Resize, QEvent.Type.Show, QEvent.Type.LayoutRequest):
-            self._position()
+        if event.type() in (QEvent.Type.Resize, QEvent.Type.Show, QEvent.Type.LayoutRequest):
+            if watched is self.status_bar:
+                # Child geometry is stale until the status bar has laid itself out.
+                QTimer.singleShot(0, self, self._position)
+            else:
+                self._position()
         return False
 
     def set_editor_dimming(self, enabled: bool) -> None:
@@ -116,6 +142,136 @@ class ActivityStrip(QObject):
         else:
             self.scrim.hide()
 
+    @staticmethod
+    def _in_bar(row) -> bool:
+        return row.property("feedbackState") in _BAR_STATES and not row.property("compactStatus")
+
+    def _bar_row(self):
+        """The row the bar shows: the newest running job, else the newest routine ending."""
+        rows = [(key, row) for key, row in self.rows.items() if isValid(row) and self._in_bar(row)]
+        running = [item for item in rows if item[1].property("feedbackState") == "progress"]
+        chosen = running or rows
+        return chosen[-1] if chosen else (None, None)
+
+    def _sync_bar(self):
+        """Present one eligible row in the status bar; every other row stays in the overlay.
+
+        The chosen row remains the data model but leaves the overlay layout. If the bar has no room
+        (a long temporary message, a narrow window) nothing is chosen and the overlay shows it all.
+        """
+        if not self._live():
+            return
+        rect = self._bar_rect()
+        key, chosen = self._bar_row() if rect is not None else (None, None)
+        layout = self.form.activityRowsLayout
+        for row in self.rows.values():
+            if not isValid(row):
+                continue
+            if row is chosen and not row.property("inBar"):
+                layout.removeWidget(row)
+                row.hide()
+                row.setProperty("inBar", True)
+            elif row is not chosen and row.property("inBar"):
+                row.setProperty("inBar", False)
+                layout.addWidget(row)
+                row.show()
+        if chosen is None:
+            self._bar_key = None
+            self._bar_timer.stop()
+            if isValid(self.bar):
+                self.bar.hide()
+            return
+        self._bar_key = key
+        state = chosen.property("feedbackState")
+        running = state == "progress"
+        now = monotonic()
+        started = chosen.property("startedAt")
+        ended = chosen.property("endedAt") or now
+        # A result whose job was started under another key has no known duration: show none.
+        elapsed = ((now if running else ended) - started) if started is not None else None
+        total = chosen.activityProgress.maximum()
+        done = chosen.activityProgress.value()
+        known = running and total > 0
+        suffix = " total" if str(key).startswith("queue") else ""
+        elapsed_text = "" if elapsed is None else clock(elapsed) if running else clock(elapsed) + suffix
+        eta = ""
+        if known and elapsed is not None and 0 < done < total and elapsed >= 3:
+            eta = f"~{clock(elapsed * (total - done) / done)} left"
+        # A job that reports its own timing (queue) overrides the generic elapsed and linear estimate.
+        reported_elapsed, reported_eta = chosen.property("elapsedText") or "", chosen.property("etaText") or ""
+        if running and (reported_elapsed or reported_eta):
+            elapsed_text = reported_elapsed.removeprefix("Elapsed ")
+            eta = reported_eta.split(" (")[0]
+        stop = chosen.activityStopButton
+        stopping = running and not stop.isHidden() and not stop.isEnabled()
+        detail = chosen.activityDetail.text()
+        stage = detail if not (running and detail in ("Preparing…", "")) else ("Preparing" if not known else "")
+        reported_stage = chosen.property("stageText") or ""
+        if running and reported_stage:
+            stage = reported_stage
+        label = chosen.activityLabel.text()
+        model = BarModel(
+            kind={"progress": "running"}.get(state, state),
+            title=label,
+            count=f"{done}/{total}" if known else "",
+            queued=(chosen.property("queuedCount") or 0) if running else 0,
+            stage=stage,
+            wide=(chosen.property("wideText") or "") if running else "",
+            fraction=(done / total) if known else None,
+            elapsed=elapsed_text,
+            eta=eta,
+            stopping=stopping,
+            lifetime=(chosen.activityLifetimeBar.value() / 6000)
+            if not running and not chosen.activityLifetimeBar.isHidden()
+            else None,
+            tooltip=" · ".join(part for part in (label, detail, reported_eta) if part),
+            stop_label=stop.text(),
+            stop_visible=not stop.isHidden(),
+        )
+        effect = chosen.graphicsEffect()
+        self.bar.present(
+            model,
+            stop_enabled=stop.isEnabled(),
+            opacity=effect.opacity() if isinstance(effect, QGraphicsOpacityEffect) else 1.0,
+        )
+        self.bar.setGeometry(rect)
+        self.bar.show()
+        self.bar.raise_()
+        if running:
+            self._bar_timer.start()
+        else:
+            self._bar_timer.stop()
+
+    def _bar_rect(self):
+        """Space between the version text and the right-hand controls, without displacing either."""
+        if not self._live():
+            return None
+        status = self.status_bar
+        message = status.currentMessage()
+        left = status.fontMetrics().horizontalAdvance(message) + 30 if message else 12
+        right = status.width() - 12
+        for child in status.findChildren(QWidget, options=Qt.FindChildOption.FindDirectChildrenOnly):
+            if child is self.bar or not child.isVisible() or child.width() <= 0:
+                continue
+            if child.x() > status.width() // 3:
+                right = min(right, child.x() - 24)
+        width = right - left
+        if width < 240 or status.height() < 1:
+            return None
+        return QRect(left, max(0, (status.height() - self.bar.height()) // 2), width, self.bar.height())
+
+    @Slot()
+    def _bar_stop(self):
+        row = self.rows.get(self._bar_key)
+        if row is not None and isValid(row):
+            row.activityStopButton.click()
+
+    @Slot()
+    def _bar_dismiss(self):
+        row = self.rows.get(self._bar_key)
+        if row is not None and isValid(row):
+            row.activityDismissButton.click()
+
     @Slot()
     def _position(self):
         if not self._live() or self._positioning:
@@ -125,12 +281,14 @@ class ActivityStrip(QObject):
             if isValid(self.scrim) and self.scrim.isVisible():
                 self.scrim.setGeometry(self.host.rect())
                 self.scrim.raise_()
+            self._sync_bar()
+            overlay_rows = {k: r for k, r in self.rows.items() if isValid(r) and not r.property("inBar")}
             panel = self.feedback
             if panel is not None and not isValid(panel.form):
                 self.feedback = None
                 panel = None
             visible_feedback = panel is not None and not panel.form.isHidden()
-            if not self.rows and not visible_feedback:
+            if not overlay_rows and not visible_feedback:
                 self.form.hide()
                 return
             width = max(1, self.host.width() - 16)
@@ -141,8 +299,8 @@ class ActivityStrip(QObject):
             height = layout.heightForWidth(width) if layout.hasHeightForWidth() else layout.sizeHint().height()
             compact_only = (
                 not visible_feedback
-                and self.rows
-                and all(isValid(row) and row.property("compactStatus") for row in self.rows.values())
+                and overlay_rows
+                and all(row.property("compactStatus") for row in overlay_rows.values())
             )
             height = max(1 if compact_only else 48, height)
             rect = QRect(8, max(0, self.host.height() - height - 8), width, height)
@@ -193,6 +351,7 @@ class ActivityStrip(QObject):
         self.finish(key)
         row = _load("activity_progress_row.ui", self.form)
         row.setProperty("feedbackState", "progress")
+        row.setProperty("startedAt", monotonic())
         if key.split("-")[0] == "trash":
             row.activitySymbol.setPixmap(trash_icon_pixmap())
         else:
@@ -224,7 +383,7 @@ class ActivityStrip(QObject):
         self._position()
         QTimer.singleShot(0, self, self._position)
 
-    def update(self, key, done, total, *, detail=None):
+    def update(self, key, done, total, *, detail=None, elapsed="", eta="", stage="", wide="", queued=0):
         if not self._live():
             return
         row = self.rows.get(key)
@@ -240,13 +399,30 @@ class ActivityStrip(QObject):
                 row.activityDetail.setText(
                     detail if detail is not None else f"{done} of {total} processed" if total else "Working…"
                 )
+            row.setProperty("elapsedText", elapsed)
+            row.setProperty("etaText", eta)
+            row.setProperty("stageText", stage)
+            row.setProperty("wideText", wide)
+            row.setProperty("queuedCount", queued)
+            self._sync_bar()
 
     def complete(self, key, title, text, state="success"):
         """Show a semantic result: success and amber outcomes expire after six seconds."""
         if not self._live():
             return
+        previous = self.rows.get(key)
+        started = previous.property("startedAt") if previous is not None and isValid(previous) else None
+        if (
+            started is None
+            and key in _RUN_RESULTS
+            and self._last_run is not None
+            and monotonic() - self._last_run[1] < 30
+        ):
+            started = self._last_run[0]  # a result right after the "run" job ended reports that job's duration
         self.start(key, title)
         row = self.rows[key]
+        row.setProperty("startedAt", started)  # unknown when the job ran under another key
+        row.setProperty("endedAt", monotonic())
         row.setProperty("feedbackState", state)
         row.activitySymbol.setText(
             {"success": "✓", "info": "i", "stopped": "■", "partial": "⚠", "warning": "⚠"}.get(state, "!")
@@ -282,15 +458,28 @@ class ActivityStrip(QObject):
                 self._expiry.pop(key, None)
                 self.rows.pop(key, None)
                 continue
-            if self.form.underMouse() or (
-                focused is not None and (focused is self.form or self.form.isAncestorOf(focused))
+            if (
+                self.form.underMouse()
+                or self.bar.underMouse()
+                or (
+                    focused is not None
+                    and (
+                        focused is self.form
+                        or self.form.isAncestorOf(focused)
+                        or focused is self.bar
+                        or self.bar.isAncestorOf(focused)
+                    )
+                )
             ):
                 continue
             remaining -= 0.1
             if remaining <= 0:
                 self._expiry.pop(key, None)
+                row.activityLifetimeBar.setValue(0)
                 effect = QGraphicsOpacityEffect(row)
                 row.setGraphicsEffect(effect)
+                # Hidden backing rows still animate; mirror only the selected row onto the shared bar.
+                effect.opacityChanged.connect(self._sync_bar)
                 fade = QPropertyAnimation(effect, b"opacity", row)
                 fade.setDuration(450)
                 fade.setStartValue(1.0)
@@ -305,6 +494,7 @@ class ActivityStrip(QObject):
                 row.activityLifetimeBar.setValue(max(0, round(remaining * 1000)))
         if not self._expiry:
             self._notice_timer.stop()
+        self._sync_bar()  # redraw the result's lifetime line
 
     def _finish_if_row(self, key, row):
         """Ignore an old fade callback if a new task has reused the same key."""
@@ -316,6 +506,8 @@ class ActivityStrip(QObject):
             return
         self._expiry.pop(key, None)
         row = self.rows.pop(key, None)
+        if key == "run" and row is not None and isValid(row) and row.property("startedAt") is not None:
+            self._last_run = (row.property("startedAt"), monotonic())
         if row is not None and isValid(row):
             self.form.activityRowsLayout.removeWidget(row)
             row.hide()
