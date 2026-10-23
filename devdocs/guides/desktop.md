@@ -256,7 +256,7 @@ reserved for keyboard navigation, matching Connection.
 Click a Grid tile or List row to open Detail. Detail defaults to Fit, with Cover
 available when you prefer a filled canvas. It also provides true 100%, zoom/pan,
 previous/next through the current filtered order, keyboard navigation and
-full screen. The full-screen toggle in the header (beside Refresh, in every view; also the Detail image toolbar button) fullscreens the window and collapses the filter row, selection bar and the metadata/prompt panels below the image; the toggle or Escape (even after changing view) restores them. Additional details include the negative prompt, resolved
+two independent viewing modes. **F11** toggles window fullscreen on any page. The **optimized Images layout** icon (beside Refresh in every view; also in the Detail image toolbar) or **Escape** hides/restores the filter row, selection bar and metadata/prompt panels without changing window fullscreen or maximization. Escape toggles optimization outside text editors, selection popups and active inline feedback, which keep their normal dismissal behavior. Additional details include the negative prompt, resolved
 seed when recorded, provider, file size/path and file actions. Raw metadata is
 bounded and sanitized; unavailable evidence is shown as `Not recorded` or
 `Unknown`, not inferred.
@@ -300,6 +300,8 @@ API failures emit `backend.api_failed` at WARNING in normal and development mode
 Error bodies are capped at 8 KiB, with 2,048-character text projections and explicit truncation/omission markers. JSON/text/XML/HTML errors are sanitized; oversized/incomplete bodies, binary content and unknown binary gRPC details are omitted. Tokens, authorization headers, signed URLs, request blobs, prompts and image data are excluded. No response can be reconstructed retrospectively from an older generic log entry. See the [endpoint inventory and implementation boundary](../plans/2026-10-22-api-response-diagnostics.md).
 
 The Logs button at the right of the status bar opens the Logs workspace in place of the current page; the same button, the close button or Escape returns to the previous page without stopping running work. Escape first dismisses an active inline notice or confirmation, then the details panel, then More filters, before closing Logs.
+
+Logs reuses the shared brand, Queue/Run controls and navigation styling. Navigation has a separate row below the brand, with Logs filters underneath so they do not overlap at smaller window sizes.
 
 - **Sessions.** The selector numbers diagnostic sessions newest first by last write (`#1` is the most recent), with the local last-write time, `this session` for the running app and a short id (full id in the tooltip). Numbers are positions in the current list, not permanent identities.
 - **Filters and sort.** Search, severity, component, event or event family (`gallery.*`), UTC time range and one typed `data.*` comparison under More filters. Component and event lists cover the whole selected session (bounded). Click DATE / TIME, or the independent COMPONENT and EVENT targets within the same column header, to sort (↕ inactive, ↑/↓ active; a second click reverses). CHARACTERISTICS opens a numeric-characteristic sort menu; the Sort list under More filters also offers severity. The count and current order show above the table. Records without characteristics show their message instead.

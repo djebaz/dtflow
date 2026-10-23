@@ -19,6 +19,7 @@ from dtflow.services.queue_session import (
     dispatch_queue,
     expand_items,
     post_queue_control,
+    read_composer_source,
     read_queue_list,
     read_queue_views,
     set_concurrency,
@@ -29,6 +30,30 @@ BACKEND = {"name": "fake", "endpoint": None, "scenario": "success"}
 
 def base(seed=5):
     return ResolvedGenerationRequest("base", "fixture", "fake-fixture", seed)
+
+
+@pytest.mark.asyncio
+async def test_composer_source_is_atomic_and_shared_owner_safe(tmp_path):
+    source = {"version": 1, "base": {"prompt": "a {cat|dog}"}, "form": {"variation": "Every combination"}}
+    queue_id, _ = await create_queue(tmp_path, BACKEND, expand_items(base(), 1), composer_source=source)
+    assert await read_composer_source(tmp_path, queue_id) == source
+    assert await read_composer_source(tmp_path, "missing") is None
+    owner = SQLiteAttempts(tmp_path)
+    await owner.open()
+    try:
+        shared_id, _ = await create_queue(tmp_path, BACKEND, expand_items(base(), 1), composer_source=source)
+        assert await read_composer_source(tmp_path, shared_id) == source
+        with pytest.raises(ValidationError, match="1 MiB"):
+            await create_queue(tmp_path, BACKEND, expand_items(base(), 1), composer_source={"text": "x" * 1_048_577})
+    finally:
+        await owner.aclose()
+    assert len(await read_queue_list(tmp_path)) == 2
+    with pytest.raises(ValidationError, match="1 MiB"):
+        await create_queue(tmp_path, BACKEND, expand_items(base(), 1), composer_source={"text": "x" * 1_048_577})
+    assert len(await read_queue_list(tmp_path)) == 2
+    with sqlite3.connect(tmp_path / "attempts.sqlite3") as db:
+        records = [row[0] for row in db.execute("SELECT request_json FROM queue_items")]
+    assert len(records) == 2 and all("composer_source" not in record and "cat|dog" not in record for record in records)
 
 
 def test_expand_items_numbers_seeds_and_validates_before_anything_is_created():

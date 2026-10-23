@@ -10,11 +10,14 @@ from PySide6.QtCore import QEvent, QObject, QRectF, QSize, Qt, QTimer
 from PySide6.QtGui import QColor, QFont, QIcon, QKeySequence, QPainter, QPainterPath, QPixmap, QShortcut
 from PySide6.QtWidgets import (
     QApplication,
+    QAbstractSpinBox,
+    QComboBox,
     QButtonGroup,
     QCheckBox,
     QFrame,
     QHeaderView,
     QLabel,
+    QLineEdit,
     QMenu,
     QPlainTextEdit,
     QPushButton,
@@ -22,6 +25,7 @@ from PySide6.QtWidgets import (
     QStyledItemDelegate,
     QStyleOptionViewItem,
     QTableWidgetItem,
+    QTextEdit,
     QVBoxLayout,
     QWidget,
 )
@@ -169,21 +173,37 @@ class _EscapeLeavesFocus(QObject):
         self.page = page
 
     def eventFilter(self, watched, event):
-        if event.type() == QEvent.Type.KeyPress and event.key() == Qt.Key.Key_Escape:
+        if (
+            event.type() in (QEvent.Type.ShortcutOverride, QEvent.Type.KeyPress)
+            and event.key() == Qt.Key.Key_Escape
+            and isValid(self.page)
+            and self.page.isVisible()
+            and isinstance(watched, QWidget)
+            and watched.window() is self.page.window()
+        ):
             feedback = getattr(self.page.window(), "_inline_feedback", None)
             if feedback is not None and feedback.form.isVisible():
                 return False  # an open notice or editor consumes Escape first
-            toggle_image_focus(self.page, False)
+            if QApplication.activePopupWidget() is not None:
+                return False
+            if not self.page.property("imageFocus") and isinstance(
+                QApplication.focusWidget(), (QLineEdit, QPlainTextEdit, QTextEdit, QComboBox, QAbstractSpinBox)
+            ):
+                return False  # native text editing keeps its own Escape handling
+            if event.type() == QEvent.Type.ShortcutOverride:
+                event.accept()
+                return True
+            if not event.isAutoRepeat():
+                toggle_image_focus(self.page)
             return True
         return False
 
 
 def toggle_image_focus(page, enter: bool | None = None) -> None:
-    """Full screen the window and collapse search, selection and info chrome around the image.
+    """Collapse search, selection and info chrome without changing the native window state.
 
     Hidden widgets are recorded so only those visible beforehand are restored. enter=False only leaves.
     """
-    window = page.window()
     focused = bool(page.property("imageFocus"))
     enter = (not focused) if enter is None else enter
     if enter == focused:
@@ -205,18 +225,10 @@ def toggle_image_focus(page, enter: bool | None = None) -> None:
         for widget in hidden:
             widget.hide()
         page._focus_hidden = hidden
-        # An application-wide filter keeps Escape working from any view or focus until focus mode ends.
-        page._focus_escape = getattr(page, "_focus_escape", None) or _EscapeLeavesFocus(page)
-        QApplication.instance().installEventFilter(page._focus_escape)
-        window.showFullScreen()
     else:
-        escape = getattr(page, "_focus_escape", None)
-        if escape is not None:
-            QApplication.instance().removeEventFilter(escape)
         for widget in getattr(page, "_focus_hidden", []):
             widget.show()
         page._focus_hidden = []
-        window.showNormal()
 
 
 def apply_gallery_button_icons(page, assets=ASSETS):
@@ -322,6 +334,8 @@ def apply_gallery(page, assets=ASSETS, sample=False):
 
     get("galleryActualSizeButton").setEnabled(True)
     get("galleryActualSizeButton").clicked.connect(lambda: set_view("100%"))
+    page._focus_escape = _EscapeLeavesFocus(page)
+    QApplication.instance().installEventFilter(page._focus_escape)
     get("galleryFullscreenButton").setEnabled(True)
     get("galleryFullscreenButton").clicked.connect(lambda: toggle_image_focus(page))
     get("galleryFocusButton").clicked.connect(lambda: toggle_image_focus(page))
@@ -405,8 +419,6 @@ class DetailFixture(QObject):
             shortcut = QShortcut(QKeySequence(key), page)
             shortcut.setContext(Qt.ShortcutContext.WidgetWithChildrenShortcut)
             shortcut.activated.connect(page.findChild(QPushButton, name).click)
-        escape = QShortcut(QKeySequence("Escape"), page)
-        escape.activated.connect(lambda: toggle_image_focus(page, False))
 
     def setup_browsing(self):
         """Mount fixture Grid/List below the same persistent two-row header."""

@@ -34,6 +34,7 @@ from dtflow.persistence.queues import (
     insert_queue,
     post_control,
     read_queue_requests,
+    read_queue_composer_source,
     read_queue_summaries,
     read_queues,
     request_from_record,
@@ -72,6 +73,7 @@ async def create_queue(
     cap: int | None = None,
     *,
     up_next: bool = False,
+    composer_source: dict | None = None,
 ) -> tuple[str, int]:
     """Persist a paused queue of resolved items; contacts no backend and never uploads.
 
@@ -86,9 +88,11 @@ async def create_queue(
     store = SQLiteAttempts(state)
     try:
         await store.open()
-        return await store.create_queue(backend, cap, requests), cap
+        return await store.create_queue(backend, cap, requests, composer_source=composer_source), cap
     except StateBusyError:
-        return await asyncio.to_thread(insert_queue, state, backend, cap, requests, up_next=up_next), cap
+        return await asyncio.to_thread(
+            insert_queue, state, backend, cap, requests, up_next=up_next, composer_source=composer_source
+        ), cap
     finally:
         await store.aclose()
 
@@ -107,6 +111,7 @@ async def create_edit_queue(
     cap: int | None = None,
     up_next: bool = False,
     receipts: tuple[PreparedAsset, ...] = (),
+    composer_source: dict | None = None,
 ) -> tuple[str, int]:
     """Stage one prepared edit once and persist a paused queue of items that share it.
 
@@ -136,7 +141,7 @@ async def create_edit_queue(
         ),
     )
     items = expand_items(edit, count) if plan is None else expand_plan(edit, plan, receipts=receipts)
-    return await create_queue(state, backend, items, cap, up_next=up_next)
+    return await create_queue(state, backend, items, cap, up_next=up_next, composer_source=composer_source)
 
 
 # Items a relaunch with ``failed_only`` (and Retry item) takes again: settled without a saved image.
@@ -230,6 +235,11 @@ async def read_queue_records(state: Path, queue_id: str) -> tuple[dict[str, Any]
     if any(not isinstance(record, dict) for _, _, record in items):
         raise ValidationError("Some items' recorded requests are unreadable, so this queue cannot be edited.")
     return tuple(record for _, _, record in items)
+
+
+async def read_composer_source(state: Path, queue_id: str) -> dict | None:
+    """Read saved authoring input, if present; no inferred reconstruction or provider access."""
+    return await asyncio.to_thread(read_queue_composer_source, Path(state), queue_id)
 
 
 async def dispatch_queue(

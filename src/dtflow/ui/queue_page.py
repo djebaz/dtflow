@@ -12,15 +12,16 @@ claims remote cancellation.
 
 import asyncio
 from collections.abc import Callable
-from dataclasses import dataclass, replace
+from dataclasses import asdict, dataclass, replace
 from pathlib import Path
 from time import monotonic
 
 from PySide6.QtCore import QSize, Qt, QTimer, QUrl
 from PySide6.QtGui import QDesktopServices, QIcon, QStandardItem, QStandardItemModel
-from PySide6.QtWidgets import QFormLayout, QListWidgetItem, QMenu, QPlainTextEdit, QWidget
+from PySide6.QtWidgets import QApplication, QFormLayout, QListWidgetItem, QMenu, QPlainTextEdit, QWidget
 
 from dtflow.core.models import BackendEvent, LoRASelection, ValidationError
+from dtflow.core.request_records import request_from_record
 from dtflow.persistence.settings import SettingsError, load_cloud_concurrency, validate_concurrency
 from dtflow.persistence.store import StateBusyError
 from dtflow.services.connection import Presentation, present_generation_failure
@@ -38,6 +39,7 @@ from dtflow.services.queue_session import (
     post_queue_control,
     read_queue_list,
     read_queue_records,
+    read_composer_source,
     read_queue_views,
     relaunch_queue,
     remove_queue,
@@ -55,6 +57,7 @@ from dtflow.ui.planning_presenter import (
     NO_LORA,
     parse_lora_set,
     queue_edit_from_records,
+    queue_edit_from_source,
     candidate_counts,
     PlanForm,
     build_plan,
@@ -129,6 +132,9 @@ WIRED_CONTROLS = (
     "newQueueButton",
     "closeComposerButton",
     "editInGenerateButton",
+    "copyToGenerateButton",
+    "composerPromptEdit",
+    "queueCopyPromptButton",
     "refreshQueuesButton",
     "clearQueuesButton",
     "removeQueueButton",
@@ -214,8 +220,11 @@ class QueuePage:
         self._runner, self._backend, self._saved = runner, backend_source, saved_source
         self._state, self._request_source, self._activity = Path(state_dir), request_source, activity
         self._simulation, self._created_hook = simulation_source, created_hook
-        self._choices, self._generate_hook = choices_source, generate_hook
+        self._live_choices, self._generate_hook = choices_source, generate_hook
+        self._choices = self._composer_choices
         self._reuse_hook = reuse_hook
+        self._draft = None  # immutable request/backend/receipts snapshot; Generate is only an explicit copy source
+        self._draft_job = None
         self._composing = False
         self.plan_hook: Callable[[], None] = lambda: None  # the Queue popover's trigger follows plan edits
         self._after_generation: list[str] = []  # popover queues waiting for the running single generation (#135)
@@ -297,7 +306,12 @@ class QueuePage:
         page.startQueueButton.clicked.connect(lambda: self.create("start"))
         page.newQueueButton.clicked.connect(self.open_composer)
         page.closeComposerButton.clicked.connect(self.close_composer)
-        page.editInGenerateButton.clicked.connect(lambda: self._generate_hook())
+        page.editInGenerateButton.clicked.connect(self.use_generate_settings)
+        page.copyToGenerateButton.clicked.connect(self.copy_to_generate)
+        page.composerPromptEdit.textChanged.connect(self._plan_changed)
+        page.queueCopyPromptButton.setIcon(QIcon(str(refresh_icon.with_name("copy.svg"))))
+        page.queueCopyPromptButton.setIconSize(QSize(16, 16))
+        page.queueCopyPromptButton.clicked.connect(self.copy_queue_prompt)
         page.queuePrimaryButton.clicked.connect(self.primary)
         page.earlierQueueButton.clicked.connect(lambda: self._order("earlier"))
         page.laterQueueButton.clicked.connect(lambda: self._order("later"))
@@ -629,7 +643,7 @@ class QueuePage:
 
     def _show_new_cap(self) -> None:
         """With cloud chosen, the new-queue maximum shows the shared cloud default; other providers keep the box."""
-        if self._backend()[0] != "cloud" or self._shared_cap is None:
+        if self._composer_backend()[0] != "cloud" or self._shared_cap is None:
             return
         spin = self.page.newQueueCapSpinBox
         self._syncing = True
@@ -771,7 +785,7 @@ class QueuePage:
 
     def sync_edit_fields(self) -> None:
         """Strengths apply to Inpaint edits only: shown while Generate is in Inpaint mode and a plan is composed."""
-        editing = self._editing() and self._planned()
+        editing = (self._draft_job is not None if self._draft is not None else self._editing()) and self._planned()
         changed = self.page.planStrengthsEdit.isHidden() == editing
         self.page.planStrengthsLabel.setVisible(editing)
         self.page.planStrengthsEdit.setVisible(editing)
@@ -999,10 +1013,32 @@ class QueuePage:
         menu.setToolTipsVisible(True)
 
     def edit_as_new(self, queue_id: str) -> None:
-        """Load a queue's recorded settings into Generate and the composer; nothing is created until Add or Start."""
+        """Load authoring input into the independent composer; Generate and recorded items stay untouched."""
 
         async def work():
-            return queue_edit_from_records(await read_queue_records(self._state, queue_id))
+            records = await read_queue_records(self._state, queue_id)
+            source = await read_composer_source(self._state, queue_id)
+            view = (await read_queue_views(self._state, queue_id))[0]
+            edited = queue_edit_from_source(source) if source is not None else queue_edit_from_records(records)
+            if source is None:
+                templates = {
+                    dict(record.get("resolution_evidence", ())).get("plan.prompt_template") for record in records
+                } - {None}
+                if len(templates) == 1:
+                    edited = replace(edited, base={**edited.base, "prompt": templates.pop()})
+                edited = replace(
+                    edited,
+                    note="This older queue has no complete composer source; its plan uses resolved items. "
+                    + edited.note,
+                )
+            asset_ids = (
+                source.get("asset_ids", ())
+                if source is not None
+                else tuple(asset["receipt_id"] for asset in records[0].get("prepared_assets", ()))
+            )
+            if not isinstance(asset_ids, (list, tuple)) or any(type(value) is not str for value in asset_ids):
+                raise ValidationError("Stored queue asset selections are unreadable.")
+            return edited, view["backend"], tuple(asset_ids), view["cap"]
 
         self._runner.submit(work(), self._edit_loaded)
 
@@ -1011,8 +1047,17 @@ class QueuePage:
             shown = Presentation("error", "Not loaded", str(failure))
             self._message(shown if isinstance(failure, ValidationError) else present_generation_failure(failure))
             return
+        result, backend, asset_ids, cap = result
         page, form = self.page, result.form
-        self._reuse_hook(result.base)
+        request = request_from_record(result.base)
+        self._set_draft(
+            request,
+            backend["name"],
+            backend.get("endpoint"),
+            asset_ids,
+            None,
+        )
+        page.newQueueCapSpinBox.setValue(cap)
         self.open_composer()
         page.planModeCombo.setCurrentText(form.mode)
         page.planPromptsEdit.setPlainText(form.prompts)
@@ -1033,15 +1078,17 @@ class QueuePage:
             for weight in weights.split(";")
         ]
         page.planLorasEdit.setText("; ".join(chips))  # one chip per LoRA and weight
-        page.planStrengthsEdit.clear()
-        for suffix in DRAW_SPINS.values():  # random draws, prompt variation and edits would change the loaded items
-            getattr(page, f"planDraw{suffix}Spin").setValue(0)
-        page.planVariationCombo.setCurrentIndex(0)
-        page.planShuffleCombo.setCurrentIndex(0)
-        page.planDropSpin.setValue(0)
-        page.planAddSpin.setValue(0)
-        page.planAddPartsEdit.clear()
-        page.planWildcardsEdit.clear()
+        page.planStrengthsEdit.setText(form.strengths)
+        for name, suffix in DRAW_SPINS.items():
+            getattr(page, f"planDraw{suffix}Spin").setValue(dict(form.draws).get(name, 0))
+        page.planVariationCombo.setCurrentText(form.variation)
+        page.planVariationCountSpin.setValue(form.variation_count)
+        page.planShuffleCombo.setCurrentText(form.shuffle)
+        page.planDropSpin.setValue(form.drop)
+        page.planAddSpin.setValue(form.add)
+        page.planAddPartsEdit.setText(form.add_parts)
+        page.planWildcardsEdit.setPlainText(form.wildcards)
+        page.planRngSeedEdit.setText(form.rng_seed)
         page.planIncrementCheck.setChecked(form.increment)
         if form.mode == REPEAT:
             page.queueCountSpinBox.setValue(result.count)
@@ -1051,7 +1098,7 @@ class QueuePage:
             "warning" if result.note else "ok",
             "Queue loaded",
             result.note
-            or "Its settings are in Generate and the composer; change them, then Add to queue or Start now.",
+            or "Its settings are in the queue draft; Generate was not changed. Edit, then Add to queue or Start now.",
         )
         self._message(loaded)
 
@@ -1121,11 +1168,89 @@ class QueuePage:
         self.refresh()
 
     # -- composer --------------------------------------------------------------------------------------------------
+    def _composer_backend(self):
+        return self._draft[1:3] if self._draft is not None else self._backend()
+
+    def quick_disclosure(self, *, plan: bool) -> str:
+        name, _ = self._composer_backend() if plan else self._backend()
+        source = "the queue composer's draft and plan" if plan else "Generate's current request"
+        return f"Uses {source}. Backend: {name}. A cloud run may use credits."
+
+    def _set_draft(self, request, name, endpoint, asset_ids, job) -> None:
+        self._draft = request, name, endpoint, tuple(asset_ids)
+        self._draft_job = job
+        edit = self.page.composerPromptEdit
+        edit.blockSignals(True)
+        edit.setPlainText(request.prompt)
+        edit.blockSignals(False)
+
+    def _composer_choices(self) -> dict:
+        choices = self._live_choices()
+        if self._draft is None:
+            return choices
+        request, name, endpoint, _ = self._draft
+        if self._backend() != (name, endpoint):
+            # Inventory and account-bound receipt choices cannot migrate to a different captured backend.
+            choices = {
+                **choices,
+                "models": [request.model_id],
+                "loras": {item.identifier: item.weight for item in request.loras},
+                "receipts": {},
+            }
+        return {
+            **choices,
+            "prompt": self.page.composerPromptEdit.toPlainText(),
+            "size": f"{request.width_px}x{request.height_px}",
+        }
+
+    def use_generate_settings(self) -> None:
+        """An explicit one-way copy, never a continuing binding to Generate's mutable form."""
+        try:
+            request, name, endpoint, assets = self._request_source(preview=True)
+            self._set_draft(request, name, endpoint, assets, self._edit_source())
+        except FormError as exc:
+            self._message(Presentation("error", "Draft not replaced", str(exc)))
+            return
+        self.sync_edit_fields()
+        self._plan_changed()
+        self.preview()
+
+    def _composer_request(self, *, preview=False):
+        if self._draft is None:
+            request, name, endpoint, assets = self._request_source(preview=True)
+            self._set_draft(request, name, endpoint, assets, self._edit_source())
+        request, name, endpoint, assets = self._draft
+        prompt = self.page.composerPromptEdit.toPlainText()
+        if not prompt.strip():
+            raise FormError("Enter a base prompt in the queue composer.", "composerPromptEdit")
+        return replace(request, prompt=prompt), name, endpoint, assets
+
+    def copy_to_generate(self) -> None:
+        try:
+            request, *_ = self._composer_request(preview=True)
+        except FormError as exc:
+            self._message(Presentation("error", "Not copied", str(exc)))
+            return
+        self._reuse_hook(asdict(request))
+        self._generate_hook()
+
+    def copy_queue_prompt(self) -> None:
+        view = self._view()
+        if view is not None:
+            QApplication.clipboard().setText((view.get("first") or {}).get("prompt") or "")
+
+    def _prompt_source(self) -> str:
+        return (
+            self.page.composerPromptEdit.toPlainText() if self._draft is not None else self._choices().get("prompt", "")
+        )
+
     def open_composer(self) -> None:
         """Show the composer in the center instead of the selected queue; its values are kept between openings."""
         if feedback(self.page)._armed:
             feedback(self.page).dismiss()
         self._composing = True
+        if self._draft is None:
+            self.use_generate_settings()
         self._invalidate_preview()
         self._refresh_choices()
         self._render()
@@ -1138,7 +1263,7 @@ class QueuePage:
         self._render()
 
     def shown(self) -> None:
-        """Returning to Queues (for example from Edit in Generate): the composer follows the Generate form."""
+        """Returning to Queues refreshes presentation without replacing the independent draft."""
         self.model.thumbnails.clear()
         self._hover_preview.hide()
         self.page.queueItemsView.viewport().update()
@@ -1203,7 +1328,7 @@ class QueuePage:
     def _generate_loras(self) -> tuple[LoRASelection, ...]:
         """The Generate form's LoRAs, which the LoRA-set editor starts from."""
         try:
-            request, *_ = self._request_source(preview=True)
+            request, *_ = self._composer_request(preview=True)
         except (FormError, ValidationError):
             return ()
         return tuple(request.loras)
@@ -1270,7 +1395,7 @@ class QueuePage:
         page = self.page
         page.planSizesEdit.refresh_options()
         try:
-            request, *_ = self._request_source(preview=True)
+            request, *_ = self._composer_request(preview=True)
         except (FormError, ValidationError):
             return
         page.planStepsEdit.refresh_options(str(request.steps))
@@ -1372,7 +1497,7 @@ class QueuePage:
             edit.blockSignals(False)
 
     def _count(self) -> tuple[str, str]:
-        return count_text(self._plan_form(), self._choices().get("prompt"), self._wildcards_dir)
+        return count_text(self._plan_form(), self._prompt_source(), self._wildcards_dir)
 
     def _base_text(self, request) -> str:
         loras = len(request.loras)
@@ -1387,7 +1512,7 @@ class QueuePage:
         ]
         if loras:
             parts.append(f"{loras} LoRA{'s' if loras != 1 else ''}")
-        if self._edit_source() is not None:
+        if self._draft_job is not None:
             parts.append(f"Inpaint · strength {request.strength:g}")
         return " · ".join(parts)
 
@@ -1399,11 +1524,11 @@ class QueuePage:
             return  # reading the request marks and snaps Generate fields: only while Queues is shown (see ``shown``)
         page = self.page
         try:
-            request, *_ = self._request_source(preview=True)
+            request, *_ = self._composer_request(preview=True)
         except FormError as exc:
             self._invalidate_preview()  # a validity change must not be overwritten later
-            page.composerBaseLabel.setText("Generate settings are not valid yet.")
-            self._show(page.planCountLabel, "error", sentence(f"Generate: {exc}"))
+            page.composerBaseLabel.setText("Queue draft settings are not valid yet.")
+            self._show(page.planCountLabel, "error", sentence(str(exc)))
             self.plan_model.clear()
             self._sync_preview_table_visibility()
             self._clear_summary()
@@ -1423,7 +1548,7 @@ class QueuePage:
             first = request.seed
             seeds = f"seed {first}" if count == 1 else f"seeds {first}–{first + count - 1}"
             self._show(page.planCountLabel, "ok", f"{count} item{'s' if count != 1 else ''} · {seeds}")
-            self._show_summary(request, count, "Nothing (repeats the Generate settings)", seeds.capitalize())
+            self._show_summary(request, count, "Nothing (repeats the queue draft)", seeds.capitalize())
             return
         if self._plan_form().variation != "Off" and not self._runner.closed:
             self._preview_in_background(request)
@@ -1527,7 +1652,7 @@ class QueuePage:
     def _show_summary(self, request, count: int | None, varies: str, seeds: str, *, loras: str | None = None) -> None:
         """The right column while composing: what the queue being built will be, before anything is saved."""
         page = self.page
-        name, endpoint = self._backend()
+        name, endpoint = self._draft[1:3] if self._draft is not None and self._composing else self._backend()
         page.composerSummaryBackendLabel.setText(f"{name} · {endpoint}" if endpoint else name)
         page.composerSummaryModelLabel.setText(request.model_id)
         loras = loras or "\n".join(lora_text(lora.identifier, lora.weight) for lora in request.loras)
@@ -1564,7 +1689,9 @@ class QueuePage:
                 report(Presentation("warning", "Queue not created", "A run started meanwhile; use Add to queue."))
             return
         try:
-            request, name, endpoint, asset_ids = self._request_source()
+            request, name, endpoint, asset_ids = (
+                self._request_source() if quick and count is not None else self._composer_request()
+            )
         except FormError as exc:
             # From another tab the marked field is out of sight, so say where it is.
             report(Presentation("error", "Queue not created", f"On Generate: {exc}" if quick else str(exc)))
@@ -1579,9 +1706,18 @@ class QueuePage:
                     error = self.page.planCountLabel.text()
                     report(Presentation("error", "Queue not created", error))
                     return
+        source_form = PlanForm("Repeat") if quick and count is not None else self._plan_form()
         count, cap = count or self.page.queueCountSpinBox.value(), self.page.newQueueCapSpinBox.value()
         backend = {"name": name, "endpoint": endpoint, "scenario": "success", **self._simulation()}
-        job = self._edit_source()
+        job = self._edit_source() if quick and source_form.mode == "Repeat" else self._draft_job
+        composer_source = {
+            "version": 1,
+            "base": asdict(replace(request, prepared_assets=())),
+            "form": asdict(source_form),
+            "count": count,
+            "asset_ids": list(asset_ids),
+        }
+        receipt_choices = dict(self._choices().get("receipts", {}))  # capture on the GUI thread
         # Add to queue during a single generation: remember the intent now, since the generation may end before the
         # new queue is saved (nothing then runs to follow, but the user still asked for it to start by itself).
         after_generation = quick and action == "add" and self._activity.generating
@@ -1591,7 +1727,16 @@ class QueuePage:
             if resolving is not None:
                 drawn = await asyncio.to_thread(self._resolve_only, *resolving)
             queue_id, used = await self._create(
-                backend, request, asset_ids, count, cap, drawn, job, up_next=action == "add"
+                backend,
+                request,
+                asset_ids,
+                count,
+                cap,
+                drawn,
+                job,
+                up_next=action == "add",
+                composer_source=composer_source,
+                receipt_choices=receipt_choices,
             )
             status = (await read_queue_views(self._state, queue_id))[0]["status"] if action == "add" else None
             return queue_id, used, status
@@ -1615,7 +1760,7 @@ class QueuePage:
         if not self._planned():
             return None
         try:
-            prompt = self._choices().get("prompt")
+            prompt = self._prompt_source()
             plan = bind_wildcards(build_plan(self._plan_form()), prompt or "", self._wildcards_dir)
             return plan_size(plan, prompt)
         except ValidationError:
@@ -1752,7 +1897,18 @@ class QueuePage:
         self.refresh()
 
     async def _create(
-        self, backend, request, asset_ids, count, cap, plan: Plan | None = None, job=None, *, up_next: bool = False
+        self,
+        backend,
+        request,
+        asset_ids,
+        count,
+        cap,
+        plan: Plan | None = None,
+        job=None,
+        *,
+        up_next: bool = False,
+        composer_source=None,
+        receipt_choices=None,
     ):
         request = await bind_prepared(self._state, backend["name"], request, asset_ids)
         receipts = ()
@@ -1761,7 +1917,7 @@ class QueuePage:
         weighted = [name.partition(".")[2] for name in dimensions if name.startswith("lora_weight.")]  # chip order
         if (sets or weighted) and backend["name"] == "cloud":
             # LoRA sets and weights may name custom cloud LoRAs that are not on Generate: bind their receipts too.
-            known = self._choices().get("receipts", {})
+            known = receipt_choices or {}
             named = {identifier for chosen in sets or () for identifier, _ in chosen} | set(weighted)
             named -= {x.identifier for x in request.loras}
             receipts = await load_prepared(
@@ -1771,7 +1927,11 @@ class QueuePage:
         if job is not None:
             # An Inpaint edit: stage the prepared source and mask once; nothing is sent until Start.
             selection = await asyncio.to_thread(
-                selection_for, backend["name"], backend["endpoint"], self._state, **self._simulation()
+                selection_for,
+                backend["name"],
+                backend["endpoint"],
+                self._state,
+                **{key: backend[key] for key in ("scenario", "delay", "previews") if key in backend},
             )
             prepared = await asyncio.to_thread(
                 prepare_edit_inputs,
@@ -1795,9 +1955,10 @@ class QueuePage:
                 cap=cap,
                 up_next=up_next,
                 receipts=receipts,
+                composer_source=composer_source,
             )
         items = expand_plan(request, plan, receipts=receipts) if plan is not None else expand_items(request, count)
-        return await create_queue(self._state, backend, items, cap, up_next=up_next)
+        return await create_queue(self._state, backend, items, cap, up_next=up_next, composer_source=composer_source)
 
     # -- planning --------------------------------------------------------------------------------------------------
     def _plan_form(self) -> PlanForm:
@@ -1914,7 +2075,7 @@ class QueuePage:
     def _plan_inputs(self, request) -> tuple:
         """Everything the pure planning step needs, read on the GUI thread so a worker can run it."""
         request = self._with_weighted_loras(request, self._lora_weight_groups())
-        return self._plan_form(), request, self._wildcards_dir, self._edit_source() is not None
+        return self._plan_form(), request, self._wildcards_dir, self._draft_job is not None
 
     @staticmethod
     def _compute_plan(form: PlanForm, request, folder: Path, edit: bool) -> tuple[Plan, PlanTable]:
@@ -2248,7 +2409,7 @@ class QueuePage:
         if self._syncing:
             return
         self._set_level(self.page.newQueueCapSpinBox, value)
-        if self._backend()[0] != "cloud":
+        if self._composer_backend()[0] != "cloud":
             return
         self._shared_epoch += 1
         self._shared_cap = value

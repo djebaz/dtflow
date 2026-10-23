@@ -226,7 +226,7 @@
           <number>12</number>
          </property>
          <item>
-          <layout class="QHBoxLayout" name="queueTitleLayout" stretch="1,0">
+          <layout class="QHBoxLayout" name="queueTitleLayout" stretch="1,0,0">
            <property name="spacing">
             <number>10</number>
            </property>
@@ -250,6 +250,15 @@
              <property name="accessibleName">
               <string>Queue prompt</string>
              </property>
+            </widget>
+           </item>
+           <item alignment="Qt::AlignTop">
+            <widget class="QToolButton" name="queueCopyPromptButton">
+             <property name="toolTip"><string>Copy prompt</string></property>
+             <property name="accessibleName"><string>Copy queue prompt</string></property>
+             <property name="autoRaise"><bool>true</bool></property>
+             <property name="minimumSize"><size><width>24</width><height>24</height></size></property>
+             <property name="maximumSize"><size><width>24</width><height>24</height></size></property>
             </widget>
            </item>
            <item alignment="Qt::AlignTop">
@@ -831,7 +840,7 @@
            </layout>
           </item>
           <item>
-           <layout class="QHBoxLayout" name="composerBaseLayout" stretch="1,0">
+           <layout class="QHBoxLayout" name="composerBaseLayout" stretch="1,0,0">
             <item>
              <widget class="QLabel" name="composerBaseLabel">
               <property name="sizePolicy">
@@ -849,21 +858,41 @@
                <string>secondary</string>
               </property>
               <property name="accessibleName">
-               <string>Generate settings the queue starts from</string>
+               <string>Independent queue draft settings</string>
               </property>
              </widget>
             </item>
             <item alignment="Qt::AlignTop">
              <widget class="QPushButton" name="editInGenerateButton">
               <property name="text">
-               <string>Edit in Generate</string>
+               <string>Use Generate settings</string>
               </property>
               <property name="toolTip">
-               <string>Change the base prompt, model, size or LoRAs on Generate; the composer follows.</string>
+               <string>Explicitly replace the queue draft with a copy of Generate settings. Generate is not changed.</string>
               </property>
              </widget>
             </item>
+           <item alignment="Qt::AlignTop">
+            <widget class="QPushButton" name="copyToGenerateButton">
+             <property name="text"><string>Copy to Generate</string></property>
+             <property name="toolTip"><string>Copy this draft's base prompt and settings to Generate without submitting work.</string></property>
+            </widget>
+           </item>
            </layout>
+          </item>
+          <item>
+           <widget class="QLabel" name="composerPromptLabel">
+            <property name="text"><string>Base prompt</string></property>
+            <property name="buddy"><cstring>composerPromptEdit</cstring></property>
+           </widget>
+          </item>
+          <item>
+           <widget class="QPlainTextEdit" name="composerPromptEdit">
+            <property name="minimumSize"><size><width>0</width><height>52</height></size></property>
+            <property name="maximumSize"><size><width>16777215</width><height>120</height></size></property>
+            <property name="placeholderText"><string>Queue source prompt; prompt variations apply to this template.</string></property>
+            <property name="accessibleName"><string>Queue base prompt</string></property>
+           </widget>
           </item>
           <item>
            <widget class="QGroupBox" name="planBox">

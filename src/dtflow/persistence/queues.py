@@ -149,7 +149,9 @@ def _check_new_queue(requests: Sequence[ResolvedGenerationRequest]) -> None:
         raise QueueError(str(exc)) from exc
 
 
-def _insert_paused(db: sqlite3.Connection, backend, cap, requests, now: str, *, up_next: bool = False) -> str:
+def _insert_paused(
+    db: sqlite3.Connection, backend, cap, requests, now: str, *, up_next: bool = False, composer_source=None
+) -> str:
     """Insert one paused (or, behind a live owner, queued) queue with pending items in the caller's transaction."""
     queue_id = uuid4().hex
     db.execute(
@@ -175,6 +177,14 @@ def _insert_paused(db: sqlite3.Connection, backend, cap, requests, now: str, *, 
         ],
     )
     QueueMixin._event(db, queue_id, "created", now, {"items": len(requests), "cap": cap})
+    if composer_source is not None:
+        if not isinstance(composer_source, dict):
+            raise QueueError("Composer source must be an object.")
+        encoded = json.dumps(composer_source, allow_nan=False)
+        if len(encoded.encode("utf-8")) > 1_048_576:
+            raise QueueError("Composer source exceeds the 1 MiB limit; nothing was created.")
+        # Queue-only evidence, committed atomically with its items. Never copied into image metadata or logs.
+        QueueMixin._event(db, queue_id, "composer_source", now, composer_source)
     if up_next:
         QueueMixin._event(db, queue_id, "enqueued", now)
     return queue_id
@@ -266,14 +276,14 @@ class QueueMixin:
     # -- creation -------------------------------------------------------------------------------------------------
 
     async def create_queue(
-        self, backend: dict[str, Any], cap: int, requests: Sequence[ResolvedGenerationRequest]
+        self, backend: dict[str, Any], cap: int, requests: Sequence[ResolvedGenerationRequest], *, composer_source=None
     ) -> str:
-        return await self._run(self._create_queue, backend, cap, tuple(requests))
+        return await self._run(self._create_queue, backend, cap, tuple(requests), composer_source)
 
-    def _create_queue(self, backend, cap, requests) -> str:
+    def _create_queue(self, backend, cap, requests, composer_source=None) -> str:
         _check_new_queue(requests)
         with self._txn() as db:
-            return _insert_paused(db, backend, cap, requests, self._now())
+            return _insert_paused(db, backend, cap, requests, self._now(), composer_source=composer_source)
 
     # -- controls -------------------------------------------------------------------------------------------------
 
@@ -631,6 +641,7 @@ def insert_queue(
     requests: Sequence[ResolvedGenerationRequest],
     *,
     up_next: bool = False,
+    composer_source: dict | None = None,
 ) -> str:
     """Add one queue while another owner holds the state (a running dispatch or generation).
 
@@ -645,7 +656,15 @@ def insert_queue(
         connection.execute("BEGIN IMMEDIATE")
         try:
             live = up_next and _dispatch_live(connection)
-            queue_id = _insert_paused(connection, backend, cap, requests, datetime.now(UTC).isoformat(), up_next=live)
+            queue_id = _insert_paused(
+                connection,
+                backend,
+                cap,
+                requests,
+                datetime.now(UTC).isoformat(),
+                up_next=live,
+                composer_source=composer_source,
+            )
             connection.execute("COMMIT")
         except BaseException:
             connection.execute("ROLLBACK")
@@ -977,6 +996,26 @@ def read_queue_requests(directory: Path, queue_id: str) -> tuple[dict[str, Any],
                 record = None
             items.append((item["position"], item["state"], record))
         return json.loads(row["backend_json"]), row["cap"], tuple(items)
+    finally:
+        connection.close()
+
+
+def read_queue_composer_source(directory: Path, queue_id: str) -> dict | None:
+    """Optional immutable composer input, separate from resolved item requests and image metadata."""
+    connection = _shared_connection(directory, readonly=True)
+    try:
+        row = connection.execute(
+            "SELECT detail_json FROM queue_events WHERE queue_id=? AND kind='composer_source' ORDER BY event_id LIMIT 1",
+            (queue_id,),
+        ).fetchone()
+        if row is None:
+            return None
+        if len(row["detail_json"].encode("utf-8")) > 1_048_576:
+            raise QueueError("Stored composer source exceeds the supported limit.")
+        value = json.loads(row["detail_json"])
+        if not isinstance(value, dict):
+            raise QueueError("Stored composer source is unreadable.")
+        return value
     finally:
         connection.close()
 

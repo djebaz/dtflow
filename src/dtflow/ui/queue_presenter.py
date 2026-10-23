@@ -666,7 +666,7 @@ def concurrency_level(value: int) -> str:
 def event_lines(view: dict) -> str:
     """Compact human-readable queue activity; durable raw events remain unchanged in persistence."""
     positions = {item["item_id"]: item["position"] for item in view.get("items", ())}
-    hidden = {"item_started", "backend_preparing", "backend_artifact_received", "backend_terminal"}
+    hidden = {"item_started", "backend_preparing", "backend_artifact_received", "backend_terminal", "composer_source"}
     lines = []
 
     def item_label(detail: dict) -> str:
