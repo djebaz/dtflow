@@ -275,10 +275,15 @@ def test_new_queue_selection_resets_filters_and_reads_items_without_idle_polling
     assert not window.queue._timer.isActive()
 
 
-def test_queue_timing_reaches_overlay_and_tooltip_without_changing_real_progress(window, qtbot, monkeypatch):
+def test_queue_timing_reaches_bar_and_tooltip_without_changing_real_progress(window, qtbot, monkeypatch):
+    from PySide6.QtCore import QRect
+
     from dtflow.ui.activity_strip import activity_strip
 
+    window.show()
     page, queue = window.queue_page, window.queue
+    strip = activity_strip(page)
+    monkeypatch.setattr(strip, "_bar_rect", lambda: QRect(12, 2, 760, 20))
     page.queueCountSpinBox.setValue(3)
     page.createQueueButton.click()
     qtbot.waitUntil(lambda: queue.model.rowCount() == 3, timeout=5000)
@@ -296,20 +301,23 @@ def test_queue_timing_reaches_overlay_and_tooltip_without_changing_real_progress
     queue._dispatching = current["queue_id"]
     window.activity.set(dispatching=True)
     queue._read_done(([current], current, 4), None)
-    row = activity_strip(page).rows["run"]
-    assert "Elapsed" in row.activityDetail.text() and "~1:00 left (estimate)" in row.activityDetail.text()
+    row = strip.rows["run"]
+    assert row.property("inBar") and strip.bar.isVisible()
+    assert strip.bar.strip.model.elapsed == queue._activity.run_state.elapsed.removeprefix("Elapsed ")
+    assert strip.bar.strip.model.eta == "~1:00 left"
+    assert "Elapsed" not in row.activityDetail.text() and "estimate" not in row.activityDetail.text()
     assert "estimate" in window.shell.runControl.toolTip()
     assert (row.activityProgress.value(), row.activityProgress.maximum()) == (1, 3)
     assert queue._timing_timer.isActive() and queue._timing_timer.interval() == 1000
     tick[0] += 1
     queue._timing_tick()
-    assert "~0:59 left" in row.activityDetail.text()
+    assert strip.bar.strip.model.eta == "~0:59 left"
     queue._read_done(([current], current, 4), None)
-    assert "~0:59 left" in row.activityDetail.text()  # an unchanged database poll preserves the countdown
+    assert strip.bar.strip.model.eta == "~0:59 left"  # an unchanged database poll preserves the countdown
     assert (row.activityProgress.value(), row.activityProgress.maximum()) == (1, 3)
     paused = dict(current, status="paused")
     queue._read_done(([paused], paused, 4), None)
-    assert "estimate" not in row.activityDetail.text() and "Elapsed" in row.activityDetail.text()
+    assert not strip.bar.strip.model.eta and strip.bar.strip.model.elapsed
     queue._dispatching = None
     window.activity.set(dispatching=False)
     queue._timer.stop()

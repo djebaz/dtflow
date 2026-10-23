@@ -263,31 +263,89 @@
            </widget>
           </item>
           <item>
-           <widget class="QPushButton" name="galleryAutoRefreshButton">
-            <property name="accessibleName">
-             <string>AutoRefresh</string>
-            </property>
-            <property name="text">
-             <string>Auto-refresh: Off</string>
-            </property>
-            <property name="enabled">
-             <bool>false</bool>
-            </property>
-            <property name="toolTip">
-             <string>Available when the current Images context supports this action.</string>
-            </property>
+           <widget class="QFrame" name="galleryLiveControl">
             <property name="minimumSize">
              <size>
-              <width>156</width>
+              <width>120</width>
               <height>36</height>
              </size>
             </property>
             <property name="maximumSize">
              <size>
-              <width>156</width>
+              <width>120</width>
               <height>36</height>
              </size>
             </property>
+            <layout class="QHBoxLayout" name="galleryLiveLayout">
+             <property name="leftMargin">
+              <number>0</number>
+             </property>
+             <property name="topMargin">
+              <number>0</number>
+             </property>
+             <property name="rightMargin">
+              <number>0</number>
+             </property>
+             <property name="bottomMargin">
+              <number>0</number>
+             </property>
+             <property name="spacing">
+              <number>0</number>
+             </property>
+             <item>
+              <widget class="QPushButton" name="galleryAutoRefreshButton">
+               <property name="accessibleName">
+                <string>AutoRefresh</string>
+               </property>
+               <property name="text">
+                <string>Live</string>
+               </property>
+               <property name="enabled">
+                <bool>false</bool>
+               </property>
+               <property name="toolTip">
+                <string>Available when the current Images context supports this action.</string>
+               </property>
+               <property name="minimumSize">
+                <size>
+                 <width>84</width>
+                 <height>36</height>
+                </size>
+               </property>
+               <property name="maximumSize">
+                <size>
+                 <width>84</width>
+                 <height>36</height>
+                </size>
+               </property>
+              </widget>
+             </item>
+             <item>
+              <widget class="QPushButton" name="galleryFollowButton">
+               <property name="accessibleName">
+                <string>Follow newest image</string>
+               </property>
+               <property name="enabled">
+                <bool>false</bool>
+               </property>
+               <property name="toolTip">
+                <string>Available when the current Images context supports this action.</string>
+               </property>
+               <property name="minimumSize">
+                <size>
+                 <width>36</width>
+                 <height>36</height>
+                </size>
+               </property>
+               <property name="maximumSize">
+                <size>
+                 <width>36</width>
+                 <height>36</height>
+                </size>
+               </property>
+              </widget>
+             </item>
+            </layout>
            </widget>
           </item>
           <item>

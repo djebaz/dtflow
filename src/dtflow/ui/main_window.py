@@ -244,6 +244,7 @@ class MainWindow:
         )
         form.workspaceStack.hide()
         form.rootLayout.addWidget(self.shell)
+        self._last_run_marker = None
         self.progress_strip = ActivityStrip(form)
         self.inline = InlineFeedback(form)
         # Preserve the connection controller's established chrome references.
@@ -398,11 +399,14 @@ class MainWindow:
         form.statusBar().addPermanentWidget(grid_status_group)
         form.statusBar().addPermanentWidget(status_actions)
         self.grid_index_group = grid_status_group
-        grid_status_group.setVisible(form.workspaceStack.currentWidget() is self.images_page)
+        # The slot stays on every tab (only its text hides) so the activity bar has the same room everywhere.
+        grid_status_group.setFixedSize(70, 20)
+        grid_index.setVisible(form.workspaceStack.currentWidget() is self.images_page)
         self.grid_index_label = grid_index
         self.gallery.grid_position_changed.connect(self._sync_grid_index_status)
         self.logs_button = logs_button
         form.statusBar().setSizeGripEnabled(False)
+        form.statusBar().setFixedHeight(24)  # same height on every tab; the activity bar sits at its centre
         form.checkButton.clicked.connect(self.check)
         form.saveKeyButton.clicked.connect(self.save_key)
         form.removeKeyButton.clicked.connect(self.remove_key)
@@ -589,7 +593,7 @@ class MainWindow:
         elif index < len(buttons):
             buttons[index].setChecked(True)
         images_active = self.form.workspaceStack.currentWidget() is self.images_page
-        self.grid_index_group.setVisible(images_active)
+        self.grid_index_label.setVisible(images_active)
         self.gallery.set_active(images_active)
         self._place_export_panel()
         self._responsive_workspace()
@@ -621,7 +625,9 @@ class MainWindow:
             action=state.action,
             completed=state.completed,
             total=state.total,
-            detail=state.detail,
+            detail=" ".join(
+                part for part in (state.detail, " · ".join(p for p in (state.elapsed, state.eta) if p)) if part
+            ),
         )
 
     def _align_run_control(self) -> None:
@@ -716,6 +722,11 @@ class MainWindow:
         if self.progress_strip.retired:
             return
         state = self.activity.run_state
+        # Each settled image or finished run pushes a refresh hint to Images (it checks the database cheaply).
+        marker = (self.activity.generating, self.activity.dispatching, state.completed)
+        if marker != self._last_run_marker:
+            self._last_run_marker = marker
+            self.gallery.notify_changed()
         if not (self.activity.generating or self.activity.dispatching):
             self.progress_strip.finish("run")
             return
@@ -726,10 +737,20 @@ class MainWindow:
             self.progress_strip.start(
                 "run",
                 label,
-                self.generation.cancel if self.activity.generating else None,
-                stop_text="Stop waiting locally",
+                self.generation.cancel if self.activity.generating else self.queue.cancel,
+                stop_text="Stop waiting locally" if self.activity.generating else "Stop after current image",
             )
-        self.progress_strip.update("run", state.completed or 0, state.total or 0, detail=state.detail)
+        self.progress_strip.update(
+            "run",
+            state.completed or 0,
+            state.total or 0,
+            detail=state.detail,
+            elapsed=state.elapsed,
+            eta=state.eta,
+            stage=state.stage,
+            wide=state.wide,
+            queued=state.queued,
+        )
 
     def show(self) -> None:
         apply_native_dark_titlebar(self.form)

@@ -535,6 +535,8 @@ Grid and Detail selection indicators share List's explicit white tick/partial SV
 
 ## Inline actions and shared progress
 
+PR #160's docked activity-bar refinement uses `color.selectionBorder` for running fill and `color.selectionHover` for the alternate unknown-progress stripe, without accent mixing. Keep the queue count compact (`4/7`) and retain the `+N queued` chip before dropping ETA/elapsed as stage text clips. The status-bar slot falls back to the existing overlay below 240 px. Routine results retain the six-second hover/focus-paused lifetime and 2 px draining line, then fade for 450 ms; expiry callbacks must not fade or remove a newer task using the shared bar. These five owner-directed refinements supersede the bundled activity-bar mockup's older fill/count values; native Windows/DPI acceptance remains separate.
+
 The standalone [inline interaction mockup](devdocs/mockups/dtflow_inline_panels.html)
 is the synchronized **illustrative reference** for PR #58's owner-smoke-tested Qt
 workflows (2026-10-10). It retains the approved original embedded images and
@@ -578,7 +580,7 @@ window resizing and is removed when the editor closes or is replaced. It does
 not apply to confirmation, progress or result messages.
 
 `activity_strip.ui`, `inline_feedback.ui` and `activity_progress_row.ui` compose one
-bottom feedback overlay, matching the owner-approved HTML interaction structure. It
+bottom feedback overlay for confirmations, editors, notices and fallback/concurrent jobs. The docked activity bar above owns the newest running job or routine result; the overlay retains the earlier HTML interaction structure. It
 never joins the main content layout: showing it does not resize previews, thumbnails
 or scroll containers. A normal row is compact (48 px baseline, 28 px symbol, title and
 small body copy, 5 px progress track with separate count and Stop). Long essential
@@ -628,7 +630,7 @@ for Trash, Export, Cache, Queue, selection and generation. Destructive
 classification is explicit at the confirmation call site (`danger=True`),
 rather than inferred from button object names. Dismiss never stops work;
 Stop delegates to the owning controller.
-Keep generation preview/Run controls and existing uncertainty semantics. The shared bottom overlay owns live Generate progress and Stop waiting locally; never duplicate the stop button or a synthetic 0–100% bar inside the Generate workspace. Show real backend stage text and step counts when reported, not invented percentages. Keep a discreet persistent Generation status label beneath the preview for durable failures and uncertain outcomes. All filters,
+Keep generation preview/Run controls and existing uncertainty semantics. The shared activity strip routes live Generate progress and Stop waiting locally to the docked bar or its overlay fallback; never duplicate the stop button or a synthetic 0–100% bar inside the Generate workspace. Show real backend stage text and step counts when reported, not invented percentages. Keep a discreet persistent Generation status label beneath the preview for durable failures and uncertain outcomes. All filters,
 slots, expiry timers and deferred positioning are Qt-owned by their overlay widgets.
 No idle layout space is reserved. Native DPI, clipping/overlap, resize, focus, scroll
 continuity and packaged acceptance require owner verification; static/CI checks do

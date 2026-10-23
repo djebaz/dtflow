@@ -704,14 +704,20 @@ class QueuePage:
         running_items = [item for item in items if item["state"] == "running"]
         detail = f"Queue {queue_id[:8]} · {summary.headline}"
         waiting = len(up_next_ids(self._views.values())) if dispatching_here else 0
+        stage = wide = ""
 
         if phase == "running":
             # The ring counts settled items, which is meaningful however many items run at once.
             completed, total = summary.settled, summary.total
             detail += f" {summary.settled}/{summary.total} settled."
             progress = [value for (owner, _), value in self._run_progress.items() if owner == queue_id]
+            wide = f"Queue {queue_id[:8]} · {summary.headline.rstrip('.')}" + (
+                f" · {running} items running" if running > 1 else " · 1 item running" if running else ""
+            )
+            stage = f"{running} running" if running else summary.headline.rstrip(".")
             if running == 1 and len(progress) == 1:
                 step, steps = progress[0]
+                stage = f"step {step}/{steps}"
                 # The item number is known only for the selected queue, whose items are read.
                 position = f"Item #{running_items[0]['position']}" if len(running_items) == 1 else "Item"
                 detail += f" {position} step {step}/{steps}."
@@ -726,11 +732,11 @@ class QueuePage:
             detail = "No runnable queue selected."
 
         remaining = None
+        elapsed = eta = ""
         if phase in ("running", "paused"):
             remaining = self._countdown.remaining(view, monotonic())
-            timing = " · ".join(part for part in (elapsed_text(view), eta_text(view, remaining=remaining)) if part)
-            if timing:
-                detail += " " + timing
+            elapsed, eta = elapsed_text(view), eta_text(view, remaining=remaining)
+            if elapsed or eta:
                 if not self._timing_timer.isActive() and not self._runner.closed:
                     self._timing_timer.start()
             else:
@@ -748,6 +754,11 @@ class QueuePage:
                 total=total,
                 queue_id=queue_id if phase != "idle" else None,
                 detail=detail,
+                elapsed=elapsed,
+                eta=eta,
+                stage=stage,
+                wide=wide,
+                queued=waiting,
             )
         )
 

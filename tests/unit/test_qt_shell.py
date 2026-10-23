@@ -89,11 +89,14 @@ def test_feedback_child_deleted_before_activity_strip_remains_safe(window, qtbot
     strip.finish("fixture-progress")
 
 
-def test_overlay_notices_preserve_editor_and_show_distinct_lifetime(window, qtbot):
+def test_overlay_notices_preserve_editor_and_show_distinct_lifetime(window, qtbot, monkeypatch):
+    from PySide6.QtCore import QRect
+
     from dtflow.ui.inline_feedback import edit_text
 
     window.show()
     strip = window.progress_strip
+    monkeypatch.setattr(strip, "_bar_rect", lambda: QRect(12, 2, 400, 20))
     edit_text(window.form, "Edit caption", "Caption", lambda value: None)
     editor = window.inline._editor
     editor.setText("Keep this text")
@@ -110,7 +113,9 @@ def test_overlay_notices_preserve_editor_and_show_distinct_lifetime(window, qtbo
     # deliver a countdown tick before we inspect these initial values.
     assert row.activityLifetimeBar.value() == 6000
     assert strip._expiry["example"] == 6.0
-    qtbot.waitUntil(row.activityLifetimeBar.isVisible, timeout=1000)
+    qtbot.waitUntil(strip.bar.isVisible, timeout=1000)
+    assert row.isHidden() and row.property("inBar")
+    assert strip._bar_key == "example" and strip.bar.strip.model.lifetime == 1
     strip.finish("example")
 
     for state in ("stopped", "partial", "warning"):
@@ -120,6 +125,10 @@ def test_overlay_notices_preserve_editor_and_show_distinct_lifetime(window, qtbo
         assert row.activityLifetimeBar.value() == 6000
         assert strip._expiry["example"] == 6.0
         assert row.property("feedbackState") == state
+        if state == "stopped":
+            assert row.property("inBar") and strip.bar.strip.model.kind == "stopped"
+        else:
+            assert not row.property("inBar") and row.activityLifetimeBar.isVisible()
         strip.finish("example")
 
     # Nonfatal warning notices use the same amber lifetime row, not the persistent editor panel.
@@ -139,6 +148,59 @@ def test_overlay_notices_preserve_editor_and_show_distinct_lifetime(window, qtbo
     assert window.inline.form.property("feedbackState") == "info"
     window.inline.escape.activated.emit()
     assert window.inline.form.isHidden()
+
+
+def test_activity_bar_progress_and_result_lifecycle(window, qtbot, monkeypatch):
+    from PySide6.QtCore import QAbstractAnimation, QRect
+    from PySide6.QtWidgets import QApplication
+
+    from dtflow.ui.theme import load_tokens
+
+    window.show()
+    strip = window.progress_strip
+    real_bar_rect = strip._bar_rect
+    # Pin the available slot, not the physical screen/font metrics, for threshold checks.
+    monkeypatch.setattr(strip, "_bar_rect", lambda: QRect(12, 2, 400, 20))
+    strip.start("fixture", "Queue · settled items", stop=lambda: None, total=7)
+    strip.update("fixture", 4, 7, queued=2, stage="3 running", elapsed="0:43", eta="~0:25 left")
+    model = strip.bar.strip.model
+    assert model.count == "4/7" and model.queued == 2 and model.fraction == 4 / 7
+    tokens = load_tokens()
+    assert strip.bar.strip._fills["running"].name() == tokens["color.selectionBorder"]
+    assert strip.bar.strip._stripe.name() == tokens["color.selectionHover"]
+    # Exercise the real geometry gate separately from the pinned presentation slot.
+    status = window.form.statusBar()
+    status.clearMessage()
+    # With no visible controls, the slot has a 12 px inset on each edge.
+    monkeypatch.setattr(status, "findChildren", lambda *args, **kwargs: [])
+    monkeypatch.setattr(status, "width", lambda: 263)
+    assert real_bar_rect() is None
+    monkeypatch.setattr(status, "width", lambda: 264)
+    assert real_bar_rect().width() == 240
+    strip.complete("fixture", "Queue", "Finished", "success")
+    strip._notice_timer.stop()
+    monkeypatch.setattr(strip.form, "underMouse", lambda: False)
+    monkeypatch.setattr(strip.bar, "underMouse", lambda: True)
+    strip._expiry["fixture"] = 0.05
+    strip._tick_notices()
+    assert strip._expiry["fixture"] == 0.05  # hover pauses the lifetime
+    monkeypatch.setattr(strip.bar, "underMouse", lambda: False)
+    window.form.clearFocus()
+    monkeypatch.setattr(QApplication, "focusWidget", lambda: None)
+    strip._tick_notices()
+    row = strip.rows["fixture"]
+    fade = row._lifetime_fade
+    assert fade.duration() == 450 and fade.state() == QAbstractAnimation.State.Running
+    fade.pause()
+    fade.setCurrentTime(225)
+    assert 0 < strip.bar.opacity_effect.opacity() < 1
+    assert strip.bar.strip.model.lifetime == 0
+    # Switching to a new task restores full opacity; the old result cannot fade that task.
+    strip.start("new-fixture", "Generation")
+    assert strip.bar.opacity_effect.opacity() == 1
+    fade.setCurrentTime(450)
+    strip._finish_if_row("fixture", row)
+    assert "new-fixture" in strip.rows and strip.bar.strip.model.title == "Generation"
 
 
 def test_destructive_recycle_confirmation_uses_red_trash_icon(window):

@@ -366,7 +366,7 @@ def apply_gallery(page, assets=ASSETS, sample=False):
         get("galleryNextButton").clicked.connect(lambda: step(1))
         get("galleryPositionOverlay").setText("1 / 6")
         get("galleryDimensionsOverlay").setText("1536 × 1024")
-        get("galleryAutoRefreshButton").setText("●  Auto-refresh: Off")
+        get("galleryAutoRefreshButton").setText("Live")
         get("galleryModelValue").setText("SDXL 1.0")
         get("galleryModelIdentifier").setText("stabilityai/stable-diffusion-xl-base-1.0")
         get("galleryAdditionalFilenameValue").setText("portrait.jpg (illustrative fixture)")

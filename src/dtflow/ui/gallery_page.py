@@ -30,6 +30,7 @@ from PySide6.QtCore import (
     qVersion,
 )
 from PySide6.QtGui import (
+    QColor,
     QIcon,
     QImage,
     QImageReader,
@@ -99,10 +100,19 @@ from dtflow.ui.gallery_loading import GalleryCanvasLoading
 from dtflow.ui.gallery_pager import GalleryPager
 from dtflow.ui.gallery_preparation import GalleryPreparation, GalleryRetirement
 from dtflow.ui.inline_feedback import feedback
+from dtflow.ui.live_control_fx import LiveFollowFx, live_dot_icon
 from dtflow.ui.runner import AsyncRunner
 from dtflow.ui.theme import load_tokens
 
 log = logging.getLogger(__name__)
+
+LIVE_FOLLOW_TIPS = {
+    "off": "Turn on Live and Follow",
+    "live": "Follow: scroll to the newest image as it arrives.",
+    "following": "Following the newest image. Click to stop.",
+    "paused": "Follow paused because you scrolled away. Click, or scroll back to the top, to resume.",
+    "newest-only": "Follow works with Newest first. Switch the sort to use it.",
+}
 
 PAGE_SIZE = gallery_limits.DEFAULT_BATCH
 MAX_MOUNTED_IMAGES = gallery_limits.DEFAULT_CARDS  # five default batches; bounded buffered Qt cards
@@ -111,7 +121,11 @@ MAX_QUERY_ITEMS = gallery_limits.MAX_READ  # GalleryQuery retains its existing p
 # The zoom slider changes widget geometry only; it never creates new thumbnail sizes.
 THUMBNAIL_SIDE = 600
 THUMBNAIL_CONCURRENCY = 6
-AUTO_REFRESH_MS = 5000
+AUTO_REFRESH_MS = 1000  # file-metadata poll only; unchanged polls never rebuild the page
+PUSH_DEBOUNCE_MS = 250  # coalesce in-process change hints before the metadata check
+LIVE_RECOVERY_INTERVAL_S = 5  # full live reads during snapshot/failure episodes keep their original spacing
+SNAPSHOT_RECOVERY_GRACE_S = 5  # presentation-only stability grace before a recovered live read hides the warning
+SOURCE_SUMMARY_INTERVAL_S = 60  # minimum spacing of gallery.source_summary per phase; samples keep accumulating
 LOOKAHEAD_SCREENS = 3  # loaded beyond the viewport: at least one batch or this many screens
 AUTO_REFRESH_FULL_INTERVAL_S = 30  # a full read periodically guards against missed file metadata changes
 STANDARD_THUMBNAIL_PX = 320
@@ -402,6 +416,7 @@ class _PerfBatchStats:
     def __init__(self) -> None:
         self._lock = Lock()
         self._pending: dict[str, dict] = {}
+        self._emitted: dict[str, float] = {}
 
     def observe(
         self, phase: str, elapsed_ms: float, *, count: int = 1, cpu_ms: float = 0.0, success: bool = True
@@ -432,10 +447,20 @@ class _PerfBatchStats:
             stats["cpu"] += cpu_ms
             stats["failures"] += int(not success)
 
-    def flush(self, phase: str | None = None) -> None:
+    def flush(self, phase: str | None = None, *, force: bool = False) -> None:
+        """Emit pending summaries, at most once per interval per phase unless forced (close/stop)."""
+        now = monotonic()
         with self._lock:
             names = (phase,) if phase is not None else tuple(self._pending)
-            completed = [(name, self._pending.pop(name)) for name in names if name in self._pending]
+            due = [
+                name
+                for name in names
+                if name in self._pending
+                and (force or now - self._emitted.get(name, float("-inf")) >= SOURCE_SUMMARY_INTERVAL_S)
+            ]
+            completed = [(name, self._pending.pop(name)) for name in due]
+            for name in due:
+                self._emitted[name] = now
         for name, stats in completed:
             source_summary(log, name, stats)
 
@@ -508,6 +533,8 @@ class GalleryPage(QObject):
         self._auto_checking = False
         self._auto_last_full = 0.0
         self._auto_unchanged_polls = 0
+        self._auto_skip_reasons: list[str] = []
+        self._auto_skip_at = 0.0
         self._refresh_failing = False
         self._snapshot_at = None
         self._snapshot_warning_dismissed = False
@@ -640,6 +667,12 @@ class GalleryPage(QObject):
         self.save_timer.setSingleShot(True)
         self.save_timer.setInterval(250)
         self.save_timer.timeout.connect(self._flush_save)
+        # Producers in this process (generation, queue items) push a change hint; the debounce
+        # coalesces bursts and the metadata check still decides whether a read is needed.
+        self.push_timer = QTimer(self)
+        self.push_timer.setSingleShot(True)
+        self.push_timer.setInterval(PUSH_DEBOUNCE_MS)
+        self.push_timer.timeout.connect(self._auto_refresh_tick)
         self.auto_timer = QTimer(self)
         self.auto_timer.setInterval(AUTO_REFRESH_MS)
         self.auto_timer.timeout.connect(self._auto_refresh_tick)
@@ -833,7 +866,24 @@ class GalleryPage(QObject):
         self.auto_button.setEnabled(True)
         self.auto_button.setCheckable(True)
         self.auto_button.installEventFilter(KeyboardFocusGuard(self.auto_button))
+        # Live is two attached buttons: Live (toggle, checked = refreshing) and Follow (implies Live).
+        # `_live_mode` stays 0 Off, 1 Auto, 2 Follow; `_live_state` is the drawn state (see _live_visual_state).
+        self.follow_button = self._widget("galleryFollowButton", QPushButton)
+        self.follow_button.setEnabled(True)
+        self.follow_button.installEventFilter(KeyboardFocusGuard(self.follow_button))
+        self.follow_button.setIconSize(QSize(16, 16))
+        self.auto_button.setIconSize(QSize(10, 10))
+        self._follow_icons = {
+            False: QIcon(str(ASSETS / "chevrons-up-dim.svg")),
+            True: QIcon(str(ASSETS / "chevrons-up.svg")),
+        }
+        self._live_mode = 0
+        self._live_state = None
+        self._syncing_live = False
+        self._live_fx = LiveFollowFx(self.follow_button, QColor(self._tokens["color.focus"]))
         self.auto_button.toggled.connect(self._auto_refresh_changed)
+        self.follow_button.clicked.connect(self._follow_clicked)
+        self._sync_live_text()
 
         self.previous_button = self._widget("galleryPreviousButton", QPushButton)
         self.next_button = self._widget("galleryNextButton", QPushButton)
@@ -1398,7 +1448,8 @@ class GalleryPage(QObject):
                 self.slider.setValue(max(MIN_THUMBNAIL_PERCENT, min(MAX_THUMBNAIL_PERCENT, migrated)))
         selected = document.get("selected")
         self.selected_id = selected if isinstance(selected, str) and selected else None
-        self.auto_button.setChecked(bool(document.get("auto_refresh", True)))
+        auto = bool(document.get("auto_refresh", True))
+        self._apply_live(0 if not auto else 2 if bool(document.get("follow", True)) else 1)
         scroll = document.get("scroll")
         if isinstance(scroll, dict):
             for name in self._scroll:
@@ -1418,12 +1469,20 @@ class GalleryPage(QObject):
             self.refresh(preserve=True, trigger="activation")
         elif active:
             self._queue_neighbor_prefetch()
+            # Catch up immediately on images added while another tab was open; the cheap
+            # metadata check decides whether a read is needed.
+            self._auto_refresh_tick()
         if active and self._pending_page_jump is not None:
             self._pending_jump_timer.start()
 
+    def notify_changed(self) -> None:
+        """In-process hint that saved outputs changed; polling remains for other processes."""
+        if self._active and self.auto_button.isChecked() and not self.runner.closed:
+            self.push_timer.start()
+
     def _sync_auto_refresh(self) -> None:
         enabled = self.auto_button.isChecked()
-        self.auto_button.setText(f"●  Auto-refresh: {'On' if enabled else 'Off'}")
+        self._sync_live_text()
         if enabled and self._active:
             self.auto_timer.start()
         else:
@@ -1454,7 +1513,7 @@ class GalleryPage(QObject):
             self._perf_stats.flush()
 
     def _auto_refresh_tick(self) -> None:
-        """Check for gallery changes without rebuilding unchanged pages every five seconds."""
+        """Check for gallery changes without rebuilding unchanged pages on each poll."""
         if not self._active or not self.auto_button.isChecked() or self.runner.closed:
             return
         reasons = []
@@ -1475,7 +1534,9 @@ class GalleryPage(QObject):
         if self._auto_checking:
             reasons.append("signature_check")
         if reasons:
-            if dev_enabled():
+            now = monotonic()
+            if dev_enabled() and (reasons != self._auto_skip_reasons or now - self._auto_skip_at >= 10):
+                self._auto_skip_reasons, self._auto_skip_at = reasons, now
                 measurement(
                     log,
                     "gallery.auto_refresh",
@@ -1487,6 +1548,8 @@ class GalleryPage(QObject):
         # A snapshot/failure episode needs every live retry and its existing
         # two-success recovery semantics; a file-stat hint cannot gate recovery.
         if self._snapshot_at or self._snapshot_warning_episode or self._refresh_failing:
+            if monotonic() - self._auto_last_full < LIVE_RECOVERY_INTERVAL_S:
+                return
             if dev_enabled():
                 measurement(
                     log, "gallery.auto_refresh", action="started", reason="live_recovery", mounted=len(self.items)
@@ -1567,14 +1630,109 @@ class GalleryPage(QObject):
         self._auto_last_full = now
         self.refresh(preserve=True, trigger="auto")
 
-    def _auto_refresh_changed(self, _checked: bool) -> None:
+    def _auto_refresh_changed(self, checked: bool) -> None:
+        # Live toggled by the user (or setChecked from elsewhere): on is Live only, off also drops Follow.
+        if not self._syncing_live:
+            self._apply_live(1 if checked else 0)
+
+    def _follow_clicked(self) -> None:
+        state = self._live_state
+        if state == "paused":
+            self._jump_to_newest()  # resume; the ring plays when the state returns to "following"
+        elif state == "following":
+            self._apply_live(1)
+        else:  # off, live, newest-only: Follow implies Live, one click from Off
+            self._apply_live(2)
+
+    def _jump_to_newest(self) -> None:
+        if self.mode == "Detail":
+            self._pending_page_selection = "first"
+        self._page_scroll_target = "start"
+        self.refresh(reset=True, preserve=False, trigger="follow")
+
+    def _apply_live(self, mode: int) -> None:
+        """Set Live to 0 Off, 1 Auto or 2 Follow; the single place that changes the mode."""
+        previous = self._live_mode
+        self._live_mode = mode
+        self._syncing_live = True
+        try:
+            self.auto_button.setChecked(mode >= 1)
+        finally:
+            self._syncing_live = False
         self._sync_auto_refresh()
-        if not self.auto_button.isChecked() and self._snapshot_live_since is not None:
+        if mode == previous:
+            return
+        if mode == 0 and self._snapshot_live_since is not None:
             # A successful live read already recovered; stopping polling must
             # not leave its presentation waiting for a check that will not run.
             self._end_snapshot_warning_episode()
             self._sync_snapshot_warning()
+        if mode == 2 and not self._restoring and SORT_LABELS.get(self.sort.currentText(), "newest") == "newest":
+            # Turning Follow on goes straight to the newest image in every view.
+            self._jump_to_newest()
         self._schedule_save()
+
+    def _following_newest(self) -> bool:
+        """True while the view sits on the newest image of a newest-first list (Follow would act)."""
+        if self.offset != 0 or self.sort.currentText() not in ("Newest first", "") or not self.items:
+            return False
+        if self.mode == "Detail":
+            return self.selected_id == self.items[0].identity
+        if self._density_anchor is not None or self._suppress_batch_scroll:
+            return False
+        bar = self.grid_scroll.verticalScrollBar() if self.mode == "Grid" else self.table.verticalScrollBar()
+        return bar.value() == 0
+
+    def _live_visual_state(self) -> str:
+        if self._live_mode == 0:
+            return "off"
+        if self._live_mode == 1:
+            return "live"
+        if self.sort.currentText() not in ("Newest first", ""):
+            return "newest-only"
+        if self.items and not self._following_newest():
+            return "paused"
+        return "following"
+
+    def _sync_live_text(self) -> None:
+        """Draw the Live control: liveState on both buttons, icons, tooltips and the motion effects."""
+        state = self._live_visual_state()
+        if state == self._live_state:
+            return
+        previous, self._live_state = self._live_state, state
+        shown = "paused" if state == "newest-only" else state
+        for button in (self.auto_button, self.follow_button):
+            button.setProperty("liveState", shown)
+            button.style().unpolish(button)
+            button.style().polish(button)
+        self.auto_button.setText("Live")
+        self.auto_button.setIcon(
+            live_dot_icon(
+                self._live_mode >= 1, QColor(self._tokens["color.focus"]), QColor(self._tokens["color.secondary"])
+            )
+        )
+        self.auto_button.setToolTip(
+            "Live updates on. Click to turn off." if self._live_mode else "Live updates off. Click to turn on."
+        )
+        self.follow_button.setIcon(self._follow_icons[state == "following"])
+        self.follow_button.setAccessibleName(
+            "Follow newest image (paused)" if shown == "paused" else "Follow newest image"
+        )
+        self.follow_button.setToolTip(LIVE_FOLLOW_TIPS[state])
+        self._live_fx.apply(previous, state)
+
+    def _follow_applies(self, query: GalleryQuery, page: GalleryPage) -> bool:
+        """Follow keeps the viewer on the newest image, but only when it is already there.
+
+        Scrolling away from the top (Grid, List) or selecting an older image (Detail) pauses
+        it implicitly (the button reads "Follow (paused)"), so new arrivals never pull the view away from
+        an inspected image; it resumes when the view returns to the newest image.
+        """
+        if self._live_mode != 2 or query.sort != "newest" or query.offset != 0:
+            return False
+        if not page.items or (self.items and self.items[0].identity == page.items[0].identity):
+            return False
+        return self._following_newest()
 
     def _filter_edited(self, *_args) -> None:
         self._cancel_open_output()
@@ -1900,7 +2058,7 @@ class GalleryPage(QObject):
         elif self._snapshot_warning_episode:
             now = monotonic()
             if not self.auto_button.isChecked() or (
-                self._snapshot_live_since is not None and now - self._snapshot_live_since >= AUTO_REFRESH_MS / 1000
+                self._snapshot_live_since is not None and now - self._snapshot_live_since >= SNAPSHOT_RECOVERY_GRACE_S
             ):
                 # Manual refresh needs no second check when polling is off.
                 # With polling on, keep the presentation-only stability grace.
@@ -1915,9 +2073,14 @@ class GalleryPage(QObject):
             status.setText(
                 f"Read-only snapshot · {self._snapshot_at} · Live updates unavailable; retrying automatically."
             )
+        following = not opening and not page.snapshot_at and self._follow_applies(query, page)
         self.offset = query.offset
         self.items = list(page.items)
         self.total = page.total
+        if following:
+            self._page_scroll_target = "start"
+            if self.mode == "Detail":
+                self.selected_id = page.items[0].identity
         self._sync_pager()
         self._sync_canvas_loading()
         # Refresh may add/remove outputs even when filters and visible cards match.
@@ -1990,7 +2153,7 @@ class GalleryPage(QObject):
             "gallery.live_access_recovered",
             level=logging.INFO,
             data={
-                "auto_refresh": self.auto_button.isChecked(),
+                "auto_refresh": self._live_mode >= 1,
             },
         )
 
@@ -2172,6 +2335,7 @@ class GalleryPage(QObject):
 
     def _sync_pager(self, *, loading: bool = False) -> None:
         """Use the viewport's first visible image, not the fetched window offset."""
+        self._sync_live_text()
         first, last = self._visible_range()
         self.grid_position_changed.emit(first if self.mode == "Grid" else 0, self.total)
         self.pager.present(
@@ -4176,7 +4340,8 @@ class GalleryPage(QObject):
             "view": self.mode,
             "thumbnail_scale_percent": self.slider.value(),
             "selected": self.selected_id,
-            "auto_refresh": self.auto_button.isChecked(),
+            "auto_refresh": self._live_mode >= 1,
+            "follow": self._live_mode == 2,
             "scroll": dict(self._scroll),
         }
 
@@ -4211,7 +4376,7 @@ class GalleryPage(QObject):
         """Persist the latest viewer state before the shared async runner is shut down."""
 
         if dev_enabled():
-            self._perf_stats.flush()
+            self._perf_stats.flush(force=True)
         self.save_timer.stop()
         future = self._save_future
         if future is not None and not future.done():
