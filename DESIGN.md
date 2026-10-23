@@ -535,6 +535,8 @@ Grid and Detail selection indicators share List's explicit white tick/partial SV
 
 ## Inline actions and shared progress
 
+The global activity-bar Stop controls the locally owned displayed queue, not whichever queue is selected for inspection. A missing owned view cannot authorize a selection-based fallback. Stop immediately disables its action and shows the stopping caveat at both short and long widths; later progress must not replace that text. Auto-play changes run identity and gives the following queue fresh transient feedback and an enabled Stop. Per-queue Cancel and dispatcher/remote-uncertainty rules stay unchanged.
+
 PR #160's docked activity-bar refinement uses `color.selectionBorder` for running fill and `color.selectionHover` for the alternate unknown-progress stripe, without accent mixing. Keep the queue count compact (`4/7`) and retain the `+N queued` chip before dropping ETA/elapsed as stage text clips. The status-bar slot falls back to the existing overlay below 240 px. Routine results retain the six-second hover/focus-paused lifetime and 2 px draining line, then fade for 450 ms; expiry callbacks must not fade or remove a newer task using the shared bar. These five owner-directed refinements supersede the bundled activity-bar mockup's older fill/count values; native Windows/DPI acceptance remains separate.
 
 The standalone [inline interaction mockup](devdocs/mockups/dtflow_inline_panels.html)

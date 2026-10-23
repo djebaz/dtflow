@@ -4,6 +4,8 @@ DTFlow's desktop application has Connection, Generate, Queues and Images pages. 
 
 ## Inline actions and progress
 
+The global activity-bar **Stop** applies to the queue currently dispatched by this window, even when another queue is selected for inspection. The selected queue's **Cancel** remains a separate action. Stop immediately disables its button and keeps the stopping explanation visible as progress updates; when auto-play advances, the next queue gets its own enabled Stop. This changes targeting and presentation, not remote-cancellation certainty or the safety rule that waiting queues become paused if dispatch ends.
+
 DTFlow-owned confirmations, errors, results, About, metadata inspection, preset naming and
 checkpoint/LoRA editors stay inside the main window. Native file/folder pickers and ordinary
 menus remain available. No confirmation opens a separate window or nested dialog event loop.
