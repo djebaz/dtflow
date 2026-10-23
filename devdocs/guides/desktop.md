@@ -50,7 +50,7 @@ from a saved request outside the slider range is kept exactly until its slider i
 requests retain their recorded weights and existing validation; this does not change the
 CLI or provider weight contract.
 
-Running jobs and routine endings (finished, stopped) use one 20 px activity bar in the middle of the status bar, between the version text and the right-hand controls; it adapts to its own width (short title below 760 px, stage text clips first, then ETA, then elapsed; title, count and Stop never drop), shows ✓/■ results with × for six seconds (paused while hovered or focused), and renders nothing when idle. Only one job shows in the bar (the newest running one, else the newest ending); other jobs, and every job when the bar has no room, keep the overlay row with its own Stop. Confirmations, editors, errors, warnings, partial results, other notices and snapshot conditions use one thin bottom overlay above content, across tabs;
+Running jobs and routine endings (finished, stopped) use one 20 px activity bar in the middle of the status bar, between the version text and the right-hand controls; it adapts to its own width (short title below 760 px, stage text clips first while retaining the `+N queued` chip, then ETA drops, then elapsed; title, compact `4/7` count and Stop never drop), shows ✓/■ results with × for six seconds (paused while hovered or focused) followed by a 450 ms fade, and renders nothing when idle. Only one job shows in the bar (the newest running one, else the newest ending); other jobs, and every job when the available bar slot is below 240 px, keep the overlay row with its own Stop. Confirmations, editors, errors, warnings, partial results, other notices and snapshot conditions use one thin bottom overlay above content, across tabs;
 it is hidden when idle and reserves no empty layout space. Labelled rows distinguish
 concurrent export, Trash, gallery selection and generation/queue work. Unknown totals are
 indeterminate, not guessed percentages; queue counts mean settled items, not sampler steps.
@@ -237,12 +237,12 @@ decode. The selected Detail image and zoom/pan stay intact when other outputs
 change, except under **Follow** (below). Fully unchanged pages also preserve exact scroll and focus while
 counts/navigation can still update.
 
-The Images **Live** button cycles Off, Auto (refresh) and Follow (refresh and keep the newest image in view with the newest-first sort); it is remembered. Under Follow:
+Images has paired **Live** and **Follow** controls. Live toggles automatic refresh; Follow enables Live and newest-image following with the newest-first sort. The remembered modes remain Off, Auto and Follow. Under Follow:
 when new images arrive while the view is on the newest one (scrolled to the top in Grid/List,
 showing the newest in Detail, so Detail zoom/pan resets), it moves to the new image. Selecting an
-older image or scrolling away pauses it; the button reads **Live: Follow (paused)** until you return to the
-newest, and switching to Follow jumps there. Other sorts never follow. New images from generation or
-queue progress in this window are picked up within a fraction of a second; changes made by other
+older image or scrolling away pauses it; the Follow icon dims and its tooltip/accessibility label explains the paused state until you return to the
+newest; clicking the paused Follow control resumes at the newest image. Other sorts never follow. Generation or
+queue progress in this window schedules a debounced metadata check (250 ms); changes made by other
 processes are found by the one-second metadata poll, which costs a full read only when the
 database files changed (snapshot/failure recovery keeps its five-second spacing).
 
