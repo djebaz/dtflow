@@ -309,6 +309,16 @@ def test_queue_timing_reaches_bar_and_tooltip_without_changing_real_progress(win
     assert "estimate" in window.shell.runControl.toolTip()
     assert (row.activityProgress.value(), row.activityProgress.maximum()) == (1, 3)
     assert queue._timing_timer.isActive() and queue._timing_timer.interval() == 1000
+    # The global Stop belongs to the displayed dispatch, never the independently selected queue.
+    waiting = dict(current, queue_id="waiting-queue", status="queued")
+    queue._views[waiting["queue_id"]] = waiting
+    queue._selected = waiting["queue_id"]
+    posted, ordered = [], []
+    monkeypatch.setattr(queue, "_post", lambda action, queue_id=None: posted.append((action, queue_id)))
+    monkeypatch.setattr(queue, "_order", ordered.append)
+    strip.bar.button.click()
+    assert posted == [("cancel", current["queue_id"])] and not ordered
+    assert queue._selected == waiting["queue_id"]
     tick[0] += 1
     queue._timing_tick()
     assert strip.bar.strip.model.eta == "~0:59 left"
@@ -318,7 +328,20 @@ def test_queue_timing_reaches_bar_and_tooltip_without_changing_real_progress(win
     paused = dict(current, status="paused")
     queue._read_done(([paused], paused, 4), None)
     assert not strip.bar.strip.model.eta and strip.bar.strip.model.elapsed
+    # Auto-play switches the displayed identity: the next queue gets a fresh Stop, not A's disabled state.
+    following = dict(current, queue_id="following-queue")
+    queue._views[following["queue_id"]] = following
+    queue._dispatching = following["queue_id"]
+    queue._publish_run_state()
+    assert strip.bar.button.isEnabled() and not strip.bar.strip.model.stopping
+    strip.bar.button.click()
+    assert posted[-1] == ("cancel", following["queue_id"])
+    queue._dispatching = "missing-owned-queue"
+    queue.cancel_run()
+    assert len(posted) == 2  # a missing owned view never falls back to the selected queue
     queue._dispatching = None
+    queue.cancel_run()
+    assert len(posted) == 2  # no live owned run: never fall back to selection
     window.activity.set(dispatching=False)
     queue._timer.stop()
     assert not queue._timing_timer.isActive()

@@ -207,7 +207,7 @@ class ActivityStrip(QObject):
         detail = chosen.activityDetail.text()
         stage = detail if not (running and detail in ("Preparing…", "")) else ("Preparing" if not known else "")
         reported_stage = chosen.property("stageText") or ""
-        if running and reported_stage:
+        if running and not stopping and reported_stage:
             stage = reported_stage
         label = chosen.activityLabel.text()
         model = BarModel(
@@ -216,7 +216,7 @@ class ActivityStrip(QObject):
             count=f"{done}/{total}" if known else "",
             queued=(chosen.property("queuedCount") or 0) if running else 0,
             stage=stage,
-            wide=(chosen.property("wideText") or "") if running else "",
+            wide=(chosen.property("wideText") or "") if running and not stopping else "",
             fraction=(done / total) if known else None,
             elapsed=elapsed_text,
             eta=eta,
@@ -375,6 +375,7 @@ class ActivityStrip(QObject):
                     if stop_text == "Stop waiting locally"
                     else "Stopping after the current item; completed work remains."
                 )
+                self._sync_bar()
                 stop()
 
             row.activityStopButton.clicked.connect(request_stop)
