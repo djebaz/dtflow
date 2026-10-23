@@ -730,6 +730,10 @@ class MainWindow:
         if not (self.activity.generating or self.activity.dispatching):
             self.progress_strip.finish("run")
             return
+        run_identity = "generation" if self.activity.generating else f"queue:{state.queue_id}"
+        row = self.progress_strip.rows.get("run")
+        if row is not None and row.property("runIdentity") != run_identity:
+            self.progress_strip.finish("run")
         if "run" not in self.progress_strip.rows:
             label = "Generation" if self.activity.generating else "Queue · settled items"
             self.progress_strip.finish("generation-result")
@@ -737,9 +741,10 @@ class MainWindow:
             self.progress_strip.start(
                 "run",
                 label,
-                self.generation.cancel if self.activity.generating else self.queue.cancel,
+                self.generation.cancel if self.activity.generating else self.queue.cancel_run,
                 stop_text="Stop waiting locally" if self.activity.generating else "Stop after current image",
             )
+            self.progress_strip.rows["run"].setProperty("runIdentity", run_identity)
         self.progress_strip.update(
             "run",
             state.completed or 0,

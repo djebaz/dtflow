@@ -2110,6 +2110,15 @@ class QueuePage:
         self._render()
         self.refresh()
 
+    def cancel_run(self) -> None:
+        """Stop the locally owned run shown globally, independently of the selected queue."""
+        if self._runner.closed or self._activity.generating or not self.dispatching_here:
+            return
+        view = self._run_view()
+        if view is None or view["queue_id"] != self._dispatching or not self._controls_for(view).cancel:
+            return
+        self._post("cancel", view["queue_id"])
+
     def cancel(self) -> None:
         """A waiting queue holds no reservation, so it is cancelled at once; any other queue gets a posted control."""
         view = self._view()

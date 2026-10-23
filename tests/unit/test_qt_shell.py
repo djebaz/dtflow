@@ -162,12 +162,30 @@ def test_activity_bar_progress_and_result_lifecycle(window, qtbot, monkeypatch):
     # Pin the available slot, not the physical screen/font metrics, for threshold checks.
     monkeypatch.setattr(strip, "_bar_rect", lambda: QRect(12, 2, 400, 20))
     strip.start("fixture", "Queue · settled items", stop=lambda: None, total=7)
-    strip.update("fixture", 4, 7, queued=2, stage="3 running", elapsed="0:43", eta="~0:25 left")
+    strip.update(
+        "fixture",
+        4,
+        7,
+        queued=2,
+        stage="3 running",
+        wide="Queue fixture · Running · 3 items running",
+        elapsed="0:43",
+        eta="~0:25 left",
+    )
     model = strip.bar.strip.model
     assert model.count == "4/7" and model.queued == 2 and model.fraction == 4 / 7
     tokens = load_tokens()
     assert strip.bar.strip._fills["running"].name() == tokens["color.selectionBorder"]
     assert strip.bar.strip._stripe.name() == tokens["color.selectionHover"]
+    strip.bar.button.click()
+    caveat = "Stopping after the current item; completed work remains."
+    assert strip.bar.strip.model.stopping and not strip.bar.button.isEnabled()
+    assert strip.bar.strip.model.stage == caveat and not strip.bar.strip.model.wide
+    # Later queue progress must not replace the caveat at either short or long widths.
+    for width in (400, 800):
+        monkeypatch.setattr(strip, "_bar_rect", lambda width=width: QRect(12, 2, width, 20))
+        strip.update("fixture", 5, 7, stage="1 running", wide="Queue fixture · Running · 1 item running")
+        assert strip.bar.strip.model.stage == caveat and not strip.bar.strip.model.wide
     # Exercise the real geometry gate separately from the pinned presentation slot.
     status = window.form.statusBar()
     status.clearMessage()
