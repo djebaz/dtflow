@@ -43,7 +43,7 @@ if sys.platform == "win32" and platform_name == "offscreen":
     # Offscreen Qt on Windows otherwise searches PySide6's empty font folder.
     os.environ.setdefault("QT_QPA_FONTDIR", str(Path(os.environ.get("WINDIR", r"C:\Windows")) / "Fonts"))
 
-from PySide6.QtCore import QCoreApplication, QEvent, QPoint, QSize, Qt  # noqa: E402
+from PySide6.QtCore import QCoreApplication, QEvent, QPoint, QRect, QSize, Qt  # noqa: E402
 from PySide6.QtGui import QColor, QGuiApplication, QImage, QPainter, QPixmap, QTextDocument, QTextOption  # noqa: E402
 from PySide6.QtTest import QTest  # noqa: E402
 from PySide6.QtWidgets import (  # noqa: E402
@@ -1072,6 +1072,21 @@ def render_active_queue_states(shell, out):
         assert page.queueFactModelLabel.text() == "flux_1_schnell_q8p.ckpt"
         assert page.queueFactLorasLabel.text() == "offline-style.safetensors 0.8"
         snap("queues-11-running")
+        # Stop is presentation-only here; never post a real queue control from an offline capture.
+        with patch.object(queue, "_post") as posted:
+            strip.bar.button.click()
+            posted.assert_called_once_with("cancel", queue._dispatching)
+            available = strip._bar_rect()
+            for width in (400, 800):
+                rect = QRect(available)
+                rect.setWidth(width)
+                with patch.object(strip, "_bar_rect", return_value=rect):
+                    strip.update("run", 1, 3, stage="1 running", wide="Queue fixture · Running · 1 item running")
+                    assert strip.bar.strip.model.stopping and not strip.bar.strip.model.wide
+                    assert strip.bar.strip.model.stage == "Stopping after the current item; completed work remains."
+                    snap(f"queues-81-stopping-caveat-{width}")
+        strip.finish("run")
+        shell._sync_activity_progress()
         # #123: while this window dispatches, the composer offers Add to queue; Start now waits for the run.
         page.newQueueButton.click()
         assert queue.composing and page.addQueueButton.isEnabled() and not page.startQueueButton.isEnabled()
