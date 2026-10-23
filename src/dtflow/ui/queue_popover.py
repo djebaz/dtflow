@@ -15,7 +15,6 @@ from PySide6.QtWidgets import QWidget
 
 from dtflow.ui.activity import Activity
 
-DISCLOSURE = "Uses Generate's current request and backend. A cloud run may use credits."
 FORM = Path(__file__).with_name("forms") / "queue_popover.ui"
 
 
@@ -108,7 +107,8 @@ class QueuePopover(QObject):
         start, add, reason = self._queue.quick_state()
         self.start_button.setEnabled(start)
         self.add_button.setEnabled(add)
-        self.note_label.setText(f"{reason} Max at once: {self._queue.quick_cap()}. {DISCLOSURE}")
+        disclosure = self._queue.quick_disclosure(plan=self.plan_option.isChecked())
+        self.note_label.setText(f"{reason} Max at once: {self._queue.quick_cap()}. {disclosure}")
         count = self.label().removeprefix("Queue").strip(" ×")
         self.start_button.setText(f"Start now ({count})" if count else "Start now")
         # Wrapped labels need the height for the fixed width, which a plain size hint does not give.

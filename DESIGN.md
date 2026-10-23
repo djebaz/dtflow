@@ -347,7 +347,7 @@ row-wide hover. Original shipped viewer behavior was single-focus browsing; Phas
 
 Detail defaults to Fit so the complete saved image is visible on entry. Cover
 remains available for a filled canvas; 100%, zoom, pan, previous/next,
-fullscreen/Escape and the right-hand filmstrip remain available. The header full-screen toggle (all views) also collapses the filter row, selection bar and metadata/prompt panels; Escape leaves it from any view. The filmstrip
+independent window fullscreen (F11), optimized layout (Images icon/Escape) and the right-hand filmstrip remain available. Optimization only collapses/restores the filter row, selection bar and metadata/prompt panels; it never calls native window show/state methods. Escape toggles it outside text editors, popups and active inline feedback. The filmstrip
 spans the content height beside the preview and its metadata/prompt/disclosure
 panels. Image overlays have a separate 10 px interior inset.
 
@@ -459,8 +459,7 @@ where + New queue was (Max at once for the new queue, neutral *Save paused* and
 *Add to queue*, `role="primary"` **Start now (N items)**, then Close; when the
 center is too narrow, the entire action group including Close flows together
 onto a wrapping row, rather than isolating Close above the remaining actions), a
-secondary one-line summary of the Generate base request with *Edit in
-Generate*, then the **Variation** section card. A bottom spacer
+secondary summary of the independent queue draft with explicit *Use Generate settings* and *Copy to Generate* actions, an editable base/source prompt, then the **Variation** section card. Editing or selecting a saved queue never overwrites Generate. A compact copy icon beside the selected queue title copies its full first-item prompt. Newly composed queues retain original authoring input separately from resolved execution items; Edit as new restores that source, while legacy reconstruction discloses its limits. A bottom spacer
 keeps the cards at their natural heights. Variation's Mode is Repeat (an item
 count, seeds s, s+1, …) or Cross/Pair. Pair/Cross dimensions are rows built by
 selection: `ValueChips` show each value as a removable `valueChip` button

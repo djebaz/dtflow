@@ -5,7 +5,7 @@ import logging
 from pathlib import Path
 
 from PySide6.QtCore import QEvent, QFile, QIODevice, QObject, QSize, Qt, QTimer, Slot
-from PySide6.QtGui import QFontMetrics, QIcon, QPixmap
+from PySide6.QtGui import QFontMetrics, QIcon, QKeySequence, QPixmap, QShortcut
 from PySide6.QtUiTools import QUiLoader
 from PySide6.QtWidgets import (
     QAbstractButton,
@@ -461,6 +461,8 @@ class MainWindow:
                 _LayoutGuard(self._align_run_control, form, (QEvent.Type.Resize, QEvent.Type.Move))
             )
         self.form.installEventFilter(_CloseGuard(self._confirm_close, self.form))
+        self._fullscreen_shortcut = QShortcut(QKeySequence("F11"), self.form)
+        self._fullscreen_shortcut.activated.connect(self._toggle_window_fullscreen)
         diagnostic_event(
             log,
             "app.window_ready",
@@ -533,6 +535,15 @@ class MainWindow:
         else:
             self._logs_previous_page = self.form.workspaceStack.currentWidget()
             self.form.workspaceStack.setCurrentWidget(self.logs_marker)
+
+    def _toggle_window_fullscreen(self) -> None:
+        if self.form.isFullScreen():
+            self.form.setWindowState(
+                getattr(self, "_windowed_state", self.form.windowState() & ~Qt.WindowState.WindowFullScreen)
+            )
+        else:
+            self._windowed_state = self.form.windowState()
+            self.form.showFullScreen()
 
     def _inline_consumes_escape(self) -> bool:
         """An active shared confirmation, editor or notice takes Escape before the Logs workspace."""

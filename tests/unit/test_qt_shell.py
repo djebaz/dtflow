@@ -46,6 +46,74 @@ def test_lifecycle_from_designer_file_and_clean_shutdown(window, qtbot):
     assert delivered == [] and not window.queue._timer.isActive()
 
 
+def test_shared_header_and_window_modes(window, qtbot):
+    from PySide6.QtCore import QPoint, Qt
+    from PySide6.QtTest import QTest
+    from PySide6.QtWidgets import QApplication
+
+    from dtflow.ui.gallery_detail_preview import toggle_image_focus
+
+    window.show()
+    QApplication.processEvents()
+    brand = window.shell.brandFrame.mapTo(window.form, QPoint(0, 0))
+    navigation = window.shell.navigationFrame.mapTo(window.form, QPoint(0, 0))
+    window._toggle_logs()
+    QApplication.processEvents()
+    assert window.shell.brandFrame.mapTo(window.form, QPoint(0, 0)) == brand
+    assert window.shell.navigationFrame.mapTo(window.form, QPoint(0, 0)) == navigation
+    assert window.shell.quickQueueButton.property("role") != "logsAction"
+    # Shared navigation must never compete with Logs filters for horizontal space.
+    for width in (1040, 900, 1600):
+        window.form.resize(width, 760)
+        QApplication.processEvents()
+        nav = window.shell.navigationFrame
+        filters = window.logs_form.logsSessionLabel
+        assert filters.mapTo(window.form, QPoint()).y() > nav.mapTo(window.form, QPoint(0, nav.height())).y()
+        for button in (
+            window.form.connectionNavigationButton,
+            window.form.generationNavigationButton,
+            window.form.queueNavigationButton,
+            window.form.imagesNavigationButton,
+        ):
+            assert nav.rect().contains(button.mapTo(nav, button.rect().bottomRight()))
+        controls = (
+            window.logs_form.logsSessionCombo,
+            window.logs_form.logsSearch,
+            window.logs_form.logsLevelCombo,
+            window.logs_form.logsComponentCombo,
+            window.logs_form.logsEventCombo,
+            window.logs_form.logsMoreFiltersButton,
+        )
+        for left, right in zip(controls, controls[1:], strict=False):
+            assert left.mapTo(window.form, left.rect().topRight()).x() < right.mapTo(window.form, QPoint()).x()
+        assert controls[-1].mapTo(window.form, controls[-1].rect().bottomRight()).x() < window.form.width()
+    window.form.imagesNavigationButton.click()
+    QApplication.processEvents()
+    page = window.gallery_detail
+    for state in (Qt.WindowState.WindowMaximized, Qt.WindowState.WindowFullScreen):
+        window.form.setWindowState(state)
+        QApplication.processEvents()
+        toggle_image_focus(page, True)
+        assert window.form.windowState() & state
+        toggle_image_focus(page, False)
+        assert window.form.windowState() & state
+    window.form.showNormal()
+    window.gallery.grid_scroll.setFocus()
+    QTest.keyClick(window.form, Qt.Key.Key_Escape)
+    assert page.property("imageFocus")
+    assert not window.form.isFullScreen()
+    QTest.keyClick(window.form, Qt.Key.Key_F11)
+    assert page.property("imageFocus") and window.form.isFullScreen()
+    QTest.keyClick(window.form, Qt.Key.Key_F11)
+    assert page.property("imageFocus") and not window.form.isFullScreen()
+    QTest.keyClick(window.form, Qt.Key.Key_Escape)
+    assert not page.property("imageFocus") and not window.form.isFullScreen()
+    QTest.keyClick(window.form, Qt.Key.Key_F11)
+    assert window.form.isFullScreen()
+    QTest.keyClick(window.form, Qt.Key.Key_F11)
+    assert not window.form.isFullScreen()
+
+
 @pytest.mark.parametrize("capability", [None, False, True])
 def test_trash_capability_gates_startup_and_source_checks(capability, monkeypatch, qtbot, tmp_path):
     from dtflow.services.image_recycle import RecycleUnavailable

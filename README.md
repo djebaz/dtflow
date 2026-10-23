@@ -42,8 +42,7 @@ folder/path actions. Save and load generation configurations to reuse a setup.
 
 ### Durable queues and controlled comparisons
 
-Compose a queue from the generation form, then start it now, add it up next behind a running
-queue or save it paused; pause, resume or cancel it later.
+Compose a queue in its own draft, initially copied from Generate, then start it now, add it up next behind a running queue or save it paused; pause, resume or cancel it later. Edit the queue's base prompt without changing Generate; **Use Generate settings** and **Copy to Generate** transfer settings explicitly. **Edit as new** restores saved authoring input for newly composed queues, including the prompt-variation source; older queues disclose reconstruction from resolved items.
 Queue items retain their resolved requests, attempts and saved outputs, so execution remains
 inspectable after restart. Concurrency controls respect backend and shared resource limits.
 
@@ -71,6 +70,8 @@ local asset receipts for reuse. Generation never hides an upload inside an ordin
 
 The fake provider lets you explore the same forms, progress, outputs and queue controls
 offline. Fixture images and configurable simulation outcomes require no model inference.
+
+Images has two independent viewing modes: **F11** toggles window fullscreen, while **Escape** or the Images optimize icon toggles the reduced-chrome layout outside editors, popups and active inline feedback. Optimizing never changes the window state.
 
 The Images tab browses committed saved outputs in Grid, List and Detail views with a
 shared compact header, 25–250% thumbnail scaling (100% uses a 320 px display size), List thumbnails whose width and height follow zoom, and a full-height Detail filmstrip. Grid, List and the filmstrip share one 600 px maximum thumbnail decode per image; the main Detail viewer reads the original saved output at native resolution.
