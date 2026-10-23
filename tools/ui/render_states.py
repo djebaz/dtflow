@@ -1081,18 +1081,18 @@ def render_active_queue_states(shell, out):
         timed.update(successful_durations=[45], started_at_utc=datetime.now(UTC).isoformat())
         queue._read_done(([timed], timed, 2), None)
         queue._timer.stop()
-        assert "Elapsed" in queue._activity.run_state.detail and "estimate" in queue._activity.run_state.detail
+        assert "Elapsed" in queue._activity.run_state.elapsed and "estimate" in queue._activity.run_state.eta
         assert (queue._activity.run_state.completed, queue._activity.run_state.total) == (1, 3)
         snap("queues-33-elapsed-eta")
         with patch("dtflow.ui.queue_page.monotonic", return_value=queue._countdown.deadline - 89):
             queue._timing_tick()
-        assert "~1:29 left" in queue._activity.run_state.detail
+        assert "~1:29 left" in queue._activity.run_state.eta
         assert (queue._activity.run_state.completed, queue._activity.run_state.total) == (1, 3)
         snap("queues-34-eta-countdown")
         resumed = dict(timed, resume_event_id=1)
         queue._read_done(([resumed], resumed, 2), None)
         queue._timer.stop()
-        assert "~1:30 left" in queue._activity.run_state.detail
+        assert "~1:30 left" in queue._activity.run_state.eta
         snap("queues-35-resume-between-polls")
         present("paused", ["succeeded", "pending", "pending"], owned=True)
         assert page.queuePrimaryButton.text() == "Resume" and queue._activity.run_state.action == "resume"
@@ -3346,6 +3346,65 @@ def render_shell_states(shell, capture):
         control.set_presentation(phase, **kwargs)
         capture(name)
     shell._sync_run_control()
+
+    # Activity-bar parity fixtures use the real keyed-row projection, with no dispatch/provider work.
+    original_size = shell.form.size()
+    original_message = shell.form.statusBar().currentMessage()
+    try:
+        clear()
+        shell.form.statusBar().showMessage("DTFlow · offline activity-bar fixture")
+        strip.start("bar-fixture", "Queue · settled items", stop=lambda: None, total=7)
+        strip.update(
+            "bar-fixture",
+            4,
+            7,
+            queued=2,
+            stage="3 running",
+            wide="Queue fixture · Running · 3 items running",
+            elapsed="0:43",
+            eta="~0:25 left",
+        )
+        for width in (400, 760, 1400, 240, 239):
+            shell.form.resize(2200, original_size.height())
+            QApplication.processEvents()
+            available = strip._bar_rect()
+            shell.form.resize(shell.form.width() + width - available.width(), original_size.height())
+            QApplication.processEvents()
+            strip._position()
+            assert strip.rows["bar-fixture"].property("inBar") == (width >= 240)
+            if width >= 240:
+                assert strip.bar.width() == width
+                assert strip.bar.strip.model.count == "4/7" and strip.bar.strip.model.queued == 2
+            capture(f"shell-22-activity-queued-width-{width}")
+        shell.form.resize(original_size)
+        strip.finish("bar-fixture")
+        strip.start("bar-fixture", "Generation", stop=lambda: None, stop_text="Stop waiting locally")
+        capture("shell-23-activity-unknown-stripes")
+        strip.rows["bar-fixture"].activityStopButton.click()
+        strip._sync_bar()
+        capture("shell-24-activity-stopping-stripes")
+        for state in ("success", "stopped"):
+            strip.complete(
+                "bar-fixture", "Generation", "Saved" if state == "success" else "Stopped waiting locally", state
+            )
+            strip._notice_timer.stop()
+            capture(f"shell-25-activity-{state}-lifetime")
+            with (
+                patch.object(strip.form, "underMouse", return_value=False),
+                patch.object(strip.bar, "underMouse", return_value=False),
+                patch.object(QApplication, "focusWidget", return_value=None),
+            ):
+                strip._expiry["bar-fixture"] = 0.05
+                strip._tick_notices()
+            fade = strip.rows["bar-fixture"]._lifetime_fade
+            fade.pause()
+            fade.setCurrentTime(225)
+            capture(f"shell-26-activity-{state}-fade")
+            clear()
+    finally:
+        clear()
+        shell.form.resize(original_size)
+        shell.form.statusBar().showMessage(original_message)
 
 
 def render_inpaint_states(shell, state, capture):

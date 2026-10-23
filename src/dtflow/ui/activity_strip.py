@@ -56,13 +56,14 @@ class ActivityStrip(QObject):
         # Filters and deferred callbacks must disappear with the overlay frame.
         self.setParent(self.form)
         self.rows = {}
-        self.bar = ActivityBar(window.statusBar())
+        self.status_bar = window.statusBar()
+        self.bar = ActivityBar(self.status_bar)
         self.bar.stop_requested.connect(self._bar_stop)
         self.bar.dismiss_requested.connect(self._bar_dismiss)
         self._bar_key = None
         self._last_run = None
-        window.statusBar().installEventFilter(self)
-        window.statusBar().messageChanged.connect(lambda _text: QTimer.singleShot(0, self, self._position))
+        self.status_bar.installEventFilter(self)
+        self.status_bar.messageChanged.connect(lambda _text: QTimer.singleShot(0, self, self._position))
         self._expiry = {}
         self._positioning = False
         self._retired = False
@@ -93,7 +94,9 @@ class ActivityStrip(QObject):
 
     def _live(self) -> bool:
         """Qt can invalidate a child wrapper before its parent's destroyed signal."""
-        return not self._retired and isValid(self.host) and isValid(self.form)
+        return not self._retired and all(
+            isValid(widget) for widget in (self.window, self.host, self.form, self.status_bar, self.bar)
+        )
 
     @property
     def retired(self) -> bool:
@@ -110,16 +113,17 @@ class ActivityStrip(QObject):
         self.feedback = None
 
     def eventFilter(self, watched, event):
+        if not self._live():
+            return False
         if (
-            not self._retired
-            and watched.objectName() == "activityStatusDismissButton"
+            watched.objectName() == "activityStatusDismissButton"
             and event.type() == QEvent.Type.KeyPress
             and event.key() == Qt.Key.Key_Escape
         ):
             watched.click()
             return True
-        if not self._retired and event.type() in (QEvent.Type.Resize, QEvent.Type.Show, QEvent.Type.LayoutRequest):
-            if watched is self.window.statusBar():
+        if event.type() in (QEvent.Type.Resize, QEvent.Type.Show, QEvent.Type.LayoutRequest):
+            if watched is self.status_bar:
                 # Child geometry is stale until the status bar has laid itself out.
                 QTimer.singleShot(0, self, self._position)
             else:
@@ -155,6 +159,8 @@ class ActivityStrip(QObject):
         The chosen row remains the data model but leaves the overlay layout. If the bar has no room
         (a long temporary message, a narrow window) nothing is chosen and the overlay shows it all.
         """
+        if not self._live():
+            return
         rect = self._bar_rect()
         key, chosen = self._bar_row() if rect is not None else (None, None)
         layout = self.form.activityRowsLayout
@@ -207,19 +213,27 @@ class ActivityStrip(QObject):
         model = BarModel(
             kind={"progress": "running"}.get(state, state),
             title=label,
-            count=chosen.activityCount.text() if known else "",
+            count=f"{done}/{total}" if known else "",
+            queued=(chosen.property("queuedCount") or 0) if running else 0,
             stage=stage,
             wide=(chosen.property("wideText") or "") if running else "",
             fraction=(done / total) if known else None,
             elapsed=elapsed_text,
             eta=eta,
             stopping=stopping,
-            lifetime=(chosen.activityLifetimeBar.value() / 6000) if not running and key in self._expiry else None,
+            lifetime=(chosen.activityLifetimeBar.value() / 6000)
+            if not running and not chosen.activityLifetimeBar.isHidden()
+            else None,
             tooltip=" · ".join(part for part in (label, detail, reported_eta) if part),
             stop_label=stop.text(),
             stop_visible=not stop.isHidden(),
         )
-        self.bar.present(model, stop_enabled=stop.isEnabled())
+        effect = chosen.graphicsEffect()
+        self.bar.present(
+            model,
+            stop_enabled=stop.isEnabled(),
+            opacity=effect.opacity() if isinstance(effect, QGraphicsOpacityEffect) else 1.0,
+        )
         self.bar.setGeometry(rect)
         self.bar.show()
         self.bar.raise_()
@@ -230,7 +244,9 @@ class ActivityStrip(QObject):
 
     def _bar_rect(self):
         """Space between the version text and the right-hand controls, without displacing either."""
-        status = self.window.statusBar()
+        if not self._live():
+            return None
+        status = self.status_bar
         message = status.currentMessage()
         left = status.fontMetrics().horizontalAdvance(message) + 30 if message else 12
         right = status.width() - 12
@@ -240,7 +256,7 @@ class ActivityStrip(QObject):
             if child.x() > status.width() // 3:
                 right = min(right, child.x() - 24)
         width = right - left
-        if width < 160 or status.height() < 1:
+        if width < 240 or status.height() < 1:
             return None
         return QRect(left, max(0, (status.height() - self.bar.height()) // 2), width, self.bar.height())
 
@@ -367,7 +383,7 @@ class ActivityStrip(QObject):
         self._position()
         QTimer.singleShot(0, self, self._position)
 
-    def update(self, key, done, total, *, detail=None, elapsed="", eta="", stage="", wide=""):
+    def update(self, key, done, total, *, detail=None, elapsed="", eta="", stage="", wide="", queued=0):
         if not self._live():
             return
         row = self.rows.get(key)
@@ -387,6 +403,7 @@ class ActivityStrip(QObject):
             row.setProperty("etaText", eta)
             row.setProperty("stageText", stage)
             row.setProperty("wideText", wide)
+            row.setProperty("queuedCount", queued)
             self._sync_bar()
 
     def complete(self, key, title, text, state="success"):
@@ -456,13 +473,13 @@ class ActivityStrip(QObject):
             ):
                 continue
             remaining -= 0.1
-            if remaining <= 0 and row.property("inBar"):
+            if remaining <= 0:
                 self._expiry.pop(key, None)
-                self.finish(key)
-            elif remaining <= 0:
-                self._expiry.pop(key, None)
+                row.activityLifetimeBar.setValue(0)
                 effect = QGraphicsOpacityEffect(row)
                 row.setGraphicsEffect(effect)
+                # Hidden backing rows still animate; mirror only the selected row onto the shared bar.
+                effect.opacityChanged.connect(self._sync_bar)
                 fade = QPropertyAnimation(effect, b"opacity", row)
                 fade.setDuration(450)
                 fade.setStartValue(1.0)

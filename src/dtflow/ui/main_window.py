@@ -749,6 +749,7 @@ class MainWindow:
             eta=state.eta,
             stage=state.stage,
             wide=state.wide,
+            queued=state.queued,
         )
 
     def show(self) -> None:

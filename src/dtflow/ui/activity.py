@@ -25,6 +25,7 @@ class RunState:
     # Short and long middle text for the activity bar; empty means use `detail`.
     stage: str = ""
     wide: str = ""
+    queued: int = 0
 
 
 class Activity:

@@ -758,6 +758,7 @@ class QueuePage:
                 eta=eta,
                 stage=stage,
                 wide=wide,
+                queued=waiting,
             )
         )
 

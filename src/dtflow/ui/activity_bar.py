@@ -6,7 +6,7 @@ from dataclasses import dataclass
 
 from PySide6.QtCore import QPointF, QRectF, Qt, Signal
 from PySide6.QtGui import QColor, QFont, QFontMetrics, QPainter, QPen, QPolygonF
-from PySide6.QtWidgets import QPushButton, QWidget
+from PySide6.QtWidgets import QGraphicsOpacityEffect, QPushButton, QWidget
 
 from dtflow.ui.theme import load_tokens
 
@@ -24,6 +24,7 @@ class BarModel:
     kind: str  # running | success | stopped
     title: str
     count: str = ""
+    queued: int = 0
     stage: str = ""
     wide: str = ""  # the longer stage text shown at the L tier (full title width)
     fraction: float | None = None  # None: unknown progress, striped fill
@@ -51,10 +52,11 @@ class _Strip(QWidget):
         self._border = QColor(colors["color.border"])
         self._text = QColor(colors["color.text"])
         self._secondary = QColor(colors["color.secondary"])
-        accent = QColor(colors["color.accent"])
-        accent.setAlphaF(0.55)
+        self._stripe = QColor(colors["color.selectionHover"])
+        self._chip = QColor(self._text)
+        self._chip.setAlphaF(0.14)
         self._edges = {"success": QColor(colors["color.success"]), "stopped": QColor(colors["color.warning"])}
-        self._fills = {"running": accent}
+        self._fills = {"running": QColor(colors["color.selectionBorder"])}
         for kind, tone in self._edges.items():
             # The result tone at 22 % over the track keeps text contrast on both sides.
             self._fills[kind] = QColor(
@@ -83,20 +85,23 @@ class _Strip(QWidget):
             fraction = 1.0
         else:
             fraction = 1.0 if model.fraction is None else max(0.0, min(1.0, model.fraction))
-        painter.fillRect(QRectF(1, 1, (width - 2) * fraction, height - 2), fill)
         if model.kind == "running" and model.fraction is None:
-            # Unknown progress: 45 degree bands of 8 px, accent 55 % over accent 38 %.
-            base = QColor(self._fills["running"])
-            base.setAlphaF(0.38)
-            painter.fillRect(QRectF(1, 1, width - 2, height - 2), base)
-            band = QPolygonF()
+            # Unknown progress alternates the two opaque selection tones; dim both when stopping.
+            base = QColor(self._stripe)
+            if model.stopping:
+                base.setAlphaF(0.5)
             painter.setPen(Qt.PenStyle.NoPen)
-            painter.setBrush(self._fills["running"])
-            for x in range(-height, width, 16):
-                band = QPolygonF(
-                    [QPointF(x, height), QPointF(x + 8, height), QPointF(x + 8 + height, 0), QPointF(x + height, 0)]
-                )
-                painter.drawPolygon(band)
+            # Paint disjoint bands so 50 % stopping opacity does not compound over another band.
+            for origin in range(-height - 16, width, 16):
+                for offset, tone in ((0, fill), (8, base)):
+                    x = origin + offset
+                    painter.setBrush(tone)
+                    band = QPolygonF(
+                        [QPointF(x, height), QPointF(x + 8, height), QPointF(x + 8 + height, 0), QPointF(x + height, 0)]
+                    )
+                    painter.drawPolygon(band)
+        else:
+            painter.fillRect(QRectF(1, 1, (width - 2) * fraction, height - 2), fill)
         painter.restore()
         if model.lifetime is not None:
             line = QColor(self._edges.get(model.kind, self._text))
@@ -134,8 +139,11 @@ class _Strip(QWidget):
         title_color.setAlphaF(0.8)
         title_width = metrics.horizontalAdvance(title)
         count_width = QFontMetrics(bold).horizontalAdvance(model.count) if model.count else 0
+        queued_text = f"+{model.queued} queued" if model.kind == "running" and model.queued > 0 else ""
+        chip_width = metrics.horizontalAdvance(queued_text) + 10 if queued_text else 0
         used = x + title_width + (8 + count_width if model.count else 0)
-        # Truncation order: stage text clips first, then ETA drops, then elapsed; title, count and Stop never drop.
+        used += 8 + chip_width if queued_text else 0
+        # Stage clips first; retain the chip, then drop ETA and elapsed. Title/count/Stop never drop.
         times_options = [t for t in (f"{model.elapsed} · {model.eta}" if model.eta else "", model.elapsed) if t]
         times = ""
         for option in times_options:
@@ -155,6 +163,15 @@ class _Strip(QWidget):
             painter.drawText(QRectF(x, 0, count_width + 2, height), int(Qt.AlignmentFlag.AlignVCenter), model.count)
             painter.setFont(font)
             x += count_width
+        if queued_text:
+            x += 8
+            chip_rect = QRectF(x, (height - 14) / 2, chip_width, 14)
+            painter.setPen(Qt.PenStyle.NoPen)
+            painter.setBrush(self._chip)
+            painter.drawRoundedRect(chip_rect, 3, 3)
+            painter.setPen(self._text)
+            painter.drawText(chip_rect, int(Qt.AlignmentFlag.AlignCenter), queued_text)
+            x += chip_width
         if stage_text:
             stage_color = QColor(self._text)
             stage_color.setAlphaF(0.85)
@@ -179,6 +196,9 @@ class ActivityBar(QWidget):
         super().__init__(parent)
         self.setObjectName("activityBar")
         self.setFixedHeight(BAR_HEIGHT)
+        self.opacity_effect = QGraphicsOpacityEffect(self)
+        self.opacity_effect.setOpacity(1.0)
+        self.setGraphicsEffect(self.opacity_effect)
         self.strip = _Strip(self)
         self.button = QPushButton("Stop", self)
         self.button.setObjectName("activityBarButton")
@@ -193,7 +213,8 @@ class ActivityBar(QWidget):
     def _clicked(self) -> None:
         (self.stop_requested if self._running else self.dismiss_requested).emit()
 
-    def present(self, model: BarModel, *, stop_enabled: bool = True) -> None:
+    def present(self, model: BarModel, *, stop_enabled: bool = True, opacity: float = 1.0) -> None:
+        self.opacity_effect.setOpacity(opacity)
         self._visible_button = model.stop_visible or model.kind != "running"
         self.strip.model = model
         self._running = model.kind == "running"
