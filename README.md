@@ -3,117 +3,111 @@
 Desktop workflows, generation and automation for [Draw Things](https://drawthings.ai).
 
 DTFlow (DTF) is a Windows-first desktop application for reproducible image generation with
-local Draw Things and direct DT+ Cloud Compute. Its Qt interface brings connection management,
-generation parameters, LoRA selection, saved outputs and durable queues into one workspace.
-Batch planning lets you compare prompts, seeds and other parameters while keeping each request inspectable.
+local Draw Things and direct DT+ Cloud Compute. It brings connection management, generation
+parameters, LoRA selection, saved outputs, durable queues and diagnostics into one Qt workspace,
+and records every request so each image has an inspectable origin.
 
 ## Features
 
-### A connected desktop workspace
+- **One workspace.** Connection, Generate, Queues, Images and Logs share one window with a
+  persistent status bar, inline confirmations and notices, and an Inspector for request details.
+- **Local or cloud.** Use local Draw Things over gRPC or direct DT+ Cloud Compute. Model and LoRA
+  inventory refreshes without generating; cloud API keys are stored in Windows Credential Manager.
+- **Generation with provenance.** Pick a checkpoint from a searchable, classified catalogue, add
+  LoRAs with explicit weights, and control seed, size, steps, guidance and sampler. Results record
+  prompts, seeds, model and LoRA identifiers and effective parameters. An offline DT+ Compute Units
+  estimate is shown for supported text-to-image checkpoints.
+- **Durable queues and comparisons.** Compose queues with prompt, seed and parameter variations,
+  start, pause, resume or cancel them, and inspect each item's resolved request, attempts and saved
+  result. Queue state survives restarts without silently replaying uncertain work.
+- **Saved image gallery.** Browse outputs in Grid, List and Detail views with prompt search,
+  filters and zoom; reuse or regenerate saved settings; export JPEG copies with readable filenames;
+  move originals to Trash or delete them with explicit confirmation.
+- **Searchable logs.** Browse, filter and export structured application diagnostics from the
+  desktop. Sensitive values such as tokens, signed URLs and image data are kept out of logs.
+- **Offline exploration.** A fake provider exercises the same forms, progress, outputs and queues
+  without model inference or network access.
+- **Automation CLI.** The same generation, queue and gallery services are available from the
+  command line for scripting and development.
 
-Connection, Generate and Queues share one interface, with persistent navigation and an
-Inspector for request details and output evidence. Choose local Draw Things or direct DT+
-Cloud Compute, check the connection, and refresh model and LoRA inventory without generating.
-Inventory choices return with their provider; last-observed model/LoRA counts and timestamps
-remain visible through refresh failures and cache-only startup.
-Windows Credential Manager stores a saved cloud API key outside ordinary configuration files.
-
-Action confirmations and notices stay inside the main window. Confirm changes the original
-button to red for Delete/Clear and mint/teal (matching Auto-refresh ON) otherwise; Cancel stays in the shared bottom overlay. Searchable checkpoint and one-step
-LoRA/weight editors avoid extra windows, while file/folder pickers remain native.
-Running work and routine results use a compact status-bar activity bar; confirmations, editors, errors and other notices keep the shared bottom overlay without resizing content. Success and amber warning/partial/stopped overlays fade after six seconds with state-colored countdowns and draining bars, paused by overlay hover or focus; red errors remain until dismissed and informational inspections close with × or a click outside. Essential information stays visible; Export and cloud LoRA Prepare (after file selection) start without a second confirmation. The overlay lifetime only hides its presentation; it never changes saved operation evidence or remote execution state.
-
-### Image generation and inspection
-
-Compose prompts and control the model, seed, dimensions, steps, guidance and sampler; samplers are filtered to the selected model and Draw Things' official presets are available read-only.
-Generate shows an offline DT+ Compute Units estimate for supported text-to-image checkpoints on both Local Draw Things and direct DT+ Cloud, with the value and supported models in Checkpoint details. Local Draw Things may bridge to DT+, but showing an estimate does not mean local execution uses DT+ or consumes credits. This is not a server billing quote or credit balance.
-After inventory refresh, classified model discovery narrows the active provider's available
-checkpoints by All/Image/Video, base-model family and exact checkpoint; Prime models are shown
-by default and an explicit option adds Niche models. In Local mode, `Include DT+ Cloud` can add classified catalogue checkpoints that a Draw Things bridge may omit from its reported local inventory. Checkpoint selection opens a searchable list with case-insensitive substring matching; an explicit custom-identifier action keeps unclassified checkpoints usable without DTFlow guessing their family or compatibility.
-
-Import user-owned custom LoRA metadata as JSON from the Connection page; DTFlow validates it before atomically replacing the durable custom catalogue under the application state directory. Select LoRAs with explicit weights and an optional trigger-prefix action. For a classified
-checkpoint, the Add chooser is narrowed to available LoRAs with known family/mode compatibility;
-compatibility feedback still distinguishes confirmed mismatches from unknown metadata rather
-than guessing.
-
-Write prompts in a compact two-line field with Generate image in its header; track real steps and Stop waiting locally through the shared activity bar (or its overlay fallback) while the preview has no duplicate controls. Follow previews in an image-first workspace, then inspect saved results with
-fit, zoom and pan. Output details link images to their generation metadata and provide
-folder/path actions. Save and load generation configurations to reuse a setup.
-
-### Durable queues and controlled comparisons
-
-Compose a queue in its own draft, initially copied from Generate, then start it now, add it up next behind a running queue or save it paused; pause, resume or cancel it later. Edit the queue's base prompt without changing Generate; **Use Generate settings** and **Copy to Generate** transfer settings explicitly. **Edit as new** restores saved authoring input for newly composed queues, including the prompt-variation source; older queues disclose reconstruction from resolved items.
-Queue items retain their resolved requests, attempts and saved outputs, so execution remains
-inspectable after restart. Concurrency controls respect backend and shared resource limits.
-
-Build seed sweeps or Pair/Cross batches over prompts, models, seeds, dimensions and other
-parameters, picking values from the inventory. The item count and the exact-item preview update
-as you edit, before anything is created; vary only the parameters you intend to compare.
-
-Draw random values from selected candidates or vary prompts with choices, wildcard lists and optional shuffle/drop/add edits. A recorded plan seed makes these offline variations reproducible; inspect the resolved items before starting. See the [queues guide](devdocs/guides/queues.md) for syntax and limits.
-
-Queue items show saved-result thumbnails, recorded prompts/model/LoRAs, parameters, status and observed duration. The item inspector offers Open in Images for an available saved result, without submitting generation.
-
-### Searchable application diagnostics
-
-Open **Logs** beside Help to browse application and gallery events in the desktop. Search and filter retained sessions, page through matching records, inspect details, copy evidence or explicitly export CSV/JSONL with progress and Cancel. Follow can be paused for a counted Refresh, and the detail pane closes when clicking elsewhere in Logs. New sessions use one structured JSONL stream; historical text/CSV files stay untouched. See the [Logs guide](devdocs/guides/desktop.md#logs).
-API failures retain bounded, sanitized server explanations in WARNING logs and ordinary error presentation, so a cloud throttle rejection need not appear as a generic credentials problem. Tokens, prompts, signed URLs and image payloads remain excluded; an error message never changes retry or remote-outcome certainty.
-
-Cloud LoRA metadata lookup tolerates unusable optional response branches and records safe response structure before interpretation. Local interpretation issues are distinguished from API rejection; unknown asset evidence never authorizes a guessed upload or receipt.
-
-Cloud LoRA uploads keep local content checksums separate from server-returned storage values, following the official client contract; a different returned value alone does not reject preparation. Logs show format/comparison facts without exposing either value.
-
-### Explicit cloud assets and offline exploration
-
-Prepare one or several converted cloud LoRA files through explicit file selection, remembering the picker folder separately per runtime, and inspect
-local asset receipts for reuse. Generation never hides an upload inside an ordinary request.
-
-The fake provider lets you explore the same forms, progress, outputs and queue controls
-offline. Fixture images and configurable simulation outcomes require no model inference.
-
-Images has two independent viewing modes: **F11** toggles window fullscreen, while **Escape** or the Images optimize icon toggles the reduced-chrome layout outside editors, popups and active inline feedback. Optimizing never changes the window state.
-
-The Images tab browses committed saved outputs in Grid, List and Detail views with a
-shared compact header, 25–250% thumbnail scaling (100% uses a 320 px display size), List thumbnails whose width and height follow zoom, and a full-height Detail filmstrip. Grid, List and the filmstrip share one 600 px maximum thumbnail decode per image; the main Detail viewer reads the original saved output at native resolution.
-Positive-prompt search, model/LoRA/date/dimensions/aspect filters, deterministic sorting
-and refresh use the same bounded read-only gallery services as the CLI. The paired Live and Follow controls enable automatic refresh and optional newest-image following; browsing older images pauses following without disabling refresh.
-When live gallery reads are unavailable across Windows/WSL1, Images can browse the last published read-only snapshot with its timestamp. Publication happens after a generation/queue session and on clean close only when state changed or no snapshot exists; snapshot browsing cannot authorize export, editing or removal. See the [snapshot design and limitations](devdocs/architecture/gallery-snapshot.md).
-Windows and WSL 1 can share one Windows-hosted state: each side shows, copies, opens and exports the other's managed outputs through verified read access without rewriting saved references, and Delete removes eligible managed originals across that boundary through a guarded Windows helper. WSL 2 Windows-drive mounts are not supported yet. See the [desktop guide](devdocs/guides/desktop.md#images) for prerequisites and limitations.
-Detail exposes recorded provenance and safe raw metadata without inventing unavailable values. Saved settings can populate Generate without dispatch, or be explicitly regenerated as a fresh lineage-linked attempt. Draw Things `custom_configs.json` presets are durable and globally imported/exported from Connection, while Generate can save/load named presets. Connection also measures and clears only disposable cache categories; inventory snapshots and source image computations use disk cache, while gallery thumbnails use memory and a disposable disk cache. Cleanup is confirmed and coordinated with active cache operations; saved originals and exported copies are never cache-cleanup targets.
-Connection and Images share one saved-image export hub; Images opens it with an always-enabled Export panel toggle (blue while open), independent of checked images, in a right-hand column beside the listing. Starting an Images export still requires checked images. Copy checked images, one image or a filtered batch into one folder as JPEGs with readable filenames and Windows-visible generation properties. Prompt privacy and optional JSON sidecars keep sharing explicit; original PNGs and saved history stay untouched. A default-on checkbox sorts pixel-statistics-flagged copies into `noise/` and `blank/`; turn it off for a completely flat folder. These are advisory flags, not generation-status verdicts. Full output identities in filenames let repeat exports skip existing copies before image processing, with bounded recycle-aware availability checks; source computations are cached centrally across destinations, without an export-folder index; new Windows files retain the saved generation-completion date in their creation time and EXIF.
-The Images split action selects **Trash** (Recycle Bin on Windows) or **Delete** (permanent), remembering separate Windows/WSL choices. Trash remains the default; unavailable Trash never silently becomes permanent deletion. Permanent removal always needs fresh inline irreversible-action confirmation. Both modes also remove an image edit's raw provider output, preserve metadata, exported copies and generation history, and use durable intent to prevent replaying uncertain removals. A card whose original was deleted outside DTFlow shows **File missing** and can be cleared with Delete. Recovered files are not automatically reintroduced from path/timestamp matches; verified recovery remains future work. See the [removal architecture and platform limits](devdocs/architecture/image-recycling.md).
-See the [desktop guide](devdocs/guides/desktop.md#images) and
-[image export guide](devdocs/guides/desktop.md#export-saved-images).
-
-## Design principles
-
-- **Desktop-first.** Keep the main workflow in a responsive graphical workspace, with
-  details available when needed instead of forcing every action through a terminal.
-- **Reproducible by design.** Record resolved prompts, seeds, model and LoRA identifiers,
-  effective parameters and output references so each result has an inspectable origin.
-- **Durable, not disposable.** Preserve attempts, queue state and saved outputs separately
-  from rebuildable cache. A restart must not silently discard results or replay uncertain work.
-- **Honest outcomes.** Previews are not finished images. Report success only after terminal
-  success, output validation and durable saving; stopping local waiting is not remote cancellation.
-- **Explicit choices.** Do not silently switch backend or credential, modify prompts, upload
-  assets or enable PAYG after a failure. Real generation may still consume subscription credits.
-- **Shared foundations.** Keep presentation, orchestration, persistence and provider protocols
-  separate. The GUI and automation interface use the same generation and queue services.
-- **Safe exploration.** Make offline fixtures useful for development and interaction checks,
-  without submitting real generation just to exercise application plumbing.
+The [desktop guide](devdocs/guides/desktop.md) and [queues guide](devdocs/guides/queues.md) describe each
+workspace in detail.
 
 ## Getting started
 
-Requirements: Python 3.13 and [uv](https://docs.astral.sh/uv/).
-From the repository root, synchronize the environment and launch the desktop:
+### Windows executable
+
+Published releases attach a single-file Windows GUI executable to
+[GitHub Releases](https://github.com/djebaz/dtflow/releases). Download it, verify it against the
+attached `SHA256SUMS.txt`, and run it; no Python installation is needed.
+
+### From source
+
+Requirements: Python 3.13 and [uv](https://docs.astral.sh/uv/). From the repository root:
 
 ```bash
 uv sync
 uv run dtflow gui
 ```
 
-Start with the **fake** provider for an offline tour, or configure local Draw Things or DT+ on the
-Connection page. See the [desktop guide](devdocs/guides/desktop.md) for connection setup and usage.
+Pick the **fake** provider on the Connection page for an offline tour, or configure local
+Draw Things or DT+. The [desktop guide](devdocs/guides/desktop.md) covers connection setup,
+launch options and each workspace.
+
+> Generating on local Draw Things or DT+ submits real work and may consume subscription credits.
+> DTFlow never switches backend or credential, uploads assets or enables pay-as-you-go on its own.
+
+### Command line
+
+```bash
+uv run dtflow --help
+uv run dtflow check -b fake
+uv run dtflow generate -b fake -p "Offline fixture" -s 0
+```
+
+See the [CLI reference](devdocs/guides/cli.md) for backends, options and examples.
+
+## Design principles
+
+- **Desktop-first.** The main workflow lives in a responsive graphical workspace, with details
+  available when needed.
+- **Reproducible by design.** Resolved prompts, seeds, model and LoRA identifiers, effective
+  parameters and output references are recorded for every result.
+- **Durable, not disposable.** Attempts, queue state and saved outputs are kept separately from
+  rebuildable cache. A restart must not silently discard results or replay uncertain work.
+- **Honest outcomes.** Previews are not finished images. Success is reported only after terminal
+  success, output validation and durable saving; stopping local waiting is not remote cancellation.
+- **Explicit choices.** No silent backend or credential switch, prompt modification, asset upload
+  or pay-as-you-go after a failure.
+- **Shared foundations.** Presentation, orchestration, persistence and provider protocols stay
+  separate, and the GUI and CLI use the same services.
+- **Safe exploration.** Offline fixtures support development and interaction checks without
+  submitting real generation.
+
+## Documentation
+
+**Using DTFlow**
+
+- [Desktop guide](devdocs/guides/desktop.md): connections, generation, images, logs and settings
+- [Queues and batch plans](devdocs/guides/queues.md): queue controls, concurrency and comparisons
+- [CLI reference](devdocs/guides/cli.md): automation and development interface
+- [Release notes](devdocs/releases/) and the [release roadmap](devdocs/plans/releases.md)
+
+**Developing DTFlow**
+
+- [Development tools](devdocs/guides/development.md), [testing](devdocs/guides/testing.md),
+  [Windows builds](devdocs/guides/building.md) and [releasing](devdocs/guides/releasing.md)
+- [Architecture](devdocs/architecture/), including the [runtime layout](devdocs/architecture/runtime-layout.md),
+  [structured diagnostics](devdocs/architecture/structured-diagnostics.md) with its
+  [event catalogue](devdocs/architecture/diagnostic-event-schema.md) and
+  [JSON Schema](devdocs/schemas/diagnostic-record-v1.schema.json), and
+  [image-operation preparation](devdocs/architecture/image-operations.md) (developer-only)
+- [Efficient Qt model/view patterns](devdocs/guides/qt-model-view-patterns.md)
+- [DESIGN.md](DESIGN.md), the [design system](devdocs/design-system/README.md), the
+  [Logs workspace specification](devdocs/design-system/logs-workspace.md) and [UI mockups](devdocs/mockups/)
+- [Current development status](devdocs/current_dev_status.md), the [implementation plan](devdocs/plans/initial.md),
+  [plans](devdocs/plans/),
+  [research](devdocs/research/) and [decisions](devdocs/decisions/)
 
 ## Repository layout
 
@@ -121,42 +115,14 @@ Connection page. See the [desktop guide](devdocs/guides/desktop.md) for connecti
 src/dtflow/   application code: core, services, persistence, backends, CLI and Qt UI
 tests/        automated checks
 tools/        diagnostic, development and packaging tools
-devdocs/      usage guides, plans, architecture, research, decisions and release notes
+devdocs/      guides, architecture, plans, research, decisions and release notes
 ```
-
-Designer forms live under `src/dtflow/ui/forms/`; shared styles and resources live under
-`src/dtflow/resources/`. See [DESIGN.md](DESIGN.md) before changing the desktop UI.
-
-## Documentation
-
-- [Desktop guide](devdocs/guides/desktop.md) — connections, generation, outputs and saved settings.
-- [5.1.0 release preparation](devdocs/releases/v5.1.0.md) — queue/composer, reproducible variation and Logs improvements, upgrade guidance and known limitations; not yet published. [5.0.0](https://github.com/djebaz/dtflow/releases/tag/v5.0.0) is published.
-- [Queues and batch plans](devdocs/guides/queues.md) — queue controls, concurrency and parameter comparisons.
-- [CLI reference](devdocs/guides/cli.md) — automation and development interface.
-- [Testing](devdocs/guides/testing.md), [development tools](devdocs/guides/development.md) and [Windows builds](devdocs/guides/building.md).
-- [Image-operation preparation](devdocs/architecture/image-operations.md) — developer-only permit-gated single-shot path; no default image capability or accepted editor/checkpoint support.
-- [Architecture](devdocs/architecture/), [runtime layout](devdocs/architecture/runtime-layout.md) and the [design system reference](devdocs/design-system/README.md).
-- [Structured diagnostics architecture](devdocs/architecture/structured-diagnostics.md) — shared JSONL logging, Qt-free reader/export and native Logs workspace introduced by PR #105 and refined in PR #111 (source present; packaged Windows acceptance not established). See the [desktop guide](devdocs/guides/desktop.md#logs).
-- [Diagnostic event catalogue and migration inventory](devdocs/architecture/diagnostic-event-schema.md) with [JSON Schema v1](devdocs/schemas/diagnostic-record-v1.schema.json) — machine-readable record fields and source-based event mappings introduced in 5.0.0.
-- [Efficient Qt model/view patterns](devdocs/guides/qt-model-view-patterns.md) — bounded table updates, worker/search integration and external reference implementations.
-- [Compact Logs workspace UI specification](devdocs/design-system/logs-workspace.md), [standalone interaction study](devdocs/mockups/dtflow_logs_workspace.html) and [app-shell study](devdocs/mockups/dtflow_app_shell_with_logs.html) — PR #105 severity-stripe table, row actions and inspector (synthetic HTML design references; the native Qt workspace follows them but is not yet accepted).
-
-- [Implementation plan](devdocs/plans/initial.md) and [release roadmap](devdocs/plans/releases.md).
-- [Research and verification evidence](devdocs/research/) and [release notes](devdocs/releases/).
-
-### Desktop interaction mockup
-
-The [PR #58 inline interaction mockup](devdocs/mockups/dtflow_inline_panels.html)
-illustrates main-window confirmations, activity overlays, the Generate prompt,
-and Images selection/export behavior. Its example images and state transitions
-are illustrative only: the mockup cannot read saved outputs, export files,
-delete originals, or contact Draw Things.
 
 ## Contributing
 
-Read [AGENTS.md](AGENTS.md) and the [current development status](devdocs/current_dev_status.md)
-for repository rules and coding orientation. Use a feature branch and pull request.
-Dependency changes go through uv, with `pyproject.toml` and `uv.lock` kept together.
+Read [AGENTS.md](AGENTS.md) for repository rules and [DESIGN.md](DESIGN.md) before changing the
+desktop UI. Work on a feature branch and open a pull request; CI runs lock, lint and test checks.
+Manage dependencies through uv and commit `pyproject.toml` and `uv.lock` together.
 
 ## License
 
