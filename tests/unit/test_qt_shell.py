@@ -62,6 +62,31 @@ def test_shared_header_and_window_modes(window, qtbot):
     assert window.shell.brandFrame.mapTo(window.form, QPoint(0, 0)) == brand
     assert window.shell.navigationFrame.mapTo(window.form, QPoint(0, 0)) == navigation
     assert window.shell.quickQueueButton.property("role") != "logsAction"
+    # Shared navigation must never compete with Logs filters for horizontal space.
+    for width in (1040, 900, 1600):
+        window.form.resize(width, 760)
+        QApplication.processEvents()
+        nav = window.shell.navigationFrame
+        filters = window.logs_form.logsSessionLabel
+        assert filters.mapTo(window.form, QPoint()).y() > nav.mapTo(window.form, QPoint(0, nav.height())).y()
+        for button in (
+            window.form.connectionNavigationButton,
+            window.form.generationNavigationButton,
+            window.form.queueNavigationButton,
+            window.form.imagesNavigationButton,
+        ):
+            assert nav.rect().contains(button.mapTo(nav, button.rect().bottomRight()))
+        controls = (
+            window.logs_form.logsSessionCombo,
+            window.logs_form.logsSearch,
+            window.logs_form.logsLevelCombo,
+            window.logs_form.logsComponentCombo,
+            window.logs_form.logsEventCombo,
+            window.logs_form.logsMoreFiltersButton,
+        )
+        for left, right in zip(controls, controls[1:], strict=False):
+            assert left.mapTo(window.form, left.rect().topRight()).x() < right.mapTo(window.form, QPoint()).x()
+        assert controls[-1].mapTo(window.form, controls[-1].rect().bottomRight()).x() < window.form.width()
     window.form.imagesNavigationButton.click()
     QApplication.processEvents()
     page = window.gallery_detail

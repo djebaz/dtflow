@@ -3608,6 +3608,20 @@ def render_logs_states(shell, capture):
     panel.logsCounter.setText("0 records · pending")
     capture("logs-01-empty")
     capture("logs-15-shared-header-aligned")
+    original_size = shell.form.size()
+    try:
+        for width in (1040, 900):
+            shell.form.resize(width, 760)
+            QApplication.processEvents()
+            nav = shell.shell.navigationFrame
+            assert (
+                panel.logsSessionLabel.mapTo(shell.form, QPoint()).y()
+                > nav.mapTo(shell.form, QPoint(0, nav.height())).y()
+            )
+            capture(f"logs-16-narrow-header-{width}")
+    finally:
+        shell.form.resize(original_size)
+        QApplication.processEvents()
     shell.logs._set_empty(NO_MATCHES)
     panel.logsCounter.setText("0 of 5 matching records · complete")
     capture("logs-08-no-matches")
