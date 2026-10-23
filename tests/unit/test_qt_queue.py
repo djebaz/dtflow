@@ -345,3 +345,48 @@ def test_queue_timing_reaches_bar_and_tooltip_without_changing_real_progress(win
     window.activity.set(dispatching=False)
     queue._timer.stop()
     assert not queue._timing_timer.isActive()
+
+
+def test_composer_keeps_its_source_prompt_and_only_copies_to_generate_explicitly(window, qtbot, monkeypatch):
+    from PySide6.QtWidgets import QApplication
+
+    window.show()
+    window.form.queueNavigationButton.click()
+    queue, page = window.queue, window.queue_page
+    window.generation_page.promptEdit.setPlainText("Keep this Generate draft")
+    queue.open_composer()
+    page.composerPromptEdit.setPlainText("a {cat|dog}")
+    page.planModeCombo.setCurrentText("Cross")
+    page.planVariationCombo.setCurrentText("Every combination")
+    window.generation_page.promptEdit.setPlainText("Unrelated Generate edit")
+    queue.shown()
+    assert page.composerPromptEdit.toPlainText() == "a {cat|dog}"
+    queue.create("save")
+    qtbot.waitUntil(lambda: not queue.composing and queue._view() is not None, timeout=5000)
+    identity = queue._view()["queue_id"]
+    assert window.generation_page.promptEdit.toPlainText() == "Unrelated Generate edit"
+    page.queueCopyPromptButton.click()
+    assert QApplication.clipboard().text() == "a cat"
+    queue.edit_as_new(identity)
+    qtbot.waitUntil(lambda: queue.composing, timeout=5000)
+    assert page.composerPromptEdit.toPlainText() == "a {cat|dog}"
+    assert page.planVariationCombo.currentText() == "Every combination"
+    assert window.generation_page.promptEdit.toPlainText() == "Unrelated Generate edit"
+    page.copyToGenerateButton.click()
+    assert window.generation_page.promptEdit.toPlainText() == "a {cat|dog}"
+    window.generation_page.promptEdit.setPlainText("Explicit replacement")
+    page.editInGenerateButton.click()
+    assert page.composerPromptEdit.toPlainText() == "Explicit replacement"
+    # A Generate backend change must not relabel or change the captured draft's cap policy.
+    monkeypatch.setattr(queue, "_backend", lambda: ("cloud", None))
+    assert "Backend: fake" in queue.quick_disclosure(plan=True)
+    assert "Backend: cloud" in queue.quick_disclosure(plan=False)
+    shared_epoch = queue._shared_epoch
+    page.newQueueCapSpinBox.setValue(3)
+    queue._show_new_cap()
+    assert queue._shared_epoch == shared_epoch
+    assert page.newQueueCapSpinBox.value() == 3
+    window.queue_popover.plan_option.setChecked(True)
+    window.queue_popover.refresh()
+    assert "composer's draft" in window.queue_popover.note_label.text()
+    assert "Backend: fake" in window.queue_popover.note_label.text()

@@ -6,10 +6,11 @@ that owns the field, using the same leading-word approach as the Generate form.
 """
 
 import re
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from pathlib import Path
 
 from dtflow.core.models import MAX_QUEUE_ITEMS, SEED_LIMIT, ValidationError
+from dtflow.core.request_records import request_from_record
 from dtflow.services.planning import Plan, PlanError, PlanTable, PromptVariation, plan_size, seed_range
 from dtflow.services.randomness import RandomSpec
 from dtflow.services.wildcards import bind_wildcards
@@ -445,6 +446,41 @@ def queue_edit_from_records(records) -> QueueEdit:
         ),
     )
     return QueueEdit(dict(records[0]), form, count, note)
+
+
+def queue_edit_from_source(source: dict) -> QueueEdit:
+    """Restore exact authoring input, never reverse-engineer it from randomly resolved item prompts."""
+    try:
+        if type(source.get("version")) is not int or source["version"] != 1:
+            raise ValidationError("Unsupported queue composer source version; recorded items are unchanged.")
+        base = request_from_record(source["base"])
+        if base.operation != "txt2img":
+            raise ValidationError("Only text-to-image queues can be edited as a new queue.")
+        values = dict(source["form"])
+        values["draws"] = tuple(tuple(pair) for pair in values.get("draws", ()))
+        form = PlanForm(**values)
+        for name, default in asdict(PlanForm()).items():
+            value = getattr(form, name)
+            if type(value) is not type(default):
+                raise ValidationError("Stored queue composer fields are unreadable.")
+        if form.mode not in ("Repeat", *MODES) or form.variation not in ("Off", *VARIATIONS):
+            raise ValidationError("Stored queue composer mode is unsupported.")
+        if form.shuffle not in ("No shuffle", *SHUFFLES):
+            raise ValidationError("Stored queue composer shuffle mode is unsupported.")
+        if any(len(pair) != 2 or type(pair[0]) is not str or type(pair[1]) is not int for pair in form.draws):
+            raise ValidationError("Stored queue random draws are unreadable.")
+        if len(dict(form.draws)) != len(form.draws) or any(
+            name not in DRAW_SPINS or not 0 <= value <= MAX_QUEUE_ITEMS for name, value in form.draws
+        ):
+            raise ValidationError("Stored queue random draws are unsupported.")
+        if not 1 <= form.variation_count <= MAX_QUEUE_ITEMS or not 0 <= form.drop <= 50 or not 0 <= form.add <= 50:
+            raise ValidationError("Stored queue variation values are unsupported.")
+        count = source["count"]
+        if type(count) is not int or not 1 <= count <= MAX_QUEUE_ITEMS:
+            raise ValidationError("Stored queue count is unsupported.")
+        return QueueEdit(asdict(base), form, count, "")
+    except (KeyError, TypeError, ValueError) as exc:
+        raise ValidationError("Stored queue composer source is unreadable; recorded items are unchanged.") from exc
 
 
 def _product(distinct: dict[str, list], names: list[str]):

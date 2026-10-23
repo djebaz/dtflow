@@ -379,10 +379,10 @@
           <item>
            <widget class="QPushButton" name="galleryFocusButton">
             <property name="accessibleName">
-             <string>Full screen image view</string>
+             <string>Toggle optimized Images layout</string>
             </property>
             <property name="toolTip">
-             <string>Full screen: hide filters, selection and info panels (Esc to leave).</string>
+             <string>Optimize Images layout (Esc): hide filters, selection and info panels. F11 independently toggles window fullscreen.</string>
             </property>
             <property name="checkable">
              <bool>true</bool>
@@ -1267,13 +1267,13 @@ No generation or saved output</string>
                   <item>
                    <widget class="QPushButton" name="galleryFullscreenButton">
                     <property name="accessibleName">
-                     <string>Fullscreen</string>
+                     <string>Toggle optimized Images layout</string>
                     </property>
                     <property name="enabled">
                      <bool>false</bool>
                     </property>
                     <property name="toolTip">
-                     <string>Available when the current Images context supports this action.</string>
+                     <string>Optimize Images layout (Esc). F11 independently toggles window fullscreen.</string>
                     </property>
                     <property name="minimumSize">
                      <size>

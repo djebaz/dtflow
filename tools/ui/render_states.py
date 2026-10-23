@@ -1254,6 +1254,7 @@ def render_active_queue_states(shell, out):
         page.planSamplersEdit.setText("euler_a; ddim")
         page.planSizesEdit.setText("768x768; 1024x1024")
         shell.generation.lora.set_loras((LoRASelection("offline-style.safetensors", 0.8),))
+        queue.use_generate_settings()  # explicit transfer; Generate edits no longer mutate an existing draft
         queue.preview()
         assert queue.plan_model.rowCount() == 8 and page.startQueueButton.text() == "Start now (8 items)"
         assert page.planTableView.isVisible()
@@ -1349,6 +1350,8 @@ def render_active_queue_states(shell, out):
         page.planDrawStepsSpin.setValue(0)
         # #129: dynamic prompt variation of the Generate prompt, with wildcards and seeded edits.
         shell.generation_page.promptEdit.setPlainText("a {red|blue} fox, __place__, golden light, film grain")
+        queue.use_generate_settings()
+        shell.generation_page.promptEdit.setPlainText("Independent Generate draft, not the queue variation source")
         page.planVariationCombo.setCurrentText("Random sample")
         page.planVariationCountSpin.setValue(4)
         page.planWildcardsEdit.setPlainText("place: forest; meadow; harbour")
@@ -1373,6 +1376,10 @@ def render_active_queue_states(shell, out):
         assert queue._preview_token == token and not queue.previewing and queue.plan_model.rowCount() == 4
         page.queueComposerScroll.ensureWidgetVisible(page.planVariationCombo)
         snap("queues-49-composer-prompt-variation")
+        page.queueComposerScroll.ensureWidgetVisible(page.composerPromptEdit)
+        assert page.composerPromptEdit.toPlainText().startswith("a {red|blue} fox")
+        assert "Independent Generate" in shell.generation_page.promptEdit.toPlainText()
+        snap("queues-68-independent-source-prompt")
         form.resize(1182, 792)
         shell._responsive_workspace()
         QTest.qWait(100)
@@ -1423,6 +1430,7 @@ def render_active_queue_states(shell, out):
         with (
             patch.object(queue, "_editing", return_value=True),
             patch.object(queue, "_edit_source", return_value=object()),
+            patch.object(queue, "_draft_job", object()),
         ):
             present("paused", ["pending", "pending"], started=False, edit=True)
             page.planStrengthsEdit.setText("0.5; 0.7")
@@ -1434,7 +1442,7 @@ def render_active_queue_states(shell, out):
         page.planStrengthsEdit.clear()
         page.planModeCombo.setCurrentText("Repeat")
 
-        # Edit as new queue: recorded items load into Generate and the composer as Cross, Pair and Repeat.
+        # Legacy Edit as new reconstructs the composer only; Generate stays independent.
         def recorded(prompt, model, seed, steps=20, loras=()):
             return {
                 "operation": "txt2img",
@@ -1462,7 +1470,7 @@ def render_active_queue_states(shell, out):
         }
         for kind, records in edits.items():
             edit = queue_edit_from_records(records)
-            queue._edit_loaded(edit, None)
+            queue._edit_loaded((edit, {"name": "fake", "endpoint": None}, (), 2), None)
             assert page.planModeCombo.currentText().lower() == edit.form.mode.lower(), kind
             assert queue.plan_model.rowCount() == (len(records) if edit.form.mode != "Repeat" else 0), kind
             page.queueComposerScroll.ensureWidgetVisible(page.planModelsEdit)
@@ -2642,10 +2650,17 @@ def render_gallery_composition_states(shell, state, out):
         gallery._widget("galleryRawButton", QPushButton).setChecked(False)
         gallery._widget("galleryFocusButton", QPushButton).click()
         try:
+            assert gallery.page.property("imageFocus") and not form.isFullScreen()
+            snap("images-104-optimized-windowed")
+            shell._toggle_window_fullscreen()
             assert gallery.page.property("imageFocus") and form.isFullScreen()
             snap("images-57-detail-fullscreen")
+            shell._toggle_window_fullscreen()
+            assert gallery.page.property("imageFocus") and not form.isFullScreen()
         finally:
             gallery._widget("galleryFocusButton", QPushButton).click()
+            if form.isFullScreen():
+                shell._toggle_window_fullscreen()
             form.resize(1600, 1000)
         present(replace(item, issue=MISSING_ISSUE))
         assert gallery.surface_painter.placeholder == "File missing"

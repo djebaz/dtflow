@@ -94,12 +94,18 @@ def test_shared_header_and_window_modes(window, qtbot):
         window.form.setWindowState(state)
         QApplication.processEvents()
         toggle_image_focus(page, True)
+        assert window.form.windowState() & state
         toggle_image_focus(page, False)
         assert window.form.windowState() & state
     window.form.showNormal()
     window.gallery.grid_scroll.setFocus()
     QTest.keyClick(window.form, Qt.Key.Key_Escape)
     assert page.property("imageFocus")
+    assert not window.form.isFullScreen()
+    QTest.keyClick(window.form, Qt.Key.Key_F11)
+    assert page.property("imageFocus") and window.form.isFullScreen()
+    QTest.keyClick(window.form, Qt.Key.Key_F11)
+    assert page.property("imageFocus") and not window.form.isFullScreen()
     QTest.keyClick(window.form, Qt.Key.Key_Escape)
     assert not page.property("imageFocus") and not window.form.isFullScreen()
     QTest.keyClick(window.form, Qt.Key.Key_F11)

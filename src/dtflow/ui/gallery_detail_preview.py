@@ -200,11 +200,10 @@ class _EscapeLeavesFocus(QObject):
 
 
 def toggle_image_focus(page, enter: bool | None = None) -> None:
-    """Full screen the window and collapse search, selection and info chrome around the image.
+    """Collapse search, selection and info chrome without changing the native window state.
 
     Hidden widgets are recorded so only those visible beforehand are restored. enter=False only leaves.
     """
-    window = page.window()
     focused = bool(page.property("imageFocus"))
     enter = (not focused) if enter is None else enter
     if enter == focused:
@@ -214,7 +213,6 @@ def toggle_image_focus(page, enter: bool | None = None) -> None:
     if toggle is not None:
         toggle.setChecked(enter)
     if enter:
-        page._focus_previous_state = window.windowState()
         targets = [page.findChild(QWidget, name) for name in FOCUS_HIDDEN_ROWS]
         column = page.findChild(QWidget, "galleryMainColumn")
         host = page.findChild(QWidget, "galleryPreviewHost")
@@ -227,13 +225,10 @@ def toggle_image_focus(page, enter: bool | None = None) -> None:
         for widget in hidden:
             widget.hide()
         page._focus_hidden = hidden
-        window.showFullScreen()
     else:
         for widget in getattr(page, "_focus_hidden", []):
             widget.show()
         page._focus_hidden = []
-        window.setWindowState(page._focus_previous_state)
-        window.show()
 
 
 def apply_gallery_button_icons(page, assets=ASSETS):

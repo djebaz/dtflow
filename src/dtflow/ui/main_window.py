@@ -537,10 +537,6 @@ class MainWindow:
             self.form.workspaceStack.setCurrentWidget(self.logs_marker)
 
     def _toggle_window_fullscreen(self) -> None:
-        from dtflow.ui.gallery_detail_preview import toggle_image_focus
-
-        if self.gallery_detail.property("imageFocus"):
-            toggle_image_focus(self.gallery_detail, False)
         if self.form.isFullScreen():
             self.form.setWindowState(
                 getattr(self, "_windowed_state", self.form.windowState() & ~Qt.WindowState.WindowFullScreen)
