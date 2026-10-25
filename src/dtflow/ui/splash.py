@@ -19,6 +19,8 @@ from dtflow import startup
 RESOURCES = Path(__file__).parents[1] / "resources"
 LOGO = RESOURCES / "images" / "dtflow-splash.png"  # pre-scaled copies of the app artwork: no decode of the large PNG
 LOGO_2X = LOGO.with_name("dtflow-splash@2x.png")
+BRAND = LOGO.with_name("dtflow-splash-brand.png")
+BRAND_2X = LOGO.with_name("dtflow-splash-brand@2x.png")
 TOKENS = RESOURCES / "styles" / "tokens.json"
 
 WIDTH = 420
@@ -108,7 +110,8 @@ class StartupSplash(QWidget):
         self._accent = QColor(tokens.get("color.accent", "#0068b8"))
         self._text = QColor(tokens.get("color.text", "#e6e6e6"))
         self._track = QColor(tokens.get("color.surface", "#252525"))
-        self._logo = self._load_logo()
+        self._brand = self._load_brand()
+        self._logo = self._load_logo() if self._brand.isNull() else QImage()
         self._announced = False
         self._finishing = False
         self._fill: float | None = None
@@ -119,6 +122,14 @@ class StartupSplash(QWidget):
         screen = QGuiApplication.primaryScreen()
         if screen is not None:
             self.move(screen.availableGeometry().center() - self.rect().center())
+
+    def _load_brand(self) -> QImage:
+        """Use pre-rendered branding when available; keep source launches compatible."""
+        ratio = self.devicePixelRatioF()
+        image = QImage(str(BRAND_2X if ratio > 1.25 else BRAND))
+        if not image.isNull():
+            image.setDevicePixelRatio(LOGO_2X_RATIO if ratio > 1.25 else 1.0)
+        return image
 
     def _load_logo(self) -> QImage:
         ratio = self.devicePixelRatioF()
@@ -153,23 +164,13 @@ class StartupSplash(QWidget):
     def paintEvent(self, event) -> None:
         painter = QPainter(self)
         painter.fillRect(self.rect(), self._background)
-        font = QFont(self.font())
-        font.setPixelSize(TITLE_PIXELS)
-        font.setWeight(QFont.Weight.DemiBold)
-        title_width = QFontMetrics(font).horizontalAdvance(TITLE)
-        logo_width = 0 if self._logo.isNull() else round(self._logo.deviceIndependentSize().width())
-        left = round((WIDTH - logo_width - TITLE_GAP - title_width) / 2)
-        middle = (HEIGHT - BAR_HEIGHT) / 2
-        if not self._logo.isNull():
-            logical = self._logo.deviceIndependentSize()
-            painter.drawImage(left, round(middle - logical.height() / 2), self._logo)
-        painter.setFont(font)
-        painter.setPen(self._text)
-        painter.drawText(
-            QRectF(left + logo_width + TITLE_GAP, middle - LOGO_SIZE / 2, title_width + 4, LOGO_SIZE),
-            Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft,
-            TITLE,
-        )
+        if not self._brand.isNull():
+            logical = self._brand.deviceIndependentSize()
+            left = round((WIDTH - logical.width()) / 2)
+            middle = (HEIGHT - BAR_HEIGHT) / 2
+            painter.drawImage(left, round(middle - logical.height() / 2), self._brand)
+        else:
+            self._paint_source_brand(painter)
         bar = self._bar_rect()
         painter.fillRect(bar, self._track)
         if self._fill is not None:
@@ -188,6 +189,25 @@ class StartupSplash(QWidget):
             self._announced = True
             QTimer.singleShot(0, self.painted.emit)
 
+    def _paint_source_brand(self, painter: QPainter) -> None:
+        """Preserve source-run branding before generated package assets exist."""
+        font = QFont(self.font())
+        font.setPixelSize(TITLE_PIXELS)
+        font.setWeight(QFont.Weight.DemiBold)
+        title_width = QFontMetrics(font).horizontalAdvance(TITLE)
+        logo_width = 0 if self._logo.isNull() else round(self._logo.deviceIndependentSize().width())
+        left = round((WIDTH - logo_width - TITLE_GAP - title_width) / 2)
+        middle = (HEIGHT - BAR_HEIGHT) / 2
+        if not self._logo.isNull():
+            logical = self._logo.deviceIndependentSize()
+            painter.drawImage(left, round(middle - logical.height() / 2), self._logo)
+        painter.setFont(font)
+        painter.setPen(self._text)
+        painter.drawText(
+            QRectF(left + logo_width + TITLE_GAP, middle - LOGO_SIZE / 2, title_width + 4, LOGO_SIZE),
+            Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft,
+            TITLE,
+        )
     def closeEvent(self, event) -> None:
         # The splash is not user-dismissible: closing it early would leave a running app without a window.
         if self._finishing:
