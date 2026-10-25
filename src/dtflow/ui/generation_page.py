@@ -1079,7 +1079,9 @@ class GenerationPage:
         if label:
             self._stage_seen.setdefault(label, time.monotonic() - self._stage_started)
         if event.kind == "progress":
-            self._present_progress(event.stage or "Generating", event.completed, event.total)
+            from dtflow.ui.progress_stages import event_stage
+
+            self._present_progress(event_stage(event), event.completed, event.total)
         elif event.kind == "preview" and event.artifact and event.artifact.designation == Designation.PREVIEW:
             self._show_image(event.artifact.encoded, "preview")
             self._present_progress("Preview shown (not the final image)")
@@ -1089,7 +1091,9 @@ class GenerationPage:
                 "submission_possible": "Submitting to backend",
                 "terminal": "Finalizing",
             }[event.kind]
-            self._present_progress(event.stage or stage)
+            from dtflow.ui.progress_stages import event_stage
+
+            self._present_progress(event_stage(event) or stage)
 
     def _generated(self, outcome, failure) -> None:
         self._cache_changed()

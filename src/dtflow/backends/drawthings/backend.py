@@ -439,15 +439,20 @@ class DrawThingsBackend:
                 )
                 base_version = (model.architecture if model else None) or bundled_base_version(request.model_id)
                 if request.operation == "txt2img":
+                    emit("preparing", stage="resolving_model")
                     spec = await self._model_spec(request.model_id)
+                    emit("preparing", stage="encoding_request")
                     wire = build_generation_message(request, await self._secret(), base_version, spec)
                 else:
                     # Never refresh/derive cloud descriptions on this path. The
                     # exact published entry and digest were gated before open/auth.
                     spec = self._image_specs[request.model_id]
                     base_version = (spec or {}).get("version") or base_version
+                    emit("preparing", stage="preparing_image_inputs")
                     prepared = await settle(asyncio.to_thread(self._image_inputs_loader, request.image_inputs))
+                    emit("preparing", stage="resolving_credentials")
                     secret = await self._secret()
+                    emit("preparing", stage="encoding_request")
                     wire = await settle(
                         asyncio.to_thread(
                             build_generation_message,
@@ -486,8 +491,11 @@ class DrawThingsBackend:
                         },
                     )
                 emit("preparing", stage="wire_validated")
+                emit("preparing", stage="waiting_execution_lane")
                 async with self._lane:
+                    emit("preparing", stage="connecting_backend")
                     await self._connect()
+                    emit("preparing", stage="preparing_grpc_metadata")
                     metadata = await self._generation_metadata(wire.message)
                     if asyncio.current_task().cancelling():
                         raise asyncio.CancelledError
@@ -504,8 +512,30 @@ class DrawThingsBackend:
                         metadata=metadata,
                     ) as stream:
                         await stream.send_message(wire.message, end=True)
+                        request_sent_at = time.monotonic()
+                        emit("preparing", stage="waiting_backend_response")
+                        diagnostic_event(
+                            log,
+                            "backend.generation_request_sent",
+                            level=logging.INFO,
+                            data={"transport": "grpc", "backend": self.backend_id},
+                        )
                         previews = 0
+                        first_response = True
                         async for response in stream:
+                            if first_response:
+                                first_response = False
+                                diagnostic_event(
+                                    log,
+                                    "backend.generation_first_response",
+                                    level=logging.INFO,
+                                    data={
+                                        "transport": "grpc",
+                                        "backend": self.backend_id,
+                                        "wait_ms": round((time.monotonic() - request_sent_at) * 1000),
+                                    },
+                                )
+                                emit("preparing", stage="backend_response_received")
                             self._log_response(response)
                             if response.chunk_state == image_service.ChunkState.MORE_CHUNKS:
                                 raise self._reject(request, "chunked_output_unsupported", stage, finals)
