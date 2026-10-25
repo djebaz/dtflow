@@ -143,10 +143,13 @@ class StartupSplash(QWidget):
         else:
             event.ignore()
 
-    def finish(self, form: QWidget) -> None:
-        """Close once the main window is up; the window form, not the splash, keeps the focus."""
+    def dismiss(self) -> None:
         self._finishing = True
         self.close()
+
+    def finish(self, form: QWidget) -> None:
+        """Close once the main window is up; the window form, not the splash, keeps the focus."""
+        self.dismiss()
         form.raise_()
         form.activateWindow()
 
@@ -174,7 +177,7 @@ def run_gui_with_splash(**options) -> int:
             outcome["window"] = gui.open_window(application, **options)
         except BaseException as exc:
             outcome["error"] = exc
-            splash.close()
+            splash.dismiss()
             application.exit(1)
             return
         form = outcome["window"].form
@@ -191,7 +194,7 @@ def run_gui_with_splash(**options) -> int:
     startup.mark("splash shown")
     QTimer.singleShot(FIRST_PAINT_FALLBACK_MS, proceed)
     result = application.exec()
-    splash.close()
+    splash.dismiss()
     if "error" in outcome:
         raise outcome["error"]
     if "window" not in outcome:
