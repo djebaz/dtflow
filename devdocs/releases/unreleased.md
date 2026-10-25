@@ -22,5 +22,5 @@ Changes through 5.2.0 are consolidated in [DTFlow 5.2.0](v5.2.0.md). This file t
 
 ## Release audit
 
-- PRs: #164, #166, #167.
-- Scope: Version bump 5.2.0 and release-note consolidation; queue thumbnail refresh continuity correction; local queue authoring templates and durable-admission FIFO coverage; startup connection check and deferred optional startup work (#168/#169, PR pending). Exact Windows executable acceptance and publication remain separate.
+- PRs: #164, #166, #167, #171.
+- Scope: Version bump 5.2.0 and release-note consolidation; queue thumbnail refresh continuity correction; local queue authoring templates and durable-admission FIFO coverage; startup connection check and deferred optional startup work (#168/#169). Exact Windows executable acceptance and publication remain separate.

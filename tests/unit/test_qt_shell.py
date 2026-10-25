@@ -721,6 +721,7 @@ def test_logs_form_is_created_once_only_on_demand(window, qtbot, monkeypatch):
 
 
 def test_first_event_turn_starts_check_but_shutdown_cannot_start_work(window, monkeypatch):
+    from types import SimpleNamespace
     from unittest.mock import Mock
 
     from dtflow.ui import app
@@ -728,7 +729,7 @@ def test_first_event_turn_starts_check_but_shutdown_cannot_start_work(window, mo
     start = Mock()
     thread = Mock()
     monkeypatch.setattr(window, "start_startup_check", start)
-    monkeypatch.setattr(app.threading, "Thread", thread)
+    monkeypatch.setattr(app, "threading", SimpleNamespace(Thread=thread))
     app._after_first_paint(window)
     start.assert_called_once()
     thread.return_value.start.assert_called_once()
