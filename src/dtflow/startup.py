@@ -16,6 +16,15 @@ _marks: list[tuple[str, float]] = []
 _lock = threading.Lock()
 _awaited: tuple[str, ...] = ()
 _deferred_title: str | None = None
+_observer = None
+_observer_thread: int | None = None
+
+
+def observe(callback) -> None:
+    """Call ``callback(name)`` for each mark made on the calling thread (the GUI thread); ``None`` stops it."""
+    global _observer, _observer_thread
+    _observer = callback
+    _observer_thread = threading.get_ident() if callback is not None else None
 
 
 def mark(name: str) -> None:
@@ -25,6 +34,9 @@ def mark(name: str) -> None:
         title = None
         if name in _awaited:
             _awaited, title, _deferred_title = (), _deferred_title, None
+    observer = _observer
+    if observer is not None and threading.get_ident() == _observer_thread:
+        observer(name)
     if title is not None:
         report(title)
 

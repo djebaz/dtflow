@@ -11,7 +11,7 @@ import time
 from pathlib import Path
 
 from PySide6.QtCore import QEvent, QObject, QRectF, Qt, QTimer, Signal
-from PySide6.QtGui import QColor, QGuiApplication, QImage, QPainter, QPen
+from PySide6.QtGui import QColor, QFont, QFontMetrics, QGuiApplication, QImage, QPainter, QPen
 from PySide6.QtWidgets import QApplication, QWidget
 
 from dtflow import startup
@@ -21,17 +21,37 @@ LOGO = RESOURCES / "images" / "dtflow-splash.png"  # pre-scaled copies of the ap
 LOGO_2X = LOGO.with_name("dtflow-splash@2x.png")
 TOKENS = RESOURCES / "styles" / "tokens.json"
 
-WIDTH = 360
-HEIGHT = 280
-LOGO_SIZE = 168
+WIDTH = 420
+HEIGHT = 200
+LOGO_SIZE = 96
+TITLE = "DTFlow"
+TITLE_PIXELS = 38
+TITLE_GAP = 22
 BAR_HEIGHT = 4
 BAR_SEGMENT = 0.28  # fraction of the bar width covered by the moving segment
 BAR_PERIOD_S = 1.4
 FRAME_MS = 16
 LOGO_2X_RATIO = 2.0
-# Fill reached when each real startup stage completes. These are stage milestones, not time estimates: the bar
-# moves as an indeterminate segment until the first stage finishes, then fills in steps as work really completes.
-STAGE_FILL = {"imports": 0.2, "theme": 0.35, "built": 0.9, "shown": 0.95}
+# Fill reached when each real startup stage completes, keyed by the existing ``startup`` mark names (unknown or
+# renamed marks are ignored). These are stage milestones, not time estimates: the bar moves as an indeterminate
+# segment until the first stage finishes, then fills in steps as work really completes.
+STAGE_FILL = {
+    "ui imports": 0.10,
+    "application and theme": 0.20,
+    "main form": 0.28,
+    "queue form": 0.36,
+    "shell form and mounting": 0.44,
+    "images page controller": 0.52,
+    "workspace: activity strip created": 0.60,
+    "workspace chrome and navigation ready": 0.68,
+    "generate controller": 0.78,
+    "queue and image operation controllers": 0.84,
+    "pages wired, session restored": 0.90,
+    "main window built": 0.94,
+    "window shown": 0.97,
+    "window painted": 1.0,
+    "window paint fallback": 1.0,
+}
 # The first-paint signal is the only trigger for loading the main UI; this guards against a platform that never paints.
 FIRST_PAINT_FALLBACK_MS = 500
 # Bounded fallback if the shown window never reports a paint event.
@@ -86,6 +106,7 @@ class StartupSplash(QWidget):
         self._background = QColor(tokens.get("color.background", "#1f1f1f"))
         self._border = QColor(tokens.get("color.border", "#3a3a3a"))
         self._accent = QColor(tokens.get("color.accent", "#0068b8"))
+        self._text = QColor(tokens.get("color.text", "#e6e6e6"))
         self._track = QColor(tokens.get("color.surface", "#252525"))
         self._logo = self._load_logo()
         self._announced = False
@@ -111,8 +132,8 @@ class StartupSplash(QWidget):
 
     def set_stage(self, stage: str) -> None:
         """Record a completed startup stage and paint it at once; the GUI thread may be blocked right after."""
-        fill = STAGE_FILL.get(stage, 1.0)
-        if self._fill is not None and fill <= self._fill:
+        fill = STAGE_FILL.get(stage)
+        if fill is None or (self._fill is not None and fill <= self._fill):
             return
         self._fill = fill
         if self.isVisible():
@@ -132,13 +153,23 @@ class StartupSplash(QWidget):
     def paintEvent(self, event) -> None:
         painter = QPainter(self)
         painter.fillRect(self.rect(), self._background)
+        font = QFont(self.font())
+        font.setPixelSize(TITLE_PIXELS)
+        font.setWeight(QFont.Weight.DemiBold)
+        title_width = QFontMetrics(font).horizontalAdvance(TITLE)
+        logo_width = 0 if self._logo.isNull() else round(self._logo.deviceIndependentSize().width())
+        left = round((WIDTH - logo_width - TITLE_GAP - title_width) / 2)
+        middle = (HEIGHT - BAR_HEIGHT) / 2
         if not self._logo.isNull():
             logical = self._logo.deviceIndependentSize()
-            painter.drawImage(
-                round((WIDTH - logical.width()) / 2),
-                round((HEIGHT - BAR_HEIGHT - logical.height()) / 2),
-                self._logo,
-            )
+            painter.drawImage(left, round(middle - logical.height() / 2), self._logo)
+        painter.setFont(font)
+        painter.setPen(self._text)
+        painter.drawText(
+            QRectF(left + logo_width + TITLE_GAP, middle - LOGO_SIZE / 2, title_width + 4, LOGO_SIZE),
+            Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft,
+            TITLE,
+        )
         bar = self._bar_rect()
         painter.fillRect(bar, self._track)
         if self._fill is not None:
@@ -194,11 +225,8 @@ def run_gui_with_splash(**options) -> int:
             except ImportError as exc:
                 raise GuiUnavailable(str(exc)) from exc
             startup.mark("ui imports")
-            splash.set_stage("imports")
             outcome["gui"] = gui
-            outcome["window"] = gui.open_window(
-                application, before_show=watch_window, progress=splash.set_stage, **options
-            )
+            outcome["window"] = gui.open_window(application, before_show=watch_window, **options)
             outcome["paint_watch"].arm()
         except BaseException as exc:
             outcome["error"] = exc
@@ -209,18 +237,20 @@ def run_gui_with_splash(**options) -> int:
     def watch_window(window) -> None:
         def window_painted(source: str) -> None:
             startup.mark("window painted" if source == "paint" else "window paint fallback")
-            splash.set_stage("painted")
+            startup.observe(None)
             splash.finish(window.form)
 
         # Watch before show(), so a synchronous first paint cannot be missed; report timings only once it is marked.
         startup.expect("window painted", "window paint fallback")
         outcome["paint_watch"] = _FirstPaint(window.form, window_painted)
 
+    startup.observe(splash.set_stage)
     splash.painted.connect(proceed)
     splash.show()
     startup.mark("splash shown")
     QTimer.singleShot(FIRST_PAINT_FALLBACK_MS, proceed)
     result = application.exec()
+    startup.observe(None)
     splash.dismiss()
     if "error" in outcome:
         raise outcome["error"]
