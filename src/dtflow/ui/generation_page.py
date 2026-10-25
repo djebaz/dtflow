@@ -26,6 +26,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from dtflow import startup
 from dtflow.composition import BACKENDS
 from dtflow.core.compute_units import ComputeUnitEstimate, estimate_compute_units
 from dtflow.core.model_profiles import has_own_profile, profile_for
@@ -294,6 +295,7 @@ class GenerationPage:
             EmptyListHint(page.assetList, "No local receipts\nPrepare a cloud asset to begin."),
             EmptyListHint(page.resultList, "No saved outputs yet"),
         )
+        startup.mark("generate: initial controller state and hints")
         self.lora = LoraAssetPanel(
             page,
             runner=runner,
@@ -304,6 +306,7 @@ class GenerationPage:
             is_busy=lambda: self._busy,
             set_busy=self._set_busy,
         )
+        startup.mark("generate: LoRA asset panel")
         for name in WIRED_CONTROLS:
             getattr(page, name).setEnabled(True)
         self._align_rail_labels()
@@ -362,6 +365,7 @@ class GenerationPage:
         ):
             page.resultPreviewLabel.add_file_button(button)
         self._set_result_actions(False)
+        startup.mark("generate: control and signal wiring")
         page.modelCombo.custom_prompt = "Exact checkpoint identifier"
         page.modelCombo.setToolTip("Select a checkpoint. Search matches any part of its name.")
         page.promptEdit.setTabChangesFocus(True)
@@ -386,13 +390,19 @@ class GenerationPage:
         page.detailsToggle.toggled.connect(page.attemptDetails.setVisible)
         page.expandPromptButton.toggled.connect(self._set_prompt_expanded)
         page.resultPreviewLabel.enable_inspection()
+        startup.mark("generate: widgets and preview setup")
         self.sync_backend()
+        startup.mark("generate: backend sync")
         self._scan_configs()
+        startup.mark("generate: config scan")
         self.inpaint = InpaintEditor(page, runner)
+        startup.mark("generate: inpaint editor")
         self.inpaint.attach(self)
+        startup.mark("generate: inpaint attachment")
         page.textToImageModeButton.toggled.connect(self._sync_activity)
         page.inpaintModeButton.toggled.connect(self._sync_activity)
         self._update_compute_units()
+        startup.mark("generate: final compute estimate")
 
     def _set_prompt_expanded(self, expanded: bool) -> None:
         """Match prompt height, icon and accessible label to the toggle state."""
