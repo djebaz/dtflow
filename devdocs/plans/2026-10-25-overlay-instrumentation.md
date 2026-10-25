@@ -11,6 +11,7 @@
 - [x] Synchronize status/release documentation.
 - [x] Inspect three owner captures with identical phase schemas; correct the earlier broad attribution to ActivityStrip.
 - [x] Split preceding Logs placeholder, stack-hide and root-layout insertion work, and isolate QObject construction from host acquisition.
+- [x] Split the development-only QLineEdit probe into construction, polishing and explicit native destruction timings, without changing normal non-development startup.
 - [ ] Collect matched native Windows logs and select an optimization only after identifying the expensive operation.
 - [ ] Final tests and smoke tests deferred to user.
 
@@ -23,6 +24,11 @@
 
 ## Open questions
 - None blocking implementation; matched native measurements remain necessary.
+
+## QLineEdit probe refinement
+- The old `first QLineEdit polished` phase combined construction, polishing and temporary disposal. It is replaced by `QLineEdit probe: constructed`, `QLineEdit probe: polished` and `QLineEdit probe: destroyed`; do not compare the old phase directly to the new polishing-only phase.
+- The probe remains hidden, parentless and development-only. Explicit Shiboken deletion measures native destruction before releasing its Python wrapper; no real input control is deleted or moved to a worker.
+- This adds measurement boundaries only. It does not disable the warm-up, establish a speedup or perform the proposed with/without-warm-up comparison. New matched owner logs are required; mixing old/new logs must trigger the report's schema warning.
 
 ## Validation
 - Tests were not added or run; smoke tests were not run. Final validation remains with the user.

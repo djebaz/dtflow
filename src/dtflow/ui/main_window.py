@@ -8,6 +8,7 @@ from pathlib import Path
 from PySide6.QtCore import QEvent, QFile, QIODevice, QObject, QSize, Qt, QTimer, Slot
 from PySide6.QtGui import QFontMetrics, QIcon, QKeySequence, QPixmap, QShortcut
 from PySide6.QtUiTools import QUiLoader
+from shiboken6 import delete as delete_qt_object
 from PySide6.QtWidgets import (
     QAbstractButton,
     QAbstractItemView,
@@ -178,8 +179,14 @@ class MainWindow:
         if dev_enabled():  # development diagnosis only: Windows pays seconds on first text-input use
             QFontMetrics(QApplication.font()).horizontalAdvance("Ag")
             startup.mark("first font metrics")
-            QLineEdit().ensurePolished()
-            startup.mark("first QLineEdit polished")
+            line_edit_probe = QLineEdit()
+            startup.mark("QLineEdit probe: constructed")
+            line_edit_probe.ensurePolished()
+            startup.mark("QLineEdit probe: polished")
+            # A hidden, parentless diagnostic probe only; measure native disposal explicitly.
+            delete_qt_object(line_edit_probe)
+            del line_edit_probe
+            startup.mark("QLineEdit probe: destroyed")
         self.form = load_form()
         startup.mark("main form")
         self.generation_page = load_ui(GENERATION_UI_FILE)
