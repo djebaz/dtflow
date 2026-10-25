@@ -764,8 +764,8 @@ class QueuePage:
                     if active_item_id is not None
                     else f"{running} items running"
                 )
-                if not progress:
-                    completed, total = None, None
+                # Keep the measurable settled/total queue progress even when an
+                # individual backend has not reported sampling steps yet.
                 wide = f"Queue {queue_id[:8]} · {stage} · {summary.settled}/{summary.total} settled"
             if active_item_id is not None:
                 key = (queue_id, active_item_id)
