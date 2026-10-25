@@ -45,8 +45,18 @@ def summarize(runs: list[dict]) -> dict:
         raise ValueError("No app.startup_timings events found")
     totals = [run["elapsed_ms"] for run in runs]
     names = sorted({name for run in runs for name in run["phases"]})
+    schema_count = len({tuple(run["phases"]) for run in runs})
     return {
         "run_count": len(runs),
+        "phase_schema_count": schema_count,
+        "mixed_phase_schemas": schema_count > 1,
+        "warnings": [
+            "Mixed startup phase schemas: per-phase medians use different sample populations. "
+            "Compare matched instrumentation before attributing changes or ranking phases."
+        ] if schema_count > 1 else [],
+        "phase_sample_count": {
+            name: sum(name in run["phases"] for run in runs) for name in names
+        },
         "elapsed_ms": {
             "min": min(totals),
             "median": statistics.median(totals),
