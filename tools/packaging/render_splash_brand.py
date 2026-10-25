@@ -56,7 +56,7 @@ def render(scale: int) -> Path:
 
 def main() -> int:
     """Generate the 1x and 2x branding assets."""
-    application = QApplication.instance() or QApplication(sys.argv[:1])
+    _application = QApplication.instance() or QApplication(sys.argv[:1])
     for scale in (1, 2):
         print(f"Rendered {render(scale)}")
     return 0

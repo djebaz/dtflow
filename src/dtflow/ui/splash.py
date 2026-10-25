@@ -208,6 +208,7 @@ class StartupSplash(QWidget):
             Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft,
             TITLE,
         )
+
     def closeEvent(self, event) -> None:
         # The splash is not user-dismissible: closing it early would leave a running app without a window.
         if self._finishing:
