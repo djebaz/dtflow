@@ -4,6 +4,7 @@ import asyncio
 import logging
 from collections.abc import Callable
 from dataclasses import replace
+from datetime import UTC, datetime
 from pathlib import Path
 from time import monotonic
 from uuid import uuid4
@@ -123,6 +124,11 @@ class GenerationService:
         on_event: EventSink | None = None,
         prepared_inputs: PreparedImageInputs | None = None,
     ) -> SavedGeneration:
+        def preparation(stage: str) -> None:
+            if on_event is not None:
+                on_event(BackendEvent(request.request_id, 0, "preparing", datetime.now(UTC).isoformat(), stage=stage))
+
+        preparation("validating_request")
         caps = self.backend.capabilities
         image_operation = request.operation != "txt2img"
         if image_operation:
@@ -175,6 +181,7 @@ class GenerationService:
                 )
             )
         if request.prepared_assets:
+            preparation("validating_assets")
             # Validation is metadata-only: a stale, inaccessible or unconfirmed reference blocks the request here,
             # before any attempt exists, and never triggers an upload or substitutes another receipt.
             if self.assets is None or any(item.backend_id != caps.backend_id for item in request.prepared_assets):
@@ -189,6 +196,7 @@ class GenerationService:
             for prepared in request.prepared_assets:
                 await self._bounded(self.assets.validate(prepared), self.timeouts.http, "asset_validation")
         if request.loras:
+            preparation("checking_loras")
             # Confirmed incompatibility or absence must stop the request before any durable attempt exists.
             raise_if_blocked(request, await self.preflight(request))
         raw_bytes = request.height_px * (1 + request.width_px * 4)
@@ -204,6 +212,7 @@ class GenerationService:
             )
         # One authoritative gate covers desktop, CLI, queues and image operations.
         # No child process, lock or Windows handshake is performed before dispatch.
+        preparation("checking_output_storage")
         try:
             await asyncio.to_thread(require_originals_ready, getattr(self.store, "directory", self.output.parent))
         except OriginalImagesUnavailableError as exc:
@@ -220,6 +229,7 @@ class GenerationService:
         if image_operation:
             request = replace(request, image_inputs=replace(request.image_inputs, attempt_id=attempt_id))
         ATTEMPT.set(attempt_id)
+        preparation("creating_attempt")
         await self.store.create(attempt_id, caps.backend_id, request)
         diagnostic_event(
             log,
@@ -256,9 +266,11 @@ class GenerationService:
                 on_event(event)
 
         try:
+            preparation("waiting_buffer_budget")
             await self.budget.acquire(reservation)
             reserved = True
             if image_operation:
+                preparation("saving_image_snapshot")
                 snapshot = await settle(
                     asyncio.to_thread(
                         snapshot_image_inputs,
@@ -270,6 +282,7 @@ class GenerationService:
                 )
                 if snapshot != request.image_inputs:
                     raise ValueError("Committed image inputs differ from the prepared attempt.")
+            preparation("recording_submission_state")
             await self.store.transition(
                 attempt_id,
                 ("prepared",),

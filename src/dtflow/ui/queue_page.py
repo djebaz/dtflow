@@ -255,6 +255,8 @@ class QueuePage:
         self._output_folder: Path | None = None
         self._images_hook = None  # set_images_hook wires Open in Images to the Images workspace
         self._run_progress: dict[tuple[str, str], tuple[int, int]] = {}
+        self._run_stages: dict[tuple[str, str], str] = {}
+        self._run_stage_started: dict[tuple[str, str], float] = {}
         self._countdown = QueueCountdown()
         self._event_relay = EventRelay(self._queue_backend_event, page)
         self._advance_relay = EventRelay(self._advanced, page)
@@ -498,6 +500,16 @@ class QueuePage:
             and self._views[queue_id]["summary"]["running"]
             and (detail_running is None or self._detail["queue_id"] != queue_id or item_id in detail_running)
         }
+        active_keys = set(self._run_progress) | set(self._run_stages)
+        valid_keys = {
+            key
+            for key in active_keys
+            if key[0] in self._views
+            and self._views[key[0]]["summary"]["running"]
+            and (detail_running is None or self._detail["queue_id"] != key[0] or key[1] in detail_running)
+        }
+        self._run_stages = {key: value for key, value in self._run_stages.items() if key in valid_keys}
+        self._run_stage_started = {key: value for key, value in self._run_stage_started.items() if key in valid_keys}
         if self._dispatching is not None:
             active = self._views.get(self._dispatching)
             if active is not None and active["status"] == "running":
@@ -730,14 +742,43 @@ class QueuePage:
             # The ring counts settled items, which is meaningful however many items run at once.
             completed, total = summary.settled, summary.total
             detail += f" {summary.settled}/{summary.total} settled."
-            progress = [value for (owner, _), value in self._run_progress.items() if owner == queue_id]
+            # Only the currently running item may supply the single-item stage/progress.
+            # Historical callbacks for other items must not take over the status.
+            active_item_id = running_items[0]["item_id"] if len(running_items) == 1 else None
+            progress = (
+                [
+                    value
+                    for (owner, item_id), value in self._run_progress.items()
+                    if owner == queue_id and item_id == active_item_id
+                ]
+                if active_item_id is not None
+                else []
+            )
             wide = f"Queue {queue_id[:8]} · {summary.headline.rstrip('.')}" + (
                 f" · {running} items running" if running > 1 else " · 1 item running" if running else ""
             )
             stage = f"{running} running" if running else summary.headline.rstrip(".")
+            if running:
+                stage = (
+                    self._run_stages.get((queue_id, active_item_id), "Admitted; preparing / waiting for backend")
+                    if active_item_id is not None
+                    else f"{running} items running"
+                )
+                # Keep the measurable settled/total queue progress even when an
+                # individual backend has not reported sampling steps yet.
+                wide = f"Queue {queue_id[:8]} · {stage} · {summary.settled}/{summary.total} settled"
+            if active_item_id is not None:
+                key = (queue_id, active_item_id)
+                stage_started = self._run_stage_started.get(key)
+                if stage_started is not None:
+                    stage += f" · {int(max(0, monotonic() - stage_started))}s"
+                if progress:
+                    step, steps = progress[0]
+                    stage += f" · step {step}/{steps}"
+            if running:
+                wide = f"Queue {queue_id[:8]} · {stage} · {summary.settled}/{summary.total} settled"
             if running == 1 and len(progress) == 1:
                 step, steps = progress[0]
-                stage = f"step {step}/{steps}"
                 # The item number is known only for the selected queue, whose items are read.
                 position = f"Item #{running_items[0]['position']}" if len(running_items) == 1 else "Item"
                 detail += f" {position} step {step}/{steps}."
@@ -756,7 +797,8 @@ class QueuePage:
         if phase in ("running", "paused"):
             remaining = self._countdown.remaining(view, monotonic())
             elapsed, eta = elapsed_text(view), eta_text(view, remaining=remaining)
-            if elapsed or eta:
+            stage_timed = len(running_items) == 1 and (queue_id, running_items[0]["item_id"]) in self._run_stage_started
+            if elapsed or eta or stage_timed:
                 if not self._timing_timer.isActive() and not self._runner.closed:
                     self._timing_timer.start()
             else:
@@ -2140,14 +2182,28 @@ class QueuePage:
 
     # -- dispatch and controls -------------------------------------------------------------------------------------
     def _queue_backend_event(self, wrapped: _QueueBackendEvent) -> None:
+        from dtflow.ui.progress_stages import event_stage
+
         event = wrapped.event
         if wrapped.queue_id == self._dispatching:
             self._dispatch_started = True
         key = (wrapped.queue_id, wrapped.item_id)
-        if event.kind == "progress" and type(event.completed) is int and type(event.total) is int and event.total > 0:
+        label = event_stage(event)
+        if label and label != self._run_stages.get(key):
+            self._run_stages[key] = label
+            self._run_stage_started[key] = monotonic()
+        if (
+            event.kind == "progress"
+            and type(event.completed) is int
+            and type(event.total) is int
+            and event.total > 0
+            and 0 <= event.completed <= event.total
+        ):
             self._run_progress[key] = (max(0, event.completed), event.total)
         elif event.kind == "terminal":
             self._run_progress.pop(key, None)
+            self._run_stages.pop(key, None)
+            self._run_stage_started.pop(key, None)
         self._publish_run_state()
 
     def trigger_run_control(self) -> None:

@@ -4,11 +4,12 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from PySide6.QtCore import QPointF, QRectF, Qt, Signal
-from PySide6.QtGui import QColor, QFont, QFontMetrics, QPainter, QPen, QPolygonF
+from PySide6.QtCore import QRectF, Qt, Signal
+from PySide6.QtGui import QColor, QFont, QFontMetrics, QPainter, QPen
 from PySide6.QtWidgets import QGraphicsOpacityEffect, QPushButton, QWidget
 
 from dtflow.ui.theme import load_tokens
+from dtflow.ui.progress_animation import paint_stripes, watch
 
 BAR_HEIGHT = 20
 STRIP_HEIGHT = 18
@@ -65,6 +66,13 @@ class _Strip(QWidget):
         self.model: BarModel | None = None
         self.setFixedHeight(STRIP_HEIGHT)
 
+    def stripes_active(self):
+        return self.model is not None and self.model.kind == "running" and self.model.fraction is None
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        watch(self)
+
     def paintEvent(self, event) -> None:
         model = self.model
         if model is None:
@@ -92,14 +100,7 @@ class _Strip(QWidget):
                 base.setAlphaF(0.5)
             painter.setPen(Qt.PenStyle.NoPen)
             # Paint disjoint bands so 50 % stopping opacity does not compound over another band.
-            for origin in range(-height - 16, width, 16):
-                for offset, tone in ((0, fill), (8, base)):
-                    x = origin + offset
-                    painter.setBrush(tone)
-                    band = QPolygonF(
-                        [QPointF(x, height), QPointF(x + 8, height), QPointF(x + 8 + height, 0), QPointF(x + height, 0)]
-                    )
-                    painter.drawPolygon(band)
+            paint_stripes(painter, width, height, fill, base)
         else:
             painter.fillRect(QRectF(1, 1, (width - 2) * fraction, height - 2), fill)
         painter.restore()
@@ -217,6 +218,7 @@ class ActivityBar(QWidget):
         self.opacity_effect.setOpacity(opacity)
         self._visible_button = model.stop_visible or model.kind != "running"
         self.strip.model = model
+        watch(self.strip)
         self._running = model.kind == "running"
         self.button.setText("Stop" if self._running else "×")
         if self.button.property("result") != (not self._running):
