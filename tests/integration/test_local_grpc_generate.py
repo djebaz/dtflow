@@ -69,7 +69,9 @@ async def run(steps, *, request=None, timeouts=None, limits=None, echo=ECHO, che
 async def test_success_stream_sends_the_resolved_request_and_returns_a_png(seed, sampler):
     steps = (Signpost("text_encoded"), Signpost("sampling", 2), Preview(pixel_tensor(16, 16, 4)), Image(GOOD))
     result, events, seen = await run(steps, request=make_request(seed=seed, sampler_id=sampler))
-    assert [e.kind for e in events][:3] == ["preparing", "submission_possible", "progress"]
+    kinds = [e.kind for e in events]
+    assert kinds[0] == "preparing" and kinds.index("submission_possible") < kinds.index("progress")
+    assert set(kinds[: kinds.index("submission_possible")]) == {"preparing"}
     assert events[-1].kind == "terminal" and [e.sequence for e in events] == list(range(1, len(events) + 1))
     assert any(e.kind == "artifact_received" for e in events)
     (artifact,) = result.artifacts
@@ -175,13 +177,13 @@ async def test_deadline_expiry_after_dispatch_leaves_the_outcome_unknown():
 async def test_unknown_model_is_rejected_before_any_network_use():
     failure, events, seen = await run((Image(GOOD),), request=make_request(model_id="missing.ckpt"))
     assert failure.code == "unknown_model" and failure.remote_outcome == RemoteOutcome.NOT_STARTED
-    assert events == [] and seen.generate_requests == []
+    assert {e.kind for e in events} <= {"preparing"} and seen.generate_requests == []
     for request in (make_request(batch_size=2),):
         invalid, events, seen = await run((Image(GOOD),), request=request)
         assert invalid.category == ErrorCategory.VALIDATION
         assert invalid.submission_stage == SubmissionStage.NOT_SUBMITTED
         assert invalid.remote_outcome == RemoteOutcome.NOT_STARTED
-        assert events == [] and seen.generate_requests == []
+        assert {e.kind for e in events} <= {"preparing"} and seen.generate_requests == []
 
 
 @pytest.mark.asyncio

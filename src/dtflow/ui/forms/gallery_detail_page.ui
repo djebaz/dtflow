@@ -372,7 +372,7 @@
              </size>
             </property>
             <property name="text">
-             <string>↻</string>
+             <string />
             </property>
            </widget>
           </item>
@@ -785,8 +785,8 @@
      </item>
      <item>
       <widget class="QPushButton" name="galleryUnselectButton">
-       <property name="text"><string>Unselect ▾</string></property>
-       <property name="accessibleName"><string>Unselect ▾</string></property>
+       <property name="text"><string>Unselect</string></property>
+       <property name="accessibleName"><string>Unselect</string></property>
        <property name="toolTip"><string>Unselect hidden images or unselect all checked images.</string></property>
        <property name="role" stdset="0"><string>gallerySelectionAction</string></property>
        <property name="enabled"><bool>true</bool></property>
@@ -811,8 +811,8 @@
      </item>
      <item>
       <widget class="QPushButton" name="galleryMoreButton">
-       <property name="text"><string>More ▾</string></property>
-       <property name="accessibleName"><string>More ▾</string></property>
+       <property name="text"><string>More</string></property>
+       <property name="accessibleName"><string>More</string></property>
        <property name="toolTip"><string>More selection commands, including actions hidden at narrow widths.</string></property>
        <property name="role" stdset="0"><string>gallerySelectionAction</string></property>
        <property name="enabled"><bool>true</bool></property>
@@ -845,7 +845,7 @@
          <property name="enabled"><bool>false</bool></property>
         </widget></item>
         <item><widget class="QPushButton" name="galleryRemovalMenuButton">
-         <property name="text"><string>▼</string></property>
+         <property name="text"><string /></property>
          <property name="accessibleName"><string>Choose image removal action</string></property>
          <property name="toolTip"><string>Choose Trash or permanent deletion. Choosing never removes images.</string></property>
          <property name="segmentEdge" stdset="0"><string>last</string></property>
@@ -1288,7 +1288,7 @@ No generation or saved output</string>
                      </size>
                     </property>
                     <property name="text">
-                     <string>⛶</string>
+                     <string />
                     </property>
                    </widget>
                   </item>

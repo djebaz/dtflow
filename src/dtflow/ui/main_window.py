@@ -6,7 +6,7 @@ import os
 from pathlib import Path
 
 from PySide6.QtCore import QEvent, QFile, QIODevice, QObject, QSize, Qt, QTimer, Slot
-from PySide6.QtGui import QFontMetrics, QIcon, QKeySequence, QPixmap, QShortcut
+from PySide6.QtGui import QIcon, QKeySequence, QShortcut
 from PySide6.QtUiTools import QUiLoader
 from PySide6.QtWidgets import (
     QAbstractButton,
@@ -30,7 +30,7 @@ from dtflow.composition import BACKENDS, BackendSelection
 from dtflow.core.gallery import GalleryQuery
 from dtflow.core.models import BackendError, ValidationError
 from dtflow.diagnostics import event as diagnostic_event
-from dtflow.logging_setup import configured_directory, dev_enabled
+from dtflow.logging_setup import configured_directory
 from dtflow.paths import application_state_dir
 from dtflow.persistence.cache_coordination import CacheBusyError, CacheCleanupError, CacheSafetyError
 from dtflow.persistence.image_recycle import reconcile as reconcile_images
@@ -54,7 +54,7 @@ from dtflow.services.credentials import (
 from dtflow.services.presets import export_presets, import_presets, load_presets
 from dtflow.ui.activity import Activity
 from dtflow.ui.activity_strip import ActivityStrip
-from dtflow.ui.brand import connection_icon
+from dtflow.ui.brand import connection_icon, status_dot
 from dtflow.ui.button_focus import KeyboardFocusGuard
 from dtflow.ui.gallery_page import GalleryPage
 from dtflow.ui.generation_page import GenerationPage
@@ -62,7 +62,6 @@ from dtflow.ui.image_export_panel import ImageExportPanel
 from dtflow.ui.image_preview import ImagePreview
 from dtflow.ui.image_recycle_panel import ImageRecyclePanel
 from dtflow.ui.inline_feedback import InlineFeedback, InlineNotice, confirm_action
-from dtflow.ui.logs_workspace import LogsWorkspace
 from dtflow.ui.queue_page import QueuePage
 from dtflow.ui.queue_popover import QueuePopover
 from dtflow.ui.queue_composer import ValueChips
@@ -93,19 +92,25 @@ PREVIEW_CONTROL_TYPES = (
 )
 
 
-def load_ui(path: Path) -> QWidget:
+def _form_loader() -> QUiLoader:
+    """Share custom-widget registration for the lifetime of this application."""
+    application = QApplication.instance()
+    loader = getattr(application, "_dtflow_form_loader", None)
+    if loader is None:
+        loader = QUiLoader(application)
+        for widget_type in (ImagePreview, SearchableComboBox, RunControl, SegmentedBar, ValueChips):
+            loader.registerCustomWidget(widget_type)
+        application._dtflow_form_loader = loader
+    return loader
+
+
+def load_ui(path: Path, parent: QWidget | None = None) -> QWidget:
     """Load a canonical Designer form without committing generated Python."""
     file = QFile(str(path))
     if not file.open(QIODevice.OpenModeFlag.ReadOnly):
         raise OSError(f"{path.name} could not be opened.")
     try:
-        loader = QUiLoader()
-        loader.registerCustomWidget(ImagePreview)
-        loader.registerCustomWidget(SearchableComboBox)
-        loader.registerCustomWidget(RunControl)
-        loader.registerCustomWidget(SegmentedBar)
-        loader.registerCustomWidget(ValueChips)
-        widget = loader.load(file)
+        widget = _form_loader().load(file, parent)
     finally:
         file.close()
     if widget is None:
@@ -171,16 +176,13 @@ class MainWindow:
         no_cache: bool = False,
     ):
         # Separate first-use Qt costs (loader plugins, fonts, stylesheet parsing) from the form's own cost.
-        QUiLoader()
+        _form_loader()
         startup.mark("ui loader created")
         QWidget().ensurePolished()
         startup.mark("first widget polished")
-        if dev_enabled():  # development diagnosis only: Windows pays seconds on first text-input use
-            QFontMetrics(QApplication.font()).horizontalAdvance("Ag")
-            startup.mark("first font metrics")
-            QLineEdit().ensurePolished()
-            startup.mark("first QLineEdit polished")
+        # Disposable font/input probes belong in tools/ui/probe_line_edit.py, not desktop startup.
         self.form = load_form()
+        self.form.statusGlyphLabel.setPixmap(status_dot())
         startup.mark("main form")
         self.generation_page = load_ui(GENERATION_UI_FILE)
         startup.mark("generation form")
@@ -206,7 +208,7 @@ class MainWindow:
         self._busy = False
         self.activity = Activity()
         form = self.form
-        self.shell = load_ui(FORMS_DIR / "workspace_shell.ui")
+        self.shell = load_ui(FORMS_DIR / "workspace_shell.ui", form.centralWidget())
         # Mount presentation regions once; page controllers retain their widget references.
         for page, names in (
             (form, ("contextRail", "workspaceFrame", "inspectorPanel")),
@@ -219,7 +221,7 @@ class MainWindow:
                 stack.addWidget(getattr(page, name))
         self.images_page = QWidget()  # Navigation marker; canonical content stays mounted in the shell.
         startup.mark("shell form and mounting")
-        self.gallery_detail = load_ui(FORMS_DIR / "gallery_detail_page.ui")
+        self.gallery_detail = load_ui(FORMS_DIR / "gallery_detail_page.ui", self.shell.centerStack)
         startup.mark("images form")
         self.gallery = GalleryPage(
             self.gallery_detail,
@@ -235,11 +237,13 @@ class MainWindow:
         self.gallery.delete_button.setToolTip(f"Move eligible checked originals to {TRASH_NAME} after confirmation.")
         self.gallery_preview = self.gallery  # retain the established integration attribute
         form.workspaceStack.addWidget(self.images_page)
-        self.shell.leftStack.addWidget(load_ui(FORMS_DIR / "gallery_context.ui"))
+        self.shell.leftStack.addWidget(load_ui(FORMS_DIR / "gallery_context.ui", self.shell.leftStack))
         self.shell.centerStack.addWidget(self.gallery_detail)
         self.shell.rightStack.addWidget(QWidget())
+        startup.mark("workspace: images mounted")
         self.logs_marker = QWidget()
         form.workspaceStack.addWidget(self.logs_marker)
+        startup.mark("workspace: Logs navigation marker mounted")
         self._logs_form = None
         self._logs = None
         self._logs_placeholder = QWidget()
@@ -248,11 +252,17 @@ class MainWindow:
         self.shell.rightStack.addWidget(QWidget())
         self._logs_previous_page = form.connectionPage
         self._logs_active = False
+        startup.mark("workspace: Logs placeholders mounted")
         form.workspaceStack.hide()
+        startup.mark("workspace: legacy stack hidden")
         form.rootLayout.addWidget(self.shell)
+        startup.mark("workspace: shell inserted into root layout")
         self._last_run_marker = None
+        startup.mark("workspace: activity strip constructor entered")
         self.progress_strip = ActivityStrip(form)
+        startup.mark("workspace: activity strip created")
         self.inline = InlineFeedback(form)
+        startup.mark("workspace: inline feedback created")
         # Preserve the connection controller's established chrome references.
         for name in (
             "brandFrame",
@@ -278,16 +288,19 @@ class MainWindow:
         # so one tab's inspector cannot push every other tab's inspector past the rail.
         self.shell.rightStack.currentChanged.connect(self._fit_inspector_page)
         self._fit_inspector_page()
-        from dtflow.ui.brand import APP_ICON, app_icon
+        startup.mark("workspace: rails and navigation configured")
+        from dtflow.ui.brand import app_icon, brand_mark
 
         form.setWindowIcon(app_icon())
-        logo = QPixmap(str(APP_ICON))
+        logo = brand_mark()
         if not logo.isNull():
             form.productMarkLabel.setPixmap(
                 logo.scaled(50, 50, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
             )
+        startup.mark("workspace: brand icon prepared")
         self._gallery_chrome_active = False
         self._gallery_previous_sizes = None
+        startup.mark("workspace chrome and navigation ready")
         self.generation = GenerationPage(
             self.generation_page,
             runner=self.runner,
@@ -506,6 +519,8 @@ class MainWindow:
         """Construct Qt objects on the GUI thread, only when Logs is first requested."""
         if self._logs is not None:
             return
+        from dtflow.ui.logs_workspace import LogsWorkspace  # deferred with the form: not needed at startup
+
         form = load_ui(FORMS_DIR / "logs_workspace.ui")
         self._logs_form = form
         index = self.shell.centerStack.indexOf(self._logs_placeholder)
@@ -919,6 +934,7 @@ class MainWindow:
 
     def _present(self, presentation: Presentation) -> None:
         label = self.form.statusLabel
+        self.form.statusGlyphLabel.setPixmap(status_dot(presentation.level))
         for widget in (label, self.form.statusGlyphLabel, self.form.statusCard):
             widget.setProperty("state", presentation.level)
             widget.style().unpolish(widget)

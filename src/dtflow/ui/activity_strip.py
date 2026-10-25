@@ -5,10 +5,12 @@ from time import monotonic
 from pathlib import Path
 
 from PySide6.QtCore import QEasingCurve, QEvent, QFile, QIODevice, QObject, QPropertyAnimation, QRect, Qt, QTimer, Slot
+from PySide6.QtGui import QIcon
 from PySide6.QtUiTools import QUiLoader
 from PySide6.QtWidgets import QApplication, QFrame, QGraphicsOpacityEffect, QWidget
 from shiboken6 import isValid
 
+from dtflow import startup
 from dtflow.ui.activity_bar import ActivityBar, BarModel, clock
 from dtflow.ui.trash_icon import trash_icon_pixmap
 
@@ -44,20 +46,26 @@ _OPERATION_ICONS = {
 class ActivityStrip(QObject):
     def __init__(self, window):
         super().__init__(window)
+        startup.mark("activity strip: QObject initialized")
         self.window = window
         self.host = window.centralWidget()
+        startup.mark("activity strip: initialization entered")
         self.form = _load("activity_strip.ui", self.host)
+        startup.mark("activity strip: Designer form loaded")
         # A sibling scrim covers the workspace, not the feedback overlay. It is
         # Qt-owned, never part of the main layout and intercepts background clicks.
         self.scrim = QFrame(self.host)
         self.scrim.setObjectName("inlineEditorScrim")
         self.scrim.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
         self.scrim.hide()
+        startup.mark("activity strip: scrim constructed")
         # Filters and deferred callbacks must disappear with the overlay frame.
         self.setParent(self.form)
         self.rows = {}
         self.status_bar = window.statusBar()
+        startup.mark("activity strip: status bar acquired")
         self.bar = ActivityBar(self.status_bar)
+        startup.mark("activity strip: painted bar constructed")
         self.bar.stop_requested.connect(self._bar_stop)
         self.bar.dismiss_requested.connect(self._bar_dismiss)
         self._bar_key = None
@@ -80,6 +88,7 @@ class ActivityStrip(QObject):
         self._bar_timer.setInterval(1000)
         self._bar_timer.timeout.connect(self._sync_bar)
         window._activity_strip = self
+        startup.mark("activity strip: wiring and timers ready")
 
     def mount_feedback(self, panel):
         self.feedback = panel
@@ -355,7 +364,13 @@ class ActivityStrip(QObject):
         if key.split("-")[0] == "trash":
             row.activitySymbol.setPixmap(trash_icon_pixmap())
         else:
-            row.activitySymbol.setText(_OPERATION_ICONS.get(key.split("-")[0], "⋯"))
+            symbol = _OPERATION_ICONS.get(key.split("-")[0])
+            if symbol is not None:
+                row.activitySymbol.setText(symbol)
+            else:
+                # A font ellipsis can trigger a costly first-use fallback during session restoration.
+                icon = Path(__file__).parents[1] / "resources" / "images" / "gallery" / "more.svg"
+                row.activitySymbol.setPixmap(QIcon(str(icon)).pixmap(24, 24))
         row.activityLabel.setText(label)
         row.activityDetail.setText(detail or "Preparing…")
         row.activityProgress.setAccessibleName(label + " progress")

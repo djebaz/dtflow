@@ -36,6 +36,11 @@ def load_theme() -> str:
             raise OSError(f"The DTFlow Qt stylesheet uses an unknown token: {match.group(1)}.") from None
 
     resolved = re.sub(r"\$\{([\w.]+)\}", token, source)
+    if sys.platform == "win32":
+        # Avoid Qt's costly generic-family lookup; native font fallback remains enabled.
+        for token_name, generic in (("type.family", "sans-serif"), ("type.monoFamily", "monospace")):
+            family = tokens[token_name]
+            resolved = resolved.replace(f'font-family: "{family}", {generic};', f'font-family: "{family}";')
     return re.sub(
         r"url\((\.\./images/(?:gallery|controls)/[^)]+)\)",
         lambda match: f'url("{(THEME_FILE.parent / match.group(1)).resolve().as_posix()}")',

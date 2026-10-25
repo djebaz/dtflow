@@ -287,7 +287,6 @@ QPushButton#queueGenerateButton {
   border-bottom-left-radius: 0;
   border-left: 1px solid ${color.accentEdge};
   padding: 0;
-  font-size: 13pt;
 }
 QPushButton#removeKeyButton,
 QPushButton#cancelQueueButton,
@@ -325,8 +324,7 @@ QFrame#previewHost {
 }
 QLabel#statusGlyphLabel {
   background: transparent;
-  color: ${color.glyphNeutral};
-  font-size: 18pt;
+  padding-top: 4px; /* centre the painted dot on the first status text line */
 }
 QFrame#statusCard[state="ok"] {
   border-color: ${color.statusOkBorder};
@@ -336,15 +334,6 @@ QFrame#statusCard[state="warning"] {
 }
 QFrame#statusCard[state="error"] {
   border-color: ${color.statusErrorBorder};
-}
-QLabel#statusGlyphLabel[state="ok"] {
-  color: ${color.success};
-}
-QLabel#statusGlyphLabel[state="warning"] {
-  color: ${color.warning};
-}
-QLabel#statusGlyphLabel[state="error"] {
-  color: ${color.error};
 }
 QLabel#statusLabel {
   background: transparent;
