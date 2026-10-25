@@ -1,3 +1,25 @@
+## Startup responsiveness follow-up (#168 / #169, 2026-10-25)
+
+Startup now queues a one-shot, non-generative connection check after the first event-loop turn. It does not wait for connectivity before admitting normal interaction. Optional credential/preset/custom-LoRA summaries read on workers and reject superseded deliveries; startup results must not erase a typed key. Saved-vault discovery for Generate/Queues is deferred until worker credential resolution. Logs form/controller construction remains on the GUI thread but happens only on first request; normal navigation must not eagerly access its lazy properties.
+
+Each connection check has a request-owner token as well as its configuration revision. Changing backend/endpoint or saving/removing a key retires the old token before cancelling its future, enabling a fresh manual check immediately; obsolete callbacks must not clear the new owner's busy state. Process environment changes are compared in memory before accepting results, never logged. External Credential Manager changes are not watched; explicit rechecks read current credentials. Do not present last-check status as continuous credential monitoring.
+
+Session restoration and Qt widget construction remain synchronous. Existing startup timings now split Generate controller creation, queue/image-operation controllers, page wiring, session restoration and restored backend/catalogue application. The historical `first paint` mark is a queued event-loop milestone, not certified usable-window or actual-paint timing. The first gallery heartbeat also includes construction after the timer is armed: the reported 30.29-second sample is not an additional independent gallery freeze. Heartbeat thresholds and the gallery benchmark protocol are unchanged.
+
+The owner log `dtflow-d837d8c2195e` recorded 50.26 seconds total, including broad 18.26-second wiring/restore, 8.19-second final-initialization and 6.11-second Images-form phases. Its source commit is unknown. This evidence motivates deferred work but does not prove which individual call caused the owner's delay, or that the change fixes it. Compare repeated cold/warm native Windows launches on exact builds with comparable state and font/platform settings; record startup milestones and first usable interaction separately. Offscreen fixture timing, native Windows/DPI and packaged acceptance remain distinct; #169 retains the measurement gate and any remaining bottlenecks. #106 retains the independent Logs memory-budget work.
+
+### Owner Windows smoke observations (2026-10-25)
+
+The owner supplied the following source-run logs and confirmed that autoconnect works in the correct credential context, then authorized squash merge of PR #171. All three report Windows, Qt 6.12.0, 96 DPI and DPR 1, with no WARNING/ERROR/CRITICAL records in the inspected snapshots. The logs identify version 5.2.0 and source modification time `2026-10-25T17:22Z`, but `source_commit` is unknown: do not promote these into exact-head build attestation.
+
+| Diagnostic session | Recorded startup milestone | Startup cloud check |
+| --- | ---: | --- |
+| `3f96de85acf2` | 12.31 s | `ok`, approximately 5.97 s after check start |
+| `7ac3750f2877` | 8.30 s | `unknown`, no provider API call recorded; owner confirmed the credential context was absent |
+| `86183bee6cc3` | 7.06 s | `ok`, approximately 4.79 s after check start; clean close counters report no rejection/drop/write/serialization loss |
+
+These launches support the scoped autoconnect smoke result and show shorter recorded startup milestones than the earlier 50.26-second incident. They do not isolate the effect of code changes from warm caches, environment or workload differences, and do not establish a repeatable speedup or completion of #169. First-use Logs navigation, other DPI settings and packaged execution were not demonstrated by these logs. No additional tests, renders or provider requests were run to inspect this owner evidence.
+
 ## PR #104 handoff — current Grid benchmark and next optimization (2026-10-19)
 
 **Current behavior overrides earlier interim descriptions in this guide.** The interactive Windows Grid matrix polls an enabled numbered page-1 chip roughly every 200 ms after the spinner, clicks once, verifies first visible image **#1**, and then drives a time-bounded, continuous down/up wheel journey independent of subsequent batch queries. Position acceptance uses the **first visible saved-image index**, not `total`, `buffered`, or an oversized initial `last` index. The final physical page-1 click remains. The matrix never changes Sort. The separate eight-profile multi-view benchmark still exists.

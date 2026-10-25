@@ -49,7 +49,10 @@ def run_gui(
     window.show()
     startup.mark("window shown")
     # The first event-loop turn follows the first paint; then the heavy gRPC library loads without delaying display.
-    QTimer.singleShot(0, lambda: _after_first_paint(window))
+    startup_timer = QTimer(window.form)
+    startup_timer.setSingleShot(True)
+    startup_timer.timeout.connect(lambda: _after_first_paint(window))
+    startup_timer.start(0)
     result = application.exec()
     # The event loop has exited cleanly; never perform this disk work in a Qt slot.
     window.runner.shutdown(timeout=30)
@@ -58,8 +61,11 @@ def run_gui(
 
 
 def _after_first_paint(window) -> None:
+    if window.runner.closed:
+        return
     startup.mark("first paint")
     startup.report("startup phases")
+    window.start_startup_check()
     threading.Thread(target=_preload_drawthings, name="dtflow-preload", daemon=True).start()
 
 
