@@ -3568,6 +3568,8 @@ def render_shell_states(shell, capture):
         clear()
         shell.form.statusBar().showMessage("DTFlow · offline activity-bar fixture")
         strip.start("bar-fixture", "Queue · settled items", stop=lambda: None, total=7)
+        assert strip.rows["bar-fixture"].activitySymbol.text() == ""
+        assert not strip.rows["bar-fixture"].activitySymbol.pixmap().isNull()
         strip.update(
             "bar-fixture",
             4,

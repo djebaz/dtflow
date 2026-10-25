@@ -5,6 +5,7 @@ from time import monotonic
 from pathlib import Path
 
 from PySide6.QtCore import QEasingCurve, QEvent, QFile, QIODevice, QObject, QPropertyAnimation, QRect, Qt, QTimer, Slot
+from PySide6.QtGui import QIcon
 from PySide6.QtUiTools import QUiLoader
 from PySide6.QtWidgets import QApplication, QFrame, QGraphicsOpacityEffect, QWidget
 from shiboken6 import isValid
@@ -363,7 +364,13 @@ class ActivityStrip(QObject):
         if key.split("-")[0] == "trash":
             row.activitySymbol.setPixmap(trash_icon_pixmap())
         else:
-            row.activitySymbol.setText(_OPERATION_ICONS.get(key.split("-")[0], "⋯"))
+            symbol = _OPERATION_ICONS.get(key.split("-")[0])
+            if symbol is not None:
+                row.activitySymbol.setText(symbol)
+            else:
+                # A font ellipsis can trigger a costly first-use fallback during session restoration.
+                icon = Path(__file__).parents[1] / "resources" / "images" / "gallery" / "more.svg"
+                row.activitySymbol.setPixmap(QIcon(str(icon)).pixmap(24, 24))
         row.activityLabel.setText(label)
         row.activityDetail.setText(detail or "Preparing…")
         row.activityProgress.setAccessibleName(label + " progress")
