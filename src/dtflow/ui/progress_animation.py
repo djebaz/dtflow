@@ -52,10 +52,16 @@ def paint_stripes(painter, width, height, fill, stripe):
         for delta, tone in ((0, fill), (8, stripe)):
             x = origin + delta + offset
             painter.setBrush(tone)
-            painter.drawPolygon(QPolygonF([
-                QPointF(x, height), QPointF(x + 8, height),
-                QPointF(x + 8 + height, 0), QPointF(x + height, 0),
-            ]))
+            painter.drawPolygon(
+                QPolygonF(
+                    [
+                        QPointF(x, height),
+                        QPointF(x + 8, height),
+                        QPointF(x + 8 + height, 0),
+                        QPointF(x + height, 0),
+                    ]
+                )
+            )
 
 
 class AnimatedProgressBar(QProgressBar):
@@ -78,5 +84,11 @@ class AnimatedProgressBar(QProgressBar):
         colors = load_tokens()
         painter = QPainter(self)
         painter.setClipRect(self.rect())
-        paint_stripes(painter, self.width(), self.height(), QColor(colors["color.selectionBorder"]), QColor(colors["color.selectionHover"]))
+        paint_stripes(
+            painter,
+            self.width(),
+            self.height(),
+            QColor(colors["color.selectionBorder"]),
+            QColor(colors["color.selectionHover"]),
+        )
         painter.end()

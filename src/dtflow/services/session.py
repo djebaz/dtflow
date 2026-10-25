@@ -310,11 +310,11 @@ async def run_generation(
     )
 
 
-
 def _preparation_event(on_event, request, stage):
     """Report a local preparation milestone before backend events start."""
     if on_event is not None:
         on_event(BackendEvent(request.request_id, 0, "preparing", datetime.now(UTC).isoformat(), stage=stage))
+
 
 async def generate_once(
     selection: BackendSelection,
