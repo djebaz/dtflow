@@ -2,6 +2,24 @@
 
 New development captures split the disposable text-input warm-up into `QLineEdit probe: constructed`, `QLineEdit probe: polished` and `QLineEdit probe: destroyed`. The destruction phase explicitly disposes the hidden native probe and releases its Python wrapper. These replace the old combined `first QLineEdit polished` phase; collect matched new-schema logs rather than comparing its old duration to polishing alone. The warm-up is still development-only and has not been disabled or shown faster.
 
+### Isolated QLineEdit style diagnostic
+
+Run each case in a separate process, alternating order for repeated samples. On Windows explicitly use the native Qt platform rather than the agent's offscreen default:
+
+```powershell
+$env:UV_LINK_MODE='copy'
+$env:UV_SYSTEM_CERTS='true'
+$env:UV_PYTHON_PREFERENCE='only-managed'
+$env:QT_QPA_PLATFORM='windows'
+uv run --frozen python tools/ui/probe_line_edit.py --style native
+uv run --frozen python tools/ui/probe_line_edit.py --style dtflow
+uv run --frozen python tools/ui/probe_line_edit.py --style dtflow-exact-font
+```
+
+The last mode removes only the global generic font fallback in that diagnostic process; it never changes the tracked theme or production loader. Each invocation prints JSON with the platform, Qt/Python version, application font/DPI and separate application/theme/loader/basic-widget/font-metrics/construction/polishing/destruction timings. The measurement excludes Python/Qt imports and full-window initialization. It neither opens DTFlow state/credentials nor connects to a provider. Observe total prelude time as well as polishing so moved first-use work is not mistaken for a speedup; metadata is collected after the timed work.
+
+In the recorded native-Windows experiment (n=3 per mode), unchanged-theme polishing had a 1,127.559 ms median versus 1.252 ms after removing the generic fallback in the probe. This supports a narrowly scoped font-fallback investigation, not a production fix or a full-application speedup claim. [Ordering, results and limitations](../plans/2026-10-25-overlay-instrumentation.md#isolated-native-windows-fontstyle-comparison-2026-10-25).
+
 Startup now queues a one-shot, non-generative connection check after the first event-loop turn. It does not wait for connectivity before admitting normal interaction. Optional credential/preset/custom-LoRA summaries read on workers and reject superseded deliveries; startup results must not erase a typed key. Saved-vault discovery for Generate/Queues is deferred until worker credential resolution. Logs form/controller construction remains on the GUI thread but happens only on first request; normal navigation must not eagerly access its lazy properties.
 
 Each connection check has a request-owner token as well as its configuration revision. Changing backend/endpoint or saving/removing a key retires the old token before cancelling its future, enabling a fresh manual check immediately; obsolete callbacks must not clear the new owner's busy state. Process environment changes are compared in memory before accepting results, never logged. External Credential Manager changes are not watched; explicit rechecks read current credentials. Do not present last-check status as continuous credential monitoring.
