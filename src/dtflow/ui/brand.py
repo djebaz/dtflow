@@ -1,10 +1,11 @@
 """Bundled DTFlow identity and icons."""
 
+import math
 from functools import cache
 from pathlib import Path
 
 from PySide6.QtCore import Qt
-from PySide6.QtGui import QColor, QIcon, QImage, QPainter, QPen, QPixmap
+from PySide6.QtGui import QColor, QGuiApplication, QIcon, QImage, QPainter, QPen, QPixmap
 
 from dtflow.ui.theme import load_tokens
 
@@ -12,7 +13,7 @@ IMAGES = Path(__file__).parents[1] / "resources" / "images"
 APP_ICON = IMAGES / "dtflow-app.png"
 
 
-BRAND_IMAGE_PX = 256  # largest size any window icon or brand mark is drawn at
+BRAND_IMAGE_PX = 512  # covers Retina Dock/taskbar icons; still one decode of the large artwork
 
 
 @cache
@@ -38,9 +39,15 @@ def app_icon() -> QIcon:
     return QIcon(str(APP_ICON)) if image.isNull() else QIcon(QPixmap.fromImage(image))
 
 
+def _paint_ratio() -> int:
+    """Whole device-pixel ratio for painted artwork: at least 2x, more on denser screens."""
+    app = QGuiApplication.instance()
+    return max(2, math.ceil(app.devicePixelRatio())) if app is not None else 2
+
+
 def tinted_icon(path: Path, token: str, size: int) -> QIcon:
     """Single-colour SVG artwork recoloured to a palette token (Qt derives the disabled mode)."""
-    ratio = 2
+    ratio = _paint_ratio()
     pixmap = QIcon(str(path)).pixmap(size * ratio, size * ratio)
     pixmap.setDevicePixelRatio(ratio)
     painter = QPainter(pixmap)
@@ -53,7 +60,7 @@ def tinted_icon(path: Path, token: str, size: int) -> QIcon:
 def status_dot(level: str = "unknown", diameter: int = 14) -> QPixmap:
     """Painted connection-status dot; a font glyph would pay a Windows font fallback at first show."""
     color = {"ok": "color.success", "warning": "color.warning", "error": "color.error"}.get(level, "color.glyphNeutral")
-    ratio = 2
+    ratio = _paint_ratio()
     pixmap = QPixmap(diameter * ratio, diameter * ratio)
     pixmap.setDevicePixelRatio(ratio)
     pixmap.fill(Qt.GlobalColor.transparent)
