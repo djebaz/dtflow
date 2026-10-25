@@ -17,6 +17,8 @@ Changes through 5.2.0 are consolidated in [DTFlow 5.2.0](v5.2.0.md). This file t
 
 - Startup diagnostics isolate shared activity-strip construction, and startup reports expose per-phase sample counts with a warning when instrumentation schemas differ; these measurements do not claim a startup speedup.
 
+- Distinguish workspace mounting and root-layout insertion from activity-strip constructor costs, avoiding attribution of preceding startup work to the overlay itself.
+
 - Load optional credential and library summaries on workers, discover saved credentials only when needed, and construct Logs widgets on first use. Repeatable native Windows startup speedup remains to be established.
 
 ## Fixed

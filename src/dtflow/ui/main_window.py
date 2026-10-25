@@ -241,6 +241,7 @@ class MainWindow:
         startup.mark("workspace: images mounted")
         self.logs_marker = QWidget()
         form.workspaceStack.addWidget(self.logs_marker)
+        startup.mark("workspace: Logs navigation marker mounted")
         self._logs_form = None
         self._logs = None
         self._logs_placeholder = QWidget()
@@ -249,9 +250,13 @@ class MainWindow:
         self.shell.rightStack.addWidget(QWidget())
         self._logs_previous_page = form.connectionPage
         self._logs_active = False
+        startup.mark("workspace: Logs placeholders mounted")
         form.workspaceStack.hide()
+        startup.mark("workspace: legacy stack hidden")
         form.rootLayout.addWidget(self.shell)
+        startup.mark("workspace: shell inserted into root layout")
         self._last_run_marker = None
+        startup.mark("workspace: activity strip constructor entered")
         self.progress_strip = ActivityStrip(form)
         startup.mark("workspace: activity strip created")
         self.inline = InlineFeedback(form)

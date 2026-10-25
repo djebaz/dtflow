@@ -9,6 +9,8 @@
 - [x] Add marks around Designer loading, scrim construction, status-bar acquisition, painted ActivityBar construction and final wiring/timers.
 - [x] Preserve existing median fields while adding per-phase sample counts, schema count and a mixed-schema warning.
 - [x] Synchronize status/release documentation.
+- [x] Inspect three owner captures with identical phase schemas; correct the earlier broad attribution to ActivityStrip.
+- [x] Split preceding Logs placeholder, stack-hide and root-layout insertion work, and isolate QObject construction from host acquisition.
 - [ ] Collect matched native Windows logs and select an optimization only after identifying the expensive operation.
 - [ ] Final tests and smoke tests deferred to user.
 
@@ -16,6 +18,8 @@
 - 2026-10-25: the checkout already advanced beyond merged #172 to PR #173; keep this refinement on its existing clean branch.
 - 2026-10-25: retain eager shared status presentation. The reported 96% share identifies a candidate, not a proven internal cause or speedup.
 - 2026-10-25: phase schemas compare ordered phase names. Missing phases are not zero-duration samples; retain the existing per-phase medians with explicit populations.
+- 2026-10-25: owner captures `2ec1e03dcfb6`, `2947e04de618` and `90ea09debf67` share one phase schema (n=3 per phase). Recorded startup totals are 11.33 s, 11.10 s and 15.74 s (median 11.33 s); all report successful connection checks and no warnings/errors in the inspected snapshots. No launches or tests were needed to inspect this evidence.
+- 2026-10-25: ActivityStrip work measured after its internal entry mark is approximately 17 ms. The preceding 0.87–1.07 s interval also includes Logs placeholders, hiding the old stack and inserting the shell into the root layout, plus initial QObject/host acquisition. This supersedes the earlier 96%-overlay attribution: do not make ActivityStrip lazy or identify root-layout insertion as the culprit until the new boundaries isolate it.
 
 ## Open questions
 - None blocking implementation; matched native measurements remain necessary.

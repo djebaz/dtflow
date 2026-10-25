@@ -45,6 +45,7 @@ _OPERATION_ICONS = {
 class ActivityStrip(QObject):
     def __init__(self, window):
         super().__init__(window)
+        startup.mark("activity strip: QObject initialized")
         self.window = window
         self.host = window.centralWidget()
         startup.mark("activity strip: initialization entered")
