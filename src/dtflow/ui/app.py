@@ -60,11 +60,23 @@ def run_gui(
     return result
 
 
+# Importing the Draw Things library parses a YAML schema in pure Python and holds the GIL, which froze the
+# freshly shown window for 0.7-2.7 s on Windows. Starting it a moment after first paint lets the first
+# interactions land before that work does; an early manual Check still supersedes the queued startup check.
+STARTUP_WORK_DELAY_MS = 1000
+
+
 def _after_first_paint(window) -> None:
     if window.runner.closed:
         return
     startup.mark("first paint")
     startup.report("startup phases")
+    QTimer.singleShot(STARTUP_WORK_DELAY_MS, window.form, lambda: _start_background_work(window))
+
+
+def _start_background_work(window) -> None:
+    if window.runner.closed:
+        return
     window.start_startup_check()
     threading.Thread(target=_preload_drawthings, name="dtflow-preload", daemon=True).start()
 
