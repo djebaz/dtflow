@@ -12,7 +12,7 @@ from PySide6.QtWidgets import (
     QSlider,
 )
 
-from dtflow.ui.brand import APP_ICON
+from dtflow.ui.brand import brand_mark
 from dtflow.ui.theme import load_tokens
 
 
@@ -31,7 +31,7 @@ class ImagePreview(QAbstractScrollArea):
         self._fit = True
         self._drag = None
         self._text = "Your next image starts here\nSet a prompt and press Generate."
-        self._brand_mark = QPixmap(str(APP_ICON))
+        self._brand_mark = brand_mark()
         self._expanded = False
         self._restore = None
         tokens = load_tokens()

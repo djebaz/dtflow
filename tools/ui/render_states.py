@@ -14,7 +14,7 @@ import sys
 import tempfile
 import time
 import traceback
-from dataclasses import replace
+from dataclasses import asdict, replace
 from datetime import UTC, datetime
 from pathlib import Path
 from types import SimpleNamespace
@@ -80,6 +80,7 @@ from dtflow.core.models import (  # noqa: E402
     InventorySnapshot,
     LoRASelection,
     RemoteOutcome,
+    ResolvedGenerationRequest,
     SubmissionStage,
     ValidationError,
 )
@@ -1017,6 +1018,7 @@ def render_active_queue_states(shell, out):
     stamp = "2026-10-17T12:00:00+00:00"
     PROMPT = "A lighthouse on a basalt cliff at dusk, long exposure, oil painting with heavy impasto"
     strip = activity_strip(page)
+    apply_read = queue._read_done
 
     def snap(name):
         QTest.qWait(100)
@@ -1091,12 +1093,17 @@ def render_active_queue_states(shell, out):
         queue._dispatch_started = owned and started
         queue._selected = queue_id
         queue._activity.set(dispatching=owned)
-        queue._read_done(([view], view, 2), None)
+        apply_read(([view], view, 2), None)
         queue._timer.stop()  # No polling between presentation-only captures.
         assert queue.model.rowCount() == len(items)
         return view
 
-    with patch.object(shell.runner, "submit", side_effect=hold_worker):
+    # Startup reads may already have queued a delivery before submit is held. Only
+    # explicit synthetic snapshots may replace this fixture's controller views.
+    with (
+        patch.object(shell.runner, "submit", side_effect=hold_worker),
+        patch.object(queue, "_read_done"),
+    ):
         form.backendCombo.setCurrentText("local")
         form.queueNavigationButton.click()
         # Category processes start with a fresh form; do not depend on the Generate fixtures running first.
@@ -1114,6 +1121,28 @@ def render_active_queue_states(shell, out):
         assert page.queueFactModelLabel.text() == "flux_1_schnell_q8p.ckpt"
         assert page.queueFactLorasLabel.text() == "offline-style.safetensors 0.8"
         snap("queues-11-running")
+        # #170: real controller presentation with observed stages; no dispatch or provider calls.
+        running_key = (queue_id, "item-0002")
+        for stage_name, screenshot in (
+            ("Admitted; preparing / waiting for backend", "queues-11a-admitted-waiting"),
+            ("Validating generation request", "queues-11b-preparing-request"),
+            ("Request sent; waiting for backend response", "queues-11c-awaiting-backend"),
+            ("Backend processing; awaiting generation progress", "queues-11d-backend-processing"),
+        ):
+            queue._run_stages[running_key] = stage_name
+            queue._run_progress.pop(running_key, None)
+            queue._publish_run_state()
+            assert queue._activity.run_state.completed == 1
+            assert queue._activity.run_state.total == 3
+            snap(screenshot)
+        queue._run_stages[running_key] = "Generating"
+        queue._run_progress[running_key] = (3, 20)
+        queue._publish_run_state()
+        assert "step 3/20" in queue._activity.run_state.stage
+        snap("queues-11e-observed-sampling")
+        queue._run_progress.pop(running_key, None)
+        queue._run_stages.pop(running_key, None)
+        queue._publish_run_state()
         # Stop is presentation-only here; never post a real queue control from an offline capture.
         with patch.object(queue, "_post") as posted:
             strip.bar.button.click()
@@ -1136,7 +1165,7 @@ def render_active_queue_states(shell, out):
         queue.close_composer()
         timed = present("running", ["succeeded", "running", "pending"], owned=True)
         timed.update(successful_durations=[45], started_at_utc=datetime.now(UTC).isoformat())
-        queue._read_done(([timed], timed, 2), None)
+        apply_read(([timed], timed, 2), None)
         queue._timer.stop()
         assert "Elapsed" in queue._activity.run_state.elapsed and "estimate" in queue._activity.run_state.eta
         assert (queue._activity.run_state.completed, queue._activity.run_state.total) == (1, 3)
@@ -1147,7 +1176,7 @@ def render_active_queue_states(shell, out):
         assert (queue._activity.run_state.completed, queue._activity.run_state.total) == (1, 3)
         snap("queues-34-eta-countdown")
         resumed = dict(timed, resume_event_id=1)
-        queue._read_done(([resumed], resumed, 2), None)
+        apply_read(([resumed], resumed, 2), None)
         queue._timer.stop()
         assert "~1:30 left" in queue._activity.run_state.eta
         snap("queues-35-resume-between-polls")
@@ -1159,7 +1188,7 @@ def render_active_queue_states(shell, out):
         snap("queues-13-foreign-running")
         stale = present("running", ["succeeded", "running", "pending"])
         stale["owner_active"] = False
-        queue._read_done(([stale], stale, 2), None)
+        apply_read(([stale], stale, 2), None)
         queue._timer.stop()
         assert page.queuePrimaryButton.text() == "Resume" and queue._activity.run_state.action == "start"
         assert "No dispatch owner" in page.queueStateLabel.toolTip()
@@ -1186,12 +1215,12 @@ def render_active_queue_states(shell, out):
         )
         running = present("running", ["succeeded", "running", "pending"], owned=True)
         queue._selected = paused["queue_id"]
-        queue._read_done(([running, paused], paused, 2), None)
+        apply_read(([running, paused], paused, 2), None)
         queue._timer.stop()
         assert page.queuePrimaryButton.text() == "Start next" and page.queuePrimaryButton.isEnabled()
         snap("queues-24-start-next")
         queued = dict(paused, status="queued", up_next=1)
-        queue._read_done(([running, queued], queued, 2), None)
+        apply_read(([running, queued], queued, 2), None)
         queue._timer.stop()
         assert page.earlierQueueButton.isVisible() and page.queuePrimaryButton.text() == "Pause"
         assert page.queueStateLabel.text() == "Up next 1" and "1 up next" in queue._activity.run_state.detail
@@ -1224,7 +1253,7 @@ def render_active_queue_states(shell, out):
         everything = [running, queued, *history]
         mixed = history[1]
         queue._selected = mixed["queue_id"]
-        queue._read_done((everything, mixed, 2), None)
+        apply_read((everything, mixed, 2), None)
         queue._timer.stop()
         headings = [page.queueList.item(i).text() for i in range(page.queueList.count())]
         assert [h for h in headings if h.isupper()] == ["RUNNING", "UP NEXT", "PAUSED", "HISTORY"]
@@ -1277,7 +1306,7 @@ def render_active_queue_states(shell, out):
         page.failedFilterButton.setChecked(True)
         fresh = dict(history[4], queue_id="offline-queue-new")
         queue._select_after = fresh["queue_id"]
-        queue._read_done(([fresh], fresh, 2), None)
+        apply_read(([fresh], fresh, 2), None)
         queue._timer.stop()
         assert not page.failedFilterButton.isChecked()
         assert not any(page.queueItemsView.isRowHidden(row) for row in range(len(fresh["items"])))
@@ -1486,18 +1515,22 @@ def render_active_queue_states(shell, out):
 
         # Legacy Edit as new reconstructs the composer only; Generate stays independent.
         def recorded(prompt, model, seed, steps=20, loras=()):
-            return {
-                "operation": "txt2img",
-                "prompt": prompt,
-                "model_id": model,
-                "seed": seed,
-                "steps": steps,
-                "guidance": 7.0,
-                "sampler_id": "euler_a",
-                "width_px": 512,
-                "height_px": 512,
-                "loras": [{"identifier": name, "weight": weight} for name, weight in loras],
-            }
+            record = asdict(
+                ResolvedGenerationRequest(
+                    request_id="offline-edit-record",
+                    prompt=prompt,
+                    model_id=model,
+                    seed=seed,
+                    steps=steps,
+                    guidance=7.0,
+                    width_px=512,
+                    height_px=512,
+                    loras=tuple(LoRASelection(name, weight) for name, weight in loras),
+                )
+            )
+            # Exercise historical txt2img decoding with a complete request payload.
+            record.pop("schema_version")
+            return record
 
         def lora(weight_a, weight_b):
             return (("style.ckpt", weight_a), ("detail.ckpt", weight_b))
@@ -1574,7 +1607,7 @@ def render_active_queue_states(shell, out):
         queue._dispatch_started = False
         queue._selected = None
         queue._activity.set(dispatching=False)
-        queue._read_done(([], None, 2), None)
+        apply_read(([], None, 2), None)
         queue._timer.stop()
 
 
@@ -1969,6 +2002,12 @@ def render_item_table_states(shell, out, state):
 def render_gallery_composition_states(shell, state, out):
     """Synthetic gallery projection and GUI settlements only; no DB authority, export or output mutation."""
     form, gallery = shell.form, shell.gallery
+    assert shell.gallery_detail.parentWidget() is shell.shell.centerStack
+    assert shell.shell.parentWidget() is form.centralWidget()
+    for name in ("galleryRefreshButton", "galleryFullscreenButton"):
+        button = shell.gallery_detail.findChild(QPushButton, name)
+        assert button.text() == "" and not button.icon().isNull()
+        assert button.accessibleName()
     export = shell.image_export
     image = QImage(1024, 768, QImage.Format.Format_RGB32)
     image.fill(QColor("#8094a8"))
@@ -3407,6 +3446,8 @@ def render_queue_popover_states(shell, capture):
     header = shell.shell.quickQueueButton
     shell.form.generationNavigationButton.click()
     trigger = shell.generation_page.queueGenerateButton
+    assert trigger.text() == "" and not trigger.icon().isNull()
+    assert trigger.accessibleName() == "Queue this request"
     popover.repeat_spin.setValue(4)
     assert trigger.toolTip().startswith("Queue ×4:"), trigger.toolTip()
     popover.open_at(trigger)
@@ -3460,6 +3501,10 @@ def render_shell_states(shell, capture):
             strip.finish(key)
 
     shell.about()
+    if sys.platform == "win32":
+        # Existing text/notice fixtures exercise the production Windows font policy.
+        assert ", sans-serif;" not in QApplication.instance().styleSheet()
+        assert ", monospace;" not in QApplication.instance().styleSheet()
     capture("shell-01-about")
     clear()
     mailbox = DiagnosticNotice()
@@ -3536,6 +3581,8 @@ def render_shell_states(shell, capture):
         clear()
         shell.form.statusBar().showMessage("DTFlow · offline activity-bar fixture")
         strip.start("bar-fixture", "Queue · settled items", stop=lambda: None, total=7)
+        assert strip.rows["bar-fixture"].activitySymbol.text() == ""
+        assert not strip.rows["bar-fixture"].activitySymbol.pixmap().isNull()
         strip.update(
             "bar-fixture",
             4,
@@ -3546,18 +3593,22 @@ def render_shell_states(shell, capture):
             elapsed="0:43",
             eta="~0:25 left",
         )
-        for width in (400, 760, 1400, 240, 239):
-            shell.form.resize(2200, original_size.height())
-            QApplication.processEvents()
-            available = strip._bar_rect()
-            shell.form.resize(shell.form.width() + width - available.width(), original_size.height())
-            QApplication.processEvents()
-            strip._position()
-            assert strip.rows["bar-fixture"].property("inBar") == (width >= 240)
-            if width >= 240:
-                assert strip.bar.width() == width
-                assert strip.bar.strip.model.count == "4/7" and strip.bar.strip.model.queued == 2
-            capture(f"shell-22-activity-queued-width-{width}")
+        shell.form.resize(2200, original_size.height())
+        QApplication.processEvents()
+        status = shell.form.statusBar()
+        left = status.fontMetrics().horizontalAdvance(status.currentMessage()) + 30
+        # Pin the available status-bar slot, not the native window size: minimum
+        # sizes and deferred layouts otherwise make exact widths platform-dependent.
+        # Keep the real _bar_rect threshold and row/bar projection under test.
+        with patch.object(status, "findChildren", return_value=[]):
+            for width in (400, 760, 1400, 240, 239):
+                with patch.object(status, "width", return_value=left + width + 12):
+                    strip._position()
+                    assert strip.rows["bar-fixture"].property("inBar") == (width >= 240)
+                    if width >= 240:
+                        assert strip.bar.width() == width
+                        assert strip.bar.strip.model.count == "4/7" and strip.bar.strip.model.queued == 2
+                    capture(f"shell-22-activity-queued-width-{width}")
         shell.form.resize(original_size)
         strip.finish("bar-fixture")
         strip.start("bar-fixture", "Generation", stop=lambda: None, stop_text="Stop waiting locally")

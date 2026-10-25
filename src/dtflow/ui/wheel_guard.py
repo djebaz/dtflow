@@ -6,7 +6,7 @@ initial keyboard focus, so focus alone cannot tell intent) and unfocused spin bo
 scroll area. In a panel that does not scroll the wheel still changes them.
 """
 
-from PySide6.QtCore import QEvent, QObject
+from PySide6.QtCore import QEvent, QObject, QTimer
 from PySide6.QtWidgets import QAbstractScrollArea, QAbstractSpinBox, QApplication, QComboBox, QWidget
 
 
@@ -16,6 +16,11 @@ class WheelGuard(QObject):
     def __init__(self, window: QWidget):
         super().__init__(window)
         self._window = window
+        # Install on the first event-loop turn: no wheel can arrive earlier, and an application-wide Python
+        # filter would otherwise run for every event of the whole window construction.
+        QTimer.singleShot(0, self, self._install)
+
+    def _install(self):
         app = QApplication.instance()
         if app is not None:
             app.installEventFilter(self)

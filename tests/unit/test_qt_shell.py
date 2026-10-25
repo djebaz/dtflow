@@ -768,11 +768,11 @@ def test_first_event_turn_starts_check_but_shutdown_cannot_start_work(window, mo
     thread = Mock()
     monkeypatch.setattr(window, "start_startup_check", start)
     monkeypatch.setattr(app, "threading", SimpleNamespace(Thread=thread))
-    app._after_first_paint(window)
+    app._start_background_work(window)
     start.assert_called_once()
     thread.return_value.start.assert_called_once()
     window.runner.shutdown()
-    app._after_first_paint(window)
+    app._start_background_work(window)
     start.assert_called_once()
     thread.return_value.start.assert_called_once()
 

@@ -10,13 +10,18 @@ from shiboken6 import isValid
 
 from dtflow.ui.theme import load_tokens
 
+ANIMATION_INTERVAL_MS = 40  # 25 frames per second while an animated bar is visible.
+STRIPE_PITCH_PX = 16
+STRIPE_HALF_PITCH_PX = STRIPE_PITCH_PX // 2
+STRIPE_SPEED_PX_PER_SECOND = 24
+
 
 class _Clock(QObject):
     def __init__(self, parent):
         super().__init__(parent)
         self.widgets = WeakSet()
         self.timer = QTimer(self)
-        self.timer.setInterval(40)
+        self.timer.setInterval(ANIMATION_INTERVAL_MS)
         self.timer.timeout.connect(self.tick)
         parent.aboutToQuit.connect(self.timer.stop)
 
@@ -35,7 +40,7 @@ class _Clock(QObject):
             self.timer.stop()
 
 
-def watch(widget):
+def watch(widget: QProgressBar) -> None:
     app = QApplication.instance()
     if app is None or not isValid(widget):
         return
@@ -45,19 +50,19 @@ def watch(widget):
     clock.watch(widget)
 
 
-def paint_stripes(painter, width, height, fill, stripe):
-    offset = (monotonic() * 24) % 16
+def paint_stripes(painter: QPainter, width: int, height: int, fill: QColor, stripe: QColor) -> None:
+    offset = (monotonic() * STRIPE_SPEED_PX_PER_SECOND) % STRIPE_PITCH_PX
     painter.setPen(Qt.PenStyle.NoPen)
-    for origin in range(-height - 32, width + 16, 16):
-        for delta, tone in ((0, fill), (8, stripe)):
+    for origin in range(-height - 2 * STRIPE_PITCH_PX, width + STRIPE_PITCH_PX, STRIPE_PITCH_PX):
+        for delta, tone in ((0, fill), (STRIPE_HALF_PITCH_PX, stripe)):
             x = origin + delta + offset
             painter.setBrush(tone)
             painter.drawPolygon(
                 QPolygonF(
                     [
                         QPointF(x, height),
-                        QPointF(x + 8, height),
-                        QPointF(x + 8 + height, 0),
+                        QPointF(x + STRIPE_HALF_PITCH_PX, height),
+                        QPointF(x + STRIPE_HALF_PITCH_PX + height, 0),
                         QPointF(x + height, 0),
                     ]
                 )

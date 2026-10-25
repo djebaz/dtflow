@@ -52,7 +52,7 @@ from PySide6.QtWidgets import (  # noqa: E402
     QWidget,
 )
 
-from dtflow.ui.brand import connection_icon  # noqa: E402
+from dtflow.ui.brand import connection_icon, status_dot  # noqa: E402
 from dtflow.ui.gallery_detail_preview import apply_gallery_button_icons  # noqa: E402
 from dtflow.ui.main_window import load_ui  # noqa: E402
 from dtflow.ui.theme import (  # noqa: E402
@@ -779,7 +779,8 @@ def labels_status():
             f.setObjectName("statusCard")
             f.setFixedSize(230, 54)
             lay = QHBoxLayout(f)
-            g = QLabel("●")
+            g = QLabel()
+            g.setPixmap(status_dot(st))
             g.setObjectName("statusGlyphLabel")
             prop(g, state=st)
             s = QLabel(f"Connected ({st})")
