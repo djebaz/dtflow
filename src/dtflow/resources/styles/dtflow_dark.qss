@@ -1813,7 +1813,6 @@ QPushButton#clearCustomLorasButton[confirmationPending="true"]:enabled,
 QPushButton#removeKeyButton[confirmationPending="true"]:enabled,
 QPushButton#prepareAssetButton[confirmationPending="true"]:enabled,
 QPushButton#clearQueuesButton[confirmationPending="true"]:enabled,
-QPushButton#clearPausedQueuesButton[confirmationPending="true"]:enabled,
 QFrame#gallerySelectionBar QPushButton#galleryDeleteButton[confirmationPending="true"]:enabled {
   background: ${color.connectionSurface};
   color: ${color.connectionGlyph};
@@ -1829,7 +1828,6 @@ QPushButton#clearDerivedCacheButton[confirmationPending="true"][confirmationDang
 QPushButton#clearAllCacheButton[confirmationPending="true"][confirmationDanger="true"]:enabled,
 QPushButton#clearCustomLorasButton[confirmationPending="true"][confirmationDanger="true"]:enabled,
 QPushButton#clearQueuesButton[confirmationPending="true"][confirmationDanger="true"]:enabled,
-QPushButton#clearPausedQueuesButton[confirmationPending="true"][confirmationDanger="true"]:enabled,
 QFrame#gallerySelectionBar QPushButton#galleryDeleteButton[confirmationPending="true"][confirmationDanger="true"]:enabled {
   background: ${color.dangerBorder};
   color: ${color.onAccent};

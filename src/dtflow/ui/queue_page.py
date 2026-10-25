@@ -160,10 +160,6 @@ CLEAR_TEXT = (
     "Finished and cancelled queues will be removed from this list. Their attempts and saved images are kept. "
     "Paused, running and up-next queues stay."
 )
-CLEAR_PAUSED_TEXT = (
-    "{count} paused queue(s) will be removed from this list, with their pending and finished items. Their attempts "
-    "and saved images are kept. Running, up-next, finished and cancelled queues stay."
-)
 REMOVE_TEXT = "This queue will be removed from the list. Its attempts and saved images are kept."
 POSTED = "Posted. The dispatch owner applies it at its next poll, or at the next Start if nothing is dispatching."
 
@@ -908,15 +904,9 @@ class QueuePage:
         )
         paused = self._paused_ids()
         page.clearPausedQueuesButton.setEnabled(bool(paused))
-        armed = feedback(page)._armed
-        pending = bool(armed and armed[0] is page.clearPausedQueuesButton)
-        if pending and not paused:
-            feedback(page).dismiss()  # nothing paused is left: the pending consent no longer applies
-            pending = False
-        if not pending:  # an open confirmation keeps its "Confirm" label
-            page.clearPausedQueuesButton.setText(
-                f"Clear paused queues ({len(paused)})" if paused else "Clear paused queues"
-            )
+        page.clearPausedQueuesButton.setText(
+            f"Clear paused queues ({len(paused)})" if paused else "Clear paused queues"
+        )
         self._publish_run_state()
 
     def _paused_ids(self) -> tuple[str, ...]:
@@ -2445,27 +2435,13 @@ class QueuePage:
         self.refresh()
 
     def clear_paused(self) -> None:
-        """Bulk-remove paused queues after inline consent naming how many; each is revalidated when it is removed."""
-        panel = feedback(self.page)
-        if panel.commit(self.page.clearPausedQueuesButton):
-            return
+        """Bulk-remove paused queues at once; each is revalidated when it is removed."""
         queue_ids = self._paused_ids()
         if not queue_ids:
             self._message(Presentation("ok", "Nothing to clear", "No paused queue to remove."))
             return
-
-        def proceed():
-            keep = (self._dispatching,) if self._dispatching else ()
-            self._runner.submit(clear_paused_queues(self._state, queue_ids, keep), self._paused_cleared)
-
-        confirm_action(
-            self.page,
-            self.page.clearPausedQueuesButton,
-            "Clear paused queues",
-            CLEAR_PAUSED_TEXT.format(count=len(queue_ids)),
-            proceed,
-            danger=True,
-        )
+        keep = (self._dispatching,) if self._dispatching else ()
+        self._runner.submit(clear_paused_queues(self._state, queue_ids, keep), self._paused_cleared)
 
     def _paused_cleared(self, result, failure) -> None:
         if failure is not None:
