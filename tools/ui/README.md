@@ -210,8 +210,10 @@ The gallery state sheet uses canonical Qt-form buttons and the same icon initial
 
 **Startup polling correction (2026-10-19):** the benchmark polls for the enabled numbered page-1 control roughly every 200 ms after the initial loading spinner; it clicks the control once as soon as available. It then checks first-visible image #1 and starts the timed wheel journey. The prior requirement for a new diagnostic `page_jump` log event was removed because it could block startup despite a usable UI. A retry is bounded by the existing startup `--timeout`. This is not a wait for every thumbnail or subsequent batch.
 
-## Logs delivery and follow-ups
+## Queue template preview definitions
 
 Queue template definitions `queues-90` through `queues-102` cover loaded/modified recipes, Save name, searchable library, Update/Delete consent, Rename, dirty replacement, backend rebinding, reconstruction review, missing dependencies, empty/error states and a narrow library. They reuse the canonical composer/library forms and shared feedback with synthetic entries and intercepted workers: no template writes, queues, provider calls or generation. These definitions have not been rendered as part of PR #167. Windows offscreen font setup remains documented in the [development guide](../../devdocs/guides/development.md); captures alone are not native/DPI acceptance.
+
+## Logs delivery and follow-ups
 
 The canonical render script defines the native Logs empty/populated/detail/error, paging, retained-selection and whole-millisecond timing states. Numeric `*_ms` chips use display-only rounding; raw records stay exact. The Windows startup fix passes the offscreen screen configuration without a drive colon and applies the Windows font-directory default even with platform arguments. Owner reports that the command works; CI rendering was skipped at runtime head `b2fdf1d`, so do not claim a complete render run from that feedback. [Delivery audit](../../devdocs/plans/2026-10-19-structured-log-viewer.md); remaining implementation [#106](https://github.com/djebaz/dtflow/issues/106), acceptance [#107](https://github.com/djebaz/dtflow/issues/107).

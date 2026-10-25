@@ -256,9 +256,11 @@ The owner-selected Option 2a pager lives directly above the gallery viewport in 
 
 The `ImagePreview` widget keeps original pixels and handles Fit, 100%, zoom, pan, scrollbars and expand. Zoom controls float top left; Expand floats top right; saved-output file actions float at the bottom. The designation badge identifies a saved final image, an interim preview, a fixture or an illustrative sample as appropriate. The empty canvas carries the DTFlow mark and a short prompt to generate. The portrait artwork is the fake provider's generated result, labeled as a fixture and never presented as inference. Open file, Open folder, Metadata and Copy path stay disabled until a saved artifact exists. In Additional details, show the image path compactly from the `output`/`outputs` directory onward; keep the underlying full path for file actions. Place the compact Use settings and Regenerate actions at the right of that path row, while Copy path, Open folder and Open in external viewer remain a separate file-action row below. Regenerate remains a neutral secondary action because confirmation, not primary-action styling, carries its potentially billable warning. Keep this distinction when reusing the viewer elsewhere.
 
-### Queues item evidence
+### Queue authoring templates
 
 The independent composer provides Save template and Load template actions beside a wrapping, bounded-width loaded-name/modified label. The searchable template library uses its canonical Designer form in the shared inline editor, with plain-text source/settings/dependency summaries and explicit Update, Rename and Delete actions. Dirty replacement and backend rebinding use the original Load button's shared confirmation state; Update uses Save and Delete uses Load with destructive intent. No template action submits work or modifies Generate; source reconstruction and mutable wildcard dependencies stay disclosed. Keep names/prompts from widening narrow layouts and preserve the shared Escape/navigation/editor priorities.
+
+### Queues item evidence
 
 Keep the existing Qt model/view table with painted fixed-height rows: Preview, Prompt, Model, LoRAs, Parameters, Status and a painted stopwatch header. Use shared tokens for selection and semantic status text. Owner-selected presentation uses 64 px cropped tiles, an aspect-fit hover up to 440 px, two visible prompt lines, extension-less display names and three inline LoRAs with all entries on hover. Gauges share the recorded-weight scale. These are presentation choices, not backend compatibility or performance evidence.
 
