@@ -768,6 +768,8 @@ class QueuePage:
                 if progress:
                     step, steps = progress[0]
                     stage += f" · step {step}/{steps}"
+            if running:
+                wide = f"Queue {queue_id[:8]} · {stage} · {summary.settled}/{summary.total} settled"
             if running == 1 and len(progress) == 1:
                 step, steps = progress[0]
                 # The item number is known only for the selected queue, whose items are read.
@@ -788,7 +790,11 @@ class QueuePage:
         if phase in ("running", "paused"):
             remaining = self._countdown.remaining(view, monotonic())
             elapsed, eta = elapsed_text(view), eta_text(view, remaining=remaining)
-            if elapsed or eta or (running == 1 and bool(self._run_stage_started.get((queue_id, running_items[0]["item_id"]))) if len(running_items) == 1 else False):
+            stage_timed = (
+                len(running_items) == 1
+                and (queue_id, running_items[0]["item_id"]) in self._run_stage_started
+            )
+            if elapsed or eta or stage_timed:
                 if not self._timing_timer.isActive() and not self._runner.closed:
                     self._timing_timer.start()
             else:
