@@ -8,7 +8,6 @@ from pathlib import Path
 from PySide6.QtCore import QEvent, QFile, QIODevice, QObject, QSize, Qt, QTimer, Slot
 from PySide6.QtGui import QFontMetrics, QIcon, QKeySequence, QPixmap, QShortcut
 from PySide6.QtUiTools import QUiLoader
-from shiboken6 import delete as delete_qt_object
 from PySide6.QtWidgets import (
     QAbstractButton,
     QAbstractItemView,
@@ -24,6 +23,8 @@ from PySide6.QtWidgets import (
     QToolButton,
     QWidget,
 )
+
+from shiboken6 import delete as delete_qt_object
 
 from dtflow import startup
 from dtflow.build import display_identity
