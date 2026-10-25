@@ -1114,6 +1114,28 @@ def render_active_queue_states(shell, out):
         assert page.queueFactModelLabel.text() == "flux_1_schnell_q8p.ckpt"
         assert page.queueFactLorasLabel.text() == "offline-style.safetensors 0.8"
         snap("queues-11-running")
+        # #170: real controller presentation with observed stages; no dispatch or provider calls.
+        running_key = (queue_id, "item-0002")
+        for stage_name, screenshot in (
+            ("Admitted; preparing / waiting for backend", "queues-11a-admitted-waiting"),
+            ("Validating generation request", "queues-11b-preparing-request"),
+            ("Request sent; waiting for backend response", "queues-11c-awaiting-backend"),
+            ("Backend processing; awaiting generation progress", "queues-11d-backend-processing"),
+        ):
+            queue._run_stages[running_key] = stage_name
+            queue._run_progress.pop(running_key, None)
+            queue._publish_run_state()
+            assert queue._activity.run_state.completed == 1
+            assert queue._activity.run_state.total == 3
+            snap(screenshot)
+        queue._run_stages[running_key] = "Generating"
+        queue._run_progress[running_key] = (3, 20)
+        queue._publish_run_state()
+        assert "step 3/20" in queue._activity.run_state.stage
+        snap("queues-11e-observed-sampling")
+        queue._run_progress.pop(running_key, None)
+        queue._run_stages.pop(running_key, None)
+        queue._publish_run_state()
         # Stop is presentation-only here; never post a real queue control from an offline capture.
         with patch.object(queue, "_post") as posted:
             strip.bar.button.click()
