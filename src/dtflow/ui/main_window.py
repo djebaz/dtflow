@@ -2,6 +2,7 @@
 
 import asyncio
 import logging
+import os
 from pathlib import Path
 
 from PySide6.QtCore import QEvent, QFile, QIODevice, QObject, QSize, Qt, QTimer, Slot
@@ -27,7 +28,7 @@ from dtflow import startup
 from dtflow.build import display_identity
 from dtflow.composition import BACKENDS, BackendSelection
 from dtflow.core.gallery import GalleryQuery
-from dtflow.core.models import BackendError, CredentialProvider, ValidationError
+from dtflow.core.models import BackendError, ValidationError
 from dtflow.diagnostics import event as diagnostic_event
 from dtflow.logging_setup import configured_directory, dev_enabled
 from dtflow.paths import application_state_dir
@@ -44,7 +45,12 @@ from dtflow.persistence.original_io import (
 from dtflow.services.cache_management import CATEGORIES, cache_usage, purge_cache
 from dtflow.services.catalogue import Catalogue, import_user_loras
 from dtflow.services.connection import Presentation, check_connection, present_failure, present_status
-from dtflow.services.credentials import SavedCredentials, SecureStorageUnavailable, credential_status
+from dtflow.services.credentials import (
+    OptionalSavedCredentials,
+    SavedCredentials,
+    SecureStorageUnavailable,
+    credential_status,
+)
 from dtflow.services.presets import export_presets, import_presets, load_presets
 from dtflow.ui.activity import Activity
 from dtflow.ui.activity_strip import ActivityStrip
@@ -186,6 +192,11 @@ class MainWindow:
         self.form.workspaceStack.addWidget(self.queue_page)
 
         self._saved = saved or SavedCredentials()
+        self._optional_saved = OptionalSavedCredentials(self._saved)
+        self._summary_reads = {}
+        self._startup_check_started = False
+        self._check_token = None
+        self._check_future = None
         self._environ = environ
         self.runner = runner or AsyncRunner(self.form)
         self._shutdown_guard = _ShutdownGuard(self.form)
@@ -229,19 +240,14 @@ class MainWindow:
         self.shell.rightStack.addWidget(QWidget())
         self.logs_marker = QWidget()
         form.workspaceStack.addWidget(self.logs_marker)
-        self.logs_form = load_ui(FORMS_DIR / "logs_workspace.ui")
+        self._logs_form = None
+        self._logs = None
+        self._logs_placeholder = QWidget()
         self.shell.leftStack.addWidget(QWidget())
-        self.shell.centerStack.addWidget(self.logs_form)
+        self.shell.centerStack.addWidget(self._logs_placeholder)
         self.shell.rightStack.addWidget(QWidget())
         self._logs_previous_page = form.connectionPage
         self._logs_active = False
-        self.logs = LogsWorkspace(
-            self.logs_form,
-            configured_directory(),
-            self._close_logs,
-            runner=self.runner,
-            escape_owner=self._inline_consumes_escape,
-        )
         form.workspaceStack.hide()
         form.rootLayout.addWidget(self.shell)
         self._last_run_marker = None
@@ -286,12 +292,13 @@ class MainWindow:
             self.generation_page,
             runner=self.runner,
             backend_source=lambda: (form.backendCombo.currentText(), form.endpointEdit.text() or None),
-            saved_source=lambda: self._saved if self._saved.available() else None,
+            saved_source=lambda: self._optional_saved,
             state_dir=self.state_dir,
             activity=self.activity,
             no_cache=no_cache,
             cache_changed=self.refresh_cache,
         )
+        startup.mark("generate controller")
         self.image_export = ImageExportPanel(
             form,
             runner=self.runner,
@@ -315,7 +322,7 @@ class MainWindow:
             self.queue_page,
             runner=self.runner,
             backend_source=lambda: (form.backendCombo.currentText(), form.endpointEdit.text() or None),
-            saved_source=lambda: self._saved if self._saved.available() else None,
+            saved_source=lambda: self._optional_saved,
             state_dir=self.state_dir,
             request_source=self.generation.request_for_queue,
             edit_source=self.generation.queue_edit_job,
@@ -327,6 +334,7 @@ class MainWindow:
             reuse_hook=self._reuse_queue_request,
             activity=self.activity,
         )
+        startup.mark("queue and image operation controllers")
         self.generation_page.inpaintModeButton.toggled.connect(lambda _on: self.queue.sync_edit_fields())
         # One-click Queue (#135): the same popover from the header and from Generate's prompt header.
         arrow = self.generation_page.queueGenerateButton
@@ -350,6 +358,7 @@ class MainWindow:
         )
         self.generation.queue_behind = self.queue.queue_behind
         form.backendCombo.addItems(BACKENDS)
+        startup.mark("page wiring")
         self._restore_session()
         startup.mark("pages wired, session restored")
         form.statusBar().showMessage(display_identity())
@@ -473,14 +482,43 @@ class MainWindow:
         )
         self._backend_changed(form.backendCombo.currentText())
         self.generation.sync_backend()
-        self.refresh_credentials()
-        self.refresh_custom_loras()
-        self.refresh_presets()
+        startup.mark("backend and restored catalogue applied")
+        self.refresh_credentials(background=True)
+        self.refresh_custom_loras(background=True)
+        self.refresh_presets(background=True)
         self._workspace_changed(0)
         self._responsive_workspace()
         # Readiness precedes reconciliation so an unsupported bridge gets one
         # startup notice, not duplicate warnings from concurrent startup tasks.
         self.runner.submit(asyncio.to_thread(require_originals_ready, self.state_dir), self._originals_ready_checked)
+
+    @property
+    def logs_form(self):
+        self._ensure_logs()
+        return self._logs_form
+
+    @property
+    def logs(self):
+        self._ensure_logs()
+        return self._logs
+
+    def _ensure_logs(self) -> None:
+        """Construct Qt objects on the GUI thread, only when Logs is first requested."""
+        if self._logs is not None:
+            return
+        form = load_ui(FORMS_DIR / "logs_workspace.ui")
+        self._logs_form = form
+        index = self.shell.centerStack.indexOf(self._logs_placeholder)
+        self.shell.centerStack.removeWidget(self._logs_placeholder)
+        self._logs_placeholder.deleteLater()
+        self.shell.centerStack.insertWidget(index, form)
+        self._logs = LogsWorkspace(
+            form,
+            configured_directory(),
+            self._close_logs,
+            runner=self.runner,
+            escape_owner=self._inline_consumes_escape,
+        )
 
     def _originals_ready_checked(self, _result, error) -> None:
         if error is not None:
@@ -569,7 +607,8 @@ class MainWindow:
             self.logs.open()
         else:
             self.logs_button.setChecked(False)
-            self.logs.stop()
+            if self._logs is not None:
+                self._logs.stop()
         if not logs_active:
             self.gallery.recycle_scope_revision += 1
             self.inline.dismiss()
@@ -724,8 +763,9 @@ class MainWindow:
         # whether the Images page changed during this navigation.
         shell.leftRail.setVisible(not images and not logs)
         shell.rightRail.setVisible(not images and not logs and not narrow)
-        self.logs_form.logsBrandSlot.setVisible(logs)
-        self.logs_form.logsNavigationSlot.setVisible(logs)
+        if self._logs_form is not None:
+            self._logs_form.logsBrandSlot.setVisible(logs)
+            self._logs_form.logsNavigationSlot.setVisible(logs)
         shell.runControl.setVisible(True)
         self._align_run_control()
 
@@ -866,6 +906,13 @@ class MainWindow:
         """A result belongs to the selection that was checked; a new provider or endpoint starts unchecked."""
         self.inline.dismiss()
         self._selection_revision = getattr(self, "_selection_revision", 0) + 1
+        # Retire the old owner before cancelling: queued completion/cancellation cannot unlock a newer check.
+        future, self._check_future = self._check_future, None
+        self._check_token = None
+        self._busy = False
+        self.form.checkButton.setEnabled(True)
+        if future is not None:
+            future.cancel()
         self._present(
             Presentation("unknown", "Not checked", f"Check the {self.form.backendCombo.currentText()} connection.")
         )
@@ -886,8 +933,32 @@ class MainWindow:
         button.style().unpolish(button)
         button.style().polish(button)
 
-    def refresh_credentials(self) -> None:
-        status = credential_status(self._environ, self._saved)
+    def _read_summary(self, key, read, apply) -> None:
+        """Optional startup reads cannot block painting or replace a newer explicit refresh."""
+        token = self._summary_reads[key] = object()
+        self.runner.submit(
+            asyncio.to_thread(read),
+            lambda result, error: apply(result, error) if self._summary_reads.get(key) is token else None,
+        )
+
+    def refresh_credentials(self, *, background: bool = False) -> None:
+        self._summary_reads.pop("credentials", None)
+        if background:
+            self.form.credentialStatusLabel.setText("Checking credential availability…")
+            self.form.removeKeyButton.setEnabled(False)
+            self._read_summary(
+                "credentials", lambda: credential_status(self._environ, self._saved), self._credentials_read
+            )
+            return
+        self.form.keyEdit.clear()
+        self._credentials_read(credential_status(self._environ, self._saved), None)
+
+    def _credentials_read(self, status, error) -> None:
+        if error is not None:
+            self.form.credentialStatusLabel.setText(
+                "Credential availability could not be read; check again or enter a key."
+            )
+            return
         text = {
             "environment": "Using DRAWTHINGS_API_KEY from the environment; a saved key is not consulted.",
             "saved": "Using the key saved in Windows Credential Manager.",
@@ -895,7 +966,6 @@ class MainWindow:
             + (" Secure storage is unavailable here." if status["saved"] == "unavailable" else ""),
         }[status["selected"]]
         self.form.credentialStatusLabel.setText(text)
-        self.form.keyEdit.clear()
         # Remove is offered only when there may be a saved key to remove (the environment hides that answer).
         self.form.removeKeyButton.setEnabled(status["saved"] in ("present", "not consulted"))
 
@@ -908,18 +978,31 @@ class MainWindow:
             amount /= 1024
         return f"{value} B"
 
-    def refresh_presets(self) -> None:
+    def refresh_presets(self, *, background: bool = False) -> None:
+        self._summary_reads.pop("presets", None)
+        if background:
+            self.form.presetLibraryStatusLabel.setText("Loading preset library…")
+            self.form.exportPresetsButton.setEnabled(False)
+            self._read_summary("presets", lambda: len(load_presets(self.state_dir)), self._presets_read)
+            return
         try:
             count = len(load_presets(self.state_dir))
-            self.form.presetLibraryStatusLabel.setText(
-                f"{count} named preset" + ("" if count == 1 else "s") + " in the durable library."
-                if count
-                else "No imported presets."
-            )
-            self.form.exportPresetsButton.setEnabled(count > 0)
         except ValidationError as exc:
-            self.form.presetLibraryStatusLabel.setText(f"Preset library is unreadable: {exc}")
+            self._presets_read(None, exc)
+        else:
+            self._presets_read(count, None)
+
+    def _presets_read(self, count, error) -> None:
+        if error is not None:
+            self.form.presetLibraryStatusLabel.setText("Preset library is unreadable; import or refresh to retry.")
             self.form.exportPresetsButton.setEnabled(False)
+            return
+        self.form.presetLibraryStatusLabel.setText(
+            f"{count} named preset" + ("" if count == 1 else "s") + " in the durable library."
+            if count
+            else "No imported presets."
+        )
+        self.form.exportPresetsButton.setEnabled(count > 0)
 
     def import_presets(self) -> None:
         if self.inline.commit(self.form.importPresetsButton):
@@ -1102,8 +1185,19 @@ class MainWindow:
             proceed,
         )
 
-    def refresh_custom_loras(self) -> None:
-        count = len(Catalogue(self.state_dir).user_loras())
+    def refresh_custom_loras(self, *, background: bool = False) -> None:
+        self._summary_reads.pop("loras", None)
+        if background:
+            self.form.customLorasStatusLabel.setText("Loading custom LoRA definitions…")
+            self.form.clearCustomLorasButton.setEnabled(False)
+            self._read_summary("loras", lambda: len(Catalogue(self.state_dir).user_loras()), self._custom_loras_read)
+            return
+        self._custom_loras_read(len(Catalogue(self.state_dir).user_loras()), None)
+
+    def _custom_loras_read(self, count, error) -> None:
+        if error is not None:
+            self.form.customLorasStatusLabel.setText("Custom LoRA definitions could not be read; import to retry.")
+            return
         self.form.customLorasStatusLabel.setText(
             f"{count} custom LoRA definition" + ("" if count == 1 else "s") + " imported."
             if count
@@ -1153,9 +1247,15 @@ class MainWindow:
             danger=True,
         )
 
-    def check(self) -> None:
-        if self._busy:
+    def start_startup_check(self) -> None:
+        """One non-generative check after the app's first event-loop turn, never periodic polling."""
+        if not self._startup_check_started and not self.runner.closed:
+            self.check(automatic=True)
+
+    def check(self, *, automatic: bool = False) -> None:
+        if self._busy or self.runner.closed:
             return
+        self._startup_check_started = True  # An early manual check supersedes the queued startup check.
         selection = BackendSelection(self.form.backendCombo.currentText(), self.form.endpointEdit.text() or None)
         self._busy = True
         self.form.checkButton.setEnabled(False)
@@ -1168,21 +1268,52 @@ class MainWindow:
                 "backend": selection.name,
             },
         )
-        saved: CredentialProvider | None = self._saved if self._saved.available() else None
         revision = self._selection_revision
-        self.runner.submit(
-            self._check(selection, saved), lambda status, failure: self._checked(status, failure, revision)
+        credential_context = self._credential_context()
+        token = self._check_token = object()
+        self._check_future = self.runner.submit(
+            self._check(selection, self._saved, automatic),
+            lambda status, failure: self._checked(status, failure, revision, credential_context, token),
         )
 
-    async def _check(self, selection, saved):
+    def _credential_context(self):
+        # Compare only in memory; never put credential values in diagnostics or presentation.
+        environ = os.environ if self._environ is None else self._environ
+        return tuple((key in environ, environ.get(key)) for key in ("DRAWTHINGS_API_KEY", "DRAWTHINGS_SHARED_SECRET"))
+
+    async def _check(self, selection, saved, automatic=False):
+        if automatic:
+            if selection.name not in BACKENDS:
+                return None
+            if selection.name == "local" and not (selection.endpoint or "").strip():
+                return None
+            if selection.name == "cloud":
+                status = await asyncio.to_thread(credential_status, self._environ, saved)
+                if status["selected"] == "none":
+                    return None
+        saved = saved if await asyncio.to_thread(saved.available) else None
         return await check_connection(selection, saved=saved)
 
-    def _checked(self, status, failure, revision=None) -> None:
+    def _checked(self, status, failure, revision=None, credential_context=None, token=None) -> None:
+        if token is not None and token is not self._check_token:
+            return
+        self._check_future = None
         self._busy = False
         self.form.checkButton.setEnabled(True)
         if revision is not None and revision != self._selection_revision:
             return  # The provider/endpoint changed while the old check was running.
-        shown = present_failure(failure) if failure else present_status(status)
+        if credential_context is not None and credential_context != self._credential_context():
+            self._selection_changed()
+            return
+        shown = (
+            present_failure(failure)
+            if failure
+            else present_status(status)
+            if status is not None
+            else Presentation(
+                "unknown", "Not checked", "Configure the endpoint or cloud API key, then check the connection."
+            )
+        )
         diagnostic_event(
             log,
             "app.connection_check_result",
@@ -1218,6 +1349,7 @@ class MainWindow:
             data={},
         )
         self.refresh_credentials()
+        self._selection_changed()
         self.generation.credentials_changed()
 
     def remove_key(self) -> None:
@@ -1245,6 +1377,7 @@ class MainWindow:
                 data={},
             )
             self.refresh_credentials()
+            self._selection_changed()
             self.generation.credentials_changed()
 
         confirm_action(
