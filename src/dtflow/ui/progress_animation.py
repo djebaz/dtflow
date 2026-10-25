@@ -22,7 +22,7 @@ class _Clock(QObject):
 
     def watch(self, widget):
         self.widgets.add(widget)
-        if widget.isVisible() and widget.stripes_active():
+        if widget.isVisible() and widget.stripes_active() and not self.timer.isActive():
             self.timer.start()
 
     def tick(self):
@@ -37,6 +37,8 @@ class _Clock(QObject):
 
 def watch(widget):
     app = QApplication.instance()
+    if app is None or not isValid(widget):
+        return
     clock = getattr(app, "_dtflow_progress_clock", None)
     if clock is None:
         clock = app._dtflow_progress_clock = _Clock(app)
