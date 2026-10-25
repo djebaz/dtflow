@@ -21,7 +21,7 @@ Current source implements the selected existing queue's seven-column table, righ
 ## Full-review corrections authorized by the owner
 
 1. Require a matching live committed gallery record before decoding a thumbnail. Excluded, recycled/deleted, missing or unreadable records never authorize fallback to an old filesystem path.
-2. Key previews by recorded path and gallery identity. Revalidate visible entries every three seconds through the gallery read/lease/cache boundary, clear them on hide/queue change/re-entry, and display unavailable results honestly. This is bounded polling, not continuous file monitoring or measured performance.
+2. Key previews by recorded path and gallery identity. Revalidate visible entries every three seconds through the gallery read/lease/cache boundary, clear them on hide/queue change/re-entry, and display unavailable results honestly. Keep already displayed tile/hover pixmaps during pending background revalidation and replace both resident sizes together on success; clear both on failed revalidation. Retained pixels are presentation only: Open in Images still requires fresh availability with no pending check. This is bounded polling, not continuous file monitoring or measured performance.
 3. Parent refresh/retry timers and the hover widget to owned QObjects/widgets; cancel on navigation/shutdown and drop obsolete results. Clearing cannot reset actual in-flight job counts; at most three decodes remain admitted.
 4. Open in Images clears conflicting browse filters, requests the exact live identity and shows an inline warning if unavailable. Snapshot browsing cannot authorize this handoff. Preserve latest request intent while waiting for an existing read, and cancel it on changed intent/navigation/shutdown.
 5. Gate the action using shared gallery-backed, mapped availability, not GUI-thread `Path.is_file()` on a foreign recorded path. Do not invent reverse-runtime path support.
@@ -49,6 +49,10 @@ Current source implements the selected existing queue's seven-column table, righ
 | Native/platform acceptance | Corrected navigation/removal/mapped-path/shutdown interactions and performance still need owner validation; no inference or provider actions authorized. |
 
 ## Remaining gates
+
+### 2026-10-25 continuity correction — PR #166
+
+The owner observed blinking queue-history thumbnails. In the supplied session log, repeated thumbnail summaries reported successful background reads, while the source expiry path deleted both resident pixmap sizes before requesting a reload. PR #166 separates retained display pixels from fresh action availability, preserving the existing three-second revalidation, worker limits, live gallery boundary and shutdown/epoch rules. The existing thumbnail lifecycle check reproduced the empty-tile failure before the fix and passes after it; final scoped validation is recorded in the PR. Renderer states `queues-69` and `queues-70` cover the delayed-refresh table and hover preview using held offline fixture reads; definitions only, not rendered. No native visual/DPI, packaged or performance acceptance is inferred; no inference or provider calls.
 
 - [x] Inspect exact-head CI for correction head `408d734` (linked above); do not equate skipped UI renders with layout acceptance or extend that result to later commits.
 - [x] Owner reviews corrected interactions; request fresh offline captures only if wanted, then native smoke as appropriate.

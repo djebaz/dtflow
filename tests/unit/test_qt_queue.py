@@ -51,7 +51,8 @@ def test_queue_thumbnail_never_falls_back_to_an_unverified_path(tmp_path, monkey
     assert not calls
 
 
-def test_queue_thumbnail_revalidates_cached_availability_and_owns_shutdown(qtbot, tmp_path, monkeypatch):
+@pytest.mark.parametrize("failure", ("unavailable", "busy", "worker_failed"))
+def test_queue_thumbnail_revalidates_cached_availability_and_owns_shutdown(qtbot, tmp_path, monkeypatch, failure):
     class Runner(QObject):
         shutdown_started = Signal()
         closed = False
@@ -90,14 +91,20 @@ def test_queue_thumbnail_revalidates_cached_availability_and_owns_shutdown(qtbot
     assert thumbnails.pixmap("output.png", thumbnail_ui.PREVIEW_SIDE, "a:0").cacheKey() == preview
     thumbnails._expire()
     assert len(runner.jobs) == 3  # repaint/hover/availability share one refresh
+    image = image.copy()
+    image.fill(0x00FF00)  # distinct refreshed pixels, not another wrapper around the same Qt image
     runner.jobs[2]((image, ""), None)
     assert thumbnails.available("output.png", "a:0")
-    assert thumbnails.pixmap("output.png", thumbnail_ui.PREVIEW_SIDE, "a:0") is not None
+    assert thumbnails.pixmap("output.png", identity="a:0").cacheKey() != tile
+    assert thumbnails.pixmap("output.png", thumbnail_ui.PREVIEW_SIDE, "a:0").cacheKey() != preview
+    for side in (thumbnail_ui.ROW_SIDE, thumbnail_ui.PREVIEW_SIDE):
+        assert thumbnails.pixmap("output.png", side, "a:0").toImage().pixelColor(0, 0).green() == 255
     now[0] = 8.0
     # Paint-time expiry must also preserve the image, even before the timer fires.
     assert thumbnails.pixmap("output.png", identity="a:0") is not None
     assert not thumbnails.available("output.png", "a:0")
-    runner.jobs[3]((None, "Saved image is no longer available"), None)
+    issue = "Original temporarily busy" if failure == "busy" else "Saved image is no longer available"
+    runner.jobs[3]((None, issue), OSError("Controlled read failure") if failure == "worker_failed" else None)
     assert thumbnails.is_failed("output.png", identity="a:0")
     assert thumbnails.pixmap("output.png", identity="a:0") is None
     assert thumbnails.pixmap("output.png", thumbnail_ui.PREVIEW_SIDE, "a:0") is None
@@ -105,7 +112,7 @@ def test_queue_thumbnail_revalidates_cached_availability_and_owns_shutdown(qtbot
     assert thumbnails._expiry.parent() is thumbnails
     thumbnails.clear()
     assert len(observations) == 1 and observations[0][0] == "queue.thumbnail_summary"
-    assert observations[0][1]["available"] == 3 and observations[0][1]["unavailable"] == 1
+    assert observations[0][1]["available"] == 3 and observations[0][1][failure] == 1
     assert "output.png" not in repr(observations) and "a:0" not in repr(observations)
     thumbnails.pixmap("busy.png", identity="b:0")
     thumbnails.clear()  # an obsolete decode still occupies a slot until completion
