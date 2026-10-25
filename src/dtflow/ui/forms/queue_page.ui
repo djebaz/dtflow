@@ -881,6 +881,19 @@
            </layout>
           </item>
           <item>
+           <layout class="QHBoxLayout" name="queueTemplateLayout">
+            <item><widget class="QLabel" name="queueTemplateStatusLabel">
+             <property name="sizePolicy"><sizepolicy hsizetype="Ignored" vsizetype="Preferred"><horstretch>1</horstretch><verstretch>0</verstretch></sizepolicy></property>
+             <property name="wordWrap"><bool>true</bool></property>
+             <property name="textFormat"><enum>Qt::PlainText</enum></property>
+             <property name="text"><string>No template loaded</string></property>
+             <property name="role" stdset="0"><string>secondary</string></property>
+            </widget></item>
+            <item><widget class="QPushButton" name="saveQueueTemplateButton"><property name="text"><string>Save template…</string></property><property name="toolTip"><string>Save a new named text-to-image recipe; no queue or generation is created.</string></property></widget></item>
+            <item><widget class="QPushButton" name="loadQueueTemplateButton"><property name="text"><string>Load template…</string></property><property name="toolTip"><string>Browse, load, update, rename or delete local queue recipes.</string></property></widget></item>
+           </layout>
+          </item>
+          <item>
            <widget class="QLabel" name="composerPromptLabel">
             <property name="text"><string>Base prompt</string></property>
             <property name="buddy"><cstring>composerPromptEdit</cstring></property>

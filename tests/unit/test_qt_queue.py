@@ -415,3 +415,110 @@ def test_composer_keeps_its_source_prompt_and_only_copies_to_generate_explicitly
     window.queue_popover.refresh()
     assert "composer's draft" in window.queue_popover.note_label.text()
     assert "Backend: fake" in window.queue_popover.note_label.text()
+
+
+def test_queue_templates_save_load_cancel_dirty_and_create_without_touching_generate(window, qtbot):
+    from dtflow.services.queue_templates import list_templates
+    from dtflow.ui.inline_feedback import feedback
+
+    window.show()
+    window.form.queueNavigationButton.click()
+    queue, page = window.queue, window.queue_page
+    window.generation_page.promptEdit.setPlainText("Generate stays independent")
+    queue.open_composer()
+    page.composerPromptEdit.setPlainText("source {cat|dog}")
+    page.planModeCombo.setCurrentText("Cross")
+    page.planVariationCombo.setCurrentText("Every combination")
+    page.queueCountSpinBox.setValue(9)  # retained even while Cross uses its variation dimension
+    page.newQueueCapSpinBox.setValue(3)
+    panel = feedback(page)
+    page.saveQueueTemplateButton.click()
+    panel._editor.setText("My queue recipe")
+    panel.form.inlineEditorAcceptButton.click()
+    qtbot.waitUntil(lambda: queue.templates.loaded is not None, timeout=5000)
+    (saved,) = list_templates(window.state_dir)
+    assert saved.recipe.request.prompt == "source {cat|dog}"
+    assert saved.recipe.form.rng_seed == ""  # deterministic enumeration has no hidden seed prerequisite
+    assert not queue._views
+    page.composerPromptEdit.setPlainText("Unsaved replacement")
+    page.queueCountSpinBox.setValue(4)
+    assert "modified" in page.queueTemplateStatusLabel.text()
+
+    def load():
+        page.loadQueueTemplateButton.click()
+        qtbot.waitUntil(lambda: panel._editor is not None, timeout=5000)
+        assert panel._editor.templateList.count() == 1
+        panel.form.inlineEditorAcceptButton.click()
+        assert panel._armed is not None
+
+    load()
+    panel.dismiss()  # Escape/Cancel discards replacement consent
+    assert page.composerPromptEdit.toPlainText() == "Unsaved replacement"
+    load()
+    page.loadQueueTemplateButton.click()  # explicit Confirm, not a second library request
+    assert page.composerPromptEdit.toPlainText() == "source {cat|dog}"
+    assert page.planRngSeedEdit.text() == "" and page.newQueueCapSpinBox.value() == 3
+    assert page.queueCountSpinBox.value() == 9
+    assert window.generation_page.promptEdit.toPlainText() == "Generate stays independent"
+    assert not queue._views
+    queue.create("save")
+    qtbot.waitUntil(lambda: not queue.composing and queue._view() is not None, timeout=5000)
+    assert queue._view()["status"] == "paused"
+    assert queue._view()["summary"]["pending"] == 2
+    assert list_templates(window.state_dir) == (saved,)
+    queue.open_composer()
+
+    def library():
+        page.loadQueueTemplateButton.click()
+        qtbot.waitUntil(lambda: panel._editor is not None, timeout=5000)
+        return panel._editor
+
+    library().templateRenameButton.click()
+    panel._editor.setText("Renamed recipe")
+    panel.form.inlineEditorAcceptButton.click()
+    qtbot.waitUntil(lambda: queue.templates.loaded.name == "Renamed recipe", timeout=5000)
+    page.composerPromptEdit.setPlainText("updated {cat|dog}")
+    library().templateUpdateButton.click()
+    assert panel._armed is not None
+    page.saveQueueTemplateButton.click()
+    qtbot.waitUntil(lambda: not queue.templates.busy, timeout=5000)
+    (updated,) = list_templates(window.state_dir)
+    assert updated.recipe.request.prompt == "updated {cat|dog}" and updated.revision == 3
+    library().templateDeleteButton.click()
+    assert panel._armed is not None
+    page.loadQueueTemplateButton.click()
+    qtbot.waitUntil(lambda: queue.templates.loaded is None, timeout=5000)
+    assert list_templates(window.state_dir) == ()
+    assert page.composerPromptEdit.toPlainText() == "updated {cat|dog}" and len(queue._views) == 1
+
+
+@pytest.mark.parametrize("active", ("fake", "cloud"))
+def test_template_backend_binding_and_cap_do_not_switch_connection_or_shared_default(
+    window, qtbot, monkeypatch, active
+):
+    from dataclasses import replace
+
+    from dtflow.services.queue_templates import save_template
+    from dtflow.ui.inline_feedback import feedback
+
+    window.show()
+    window.form.queueNavigationButton.click()
+    queue, page = window.queue, window.queue_page
+    queue.open_composer()
+    recipe = replace(queue.templates.capture(), backend="cloud", cap=7)
+    template = save_template(window.state_dir, "Cloud recipe", recipe)
+    monkeypatch.setattr(queue, "_backend", lambda: (active, None))
+    panel = feedback(page)
+    epoch = queue._shared_epoch
+    queue.templates.load(template)
+    assert panel._armed and queue._backend()[0] == active
+    page.loadQueueTemplateButton.click()
+    assert queue._composer_backend()[0] == active  # explicit rebinding, not a changed connection
+    assert page.newQueueCapSpinBox.value() == 7 and queue._shared_epoch == epoch
+    queue._shared_cap = 4
+    queue._show_new_cap()
+    assert page.newQueueCapSpinBox.value() == 7
+    monkeypatch.setattr(queue, "_backend", lambda: ("local", None))
+    queue.create("save")
+    assert not queue._views  # a later connection change needs explicit review/rebinding
+    assert queue._shared_epoch == epoch
