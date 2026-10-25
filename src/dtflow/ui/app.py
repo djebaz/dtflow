@@ -26,8 +26,12 @@ def open_window(
     gallery_limits: tuple[int, int] | None = None,
     thumbnail_format: str = "jpg",
     diagnostic_notices=None,
+    before_show=None,
 ) -> MainWindow:
-    """Configure and show the main window; the caller runs the event loop and then calls ``close_window``."""
+    """Configure and show the main window; the caller runs the event loop and then calls ``close_window``.
+
+    ``before_show`` receives the window just before ``show()`` so a caller can watch its first paint without a race.
+    """
     configure(no_cache=no_cache)
     thumbnail_cache.configure(no_cache=no_cache, thumbnail_format=thumbnail_format)
     if gallery_limits is not None:
@@ -46,6 +50,8 @@ def open_window(
     application.aboutToQuit.connect(window.gallery.save_now)
     application.aboutToQuit.connect(window.image_export.cancel)
     application.aboutToQuit.connect(window.runner.shutdown)
+    if before_show is not None:
+        before_show(window)
     window.show()
     startup.mark("window shown")
     # The first event-loop turn follows the first paint; then the heavy gRPC library loads without delaying display.

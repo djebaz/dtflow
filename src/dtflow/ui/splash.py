@@ -40,26 +40,31 @@ class GuiUnavailable(ImportError):
 
 
 class _FirstPaint(QObject):
-    """Calls back once, on the first paint event delivered to the watched window (or a bounded fallback)."""
+    """Calls back once with ``"paint"`` on the first paint event of the watched window, or ``"fallback"`` if none comes.
+
+    Install it before the window is shown, then ``arm()`` the bounded fallback after ``show()``.
+    """
 
     def __init__(self, form: QWidget, callback) -> None:
         super().__init__(form)
         self._callback = callback
         self._done = False
         form.installEventFilter(self)
-        QTimer.singleShot(WINDOW_PAINT_FALLBACK_MS, self._fire)
+
+    def arm(self) -> None:
+        QTimer.singleShot(WINDOW_PAINT_FALLBACK_MS, lambda: self._fire("fallback"))
 
     def eventFilter(self, watched, event) -> bool:
         if event.type() == QEvent.Type.Paint:
-            self._fire()
+            self._fire("paint")
         return False
 
-    def _fire(self) -> None:
+    def _fire(self, source: str) -> None:
         if self._done:
             return
         self._done = True
         self.parent().removeEventFilter(self)
-        self._callback()
+        self._callback(source)
 
 
 class StartupSplash(QWidget):
@@ -174,20 +179,22 @@ def run_gui_with_splash(**options) -> int:
                 raise GuiUnavailable(str(exc)) from exc
             startup.mark("ui imports")
             outcome["gui"] = gui
-            outcome["window"] = gui.open_window(application, **options)
+            outcome["window"] = gui.open_window(application, before_show=watch_window, **options)
+            outcome["paint_watch"].arm()
         except BaseException as exc:
             outcome["error"] = exc
             splash.dismiss()
             application.exit(1)
             return
-        form = outcome["window"].form
 
-        def window_painted() -> None:
-            startup.mark("window painted")
-            splash.finish(form)
+    def watch_window(window) -> None:
+        def window_painted(source: str) -> None:
+            startup.mark("window painted" if source == "paint" else "window paint fallback")
+            splash.finish(window.form)
 
-        # The window is already shown; the splash stays until the window reports its first paint.
-        outcome["paint_watch"] = _FirstPaint(form, window_painted)
+        # Watch before show(), so a synchronous first paint cannot be missed; report timings only once it is marked.
+        startup.expect("window painted", "window paint fallback")
+        outcome["paint_watch"] = _FirstPaint(window.form, window_painted)
 
     splash.painted.connect(proceed)
     splash.show()

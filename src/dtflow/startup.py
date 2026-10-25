@@ -14,15 +14,35 @@ STARTED = time.perf_counter()
 log = logging.getLogger("dtflow.startup")
 _marks: list[tuple[str, float]] = []
 _lock = threading.Lock()
+_awaited: tuple[str, ...] = ()
+_deferred_title: str | None = None
 
 
 def mark(name: str) -> None:
+    global _awaited, _deferred_title
     with _lock:
         _marks.append((name, time.perf_counter()))
+        title = None
+        if name in _awaited:
+            _awaited, title, _deferred_title = (), _deferred_title, None
+    if title is not None:
+        report(title)
+
+
+def expect(*names: str) -> None:
+    """Hold the next ``report`` until one of ``names`` is marked, so the report includes that milestone."""
+    global _awaited
+    with _lock:
+        _awaited = names
 
 
 def report(title: str) -> None:
     """Log each phase's duration since the previous mark, in milliseconds."""
+    global _deferred_title
+    with _lock:
+        if _awaited:
+            _deferred_title = title
+            return
     if not log.isEnabledFor(logging.DEBUG):
         return
     with _lock:
