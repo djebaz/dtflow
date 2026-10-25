@@ -233,6 +233,7 @@ def toggle_image_focus(page, enter: bool | None = None) -> None:
 
 def apply_gallery_button_icons(page, assets=ASSETS):
     """Shared real icon configuration for application and state-catalogue buttons."""
+    # Keep icon-only Designer text empty: discarded Unicode glyphs still trigger font fallback during loading.
 
     def get(name):
         return page.findChild(QWidget, name)

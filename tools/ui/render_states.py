@@ -1993,6 +1993,10 @@ def render_gallery_composition_states(shell, state, out):
     form, gallery = shell.form, shell.gallery
     assert shell.gallery_detail.parentWidget() is shell.shell.centerStack
     assert shell.shell.parentWidget() is form.centralWidget()
+    for name in ("galleryRefreshButton", "galleryFullscreenButton"):
+        button = shell.gallery_detail.findChild(QPushButton, name)
+        assert button.text() == "" and not button.icon().isNull()
+        assert button.accessibleName()
     export = shell.image_export
     image = QImage(1024, 768, QImage.Format.Format_RGB32)
     image.fill(QColor("#8094a8"))
