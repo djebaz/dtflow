@@ -288,6 +288,7 @@ class MainWindow:
             )
         self._gallery_chrome_active = False
         self._gallery_previous_sizes = None
+        startup.mark("workspace chrome and navigation ready")
         self.generation = GenerationPage(
             self.generation_page,
             runner=self.runner,
