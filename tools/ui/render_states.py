@@ -1781,6 +1781,29 @@ def render_item_table_states(shell, out, state):
             Qt.WidgetAttribute.WA_TransparentForMouseEvents
         )
         save(preview.label, out, "queues-64-item-table-thumbnail-preview")
+        # Hold actual fixture decodes to expose the in-flight refresh state, not just its completed result.
+        from dtflow.ui.queue_thumbnails import PREVIEW_SIDE, REVALIDATE_MS
+
+        path, identity = items[0]["artifacts"][0], "a71b71c1:0"
+        tile = model.thumbnails.pixmap(path, identity=identity).cacheKey()
+        enlarged = model.thumbnails.pixmap(path, PREVIEW_SIDE, identity).cacheKey()
+        pending = []
+        try:
+            with patch.object(
+                model.thumbnails._runner, "submit", side_effect=lambda work, done: pending.append((work, done))
+            ):
+                model.thumbnails._checked[(path, identity)] -= REVALIDATE_MS / 1000 + 1
+                model.thumbnails._expire()
+                assert model.thumbnails.pixmap(path, identity=identity).cacheKey() == tile
+                assert model.thumbnails.pixmap(path, PREVIEW_SIDE, identity).cacheKey() == enlarged
+                assert not model.thumbnails.available(path, identity)
+                snap("queues-69-item-table-revalidation-pending")
+                assert not page.itemOpenImagesButton.isEnabled()
+                save(preview.label, out, "queues-70-thumbnail-preview-revalidation-pending")
+        finally:
+            for work, done in pending:
+                real_submit(work, done)  # resume only synthetic fixture reads through the intercepted decoder
+        wait_for(lambda: model.thumbnails.available(path, identity))
         preview.hide()
         select(1)  # more than three LoRAs and the 55-character filename
         assert page.itemSeedLabel.text() == str(items[1]["seed"]) and page.itemDimensionsLabel.text() == "1024 × 1024"
