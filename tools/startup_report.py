@@ -53,18 +53,17 @@ def summarize(runs: list[dict]) -> dict:
         "warnings": [
             "Mixed startup phase schemas: per-phase medians use different sample populations. "
             "Compare matched instrumentation before attributing changes or ranking phases."
-        ] if schema_count > 1 else [],
-        "phase_sample_count": {
-            name: sum(name in run["phases"] for run in runs) for name in names
-        },
+        ]
+        if schema_count > 1
+        else [],
+        "phase_sample_count": {name: sum(name in run["phases"] for run in runs) for name in names},
         "elapsed_ms": {
             "min": min(totals),
             "median": statistics.median(totals),
             "max": max(totals),
         },
         "phase_median_ms": {
-            name: statistics.median([r["phases"][name] for r in runs if name in r["phases"]])
-            for name in names
+            name: statistics.median([r["phases"][name] for r in runs if name in r["phases"]]) for name in names
         },
         "runs": [{"source": r["source"], "elapsed_ms": r["elapsed_ms"]} for r in runs],
         "caveat": (

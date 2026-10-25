@@ -1,6 +1,5 @@
 """Labels for observed events only; no provider calls or inferred completion."""
 
-
 from dtflow.core.models import BackendEvent
 
 
