@@ -648,6 +648,34 @@ def render_connection_management(shell, out):
         QTest.mouseMove(about, about.rect().center())
         snap("connection-40-about-status-button")
 
+        # The real startup entry point, with service admission intercepted: no network or credentials.
+        pending = []
+
+        def hold_startup(coroutine, callback):
+            coroutine.close()
+            pending.append(callback)
+
+        with patch.object(shell.runner, "submit", side_effect=hold_startup):
+            shell.refresh_credentials(background=True)
+            shell.refresh_presets(background=True)
+            shell.refresh_custom_loras(background=True)
+            shell._startup_check_started = False
+            shell.start_startup_check()
+        assert form.statusCard.property("state") == "warning"
+        assert "Checking credential" in form.credentialStatusLabel.text()
+        assert not form.exportPresetsButton.isEnabled() and not form.clearCustomLorasButton.isEnabled()
+        snap("connection-41-startup-check-and-loading")
+        pending[-1](None, None)
+        shell._credentials_read({"selected": "none", "saved": "absent"}, None)
+        shell._presets_read(0, None)
+        shell._custom_loras_read(0, None)
+        assert form.statusCard.property("state") == "unknown"
+        snap("connection-42-startup-unconfigured")
+        shell._credentials_read(None, OSError())
+        shell._presets_read(None, OSError())
+        shell._custom_loras_read(None, OSError())
+        snap("connection-43-startup-summary-unavailable")
+
 
 def render_generate_configuration_states(shell, out):
     """Local editors/inventory/configuration plus asset progress; no provider or upload worker runs."""

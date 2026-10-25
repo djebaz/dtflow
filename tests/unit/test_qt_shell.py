@@ -574,6 +574,170 @@ def test_connection_check_presents_fake_backend_and_closes(window, qtbot):
     assert window.form.statusLabel.text().startswith("Connected")
 
 
+@pytest.mark.parametrize("fail", [False, True])
+def test_startup_check_is_once_async_and_retained_across_navigation(window, qtbot, monkeypatch, fail):
+    from dtflow.core.models import ConnectionStatus
+    from dtflow.ui import main_window
+
+    entered, release = threading.Event(), threading.Event()
+    calls = []
+
+    async def check(selection, *, saved):
+        calls.append((selection.name, threading.get_ident()))
+        entered.set()
+        await asyncio.to_thread(release.wait, 5)
+        if fail:
+            raise ConnectionRefusedError()
+        return ConnectionStatus("fake", "offline://fixture", "2026-10-25T12:00:00+00:00", "ok", "ok", "ok")
+
+    monkeypatch.setattr(main_window, "check_connection", check)
+    window.start_startup_check()
+    window.start_startup_check()
+    try:
+        qtbot.waitUntil(entered.is_set)
+        assert window.form.statusCard.property("state") == "warning"
+        window._show_queue()
+        assert window.form.workspaceStack.currentWidget() is window.queue_page
+        assert calls == [("fake", calls[0][1])] and calls[0][1] != threading.get_ident()
+    finally:
+        release.set()
+    qtbot.waitUntil(lambda: not window._busy)
+    expected = "error" if fail else "ok"
+    assert window.form.connectionNavigationButton.property("state") == expected
+    window._show_generation()
+    assert window.form.connectionNavigationButton.property("state") == expected
+    window.start_startup_check()
+    assert len(calls) == 1
+
+
+@pytest.mark.parametrize("backend", ["local", "cloud"])
+def test_unconfigured_startup_check_does_not_contact_a_provider(window, qtbot, monkeypatch, backend):
+    from dtflow.ui import main_window
+
+    async def forbidden(*args, **kwargs):
+        pytest.fail("Unconfigured startup must not contact a provider")
+
+    monkeypatch.setattr(main_window, "check_connection", forbidden)
+    window.form.backendCombo.setCurrentText(backend)
+    window.form.endpointEdit.clear()
+    window.start_startup_check()
+    qtbot.waitUntil(lambda: not window._busy)
+    assert window.form.statusCard.property("state") == "unknown"
+    assert window.form.checkButton.isEnabled()
+
+
+@pytest.mark.parametrize("change", ["endpoint", "credential", "environment"])
+def test_pending_startup_result_cannot_replace_changed_connection_context(window, qtbot, monkeypatch, change):
+    from dtflow.core.models import ConnectionStatus
+    from dtflow.ui import main_window
+
+    entered, release = threading.Event(), threading.Event()
+
+    async def check(selection, *, saved):
+        entered.set()
+        await asyncio.to_thread(release.wait, 5)
+        return ConnectionStatus("fake", "offline://fixture", "2026-10-25T12:00:00+00:00", "ok", "ok", "ok")
+
+    monkeypatch.setattr(main_window, "check_connection", check)
+    window.start_startup_check()
+    try:
+        qtbot.waitUntil(entered.is_set)
+        if change == "endpoint":
+            window.form.endpointEdit.setText("changed:1234")
+        elif change == "environment":
+            window._environ["DRAWTHINGS_API_KEY"] = "fixture-environment-key"
+        else:
+            window.form.keyEdit.setText("fixture-secret")
+            window.save_key()
+    finally:
+        release.set()
+    qtbot.waitUntil(lambda: not window._busy)
+    assert window.form.statusCard.property("state") == "unknown"
+    # Manual recheck remains available and supersedes the automatic one-shot.
+    window.check()
+    qtbot.waitUntil(lambda: not window._busy)
+    assert window.form.statusCard.property("state") == "ok"
+
+
+def test_startup_optional_reads_are_workers_and_cannot_overwrite_edits(window, qtbot, monkeypatch):
+    from dtflow.ui import main_window
+
+    entered, release = threading.Event(), threading.Event()
+    threads = []
+
+    def slow_status(*args):
+        threads.append(threading.get_ident())
+        entered.set()
+        release.wait(5)
+        return {"selected": "none", "saved": "absent"}
+
+    monkeypatch.setattr(main_window, "credential_status", slow_status)
+    window.refresh_credentials(background=True)
+    window.form.keyEdit.setText("unfinished-fixture-key")
+    try:
+        qtbot.waitUntil(entered.is_set)
+        window._show_generation()
+        assert threads[0] != threading.get_ident()
+    finally:
+        release.set()
+    qtbot.waitUntil(lambda: window.form.credentialStatusLabel.text() == "No API key available.")
+    assert window.form.keyEdit.text() == "unfinished-fixture-key"
+
+    deliveries = []
+    monkeypatch.setattr(
+        window.runner, "submit", lambda coroutine, callback: (coroutine.close(), deliveries.append(callback))
+    )
+    window.refresh_presets(background=True)
+    window.refresh_presets()  # A newer explicit import/refresh wins over a queued startup count.
+    deliveries[-1](42, None)
+    assert window.form.presetLibraryStatusLabel.text() == "No imported presets."
+    assert not window.form.exportPresetsButton.isEnabled()
+    window.runner.shutdown()
+    window.start_startup_check()  # No admission or widget updates after shutdown begins.
+
+
+def test_logs_form_is_created_once_only_on_demand(window, qtbot, monkeypatch):
+    from dtflow.ui import main_window
+
+    assert window._logs is None and window._logs_form is None
+    created = []
+    original = main_window.load_ui
+
+    def load(path):
+        created.append(path.name)
+        return original(path)
+
+    monkeypatch.setattr(main_window, "load_ui", load)
+    window.show()
+    window._show_generation()
+    assert created == []
+    window._toggle_logs()
+    first = window.logs
+    assert window.shell.centerStack.currentWidget() is window.logs_form
+    window._close_logs()
+    window._toggle_logs()
+    assert window.logs is first
+    assert created == ["logs_workspace.ui"]
+
+
+def test_first_event_turn_starts_check_but_shutdown_cannot_start_work(window, monkeypatch):
+    from unittest.mock import Mock
+
+    from dtflow.ui import app
+
+    start = Mock()
+    thread = Mock()
+    monkeypatch.setattr(window, "start_startup_check", start)
+    monkeypatch.setattr(app.threading, "Thread", thread)
+    app._after_first_paint(window)
+    start.assert_called_once()
+    thread.return_value.start.assert_called_once()
+    window.runner.shutdown()
+    app._after_first_paint(window)
+    start.assert_called_once()
+    thread.return_value.start.assert_called_once()
+
+
 def test_cloud_missing_credentials_are_reported_not_raised(window, qtbot, monkeypatch):
     from dtflow.core.models import ConnectionStatus
     from dtflow.ui import main_window

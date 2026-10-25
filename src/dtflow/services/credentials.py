@@ -1,5 +1,6 @@
 """Deterministic environment-first credential resolution plus the secure saved-key store."""
 
+import asyncio
 import os
 from collections.abc import Mapping
 
@@ -125,6 +126,18 @@ class SavedCredentials:
 
     def present(self) -> bool:
         return self._store().get_password(SERVICE, ACCOUNT) is not None
+
+
+class OptionalSavedCredentials:
+    """Defer desktop vault discovery until a worker needs credentials, never a Qt getter."""
+
+    def __init__(self, saved: SavedCredentials):
+        self.saved = saved
+
+    async def get(self) -> Credential | None:
+        if not await asyncio.to_thread(self.saved.available):
+            return None
+        return await self.saved.get()
 
 
 def credential_status(
