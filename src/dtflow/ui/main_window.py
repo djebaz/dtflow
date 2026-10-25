@@ -238,6 +238,7 @@ class MainWindow:
         self.shell.leftStack.addWidget(load_ui(FORMS_DIR / "gallery_context.ui"))
         self.shell.centerStack.addWidget(self.gallery_detail)
         self.shell.rightStack.addWidget(QWidget())
+        startup.mark("workspace: images mounted")
         self.logs_marker = QWidget()
         form.workspaceStack.addWidget(self.logs_marker)
         self._logs_form = None
@@ -253,6 +254,7 @@ class MainWindow:
         self._last_run_marker = None
         self.progress_strip = ActivityStrip(form)
         self.inline = InlineFeedback(form)
+        startup.mark("workspace: overlays created")
         # Preserve the connection controller's established chrome references.
         for name in (
             "brandFrame",
@@ -278,6 +280,7 @@ class MainWindow:
         # so one tab's inspector cannot push every other tab's inspector past the rail.
         self.shell.rightStack.currentChanged.connect(self._fit_inspector_page)
         self._fit_inspector_page()
+        startup.mark("workspace: rails and navigation configured")
         from dtflow.ui.brand import APP_ICON, app_icon
 
         form.setWindowIcon(app_icon())
@@ -286,6 +289,7 @@ class MainWindow:
             form.productMarkLabel.setPixmap(
                 logo.scaled(50, 50, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
             )
+        startup.mark("workspace: brand icon prepared")
         self._gallery_chrome_active = False
         self._gallery_previous_sizes = None
         startup.mark("workspace chrome and navigation ready")
