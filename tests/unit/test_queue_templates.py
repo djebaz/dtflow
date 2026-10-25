@@ -44,7 +44,8 @@ def test_library_roundtrip_update_rename_delete_and_stale_edit(tmp_path):
         templates.delete_template(tmp_path, updated)
     templates.delete_template(tmp_path, renamed)
     assert templates.list_templates(tmp_path) == ()
-    assert not (tmp_path / "jobs.sqlite3").exists()  # no execution store or cache needed
+    # No execution store or cache was created.
+    assert {path.name for path in tmp_path.iterdir()} == {"queue_templates.sqlite3"}
 
 
 @pytest.mark.parametrize("field,value", [("count", True), ("count", 1001), ("cap", 11), ("backend", "unknown")])
