@@ -6,6 +6,8 @@ Changes through 5.2.0 are consolidated in [DTFlow 5.2.0](v5.2.0.md). This file t
 
 ## Added
 
+- Queues: **Clear paused queues** bulk action beside Clear history (#175). It shows the eligible count, acts at once without confirmation, revalidates each queue inside the removal transaction (still paused with pending work, no running reservation, not this window's dispatch), and reports removed and skipped counts; running, up-next, blocked, finished and cancelled queues, attempts and saved images are untouched.
+
 - Add an isolated QLineEdit style diagnostic for native, DTFlow and exact-font variants, with per-operation timings and no application-state or provider access. Production styling is unchanged.
 
 - Offline startup diagnostic report (`python3 tools/startup_report.py <logs...>`) for comparing recorded `-x` phase timings without starting providers; measured first-paint callbacks are not asserted to be first usable window (#169). Repeated matching Windows source/packaged acceptance remains outstanding.

@@ -150,6 +150,19 @@
         </property>
        </widget>
       </item>
+      <item>
+       <widget class="QPushButton" name="clearPausedQueuesButton">
+        <property name="text">
+         <string>Clear paused queues</string>
+        </property>
+        <property name="toolTip">
+         <string>Removes paused queues that are not running from this list. Running, up-next and finished queues, attempts and saved images are kept.</string>
+        </property>
+        <property name="accessibleName">
+         <string>Clear paused queues</string>
+        </property>
+       </widget>
+      </item>
      </layout>
     </widget>
    </item>

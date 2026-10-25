@@ -797,6 +797,38 @@ def delete_idle_queues(directory: Path, keep: Sequence[str] = ()) -> int:
     return len(queue_ids)
 
 
+def delete_paused_queues(directory: Path, queue_ids: Sequence[str], keep: Sequence[str] = ()) -> tuple[int, int]:
+    """Bulk-remove the named queues that are still paused with work left; return ``(removed, skipped)``.
+
+    Eligibility is checked again inside one write transaction: a queue that started, went up next, finished, was
+    cancelled, already left, holds a running reservation or is named in ``keep`` is skipped and left untouched.
+    Attempts and saved outputs are never touched.
+    """
+    wanted = list(dict.fromkeys(queue_ids))
+    if not wanted:
+        return 0, 0
+    connection = _shared_connection(directory)
+    try:
+        connection.execute("BEGIN IMMEDIATE")
+        try:
+            marks = ",".join("?" * len(wanted))
+            eligible = _removable(
+                connection,
+                f"q.queue_id IN ({marks}) AND q.state='paused' AND EXISTS "
+                "(SELECT 1 FROM queue_items i WHERE i.queue_id=q.queue_id AND i.state='pending')",
+                wanted,
+                keep,
+            )
+            _delete(connection, eligible)
+            connection.execute("COMMIT")
+        except BaseException:
+            connection.execute("ROLLBACK")
+            raise
+    finally:
+        connection.close()
+    return len(eligible), len(wanted) - len(eligible)
+
+
 def delete_queue(directory: Path, queue_id: str, keep: Sequence[str] = ()) -> None:
     """Remove one queue record (a paused, finished or cancelled one) with its items, controls and events.
 
