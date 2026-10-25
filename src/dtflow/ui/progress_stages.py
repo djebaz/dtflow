@@ -17,7 +17,7 @@ def event_stage(event):
             "saving_image_snapshot": "Saving image input snapshot",
             "recording_submission_state": "Recording submission state",
             "waiting_backend_response": "Request sent; waiting for backend response",
-            "backend_response_received": "Backend response received",
+            "backend_response_received": "Backend processing; awaiting generation progress",
             "resolving_model": "Resolving model description",
             "preparing_image_inputs": "Preparing image inputs",
             "resolving_credentials": "Resolving backend credentials",
