@@ -78,16 +78,34 @@ def test_queue_thumbnail_revalidates_cached_availability_and_owns_shutdown(qtbot
     assert thumbnails.pixmap("output.png", identity="a:0") is None
     runner.jobs[0]((image, ""), None)
     assert thumbnails.available("output.png", "a:0")
+    # Both painted sizes survive a slow revalidation; retained pixels are not fresh action authority.
+    assert thumbnails.pixmap("output.png", thumbnail_ui.PREVIEW_SIDE, "a:0") is None
+    runner.jobs[1]((image, ""), None)
+    tile = thumbnails.pixmap("output.png", identity="a:0").cacheKey()
+    preview = thumbnails.pixmap("output.png", thumbnail_ui.PREVIEW_SIDE, "a:0").cacheKey()
     now[0] = 4.0
     thumbnails._expire()
     assert not thumbnails.available("output.png", "a:0")
-    runner.jobs[1]((None, "Saved image is no longer available"), None)
+    assert thumbnails.pixmap("output.png", identity="a:0").cacheKey() == tile
+    assert thumbnails.pixmap("output.png", thumbnail_ui.PREVIEW_SIDE, "a:0").cacheKey() == preview
+    thumbnails._expire()
+    assert len(runner.jobs) == 3  # repaint/hover/availability share one refresh
+    runner.jobs[2]((image, ""), None)
+    assert thumbnails.available("output.png", "a:0")
+    assert thumbnails.pixmap("output.png", thumbnail_ui.PREVIEW_SIDE, "a:0") is not None
+    now[0] = 8.0
+    # Paint-time expiry must also preserve the image, even before the timer fires.
+    assert thumbnails.pixmap("output.png", identity="a:0") is not None
+    assert not thumbnails.available("output.png", "a:0")
+    runner.jobs[3]((None, "Saved image is no longer available"), None)
     assert thumbnails.is_failed("output.png", identity="a:0")
+    assert thumbnails.pixmap("output.png", identity="a:0") is None
+    assert thumbnails.pixmap("output.png", thumbnail_ui.PREVIEW_SIDE, "a:0") is None
     assert not observations  # repeated completions/polls stay aggregated
     assert thumbnails._expiry.parent() is thumbnails
     thumbnails.clear()
     assert len(observations) == 1 and observations[0][0] == "queue.thumbnail_summary"
-    assert observations[0][1]["available"] == observations[0][1]["unavailable"] == 1
+    assert observations[0][1]["available"] == 3 and observations[0][1]["unavailable"] == 1
     assert "output.png" not in repr(observations) and "a:0" not in repr(observations)
     thumbnails.pixmap("busy.png", identity="b:0")
     thumbnails.clear()  # an obsolete decode still occupies a slot until completion

@@ -93,8 +93,9 @@ class QueueThumbnails(QObject):
         if now - self._diagnostic_since >= SUMMARY_SECONDS:
             self._flush_diagnostics()
         for key, checked in tuple(self._checked.items()):
-            if now - checked >= REVALIDATE_MS / 1000:
-                self._forget(key)
+            if now - checked >= REVALIDATE_MS / 1000 and key not in self._queued:
+                if key in self._failed:
+                    self._forget(key)  # permit retry, but keep successful pixels until a worker replaces them
                 self.changed.emit(key[0])
 
     def _forget(self, key) -> None:
@@ -107,26 +108,33 @@ class QueueThumbnails(QObject):
         if self._closed or self._runner.closed or not identity:
             return None
         key = (path, identity)
-        if monotonic() - self._checked.get(key, monotonic()) >= REVALIDATE_MS / 1000:
+        stale = monotonic() - self._checked.get(key, monotonic()) >= REVALIDATE_MS / 1000
+        if stale and key in self._failed:
             self._forget(key)
         store = self._stores[side][0]
         found = store.get(key)
         if found is not None:
             store.move_to_end(key)
-            return found
-        if key not in self._failed:
+        if (found is None or stale) and key not in self._failed:
             self._wanted.setdefault(key, set()).add(side)
             if key not in self._queued:
                 self._queued.add(key)
                 self._waiting.append((self._epoch, key))
                 self._pump()
-        return None
+        return found
 
     def is_failed(self, path: str, side: int = ROW_SIDE, identity: str | None = None) -> bool:
         return not identity or (path, identity) in self._failed
 
     def available(self, path: str, identity: str | None) -> bool:
-        return self.pixmap(path, identity=identity) is not None
+        """Fresh availability only; retained pixels during revalidation are presentation, not authority."""
+        pixmap = self.pixmap(path, identity=identity)
+        key = (path, identity)
+        return (
+            pixmap is not None
+            and key not in self._queued
+            and monotonic() - self._checked.get(key, float("-inf")) < REVALIDATE_MS / 1000
+        )
 
     def clear(self) -> None:
         """Forget everything; results still in flight are ignored when they arrive."""
@@ -211,7 +219,9 @@ class QueueThumbnails(QObject):
             image, _issue = result if error is None and result else (None, "unreadable")
             self._checked[key] = monotonic()
             if image is not None:
-                for side in self._wanted.pop(key, {ROW_SIDE}):
+                wanted = self._wanted.pop(key, {ROW_SIDE})
+                wanted.update(side for side, (store, _) in self._stores.items() if key in store)
+                for side in wanted:
                     store, limit = self._stores[side]
                     store[key] = QPixmap.fromImage(image) if side == PREVIEW_SIDE else self._square(image, side)
                     while len(store) > limit:
@@ -219,6 +229,8 @@ class QueueThumbnails(QObject):
                         if not any(evicted in other for other, _ in self._stores.values()):
                             self._checked.pop(evicted, None)
             else:
+                self._forget(key)  # failed live revalidation invalidates every retained size
+                self._checked[key] = monotonic()
                 self._wanted.pop(key, None)
                 self._failed.add(key)  # includes temporary lease refusal; the owned expiry timer permits retry
             self.changed.emit(key[0])
