@@ -731,14 +731,22 @@ class QueuePage:
             # The ring counts settled items, which is meaningful however many items run at once.
             completed, total = summary.settled, summary.total
             detail += f" {summary.settled}/{summary.total} settled."
-            progress = [value for (owner, _), value in self._run_progress.items() if owner == queue_id]
+            # Only the currently running item may supply the single-item stage/progress.
+            # Historical callbacks for other items must not take over the status.
+            active_item_id = running_items[0]["item_id"] if len(running_items) == 1 else None
+            progress = [
+                value for (owner, item_id), value in self._run_progress.items()
+                if owner == queue_id and item_id == active_item_id
+            ] if active_item_id is not None else []
             wide = f"Queue {queue_id[:8]} · {summary.headline.rstrip('.')}" + (
                 f" · {running} items running" if running > 1 else " · 1 item running" if running else ""
             )
             stage = f"{running} running" if running else summary.headline.rstrip(".")
             if running:
-                stages = [value for (owner, _), value in self._run_stages.items() if owner == queue_id]
-                stage = stages[-1] if running == 1 and stages else "Admitted; preparing / waiting for backend"
+                stage = (
+                    self._run_stages.get((queue_id, active_item_id), "Admitted; preparing / waiting for backend")
+                    if active_item_id is not None else f"{running} items running"
+                )
                 if not progress:
                     completed, total = None, None
                 wide = f"Queue {queue_id[:8]} · {stage} · {summary.settled}/{summary.total} settled"
