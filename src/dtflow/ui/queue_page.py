@@ -31,6 +31,7 @@ from dtflow.services.planning import Plan, PlanTable, describe_plan, expand_plan
 from dtflow.services.wildcards import bind_wildcards, fingerprint, list_names
 from dtflow.services.queue_session import (
     change_queue_order,
+    clear_paused_queues,
     clear_queues,
     create_edit_queue,
     create_queue,
@@ -140,6 +141,7 @@ WIRED_CONTROLS = (
     "queueCopyPromptButton",
     "refreshQueuesButton",
     "clearQueuesButton",
+    "clearPausedQueuesButton",
     "removeQueueButton",
     "newQueueCapSpinBox",
     "concurrencySpinBox",
@@ -307,6 +309,7 @@ class QueuePage:
         self._timing_timer.timeout.connect(self._timing_tick)
         page.refreshQueuesButton.clicked.connect(self.refresh)
         page.clearQueuesButton.clicked.connect(self.clear_queues)
+        page.clearPausedQueuesButton.clicked.connect(self.clear_paused)
         page.removeQueueButton.clicked.connect(self.remove)
         page.createQueueButton.clicked.connect(lambda: self.create("save"))
         page.addQueueButton.clicked.connect(lambda: self.create("add"))
@@ -899,7 +902,18 @@ class QueuePage:
                 for v in self._views.values()
             )
         )
+        paused = self._paused_ids()
+        page.clearPausedQueuesButton.setEnabled(bool(paused))
+        page.clearPausedQueuesButton.setText(
+            f"Clear paused queues ({len(paused)})" if paused else "Clear paused queues"
+        )
         self._publish_run_state()
+
+    def _paused_ids(self) -> tuple[str, ...]:
+        """Paused queues from the latest read that this window could remove (not its own dispatch, nothing running)."""
+        return tuple(
+            queue_id for queue_id, view in self._views.items() if view["status"] == "paused" and self._removable(view)
+        )
 
     def _live_run(self) -> bool:
         """A queue runs with a live owner; one whose owner is gone (needs recovery) has nobody to wait behind."""
@@ -2418,6 +2432,26 @@ class QueuePage:
             return
         text = f"{removed} queue(s) removed." if removed else "No finished or cancelled queue to remove."
         self._message(Presentation("ok", "History cleared", text))
+        self.refresh()
+
+    def clear_paused(self) -> None:
+        """Bulk-remove paused queues at once; each is revalidated when it is removed."""
+        queue_ids = self._paused_ids()
+        if not queue_ids:
+            self._message(Presentation("ok", "Nothing to clear", "No paused queue to remove."))
+            return
+        keep = (self._dispatching,) if self._dispatching else ()
+        self._runner.submit(clear_paused_queues(self._state, queue_ids, keep), self._paused_cleared)
+
+    def _paused_cleared(self, result, failure) -> None:
+        if failure is not None:
+            self._message(present_generation_failure(failure))
+            return
+        removed, skipped = result
+        text = f"{removed} paused queue(s) removed." if removed else "No paused queue was removed."
+        if skipped:
+            text += f" {skipped} changed state meanwhile and stayed."
+        self._message(Presentation("ok" if not skipped or removed else "warning", "Paused queues cleared", text))
         self.refresh()
 
     def remove(self) -> None:
