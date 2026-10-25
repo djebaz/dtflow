@@ -161,8 +161,8 @@ CLEAR_TEXT = (
     "Paused, running and up-next queues stay."
 )
 CLEAR_PAUSED_TEXT = (
-    "{count} paused queue(s) will be removed from this list, with their pending items. Their attempts and saved "
-    "images are kept. Running, up-next, finished and cancelled queues stay."
+    "{count} paused queue(s) will be removed from this list, with their pending and finished items. Their attempts "
+    "and saved images are kept. Running, up-next, finished and cancelled queues stay."
 )
 REMOVE_TEXT = "This queue will be removed from the list. Its attempts and saved images are kept."
 POSTED = "Posted. The dispatch owner applies it at its next poll, or at the next Start if nothing is dispatching."
@@ -908,12 +908,15 @@ class QueuePage:
         )
         paused = self._paused_ids()
         page.clearPausedQueuesButton.setEnabled(bool(paused))
-        page.clearPausedQueuesButton.setText(
-            f"Clear paused queues ({len(paused)})" if paused else "Clear paused queues"
-        )
         armed = feedback(page)._armed
-        if not paused and armed and armed[0] is page.clearPausedQueuesButton:
+        pending = bool(armed and armed[0] is page.clearPausedQueuesButton)
+        if pending and not paused:
             feedback(page).dismiss()  # nothing paused is left: the pending consent no longer applies
+            pending = False
+        if not pending:  # an open confirmation keeps its "Confirm" label
+            page.clearPausedQueuesButton.setText(
+                f"Clear paused queues ({len(paused)})" if paused else "Clear paused queues"
+            )
         self._publish_run_state()
 
     def _paused_ids(self) -> tuple[str, ...]:

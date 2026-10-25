@@ -6,7 +6,7 @@ Changes through 5.2.0 are consolidated in [DTFlow 5.2.0](v5.2.0.md). This file t
 
 ## Added
 
-- Queues: **Clear paused queues** bulk action beside Clear history (#175). It shows the eligible count, asks for inline confirmation, revalidates each queue and its dispatch ownership inside the removal transaction, and reports removed and skipped counts; running, up-next, blocked, finished and cancelled queues, attempts and saved images are untouched.
+- Queues: **Clear paused queues** bulk action beside Clear history (#175). It shows the eligible count, asks for inline confirmation, revalidates each queue inside the removal transaction (still paused with pending work, no running reservation, not this window's dispatch), and reports removed and skipped counts; running, up-next, blocked, finished and cancelled queues, attempts and saved images are untouched.
 
 - Add an isolated QLineEdit style diagnostic for native, DTFlow and exact-font variants, with per-operation timings and no application-state or provider access. Production styling is unchanged.
 

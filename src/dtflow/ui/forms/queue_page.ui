@@ -156,7 +156,7 @@
          <string>Clear paused queues</string>
         </property>
         <property name="toolTip">
-         <string>Removes every paused queue from this list. Running, up-next and finished queues, attempts and saved images are kept.</string>
+         <string>Removes paused queues that are not running from this list. Running, up-next and finished queues, attempts and saved images are kept.</string>
         </property>
         <property name="accessibleName">
          <string>Clear paused queues</string>
