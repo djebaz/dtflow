@@ -48,13 +48,15 @@ Current source implements the selected existing queue's seven-column table, righ
 | Local validation | Syntax/lint/format/whitespace and documentation-target checks only; no local pytest or renders. |
 | Native/platform acceptance | Corrected navigation/removal/mapped-path/shutdown interactions and performance still need owner validation; no inference or provider actions authorized. |
 
-## Remaining gates
-
-### 2026-10-25 continuity correction — PR #166
-
-The owner observed blinking queue-history thumbnails. In the supplied session log, repeated thumbnail summaries reported successful background reads, while the source expiry path deleted both resident pixmap sizes before requesting a reload. PR #166 separates retained display pixels from fresh action availability, preserving the existing three-second revalidation, worker limits, live gallery boundary and shutdown/epoch rules. The existing thumbnail lifecycle check reproduced the empty-tile failure before the fix and passes after it; final scoped validation is recorded in the PR. Renderer states `queues-69` and `queues-70` cover the delayed-refresh table and hover preview using held offline fixture reads; definitions only, not rendered. No native visual/DPI, packaged or performance acceptance is inferred; no inference or provider calls.
+## Historical merge gates — PR #150
 
 - [x] Inspect exact-head CI for correction head `408d734` (linked above); do not equate skipped UI renders with layout acceptance or extend that result to later commits.
 - [x] Owner reviews corrected interactions; request fresh offline captures only if wanted, then native smoke as appropriate.
 - [x] Reconcile #127/#130 closure with accepted delivered scope. Do not claim clickable activity, scrollable prompt tooltips, broader backend compatibility or exhaustive DPI/fault acceptance.
 - [x] Obtain explicit merge approval. This task does not merge, build, tag or publish.
+
+## 2026-10-25 continuity correction — PR #166
+
+The owner observed blinking queue-history thumbnails. In the supplied session log, repeated thumbnail summaries reported successful background reads, while the source expiry path deleted both resident pixmap sizes before requesting a reload. PR #166 separates retained display pixels from fresh action availability, preserving the existing three-second revalidation, worker limits, live gallery boundary and shutdown/epoch rules. The existing thumbnail lifecycle check reproduced the empty-tile failure before the fix and passes after it. Renderer states `queues-69` and `queues-70` cover the delayed-refresh table and hover preview using held offline fixture reads; definitions only, not rendered. No native visual/DPI, packaged or performance acceptance is inferred; no inference or provider calls.
+
+At implementation head `d8d2ac5`, the full local offline suite passed **646 tests, 3 skipped in 269.20 s**; the scoped queue Qt/presenter run passed **30 tests in 16.64 s**. Repository-wide Ruff lint and format checks passed (**408 files already formatted**), and changed Python syntax plus thumbnail imports passed. Independent standards and requirement reviews found no actionable issues. [CI dispatch 40200216034](https://github.com/djebaz/dtflow/actions/runs/40200216034) could not start a runner because GitHub reported failed account payments or a spending-limit restriction; the target-resolution/checkout steps never ran, so this is not current-head CI test evidence. Final merge identity is recorded in the PR. These local source checks do not establish native visual or packaged acceptance.
