@@ -253,8 +253,9 @@ class MainWindow:
         form.rootLayout.addWidget(self.shell)
         self._last_run_marker = None
         self.progress_strip = ActivityStrip(form)
+        startup.mark("workspace: activity strip created")
         self.inline = InlineFeedback(form)
-        startup.mark("workspace: overlays created")
+        startup.mark("workspace: inline feedback created")
         # Preserve the connection controller's established chrome references.
         for name in (
             "brandFrame",
