@@ -512,8 +512,30 @@ class DrawThingsBackend:
                         metadata=metadata,
                     ) as stream:
                         await stream.send_message(wire.message, end=True)
+                        request_sent_at = time.monotonic()
+                        emit("preparing", stage="waiting_backend_response")
+                        diagnostic_event(
+                            log,
+                            "backend.generation_request_sent",
+                            level=logging.INFO,
+                            data={"transport": "grpc", "backend": self.backend_id},
+                        )
                         previews = 0
+                        first_response = True
                         async for response in stream:
+                            if first_response:
+                                first_response = False
+                                diagnostic_event(
+                                    log,
+                                    "backend.generation_first_response",
+                                    level=logging.INFO,
+                                    data={
+                                        "transport": "grpc",
+                                        "backend": self.backend_id,
+                                        "wait_ms": round((time.monotonic() - request_sent_at) * 1000),
+                                    },
+                                )
+                                emit("preparing", stage="backend_response_received")
                             self._log_response(response)
                             if response.chunk_state == image_service.ChunkState.MORE_CHUNKS:
                                 raise self._reject(request, "chunked_output_unsupported", stage, finals)
