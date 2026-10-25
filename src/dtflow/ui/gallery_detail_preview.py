@@ -264,6 +264,11 @@ def apply_gallery_button_icons(page, assets=ASSETS):
         get(name).setText("")
         get(name).setIcon(QIcon(str(assets / f"{icon}.svg")))
         get(name).setIconSize(QSize(24, 24))
+    removal = get("galleryRemovalMenuButton")
+    if removal is not None:
+        removal.setText("")
+        removal.setIcon(QIcon(str(assets.parent / "controls" / "chevron-down.svg")))
+        removal.setIconSize(QSize(12, 12))
 
 
 def apply_gallery(page, assets=ASSETS, sample=False):
@@ -336,7 +341,9 @@ def apply_gallery(page, assets=ASSETS, sample=False):
     get("galleryActualSizeButton").setEnabled(True)
     get("galleryActualSizeButton").clicked.connect(lambda: set_view("100%"))
     page._focus_escape = _EscapeLeavesFocus(page)
-    QApplication.instance().installEventFilter(page._focus_escape)
+    # First event-loop turn, like WheelGuard: keys cannot arrive earlier, and an application-wide
+    # Python filter would otherwise run for every event while the window is still being built.
+    QTimer.singleShot(0, page._focus_escape, lambda: QApplication.instance().installEventFilter(page._focus_escape))
     get("galleryFullscreenButton").setEnabled(True)
     get("galleryFullscreenButton").clicked.connect(lambda: toggle_image_focus(page))
     get("galleryFocusButton").clicked.connect(lambda: toggle_image_focus(page))

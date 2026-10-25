@@ -61,6 +61,7 @@ from dtflow.services.session import (
 )
 from dtflow.ui.activity import Activity, RunState
 from dtflow.ui.activity_strip import activity_strip
+from dtflow.ui.brand import tinted_icon
 from dtflow.ui.empty_hint import EmptyListHint
 from dtflow.ui.generation_presenter import (
     FAKE_MODEL,
@@ -375,7 +376,9 @@ class GenerationPage:
         page.generateButton.setIcon(QIcon(str(icons / "sparkles.svg")))
         page.generateButton.setIconSize(QSize(16, 16))
         # Use artwork rather than a font glyph: hidden-page size hints run during the first window show.
-        page.queueGenerateButton.setIcon(QIcon(str(icons.parent / "controls" / "chevron-down.svg")))
+        page.queueGenerateButton.setIcon(
+            tinted_icon(icons.parent / "controls" / "chevron-down.svg", "color.onAccent", 16)
+        )
         page.queueGenerateButton.setIconSize(QSize(16, 16))
         page.checkpointDetailsButton.setIcon(QIcon(str(icons / "info.svg")))
         page.checkpointDetailsButton.setIconSize(QSize(16, 16))

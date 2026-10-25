@@ -6,7 +6,7 @@ import os
 from pathlib import Path
 
 from PySide6.QtCore import QEvent, QFile, QIODevice, QObject, QSize, Qt, QTimer, Slot
-from PySide6.QtGui import QIcon, QKeySequence, QPixmap, QShortcut
+from PySide6.QtGui import QIcon, QKeySequence, QShortcut
 from PySide6.QtUiTools import QUiLoader
 from PySide6.QtWidgets import (
     QAbstractButton,
@@ -54,7 +54,7 @@ from dtflow.services.credentials import (
 from dtflow.services.presets import export_presets, import_presets, load_presets
 from dtflow.ui.activity import Activity
 from dtflow.ui.activity_strip import ActivityStrip
-from dtflow.ui.brand import connection_icon
+from dtflow.ui.brand import connection_icon, status_dot
 from dtflow.ui.button_focus import KeyboardFocusGuard
 from dtflow.ui.gallery_page import GalleryPage
 from dtflow.ui.generation_page import GenerationPage
@@ -62,7 +62,6 @@ from dtflow.ui.image_export_panel import ImageExportPanel
 from dtflow.ui.image_preview import ImagePreview
 from dtflow.ui.image_recycle_panel import ImageRecyclePanel
 from dtflow.ui.inline_feedback import InlineFeedback, InlineNotice, confirm_action
-from dtflow.ui.logs_workspace import LogsWorkspace
 from dtflow.ui.queue_page import QueuePage
 from dtflow.ui.queue_popover import QueuePopover
 from dtflow.ui.queue_composer import ValueChips
@@ -183,6 +182,7 @@ class MainWindow:
         startup.mark("first widget polished")
         # Disposable font/input probes belong in tools/ui/probe_line_edit.py, not desktop startup.
         self.form = load_form()
+        self.form.statusGlyphLabel.setPixmap(status_dot())
         startup.mark("main form")
         self.generation_page = load_ui(GENERATION_UI_FILE)
         startup.mark("generation form")
@@ -289,10 +289,10 @@ class MainWindow:
         self.shell.rightStack.currentChanged.connect(self._fit_inspector_page)
         self._fit_inspector_page()
         startup.mark("workspace: rails and navigation configured")
-        from dtflow.ui.brand import APP_ICON, app_icon
+        from dtflow.ui.brand import app_icon, brand_mark
 
         form.setWindowIcon(app_icon())
-        logo = QPixmap(str(APP_ICON))
+        logo = brand_mark()
         if not logo.isNull():
             form.productMarkLabel.setPixmap(
                 logo.scaled(50, 50, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
@@ -519,6 +519,8 @@ class MainWindow:
         """Construct Qt objects on the GUI thread, only when Logs is first requested."""
         if self._logs is not None:
             return
+        from dtflow.ui.logs_workspace import LogsWorkspace  # deferred with the form: not needed at startup
+
         form = load_ui(FORMS_DIR / "logs_workspace.ui")
         self._logs_form = form
         index = self.shell.centerStack.indexOf(self._logs_placeholder)
@@ -932,6 +934,7 @@ class MainWindow:
 
     def _present(self, presentation: Presentation) -> None:
         label = self.form.statusLabel
+        self.form.statusGlyphLabel.setPixmap(status_dot(presentation.level))
         for widget in (label, self.form.statusGlyphLabel, self.form.statusCard):
             widget.setProperty("state", presentation.level)
             widget.style().unpolish(widget)
