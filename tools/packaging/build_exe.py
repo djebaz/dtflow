@@ -1,4 +1,4 @@
-"""Build a stamped one-file DTFlow desktop executable named dtflow-<version>-g<short-sha>-<platform>-<arch>.exe.
+"""Build a stamped DTFlow desktop executable named dtflow-<version>-g<short-sha>-<platform>-<arch>.exe.
 
 Run from the repository root: ``uv run --with pyinstaller python tools/packaging/build_exe.py``.
 It records the full source commit and clean/dirty status in the ignored ``src/dtflow/_buildinfo.py``,
@@ -38,7 +38,8 @@ def artifact_name(version: str, commit: str, system: str, machine: str) -> str:
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument("-o", "--out", default="dist", help="directory receiving the executable (default: dist)")
+    parser.add_argument("-o", "--out", default="dist", help="directory receiving the build (default: dist)")
+    parser.add_argument("--onedir", action="store_true", help="build a folder distribution instead of the default one-file executable")
     args = parser.parse_args(argv)
     commit, status = source_identity()
     if status == "dirty":
@@ -46,11 +47,13 @@ def main(argv: list[str] | None = None) -> int:
             "warning: working tree has local modifications; the build will report source status dirty", file=sys.stderr
         )
     name = artifact_name(version("dtflow"), commit, platform.system(), platform.machine())
+    if args.onedir:
+        name = name.removesuffix(".exe")
     out = (ROOT / args.out).resolve()
     BUILDINFO.write_text(f'SOURCE_COMMIT = "{commit}"\nSOURCE_STATUS = "{status}"\n', encoding="utf-8")
     try:
         command = [
-            sys.executable, "-m", "PyInstaller", "--noconfirm", "--clean", "--onefile", "--name", "dtflow",
+            sys.executable, "-m", "PyInstaller", "--noconfirm", "--clean", "--onedir" if args.onedir else "--onefile", "--name", "dtflow",
             "--paths", "src", "--copy-metadata", "dtflow", "--collect-data", "drawthings_py",
             "--collect-data", "dtflow", "--copy-metadata", "keyring", "--collect-binaries", "onnxruntime",
             "--distpath", str(out),
@@ -69,7 +72,7 @@ def main(argv: list[str] | None = None) -> int:
         subprocess.run(command, cwd=ROOT, check=True)
     finally:
         BUILDINFO.unlink(missing_ok=True)
-    built = out / ("dtflow.exe" if platform.system() == "Windows" else "dtflow")
+    built = out / ("dtflow" if args.onedir else ("dtflow.exe" if platform.system() == "Windows" else "dtflow"))
     target = out / name
     shutil.move(built, target)
     print(f"built {target}\ncommit {commit} ({status})")

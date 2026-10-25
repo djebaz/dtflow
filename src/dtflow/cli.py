@@ -835,13 +835,17 @@ def run_gui_command(
 ) -> int:
     """Qt is imported only here, so every other command runs without it."""
     try:
-        from dtflow.ui.app import run_gui
+        from dtflow.ui.splash import GuiUnavailable, run_gui_with_splash
 
         startup.mark("qt imports")
     except ImportError:
         print("The Qt shell requires its dependencies. Run uv sync.", file=sys.stderr)
         return EXIT_INVALID
-    return run_gui(no_cache=no_cache, gallery_limits=gallery_limits, thumbnail_format=thumbnail_format)
+    try:
+        return run_gui_with_splash(no_cache=no_cache, gallery_limits=gallery_limits, thumbnail_format=thumbnail_format)
+    except GuiUnavailable:
+        print("The Qt shell requires its dependencies. Run uv sync.", file=sys.stderr)
+        return EXIT_INVALID
 
 
 def run_tests(args: argparse.Namespace) -> int:

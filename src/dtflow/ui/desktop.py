@@ -70,9 +70,9 @@ def _run(argv: list[str] | None, report: Callable[..., None]) -> int:
             )
         except LoggingSetupError:
             notices.post("Diagnostic logs are unavailable. Continuing without a log file.")
-        from dtflow.ui.app import run_gui
+        from dtflow.ui.splash import run_gui_with_splash
 
-        return run_gui(no_cache=args.no_cache, diagnostic_notices=notices)
+        return run_gui_with_splash(no_cache=args.no_cache, diagnostic_notices=notices)
     except KeyboardInterrupt:
         diagnostic_event(
             log,
