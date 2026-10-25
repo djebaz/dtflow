@@ -29,6 +29,18 @@ uv sync --locked
 uv run --with pyinstaller==6.22.3 python tools/packaging/build_exe.py
 ```
 
+### Optional one-folder build (startup comparison)
+
+The canonical builder also accepts `--onedir` for a folder-based distribution. The default remains `--onefile`; do not pass PyInstaller's mode flags directly to the builder.
+
+```powershell
+uv run --with pyinstaller==6.22.3 python tools/packaging/build_exe.py --onedir
+```
+
+This produces a stamped folder under `dist/` containing `dtflow.exe` and its dependencies. Keep the **entire folder** when moving or testing it; do not distribute `dtflow.exe` alone. One-folder mode avoids the per-launch extraction of the one-file bootloader, but is not necessarily smaller on disk. The owner reports that the Windows one-folder build launched correctly and felt faster than the standalone one-file build; **no controlled timings or release acceptance have been recorded**. Compare the exact build identity and startup timings on the same machine before claiming a benchmark.
+
+Both modes can consume substantial disk space in `build/` and `dist/`. A Windows `--onedir` attempt previously reached PyInstaller's COLLECT phase and failed with `OSError: [Errno 28] No space left on device`; the owner subsequently reported a working build. Check available disk space and remove only unneeded generated artifacts before retrying. The manual GitHub Actions workflow and release artifact remain one-file unless explicitly changed in a separate reviewed update.
+
 PyInstaller 6.22.3 is the previously recorded Windows build-tool version; the command requests it temporarily without changing the application lockfile. Record the actual Python, Windows, architecture and build-tool versions with acceptance evidence. Build public releases from a clean checkout. A development build with tracked modifications warns and stamps `dirty`; do not present it as a clean release.
 
 The script prints the output path and source identity only after a successful build. The artifact is:

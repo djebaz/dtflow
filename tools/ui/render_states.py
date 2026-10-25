@@ -108,6 +108,7 @@ from dtflow.ui.inline_feedback import InlineNotice  # noqa: E402
 from dtflow.ui.main_window import MainWindow  # noqa: E402
 from dtflow.ui.queue_item_delegate import COL_LORAS, COL_PROMPT, COL_STATUS, wrapped_lines  # noqa: E402
 from dtflow.ui.queue_model import LEVEL_COLORS  # noqa: E402
+from dtflow.ui.splash import StartupSplash  # noqa: E402
 from dtflow.ui.system_trash import TRASH_NAME  # noqa: E402
 from dtflow.ui.theme import apply_theme  # noqa: E402
 
@@ -3491,6 +3492,15 @@ def render_queue_popover_states(shell, capture):
     page.planModeCombo.setCurrentText("Repeat")
 
 
+def render_startup_splash(out):
+    """The startup splash (logo and busy bar) as the first window; offline, no provider or main window."""
+    splash = StartupSplash()
+    splash.show()
+    wait_for(lambda: splash._announced)
+    save(splash, out, "shell-30-startup-splash")
+    splash.dismiss()
+
+
 def render_shell_states(shell, capture):
     """Window-level notices, close consent and header run-control phases, driven through the real handlers."""
     strip = activity_strip(shell.form)
@@ -4026,6 +4036,8 @@ def main():
         state = Path(temporary)
         if any(wants(category) for category in ("connection", "generate", "queues", "images")):
             render_workspace_states(app, state, args.out)
+        if wants("shell"):
+            render_startup_splash(args.out)
         if wants("images"):
             render_mapped_gallery_states(app, state, args.out)
         if wants("images"):

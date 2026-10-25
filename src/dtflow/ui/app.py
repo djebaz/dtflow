@@ -19,21 +19,25 @@ from dtflow.ui.main_window import MainWindow
 from dtflow.ui.theme import apply_theme
 
 
-def run_gui(
-    argv: list[str] | None = None,
+def open_window(
+    application: QApplication,
     *,
     no_cache: bool = False,
     gallery_limits: tuple[int, int] | None = None,
     thumbnail_format: str = "jpg",
     diagnostic_notices=None,
-) -> int:
+    before_show=None,
+) -> MainWindow:
+    """Configure and show the main window; the caller runs the event loop and then calls ``close_window``.
+
+    ``before_show`` receives the window just before ``show()`` so a caller can watch its first paint without a race.
+    """
     configure(no_cache=no_cache)
     thumbnail_cache.configure(no_cache=no_cache, thumbnail_format=thumbnail_format)
     if gallery_limits is not None:
         from dtflow.ui.gallery_page import configure_limits
 
         configure_limits(batch=gallery_limits[0], cards=gallery_limits[1])
-    application = QApplication.instance() or QApplication(argv if argv is not None else sys.argv[:1])
     apply_theme(application)
     application.setWindowIcon(app_icon())
     startup.mark("application and theme")
@@ -46,6 +50,8 @@ def run_gui(
     application.aboutToQuit.connect(window.gallery.save_now)
     application.aboutToQuit.connect(window.image_export.cancel)
     application.aboutToQuit.connect(window.runner.shutdown)
+    if before_show is not None:
+        before_show(window)
     window.show()
     startup.mark("window shown")
     # The first event-loop turn follows the first paint; then the heavy gRPC library loads without delaying display.
@@ -53,11 +59,33 @@ def run_gui(
     startup_timer.setSingleShot(True)
     startup_timer.timeout.connect(lambda: _after_first_paint(window))
     startup_timer.start(0)
-    result = application.exec()
+    return window
+
+
+def close_window(window: MainWindow, result: int) -> int:
     # The event loop has exited cleanly; never perform this disk work in a Qt slot.
     window.runner.shutdown(timeout=30)
     finish_at_close(window.state_dir)
     return result
+
+
+def run_gui(
+    argv: list[str] | None = None,
+    *,
+    no_cache: bool = False,
+    gallery_limits: tuple[int, int] | None = None,
+    thumbnail_format: str = "jpg",
+    diagnostic_notices=None,
+) -> int:
+    application = QApplication.instance() or QApplication(argv if argv is not None else sys.argv[:1])
+    window = open_window(
+        application,
+        no_cache=no_cache,
+        gallery_limits=gallery_limits,
+        thumbnail_format=thumbnail_format,
+        diagnostic_notices=diagnostic_notices,
+    )
+    return close_window(window, application.exec())
 
 
 # Importing the Draw Things library parses a YAML schema in pure Python and holds the GIL, which froze the
