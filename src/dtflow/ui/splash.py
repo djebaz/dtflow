@@ -2,7 +2,7 @@
 
 Only the smallest Qt modules and one bundled image are touched here. The theme, Designer forms, main window and
 services load after the splash has painted, in a queued continuation on the GUI thread. No fixed delays are used; the
-splash closes when the main window is shown or when startup fails.
+splash closes on the event-loop turn after the main window is shown (so it has painted) or when startup fails.
 """
 
 import json
@@ -146,7 +146,8 @@ def run_gui_with_splash(**options) -> int:
             splash.close()
             application.exit(1)
             return
-        splash.finish(outcome["window"])
+        # The window is already shown; the splash stays through the next event-loop turn, which paints it.
+        QTimer.singleShot(0, lambda: splash.finish(outcome["window"]))
 
     splash.painted.connect(proceed)
     splash.show()
