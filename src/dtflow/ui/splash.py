@@ -2,7 +2,7 @@
 
 Only the smallest Qt modules and one bundled image are touched here. The theme, Designer forms, main window and
 services load after the splash has painted, in a queued continuation on the GUI thread. No fixed delays are used; the
-splash closes on the event-loop turn after the main window is shown (so it has painted) or when startup fails.
+splash closes at the main window's first paint or when startup fails.
 """
 
 import json
@@ -10,14 +10,15 @@ import sys
 import time
 from pathlib import Path
 
-from PySide6.QtCore import QRectF, Qt, QTimer, Signal
+from PySide6.QtCore import QEvent, QObject, QRectF, Qt, QTimer, Signal
 from PySide6.QtGui import QColor, QGuiApplication, QImage, QPainter, QPen
 from PySide6.QtWidgets import QApplication, QWidget
 
 from dtflow import startup
 
 RESOURCES = Path(__file__).parents[1] / "resources"
-LOGO = RESOURCES / "images" / "dtflow-app.png"
+LOGO = RESOURCES / "images" / "dtflow-splash.png"  # pre-scaled copies of the app artwork: no decode of the large PNG
+LOGO_2X = LOGO.with_name("dtflow-splash@2x.png")
 TOKENS = RESOURCES / "styles" / "tokens.json"
 
 WIDTH = 360
@@ -27,12 +28,38 @@ BAR_HEIGHT = 4
 BAR_SEGMENT = 0.28  # fraction of the bar width covered by the moving segment
 BAR_PERIOD_S = 1.4
 FRAME_MS = 16
+LOGO_2X_RATIO = 2.0
 # The first-paint signal is the only trigger for loading the main UI; this guards against a platform that never paints.
 FIRST_PAINT_FALLBACK_MS = 500
+# Bounded fallback if the shown window never reports a paint event.
+WINDOW_PAINT_FALLBACK_MS = 250
 
 
 class GuiUnavailable(ImportError):
     """The Qt shell modules could not be imported."""
+
+
+class _FirstPaint(QObject):
+    """Calls back once, on the first paint event delivered to the watched window (or a bounded fallback)."""
+
+    def __init__(self, form: QWidget, callback) -> None:
+        super().__init__(form)
+        self._callback = callback
+        self._done = False
+        form.installEventFilter(self)
+        QTimer.singleShot(WINDOW_PAINT_FALLBACK_MS, self._fire)
+
+    def eventFilter(self, watched, event) -> bool:
+        if event.type() == QEvent.Type.Paint:
+            self._fire()
+        return False
+
+    def _fire(self) -> None:
+        if self._done:
+            return
+        self._done = True
+        self.parent().removeEventFilter(self)
+        self._callback()
 
 
 class StartupSplash(QWidget):
@@ -54,6 +81,7 @@ class StartupSplash(QWidget):
         self._track = QColor(tokens.get("color.surface", "#252525"))
         self._logo = self._load_logo()
         self._announced = False
+        self._finishing = False
         self._clock = time.perf_counter()
         self._timer = QTimer(self)
         self._timer.setInterval(FRAME_MS)
@@ -63,16 +91,11 @@ class StartupSplash(QWidget):
             self.move(screen.availableGeometry().center() - self.rect().center())
 
     def _load_logo(self) -> QImage:
-        ratio = max(1.0, self.devicePixelRatioF())
-        image = QImage(str(LOGO))
-        if image.isNull():
-            return image
-        side = round(LOGO_SIZE * ratio)
-        scaled = image.scaled(
-            side, side, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation
-        )
-        scaled.setDevicePixelRatio(ratio)
-        return scaled
+        ratio = self.devicePixelRatioF()
+        image = QImage(str(LOGO_2X if ratio > 1.25 else LOGO))
+        if not image.isNull():
+            image.setDevicePixelRatio(LOGO_2X_RATIO if ratio > 1.25 else 1.0)
+        return image
 
     def _bar_rect(self) -> QRectF:
         return QRectF(1, HEIGHT - 1 - BAR_HEIGHT, WIDTH - 2, BAR_HEIGHT)
@@ -113,8 +136,16 @@ class StartupSplash(QWidget):
             self._announced = True
             QTimer.singleShot(0, self.painted.emit)
 
+    def closeEvent(self, event) -> None:
+        # The splash is not user-dismissible: closing it early would leave a running app without a window.
+        if self._finishing:
+            super().closeEvent(event)
+        else:
+            event.ignore()
+
     def finish(self, form: QWidget) -> None:
         """Close once the main window is up; the window form, not the splash, keeps the focus."""
+        self._finishing = True
         self.close()
         form.raise_()
         form.activateWindow()
@@ -146,8 +177,14 @@ def run_gui_with_splash(**options) -> int:
             splash.close()
             application.exit(1)
             return
-        # The window is already shown; the splash stays through the next event-loop turn, which paints it.
-        QTimer.singleShot(0, lambda: splash.finish(outcome["window"].form))
+        form = outcome["window"].form
+
+        def window_painted() -> None:
+            startup.mark("window painted")
+            splash.finish(form)
+
+        # The window is already shown; the splash stays until the window reports its first paint.
+        outcome["paint_watch"] = _FirstPaint(form, window_painted)
 
     splash.painted.connect(proceed)
     splash.show()
