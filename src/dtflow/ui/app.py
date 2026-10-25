@@ -27,11 +27,14 @@ def open_window(
     thumbnail_format: str = "jpg",
     diagnostic_notices=None,
     before_show=None,
+    progress=None,
 ) -> MainWindow:
     """Configure and show the main window; the caller runs the event loop and then calls ``close_window``.
 
     ``before_show`` receives the window just before ``show()`` so a caller can watch its first paint without a race.
+    ``progress`` receives a completed-stage name after each real construction stage.
     """
+    report = progress or (lambda stage: None)
     configure(no_cache=no_cache)
     thumbnail_cache.configure(no_cache=no_cache, thumbnail_format=thumbnail_format)
     if gallery_limits is not None:
@@ -41,10 +44,12 @@ def open_window(
     apply_theme(application)
     application.setWindowIcon(app_icon())
     startup.mark("application and theme")
+    report("theme")
     window = MainWindow(no_cache=no_cache)
     if diagnostic_notices is not None:
         window._diagnostic_notice = DiagnosticNoticeReceiver(window, diagnostic_notices)
     startup.mark("main window built")
+    report("built")
     # The session is remembered before the runner stops, so the last form values survive a normal quit.
     application.aboutToQuit.connect(lambda: window.remember(background=False))
     application.aboutToQuit.connect(window.gallery.save_now)
@@ -54,6 +59,7 @@ def open_window(
         before_show(window)
     window.show()
     startup.mark("window shown")
+    report("shown")
     # The first event-loop turn follows the first paint; then the heavy gRPC library loads without delaying display.
     startup_timer = QTimer(window.form)
     startup_timer.setSingleShot(True)

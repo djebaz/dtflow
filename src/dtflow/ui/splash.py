@@ -29,6 +29,9 @@ BAR_SEGMENT = 0.28  # fraction of the bar width covered by the moving segment
 BAR_PERIOD_S = 1.4
 FRAME_MS = 16
 LOGO_2X_RATIO = 2.0
+# Fill reached when each real startup stage completes. These are stage milestones, not time estimates: the bar
+# moves as an indeterminate segment until the first stage finishes, then fills in steps as work really completes.
+STAGE_FILL = {"imports": 0.2, "theme": 0.35, "built": 0.9, "shown": 0.95}
 # The first-paint signal is the only trigger for loading the main UI; this guards against a platform that never paints.
 FIRST_PAINT_FALLBACK_MS = 500
 # Bounded fallback if the shown window never reports a paint event.
@@ -87,6 +90,7 @@ class StartupSplash(QWidget):
         self._logo = self._load_logo()
         self._announced = False
         self._finishing = False
+        self._fill: float | None = None
         self._clock = time.perf_counter()
         self._timer = QTimer(self)
         self._timer.setInterval(FRAME_MS)
@@ -104,6 +108,15 @@ class StartupSplash(QWidget):
 
     def _bar_rect(self) -> QRectF:
         return QRectF(1, HEIGHT - 1 - BAR_HEIGHT, WIDTH - 2, BAR_HEIGHT)
+
+    def set_stage(self, stage: str) -> None:
+        """Record a completed startup stage and paint it at once; the GUI thread may be blocked right after."""
+        fill = STAGE_FILL.get(stage, 1.0)
+        if self._fill is not None and fill <= self._fill:
+            return
+        self._fill = fill
+        if self.isVisible():
+            self.repaint()
 
     def _advance(self) -> None:
         self.update(self._bar_rect().toAlignedRect())
@@ -128,12 +141,15 @@ class StartupSplash(QWidget):
             )
         bar = self._bar_rect()
         painter.fillRect(bar, self._track)
-        phase = ((time.perf_counter() - self._clock) / BAR_PERIOD_S) % 1.0
-        segment = bar.width() * BAR_SEGMENT
-        start = bar.left() - segment + phase * (bar.width() + segment)
-        painter.setClipRect(bar)
-        painter.fillRect(QRectF(start, bar.top(), segment, bar.height()), self._accent)
-        painter.setClipping(False)
+        if self._fill is not None:
+            painter.fillRect(QRectF(bar.left(), bar.top(), bar.width() * self._fill, bar.height()), self._accent)
+        else:
+            phase = ((time.perf_counter() - self._clock) / BAR_PERIOD_S) % 1.0
+            segment = bar.width() * BAR_SEGMENT
+            start = bar.left() - segment + phase * (bar.width() + segment)
+            painter.setClipRect(bar)
+            painter.fillRect(QRectF(start, bar.top(), segment, bar.height()), self._accent)
+            painter.setClipping(False)
         painter.setPen(QPen(self._border, 1))
         painter.drawRect(0, 0, WIDTH - 1, HEIGHT - 1)
         painter.end()
@@ -178,8 +194,11 @@ def run_gui_with_splash(**options) -> int:
             except ImportError as exc:
                 raise GuiUnavailable(str(exc)) from exc
             startup.mark("ui imports")
+            splash.set_stage("imports")
             outcome["gui"] = gui
-            outcome["window"] = gui.open_window(application, before_show=watch_window, **options)
+            outcome["window"] = gui.open_window(
+                application, before_show=watch_window, progress=splash.set_stage, **options
+            )
             outcome["paint_watch"].arm()
         except BaseException as exc:
             outcome["error"] = exc
@@ -190,6 +209,7 @@ def run_gui_with_splash(**options) -> int:
     def watch_window(window) -> None:
         def window_painted(source: str) -> None:
             startup.mark("window painted" if source == "paint" else "window paint fallback")
+            splash.set_stage("painted")
             splash.finish(window.form)
 
         # Watch before show(), so a synchronous first paint cannot be missed; report timings only once it is marked.
