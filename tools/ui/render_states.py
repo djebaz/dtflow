@@ -676,6 +676,19 @@ def render_connection_management(shell, out):
         shell._custom_loras_read(None, OSError())
         snap("connection-43-startup-summary-unavailable")
 
+        with patch.object(shell.runner, "submit", side_effect=hold_startup), patch.object(shell, "remember"):
+            shell.check()
+            obsolete = pending[-1]
+            form.endpointEdit.setText("offline-fixture.invalid:1234")
+            assert form.checkButton.isEnabled()
+            shell.check()
+            latest = pending[-1]
+            obsolete(None, TimeoutError())
+            assert shell._busy and not form.checkButton.isEnabled()
+            assert form.statusCard.property("state") == "warning"
+            snap("connection-44-recheck-after-context-change")
+            latest(None, None)
+
 
 def render_generate_configuration_states(shell, out):
     """Local editors/inventory/configuration plus asset progress; no provider or upload worker runs."""

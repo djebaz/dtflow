@@ -148,6 +148,8 @@ The [remaining-state implementation plan](../../devdocs/plans/2026-10-17-remaini
 
 Startup follow-up #168/#169 adds `connection-41-startup-check-and-loading`, `connection-42-startup-unconfigured` and `connection-43-startup-summary-unavailable` through real startup/presentation handlers with intercepted coroutine admission. These definitions submit no provider or credential work and have not been rendered. Lazy Logs creation reuses the existing Logs fixtures; first-use navigation is covered separately by the Qt shell tests.
 
+`connection-44-recheck-after-context-change` covers a fresh pending check after configuration changes, including rejection of the old check's late failure without enabling the current Check button. Coroutine admission is intercepted; this definition has not been rendered.
+
 `render_states.py` saves listed offline workflow states as `<tab>-<NN>-<state>.png`, for example `images-01-grid.png`, `generate-01-empty.png` and `queues-02-created-paused.png`. The groups are `connection`, `generate`, `images`, `inpaint`, `queues` and `shell`; numbering is independent within each group. Keep existing names stable and append new numbers within the relevant group, so filenames sort by group without global numbering collisions. Render order may differ from filename order.
 
 The separate `shots.py` / `design_shots.py` screen captures retain their matched `10-connection` / `11-generate` / `12-queues` / `13-images` names; `states.py` / `design_states.py` retain their component-sheet names. These are separate capture namespaces, not references to the workflow-state IDs. Use separate output directories and do not treat leftover screenshots from an earlier naming scheme as current evidence.

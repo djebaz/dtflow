@@ -16,6 +16,8 @@ Changes through 5.2.0 are consolidated in [DTFlow 5.2.0](v5.2.0.md). This file t
 
 ## Fixed
 
+- Changing connection settings or saving/removing a key permits an immediate new connection check; late results from the retired check cannot alter the new status or unlock its controls.
+
 - Queue concurrency coverage checks FIFO at durable admission, without assuming asynchronous preparation reaches the backend in the same order.
 
 - Queue-history thumbnails and hover previews stay visible during background availability refresh instead of blinking empty. Failed checks still clear previews, and Open in Images continues to require fresh availability.

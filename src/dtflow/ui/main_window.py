@@ -195,6 +195,8 @@ class MainWindow:
         self._optional_saved = OptionalSavedCredentials(self._saved)
         self._summary_reads = {}
         self._startup_check_started = False
+        self._check_token = None
+        self._check_future = None
         self._environ = environ
         self.runner = runner or AsyncRunner(self.form)
         self._shutdown_guard = _ShutdownGuard(self.form)
@@ -904,6 +906,13 @@ class MainWindow:
         """A result belongs to the selection that was checked; a new provider or endpoint starts unchecked."""
         self.inline.dismiss()
         self._selection_revision = getattr(self, "_selection_revision", 0) + 1
+        # Retire the old owner before cancelling: queued completion/cancellation cannot unlock a newer check.
+        future, self._check_future = self._check_future, None
+        self._check_token = None
+        self._busy = False
+        self.form.checkButton.setEnabled(True)
+        if future is not None:
+            future.cancel()
         self._present(
             Presentation("unknown", "Not checked", f"Check the {self.form.backendCombo.currentText()} connection.")
         )
@@ -1261,9 +1270,10 @@ class MainWindow:
         )
         revision = self._selection_revision
         credential_context = self._credential_context()
-        self.runner.submit(
+        token = self._check_token = object()
+        self._check_future = self.runner.submit(
             self._check(selection, self._saved, automatic),
-            lambda status, failure: self._checked(status, failure, revision, credential_context),
+            lambda status, failure: self._checked(status, failure, revision, credential_context, token),
         )
 
     def _credential_context(self):
@@ -1284,7 +1294,10 @@ class MainWindow:
         saved = saved if await asyncio.to_thread(saved.available) else None
         return await check_connection(selection, saved=saved)
 
-    def _checked(self, status, failure, revision=None, credential_context=None) -> None:
+    def _checked(self, status, failure, revision=None, credential_context=None, token=None) -> None:
+        if token is not None and token is not self._check_token:
+            return
+        self._check_future = None
         self._busy = False
         self.form.checkButton.setEnabled(True)
         if revision is not None and revision != self._selection_revision:

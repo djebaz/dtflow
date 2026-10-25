@@ -659,6 +659,44 @@ def test_pending_startup_result_cannot_replace_changed_connection_context(window
     assert window.form.statusCard.property("state") == "ok"
 
 
+def test_changed_connection_can_recheck_immediately_without_stale_owner_unlocking_it(window, monkeypatch):
+    from dtflow.core.models import ConnectionStatus
+
+    pending = []
+
+    class Future:
+        cancelled = False
+
+        def cancel(self):
+            self.cancelled = True
+
+    def hold(coroutine, callback):
+        coroutine.close()
+        future = Future()
+        pending.append((callback, future))
+        return future
+
+    monkeypatch.setattr(window.runner, "submit", hold)
+    window.start_startup_check()
+    old_callback, old_future = pending[-1]
+    assert not window.form.checkButton.isEnabled()
+    window.form.endpointEdit.setText("changed-fixture:1234")
+    assert old_future.cancelled and window.form.checkButton.isEnabled()
+    window.form.checkButton.click()
+    current_callback, current_future = pending[-1]
+    assert len(pending) == 2 and window._busy
+    old_callback(None, TimeoutError())  # A late cancellation/error cannot unlock the current request.
+    assert window._busy and not window.form.checkButton.isEnabled()
+    assert window.form.statusCard.property("state") == "warning"
+    current_callback(
+        ConnectionStatus("fake", "offline://new-fixture", "2026-10-25T12:00:00+00:00", "ok", "ok", "ok"), None
+    )
+    assert not window._busy and not current_future.cancelled
+    assert window.form.statusCard.property("state") == "ok"
+    old_callback(None, TimeoutError())
+    assert window.form.statusCard.property("state") == "ok"
+
+
 def test_startup_optional_reads_are_workers_and_cannot_overwrite_edits(window, qtbot, monkeypatch):
     from dtflow.ui import main_window
 
