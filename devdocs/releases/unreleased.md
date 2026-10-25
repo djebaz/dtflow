@@ -6,6 +6,8 @@ Changes through 5.2.0 are consolidated in [DTFlow 5.2.0](v5.2.0.md). This file t
 
 ## Added
 
+- Minimal startup splash (#178 step 1): `dtflow gui` and the desktop entry show the DTFlow logo with a thin indeterminate bar as soon as `QApplication` exists, before the theme, forms and main window are imported. The main UI loads in a queued continuation after the splash's first paint signal; the splash closes when the main window is shown or startup fails. No fixed delays or percentages. It appears only after Python and Qt start (for a PyInstaller one-file build, after extraction). Source/offscreen timing, render fixture and packaged Windows acceptance (#178 steps 2+) remain outstanding.
+
 - Queues: **Clear paused queues** bulk action beside Clear history (#175). It shows the eligible count, acts at once without confirmation, revalidates each queue inside the removal transaction (still paused with pending work, no running reservation, not this window's dispatch), and reports removed and skipped counts; running, up-next, blocked, finished and cancelled queues, attempts and saved images are untouched.
 
 - Add an isolated QLineEdit style diagnostic for native, DTFlow and exact-font variants, with per-operation timings and no application-state or provider access. Production styling is unchanged.
