@@ -365,18 +365,41 @@ class QueueMixin:
         with self._txn() as db:
             db.execute("INSERT OR REPLACE INTO queue_dispatch (owner, started_at_utc) VALUES (1, ?)", (self._now(),))
 
-    async def claim_queued(self, overlap_after: str | None = None) -> str | None:
+    async def overlap_ready(self, tail_id: str) -> bool:
+        """Cheap read-only look: has ``tail_id`` handed out its last item while a same-backend queue waits?"""
+        return await self._run(self._overlap_ready, tail_id)
+
+    def _overlap_ready(self, tail_id: str) -> bool:
+        db = self._db()
+        tail = db.execute(
+            "SELECT backend_key, state, (SELECT COUNT(*) FROM queue_items WHERE queue_id=q.queue_id"
+            " AND state='pending') AS pending FROM queues q WHERE queue_id=?",
+            (tail_id,),
+        ).fetchone()
+        row = db.execute(
+            "SELECT backend_key FROM queues WHERE state='queued' ORDER BY up_next, created_at_utc LIMIT 1"
+        ).fetchone()
+        return bool(
+            tail is not None
+            and row is not None
+            and tail["state"] == "running"
+            and not tail["pending"]
+            and tail["backend_key"] == row["backend_key"]
+        )
+
+    async def claim_queued(self, overlap_after: str | None = None, limit: int | None = None) -> str | None:
         """Auto-play: atomically start the first up-next queue, or close the order when none waits.
 
         Picking and starting happen in one transaction, so a Pause, Cancel or reorder made before it is respected, and
         a queue can never join after the owner found the order empty.
 
         With ``overlap_after`` (a running queue whose items are all claimed) the first waiting queue starts early, only
-        while a slot is free on their shared backend; otherwise nothing changes and the order stays open.
+        while a slot is free on their shared backend (reservations below ``min(cap, limit)``, ``limit`` being the
+        backend's own maximum); otherwise nothing changes and the order stays open.
         """
-        return await self._run(self._claim_queued, overlap_after)
+        return await self._run(self._claim_queued, overlap_after, limit)
 
-    def _claim_queued(self, overlap_after: str | None = None) -> str | None:
+    def _claim_queued(self, overlap_after: str | None = None, limit: int | None = None) -> str | None:
         with self._txn() as db:
             row = db.execute(
                 "SELECT queue_id, backend_key, cap FROM queues WHERE state='queued' ORDER BY up_next, created_at_utc"
@@ -399,7 +422,8 @@ class QueueMixin:
                     or tail["state"] != "running"
                     or tail["pending"]
                     or tail["backend_key"] != row["backend_key"]
-                    or self._reserved(db, row["backend_key"]) >= row["cap"]
+                    or limit is None
+                    or self._reserved(db, row["backend_key"]) >= min(row["cap"], limit)
                 ):
                     return None
             now = self._now()

@@ -186,6 +186,15 @@ class _QueueAdvance:
 
 
 @dataclass(frozen=True, slots=True)
+class _QueueOverlap:
+    """Auto-play started ``queue_id`` early, beside the still-running queue."""
+
+    queue_id: str
+    kind: str = "queue_overlap"
+    sequence: int = 0
+
+
+@dataclass(frozen=True, slots=True)
 class _QueueBackendEvent:
     queue_id: str
     item_id: str
@@ -260,6 +269,8 @@ class QueuePage:
         self._countdown = QueueCountdown()
         self._event_relay = EventRelay(self._queue_backend_event, page)
         self._advance_relay = EventRelay(self._advanced, page)
+        self._overlap_relay = EventRelay(self._overlapped, page)
+        self._overlapping: set[str] = set()  # queues auto-started early by this window's dispatch
         self.model = QueueItemModel(page)
         page.queueItemsView.setModel(self.model)
         for view in (page.queueItemsView, page.planTableView):
@@ -452,6 +463,10 @@ class QueuePage:
     def dispatching_here(self) -> bool:
         return self._dispatching is not None
 
+    def _owns(self, queue_id: str | None) -> bool:
+        """This window dispatches ``queue_id``: the primary queue or one auto-started early beside it."""
+        return queue_id is not None and (queue_id == self._dispatching or queue_id in self._overlapping)
+
     # -- reading ---------------------------------------------------------------------------------------------------
     def refresh(self) -> None:
         if self._runner.closed:
@@ -618,7 +633,7 @@ class QueuePage:
             getattr(page, f"queueFact{name}Label").setText(value)
         page.queueFactPlanLabel.setToolTip(f"Queue {view['queue_id']}")
         level, chip = status_chip(view, up_next_ids(self._views.values()))
-        if self._dispatching == view["queue_id"]:
+        if self._owns(view["queue_id"]):
             owner = "This window dispatches it."
         elif needs_recovery(view):
             owner = "No dispatch owner is active. Resume recovers pending items without replaying uncertain attempts."
@@ -676,7 +691,7 @@ class QueuePage:
         spin.style().polish(spin)
 
     def _started(self, view: dict | None) -> bool:
-        owns_view = bool(view and self._dispatching == view["queue_id"])
+        owns_view = bool(view and self._owns(view["queue_id"]))
         return owns_view or has_started(self._detail_for(view)) or bool(view and view["status"] == "running")
 
     def _controls_for(self, view: dict | None):
@@ -685,7 +700,7 @@ class QueuePage:
             dispatching_here=self.dispatching_here,
             generating=self._activity.generating,
             started=self._started(view),
-            owned=bool(view and self._dispatching == view["queue_id"]),
+            owned=bool(view and self._owns(view["queue_id"])),
         )
 
     def _run_view(self) -> dict | None:
@@ -709,7 +724,7 @@ class QueuePage:
 
         available = self._controls_for(view)
         queue_id = view["queue_id"]
-        dispatching_here = self._dispatching == queue_id
+        dispatching_here = self._owns(queue_id)
         status = view["status"]
         phase, action = "idle", None
 
@@ -849,7 +864,7 @@ class QueuePage:
             view is not None
             and view["status"] in ("paused", "finished", "cancelled")
             and not view["summary"]["running"]
-            and view["queue_id"] != self._dispatching
+            and not self._owns(view["queue_id"])
         )
 
     def _sync(self) -> None:
@@ -858,7 +873,7 @@ class QueuePage:
         view = self._view()
         available = self._controls_for(view)
         action = primary_action(
-            view, available, started=self._started(view), owned=bool(view and self._dispatching == view["queue_id"])
+            view, available, started=self._started(view), owned=bool(view and self._owns(view["queue_id"]))
         )
         page.queuePrimaryButton.setEnabled(action is not None)
         page.queuePrimaryButton.setText(action.text if action else "Start")
@@ -895,8 +910,7 @@ class QueuePage:
         )
         page.clearQueuesButton.setEnabled(
             any(
-                v["status"] in ("finished", "cancelled") and v["queue_id"] != self._dispatching
-                for v in self._views.values()
+                v["status"] in ("finished", "cancelled") and not self._owns(v["queue_id"]) for v in self._views.values()
             )
         )
         self._publish_run_state()
@@ -2185,7 +2199,7 @@ class QueuePage:
         from dtflow.ui.progress_stages import event_stage
 
         event = wrapped.event
-        if wrapped.queue_id == self._dispatching:
+        if self._owns(wrapped.queue_id):
             self._dispatch_started = True
         key = (wrapped.queue_id, wrapped.item_id)
         label = event_stage(event)
@@ -2227,7 +2241,7 @@ class QueuePage:
         """The header's one action, whichever of Start, Start next, Pause or Resume applies now."""
         view = self._view()
         available = self._controls_for(view)
-        owned = bool(view and self._dispatching == view["queue_id"])
+        owned = bool(view and self._owns(view["queue_id"]))
         action = primary_action(view, available, started=self._started(view), owned=owned)
         if action is None:
             return
@@ -2263,10 +2277,17 @@ class QueuePage:
                 saved=saved,
                 on_event=lambda item_id, event: self._event_relay(_QueueBackendEvent(queue_id, item_id, event)),
                 on_next=lambda settled, following: self._advance_relay(_QueueAdvance(settled, following)),
+                on_overlap=lambda started: self._overlap_relay(_QueueOverlap(started)),
             ),
             self._dispatched,
         )
         self._timer.start()
+
+    def _overlapped(self, overlap: _QueueOverlap) -> None:
+        """Auto-play started a queue beside the running one: this window owns both until the first one settles."""
+        if self._dispatching is not None:
+            self._overlapping.add(overlap.queue_id)
+            self.refresh()
 
     def _advanced(self, advance: _QueueAdvance) -> None:
         """Auto-play: the settled queue reports like a finished dispatch, and this window now owns the next one."""
@@ -2280,11 +2301,13 @@ class QueuePage:
             "success" if presentation.level == "ok" else "partial",
         )
         self._dispatching, self._dispatch_started = advance.following, False
+        self._overlapping.discard(advance.following)
         self._message(Presentation("ok", "Up next started", f"{advance.following[:8]} started by itself."))
         self.refresh()
 
     def _dispatched(self, final, failure) -> None:
         self._dispatching, self._future = None, None
+        self._overlapping.clear()
         self._dispatch_started = False
         waiting = bool(self._after_generation)
         if failure is not None:
@@ -2339,7 +2362,7 @@ class QueuePage:
         if self._runner.closed or self._activity.generating or not self.dispatching_here:
             return
         view = self._run_view()
-        if view is None or view["queue_id"] != self._dispatching or not self._controls_for(view).cancel:
+        if view is None or not self._owns(view["queue_id"]) or not self._controls_for(view).cancel:
             return
         self._post("cancel", view["queue_id"])
 
@@ -2407,7 +2430,7 @@ class QueuePage:
             return
 
         def proceed():
-            keep = (self._dispatching,) if self._dispatching else ()
+            keep = tuple(q for q in (self._dispatching, *self._overlapping) if q)
             self._runner.submit(clear_queues(self._state, keep), self._cleared)
 
         confirm_action(self.page, self.page.clearQueuesButton, "Clear history", CLEAR_TEXT, proceed, danger=True)
@@ -2431,7 +2454,7 @@ class QueuePage:
         queue_id = view["queue_id"]
 
         def proceed():
-            keep = (self._dispatching,) if self._dispatching else ()
+            keep = tuple(q for q in (self._dispatching, *self._overlapping) if q)
             self._runner.submit(remove_queue(self._state, queue_id, keep), self._removed)
 
         confirm_action(

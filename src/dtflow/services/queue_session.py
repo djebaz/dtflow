@@ -255,6 +255,7 @@ async def dispatch_queue(
     on_settle: Callable[[str, str], None] | None = None,
     on_event: Callable[[str, BackendEvent], None] | None = None,
     on_next: Callable[[dict[str, Any], str], None] | None = None,
+    on_overlap: Callable[[str], None] | None = None,
     auto_play: bool = True,
 ) -> dict[str, Any]:
     """Make this process the dispatch owner and run the queue until it finishes or is cancelled, then auto-play.
@@ -264,21 +265,43 @@ async def dispatch_queue(
     queues up next while it runs; when a queue settles it atomically claims and starts the first one waiting
     (``on_next`` receives the settled view and the next id) and returns the last settled view. Whenever it stops, by
     failure or interruption included, every queue still waiting is restored paused: nothing starts without a live owner.
-    Without ``auto_play`` (the CLI's ``queue start``) it runs exactly the queue it names.
+    A queue started early beside a running one is announced with ``on_overlap``; ``on_next`` still reports each queue
+    only when it truly settles. Without ``auto_play`` (the CLI's ``queue start``) it runs exactly the queue it names.
     """
     policy = timeouts or TimeoutPolicy()
     store = SQLiteAttempts(state)
     owned, reason = False, "stopped"
     chain: list[tuple[str, asyncio.Task]] = []  # dispatch order; the head is the oldest queue still unsettled
     claimed: set[str] = set()  # queues this owner auto-started and has not seen settle
+    limits: dict[str, int] = {}  # each open queue's backend maximum, known once its backend is open
+    overlap_open = True
 
     def start(next_id: str) -> None:
         chain.append(
             (
                 next_id,
-                asyncio.create_task(_dispatch_one(store, state, next_id, policy, saved, out, on_settle, on_event)),
+                asyncio.create_task(
+                    _dispatch_one(store, state, next_id, policy, saved, out, on_settle, on_event, limits)
+                ),
             )
         )
+
+    async def claim(**kwargs) -> str | None:
+        """Claim up next, never abandoning a started queue to a cancellation that lands mid-claim."""
+        task = asyncio.ensure_future(store.claim_queued(**kwargs))
+        try:
+            found = await asyncio.shield(task)
+        except asyncio.CancelledError:
+            try:
+                found = await task
+            except Exception:
+                found = None
+            if found is not None:
+                claimed.add(found)
+            raise
+        if found is not None:
+            claimed.add(found)
+        return found
 
     try:
         await store.open()
@@ -289,46 +312,64 @@ async def dispatch_queue(
         final: dict[str, Any] = {}
         while True:
             head_id, head = chain[0]
-            for _, task in chain:
+            for entry in chain[1:]:
+                other_id, task = entry
                 if task.done() and not task.cancelled() and task.exception() is not None:
-                    raise task.exception()  # type: ignore[misc]
-            if head.done():
-                chain.pop(0)
-                final = head.result()
-                claimed.discard(head_id)
-                if not auto_play:
-                    return final
-                schedule_publish(state, reason="queue_settled")
-                # A queue that already overlapped its predecessor is the next one: it keeps running undisturbed.
-                following = chain[0][0] if chain else await store.claim_queued()  # an empty order also closes it
-                if following is None:
-                    reason = "drained"
-                    return final
-                diagnostic_event(log, "queue.auto_play", level=logging.INFO, data={"settled": final["status"]})
-                if on_next is not None:
-                    on_next(final, following)
-                if not chain:
-                    claimed.add(following)
-                    start(following)
-                continue
-            if auto_play:
-                # Cross-queue overlap: once the newest queue has handed out its last item, a free slot on the shared
-                # backend is reused by the next up-next queue. The combined cap is still enforced item by item at claim.
-                tail_id, tail = chain[-1]
-                if not tail.done():
-                    overlapping = await store.claim_queued(overlap_after=tail_id)
-                    if overlapping is not None:
-                        diagnostic_event(
-                            log, "queue.overlap_started", level=logging.INFO, data={"after_active": len(chain)}
-                        )
-                        claimed.add(overlapping)
-                        start(overlapping)
-                        continue
-            await asyncio.wait(
-                [task for _, task in chain if not task.done()],
-                timeout=OVERLAP_POLL,
-                return_when=asyncio.FIRST_COMPLETED,
-            )
+                    # An overlapped queue failing on its own (backend, inventory, persistence) must not take the healthy
+                    # queue ahead of it down: it goes back to paused and early starts stop for this session.
+                    exc = task.exception()
+                    diagnostic_event(
+                        log, "queue.overlap_failed", level=logging.WARNING, data={"reason": type(exc).__name__}
+                    )
+                    chain.remove(entry)
+                    claimed.discard(other_id)
+                    overlap_open = False
+                    await store.release_queued("overlap_failed", other_id)
+                    break
+            else:
+                if head.done() and not head.cancelled() and head.exception() is not None:
+                    raise head.exception()  # type: ignore[misc]
+                if head.done():
+                    chain.pop(0)
+                    final = head.result()
+                    claimed.discard(head_id)
+                    limits.pop(head_id, None)
+                    if not auto_play:
+                        return final
+                    schedule_publish(state, reason="queue_settled")
+                    # A queue that already overlapped its predecessor is the next one: it keeps running undisturbed.
+                    following = chain[0][0] if chain else await claim()  # an empty order also closes it
+                    if following is None:
+                        reason = "drained"
+                        return final
+                    diagnostic_event(log, "queue.auto_play", level=logging.INFO, data={"settled": final["status"]})
+                    if on_next is not None:
+                        on_next(final, following)
+                    if not chain:
+                        start(following)
+                    continue
+                if auto_play and overlap_open:
+                    # Cross-queue overlap: once the newest unsettled queue has handed out its last item, a free slot on
+                    # the shared backend is reused by the next up-next queue. The combined cap is still enforced item by
+                    # item at claim.
+                    live = [(qid, task) for qid, task in chain if not task.done()]
+                    if live and live[-1][0] in limits and await store.overlap_ready(live[-1][0]):
+                        tail_id = live[-1][0]
+                        overlapping = await claim(overlap_after=tail_id, limit=limits[tail_id])
+                        if overlapping is not None:
+                            diagnostic_event(
+                                log,
+                                "queue.overlap_started",
+                                level=logging.INFO,
+                                data={"after": tail_id, "queue_id": overlapping, "after_active": len(chain)},
+                            )
+                            if on_overlap is not None:
+                                on_overlap(overlapping)
+                            start(overlapping)
+                            continue
+                pending = [task for _, task in chain if not task.done()]
+                if pending:
+                    await asyncio.wait(pending, timeout=OVERLAP_POLL, return_when=asyncio.FIRST_COMPLETED)
     finally:
         for _, task in chain:
             task.cancel()
@@ -351,7 +392,7 @@ async def dispatch_queue(
             schedule_publish(state, reason="queue_session_end")
 
 
-async def _dispatch_one(store, state, queue_id, policy, saved, out, on_settle, on_event) -> dict[str, Any]:
+async def _dispatch_one(store, state, queue_id, policy, saved, out, on_settle, on_event, limits=None) -> dict[str, Any]:
     """One queue on the open owner: its own recorded backend session, closed before the next queue starts."""
     backend = None
     try:
@@ -402,6 +443,8 @@ async def _dispatch_one(store, state, queue_id, policy, saved, out, on_settle, o
                 "command": "queue",
             },
         )
+        if limits is not None:
+            limits[queue_id] = backend.capabilities.max_concurrency
         return await QueueDispatcher(store, service, on_settle=on_settle, on_event=on_event).run(queue_id)
     finally:
         if backend is not None:
