@@ -16,11 +16,11 @@ Owner Windows source runs of `uv run dtflow -x gui` (Qt 6.12.0, 96 DPI, DPR 1; t
 
 Largest remaining phases (head 787ea58 and later): Qt/UI imports 0.60–0.76 s, main form 0.31–0.74 s (0.83–1.25 s on cold launches), Images form + controller ~0.45 s, shell form and mounting ~0.24 s, window shown 0.25–0.3 s, first paint 0.33–0.5 s.
 
-Post-paint responsiveness: the Draw Things library import parses a YAML schema in pure Python while holding the GIL. With the import started at first paint, `gallery.gui_gap` showed 0.8–2.7 s stalls; with `STARTUP_WORK_DELAY_MS = 1000` the largest gap after the library load was 70 and 138 ms (two runs). The first-second gaps (0.2–0.5 s) that remain are the window's own first paint and background reads. Starting the import in parallel with window construction was tried offline and was slower to build and show, so it was not adopted.
+Post-show responsiveness: the Draw Things library import parses a YAML schema in pure Python while holding the GIL. With the import started at the queued `first paint` milestone, `gallery.gui_gap` showed 0.8–2.7 s stalls; with `STARTUP_WORK_DELAY_MS = 1000` the largest observed gap after the library load was 70 and 138 ms (two runs). This is an observed reduction, not proof that delaying the import eliminates GIL contention or freezes. The remaining first-second gaps (0.2–0.5 s) are unattributed; first paint and background reads are candidates, not established causes. The milestone is not an observed paint event. Starting the import in parallel with window construction was tried offline and was slower to build and show, so it was not adopted.
 
 `QT_QPA_PLATFORM=windows:nodirectwrite` was compared with the default in three alternating pairs: main form 827, 827, 820 ms versus 369, 632, 382 ms, median total 4.02 s versus 3.85 s. It is slower and is not adopted.
 
-Import-time breakdown without starting the window: `uv run python -X importtime -m dtflow.cli -x gui 2> importtime.txt`, then close the window. #169 and #170 remain open for packaged and visual acceptance.
+For an import-time breakdown without starting the window, create `tmp/` if needed, then run `uv run --frozen python -X importtime -c "import dtflow.ui.app" 2> tmp/startup-importtime.txt`. This imports the GUI modules but does not call the desktop entry point or schedule its automatic connection check. Launching `dtflow.cli ... gui` is not an import-only probe: it opens the desktop and can check the configured backend. #169 and #170 remain open for packaged and visual acceptance.
 
 ### Isolated QLineEdit style diagnostic
 

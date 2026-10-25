@@ -15,7 +15,7 @@
 - [x] Add an isolated native-versus-DTFlow-styled QLineEdit diagnostic with prelude timings and post-measurement metadata; never change production styling or open application state.
 - [x] Run three alternating fresh-process pairs and record results/limitations; follow with three pairs comparing the unchanged theme against a diagnostic-only exact-font ablation.
 - [x] Collect matched native Windows logs and select an optimization only after identifying the expensive operation (generic font fallback, glyph fonts, form/loader work, post-paint provider import; see Outcome).
-- [ ] Final tests and smoke tests deferred to user (CI is dispatch-only; nothing on this branch has had a test run).
+- [ ] Complete final validation: scoped local tests passed at earlier PR heads; at `8f5a86e`, the owner reports 6 previously failing gRPC/Qt checks and 212 other selected tests passing. These are scoped results, not a final full-suite pass. The three top-level `tests/test_*.py` files remain unconfirmed. CI is dispatch-only; current-head CI, renders, broader native visual smoke and packaged acceptance remain outstanding.
 
 ## Decisions and Design Changes
 - 2026-10-25: the checkout already advanced beyond merged #172 to PR #173; keep this refinement on its existing clean branch.
@@ -28,13 +28,15 @@
 - None blocking implementation; matched native measurements remain necessary.
 
 ## QLineEdit probe refinement
+This section records the earlier instrumentation-only state. The in-app probes were subsequently removed; use `tools/ui/probe_line_edit.py` for current diagnostics and see Outcome below.
+
 - The old `first QLineEdit polished` phase combined construction, polishing and temporary disposal. It is replaced by `QLineEdit probe: constructed`, `QLineEdit probe: polished` and `QLineEdit probe: destroyed`; do not compare the old phase directly to the new polishing-only phase.
 - The probe remains hidden, parentless and development-only. Explicit Shiboken deletion measures native destruction before releasing its Python wrapper; no real input control is deleted or moved to a worker.
 - This adds measurement boundaries only. It does not disable the warm-up, establish a speedup or perform the proposed with/without-warm-up comparison. New matched owner logs are required; mixing old/new logs must trigger the report's schema warning.
 - Follow-up: owner authorized the isolated styled/native comparison. `tools/ui/probe_line_edit.py --style native|dtflow` measures application/theme/loader/basic-widget/font-metrics/probe costs separately, excluding Python/Qt import time and the full application. Run each case in its own process, alternating order; native Qt styling also differs in font/theme policy, so results cannot attribute cost to a specific QSS selector.
 
 ## Validation
-- Tests were not added or run; smoke tests were not run. Final validation remains with the user.
+- Historical instrumentation-only validation: tests were not added or run for that refinement, and smoke tests were not run. This does not describe the whole PR; later scoped local and owner-reported test results are recorded in the action item above. Full current-head acceptance remains outstanding.
 - The owner authorized diagnostic commands. Twelve isolated native-Windows Qt probe processes were run (six native/styled comparisons, six styled/exact-font comparisons); the full desktop was not launched, no application state/credentials were opened and startup_report.py was not rerun for this experiment.
 - No renders, packaging, provider calls, uploads or inference were performed.
 
@@ -50,6 +52,6 @@
 - The expensive operation was Qt resolving the generic `sans-serif`/`monospace` fallback (and glyph-only labels) during first polish on Windows, not ActivityStrip. Production now drops the generic fallback on Windows (`ui/theme.py`); the isolated probe's "production unchanged" statements above describe the earlier state.
 - Owner Windows source runs: 11.33 s median before, then 4.63/4.72 s, 3.96/3.54/3.53 s and 3.5–4.1 s at later heads; see [measured results](../guides/development.md#measured-startup-results-pr-173-2026-10-25) for the table and caveats.
 - The in-app QLineEdit warm-up probes described above were removed once the isolated tool had located the cost.
-- Post-paint: the provider library import parses YAML in pure Python under the GIL; check and preload now start 1 s after first paint (`STARTUP_WORK_DELAY_MS`), cutting the largest recorded GUI gap from 0.8–2.7 s to 70–138 ms.
+- Post-show: the provider library import parses YAML in pure Python under the GIL; check and preload are now scheduled 1 s after the queued `first paint` milestone (`STARTUP_WORK_DELAY_MS`), not an observed paint event. Two owner runs recorded largest post-load GUI gaps of 70 and 138 ms versus earlier 0.8–2.7 s observations; delaying the work does not establish that GIL contention or freezes are eliminated.
 - Rejected: `windows:nodirectwrite` (slower main form), starting the provider import in parallel with window construction (slower build and show offline).
 - Open: lazy Images/Queue construction, Qt/UI import time (~0.6 s), main-form and first-paint cost, packaged and cold/warm measurements, native visual acceptance.

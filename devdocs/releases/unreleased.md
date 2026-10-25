@@ -19,7 +19,7 @@ Changes through 5.2.0 are consolidated in [DTFlow 5.2.0](v5.2.0.md). This file t
 
 - Faster Windows desktop startup (#169): theme resolution no longer requests the generic font fallback on Windows; glyph-only controls use artwork (status dot, queue and removal arrows, activity placeholder icon); one shared form loader with forms created under their final parents; lazy NumPy and Logs-module imports; the brand artwork is decoded once; application-wide wheel and Escape filters install on the first event-loop turn. Owner Windows source runs moved from 11.1–15.7 s to 3.5–4.1 s; these are single-machine observations, not packaged or controlled benchmarks, and #169 stays open.
 
-- Start the automatic connection check and the Draw Things provider preload one second after first paint, so the provider library's import no longer freezes the freshly shown window (largest recorded GUI gap 0.8–2.7 s before, 70–138 ms after). The check result arrives about a second later.
+- Schedule the automatic connection check and the Draw Things provider preload one second after the queued `first paint` milestone (not an observed paint event). Two owner runs recorded largest post-load GUI gaps of 70 and 138 ms, versus earlier 0.8–2.7 s observations; this does not establish that GIL contention or freezes are eliminated. The check result arrives about a second later.
 
 - Startup diagnostics isolate shared activity-strip construction, and startup reports expose per-phase sample counts with a warning when instrumentation schemas differ; these measurements do not claim a startup speedup.
 
