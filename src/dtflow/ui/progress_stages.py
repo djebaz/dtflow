@@ -1,7 +1,10 @@
 """Labels for observed events only; no provider calls or inferred completion."""
 
 
-def event_stage(event):
+from dtflow.core.models import BackendEvent
+
+
+def event_stage(event: BackendEvent) -> str:
     if event.kind == "preparing":
         return {
             "binding_assets": "Checking prepared asset references",
