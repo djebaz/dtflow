@@ -14,6 +14,7 @@ import secrets
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, replace
+from datetime import UTC, datetime
 from pathlib import Path
 from uuid import uuid4
 
@@ -24,6 +25,7 @@ from dtflow.core.model_profiles import exact_model_description_digest
 from dtflow.core.models import (
     AssetReconciliation,
     BackendError,
+    BackendEvent,
     CredentialProvider,
     Designation,
     EventSink,
@@ -308,6 +310,12 @@ async def run_generation(
     )
 
 
+
+def _preparation_event(on_event, request, stage):
+    """Report a local preparation milestone before backend events start."""
+    if on_event is not None:
+        on_event(BackendEvent(request.request_id, 0, "preparing", datetime.now(UTC).isoformat(), stage=stage))
+
 async def generate_once(
     selection: BackendSelection,
     state: Path,
@@ -328,8 +336,11 @@ async def generate_once(
         raise ValidationError(
             "Use the explicit permit-scoped image-generation entry; generic dispatch is txt2img-only."
         )
+    _preparation_event(on_event, request, "binding_assets")
     request = await bind_prepared(state, selection.name, request, asset_ids)
+    _preparation_event(on_event, request, "opening_session")
     async with open_session(selection, state, output=output, timeouts=timeouts, saved=saved) as service:
+        _preparation_event(on_event, request, "session_ready")
         return await run_generation(service, request, prefix=prefix, on_event=on_event)
 
 
@@ -387,8 +398,11 @@ async def generate_image_once(
             ("image_permit_status", permit.status),
         ),
     )
+    _preparation_event(on_event, request, "validating_image_inputs")
     await settle(asyncio.to_thread(validate_prepared_inputs, prepared_inputs))
+    _preparation_event(on_event, request, "binding_assets")
     request = await bind_prepared(state, selection.name, request, asset_ids)
+    _preparation_event(on_event, request, "opening_session")
     async with open_session(
         selection,
         state,
@@ -398,6 +412,7 @@ async def generate_image_once(
         image_permits=(permit,),
         allow_image_probe=allow_image_probe,
     ) as service:
+        _preparation_event(on_event, request, "session_ready")
         return await run_generation(service, request, prefix=prefix, on_event=on_event, prepared_inputs=prepared_inputs)
 
 
