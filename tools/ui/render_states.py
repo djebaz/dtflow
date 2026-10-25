@@ -3419,6 +3419,11 @@ def render_queue_states(shell, capture):
     page.removeQueueButton.click()
     capture("queues-05-remove-confirmation")
     shell.inline.dismiss()
+    # Bulk cleanup of paused queues names how many will go before anything is removed (#175).
+    assert page.clearPausedQueuesButton.isEnabled()
+    page.clearPausedQueuesButton.click()
+    capture("queues-05a-clear-paused-confirmation")
+    shell.inline.dismiss()
     view = queue._view()
     counts = dict.fromkeys(view["summary"], 0)
     strip = activity_strip(page)

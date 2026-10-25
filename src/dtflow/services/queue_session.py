@@ -30,6 +30,7 @@ from dtflow.persistence.gallery_snapshot import schedule_publish
 from dtflow.persistence.queues import (
     change_up_next,
     delete_idle_queues,
+    delete_paused_queues,
     delete_queue,
     insert_queue,
     post_control,
@@ -391,6 +392,13 @@ async def clear_queues(state: Path, keep: tuple[str, ...] = ()) -> int:
     if not (Path(state) / "attempts.sqlite3").is_file():
         return 0
     return await asyncio.to_thread(delete_idle_queues, Path(state), keep)
+
+
+async def clear_paused_queues(state: Path, queue_ids: tuple[str, ...], keep: tuple[str, ...] = ()) -> tuple[int, int]:
+    """Delete the confirmed paused queue records that are still paused; return ``(removed, skipped)``."""
+    if not queue_ids or not (Path(state) / "attempts.sqlite3").is_file():
+        return 0, len(queue_ids)
+    return await asyncio.to_thread(delete_paused_queues, Path(state), queue_ids, keep)
 
 
 async def remove_queue(state: Path, queue_id: str, keep: tuple[str, ...] = ()) -> None:
