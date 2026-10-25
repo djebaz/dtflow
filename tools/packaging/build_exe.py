@@ -39,7 +39,9 @@ def artifact_name(version: str, commit: str, system: str, machine: str) -> str:
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("-o", "--out", default="dist", help="directory receiving the build (default: dist)")
-    parser.add_argument("--onedir", action="store_true", help="build a folder distribution instead of the default one-file executable")
+    parser.add_argument(
+        "--onedir", action="store_true", help="build a folder distribution instead of the default one-file executable"
+    )
     args = parser.parse_args(argv)
     commit, status = source_identity()
     if status == "dirty":
