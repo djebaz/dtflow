@@ -20,4 +20,9 @@
 
 ## Progress
 
-- Initial inspection complete; implementation and validation pending.
+- PR [#167](https://github.com/djebaz/dtflow/pull/167) contains both issues. The ten-slot check now observes FIFO through `claim_next`, independently of concurrent backend-start arrival order.
+- Shared authoring types/source validation are extracted with compatible presenter imports; the template boundary separately requires complete version-1 base/form fields, keeping historical queue-source compatibility unchanged.
+- Source implements the independent transactional library, canonical template controls/library form, inline name/search/confirmation flows and loaded-name/modified tracking. Core recipe validation and SQLite mutation checks run before replacement/write; background callbacks are navigation-scoped and owned by the existing runner.
+- The first independent review found three source defects: deterministic enumeration incorrectly requiring an RNG seed, a dormant Repeat count not restored in Pair/Cross, and truncated forms acquiring defaults. All three were corrected and the spec reviewer confirmed them addressed. Standards review found no actionable violations. These are static reviews, not native acceptance.
+- Scoped offline validation passed **73 tests in 49.10 s** across queue integration, template storage/validation, Qt composition, planning presentation and import boundaries. The full suite will be recorded against the committed implementation head. Repository-wide Ruff lint/format, changed Python syntax and both canonical Designer XML parses pass.
+- Preview definitions `queues-90`–`queues-102` are added with synthetic entries and intercepted workers; not rendered. No real inference, provider calls, uploads, model downloads, destructive user-file actions or billable operations. Native Windows/DPI, complex real-use and packaged acceptance remain unverified.

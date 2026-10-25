@@ -363,6 +363,7 @@ def render_workspace_states(app, state, out):
         if wants("queues"):
             render_active_queue_states(shell, out)
             render_item_table_states(shell, out, state)
+            render_queue_template_states(shell, out)
         if wants("images"):
             render_gallery_composition_states(shell, state, out)
     finally:
@@ -1541,6 +1542,93 @@ def header_end_visible(table):
     header = table.horizontalHeader()
     last = header.count() - 1
     return header.sectionViewportPosition(last) + header.sectionSize(last) <= table.viewport().width()
+
+
+def render_queue_template_states(shell, out):
+    """Template presentation only: synthetic entries, intercepted workers, no library/queue/provider mutations."""
+    from dataclasses import replace
+
+    from dtflow.core.models import ResolvedGenerationRequest
+    from dtflow.core.queue_authoring import PlanForm
+    from dtflow.services.queue_templates import QueueTemplate, Recipe
+
+    queue, page = shell.queue, shell.queue_page
+    controller, panel = queue.templates, shell.inline
+
+    def hold(work, callback):
+        work.close()
+
+    def snap(name):
+        QTest.qWait(100)
+        save(shell.form, out, name)
+
+    recipe = Recipe(
+        ResolvedGenerationRequest("fixture-draft", "a {cat|dog}", "fake-fixture", 123), PlanForm("Repeat"), 3, "fake", 2
+    )
+    template = QueueTemplate("fixture-template", "My reusable queue recipe", 1, recipe)
+    with patch.object(shell.runner, "submit", side_effect=hold):
+        shell.form.backendCombo.setCurrentText("fake")
+        shell.form.queueNavigationButton.click()
+        shell.form.resize(1600, 1000)
+        shell._responsive_workspace()
+        queue._set_draft(recipe.request, "fake", None, (), None)
+        queue.open_composer()
+        controller._apply(template, recipe, ("fake", None))
+        snap("queues-90-template-loaded")
+        controller.save_as()
+        panel._editor.setText("Another named recipe")
+        snap("queues-91-template-save-name")
+        panel.dismiss()
+        controller._library((template,))
+        snap("queues-92-template-library")
+        editor = panel._editor
+        editor.templateUpdateButton.click()  # arms only; never commit the synthetic update
+        snap("queues-93-template-update-consent")
+        panel.dismiss()
+        controller._library((template,))
+        panel._editor.templateRenameButton.click()
+        snap("queues-94-template-rename")
+        panel.dismiss()
+        controller._library((template,))
+        panel._editor.templateDeleteButton.click()
+        snap("queues-95-template-delete-consent")
+        panel.dismiss()
+        page.composerPromptEdit.setPlainText("An unsaved queue draft")
+        controller.load(template)
+        snap("queues-96-template-dirty-replacement")
+        panel.dismiss()
+        cloud = replace(template, recipe=replace(recipe, backend="cloud"))
+        controller.load(cloud)
+        snap("queues-97-template-backend-rebinding")
+        panel.dismiss()
+        reconstructed = replace(template, recipe=replace(recipe, reconstructed=True))
+        controller.load(reconstructed)
+        snap("queues-98-template-reconstructed-review")
+        panel.dismiss()
+        missing = replace(
+            recipe,
+            request=replace(recipe.request, prompt="__missing_fixture_list__"),
+            form=PlanForm("Cross", variation="Random sample", rng_seed="42"),
+        )
+        controller._apply(replace(template, recipe=missing), missing, ("fake", None))
+        snap("queues-99-template-missing-dependencies")
+        controller._library(())
+        snap("queues-100-template-library-empty")
+        panel.dismiss()
+        controller._error(ValidationError("Unsupported template library schema; draft and library left unchanged."))
+        snap("queues-101-template-library-error")
+        panel.dismiss()
+        controller._library(
+            (replace(template, name="A deliberately long but bounded reusable authoring template name"),)
+        )
+        shell.form.resize(1000, 900)
+        shell._responsive_workspace()
+        snap("queues-102-template-library-narrow")
+        panel.dismiss()
+        controller.detach()
+        queue.close_composer()
+        shell.form.resize(1600, 1000)
+        shell._responsive_workspace()
 
 
 def render_item_table_states(shell, out, state):

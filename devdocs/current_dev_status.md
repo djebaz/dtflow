@@ -1,5 +1,7 @@
 # Current development status
 
+**Queue-authoring follow-up, 2026-10-25 — PR #167:** local text-to-image template save/load/update/rename/delete is source-implemented with a separate durable library and shared composer-source validation. Dirty replacement/backend rebinding are explicit; Generate, execution state and shared cloud defaults stay independent. The ten-slot FIFO check now observes durable admission rather than asynchronous backend arrival (#142). [Scope, limits and verification](plans/2026-10-25-queue-templates.md). This scoped update does not recertify the older snapshot below; native/DPI, packaged and provider acceptance remain separate.
+
 **Snapshot: 2026-10-23.** Coding orientation against the [initial implementation plan](plans/initial.md), not a release declaration. Repository source and linked evidence are authoritative; implemented code, owner-reported compatibility and final packaged acceptance are distinct.
 
 ## Release and branch state
