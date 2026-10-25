@@ -6,6 +6,9 @@ Changes through 5.2.0 are consolidated in [DTFlow 5.2.0](v5.2.0.md). This file t
 
 ## Added
 
+- Offline startup diagnostic report (`python3 tools/startup_report.py <logs...>`) for comparing recorded `-x` phase timings without starting providers; measured first-paint callbacks are not asserted to be first usable window (#169). Repeated matching Windows source/packaged acceptance remains outstanding.
+- Focused offline event-stage and visible animation lifecycle tests, plus queue preparation/wait/sampling render fixtures, to strengthen progress presentation review (#170). Native visual acceptance remains outstanding.
+
 - Check the restored connection once in the background at desktop startup; retain its last-check indicator across navigation without generating or resuming work.
 
 - Save and reload named text-to-image queue recipes, with searchable selection, explicit update/rename/delete, dirty-draft replacement and backend-rebinding review. Original prompts, variation settings and seeds stay independent of Generate and queue history; loading never starts work.
