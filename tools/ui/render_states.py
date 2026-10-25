@@ -3482,6 +3482,9 @@ def render_shell_states(shell, capture):
             strip.finish(key)
 
     shell.about()
+    if sys.platform == "win32":
+        # Existing text/notice fixtures exercise the production Windows font policy.
+        assert ", sans-serif;" not in QApplication.instance().styleSheet()
     capture("shell-01-about")
     clear()
     mailbox = DiagnosticNotice()

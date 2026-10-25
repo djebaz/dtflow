@@ -36,14 +36,20 @@ def measure(style: str) -> dict:
     mark("application_ms")
     if style == "dtflow":
         apply_theme(app)
-    elif style == "dtflow-exact-font":
-        # Diagnostic ablation only: retain the tracked family, omit its generic fallback.
+    elif style in ("dtflow-exact-font", "dtflow-generic-fallback"):
+        # Retain an explicit old-policy baseline after production adopts the exact family.
         family = load_tokens()["type.family"]
         source = load_theme()
         declaration = f'font-family: "{family}", sans-serif;'
-        if source.count(declaration) != 1:
+        exact = f'font-family: "{family}";'
+        if source.count(declaration) + source.count(exact) != 1:
             raise ValueError("Expected exactly one global font-family declaration")
-        app.setStyleSheet(source.replace(declaration, f'font-family: "{family}";', 1))
+        source = (
+            source.replace(declaration, exact, 1)
+            if style == "dtflow-exact-font"
+            else source.replace(exact, declaration, 1)
+        )
+        app.setStyleSheet(source)
     mark("theme_ms")
     loader = QUiLoader()
     mark("loader_ms")
@@ -85,7 +91,9 @@ def measure(style: str) -> dict:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--style", required=True, choices=("native", "dtflow", "dtflow-exact-font"))
+    parser.add_argument(
+        "--style", required=True, choices=("native", "dtflow", "dtflow-exact-font", "dtflow-generic-fallback")
+    )
     args = parser.parse_args()
     print(json.dumps(measure(args.style)))
 
