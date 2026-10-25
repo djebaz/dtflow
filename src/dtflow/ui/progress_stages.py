@@ -4,6 +4,18 @@
 def event_stage(event):
     if event.kind == "preparing":
         return {
+            "binding_assets": "Checking prepared asset references",
+            "opening_session": "Opening backend session",
+            "session_ready": "Backend session ready",
+            "validating_image_inputs": "Validating image inputs",
+            "validating_request": "Validating generation request",
+            "validating_assets": "Validating prepared assets",
+            "checking_loras": "Checking LoRA compatibility",
+            "checking_output_storage": "Checking output storage",
+            "creating_attempt": "Creating generation attempt",
+            "waiting_buffer_budget": "Waiting for memory budget",
+            "saving_image_snapshot": "Saving image input snapshot",
+            "recording_submission_state": "Recording submission state",
             "resolving_model": "Resolving model description",
             "preparing_image_inputs": "Preparing image inputs",
             "resolving_credentials": "Resolving backend credentials",
