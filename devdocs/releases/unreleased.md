@@ -17,11 +17,15 @@ Changes through 5.2.0 are consolidated in [DTFlow 5.2.0](v5.2.0.md). This file t
 
 ## Changed
 
+- Faster Windows desktop startup (#169): theme resolution no longer requests the generic font fallback on Windows; glyph-only controls use artwork (status dot, queue and removal arrows, activity placeholder icon); one shared form loader with forms created under their final parents; lazy NumPy and Logs-module imports; the brand artwork is decoded once; application-wide wheel and Escape filters install on the first event-loop turn. Owner Windows source runs moved from 11.1–15.7 s to 3.5–4.1 s; these are single-machine observations, not packaged or controlled benchmarks, and #169 stays open.
+
+- Start the automatic connection check and the Draw Things provider preload one second after first paint, so the provider library's import no longer freezes the freshly shown window (largest recorded GUI gap 0.8–2.7 s before, 70–138 ms after). The check result arrives about a second later.
+
 - Startup diagnostics isolate shared activity-strip construction, and startup reports expose per-phase sample counts with a warning when instrumentation schemas differ; these measurements do not claim a startup speedup.
 
 - Distinguish workspace mounting and root-layout insertion from activity-strip constructor costs, avoiding attribution of preceding startup work to the overlay itself.
 
-- Split the development-only QLineEdit warm-up into construction, polishing and destruction timings instead of attributing its combined cost to polishing.
+- The development-only in-app QLineEdit/font warm-up phases were removed after the isolated diagnostic located the cost; `tools/ui/probe_line_edit.py` remains for isolated comparisons.
 
 - Load optional credential and library summaries on workers, discover saved credentials only when needed, and construct Logs widgets on first use. Repeatable native Windows startup speedup remains to be established.
 

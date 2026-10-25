@@ -1,6 +1,26 @@
 ## Startup responsiveness follow-up (#168 / #169, 2026-10-25)
 
-New development captures split the disposable text-input warm-up into `QLineEdit probe: constructed`, `QLineEdit probe: polished` and `QLineEdit probe: destroyed`. The destruction phase explicitly disposes the hidden native probe and releases its Python wrapper. These replace the old combined `first QLineEdit polished` phase; collect matched new-schema logs rather than comparing its old duration to polishing alone. The warm-up is still development-only and has not been disabled or shown faster.
+The in-app disposable QLineEdit/font warm-up phases (`QLineEdit probe: ...`, `first font metrics`) were removed; use the isolated diagnostic below instead. Phase names changed across PR #173, so `tools/startup_report.py` warns about mixed schemas: compare totals and shared phases only, never old and new phase names.
+
+### Measured startup results (PR #173, 2026-10-25)
+
+Owner Windows source runs of `uv run dtflow -x gui` (Qt 6.12.0, 96 DPI, DPR 1; the window was closed once up). The logs do not record the commit (`source_commit` unknown), only `source_modified`, so each row is tied to the head current when it was run. These are single-machine observations, not controlled cold/warm, packaged or cross-machine benchmarks; the first launch after a pause costs about 0.4–0.8 s more in the main form (cold OS caches).
+
+| Head | Runs (s) | Notes |
+| --- | --- | --- |
+| before #173 optimizations | 11.33, 11.10, 15.74 | median 11.33 |
+| a4f3a3b | 4.63, 4.72 | fallback removal, glyphs, shared loader |
+| 787ea58 | 3.96, 3.54, 3.53 | filters, brand image, Logs import, remaining glyphs |
+| e80a597 | 3.83, 3.85, 4.06, 3.50, 4.43 | same startup path as 787ea58 |
+| 26358c5 | 4.07, 3.63 | check and preload delayed 1 s after first paint |
+
+Largest remaining phases (head 787ea58 and later): Qt/UI imports 0.60–0.76 s, main form 0.31–0.74 s (0.83–1.25 s on cold launches), Images form + controller ~0.45 s, shell form and mounting ~0.24 s, window shown 0.25–0.3 s, first paint 0.33–0.5 s.
+
+Post-paint responsiveness: the Draw Things library import parses a YAML schema in pure Python while holding the GIL. With the import started at first paint, `gallery.gui_gap` showed 0.8–2.7 s stalls; with `STARTUP_WORK_DELAY_MS = 1000` the largest gap after the library load was 70 and 138 ms (two runs). The first-second gaps (0.2–0.5 s) that remain are the window's own first paint and background reads. Starting the import in parallel with window construction was tried offline and was slower to build and show, so it was not adopted.
+
+`QT_QPA_PLATFORM=windows:nodirectwrite` was compared with the default in three alternating pairs: main form 827, 827, 820 ms versus 369, 632, 382 ms, median total 4.02 s versus 3.85 s. It is slower and is not adopted.
+
+Import-time breakdown without starting the window: `uv run python -X importtime -m dtflow.cli -x gui 2> importtime.txt`, then close the window. #169 and #170 remain open for packaged and visual acceptance.
 
 ### Isolated QLineEdit style diagnostic
 
@@ -14,9 +34,10 @@ $env:QT_QPA_PLATFORM='windows'
 uv run --frozen python tools/ui/probe_line_edit.py --style native
 uv run --frozen python tools/ui/probe_line_edit.py --style dtflow
 uv run --frozen python tools/ui/probe_line_edit.py --style dtflow-exact-font
+uv run --frozen python tools/ui/probe_line_edit.py --style dtflow-generic-fallback
 ```
 
-The last mode removes only the global generic font fallback in that diagnostic process; it never changes the tracked theme or production loader. Each invocation prints JSON with the platform, Qt/Python version, application font/DPI and separate application/theme/loader/basic-widget/font-metrics/construction/polishing/destruction timings. The measurement excludes Python/Qt imports and full-window initialization. It neither opens DTFlow state/credentials nor connects to a provider. Observe total prelude time as well as polishing so moved first-use work is not mistaken for a speedup; metadata is collected after the timed work.
+`dtflow-exact-font` and `dtflow-generic-fallback` replace only the global font-family declaration in that diagnostic process (the second restores the pre-#173 Windows policy as a baseline). `dtflow-exact-font` removes only the global generic font fallback in that diagnostic process; it never changes the tracked theme or production loader. Each invocation prints JSON with the platform, Qt/Python version, application font/DPI and separate application/theme/loader/basic-widget/font-metrics/construction/polishing/destruction timings. The measurement excludes Python/Qt imports and full-window initialization. It neither opens DTFlow state/credentials nor connects to a provider. Observe total prelude time as well as polishing so moved first-use work is not mistaken for a speedup; metadata is collected after the timed work.
 
 In the recorded native-Windows experiment (n=3 per mode), unchanged-theme polishing had a 1,127.559 ms median versus 1.252 ms after removing the generic fallback in the probe. This supports a narrowly scoped font-fallback investigation, not a production fix or a full-application speedup claim. [Ordering, results and limitations](../plans/2026-10-25-overlay-instrumentation.md#isolated-native-windows-fontstyle-comparison-2026-10-25).
 

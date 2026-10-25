@@ -14,8 +14,8 @@
 - [x] Split the development-only QLineEdit probe into construction, polishing and explicit native destruction timings, without changing normal non-development startup.
 - [x] Add an isolated native-versus-DTFlow-styled QLineEdit diagnostic with prelude timings and post-measurement metadata; never change production styling or open application state.
 - [x] Run three alternating fresh-process pairs and record results/limitations; follow with three pairs comparing the unchanged theme against a diagnostic-only exact-font ablation.
-- [ ] Collect matched native Windows logs and select an optimization only after identifying the expensive operation.
-- [ ] Final tests and smoke tests deferred to user.
+- [x] Collect matched native Windows logs and select an optimization only after identifying the expensive operation (generic font fallback, glyph fonts, form/loader work, post-paint provider import; see Outcome).
+- [ ] Final tests and smoke tests deferred to user (CI is dispatch-only; nothing on this branch has had a test run).
 
 ## Decisions and Design Changes
 - 2026-10-25: the checkout already advanced beyond merged #172 to PR #173; keep this refinement on its existing clean branch.
@@ -45,3 +45,11 @@
 - Follow-up ablation retains the stylesheet except for replacing its single global `font-family: "Segoe UI", sans-serif;` declaration with `font-family: "Segoe UI";` in the diagnostic process. Median polishing: unchanged theme **1,127.559 ms** (range 1,053.466–1,134.394), exact-font variant **1.252 ms** (range 1.062–1.748). Prelude-inclusive medians: **1,621.849 ms versus 462.280 ms**.
 - Evidence supports the generic fallback declaration as the source of the isolated polishing penalty on this machine; it does not prove a specific Qt internal mechanism, visual equivalence, other-platform behavior or a measured full-desktop speedup. A production fix still needs deliberate platform/fallback handling and owner visual/startup checks.
 - Ignored raw evidence: `tmp/line-edit-style-comparison.json` and `tmp/line-edit-font-ablation.json`. These contain diagnostic metadata/timings only, not prompts, credentials or application-state paths.
+
+## Outcome (2026-10-25)
+- The expensive operation was Qt resolving the generic `sans-serif`/`monospace` fallback (and glyph-only labels) during first polish on Windows, not ActivityStrip. Production now drops the generic fallback on Windows (`ui/theme.py`); the isolated probe's "production unchanged" statements above describe the earlier state.
+- Owner Windows source runs: 11.33 s median before, then 4.63/4.72 s, 3.96/3.54/3.53 s and 3.5–4.1 s at later heads; see [measured results](../guides/development.md#measured-startup-results-pr-173-2026-10-25) for the table and caveats.
+- The in-app QLineEdit warm-up probes described above were removed once the isolated tool had located the cost.
+- Post-paint: the provider library import parses YAML in pure Python under the GIL; check and preload now start 1 s after first paint (`STARTUP_WORK_DELAY_MS`), cutting the largest recorded GUI gap from 0.8–2.7 s to 70–138 ms.
+- Rejected: `windows:nodirectwrite` (slower main form), starting the provider import in parallel with window construction (slower build and show offline).
+- Open: lazy Images/Queue construction, Qt/UI import time (~0.6 s), main-form and first-paint cost, packaged and cold/warm measurements, native visual acceptance.
