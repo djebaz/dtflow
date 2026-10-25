@@ -143,14 +143,25 @@ def state(tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_ten_items_ten_slots_start_before_completion(state):
+async def test_ten_items_ten_slots_start_before_completion(state, monkeypatch):
     """The queue dispatcher admits ten concurrent items when configured to ten."""
     backend = ScriptedBackend(10)
     async with Harness(state, backend) as h:
+        claimed_seeds = []
+        claim_next = h.store.claim_next
+
+        async def record_claim(queue_id, limit):
+            claim = await claim_next(queue_id, limit)
+            if claim is not None:
+                claimed_seeds.append(claim[1].seed)
+            return claim
+
+        monkeypatch.setattr(h.store, "claim_next", record_claim)
         queue_id = await h.store.create_queue(BACKEND, 10, [item(n) for n in range(10)])
         run = h.run(queue_id)
         await until(lambda: len(backend.started) == 10)
-        assert backend.started == list(range(10)) and backend.active == backend.peak == 10
+        assert claimed_seeds == list(range(10))  # durable admission is FIFO; async preparation can reorder arrival
+        assert sorted(backend.started) == list(range(10)) and backend.active == backend.peak == 10
         backend.release(*range(10))
         final = await asyncio.wait_for(run, SETTLE)
     assert final["summary"]["succeeded"] == 10

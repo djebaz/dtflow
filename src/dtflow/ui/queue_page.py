@@ -72,6 +72,7 @@ from dtflow.ui.queue_composer import SIZE_PRESETS, ActionsFit, ComposerGridFit, 
 from dtflow.ui.queue_item_delegate import ROW_HEIGHT, ItemTableHeader, ItemTableLayout, QueueItemDelegate
 from dtflow.ui.queue_model import ITEM_ID_ROLE, QueueItemModel
 from dtflow.ui.queue_thumbnails import HoverPreview, QueueThumbnails
+from dtflow.ui.queue_templates import QueueTemplates
 from dtflow.ui.queue_presenter import (
     CONCURRENCY_HINT,
     FILTERS,
@@ -133,6 +134,8 @@ WIRED_CONTROLS = (
     "closeComposerButton",
     "editInGenerateButton",
     "copyToGenerateButton",
+    "saveQueueTemplateButton",
+    "loadQueueTemplateButton",
     "composerPromptEdit",
     "queueCopyPromptButton",
     "refreshQueuesButton",
@@ -225,6 +228,8 @@ class QueuePage:
         self._reuse_hook = reuse_hook
         self._draft = None  # immutable request/backend/receipts snapshot; Generate is only an explicit copy source
         self._draft_job = None
+        self._template_cap = False  # a loaded recipe's cap is local authoring state, never the shared cloud default
+        self._authoring_reconstructed = False
         self._composing = False
         self.plan_hook: Callable[[], None] = lambda: None  # the Queue popover's trigger follows plan edits
         self._after_generation: list[str] = []  # popover queues waiting for the running single generation (#135)
@@ -404,6 +409,7 @@ class QueuePage:
                 widget.valueChanged.connect(self._plan_changed)
             else:
                 widget.currentTextChanged.connect(self._plan_changed)
+        self.templates = QueueTemplates(self)
         self._mode_changed()
         activity.listen(self._sync)
         activity.listen(self._after_generation_ended)
@@ -643,7 +649,7 @@ class QueuePage:
 
     def _show_new_cap(self) -> None:
         """With cloud chosen, the new-queue maximum shows the shared cloud default; other providers keep the box."""
-        if self._composer_backend()[0] != "cloud" or self._shared_cap is None:
+        if self._template_cap or self._composer_backend()[0] != "cloud" or self._shared_cap is None:
             return
         spin = self.page.newQueueCapSpinBox
         self._syncing = True
@@ -1048,6 +1054,9 @@ class QueuePage:
             self._message(shown if isinstance(failure, ValidationError) else present_generation_failure(failure))
             return
         result, backend, asset_ids, cap = result
+        if not self.templates.applying:
+            self.templates.detach()
+        self._authoring_reconstructed = bool(result.note)
         page, form = self.page, result.form
         request = request_from_record(result.base)
         self._set_draft(
@@ -1208,6 +1217,7 @@ class QueuePage:
         try:
             request, name, endpoint, assets = self._request_source(preview=True)
             self._set_draft(request, name, endpoint, assets, self._edit_source())
+            self._authoring_reconstructed = False
         except FormError as exc:
             self._message(Presentation("error", "Draft not replaced", str(exc)))
             return
@@ -1257,6 +1267,7 @@ class QueuePage:
         self.preview()
 
     def close_composer(self) -> None:
+        self.templates.navigation_changed()
         self._composing = False
         self._invalidate_preview()
         self._preview_timer.stop()
@@ -1434,14 +1445,7 @@ class QueuePage:
         return tuple((name, spin.value()) for name, spin in spins if spin.value() and not spin.isHidden())
 
     def _random_active(self) -> bool:
-        page = self.page
-        mode = page.planVariationCombo.currentText()
-        edits = (
-            page.planShuffleCombo.currentIndex() > 0
-            or page.planDropSpin.value() > 0
-            or (page.planAddSpin.value() > 0 and bool(page.planAddPartsEdit.text().strip()))
-        )
-        return self._planned() and (bool(self._draws()) or mode == "Random sample" or (mode != "Off" and edits))
+        return self._plan_form().uses_randomness
 
     def _sync_draw_controls(self) -> None:
         """Each draw count shows how many values its row lists ("2 of 5"). The count the user chose is never changed.
@@ -1692,7 +1696,9 @@ class QueuePage:
             request, name, endpoint, asset_ids = (
                 self._request_source() if quick and count is not None else self._composer_request()
             )
-        except FormError as exc:
+            if not (quick and count is not None) and self.templates.loaded is not None:
+                asset_ids = self.templates.validate_use(request, name, endpoint)
+        except ValidationError as exc:
             # From another tab the marked field is out of sight, so say where it is.
             report(Presentation("error", "Queue not created", f"On Generate: {exc}" if quick else str(exc)))
             return
@@ -2011,6 +2017,7 @@ class QueuePage:
         self._actions_fit.refit()
         self._schedule_preview()
         self.plan_hook()
+        self.templates.changed()
 
     @staticmethod
     def _column_title(name: str) -> str:
@@ -2409,6 +2416,9 @@ class QueuePage:
         if self._syncing:
             return
         self._set_level(self.page.newQueueCapSpinBox, value)
+        self.templates.changed()
+        if self._template_cap:
+            return
         if self._composer_backend()[0] != "cloud":
             return
         self._shared_epoch += 1

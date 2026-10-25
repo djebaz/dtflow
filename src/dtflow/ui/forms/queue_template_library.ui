@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>QueueTemplateLibrary</class>
+ <widget class="QWidget" name="queueTemplateLibrary">
+  <layout class="QVBoxLayout" name="templateLibraryLayout">
+   <property name="leftMargin"><number>0</number></property>
+   <property name="topMargin"><number>0</number></property>
+   <property name="rightMargin"><number>0</number></property>
+   <property name="bottomMargin"><number>0</number></property>
+   <item><widget class="QLineEdit" name="templateSearchEdit">
+    <property name="placeholderText"><string>Search templates…</string></property>
+    <property name="accessibleName"><string>Search queue templates</string></property>
+    <property name="clearButtonEnabled"><bool>true</bool></property>
+   </widget></item>
+   <item><widget class="QListWidget" name="templateList">
+    <property name="maximumHeight"><number>140</number></property>
+    <property name="horizontalScrollBarPolicy"><enum>Qt::ScrollBarAlwaysOff</enum></property>
+    <property name="textElideMode"><enum>Qt::ElideRight</enum></property>
+    <property name="accessibleName"><string>Saved queue templates</string></property>
+   </widget></item>
+   <item><widget class="QLabel" name="templateSummaryLabel">
+    <property name="sizePolicy"><sizepolicy hsizetype="Ignored" vsizetype="Preferred"><horstretch>0</horstretch><verstretch>0</verstretch></sizepolicy></property>
+    <property name="wordWrap"><bool>true</bool></property>
+    <property name="textFormat"><enum>Qt::PlainText</enum></property>
+    <property name="text"><string>Select a recipe. Loading only changes the queue draft.</string></property>
+    <property name="accessibleName"><string>Selected template summary and dependencies</string></property>
+   </widget></item>
+   <item><layout class="QHBoxLayout" name="templateManageLayout">
+    <item><widget class="QPushButton" name="templateUpdateButton"><property name="text"><string>Update…</string></property><property name="toolTip"><string>Explicitly replace the selected saved recipe with the current draft.</string></property></widget></item>
+    <item><widget class="QPushButton" name="templateRenameButton"><property name="text"><string>Rename…</string></property></widget></item>
+    <item><widget class="QPushButton" name="templateDeleteButton"><property name="text"><string>Delete…</string></property><property name="toolTip"><string>Delete only the selected template, not queues or outputs.</string></property></widget></item>
+   </layout></item>
+  </layout>
+ </widget>
+ <resources/>
+ <connections/>
+</ui>
