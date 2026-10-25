@@ -15,7 +15,6 @@ import threading
 from dataclasses import dataclass
 from pathlib import Path
 
-import numpy as np
 from PIL import Image
 
 from dtflow.core.image_inputs import ImageContent
@@ -103,8 +102,8 @@ PART_COLORS = {
     "skin": (255, 224, 178),
 }
 _CLASS_PART = {k: name for name, ids in GARMENT_CLASSES.items() for k in ids}
-_MEAN = np.array((0.485, 0.456, 0.406), dtype=np.float32)
-_STD = np.array((0.229, 0.224, 0.225), dtype=np.float32)
+_MEAN = (0.485, 0.456, 0.406)
+_STD = (0.229, 0.224, 0.225)
 _sessions: dict[tuple[str, str], object] = {}
 _lock = threading.Lock()
 
@@ -123,6 +122,8 @@ class PersonLayers:
             return self.person
         if self.classes is None:
             return None
+        import numpy as np
+
         ids = GROUP_CLASSES.get(name) or GARMENT_CLASSES[name]
         return (
             (np.isin(np.frombuffer(self.classes, dtype=np.uint8), [k + 1 for k in ids]) * 255)
@@ -331,6 +332,8 @@ FLOATS = ("tensor(float)", "tensor(float16)")
 
 def _run(session, tensor):
     """Run with the model's own float width (float32 or float16 exports); results come back as float32."""
+    import numpy as np
+
     dtype = np.float16 if session.get_inputs()[0].type == "tensor(float16)" else np.float32
     outputs = session.run(None, {session.get_inputs()[0].name: tensor.astype(dtype, copy=False)})
     return [np.asarray(item, dtype=np.float32) for item in outputs]
@@ -413,6 +416,8 @@ def _faces_session(data: bytes):
 
 
 def _nms(boxes, scores, iou_threshold):
+    import numpy as np
+
     order = np.argsort(-scores)
     areas = (boxes[:, 2] - boxes[:, 0]) * (boxes[:, 3] - boxes[:, 1])
     kept = []
@@ -431,6 +436,8 @@ def _nms(boxes, scores, iou_threshold):
 
 def _face_boxes(session, image: Image.Image):
     """Source-pixel boxes of the FACE_* detections (NudeNet-style: black bottom/right square padding, 320 px)."""
+    import numpy as np
+
     width, height = image.size
     side = max(width, height)
     canvas = Image.new("RGB", (side, side), (0, 0, 0))
@@ -467,6 +474,8 @@ def _face_boxes(session, image: Image.Image):
 
 def _cap_face(classes, box, faces):
     """Relabel Face pixels far from every detected face as Skin: the clothes model paints neck and chest as Face."""
+    import numpy as np
+
     x0, y0, x1, y1 = box
     shaped = np.frombuffer(classes, dtype=np.uint8).reshape(y1 - y0, x1 - x0).copy()
     allowed = np.zeros(shaped.shape, bool)
@@ -481,6 +490,8 @@ def _cap_face(classes, box, faces):
 
 
 def _letterbox(image: Image.Image):
+    import numpy as np
+
     width, height = image.size
     gain = min(SIDE / width, SIDE / height)
     resized = (max(1, round(width * gain)), max(1, round(height * gain)))
@@ -493,6 +504,8 @@ def _letterbox(image: Image.Image):
 
 
 def _instances(session, image: Image.Image, threshold: float):
+    import numpy as np
+
     tensor, (left, top, rw, rh) = _letterbox(image)
     detections, prototypes = _run(session, tensor)
     if not np.isfinite(detections).all() or not np.isfinite(prototypes).all():
@@ -526,6 +539,8 @@ def _instances(session, image: Image.Image, threshold: float):
 
 
 def _clothes_layers(session, image: Image.Image, mask, box):
+    import numpy as np
+
     width, height = image.size
     x0, y0, x1, y1 = box
     mx, my = int((x1 - x0) * 0.08), int((y1 - y0) * 0.08)
@@ -534,7 +549,10 @@ def _clothes_layers(session, image: Image.Image, mask, box):
     scale = CLOTHES_SIZE / max(crop.size)
     target = (max(32, round(crop.width * scale / 32) * 32), max(32, round(crop.height * scale / 32) * 32))
     pixels = np.asarray(crop.resize(target, Image.Resampling.BILINEAR), dtype=np.float32) / 255.0
-    tensor = np.ascontiguousarray(((pixels - _MEAN) / _STD).transpose(2, 0, 1)[None], dtype=np.float32)
+    tensor = np.ascontiguousarray(
+        ((pixels - np.asarray(_MEAN, dtype=np.float32)) / np.asarray(_STD, dtype=np.float32)).transpose(2, 0, 1)[None],
+        dtype=np.float32,
+    )
     logits = _run(session, tensor)[0]
     if not np.isfinite(logits).all():
         raise ValidationError("Clothes model returned non-finite values.")
@@ -616,6 +634,8 @@ def part_at(person: PersonLayers, x: int, y: int, layers: frozenset[str]) -> str
 
 def colored_preview(person: PersonLayers, layers: frozenset[str], active: str | None = None) -> bytes:
     """Box-sized RGBA preview: each ticked part in its own colour, the ``active`` part (under the pointer) stronger."""
+    import numpy as np
+
     x0, y0, x1, y1 = person.box
     shape = (y1 - y0, x1 - x0)
     rgba = np.zeros((*shape, 4), dtype=np.uint8)
@@ -638,6 +658,8 @@ def colored_preview(person: PersonLayers, layers: frozenset[str], active: str | 
 
 def layers_union(person: PersonLayers, layers: frozenset[str]) -> bytes:
     """Box-sized 0/255 union of the chosen layers, for the hover preview; layers the model lacks are skipped."""
+    import numpy as np
+
     total = np.zeros((person.box[3] - person.box[1]) * (person.box[2] - person.box[0]), dtype=np.uint8)
     for name in layers:
         data = person.layer(name)
@@ -650,6 +672,8 @@ def apply_selection(
     current: bytes, analysis: PersonAnalysis, person: PersonLayers, layers: frozenset[str], *, remove: bool
 ) -> bytes:
     """New binary working mask: ``current`` with the person's chosen layers added (or removed)."""
+    import numpy as np
+
     if not layers or not layers <= set(LAYERS):
         raise ValidationError("Tick at least one layer.")
     mask = np.frombuffer(current, dtype=np.uint8).reshape(analysis.height, analysis.width).copy()

@@ -6,7 +6,7 @@ import os
 from pathlib import Path
 
 from PySide6.QtCore import QEvent, QFile, QIODevice, QObject, QSize, Qt, QTimer, Slot
-from PySide6.QtGui import QFontMetrics, QIcon, QKeySequence, QPixmap, QShortcut
+from PySide6.QtGui import QIcon, QKeySequence, QPixmap, QShortcut
 from PySide6.QtUiTools import QUiLoader
 from PySide6.QtWidgets import (
     QAbstractButton,
@@ -24,15 +24,13 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from shiboken6 import delete as delete_qt_object
-
 from dtflow import startup
 from dtflow.build import display_identity
 from dtflow.composition import BACKENDS, BackendSelection
 from dtflow.core.gallery import GalleryQuery
 from dtflow.core.models import BackendError, ValidationError
 from dtflow.diagnostics import event as diagnostic_event
-from dtflow.logging_setup import configured_directory, dev_enabled
+from dtflow.logging_setup import configured_directory
 from dtflow.paths import application_state_dir
 from dtflow.persistence.cache_coordination import CacheBusyError, CacheCleanupError, CacheSafetyError
 from dtflow.persistence.image_recycle import reconcile as reconcile_images
@@ -95,19 +93,25 @@ PREVIEW_CONTROL_TYPES = (
 )
 
 
-def load_ui(path: Path) -> QWidget:
+def _form_loader() -> QUiLoader:
+    """Share custom-widget registration for the lifetime of this application."""
+    application = QApplication.instance()
+    loader = getattr(application, "_dtflow_form_loader", None)
+    if loader is None:
+        loader = QUiLoader(application)
+        for widget_type in (ImagePreview, SearchableComboBox, RunControl, SegmentedBar, ValueChips):
+            loader.registerCustomWidget(widget_type)
+        application._dtflow_form_loader = loader
+    return loader
+
+
+def load_ui(path: Path, parent: QWidget | None = None) -> QWidget:
     """Load a canonical Designer form without committing generated Python."""
     file = QFile(str(path))
     if not file.open(QIODevice.OpenModeFlag.ReadOnly):
         raise OSError(f"{path.name} could not be opened.")
     try:
-        loader = QUiLoader()
-        loader.registerCustomWidget(ImagePreview)
-        loader.registerCustomWidget(SearchableComboBox)
-        loader.registerCustomWidget(RunControl)
-        loader.registerCustomWidget(SegmentedBar)
-        loader.registerCustomWidget(ValueChips)
-        widget = loader.load(file)
+        widget = _form_loader().load(file, parent)
     finally:
         file.close()
     if widget is None:
@@ -173,21 +177,11 @@ class MainWindow:
         no_cache: bool = False,
     ):
         # Separate first-use Qt costs (loader plugins, fonts, stylesheet parsing) from the form's own cost.
-        QUiLoader()
+        _form_loader()
         startup.mark("ui loader created")
         QWidget().ensurePolished()
         startup.mark("first widget polished")
-        if dev_enabled():  # development diagnosis only: Windows pays seconds on first text-input use
-            QFontMetrics(QApplication.font()).horizontalAdvance("Ag")
-            startup.mark("first font metrics")
-            line_edit_probe = QLineEdit()
-            startup.mark("QLineEdit probe: constructed")
-            line_edit_probe.ensurePolished()
-            startup.mark("QLineEdit probe: polished")
-            # A hidden, parentless diagnostic probe only; measure native disposal explicitly.
-            delete_qt_object(line_edit_probe)
-            del line_edit_probe
-            startup.mark("QLineEdit probe: destroyed")
+        # Disposable font/input probes belong in tools/ui/probe_line_edit.py, not desktop startup.
         self.form = load_form()
         startup.mark("main form")
         self.generation_page = load_ui(GENERATION_UI_FILE)
@@ -214,7 +208,7 @@ class MainWindow:
         self._busy = False
         self.activity = Activity()
         form = self.form
-        self.shell = load_ui(FORMS_DIR / "workspace_shell.ui")
+        self.shell = load_ui(FORMS_DIR / "workspace_shell.ui", form.centralWidget())
         # Mount presentation regions once; page controllers retain their widget references.
         for page, names in (
             (form, ("contextRail", "workspaceFrame", "inspectorPanel")),
@@ -227,7 +221,7 @@ class MainWindow:
                 stack.addWidget(getattr(page, name))
         self.images_page = QWidget()  # Navigation marker; canonical content stays mounted in the shell.
         startup.mark("shell form and mounting")
-        self.gallery_detail = load_ui(FORMS_DIR / "gallery_detail_page.ui")
+        self.gallery_detail = load_ui(FORMS_DIR / "gallery_detail_page.ui", self.shell.centerStack)
         startup.mark("images form")
         self.gallery = GalleryPage(
             self.gallery_detail,
@@ -243,7 +237,7 @@ class MainWindow:
         self.gallery.delete_button.setToolTip(f"Move eligible checked originals to {TRASH_NAME} after confirmation.")
         self.gallery_preview = self.gallery  # retain the established integration attribute
         form.workspaceStack.addWidget(self.images_page)
-        self.shell.leftStack.addWidget(load_ui(FORMS_DIR / "gallery_context.ui"))
+        self.shell.leftStack.addWidget(load_ui(FORMS_DIR / "gallery_context.ui", self.shell.leftStack))
         self.shell.centerStack.addWidget(self.gallery_detail)
         self.shell.rightStack.addWidget(QWidget())
         startup.mark("workspace: images mounted")

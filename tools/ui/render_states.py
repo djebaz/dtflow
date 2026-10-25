@@ -1991,6 +1991,8 @@ def render_item_table_states(shell, out, state):
 def render_gallery_composition_states(shell, state, out):
     """Synthetic gallery projection and GUI settlements only; no DB authority, export or output mutation."""
     form, gallery = shell.form, shell.gallery
+    assert shell.gallery_detail.parentWidget() is shell.shell.centerStack
+    assert shell.shell.parentWidget() is form.centralWidget()
     export = shell.image_export
     image = QImage(1024, 768, QImage.Format.Format_RGB32)
     image.fill(QColor("#8094a8"))
@@ -3485,6 +3487,7 @@ def render_shell_states(shell, capture):
     if sys.platform == "win32":
         # Existing text/notice fixtures exercise the production Windows font policy.
         assert ", sans-serif;" not in QApplication.instance().styleSheet()
+        assert ", monospace;" not in QApplication.instance().styleSheet()
     capture("shell-01-about")
     clear()
     mailbox = DiagnosticNotice()
