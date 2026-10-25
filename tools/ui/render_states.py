@@ -3593,18 +3593,22 @@ def render_shell_states(shell, capture):
             elapsed="0:43",
             eta="~0:25 left",
         )
-        for width in (400, 760, 1400, 240, 239):
-            shell.form.resize(2200, original_size.height())
-            QApplication.processEvents()
-            available = strip._bar_rect()
-            shell.form.resize(shell.form.width() + width - available.width(), original_size.height())
-            QApplication.processEvents()
-            strip._position()
-            assert strip.rows["bar-fixture"].property("inBar") == (width >= 240)
-            if width >= 240:
-                assert strip.bar.width() == width
-                assert strip.bar.strip.model.count == "4/7" and strip.bar.strip.model.queued == 2
-            capture(f"shell-22-activity-queued-width-{width}")
+        shell.form.resize(2200, original_size.height())
+        QApplication.processEvents()
+        status = shell.form.statusBar()
+        left = status.fontMetrics().horizontalAdvance(status.currentMessage()) + 30
+        # Pin the available status-bar slot, not the native window size: minimum
+        # sizes and deferred layouts otherwise make exact widths platform-dependent.
+        # Keep the real _bar_rect threshold and row/bar projection under test.
+        with patch.object(status, "findChildren", return_value=[]):
+            for width in (400, 760, 1400, 240, 239):
+                with patch.object(status, "width", return_value=left + width + 12):
+                    strip._position()
+                    assert strip.rows["bar-fixture"].property("inBar") == (width >= 240)
+                    if width >= 240:
+                        assert strip.bar.width() == width
+                        assert strip.bar.strip.model.count == "4/7" and strip.bar.strip.model.queued == 2
+                    capture(f"shell-22-activity-queued-width-{width}")
         shell.form.resize(original_size)
         strip.finish("bar-fixture")
         strip.start("bar-fixture", "Generation", stop=lambda: None, stop_text="Stop waiting locally")
