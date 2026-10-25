@@ -255,6 +255,7 @@ class QueuePage:
         self._output_folder: Path | None = None
         self._images_hook = None  # set_images_hook wires Open in Images to the Images workspace
         self._run_progress: dict[tuple[str, str], tuple[int, int]] = {}
+        self._run_stages: dict[tuple[str, str], str] = {}
         self._countdown = QueueCountdown()
         self._event_relay = EventRelay(self._queue_backend_event, page)
         self._advance_relay = EventRelay(self._advanced, page)
@@ -735,6 +736,12 @@ class QueuePage:
                 f" · {running} items running" if running > 1 else " · 1 item running" if running else ""
             )
             stage = f"{running} running" if running else summary.headline.rstrip(".")
+            if running:
+                stages = [value for (owner, _), value in self._run_stages.items() if owner == queue_id]
+                stage = stages[-1] if running == 1 and stages else "Admitted; preparing / waiting for backend"
+                if not progress:
+                    completed, total = None, None
+                wide = f"Queue {queue_id[:8]} · {stage} · {summary.settled}/{summary.total} settled"
             if running == 1 and len(progress) == 1:
                 step, steps = progress[0]
                 stage = f"step {step}/{steps}"
@@ -2140,14 +2147,20 @@ class QueuePage:
 
     # -- dispatch and controls -------------------------------------------------------------------------------------
     def _queue_backend_event(self, wrapped: _QueueBackendEvent) -> None:
+        from dtflow.ui.progress_stages import event_stage
+
         event = wrapped.event
         if wrapped.queue_id == self._dispatching:
             self._dispatch_started = True
         key = (wrapped.queue_id, wrapped.item_id)
-        if event.kind == "progress" and type(event.completed) is int and type(event.total) is int and event.total > 0:
+        label = event_stage(event)
+        if label:
+            self._run_stages[key] = label
+        if event.kind == "progress" and type(event.completed) is int and type(event.total) is int and event.total > 0 and 0 <= event.completed <= event.total:
             self._run_progress[key] = (max(0, event.completed), event.total)
         elif event.kind == "terminal":
             self._run_progress.pop(key, None)
+            self._run_stages.pop(key, None)
         self._publish_run_state()
 
     def trigger_run_control(self) -> None:
