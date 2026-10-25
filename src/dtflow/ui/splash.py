@@ -113,11 +113,11 @@ class StartupSplash(QWidget):
             self._announced = True
             QTimer.singleShot(0, self.painted.emit)
 
-    def finish(self, window: QWidget) -> None:
-        """Close once the main window is up; the window, not the splash, keeps the focus."""
+    def finish(self, form: QWidget) -> None:
+        """Close once the main window is up; the window form, not the splash, keeps the focus."""
         self.close()
-        window.raise_()
-        window.activateWindow()
+        form.raise_()
+        form.activateWindow()
 
 
 def run_gui_with_splash(**options) -> int:
@@ -147,7 +147,7 @@ def run_gui_with_splash(**options) -> int:
             application.exit(1)
             return
         # The window is already shown; the splash stays through the next event-loop turn, which paints it.
-        QTimer.singleShot(0, lambda: splash.finish(outcome["window"]))
+        QTimer.singleShot(0, lambda: splash.finish(outcome["window"].form))
 
     splash.painted.connect(proceed)
     splash.show()
