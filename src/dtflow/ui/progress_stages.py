@@ -3,7 +3,16 @@
 
 def event_stage(event):
     if event.kind == "preparing":
-        return "Request validated" if event.stage == "wire_validated" else "Preparing request"
+        return {
+            "resolving_model": "Resolving model description",
+            "preparing_image_inputs": "Preparing image inputs",
+            "resolving_credentials": "Resolving backend credentials",
+            "encoding_request": "Encoding generation request",
+            "wire_validated": "Request validated",
+            "waiting_execution_lane": "Waiting for execution slot",
+            "connecting_backend": "Connecting to backend",
+            "preparing_grpc_metadata": "Preparing gRPC metadata",
+        }.get(event.stage, "Preparing request")
     if event.kind == "submission_possible":
         return "Submitting request / waiting for backend"
     if event.kind == "terminal":
