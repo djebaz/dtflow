@@ -1198,7 +1198,7 @@
           <item>
            <widget class="QPushButton" name="queueGenerateButton">
             <property name="text">
-             <string>▾</string>
+             <string />
             </property>
             <property name="minimumSize">
              <size>

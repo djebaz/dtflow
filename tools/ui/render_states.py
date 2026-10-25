@@ -3435,6 +3435,8 @@ def render_queue_popover_states(shell, capture):
     header = shell.shell.quickQueueButton
     shell.form.generationNavigationButton.click()
     trigger = shell.generation_page.queueGenerateButton
+    assert trigger.text() == "" and not trigger.icon().isNull()
+    assert trigger.accessibleName() == "Queue this request"
     popover.repeat_spin.setValue(4)
     assert trigger.toolTip().startswith("Queue ×4:"), trigger.toolTip()
     popover.open_at(trigger)

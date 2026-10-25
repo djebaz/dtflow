@@ -374,6 +374,9 @@ class GenerationPage:
         self._collapse_icon = QIcon(str(icons / "minimize.svg"))
         page.generateButton.setIcon(QIcon(str(icons / "sparkles.svg")))
         page.generateButton.setIconSize(QSize(16, 16))
+        # Use artwork rather than a font glyph: hidden-page size hints run during the first window show.
+        page.queueGenerateButton.setIcon(QIcon(str(icons.parent / "controls" / "chevron-down.svg")))
+        page.queueGenerateButton.setIconSize(QSize(16, 16))
         page.checkpointDetailsButton.setIcon(QIcon(str(icons / "info.svg")))
         page.checkpointDetailsButton.setIconSize(QSize(16, 16))
         page.previousCheckpointButton.setIcon(QIcon(str(icons / "chevron-left.svg")))
