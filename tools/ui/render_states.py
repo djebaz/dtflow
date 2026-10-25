@@ -14,7 +14,7 @@ import sys
 import tempfile
 import time
 import traceback
-from dataclasses import replace
+from dataclasses import asdict, replace
 from datetime import UTC, datetime
 from pathlib import Path
 from types import SimpleNamespace
@@ -80,6 +80,7 @@ from dtflow.core.models import (  # noqa: E402
     InventorySnapshot,
     LoRASelection,
     RemoteOutcome,
+    ResolvedGenerationRequest,
     SubmissionStage,
     ValidationError,
 )
@@ -1017,6 +1018,7 @@ def render_active_queue_states(shell, out):
     stamp = "2026-10-17T12:00:00+00:00"
     PROMPT = "A lighthouse on a basalt cliff at dusk, long exposure, oil painting with heavy impasto"
     strip = activity_strip(page)
+    apply_read = queue._read_done
 
     def snap(name):
         QTest.qWait(100)
@@ -1091,12 +1093,17 @@ def render_active_queue_states(shell, out):
         queue._dispatch_started = owned and started
         queue._selected = queue_id
         queue._activity.set(dispatching=owned)
-        queue._read_done(([view], view, 2), None)
+        apply_read(([view], view, 2), None)
         queue._timer.stop()  # No polling between presentation-only captures.
         assert queue.model.rowCount() == len(items)
         return view
 
-    with patch.object(shell.runner, "submit", side_effect=hold_worker):
+    # Startup reads may already have queued a delivery before submit is held. Only
+    # explicit synthetic snapshots may replace this fixture's controller views.
+    with (
+        patch.object(shell.runner, "submit", side_effect=hold_worker),
+        patch.object(queue, "_read_done"),
+    ):
         form.backendCombo.setCurrentText("local")
         form.queueNavigationButton.click()
         # Category processes start with a fresh form; do not depend on the Generate fixtures running first.
@@ -1158,7 +1165,7 @@ def render_active_queue_states(shell, out):
         queue.close_composer()
         timed = present("running", ["succeeded", "running", "pending"], owned=True)
         timed.update(successful_durations=[45], started_at_utc=datetime.now(UTC).isoformat())
-        queue._read_done(([timed], timed, 2), None)
+        apply_read(([timed], timed, 2), None)
         queue._timer.stop()
         assert "Elapsed" in queue._activity.run_state.elapsed and "estimate" in queue._activity.run_state.eta
         assert (queue._activity.run_state.completed, queue._activity.run_state.total) == (1, 3)
@@ -1169,7 +1176,7 @@ def render_active_queue_states(shell, out):
         assert (queue._activity.run_state.completed, queue._activity.run_state.total) == (1, 3)
         snap("queues-34-eta-countdown")
         resumed = dict(timed, resume_event_id=1)
-        queue._read_done(([resumed], resumed, 2), None)
+        apply_read(([resumed], resumed, 2), None)
         queue._timer.stop()
         assert "~1:30 left" in queue._activity.run_state.eta
         snap("queues-35-resume-between-polls")
@@ -1181,7 +1188,7 @@ def render_active_queue_states(shell, out):
         snap("queues-13-foreign-running")
         stale = present("running", ["succeeded", "running", "pending"])
         stale["owner_active"] = False
-        queue._read_done(([stale], stale, 2), None)
+        apply_read(([stale], stale, 2), None)
         queue._timer.stop()
         assert page.queuePrimaryButton.text() == "Resume" and queue._activity.run_state.action == "start"
         assert "No dispatch owner" in page.queueStateLabel.toolTip()
@@ -1208,12 +1215,12 @@ def render_active_queue_states(shell, out):
         )
         running = present("running", ["succeeded", "running", "pending"], owned=True)
         queue._selected = paused["queue_id"]
-        queue._read_done(([running, paused], paused, 2), None)
+        apply_read(([running, paused], paused, 2), None)
         queue._timer.stop()
         assert page.queuePrimaryButton.text() == "Start next" and page.queuePrimaryButton.isEnabled()
         snap("queues-24-start-next")
         queued = dict(paused, status="queued", up_next=1)
-        queue._read_done(([running, queued], queued, 2), None)
+        apply_read(([running, queued], queued, 2), None)
         queue._timer.stop()
         assert page.earlierQueueButton.isVisible() and page.queuePrimaryButton.text() == "Pause"
         assert page.queueStateLabel.text() == "Up next 1" and "1 up next" in queue._activity.run_state.detail
@@ -1246,7 +1253,7 @@ def render_active_queue_states(shell, out):
         everything = [running, queued, *history]
         mixed = history[1]
         queue._selected = mixed["queue_id"]
-        queue._read_done((everything, mixed, 2), None)
+        apply_read((everything, mixed, 2), None)
         queue._timer.stop()
         headings = [page.queueList.item(i).text() for i in range(page.queueList.count())]
         assert [h for h in headings if h.isupper()] == ["RUNNING", "UP NEXT", "PAUSED", "HISTORY"]
@@ -1299,7 +1306,7 @@ def render_active_queue_states(shell, out):
         page.failedFilterButton.setChecked(True)
         fresh = dict(history[4], queue_id="offline-queue-new")
         queue._select_after = fresh["queue_id"]
-        queue._read_done(([fresh], fresh, 2), None)
+        apply_read(([fresh], fresh, 2), None)
         queue._timer.stop()
         assert not page.failedFilterButton.isChecked()
         assert not any(page.queueItemsView.isRowHidden(row) for row in range(len(fresh["items"])))
@@ -1508,18 +1515,22 @@ def render_active_queue_states(shell, out):
 
         # Legacy Edit as new reconstructs the composer only; Generate stays independent.
         def recorded(prompt, model, seed, steps=20, loras=()):
-            return {
-                "operation": "txt2img",
-                "prompt": prompt,
-                "model_id": model,
-                "seed": seed,
-                "steps": steps,
-                "guidance": 7.0,
-                "sampler_id": "euler_a",
-                "width_px": 512,
-                "height_px": 512,
-                "loras": [{"identifier": name, "weight": weight} for name, weight in loras],
-            }
+            record = asdict(
+                ResolvedGenerationRequest(
+                    request_id="offline-edit-record",
+                    prompt=prompt,
+                    model_id=model,
+                    seed=seed,
+                    steps=steps,
+                    guidance=7.0,
+                    width_px=512,
+                    height_px=512,
+                    loras=tuple(LoRASelection(name, weight) for name, weight in loras),
+                )
+            )
+            # Exercise historical txt2img decoding with a complete request payload.
+            record.pop("schema_version")
+            return record
 
         def lora(weight_a, weight_b):
             return (("style.ckpt", weight_a), ("detail.ckpt", weight_b))
@@ -1596,7 +1607,7 @@ def render_active_queue_states(shell, out):
         queue._dispatch_started = False
         queue._selected = None
         queue._activity.set(dispatching=False)
-        queue._read_done(([], None, 2), None)
+        apply_read(([], None, 2), None)
         queue._timer.stop()
 
 
