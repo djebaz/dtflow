@@ -66,6 +66,9 @@ def default_cap(state: Path, backend_name: str) -> int:
     return load_cloud_concurrency(state) if backend_name == "cloud" else 4
 
 
+OVERLAP_POLL = 0.5  # seconds between looks for a free slot at a queue boundary
+
+
 async def create_queue(
     state: Path,
     backend: dict[str, Any],
@@ -265,31 +268,77 @@ async def dispatch_queue(
     """
     policy = timeouts or TimeoutPolicy()
     store = SQLiteAttempts(state)
-    owned, reason, claimed = False, "stopped", None
+    owned, reason = False, "stopped"
+    chain: list[tuple[str, asyncio.Task]] = []  # dispatch order; the head is the oldest queue still unsettled
+    claimed: set[str] = set()  # queues this owner auto-started and has not seen settle
+
+    def start(next_id: str) -> None:
+        chain.append(
+            (
+                next_id,
+                asyncio.create_task(_dispatch_one(store, state, next_id, policy, saved, out, on_settle, on_event)),
+            )
+        )
+
     try:
         await store.open()
         owned = True
         if auto_play:
             await store.open_up_next()
+        start(queue_id)
+        final: dict[str, Any] = {}
         while True:
-            final = await _dispatch_one(store, state, queue_id, policy, saved, out, on_settle, on_event)
-            claimed = None
-            if not auto_play:
-                return final
-            schedule_publish(state, reason="queue_settled")
-            following = await store.claim_queued()  # an empty order also closes it to new arrivals
-            if following is None:
-                reason = "drained"
-                return final
-            diagnostic_event(log, "queue.auto_play", level=logging.INFO, data={"settled": final["status"]})
-            if on_next is not None:
-                on_next(final, following)
-            queue_id = claimed = following
+            head_id, head = chain[0]
+            for _, task in chain:
+                if task.done() and not task.cancelled() and task.exception() is not None:
+                    raise task.exception()  # type: ignore[misc]
+            if head.done():
+                chain.pop(0)
+                final = head.result()
+                claimed.discard(head_id)
+                if not auto_play:
+                    return final
+                schedule_publish(state, reason="queue_settled")
+                # A queue that already overlapped its predecessor is the next one: it keeps running undisturbed.
+                following = chain[0][0] if chain else await store.claim_queued()  # an empty order also closes it
+                if following is None:
+                    reason = "drained"
+                    return final
+                diagnostic_event(log, "queue.auto_play", level=logging.INFO, data={"settled": final["status"]})
+                if on_next is not None:
+                    on_next(final, following)
+                if not chain:
+                    claimed.add(following)
+                    start(following)
+                continue
+            if auto_play:
+                # Cross-queue overlap: once the newest queue has handed out its last item, a free slot on the shared
+                # backend is reused by the next up-next queue. The combined cap is still enforced item by item at claim.
+                tail_id, tail = chain[-1]
+                if not tail.done():
+                    overlapping = await store.claim_queued(overlap_after=tail_id)
+                    if overlapping is not None:
+                        diagnostic_event(
+                            log, "queue.overlap_started", level=logging.INFO, data={"after_active": len(chain)}
+                        )
+                        claimed.add(overlapping)
+                        start(overlapping)
+                        continue
+            await asyncio.wait(
+                [task for _, task in chain if not task.done()],
+                timeout=OVERLAP_POLL,
+                return_when=asyncio.FIRST_COMPLETED,
+            )
     finally:
+        for _, task in chain:
+            task.cancel()
+        if chain:
+            await asyncio.shield(asyncio.gather(*(task for _, task in chain), return_exceptions=True))
         try:
             if owned and auto_play:
                 try:
-                    await store.release_queued(reason, claimed)
+                    for current in claimed or {None}:
+                        await store.release_queued(reason, current)
                 except Exception as exc:
                     diagnostic_event(
                         log,

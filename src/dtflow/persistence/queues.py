@@ -365,28 +365,50 @@ class QueueMixin:
         with self._txn() as db:
             db.execute("INSERT OR REPLACE INTO queue_dispatch (owner, started_at_utc) VALUES (1, ?)", (self._now(),))
 
-    async def claim_queued(self) -> str | None:
+    async def claim_queued(self, overlap_after: str | None = None) -> str | None:
         """Auto-play: atomically start the first up-next queue, or close the order when none waits.
 
         Picking and starting happen in one transaction, so a Pause, Cancel or reorder made before it is respected, and
         a queue can never join after the owner found the order empty.
-        """
-        return await self._run(self._claim_queued)
 
-    def _claim_queued(self) -> str | None:
+        With ``overlap_after`` (a running queue whose items are all claimed) the first waiting queue starts early, only
+        while a slot is free on their shared backend; otherwise nothing changes and the order stays open.
+        """
+        return await self._run(self._claim_queued, overlap_after)
+
+    def _claim_queued(self, overlap_after: str | None = None) -> str | None:
         with self._txn() as db:
             row = db.execute(
-                "SELECT queue_id FROM queues WHERE state='queued' ORDER BY up_next, created_at_utc LIMIT 1"
+                "SELECT queue_id, backend_key, cap FROM queues WHERE state='queued' ORDER BY up_next, created_at_utc"
+                " LIMIT 1"
             ).fetchone()
-            if row is None:
-                db.execute("DELETE FROM queue_dispatch")
-                return None
+            if overlap_after is None:
+                if row is None:
+                    db.execute("DELETE FROM queue_dispatch")
+                    return None
+            else:
+                if row is None:
+                    return None
+                tail = db.execute(
+                    "SELECT backend_key, state, (SELECT COUNT(*) FROM queue_items WHERE queue_id=q.queue_id"
+                    " AND state='pending') AS pending FROM queues q WHERE queue_id=?",
+                    (overlap_after,),
+                ).fetchone()
+                if (
+                    tail is None
+                    or tail["state"] != "running"
+                    or tail["pending"]
+                    or tail["backend_key"] != row["backend_key"]
+                    or self._reserved(db, row["backend_key"]) >= row["cap"]
+                ):
+                    return None
             now = self._now()
             db.execute(
                 "UPDATE queues SET state='running', up_next=NULL, updated_at_utc=? WHERE queue_id=?",
                 (now, row["queue_id"]),
             )
-            self._event(db, row["queue_id"], "started", now, {"by": "up_next"})
+            detail = {"by": "up_next"} if overlap_after is None else {"by": "up_next", "overlap_after": overlap_after}
+            self._event(db, row["queue_id"], "started", now, detail)
             return row["queue_id"]
 
     async def release_queued(self, reason: str, current: str | None = None) -> int:
