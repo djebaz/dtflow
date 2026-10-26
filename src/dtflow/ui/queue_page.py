@@ -109,6 +109,7 @@ from dtflow.ui.queue_presenter import (
     up_next_ids,
 )
 from dtflow.ui.prompt_tags import PROMPT_RUNS_ROLE, TagCellDelegate, style_prompt_tags, tag_spans, tagged_html
+from dtflow.ui.submit_shortcut import SubmitShortcut
 from dtflow.ui.queue_widgets import ENTRY_ROLE, HEADING_ROLE, QueueListDelegate
 from dtflow.ui.runner import AsyncRunner, EventRelay
 
@@ -335,6 +336,7 @@ class QueuePage:
         page.copyToGenerateButton.clicked.connect(self.copy_to_generate)
         page.composerPromptEdit.textChanged.connect(self._plan_changed)
         self._prompt_tags = style_prompt_tags(page.composerPromptEdit)
+        self._submit_shortcut = SubmitShortcut(page.composerPromptEdit, self._shortcut_button)
         page.queueCopyPromptButton.setIcon(QIcon(str(refresh_icon.with_name("copy.svg"))))
         page.queueCopyPromptButton.setIconSize(QSize(16, 16))
         page.queueCopyPromptButton.clicked.connect(self.copy_queue_prompt)
@@ -1780,6 +1782,13 @@ class QueuePage:
             self._invalidate_preview()  # the inputs changed: a result still being drawn is already stale
         if self._composing and self.page.queueWorkspace.isVisible():
             self._preview_timer.start()
+
+    def _shortcut_button(self):
+        """Ctrl+Enter in the composer: Start now, or Add to queue while a queue runs (Start now is then disabled, so at
+        most one is ever enabled). Save paused is never a shortcut target."""
+        page = self.page
+        buttons = (page.startQueueButton, page.addQueueButton)
+        return next((button for button in buttons if self._composing and button.isEnabled()), None)
 
     # -- creation --------------------------------------------------------------------------------------------------
     def create(self, action: str = "save", *, count: int | None = None, quick: bool = False) -> None:
