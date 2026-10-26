@@ -20,6 +20,7 @@ from PySide6.QtWidgets import (
 
 from dtflow.core.gallery import GalleryItem
 from dtflow.ui.gallery_detail_preview import ASSETS
+from dtflow.ui.prompt_tags import PromptTagHighlighter, stored_runs
 
 HOVER_DELAY_MS = 200
 BUTTON_SIDE = 30
@@ -76,6 +77,7 @@ class GalleryHoverCard(QFrame):
         self.prompt.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         self.prompt.setFrameShape(QFrame.Shape.NoFrame)
         # The card is sized to the whole prompt, so the box never scrolls or clips.
+        self._tags = PromptTagHighlighter(self.prompt, scan=False)
         self.prompt.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.prompt.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.prompt.setWordWrapMode(QTextOption.WrapMode.WrapAtWordBoundaryOrAnywhere)
@@ -119,7 +121,8 @@ class GalleryHoverCard(QFrame):
         if (
             item is not None
             and current is not None
-            and (item.identity, item.prompt, item.loras) == (current.identity, current.prompt, current.loras)
+            and (item.identity, item.prompt, item.loras, item.request_json)
+            == (current.identity, current.prompt, current.loras, current.request_json)
         ):
             self._item = item
             return
@@ -133,6 +136,7 @@ class GalleryHoverCard(QFrame):
         item = self._item
         self._dirty = False
         self.prompt.setPlainText(item.prompt or "Not recorded")
+        self._tags.set_runs(stored_runs(item.request_json) if item.prompt else ())
         while self.lora_rows.count():
             row = self.lora_rows.takeAt(0).widget()
             if row is not None:
