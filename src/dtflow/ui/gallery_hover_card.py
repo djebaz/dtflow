@@ -4,9 +4,18 @@ Presentation only: it renders the already loaded GalleryItem and never reads met
 touches the backend or changes zoom, pan or navigation.
 """
 
-from PySide6.QtCore import QEvent, QObject, Qt, QTimer
+from PySide6.QtCore import QEvent, QObject, QSize, Qt, QTimer
 from PySide6.QtGui import QCursor
-from PySide6.QtWidgets import QFrame, QHBoxLayout, QLabel, QPlainTextEdit, QVBoxLayout, QWidget
+from PySide6.QtWidgets import (
+    QApplication,
+    QFrame,
+    QHBoxLayout,
+    QLabel,
+    QPlainTextEdit,
+    QSizePolicy,
+    QVBoxLayout,
+    QWidget,
+)
 
 from dtflow.core.gallery import GalleryItem
 
@@ -15,7 +24,30 @@ LEAVE_GRACE_MS = 150
 EDGE_MARGIN = 12
 MAX_WIDTH = 440
 MAX_PROMPT_HEIGHT = 150
+QWIDGETSIZE_MAX = 16777215
+TOOLBAR_GAP = 8
 LORA_UNKNOWN_TIP = "No persisted LoRA application/compatibility evidence is available in the saved request."
+
+
+class _ElidedLabel(QLabel):
+    """Label that elides its text to the available width and keeps the full text as tooltip."""
+
+    def __init__(self, text: str, parent: QWidget):
+        super().__init__(parent)
+        self._full = text
+        self.setToolTip(text)
+        self.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
+        self._elide()
+
+    def minimumSizeHint(self):
+        return QSize(0, super().minimumSizeHint().height())
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        self._elide()
+
+    def _elide(self) -> None:
+        self.setText(self.fontMetrics().elidedText(self._full, Qt.TextElideMode.ElideMiddle, max(0, self.width())))
 
 
 class GalleryHoverCard(QFrame):
@@ -58,16 +90,29 @@ class GalleryHoverCard(QFrame):
         self.hide_timer.setInterval(LEAVE_GRACE_MS)
         self.hide_timer.timeout.connect(self._hide_if_left)
         self._item: GalleryItem | None = None
+        self._dirty = False
         self._watcher = _SurfaceWatcher(self)
         surface.installEventFilter(self._watcher)
 
     def set_item(self, item: GalleryItem | None) -> None:
-        """Replace the content for a new selection; always dismisses the card."""
+        """Track the selection. The card closes only when what it shows would change."""
+        current = self._item
+        if (
+            item is not None
+            and current is not None
+            and (item.identity, item.prompt, item.loras) == (current.identity, current.prompt, current.loras)
+        ):
+            self._item = item
+            return
         self.dismiss()
         self._item = item
-        if item is None:
-            return
+        self._dirty = item is not None
+
+    def _populate(self) -> None:
+        item = self._item
+        self._dirty = False
         self.prompt.setPlainText(item.prompt or "Not recorded")
+        self.prompt.verticalScrollBar().setValue(0)
         while self.lora_rows.count():
             row = self.lora_rows.takeAt(0).widget()
             if row is not None:
@@ -82,9 +127,8 @@ class GalleryHoverCard(QFrame):
         row = QHBoxLayout(chip)
         row.setContentsMargins(4, 2, 4, 2)
         row.setSpacing(6)
-        name = QLabel(identifier, chip)
+        name = _ElidedLabel(identifier, chip)
         name.setProperty("textRole", "loraName")
-        name.setToolTip(identifier)
         value = QLabel(f"{weight:g}", chip)
         value.setProperty("textRole", "identifier")
         status = QLabel("Unknown", chip)
@@ -116,28 +160,55 @@ class GalleryHoverCard(QFrame):
         self.hide_timer.stop()
         self.hide()
 
-    def reposition(self) -> None:
-        bounds = self.surface.rect().adjusted(EDGE_MARGIN, EDGE_MARGIN, -EDGE_MARGIN, -EDGE_MARGIN)
-        if bounds.width() <= 0 or bounds.height() <= 0:
-            return
-        self.setFixedWidth(max(1, min(MAX_WIDTH, bounds.width())))
-        self.adjustSize()
-        height = min(self.height(), bounds.height())
-        self.setFixedHeight(height)
-        self.move(bounds.left(), bounds.bottom() - height + 1)
+    def _bottom_limit(self) -> int:
+        """Lowest y the card may reach: above the image toolbar when that overlaps the surface."""
+        bottom = self.surface.rect().bottom() - EDGE_MARGIN
+        toolbar = self.surface.window().findChild(QWidget, "galleryImageToolbar")
+        if toolbar is not None and toolbar.isVisible():
+            top = self.surface.mapFromGlobal(toolbar.mapToGlobal(toolbar.rect().topLeft())).y()
+            if top <= bottom:
+                bottom = top - TOOLBAR_GAP
+        return bottom
 
-    def _pointer_over(self, widget: QWidget) -> bool:
-        return widget.rect().contains(widget.mapFromGlobal(QCursor.pos()))
+    def reposition(self) -> None:
+        left, top = EDGE_MARGIN, EDGE_MARGIN
+        right = self.surface.rect().right() - EDGE_MARGIN
+        bottom = self._bottom_limit()
+        if right <= left or bottom <= top:
+            return
+        width = max(1, min(MAX_WIDTH, right - left + 1))
+        # Release the previous fixed size so content from a different image is measured fresh.
+        self.setMinimumSize(0, 0)
+        self.setMaximumSize(QWIDGETSIZE_MAX, QWIDGETSIZE_MAX)
+        self.setFixedWidth(width)
+        margins = self.layout().contentsMargins()
+        document = self.prompt.document()
+        document.setTextWidth(
+            max(1, width - margins.left() - margins.right() - self.prompt.verticalScrollBar().sizeHint().width())
+        )
+        wanted = int(document.size().height() + 2 * document.documentMargin()) + 2
+        self.prompt.setFixedHeight(max(self.fontMetrics().height() + 8, min(MAX_PROMPT_HEIGHT, wanted)))
+        self.layout().activate()
+        height = min(self.layout().sizeHint().height(), bottom - top + 1)
+        self.setFixedHeight(height)
+        self.move(left, bottom - height + 1)
+
+    def _is_over(self, widget: QWidget) -> bool:
+        """True when the topmost widget under the pointer is the widget or one of its descendants."""
+        under = QApplication.widgetAt(QCursor.pos())
+        return under is not None and (under is widget or widget.isAncestorOf(under))
 
     def _show_if_hovered(self) -> None:
-        if self._item is None or not self.surface.isVisible() or not self._pointer_over(self.surface):
+        if self._item is None or not self.surface.isVisible() or not self._is_over(self.surface):
             return
+        if self._dirty:
+            self._populate()
         self.reposition()
         self.show()
         self.raise_()
 
     def _hide_if_left(self) -> None:
-        if not self._pointer_over(self) and not self._pointer_over(self.surface):
+        if not self._is_over(self.surface):
             self.dismiss()
 
     def enterEvent(self, event):

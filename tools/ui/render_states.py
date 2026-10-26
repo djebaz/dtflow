@@ -2148,14 +2148,18 @@ def render_gallery_composition_states(shell, state, out):
         gallery.items[0] = hover_record
         gallery._presented_item = None
         gallery._present_item(hover_record)
+        card._populate()
         card.reposition()
         card.show()
         QTest.qWait(30)
         assert card.isVisible() and gallery.surface.rect().contains(card.geometry())
         assert card.prompt.verticalScrollBar().maximum() > 0
         snap("images-99-detail-hover-card-long-prompt")
-        gallery._present_item(replace(hover_record, identity="offline-chevron:x", prompt="", loras=()))
+        empty_record = replace(hover_record, prompt="", loras=())
+        gallery.items[0] = empty_record
+        gallery._present_item(empty_record)
         assert not card.isVisible()
+        card._populate()
         card.reposition()
         card.show()
         snap("images-99a-detail-hover-card-empty")
