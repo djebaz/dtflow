@@ -89,6 +89,7 @@ from dtflow.services.gallery import (
 from dtflow.ui.activity_strip import activity_strip
 from dtflow.ui.button_focus import KeyboardFocusGuard
 from dtflow.ui.desktop_open import open_local_path
+from dtflow.ui.gallery_hover_card import GalleryHoverCard
 from dtflow.ui.gallery_detail_preview import (
     ASSETS,
     CoverPainter,
@@ -620,7 +621,7 @@ class GalleryPage(QObject):
         self.surface_painter = self._presentation_painters[0]
         self.surface_painter.pixmap = QPixmap()
         self.surface = self._widget("galleryImageSurface", QLabel)
-        self.surface.setToolTip("Saved output preview")
+        self.hover_card = GalleryHoverCard(self.surface)
         self._widget("galleryFixtureOverlay").hide()
 
         self.stack = self._widget("galleryContentStack")
@@ -3328,6 +3329,7 @@ class GalleryPage(QObject):
         self._widget("galleryModelValue", QLabel).setText(item.model or "Not recorded")
         self._widget("galleryModelIdentifier", QLabel).hide()
         self._present_loras(item)
+        self.hover_card.set_item(item)
         self._widget("galleryStepsValue", QLabel).setText(self._value(request.get("steps")))
         self._widget("galleryGuidanceValue", QLabel).setText(self._value(request.get("guidance")))
         self._widget("gallerySamplerValue", QLabel).setText(self._value(request.get("sampler_id")))
@@ -3384,7 +3386,7 @@ class GalleryPage(QObject):
         self.folder_button.setEnabled(available)
         if image_changed:
             self.external_button.setEnabled(available)
-            self.surface.setToolTip(item.issue or item.path)
+            self.surface.setToolTip(item.issue or "")
             self.surface_painter.pixmap = QPixmap()
             self.surface_painter.zoom = 1.0
             self.surface_painter.offset = [0.0, 0.0]
@@ -4278,6 +4280,7 @@ class GalleryPage(QObject):
 
     def _clear_detail(self) -> None:
         self._presented_item = None
+        self.hover_card.set_item(None)
         self._image_generation += 1
         self._detail_generation += 1
         self.surface_painter.pixmap = QPixmap()
