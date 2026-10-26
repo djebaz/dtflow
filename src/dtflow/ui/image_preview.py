@@ -16,6 +16,9 @@ from dtflow.ui.brand import brand_mark
 from dtflow.ui.theme import load_tokens
 
 
+WHEEL_STEP = 1.1  # per 120-unit wheel notch; Images → Detail uses the same step
+
+
 class ImagePreview(QAbstractScrollArea):
     """Fit preserves the entire image; pixel zoom adds scrollbars, never resizes the saved artifact."""
 
@@ -24,7 +27,7 @@ class ImagePreview(QAbstractScrollArea):
         self.setFrameShape(QFrame.Shape.NoFrame)
         self.setMinimumSize(160, 180)
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
-        self.setAccessibleName("Image preview. Control-wheel zooms; drag to pan.")
+        self.setAccessibleName("Image preview. Mouse wheel zooms; drag to pan.")
         self.viewport().setMouseTracking(True)
         self._pixmap = QPixmap()
         self._scale = 1.0
@@ -42,16 +45,16 @@ class ImagePreview(QAbstractScrollArea):
         row = QHBoxLayout(self._top)
         row.setContentsMargins(4, 4, 4, 4)
         row.setSpacing(4)
-        self.fitButton = self._button(row, "Fit", self.fit)
-        self.actualButton = self._button(row, "100%", lambda: self.zoom(1.0))
-        self.minusButton = self._button(row, "−", lambda: self.zoom(self._scale / 1.25))
+        self.fitButton = self._button(row, "Fit", self.fit, "Fit the whole image (F)")
+        self.actualButton = self._button(row, "100%", lambda: self.zoom(1.0), "Actual size")
+        self.minusButton = self._button(row, "−", lambda: self.zoom(self._scale / 1.25), "Zoom out (−)")
         self.zoomSlider = QSlider(Qt.Orientation.Horizontal, self._top)
         self.zoomSlider.setRange(5, 400)
         self.zoomSlider.setFixedWidth(70)
         self.zoomSlider.setAccessibleName("Preview zoom percentage")
         self.zoomSlider.valueChanged.connect(lambda value: self.zoom(value / 100))
         row.addWidget(self.zoomSlider)
-        self.plusButton = self._button(row, "+", lambda: self.zoom(self._scale * 1.25))
+        self.plusButton = self._button(row, "+", lambda: self.zoom(self._scale * 1.25), "Zoom in (+)")
         self._expand = QPushButton("Expand", self.viewport())
         self._expand.setObjectName("previewExpandButton")
         self._expand.setToolTip("Expand the canvas; Escape restores the workspace.")
@@ -74,8 +77,9 @@ class ImagePreview(QAbstractScrollArea):
         self._sync()
 
     @staticmethod
-    def _button(row, text, callback):
+    def _button(row, text, callback, tip=""):
         button = QPushButton(text)
+        button.setToolTip(tip)
         button.setMinimumWidth(28)
         button.clicked.connect(callback)
         row.addWidget(button)
@@ -242,11 +246,12 @@ class ImagePreview(QAbstractScrollArea):
             self._sync()
 
     def wheelEvent(self, event):
-        if event.modifiers() & Qt.KeyboardModifier.ControlModifier:
-            self.zoom(self._scale * (1.25 if event.angleDelta().y() > 0 else 0.8), event.position().toPoint())
-            event.accept()
-        else:
-            super().wheelEvent(event)
+        # Same policy as Images → Detail: the wheel over the canvas zooms (Ctrl optional), anchored at the pointer,
+        # and never scrolls a surrounding panel. Panning stays on drag, scrollbars and keys.
+        delta = event.angleDelta().y()
+        if delta and not self._pixmap.isNull():
+            self.zoom(self._scale * WHEEL_STEP ** (delta / 120), event.position().toPoint())
+        event.accept()
         self._show_controls()
 
     def mousePressEvent(self, event):

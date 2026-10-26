@@ -184,9 +184,9 @@ class GalleryHoverCard(QFrame):
         self.hide()
 
     def _bottom_limit(self) -> int:
-        """Lowest y the card may reach: above the next button and image toolbar that sit over the surface."""
+        """Lowest y the card may reach: above the next button and position/size labels that sit over the surface."""
         bottom = self.surface.rect().bottom() - EDGE_MARGIN
-        for name in ("galleryNextButton", "galleryImageToolbar"):
+        for name in ("galleryNextButton", "galleryPositionOverlay"):
             widget = self.surface.window().findChild(QWidget, name)
             if widget is not None and widget.isVisible():
                 top = self.surface.mapFromGlobal(widget.mapToGlobal(widget.rect().topLeft())).y()
