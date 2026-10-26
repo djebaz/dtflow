@@ -24,6 +24,8 @@ LEAVE_GRACE_MS = 150
 EDGE_MARGIN = 12
 MAX_WIDTH = 440
 QWIDGETSIZE_MAX = 16777215
+PROMPT_POINT_SIZE = 10.5
+PROMPT_MIN_POINT_SIZE = 8.0
 TOOLBAR_GAP = 8
 LORA_UNKNOWN_TIP = "No persisted LoRA application/compatibility evidence is available in the saved request."
 
@@ -93,7 +95,6 @@ class GalleryHoverCard(QFrame):
         self.hide_timer.timeout.connect(self._hide_if_left)
         self._item: GalleryItem | None = None
         self._dirty = False
-        self._base_size: float | None = None
         self._watcher = _SurfaceWatcher(self)
         surface.installEventFilter(self._watcher)
 
@@ -195,20 +196,19 @@ class GalleryHoverCard(QFrame):
         self.layout().activate()
         chrome = self.layout().sizeHint().height() - minimum
         room = max(minimum, bottom - top + 1 - chrome)
-        font = self.prompt.font()
-        if self._base_size is None:
-            self._base_size = font.pointSizeF()
-        base_size = self._base_size
         wanted = minimum
-        # Never scroll: if the whole prompt does not fit, shrink its type until it does.
-        for size in [base_size - step * 0.5 for step in range(0, 9)]:
-            font.setPointSizeF(max(size, 6.0))
-            self.prompt.setFont(font)
-            document.setDefaultFont(font)
+        # Match the Detail panel prompt (14 px ~ 10.5 pt). Never scroll: only if the whole prompt does not
+        # fit, step the type down, but not below a readable size.
+        size = PROMPT_POINT_SIZE
+        while True:
+            self.prompt.setStyleSheet(f"font-size: {size:g}pt;")
+            self.prompt.ensurePolished()
+            document.setDefaultFont(self.prompt.font())
             document.setTextWidth(text_width)
             wanted = int(document.size().height() + 2 * document.documentMargin()) + 4
-            if wanted <= room:
+            if wanted <= room or size <= PROMPT_MIN_POINT_SIZE:
                 break
+            size -= 0.5
         self.prompt.setFixedHeight(max(minimum, wanted))
         self.layout().activate()
         height = self.layout().sizeHint().height()
