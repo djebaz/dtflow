@@ -53,7 +53,7 @@ class SegmentedBar(QWidget):
 
     def set_counts(self, segments: tuple[tuple[str, int], ...], settled: int, total: int) -> None:
         self._segments, self.settled, self.total = tuple(segments), settled, total
-        self.setAccessibleDescription(f"{settled} of {total} settled")
+        self.setAccessibleDescription(f"Progress: {settled}/{total}")
         self.update()
 
     def sizeHint(self) -> QSize:

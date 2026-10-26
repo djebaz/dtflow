@@ -229,7 +229,7 @@ def test_activity_bar_progress_and_result_lifecycle(window, qtbot, monkeypatch):
     real_bar_rect = strip._bar_rect
     # Pin the available slot, not the physical screen/font metrics, for threshold checks.
     monkeypatch.setattr(strip, "_bar_rect", lambda: QRect(12, 2, 400, 20))
-    strip.start("fixture", "Queue · settled items", stop=lambda: None, total=7)
+    strip.start("fixture", "Queue progress", stop=lambda: None, total=7)
     strip.update(
         "fixture",
         4,

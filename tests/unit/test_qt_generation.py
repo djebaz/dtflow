@@ -169,7 +169,7 @@ def test_run_ring_preserves_reported_sampler_step_across_stage_and_preview(windo
     use(gate=gate)
     page = window.generation_page
     page.generateButton.click()
-    qtbot.waitUntil(lambda: window.activity.run_state.detail.startswith("Submitting request"), timeout=5000)
+    qtbot.waitUntil(lambda: window.activity.run_state.detail.startswith("Sending request"), timeout=5000)
     ring = window.shell.runControl
     assert ring._phase == "running" and ring._completed is None
 
@@ -203,7 +203,7 @@ def test_preview_is_shown_but_never_becomes_a_result(window, qtbot, fake):
     page = window.generation_page
     page.generateButton.click()
     qtbot.waitUntil(
-        lambda: window.activity.run_state.detail.startswith("Submitting request"), timeout=5000
+        lambda: window.activity.run_state.detail.startswith("Sending request"), timeout=5000
     )  # held at gate
     png = fixture_png(64, 64, 1)
     preview = ImageArtifact("p", Designation.PREVIEW, "image/png", png, 64, 64)
@@ -232,7 +232,7 @@ def test_local_stop_reports_recorded_evidence_not_remote_cancellation(window, qt
     use(gate=gate)
     page = window.generation_page
     page.generateButton.click()
-    qtbot.waitUntil(lambda: window.activity.run_state.detail.startswith("Submitting request"), timeout=5000)
+    qtbot.waitUntil(lambda: window.activity.run_state.detail.startswith("Sending request"), timeout=5000)
     window.progress_strip.rows["run"].activityStopButton.click()
     qtbot.waitUntil(settled(window), timeout=5000)
     text = page.generationStatusLabel.text()

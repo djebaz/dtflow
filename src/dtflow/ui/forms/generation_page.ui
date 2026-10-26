@@ -51,7 +51,7 @@
          <string>sectionCard</string>
         </property>
         <property name="accessibleName">
-         <string>Backend</string>
+         <string>Connection</string>
         </property>
         <layout class="QVBoxLayout" name="backendSummaryBoxCardLayout">
          <property name="leftMargin">
@@ -118,7 +118,7 @@
             <item>
              <widget class="QLabel" name="backendSummaryBoxHeading">
               <property name="text">
-               <string>Backend</string>
+               <string>Connection</string>
               </property>
               <property name="textRole" stdset="0">
                <string>panelHeading</string>
@@ -150,7 +150,7 @@
             <item row="0" column="1">
              <widget class="QComboBox" name="generationBackendCombo">
               <property name="accessibleName">
-               <string>Generation backend</string>
+               <string>Generation provider</string>
               </property>
              </widget>
             </item>
@@ -391,7 +391,7 @@
                <string>Include DT+ Cloud</string>
               </property>
               <property name="toolTip">
-               <string>Local bridge mode: include classified catalogue checkpoints that the local inventory may not report.</string>
+               <string>Local bridge mode: include classified catalogue checkpoints that the local model list may not report.</string>
               </property>
               <property name="visible">
                <bool>false</bool>
@@ -432,17 +432,20 @@
                <item>
                 <widget class="QPushButton" name="refreshInventoryButton">
                  <property name="text">
-                  <string>Refresh inventory</string>
+                  <string>Refresh models</string>
                  </property>
                  <property name="accessibleName">
-                  <string>Refresh backend inventory</string>
+                  <string>Refresh models</string>
+                 </property>
+                 <property name="toolTip">
+                  <string>Reload the model and LoRA lists from the selected connection.</string>
                  </property>
                 </widget>
                </item>
                <item>
                 <widget class="QLabel" name="inventoryEvidenceLabel">
                  <property name="text">
-                  <string>Inventory has not been observed. Refresh to discover models.</string>
+                  <string>No model list yet. Refresh to discover models.</string>
                  </property>
                  <property name="wordWrap">
                   <bool>true</bool>
@@ -1216,7 +1219,7 @@
              <string>Queue this request</string>
             </property>
             <property name="toolTip">
-             <string>Queue ×1: Repeat N or the composer plan, now or behind running work.</string>
+             <string>Queue ×1: Repeat N or the New queue plan, now or behind running work.</string>
             </property>
            </widget>
           </item>
@@ -1375,7 +1378,7 @@
            <string>Check</string>
           </property>
           <property name="toolTip">
-           <string>Refresh inventory and check the selected LoRAs. Nothing is generated.</string>
+           <string>Refresh models and LoRAs, then check the selected LoRAs. Nothing is generated.</string>
           </property>
          </widget>
         </item>
@@ -1535,7 +1538,7 @@
             <item>
              <widget class="QLabel" name="assetStatusLabel">
               <property name="text">
-               <string>Asset actions need the cloud backend.</string>
+               <string>Asset actions need the cloud provider.</string>
               </property>
               <property name="wordWrap">
                <bool>true</bool>

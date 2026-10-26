@@ -92,7 +92,7 @@
               <string>sectionCard</string>
              </property>
              <property name="accessibleName">
-              <string>Backend</string>
+              <string>Connection</string>
              </property>
              <layout class="QVBoxLayout" name="connectionBoxCardLayout">
               <property name="leftMargin">
@@ -159,7 +159,7 @@
                  <item>
                   <widget class="QLabel" name="connectionBoxHeading">
                    <property name="text">
-                    <string>Backend</string>
+                    <string>Connection</string>
                    </property>
                    <property name="textRole" stdset="0">
                     <string>panelHeading</string>
@@ -197,7 +197,7 @@
                  <item row="0" column="1">
                   <widget class="QComboBox" name="backendCombo">
                    <property name="accessibleName">
-                    <string>Generation backend</string>
+                    <string>Generation provider</string>
                    </property>
                   </widget>
                  </item>
@@ -230,7 +230,7 @@
                     <string>Check connection</string>
                    </property>
                    <property name="accessibleName">
-                    <string>Check selected backend connection</string>
+                    <string>Check selected connection</string>
                    </property>
                   </widget>
                  </item>
@@ -543,7 +543,7 @@
            <item>
             <widget class="QLabel" name="workspaceSubtitleLabel">
              <property name="text">
-              <string>Verify the selected backend without submitting generation. DTFlow never falls back to another provider.</string>
+              <string>Check the selected connection without submitting generation. DTFlow never falls back to another provider.</string>
              </property>
              <property name="wordWrap">
               <bool>true</bool>
@@ -698,7 +698,7 @@
                <layout class="QVBoxLayout" name="cacheManagementLayout"><property name="leftMargin"><number>10</number></property><property name="topMargin"><number>8</number></property><property name="rightMargin"><number>10</number></property><property name="bottomMargin"><number>10</number></property><property name="spacing"><number>8</number></property>
                 <item><widget class="QLabel" name="cacheStatusLabel"><property name="text"><string>Measuring cache…</string></property><property name="wordWrap"><bool>true</bool></property><property name="role" stdset="0"><string>secondary</string></property></widget></item>
                 <item><layout class="QGridLayout" name="cacheButtons"><property name="horizontalSpacing"><number>6</number></property><property name="verticalSpacing"><number>6</number></property>
-                 <item row="0" column="0"><widget class="QPushButton" name="clearInventoryCacheButton"><property name="text"><string>Clear inventory</string></property></widget></item>
+                 <item row="0" column="0"><widget class="QPushButton" name="clearInventoryCacheButton"><property name="text"><string>Clear models</string></property></widget></item>
                  <item row="0" column="1"><widget class="QPushButton" name="clearThumbnailCacheButton"><property name="text"><string>Clear thumbnails</string></property></widget></item>
                  <item row="1" column="0"><widget class="QPushButton" name="clearDerivedCacheButton"><property name="text"><string>Clear derived</string></property></widget></item>
                  <item row="1" column="1"><widget class="QPushButton" name="clearAllCacheButton"><property name="text"><string>Clear all</string></property><property name="role" stdset="0"><string>danger</string></property></widget></item>
@@ -892,7 +892,7 @@
                   <widget class="QLabel" name="safetyLabel">
                    <property name="text">
                     <string>• No generation request
-• No automatic backend fallback
+• No automatic provider fallback
 • Credentials are never shown or logged
 • Failures retain explicit provider evidence</string>
                    </property>

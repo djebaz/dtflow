@@ -1003,7 +1003,7 @@ class GenerationPage:
         self.page.resultPreviewLabel.clear()
         self.page.resultPreviewLabel.setProperty("designation", "")
         self.page.previewHost.setMinimumHeight(PREVIEW_MIN_HEIGHT)
-        self._status(Presentation("warning", "Generating", f"Waiting on the selected backend. {note or ''}".strip()))
+        self._status(Presentation("warning", "Generating", f"Waiting on the selected provider. {note or ''}".strip()))
         self._stage_started = time.monotonic()
         self._stage_seen = {}
         self._generating = True
@@ -1108,7 +1108,7 @@ class GenerationPage:
         elif event.kind in {"preparing", "submission_possible", "terminal"}:
             stage = {
                 "preparing": "Preparing",
-                "submission_possible": "Submitting to backend",
+                "submission_possible": "Sending request",
                 "terminal": "Finalizing",
             }[event.kind]
             from dtflow.ui.progress_stages import event_stage
@@ -1304,7 +1304,7 @@ class GenerationPage:
             return
         name, endpoint = self._backend()
         self._set_busy(True)
-        self._inventory_notice = "Refreshing inventory…"
+        self._inventory_notice = "Refreshing models…"
         self._inventory_error = ""
         self._write_inventory_stats()
         diagnostic_event(
@@ -1325,7 +1325,7 @@ class GenerationPage:
         self._cache_changed()
         if source != self._current_inventory_source() or revision != self._inventory_revision:
             self._set_busy(False)
-            if self._inventory_notice == "Refreshing inventory…":
+            if self._inventory_notice == "Refreshing models…":
                 self._inventory_notice = ""
                 self._write_inventory_stats()
             return
@@ -1613,7 +1613,7 @@ class GenerationPage:
         self._catalogue.set_inventory(snapshot)
         self._inventory_how = how
         if self._inventory_error:
-            self._inventory_notice = "Refresh failed · showing previous inventory"
+            self._inventory_notice = "Refresh failed · showing previous models"
         self._rebuild_catalogue(
             preferred_family=self._pending_family,
             preferred_checkpoint=self.page.modelCombo.currentText(),
@@ -1627,7 +1627,7 @@ class GenerationPage:
         label = self.page.inventoryEvidenceLabel
         snapshot = self._inventory_snapshot
         if snapshot is None:
-            label.setText(self._inventory_notice or "Inventory has not been observed. Refresh to discover models.")
+            label.setText(self._inventory_notice or "No model list yet. Refresh to discover models.")
             label.setToolTip(self._inventory_error)
             return
         models = len(eligible_model_ids(snapshot))
@@ -1665,9 +1665,7 @@ class GenerationPage:
                 data=failure_fields(failure),
             )
             self._inventory_notice = (
-                "Refresh failed · showing previous inventory"
-                if self._inventory_snapshot
-                else "Inventory refresh failed."
+                "Refresh failed · showing previous models" if self._inventory_snapshot else "Model refresh failed."
             )
             self._inventory_error = f"{shown.headline}: {shown.detail}"
             self._write_inventory_stats()
@@ -1685,7 +1683,7 @@ class GenerationPage:
         self._cache_request = token
         source, revision = self._current_inventory_source(), self._inventory_revision
         if self._inventory_snapshot is None and not self._inventory_notice:
-            self._inventory_notice = "Loading saved inventory…"
+            self._inventory_notice = "Loading saved models…"
             self._write_inventory_stats()
         self._runner.submit(
             self._cached(name, endpoint, self._saved()),
@@ -1704,7 +1702,7 @@ class GenerationPage:
         ):
             return
         self._cache_request = None
-        if self._inventory_notice == "Loading saved inventory…":
+        if self._inventory_notice == "Loading saved models…":
             self._inventory_notice = ""
         if result is None:
             if revalidate:

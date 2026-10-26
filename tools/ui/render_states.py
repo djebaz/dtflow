@@ -809,7 +809,7 @@ def render_generate_configuration_states(shell, out):
         assert not page.refreshInventoryButton.isEnabled()
         snap("generate-28-inventory-refreshing")
         controller._refreshed(None, OSError("Offline fixture"))
-        assert "showing previous inventory" in page.inventoryEvidenceLabel.text()
+        assert "showing previous models" in page.inventoryEvidenceLabel.text()
         snap("generate-29-inventory-refresh-failed")
         controller._inventory_notice = controller._inventory_error = ""
         controller._show_inventory(snapshot, "cached")
@@ -1125,10 +1125,10 @@ def render_active_queue_states(shell, out):
         # #170: real controller presentation with observed stages; no dispatch or provider calls.
         running_key = (queue_id, "item-0002")
         for stage_name, screenshot in (
-            ("Admitted; preparing / waiting for backend", "queues-11a-admitted-waiting"),
+            ("Starting; waiting for response", "queues-11a-admitted-waiting"),
             ("Validating generation request", "queues-11b-preparing-request"),
-            ("Request sent; waiting for backend response", "queues-11c-awaiting-backend"),
-            ("Backend processing; awaiting generation progress", "queues-11d-backend-processing"),
+            ("Waiting for the provider's reply", "queues-11c-awaiting-backend"),
+            ("Request accepted; waiting for first progress", "queues-11d-backend-processing"),
         ):
             queue._run_stages[running_key] = stage_name
             queue._run_progress.pop(running_key, None)
@@ -1901,7 +1901,7 @@ def render_item_table_states(shell, out, state):
             lambda: model.thumbnails.pixmap(items[0]["artifacts"][0], identity="a71b71c1:0") is not None
         )  # async, bounded decode through the intercepted fixture boundary
         assert model.gauge_scale == 1.5  # the largest recorded weight in this fixture; a 0.94 LoRA fills 63%
-        assert model.headerData(6, Qt.Orientation.Horizontal, Qt.ItemDataRole.ToolTipRole) == "Backend duration"
+        assert model.headerData(6, Qt.Orientation.Horizontal, Qt.ItemDataRole.ToolTipRole) == "Provider duration"
         assert table.verticalHeader().defaultSectionSize() == 76
         assert header_end_visible(table)
         header = table.horizontalHeader()
@@ -3621,7 +3621,7 @@ def render_shell_states(shell, capture):
     try:
         clear()
         shell.form.statusBar().showMessage("DTFlow · offline activity-bar fixture")
-        strip.start("bar-fixture", "Queue · settled items", stop=lambda: None, total=7)
+        strip.start("bar-fixture", "Queue progress", stop=lambda: None, total=7)
         assert strip.rows["bar-fixture"].activitySymbol.text() == ""
         assert not strip.rows["bar-fixture"].activitySymbol.pixmap().isNull()
         strip.update(

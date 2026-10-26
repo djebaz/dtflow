@@ -140,7 +140,7 @@ def present_generation_failure(exc: Exception) -> Presentation:
             wanted = dict(UNSUPPORTED_NAMES)
             names = " or ".join(wanted.get(name, name) for name, _ in failure.diagnostics)
             hint = (
-                " Refresh inventory to see the models this provider offers."
+                " Refresh models to see the models this provider offers."
                 if failure.diagnostics[0][0] == "model"
                 else ""
             )
@@ -160,7 +160,7 @@ def present_generation_failure(exc: Exception) -> Presentation:
             return Presentation("error", "Generated image not fully saved", failure.message)
         if api:
             # PERMISSION_DENIED also covers throttling and request validation upstream.
-            return Presentation("error", "Backend request failed", detail)
+            return Presentation("error", "Provider request failed", detail)
         if failure.category in (ErrorCategory.CREDENTIALS, ErrorCategory.AUTHENTICATION):
             return Presentation("error", "Credentials problem", failure.code)
         return Presentation("error", "Generation failed", failure.code)
