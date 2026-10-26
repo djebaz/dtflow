@@ -23,7 +23,6 @@ HOVER_DELAY_MS = 400
 LEAVE_GRACE_MS = 150
 EDGE_MARGIN = 12
 MAX_WIDTH = 440
-MAX_PROMPT_HEIGHT = 150
 QWIDGETSIZE_MAX = 16777215
 TOOLBAR_GAP = 8
 LORA_UNKNOWN_TIP = "No persisted LoRA application/compatibility evidence is available in the saved request."
@@ -71,7 +70,6 @@ class GalleryHoverCard(QFrame):
         self.prompt.setReadOnly(True)
         self.prompt.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         self.prompt.setFrameShape(QFrame.Shape.NoFrame)
-        self.prompt.setMaximumHeight(MAX_PROMPT_HEIGHT)
         self.lora_label = QLabel("LoRAs", self)
         self.lora_label.setProperty("role", "secondary")
         self.lora_rows = QVBoxLayout()
@@ -161,16 +159,18 @@ class GalleryHoverCard(QFrame):
         self.hide()
 
     def _bottom_limit(self) -> int:
-        """Lowest y the card may reach: above the image toolbar when that overlaps the surface."""
+        """Lowest y the card may reach: above the next button and image toolbar that sit over the surface."""
         bottom = self.surface.rect().bottom() - EDGE_MARGIN
-        toolbar = self.surface.window().findChild(QWidget, "galleryImageToolbar")
-        if toolbar is not None and toolbar.isVisible():
-            top = self.surface.mapFromGlobal(toolbar.mapToGlobal(toolbar.rect().topLeft())).y()
-            if top <= bottom:
-                bottom = top - TOOLBAR_GAP
+        for name in ("galleryNextButton", "galleryImageToolbar"):
+            widget = self.surface.window().findChild(QWidget, name)
+            if widget is not None and widget.isVisible():
+                top = self.surface.mapFromGlobal(widget.mapToGlobal(widget.rect().topLeft())).y()
+                if top <= bottom:
+                    bottom = top - TOOLBAR_GAP
         return bottom
 
     def reposition(self) -> None:
+        """Anchor to the image's top right; the prompt grows to show everything the space allows."""
         left, top = EDGE_MARGIN, EDGE_MARGIN
         right = self.surface.rect().right() - EDGE_MARGIN
         bottom = self._bottom_limit()
@@ -180,18 +180,24 @@ class GalleryHoverCard(QFrame):
         # Release the previous fixed size so content from a different image is measured fresh.
         self.setMinimumSize(0, 0)
         self.setMaximumSize(QWIDGETSIZE_MAX, QWIDGETSIZE_MAX)
+        self.prompt.setMaximumHeight(QWIDGETSIZE_MAX)
         self.setFixedWidth(width)
         margins = self.layout().contentsMargins()
         document = self.prompt.document()
-        document.setTextWidth(
-            max(1, width - margins.left() - margins.right() - self.prompt.verticalScrollBar().sizeHint().width())
-        )
-        wanted = int(document.size().height() + 2 * document.documentMargin()) + 2
-        self.prompt.setFixedHeight(max(self.fontMetrics().height() + 8, min(MAX_PROMPT_HEIGHT, wanted)))
+        # Wrap at the viewport width the box will really have (a scrollbar may take part of it).
+        text_width = max(1, width - margins.left() - margins.right() - 2 * self.prompt.frameWidth())
+        document.setTextWidth(text_width)
+        wanted = int(document.size().height() + 2 * document.documentMargin()) + 4
+        minimum = self.fontMetrics().height() + 8
+        self.prompt.setFixedHeight(minimum)
+        self.layout().activate()
+        chrome = self.layout().sizeHint().height() - minimum
+        room = max(minimum, bottom - top + 1 - chrome)
+        self.prompt.setFixedHeight(max(minimum, min(wanted, room)))
         self.layout().activate()
         height = min(self.layout().sizeHint().height(), bottom - top + 1)
         self.setFixedHeight(height)
-        self.move(left, bottom - height + 1)
+        self.move(right - width + 1, top)
 
     def _is_over(self, widget: QWidget) -> bool:
         """True when the topmost widget under the pointer is the widget or one of its descendants."""
