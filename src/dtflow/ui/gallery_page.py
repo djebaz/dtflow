@@ -603,6 +603,8 @@ class GalleryPage(QObject):
         self._grid_mount_slices = 0
         self._grid_mount_callbacks: list = []
         self._applied_thumbnail_percent: int | None = None
+        # Grid, List and Detail (filmstrip) each remember their own slider value.
+        self._thumbnail_percents = {"Grid": 100, "List": 100, "Detail": 100}
         self._density_anchor: tuple[str, str, int] | None = None
         self._film_buttons: list[QPushButton] = []
         self._film_painters: list[CoverPainter] = []
@@ -1440,17 +1442,8 @@ class GalleryPage(QObject):
         self.mode = str(document.get("view", "Grid"))
         if self.mode not in self.modes:
             self.mode = "Grid"
-        scale_percent = document.get("thumbnail_scale_percent")
-        if type(scale_percent) is int and MIN_THUMBNAIL_PERCENT <= scale_percent <= MAX_THUMBNAIL_PERCENT:
-            self.slider.setValue(scale_percent)
-        else:
-            # PR #34 initially persisted the raw pixel size under "density".
-            # Preserve those local smoke-test preferences while moving the UI
-            # contract to a percentage based on the current standard size.
-            legacy_density = document.get("density")
-            if type(legacy_density) is int and legacy_density > 0:
-                migrated = round(legacy_density * 100 / STANDARD_THUMBNAIL_PX)
-                self.slider.setValue(max(MIN_THUMBNAIL_PERCENT, min(MAX_THUMBNAIL_PERCENT, migrated)))
+        self._restore_thumbnail_percents(document)
+        self.slider.setValue(self._thumbnail_percents[self.mode])
         selected = document.get("selected")
         self.selected_id = selected if isinstance(selected, str) and selected else None
         auto = bool(document.get("auto_refresh", True))
@@ -1461,6 +1454,30 @@ class GalleryPage(QObject):
                 value = scroll.get(name)
                 if type(value) is int and value >= 0:
                     self._scroll[name] = value
+
+    def _restore_thumbnail_percents(self, document: dict) -> None:
+        def valid(value) -> bool:
+            return type(value) is int and MIN_THUMBNAIL_PERCENT <= value <= MAX_THUMBNAIL_PERCENT
+
+        # Preferences written before per-view zoom hold one shared value; it seeds
+        # all three views. PR #34 initially persisted the raw pixel size under
+        # "density", which is converted to the percentage contract.
+        shared = document.get("thumbnail_scale_percent")
+        if not valid(shared):
+            legacy_density = document.get("density")
+            if type(legacy_density) is int and legacy_density > 0:
+                migrated = round(legacy_density * 100 / STANDARD_THUMBNAIL_PX)
+                shared = max(MIN_THUMBNAIL_PERCENT, min(MAX_THUMBNAIL_PERCENT, migrated))
+            else:
+                shared = None
+        stored = document.get("thumbnail_scale_percents")
+        stored = stored if isinstance(stored, dict) else {}
+        for mode in self._thumbnail_percents:
+            value = stored.get(mode)
+            if valid(value):
+                self._thumbnail_percents[mode] = value
+            elif shared is not None:
+                self._thumbnail_percents[mode] = shared
 
     def set_active(self, active: bool) -> None:
         first_activation = active and not self._active and not self.items
@@ -3680,6 +3697,7 @@ class GalleryPage(QObject):
         if mode != self.mode:
             self._prefetch_zone_hint = None
         self.mode = mode
+        self.slider.setValue(self._thumbnail_percents[mode])
         self.stack.setCurrentWidget(self.modes[mode])
         self._widget(f"gallery{mode}Button", QPushButton).setChecked(True)
         if mode == "Detail":
@@ -3721,6 +3739,7 @@ class GalleryPage(QObject):
 
     def _density_changed(self, *_args) -> None:
         scale_percent = self.slider.value()
+        self._thumbnail_percents[self.mode] = scale_percent
         self._widget("galleryThumbnailSizeValue", QLabel).setText(f"{scale_percent}%")
         if scale_percent == self._applied_thumbnail_percent:
             # View switches do not imply a size change or a second full repaint.
@@ -4366,7 +4385,7 @@ class GalleryPage(QObject):
                 "sort": self.sort.currentText(),
             },
             "view": self.mode,
-            "thumbnail_scale_percent": self.slider.value(),
+            "thumbnail_scale_percents": dict(self._thumbnail_percents),
             "selected": self.selected_id,
             "auto_refresh": self._live_mode >= 1,
             "follow": self._live_mode == 2,

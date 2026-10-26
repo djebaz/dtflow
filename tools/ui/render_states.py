@@ -2865,6 +2865,28 @@ def render_gallery_composition_states(shell, state, out):
         assert gallery._film_entries[item.identity][0].width() == 88
         snap("images-101-detail-thumbnail-badges-small")
         gallery.slider.setValue(100)
+        # Grid, List and Detail keep independent thumbnail zoom; Detail filmstrip
+        # zoom never touches the full-size image zoom.
+        detail_mode = gallery.mode
+        image_zoom = gallery.surface_painter.zoom
+        gallery.slider.setValue(60)
+        assert gallery.surface_painter.zoom == image_zoom
+        gallery.show_view("Grid", persist=False)
+        gallery.slider.setValue(160)
+        gallery.show_view("List", persist=False)
+        gallery.slider.setValue(80)
+        gallery.show_view("Grid", persist=False)
+        assert gallery.slider.value() == 160
+        snap("images-170-grid-independent-zoom")
+        gallery.show_view("List", persist=False)
+        assert gallery.slider.value() == 80
+        gallery.show_view("Detail", persist=False)
+        assert gallery.slider.value() == 60
+        snap("images-171-detail-independent-zoom")
+        for name, percent in (("Grid", 100), ("List", 100), ("Detail", 100)):
+            gallery.show_view(name, persist=False)
+            gallery.slider.setValue(percent)
+        gallery.show_view(detail_mode, persist=False)
         present(item)
         raw = gallery._widget("galleryRawMetadata")
         gallery._widget("galleryRawButton", QPushButton).setChecked(True)
