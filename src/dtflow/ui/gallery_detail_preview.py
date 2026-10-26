@@ -31,6 +31,7 @@ from PySide6.QtWidgets import (
 )
 from shiboken6 import isValid
 
+from dtflow.ui.prompt_tags import paint_cell_tags
 from dtflow.ui.theme import load_tokens
 
 ASSETS = Path(__file__).parents[1] / "resources/images/gallery"
@@ -162,6 +163,7 @@ class RowHoverDelegate(QStyledItemDelegate):
         else:
             style.state &= ~QStyle.StateFlag.State_MouseOver
         super().paint(painter, style, index)
+        paint_cell_tags(self, painter, option, index)
 
 
 FOCUS_HIDDEN_ROWS = ("galleryNavigationRow", "gallerySelectionBar")
@@ -543,6 +545,7 @@ class DetailFixture(QObject):
                 self.table.setItem(row, column, item)
         for column, width in enumerate((36, 80, 150, 150, 270, 120, 85, 130, 320)):
             self.table.setColumnWidth(column, width)
+        self.table.setColumnHidden(2, True)  # no Filename column in the list view
         self.table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Interactive)
         self.table.horizontalHeader().setStretchLastSection(True)
         self.table.itemClicked.connect(

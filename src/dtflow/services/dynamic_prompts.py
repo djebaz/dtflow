@@ -13,6 +13,8 @@ Pure: no I/O, no network, and error messages name positions and wildcards, never
 
 import random
 import re
+import zlib
+from contextvars import ContextVar
 from collections.abc import Mapping
 from dataclasses import dataclass
 from itertools import combinations, product
@@ -25,6 +27,10 @@ CAP = 10**9  # variant counts saturate here instead of growing without bound
 _HEADER = re.compile(r"\s*(\d+)(?:-(\d+))?\$\$")
 _WEIGHT = re.compile(r"\s*(\d+(?:\.\d+)?)::")
 _WILDCARD = re.compile(r"__([A-Za-z0-9]+(?:[_\-][A-Za-z0-9]+)*)__")
+PROMPT_TAGS_KEY = "prompt.variation_runs"  # request evidence: ``encode_runs`` of the runs variations produced
+_marker: ContextVar[str] = ContextVar("dtflow_prompt_marker", default="\ue000")
+# ``_resolve`` picks a private-use marker character absent from its inputs; ``_mark`` puts it before each character that
+# came from a variation and ``_untag`` removes it, so a literal private-use character in a prompt is left alone.
 
 
 @dataclass(frozen=True, slots=True)
@@ -202,6 +208,50 @@ def _node_count(node: Node, lists: Lists, depth: int) -> int:
     return min(CAP, sum(ways[node.low : node.high + 1]))
 
 
+Runs = tuple[tuple[int, int], ...]
+
+
+def _mark(text: str) -> str:
+    """Tag every character that is not whitespace or a comma (the separators edits split on); idempotent."""
+    out: list[str] = []
+    tagged = False
+    for char in text:
+        if char == _marker.get():
+            tagged = True
+            out.append(char)
+            continue
+        out.append(char if tagged or char.isspace() or char == "," else _marker.get() + char)
+        tagged = False
+    return "".join(out)
+
+
+def _untag(text: str) -> tuple[str, tuple[tuple[int, int], ...]]:
+    """The prompt without markers, and ``(start, length)`` of each run that came from a variation.
+
+    Runs separated by only whitespace join into one, so ``{red car|blue}`` is one tag, ``red car``.
+    """
+    clean: list[str] = []
+    spans: list[list[int]] = []
+    tagged = False
+    gap_is_space = False
+    for char in text:
+        if char == _marker.get():
+            tagged = True
+            continue
+        position = len(clean)
+        clean.append(char)
+        if tagged:
+            if spans and gap_is_space:
+                spans[-1][1] = position + 1 - spans[-1][0]
+            else:
+                spans.append([position, 1])
+            gap_is_space = True
+        elif not char.isspace():
+            gap_is_space = False
+        tagged = False
+    return "".join(clean), tuple((start, length) for start, length in spans)
+
+
 def _tidy(text: str) -> str:
     return re.sub(r"\s+,", ",", re.sub(r"[ \t]{2,}", " ", text)).strip()
 
@@ -217,7 +267,7 @@ def _sample(nodes: tuple[Node, ...], lists: Lists, rng: random.Random, depth: in
             parts.append(node.value)
         elif isinstance(node, Wild):
             entries = lists.get(node.name, depth + 1)
-            parts.append(_sample(entries[rng.randrange(len(entries))], lists, rng, depth + 1))
+            parts.append(_mark(_sample(entries[rng.randrange(len(entries))], lists, rng, depth + 1)))
         else:
             wanted = rng.randint(node.low, node.high)
             remaining = list(range(len(node.options)))
@@ -225,7 +275,7 @@ def _sample(nodes: tuple[Node, ...], lists: Lists, rng: random.Random, depth: in
             for _ in range(wanted):
                 index = remaining.pop(_pick_one(rng, [node.options[i][0] for i in remaining]))
                 chosen.append(index)
-            parts.append(", ".join(_sample(node.options[i][1], lists, rng, depth) for i in sorted(chosen)))
+            parts.append(_mark(", ".join(_sample(node.options[i][1], lists, rng, depth) for i in sorted(chosen))))
     return "".join(parts)
 
 
@@ -238,12 +288,12 @@ def _node_all(node: Node, lists: Lists, depth: int) -> list[str]:
     if isinstance(node, Text):
         return [node.value]
     if isinstance(node, Wild):
-        return [text for entry in lists.get(node.name, depth + 1) for text in _all(entry, lists, depth + 1)]
+        return [_mark(text) for entry in lists.get(node.name, depth + 1) for text in _all(entry, lists, depth + 1)]
     results = []
     for size in range(node.low, node.high + 1):
         for subset in combinations(node.options, size):
             columns = [_all(content, lists, depth) for _, content in subset]
-            results.extend(", ".join(parts) for parts in product(*columns))
+            results.extend(_mark(", ".join(parts)) for parts in product(*columns))
     return results
 
 
@@ -305,6 +355,107 @@ def _non_empty(texts) -> tuple[str, ...]:
     return kept
 
 
+def _resolve(
+    template: str,
+    wildcards: Mapping[str, tuple[str, ...]],
+    *,
+    strategy: str,
+    n: int | None,
+    rng_seed: int,
+    limit: int,
+    mutation: Mutation | None,
+) -> tuple[tuple[tuple[str, Runs], ...], tuple[str, ...]]:
+    """(each distinct prompt with its variation runs, wildcard names used)."""
+    present = set(template).union(*(set(entry) for entries in wildcards.values() for entry in entries))
+    present.update(char for part in (mutation.add if mutation is not None else ()) for char in part)
+    marker = next(chr(code) for code in range(0xE000, 0xF900) if chr(code) not in present)
+    token = _marker.set(marker)
+    try:
+        marked, used = _resolve_marked(
+            template, wildcards, strategy=strategy, n=n, rng_seed=rng_seed, limit=limit, mutation=mutation
+        )
+        return tuple(_untag(text) for text in marked), used
+    finally:
+        _marker.reset(token)
+
+
+def _resolve_marked(
+    template: str,
+    wildcards: Mapping[str, tuple[str, ...]],
+    *,
+    strategy: str,
+    n: int | None,
+    rng_seed: int,
+    limit: int = MAX_QUEUE_ITEMS,
+    mutation: Mutation | None = None,
+) -> tuple[tuple[str, ...], tuple[str, ...]]:
+    """(marked prompts, wildcard names used), distinct once markers are removed; see ``variants``."""
+    lists = Lists(wildcards)
+    nodes = parse(template)
+    total = count(nodes, lists)
+    mutation = mutation if mutation is not None and mutation.active else None
+    if mutation is not None:
+        check_mutation(mutation)
+        rng = random.Random(f"dtflow-prompt/{rng_seed}")
+        if strategy == "all":
+            if total > limit:
+                raise _fail(f"The prompt has {total} combinations; one queue holds at most {limit}.")
+            unique = _distinct(_tidy(_mutate(_tidy(text), rng, mutation)) for text in _all(nodes, lists, 0))
+            return _non_empty(unique), tuple(sorted(lists.used))
+        if type(n) is not int or not 1 <= n <= limit:
+            raise _fail(f"A random sample of prompts needs a count in 1..{limit}.")
+        seen: dict[str, str] = {}
+        attempts = 0
+        while len(seen) < n and attempts < 200 * n + 1000:  # edits have no exhaustive fallback, so allow more tries
+            text = _tidy(_mutate(_tidy(_sample(nodes, lists, rng, 0)), rng, mutation))
+            if text:
+                seen.setdefault(_untag(text)[0], text)
+            attempts += 1
+        if len(seen) < n:
+            if not seen:
+                raise _fail("The prompt resolves to nothing; keep some text outside the choices.")
+            raise _fail(f"Only {len(seen)} different prompts could be made; ask for fewer or allow more edits.")
+        return tuple(seen.values()), tuple(sorted(lists.used))
+    if strategy == "all":
+        if total > limit:
+            raise _fail(f"The prompt has {total} combinations; one queue holds at most {limit}.")
+        unique = _non_empty(_distinct(_tidy(text) for text in _all(nodes, lists, 0)))
+        return unique, tuple(sorted(lists.used))
+    if type(n) is not int or not 1 <= n <= limit:
+        raise _fail(f"A random sample of prompts needs a count in 1..{limit}.")
+    if total < n:
+        raise _fail(f"The prompt has only {total} different variants; {n} were asked for.")
+    rng = random.Random(f"dtflow-prompt/{rng_seed}")
+    seen: dict[str, str] = {}
+    attempts = 0
+    while len(seen) < n and attempts < 20 * n + 200:
+        text = _tidy(_sample(nodes, lists, rng, 0))
+        if text:
+            seen.setdefault(_untag(text)[0], text)
+        attempts += 1
+    if len(seen) < n:  # a nearly exhausted space: finish uniformly from the unseen combinations
+        if total > limit:
+            raise _fail(f"Could not draw {n} different prompts; ask for fewer or add more choices.")
+        rest = [
+            text for text in _distinct(_tidy(t) for t in _all(nodes, lists, 0)) if text and _untag(text)[0] not in seen
+        ]
+        for text in rng.sample(rest, min(len(rest), n - len(seen))):
+            seen[_untag(text)[0]] = text
+        if len(seen) < n:
+            if not seen:
+                raise _fail("The prompt resolves to nothing; keep some text outside the choices.")
+            raise _fail(f"The prompt has only {len(seen)} different resolved prompts; {n} were asked for.")
+    return tuple(seen.values()), tuple(sorted(lists.used))
+
+
+def _distinct(texts) -> tuple[str, ...]:
+    """The marked texts whose unmarked prompt is new, in order."""
+    unique: dict[str, str] = {}
+    for text in texts:
+        unique.setdefault(_untag(text)[0], text)
+    return tuple(unique.values())
+
+
 def variants(
     template: str,
     wildcards: Mapping[str, tuple[str, ...]],
@@ -316,57 +467,46 @@ def variants(
     mutation: Mutation | None = None,
 ) -> tuple[tuple[str, ...], tuple[str, ...]]:
     """(resolved prompts, wildcard names used). ``random`` draws ``n`` distinct prompts, ``all`` lists every one."""
-    lists = Lists(wildcards)
-    nodes = parse(template)
-    total = count(nodes, lists)
-    mutation = mutation if mutation is not None and mutation.active else None
-    if mutation is not None:
-        check_mutation(mutation)
-        rng = random.Random(f"dtflow-prompt/{rng_seed}")
-        if strategy == "all":
-            if total > limit:
-                raise _fail(f"The prompt has {total} combinations; one queue holds at most {limit}.")
-            unique = dict.fromkeys(_tidy(_mutate(_tidy(text), rng, mutation)) for text in _all(nodes, lists, 0))
-            return _non_empty(unique), tuple(sorted(lists.used))
-        if type(n) is not int or not 1 <= n <= limit:
-            raise _fail(f"A random sample of prompts needs a count in 1..{limit}.")
-        seen: dict[str, None] = {}
-        attempts = 0
-        while len(seen) < n and attempts < 200 * n + 1000:  # edits have no exhaustive fallback, so allow more tries
-            text = _tidy(_mutate(_tidy(_sample(nodes, lists, rng, 0)), rng, mutation))
-            if text:
-                seen.setdefault(text, None)
-            attempts += 1
-        if len(seen) < n:
-            if not seen:
-                raise _fail("The prompt resolves to nothing; keep some text outside the choices.")
-            raise _fail(f"Only {len(seen)} different prompts could be made; ask for fewer or allow more edits.")
-        return tuple(seen), tuple(sorted(lists.used))
-    if strategy == "all":
-        if total > limit:
-            raise _fail(f"The prompt has {total} combinations; one queue holds at most {limit}.")
-        unique = _non_empty(dict.fromkeys(_tidy(text) for text in _all(nodes, lists, 0)))
-        return unique, tuple(sorted(lists.used))
-    if type(n) is not int or not 1 <= n <= limit:
-        raise _fail(f"A random sample of prompts needs a count in 1..{limit}.")
-    if total < n:
-        raise _fail(f"The prompt has only {total} different variants; {n} were asked for.")
-    rng = random.Random(f"dtflow-prompt/{rng_seed}")
-    seen: dict[str, None] = {}
-    attempts = 0
-    while len(seen) < n and attempts < 20 * n + 200:
-        text = _tidy(_sample(nodes, lists, rng, 0))
-        if text:
-            seen.setdefault(text, None)
-        attempts += 1
-    if len(seen) < n:  # a nearly exhausted space: finish uniformly from the unseen combinations
-        if total > limit:
-            raise _fail(f"Could not draw {n} different prompts; ask for fewer or add more choices.")
-        rest = [text for text in dict.fromkeys(_tidy(t) for t in _all(nodes, lists, 0)) if text and text not in seen]
-        for text in rng.sample(rest, min(len(rest), n - len(seen))):
-            seen[text] = None
-        if len(seen) < n:
-            if not seen:
-                raise _fail("The prompt resolves to nothing; keep some text outside the choices.")
-            raise _fail(f"The prompt has only {len(seen)} different resolved prompts; {n} were asked for.")
-    return tuple(seen), tuple(sorted(lists.used))
+    resolved, used = _resolve(
+        template, wildcards, strategy=strategy, n=n, rng_seed=rng_seed, limit=limit, mutation=mutation
+    )
+    return tuple(text for text, _ in resolved), used
+
+
+def tagged_variants(
+    template: str,
+    wildcards: Mapping[str, tuple[str, ...]],
+    *,
+    strategy: str,
+    n: int | None,
+    rng_seed: int,
+    limit: int = MAX_QUEUE_ITEMS,
+    mutation: Mutation | None = None,
+) -> tuple[tuple[tuple[str, tuple[tuple[int, int], ...]], ...], tuple[str, ...]]:
+    """Like ``variants``, but each prompt comes with ``(start, length)`` of the runs its variations produced.
+
+    Text that is only whitespace or commas is never part of a run, so a bare ``, `` joining two picks stays plain.
+    """
+    return _resolve(template, wildcards, strategy=strategy, n=n, rng_seed=rng_seed, limit=limit, mutation=mutation)
+
+
+def encode_runs(prompt: str, runs: Runs) -> str:
+    """``checksum|start:length,...``: the checksum ties the runs to this exact prompt text."""
+    return f"{zlib.crc32(prompt.encode()):08x}|" + ",".join(f"{start}:{length}" for start, length in runs)
+
+
+def decode_runs(prompt: str, value: str | None) -> Runs:
+    """The runs ``encode_runs`` stored for ``prompt``; empty when the prompt was edited since or the value is damaged."""
+    try:
+        checksum, _, body = (value or "").partition("|")
+        if checksum != f"{zlib.crc32(prompt.encode()):08x}":
+            return ()
+        runs = tuple((int(a), int(b)) for a, b in (part.split(":") for part in body.split(",") if part))
+    except ValueError:
+        return ()
+    end = 0
+    for start, length in runs:  # sorted, non-empty and non-overlapping, all inside the prompt
+        if start < end or length <= 0 or start + length > len(prompt):
+            return ()
+        end = start + length
+    return runs

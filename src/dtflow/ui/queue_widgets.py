@@ -4,6 +4,7 @@ from PySide6.QtCore import QRect, QRectF, QSize, Qt
 from PySide6.QtGui import QColor, QFont, QFontMetrics, QPainter
 from PySide6.QtWidgets import QStyle, QStyledItemDelegate, QStyleOptionViewItem, QWidget
 
+from dtflow.ui.prompt_tags import elided_without_ellipsis, paint_tag_runs
 from dtflow.ui.queue_presenter import QueueEntry
 from dtflow.ui.theme import load_tokens
 
@@ -130,6 +131,9 @@ class QueueListDelegate(QStyledItemDelegate):
         title_rect = QRect(rect.left(), rect.top(), chip.left() - rect.left() - 6, chip.height())
         title = QFontMetrics(title_font).elidedText(entry.title, Qt.TextElideMode.ElideRight, title_rect.width())
         painter.drawText(title_rect, Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter, title)
+        if entry.title_runs:
+            shown = elided_without_ellipsis(entry.title, title_font, title_rect.width())
+            paint_tag_runs(painter, title_rect, shown, entry.title_runs, title_font)
 
         small = QFont(option.font)
         small.setPointSizeF(max(7.5, option.font.pointSizeF() - 1))

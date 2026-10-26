@@ -102,6 +102,7 @@ from dtflow.ui.gallery_pager import GalleryPager
 from dtflow.ui.gallery_preparation import GalleryPreparation, GalleryRetirement
 from dtflow.ui.inline_feedback import feedback
 from dtflow.ui.live_control_fx import LiveFollowFx, live_dot_icon
+from dtflow.ui.prompt_tags import PROMPT_RUNS_ROLE, PromptTagHighlighter, request_runs, stored_runs, tagged_html
 from dtflow.ui.runner import AsyncRunner
 from dtflow.ui.theme import load_tokens
 
@@ -116,6 +117,8 @@ LIVE_FOLLOW_TIPS = {
 }
 
 PAGE_SIZE = gallery_limits.DEFAULT_BATCH
+FILENAME_COLUMN = 2
+PROMPT_COLUMN = 8  # the list view's prompt cell, see ``_entry_fields``
 MAX_MOUNTED_IMAGES = gallery_limits.DEFAULT_CARDS  # five default batches; bounded buffered Qt cards
 MAX_QUERY_ITEMS = gallery_limits.MAX_READ  # GalleryQuery retains its existing per-read safety cap
 # One fixed, bounded decode size per saved output for Grid, List, and Detail filmstrip.
@@ -793,11 +796,13 @@ class GalleryPage(QObject):
         self.table.verticalHeader().hide()
         self.table.setProperty("hoverRow", -1)
         self.table.setItemDelegate(RowHoverDelegate(self.table))
+        self.table.setWordWrap(False)  # the prompt cell's tags are painted on one elided line
         self.table.setIconSize(QSize(64, 48))
         self.table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Interactive)
         self.table.horizontalHeader().setStretchLastSection(True)
         for column, width in enumerate((36, 80, 160, 180, 300, 120, 90, 145, 360)):
             self.table.setColumnWidth(column, width)
+        self.table.setColumnHidden(FILENAME_COLUMN, True)  # the name stays in the cell data; the list shows no Filename
         self.table.itemClicked.connect(self._table_clicked)
         self.table.itemActivated.connect(self._table_activated)
         self.table.itemChanged.connect(self._table_item_changed)
@@ -2763,6 +2768,8 @@ class GalleryPage(QObject):
             cell = QTableWidgetItem(value)
             cell.setData(Qt.ItemDataRole.UserRole, item.identity)
             cell.setToolTip(tooltip if column == 1 else value)
+            if column == PROMPT_COLUMN:
+                self._tag_prompt_cell(cell, item)
             if column == 0:
                 cell.setFlags(
                     Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsSelectable | Qt.ItemFlag.ItemIsUserCheckable
@@ -3047,12 +3054,22 @@ class GalleryPage(QObject):
                     Qt.CheckState.Checked if item.identity in self.selection.checked else Qt.CheckState.Unchecked
                 )
             cell.setToolTip(tooltip if column == 1 else value)
+            if column == PROMPT_COLUMN:
+                self._tag_prompt_cell(cell, item)
         film_button, film_painter = self._film_entries[item.identity]
         film_button.setAccessibleName(f"Open {filename}")
         film_button.setToolTip(tooltip)
         film_painter.badges = (dimensions, size)
         button.update()
         film_button.update()
+
+    @staticmethod
+    def _tag_prompt_cell(cell: QTableWidgetItem, item: GalleryItem) -> None:
+        """Hand the list view's prompt cell the parts its prompt variation produced; its delegate paints them."""
+        runs = stored_runs(item.request_json) if item.prompt else ()
+        cell.setData(PROMPT_RUNS_ROLE, runs or None)
+        if runs:
+            cell.setToolTip(f"<p style='white-space:pre-wrap'>{tagged_html(item.prompt, runs)}</p>")
 
     def _entry_fields(self, item):
         loras = "; ".join(f"{identifier} · {weight:g} · Unknown" for identifier, weight in item.loras) or "None"
@@ -3311,6 +3328,15 @@ class GalleryPage(QObject):
         self.previous_button.setEnabled(index > 0 or self.offset > 0)
         self.next_button.setEnabled(index + 1 < len(self.items) or self.offset + len(self.items) < self.total)
 
+    def _show_positive_prompt(self, text: str, runs) -> None:
+        """The saved prompt with the parts its prompt variation produced styled as tags."""
+        edit = self._widget("galleryPositivePrompt")
+        tags = getattr(self, "_prompt_tags", None)
+        if tags is None:
+            tags = self._prompt_tags = PromptTagHighlighter(edit, scan=False)
+        edit.setPlainText(text)
+        tags.set_runs(runs)
+
     _USE_TIP = "Populate Generate from this recorded request without submitting."
     _REGENERATE_TIP = "Create a fresh generation attempt from these recorded settings after confirmation."
 
@@ -3334,7 +3360,7 @@ class GalleryPage(QObject):
         self._widget("galleryGuidanceValue", QLabel).setText(self._value(request.get("guidance")))
         self._widget("gallerySamplerValue", QLabel).setText(self._value(request.get("sampler_id")))
         self._widget("galleryDateValue", QLabel).setText(_local_timestamp(item.saved_at_utc))
-        self._widget("galleryPositivePrompt").setPlainText(item.prompt or "Not recorded")
+        self._show_positive_prompt(item.prompt or "Not recorded", request_runs(request) if item.prompt else ())
         self._widget("galleryAdditionalNegativePromptValue", QLabel).setText(item.negative or "Not recorded")
         self._widget("galleryAdditionalSeedValue", QLabel).setText(self._value(request.get("seed")))
         operation = request.get("operation")
@@ -4295,7 +4321,7 @@ class GalleryPage(QObject):
         self._widget("galleryLoRAChip2").hide()
         for name in ("galleryStepsValue", "galleryGuidanceValue", "gallerySamplerValue", "galleryDateValue"):
             self._widget(name, QLabel).setText("—")
-        self._widget("galleryPositivePrompt").setPlainText("No saved output selected.")
+        self._show_positive_prompt("No saved output selected.", ())
         for name in (
             "galleryAdditionalNegativePromptValue",
             "galleryAdditionalSeedValue",
