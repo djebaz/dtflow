@@ -218,7 +218,7 @@ Windows font metrics and resulting line wraps still need target-machine review.
 
 All tabs share one persistent Designer shell (`src/dtflow/ui/forms/workspace_shell.ui`) with three coordinated content stacks. The splitter, rails and page content remain mounted across tab switches. Connection, Generate and Queues change context, primary workspace and evidence stacks. Images reparents the same branding/navigation widgets into its two header slots and hides both content rails; leaving Images restores their parents and splitter geometry. The shell owns the global segmented Run control and responsive right-rail state; page controllers retain their content references and service wiring.
 
-Generate has three regions: a left parameter rail, a flexible center containing prompt, optional negative prompt and the large preview, and a responsive right inspector for LoRAs, assets and evidence. Branding lives at the top of the shared left rail; navigation stays below the brand in the shared left rail at every width for Connection, Generate and Queues. Images uses the aligned header slots described below. A compact 30×30 segmented Run control sits in the brand row with deliberate clearance from the logo. It shows queue readiness/activity or single-generation progress: Play starts a runnable selected queue, an owned running queue can be paused, an owned paused queue can be resumed, single generation shows reported step progress but remains status-only, and work owned by another process is never controlled implicitly from the header. Just left of it, a 30×30 auto-raised **Queue** tool button (stack icon) opens the one-click Queue popover (#135); the Run control stays centered above the Images tab with the button counted in its offset. The popover is a `role="card"` popup, 340 px wide: a title, *Repeat N times* and *Composer plan* (the composer's current Pair/Cross plan, disabled with its reason when there is none) as radio choices, a secondary line with the availability reason, the new queue's Max at once and the credit disclosure, then a neutral *Add to queue* and a `role="primary"` *Start now (N)*, right-aligned; only the action that applies now is enabled. *Generate image* is a split button: a 30 px ▾ segment joined to its right (square inner corners, an `accentEdge` divider) opens the same popover right-aligned under it; its tooltip carries the current count (*Queue ×N*), and it stays enabled during a generation so Add to queue can wait behind it. Outcomes go to the shared bottom overlay. Connection uses backend/credential context, readiness in the center and safety evidence on the right. Its Custom LoRAs, Draw Things presets and Disposable cache controls use the same section-card header/content structure; destructive whole-cache cleanup uses the shared danger action role. Queues uses the grouped queue list on the left, New queue on top of the center above the selected queue's header and items (or the composer), and selected-attempt evidence on the right. There is no full-width application title band or slogan on any tab. The center uses the space that band once consumed.
+Generate has three regions: a left parameter rail, a flexible center containing prompt, optional negative prompt and the large preview, and a responsive right inspector for LoRAs, assets and evidence. Branding lives at the top of the shared left rail; navigation stays below the brand in the shared left rail at every width for Connection, Generate and Queues. Images uses the aligned header slots described below. A compact 30×30 segmented Run control sits in the brand row with deliberate clearance from the logo. It shows queue readiness/activity or single-generation progress: Play starts a runnable selected queue, an owned running queue can be paused, an owned paused queue can be resumed, single generation shows reported step progress but remains status-only, and work owned by another process is never controlled implicitly from the header. Just left of it, a 30×30 auto-raised **Queue** tool button (stack icon) opens the one-click Queue popover (#135); the Run control stays centered above the Images tab with the button counted in its offset. The popover is a `role="card"` popup, 340 px wide: a title, *Repeat N times* and *Composer plan* (the composer's current Pair/Cross plan, disabled with its reason when there is none) as radio choices, a secondary line with the availability reason, the new queue's Concurrency and the credit disclosure, then a neutral *Add to queue* and a `role="primary"` *Start now (N)*, right-aligned; only the action that applies now is enabled. *Generate image* is a split button: a 30 px ▾ segment joined to its right (square inner corners, an `accentEdge` divider) opens the same popover right-aligned under it; its tooltip carries the current count (*Queue ×N*), and it stays enabled during a generation so Add to queue can wait behind it. Outcomes go to the shared bottom overlay. Connection uses backend/credential context, readiness in the center and safety evidence on the right. Its Custom LoRAs, Draw Things presets and Disposable cache controls use the same section-card header/content structure; destructive whole-cache cleanup uses the shared danger action role. Queues uses the grouped queue list on the left, New queue on top of the center above the selected queue's header and items (or the composer), and selected-attempt evidence on the right. There is no full-width application title band or slogan on any tab. The center uses the space that band once consumed.
 
 The shared splitter uses the `size.workspaceGutter` token for an 8 px neutral drag gutter between panels, with a subtle border-colored hover affordance. Internal panel padding is unchanged.
 
@@ -294,7 +294,7 @@ One icon per meaning. The glyphs are monochrome SVGs in `src/dtflow/resources/im
 | Gallery header | Grid `grid`, List `list`, Detail `image`, Refresh `refresh`, full-screen toggle `fullscreen` (every view), filter combo arrow `chevron`, fullscreen `fullscreen` |
 | Metadata band | Model `box`, LoRAs `layers`, Steps `repeat`, CFG `compass`, Sampler `waypoints`, Date `calendar` |
 | Prompt disclosure | Additional `document`, Raw `json` |
-| Additional-details rows | Negative prompt `ban`, Resolved seed `dices`, Filename `file-image`, Source `hard-drive`, File size `weight`, Backend duration `timer`; Path keeps `document` |
+| Additional-details rows | Negative prompt `ban`, Resolved seed `dices`, Filename `file-image`, Source `hard-drive`, File size `weight`, Provider duration `timer`; Path keeps `document` |
 
 Do not use emoji; Unicode is limited to the gallery's prev/next and zoom glyphs. The web reference's "Icon Usage Map" card in [`devdocs/design-system/`](devdocs/design-system/README.md) mirrors this table.
 
@@ -459,7 +459,7 @@ presenting “0 of 0” as work. Avoid distributing spare height among action ro
 **New queue** opens the composer in the center instead of the selected queue
 (header, items and empty state hide; Close or selecting a queue returns). It
 scrolls on its own: an untitled top row, right-aligned, holds the actions
-where + New queue was (Max at once for the new queue, neutral *Save paused* and
+where + New queue was (Concurrency for the new queue, neutral *Save paused* and
 *Add to queue*, `role="primary"` **Start now (N items)**, then Close; when the
 center is too narrow, the entire action group including Close flows together
 onto a wrapping row, rather than isolating Close above the remaining actions), a
@@ -484,7 +484,7 @@ only while a queue runs with a live dispatch owner; Start now is disabled while
 this window dispatches or generates and while another process dispatches. While
 composing, the right column replaces item evidence with a *New queue* summary
 card (the `itemIdentityBox` pattern: backend, model, LoRAs with weights, items,
-varies, seeds, Max at once, plus a caption that nothing is sent yet).
+varies, seeds, Concurrency, plus a caption that nothing is sent yet).
 
 The queue header is the single status location for the selected queue: the
 prompt title (`section` text role, wrapping), then a labelled facts grid
@@ -493,7 +493,7 @@ Backend, Created on the right), one `statusChip` label (state-colored border and
 neutral selection treatment for *Up next N*), then one action row and one
 progress row. The action row holds exactly one `role="primary"` button whose
 text follows the state (Start, Start next, Pause, Resume), neutral-red Cancel,
-Earlier/Later only for a waiting queue, the queue's own Max at once spin box, a neutral Relaunch
+Earlier/Later only for a waiting queue, the queue's own Concurrency spin box, a neutral Relaunch
 that opens a menu (same or new seeds, all or only failed items; the list's
 context menu offers the same submenu) and a neutral Remove whose consent uses
 the shared red inline confirmation. The item panel keeps its identity grid and
@@ -501,7 +501,7 @@ puts Open folder and a neutral *Retry item* (failed, cancelled or no-result
 items only) on their own row below it, so long failure codes never push them
 out of the column. The
 progress row is a painted segmented bar (success, error, unknown, warning and
-accent runs over the bar track; pending is empty track), a settled count and
+accent runs over the bar track; pending is empty track), a finished count and
 `filterChip` count buttons in their state color that turn selection-blue when
 checked. Transient outcomes use the shared bottom overlay, never a sticky
 message line. Long titles and subtitles wrap or elide; at a 1000 px window the
@@ -521,7 +521,7 @@ An expired estimate stays at zero until fresh evidence arrives; it never complet
 In the left context rail the queue list takes the flexible rail height under
 the QUEUES eyebrow, an icon-only Refresh and a filter field. Rows are painted
 two-line items (semibold title with a status chip, secondary subtitle, then a
-4 px segmented mini bar with a settled count) under eyebrow-style group headings
+4 px segmented mini bar with a finished count) under eyebrow-style group headings
 (Running, Up next, Paused, History). Clear history stays at its natural height
 below it. A neutral **+ New queue** button (the selected queue keeps the only primary action) sits right-aligned in
 a row at the top of the center workspace, so it is visible at every width
@@ -529,7 +529,7 @@ a row at the top of the center workspace, so it is visible at every width
 
 ### Inventory continuity and statistics
 
-Provider switches restore each provider's last-successful matching observation without resetting its form. Preserve model/LoRA counts, provenance (cached, remembered or refreshed) and original observation time alongside refreshing/error status. A failed refresh says Refresh failed · showing previous inventory and does not rebuild/prune selections. Unknown/no matching observation is not a fabricated zero inventory. Endpoint or selected credential changes invalidate mismatched availability evidence; mere provider switching or a failed HTTP/RPC response does not. Discovery restoration itself never silently removes selected checkpoints/LoRAs; deliberate user filter changes keep existing catalogue behavior. Generation still performs fresh live validation. Use the existing inventoryEvidenceLabel and shared secondary-text styling; no new tokens or layouts.
+Provider switches restore each provider's last-successful matching observation without resetting its form. Preserve model/LoRA counts, provenance (cached, remembered or refreshed) and original observation time alongside refreshing/error status. A failed refresh says Refresh failed · showing previous models and does not rebuild/prune selections. Unknown/no matching observation is not a fabricated zero inventory. Endpoint or selected credential changes invalidate mismatched availability evidence; mere provider switching or a failed HTTP/RPC response does not. Discovery restoration itself never silently removes selected checkpoints/LoRAs; deliberate user filter changes keep existing catalogue behavior. Generation still performs fresh live validation. Use the existing inventoryEvidenceLabel and shared secondary-text styling; no new tokens or layouts.
 
 The Images export column is page-local, not the shell inspector or a List-side preview. The canonical gallery form owns its scroll container, close action and empty card host; the Connection form owns the single shared vertical export card. Reparent the card on navigation, preserve settings/progress and never cancel merely because the panel is hidden. Keep the listing flexible beside the column; both remain keyboard-accessible and the export controls scroll at smaller heights. Owner reports column smoke passed for 5772f54. The subsequent checked-only Images context hides the scope label/dropdown, retaining Connection scope choices; that small follow-up remains owner-smoke-pending.
 

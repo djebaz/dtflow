@@ -772,7 +772,7 @@ class QueuePage:
         if phase == "running":
             # The ring counts settled items, which is meaningful however many items run at once.
             completed, total = summary.settled, summary.total
-            detail += f" {summary.settled}/{summary.total} settled."
+            detail += f" Progress: {summary.settled}/{summary.total}."
             # Only the currently running item may supply the single-item stage/progress.
             # Historical callbacks for other items must not take over the status.
             active_item_id = running_items[0]["item_id"] if len(running_items) == 1 else None
@@ -791,13 +791,13 @@ class QueuePage:
             stage = f"{running} running" if running else summary.headline.rstrip(".")
             if running:
                 stage = (
-                    self._run_stages.get((queue_id, active_item_id), "Admitted; preparing / waiting for backend")
+                    self._run_stages.get((queue_id, active_item_id), "Starting; waiting for response")
                     if active_item_id is not None
                     else f"{running} items running"
                 )
                 # Keep the measurable settled/total queue progress even when an
                 # individual backend has not reported sampling steps yet.
-                wide = f"Queue {queue_id[:8]} · {stage} · {summary.settled}/{summary.total} settled"
+                wide = f"Queue {queue_id[:8]} · {stage} · {summary.settled}/{summary.total}"
             if active_item_id is not None:
                 key = (queue_id, active_item_id)
                 stage_started = self._run_stage_started.get(key)
@@ -807,7 +807,7 @@ class QueuePage:
                     step, steps = progress[0]
                     stage += f" · step {step}/{steps}"
             if running:
-                wide = f"Queue {queue_id[:8]} · {stage} · {summary.settled}/{summary.total} settled"
+                wide = f"Queue {queue_id[:8]} · {stage} · {summary.settled}/{summary.total}"
             if running == 1 and len(progress) == 1:
                 step, steps = progress[0]
                 # The item number is known only for the selected queue, whose items are read.
@@ -1265,8 +1265,8 @@ class QueuePage:
 
     def quick_disclosure(self, *, plan: bool) -> str:
         name, _ = self._composer_backend() if plan else self._backend()
-        source = "the queue composer's draft and plan" if plan else "Generate's current request"
-        return f"Uses {source}. Backend: {name}. A cloud run may use credits."
+        source = "the new queue's draft and plan" if plan else "Generate's current request"
+        return f"Uses {source}. Connection: {name}. A cloud run may use credits."
 
     def _set_draft(self, request, name, endpoint, asset_ids, job) -> None:
         self._draft = request, name, endpoint, tuple(asset_ids)
@@ -1315,7 +1315,7 @@ class QueuePage:
         request, name, endpoint, assets = self._draft
         prompt = self.page.composerPromptEdit.toPlainText()
         if not prompt.strip():
-            raise FormError("Enter a base prompt in the queue composer.", "composerPromptEdit")
+            raise FormError("Enter a base prompt for the new queue.", "composerPromptEdit")
         return replace(request, prompt=prompt), name, endpoint, assets
 
     def copy_to_generate(self) -> None:

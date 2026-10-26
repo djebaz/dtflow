@@ -92,7 +92,7 @@
               <string>sectionCard</string>
              </property>
              <property name="accessibleName">
-              <string>Backend</string>
+              <string>Connection</string>
              </property>
              <layout class="QVBoxLayout" name="connectionBoxCardLayout">
               <property name="leftMargin">
@@ -159,7 +159,7 @@
                  <item>
                   <widget class="QLabel" name="connectionBoxHeading">
                    <property name="text">
-                    <string>Backend</string>
+                    <string>Connection</string>
                    </property>
                    <property name="textRole" stdset="0">
                     <string>panelHeading</string>
@@ -197,7 +197,7 @@
                  <item row="0" column="1">
                   <widget class="QComboBox" name="backendCombo">
                    <property name="accessibleName">
-                    <string>Generation backend</string>
+                    <string>Generation provider</string>
                    </property>
                   </widget>
                  </item>
@@ -230,7 +230,7 @@
                     <string>Check connection</string>
                    </property>
                    <property name="accessibleName">
-                    <string>Check selected backend connection</string>
+                    <string>Check selected connection</string>
                    </property>
                   </widget>
                  </item>
@@ -543,7 +543,7 @@
            <item>
             <widget class="QLabel" name="workspaceSubtitleLabel">
              <property name="text">
-              <string>Verify the selected backend without submitting generation. DTFlow never falls back to another provider.</string>
+              <string>Check the selected connection without submitting generation. DTFlow never falls back to another provider.</string>
              </property>
              <property name="wordWrap">
               <bool>true</bool>

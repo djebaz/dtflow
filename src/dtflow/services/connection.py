@@ -140,7 +140,7 @@ def present_generation_failure(exc: Exception) -> Presentation:
             wanted = dict(UNSUPPORTED_NAMES)
             names = " or ".join(wanted.get(name, name) for name, _ in failure.diagnostics)
             hint = (
-                " Refresh inventory to see the models this provider offers."
+                " Refresh models to see the models this provider offers."
                 if failure.diagnostics[0][0] == "model"
                 else ""
             )

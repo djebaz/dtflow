@@ -801,7 +801,7 @@ class MainWindow:
         if row is not None and row.property("runIdentity") != run_identity:
             self.progress_strip.finish("run")
         if "run" not in self.progress_strip.rows:
-            label = "Generation" if self.activity.generating else "Queue · settled items"
+            label = "Generation" if self.activity.generating else "Queue progress"
             self.progress_strip.finish("generation-result")
             self.progress_strip.finish("queue-result")
             self.progress_strip.start(
