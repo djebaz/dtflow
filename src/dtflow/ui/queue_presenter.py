@@ -418,6 +418,7 @@ class QueueEntry:
     settled: int
     total: int
     segments: tuple[tuple[str, int], ...]
+    title_runs: tuple[tuple[int, int], ...] = ()  # parts of ``title`` a prompt variation produced
 
     @property
     def text(self) -> str:
@@ -445,6 +446,29 @@ def queue_title(view: dict) -> str:
     if operation == "txt2img":
         return prompt
     return ("Inpaint" if operation == "inpaint" else "Image to image") + f" · {prompt}"
+
+
+def queue_title_runs(view: dict) -> tuple[tuple[int, int], ...]:
+    """``(start, length)`` of the parts of ``queue_title(view)`` that the first item's prompt variation produced."""
+    first = view.get("first") or {}
+    prompt = first.get("prompt") or ""
+    runs = decode_runs(prompt, first.get("prompt_runs"))
+    offset = 0
+    for part in prompt.splitlines(keepends=True):
+        if part.strip():
+            break
+        offset += len(part)
+    else:
+        return ()
+    if not runs:
+        return ()
+    start = offset + len(part) - len(part.lstrip())
+    line = part.strip()
+    shown = len(line) if len(line) <= 80 else len(line[:79].rstrip())  # as ``_first_line`` truncates
+    operation = first.get("operation") or "txt2img"
+    prefix = 0 if operation == "txt2img" else len(("Inpaint" if operation == "inpaint" else "Image to image") + " · ")
+    clipped = ((max(run_start, start), min(run_start + length, start + shown)) for run_start, length in runs)
+    return tuple((low - start + prefix, high - low) for low, high in clipped if low < high)
 
 
 def plan_text(view: dict) -> str:
@@ -561,6 +585,7 @@ def queue_entries(views, now: datetime | None = None) -> tuple[QueueEntry, ...]:
                     summary.settled,
                     summary.total,
                     segments(view["summary"]),
+                    queue_title_runs(view),
                 )
             )
     return tuple(rows)

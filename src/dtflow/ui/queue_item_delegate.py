@@ -8,6 +8,7 @@ from PySide6.QtCore import QEvent, QObject, QRect, QRectF, QSize, Qt
 from PySide6.QtGui import QColor, QFont, QFontMetrics, QPainter, QPainterPath, QTextLayout, QTextOption
 from PySide6.QtWidgets import QHeaderView, QStyle, QStyledItemDelegate, QStyleOptionViewItem, QTableView
 
+from dtflow.ui.prompt_tags import paint_tag_runs
 from dtflow.ui.queue_model import ROW_ROLE, stopwatch_icon
 from dtflow.ui.queue_presenter import display_name, lora_fraction
 from dtflow.ui.theme import load_tokens
@@ -137,12 +138,8 @@ class QueueItemDelegate(QStyledItemDelegate):
                 low, high = max(run_start, start), min(run_start + length, cursor)
                 if low >= high:
                     continue
-                x = rect.left() + metrics.horizontalAdvance(core[: low - start])
-                piece = core[low - start : high - start]
-                tag = QRect(x, rect.top() + number * height, metrics.horizontalAdvance(piece), height)
-                painter.fillRect(tag, QColor(_TOKENS["color.accent"]))
-                painter.setPen(QColor(_TOKENS["color.onAccent"]))
-                painter.drawText(tag, Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter, piece)
+                line_rect = QRect(rect.left(), rect.top() + number * height, rect.width(), height)
+                paint_tag_runs(painter, line_rect, core, [(low - start, high - low)], font)
 
     @staticmethod
     def _lines(painter, rect, lines, font, color) -> None:

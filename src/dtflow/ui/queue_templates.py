@@ -2,6 +2,7 @@
 
 import asyncio
 from dataclasses import asdict, replace
+from html import escape
 from pathlib import Path
 
 from PySide6.QtCore import QEvent, QFile, QIODevice, QObject, QSignalBlocker, Qt
@@ -12,6 +13,7 @@ from dtflow.core.models import ValidationError
 from dtflow.core.queue_authoring import QueueEdit
 from dtflow.services import queue_templates as service
 from dtflow.ui.inline_feedback import confirm_action, edit_text, feedback
+from dtflow.ui.prompt_tags import tag_spans, tagged_html
 
 
 class QueueTemplates(QObject):
@@ -143,17 +145,26 @@ class QueueTemplates(QObject):
 
         def selection_changed():
             template = selected()
-            text = (
+            lines = [
                 service.summary(template) if template else "No matching template. Save a new recipe from the composer."
-            )
+            ]
+            html = [escape(lines[0])]
             if template:
-                text += "\nSource prompt: " + template.recipe.request.prompt[:160].replace("\n", " ")
+                source = template.recipe.request.prompt[:160].replace("\n", " ")
+                html.append("Source prompt: " + tagged_html(source, tag_spans(source)))
+                extra = []
                 if template.recipe.reconstructed:
-                    text += "\nReconstructed from older queue results: original authoring input was missing. Review before reuse."
-                text += "\nWildcard files use current local contents, not archived copies. Missing dependencies remain unresolved."
+                    extra.append(
+                        "Reconstructed from older queue results: original authoring input was missing. Review before reuse."
+                    )
+                extra.append(
+                    "Wildcard files use current local contents, not archived copies. Missing dependencies remain unresolved."
+                )
                 if template.recipe.backend != self.queue._backend()[0]:
-                    text += "\nBackend mismatch: loading requires explicit rebinding to the active connection."
-            editor.templateSummaryLabel.setText(text)
+                    extra.append("Backend mismatch: loading requires explicit rebinding to the active connection.")
+                html += [escape(line) for line in extra]
+            editor.templateSummaryLabel.setTextFormat(Qt.TextFormat.RichText)
+            editor.templateSummaryLabel.setText("<br>".join(part.replace("\n", "<br>") for part in html))
             for button in (
                 editor.templateUpdateButton,
                 editor.templateRenameButton,

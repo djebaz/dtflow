@@ -13,6 +13,7 @@ claims remote cancellation.
 import asyncio
 from collections.abc import Callable
 from dataclasses import asdict, dataclass, replace
+from html import escape
 from pathlib import Path
 from time import monotonic
 
@@ -101,12 +102,13 @@ from dtflow.ui.queue_presenter import (
     lora_text,
     queue_facts,
     queue_title,
+    queue_title_runs,
     segments,
     status_chip,
     summarize,
     up_next_ids,
 )
-from dtflow.ui.prompt_tags import style_prompt_tags, tagged_html
+from dtflow.ui.prompt_tags import PROMPT_RUNS_ROLE, TagCellDelegate, style_prompt_tags, tag_spans, tagged_html
 from dtflow.ui.queue_widgets import ENTRY_ROLE, HEADING_ROLE, QueueListDelegate
 from dtflow.ui.runner import AsyncRunner, EventRelay
 
@@ -360,6 +362,7 @@ class QueuePage:
         page.newQueueCapSpinBox.valueChanged.connect(self._new_cap_changed)
         self.plan_model = QStandardItemModel(page)
         page.planTableView.setModel(self.plan_model)
+        page.planTableView.setItemDelegate(TagCellDelegate(page.planTableView))
         self._preview_key: tuple | None = None  # (plan form, request) of the preview shown or being drawn
         self._preview_token = 0  # a prompt-variation preview resolves off the GUI thread; only the latest token shows
         self._previewing = False
@@ -633,7 +636,9 @@ class QueuePage:
     def _render_header(self, view: dict) -> None:
         page = self.page
         summary = summarize(view)
-        page.queueTitleLabel.setText(queue_title(view))
+        title, title_runs = queue_title(view), queue_title_runs(view)
+        page.queueTitleLabel.setTextFormat(Qt.TextFormat.RichText if title_runs else Qt.TextFormat.PlainText)
+        page.queueTitleLabel.setText(tagged_html(title, title_runs) if title_runs else title)
         first = view.get("first") or {}
         prompt = first.get("prompt") or ""
         runs = decode_runs(prompt, first.get("prompt_runs"))
@@ -1581,7 +1586,18 @@ class QueuePage:
     def _count(self) -> tuple[str, str]:
         return count_text(self._plan_form(), self._prompt_source(), self._wildcards_dir)
 
+    def _base_html(self, request) -> str:
+        """``_base_text`` as rich text, the base prompt's variation keywords styled as tags."""
+        parts = self._base_parts(request)
+        head = parts[0] if request.prompt.strip() else ""
+        return (tagged_html(head, tag_spans(head)) if head else escape(parts[0])) + escape(
+            " · " + " · ".join(parts[1:])
+        )
+
     def _base_text(self, request) -> str:
+        return " · ".join(self._base_parts(request))
+
+    def _base_parts(self, request) -> list[str]:
         loras = len(request.loras)
         parts = [
             _clip(request.prompt.strip().splitlines()[0]) if request.prompt.strip() else "(no prompt)",
@@ -1596,7 +1612,7 @@ class QueuePage:
             parts.append(f"{loras} LoRA{'s' if loras != 1 else ''}")
         if self._draft_job is not None:
             parts.append(f"Inpaint · strength {request.strength:g}")
-        return " · ".join(parts)
+        return parts
 
     def preview(self) -> None:
         """Live count and items for the composer: pure planning against the Generate form, nothing persisted or sent."""
@@ -1609,6 +1625,7 @@ class QueuePage:
             request, *_ = self._composer_request(preview=True)
         except FormError as exc:
             self._invalidate_preview()  # a validity change must not be overwritten later
+            page.composerBaseLabel.setTextFormat(Qt.TextFormat.PlainText)
             page.composerBaseLabel.setText("Queue draft settings are not valid yet.")
             self._show(page.planCountLabel, "error", sentence(str(exc)))
             self.plan_model.clear()
@@ -1622,8 +1639,13 @@ class QueuePage:
             return  # polling and presentation syncs reach here unchanged: keep what is shown or being drawn
         self._invalidate_preview()
         self._preview_key = key
-        page.composerBaseLabel.setText(self._base_text(request))
-        page.composerBaseLabel.setToolTip(request.prompt)
+        page.composerBaseLabel.setTextFormat(Qt.TextFormat.RichText)
+        page.composerBaseLabel.setText(self._base_html(request))
+        page.composerBaseLabel.setToolTip(
+            f"<p style='white-space:pre-wrap'>{tagged_html(request.prompt, tag_spans(request.prompt))}</p>"
+            if request.prompt
+            else ""
+        )
         if not self._planned():
             self._mark_plan(None)
             count = page.queueCountSpinBox.value()
@@ -2110,10 +2132,18 @@ class QueuePage:
         self.plan_model.setHorizontalHeaderLabels([self._column_title(name) for name in table.columns])
         for column, name in enumerate(table.columns):
             self.plan_model.setHeaderData(column, Qt.Orientation.Horizontal, name, Qt.ItemDataRole.ToolTipRole)
-        for row in table.rows:
+        prompt_column = table.columns.index("prompt") if "prompt" in table.columns else None
+        for number, row in enumerate(table.rows):
             cells = [QStandardItem(cell) for cell in row]
             for item in cells:
                 item.setToolTip(item.text())  # the cells elide to the panel width
+            if prompt_column is not None and number < len(table.prompt_runs):
+                runs = decode_runs(row[prompt_column], table.prompt_runs[number])
+                if runs:  # the parts the prompt variation produced are painted as tags by the view's delegate
+                    cells[prompt_column].setData(runs, PROMPT_RUNS_ROLE)
+                    cells[prompt_column].setToolTip(
+                        f"<p style='white-space:pre-wrap'>{tagged_html(row[prompt_column], runs)}</p>"
+                    )
             self.plan_model.appendRow(cells)
         view = self.page.planTableView
         # Columns share the panel width (header and cell text elide) instead of widening the table past the panel.

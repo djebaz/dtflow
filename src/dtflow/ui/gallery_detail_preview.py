@@ -31,6 +31,7 @@ from PySide6.QtWidgets import (
 )
 from shiboken6 import isValid
 
+from dtflow.ui.prompt_tags import paint_cell_tags
 from dtflow.ui.theme import load_tokens
 
 ASSETS = Path(__file__).parents[1] / "resources/images/gallery"
@@ -162,6 +163,7 @@ class RowHoverDelegate(QStyledItemDelegate):
         else:
             style.state &= ~QStyle.StateFlag.State_MouseOver
         super().paint(painter, style, index)
+        paint_cell_tags(self, painter, option, index)
 
 
 FOCUS_HIDDEN_ROWS = ("galleryNavigationRow", "gallerySelectionBar")

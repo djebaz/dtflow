@@ -4,12 +4,14 @@ import json
 import re
 from html import escape
 
-from PySide6.QtGui import QColor, QSyntaxHighlighter, QTextCharFormat
-from PySide6.QtWidgets import QPlainTextEdit, QTextEdit
+from PySide6.QtCore import QRect, Qt
+from PySide6.QtGui import QColor, QFont, QFontMetrics, QPainter, QSyntaxHighlighter, QTextCharFormat
+from PySide6.QtWidgets import QApplication, QPlainTextEdit, QStyle, QStyledItemDelegate, QStyleOptionViewItem, QTextEdit
 
 from dtflow.services.dynamic_prompts import PROMPT_TAGS_KEY, Runs, decode_runs
 from dtflow.ui.theme import load_tokens
 
+PROMPT_RUNS_ROLE = Qt.ItemDataRole.UserRole + 7  # table cells: the (start, length) runs of the cell text to tag
 _WILDCARD = re.compile(r"__([A-Za-z0-9]+(?:[_\-][A-Za-z0-9]+)*)__")
 
 
@@ -139,3 +141,54 @@ def tagged_html(text: str, runs: Runs) -> str:
         position = start + length
     out.append(escape(text[position:]))
     return "".join(out)
+
+
+def paint_tag_runs(painter: QPainter, rect: QRect, shown: str, runs: Runs, font: QFont) -> None:
+    """Paint tags over ``shown``, the single line of text already drawn at the left of ``rect`` (ellipsis excluded)."""
+    tokens = load_tokens()
+    metrics = QFontMetrics(font)
+    painter.save()
+    painter.setClipRect(rect)
+    painter.setFont(font)
+    for start, length in runs:
+        end = min(start + length, len(shown))
+        if start >= end:
+            continue
+        tag = QRect(
+            rect.left() + metrics.horizontalAdvance(shown[:start]),
+            rect.top(),
+            metrics.horizontalAdvance(shown[start:end]),
+            rect.height(),
+        )
+        painter.fillRect(tag, QColor(tokens["color.accent"]))
+        painter.setPen(QColor(tokens["color.onAccent"]))
+        painter.drawText(tag, Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter, shown[start:end])
+    painter.restore()
+
+
+def elided_without_ellipsis(text: str, font: QFont, width: int) -> str:
+    """What ``elidedText(..., ElideRight, width)`` keeps of ``text``, without the trailing ellipsis."""
+    elided = QFontMetrics(font).elidedText(text, Qt.TextElideMode.ElideRight, width)
+    return elided[:-1] if elided != text else text
+
+
+def paint_cell_tags(delegate: QStyledItemDelegate, painter: QPainter, option, index) -> None:
+    """Over a cell the style drew, paint the ``PROMPT_RUNS_ROLE`` runs of its single elided line as tags."""
+    runs = index.data(PROMPT_RUNS_ROLE)
+    if not runs:
+        return
+    option = QStyleOptionViewItem(option)
+    delegate.initStyleOption(option, index)
+    widget = option.widget
+    style = widget.style() if widget else QApplication.style()
+    rect = style.subElementRect(QStyle.SubElement.SE_ItemViewItemText, option, widget)
+    text = index.data(Qt.ItemDataRole.DisplayRole) or ""
+    paint_tag_runs(painter, rect, elided_without_ellipsis(text, option.font, rect.width()), runs, option.font)
+
+
+class TagCellDelegate(QStyledItemDelegate):
+    """Plain cells, except that runs stored under ``PROMPT_RUNS_ROLE`` are painted as tags."""
+
+    def paint(self, painter, option, index) -> None:
+        super().paint(painter, option, index)
+        paint_cell_tags(self, painter, option, index)

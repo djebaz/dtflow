@@ -138,6 +138,7 @@ class PlanTable:
     columns: tuple[str, ...]
     rows: tuple[tuple[str, ...], ...]
     rng_seed: int | None = None
+    prompt_runs: tuple[str, ...] = ()  # per row: the prompt's variation runs as ``dynamic_prompts.encode_runs`` text
 
 
 def seed_range(start: int, count: int) -> tuple[int, ...]:
@@ -484,7 +485,8 @@ def describe_plan(base: ResolvedGenerationRequest, plan: Plan, *, edit: bool = F
         )
         for index, item in enumerate(items, 1)
     )
-    return PlanTable(plan.mode, plan.effective_seed_policy, len(items), columns, rows, plan.rng_seed)
+    runs = tuple(dict(item.resolution_evidence).get(dynamic_prompts.PROMPT_TAGS_KEY, "") for item in items)
+    return PlanTable(plan.mode, plan.effective_seed_policy, len(items), columns, rows, plan.rng_seed, runs)
 
 
 def _lora_sets(value: Any) -> tuple[tuple[tuple[str, Any], ...], ...]:

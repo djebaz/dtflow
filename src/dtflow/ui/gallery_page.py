@@ -102,7 +102,7 @@ from dtflow.ui.gallery_pager import GalleryPager
 from dtflow.ui.gallery_preparation import GalleryPreparation, GalleryRetirement
 from dtflow.ui.inline_feedback import feedback
 from dtflow.ui.live_control_fx import LiveFollowFx, live_dot_icon
-from dtflow.ui.prompt_tags import PromptTagHighlighter, request_runs
+from dtflow.ui.prompt_tags import PROMPT_RUNS_ROLE, PromptTagHighlighter, request_runs, stored_runs, tagged_html
 from dtflow.ui.runner import AsyncRunner
 from dtflow.ui.theme import load_tokens
 
@@ -117,6 +117,7 @@ LIVE_FOLLOW_TIPS = {
 }
 
 PAGE_SIZE = gallery_limits.DEFAULT_BATCH
+PROMPT_COLUMN = 8  # the list view's prompt cell, see ``_entry_fields``
 MAX_MOUNTED_IMAGES = gallery_limits.DEFAULT_CARDS  # five default batches; bounded buffered Qt cards
 MAX_QUERY_ITEMS = gallery_limits.MAX_READ  # GalleryQuery retains its existing per-read safety cap
 # One fixed, bounded decode size per saved output for Grid, List, and Detail filmstrip.
@@ -794,6 +795,7 @@ class GalleryPage(QObject):
         self.table.verticalHeader().hide()
         self.table.setProperty("hoverRow", -1)
         self.table.setItemDelegate(RowHoverDelegate(self.table))
+        self.table.setWordWrap(False)  # the prompt cell's tags are painted on one elided line
         self.table.setIconSize(QSize(64, 48))
         self.table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Interactive)
         self.table.horizontalHeader().setStretchLastSection(True)
@@ -2764,6 +2766,8 @@ class GalleryPage(QObject):
             cell = QTableWidgetItem(value)
             cell.setData(Qt.ItemDataRole.UserRole, item.identity)
             cell.setToolTip(tooltip if column == 1 else value)
+            if column == PROMPT_COLUMN:
+                self._tag_prompt_cell(cell, item)
             if column == 0:
                 cell.setFlags(
                     Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsSelectable | Qt.ItemFlag.ItemIsUserCheckable
@@ -3048,12 +3052,22 @@ class GalleryPage(QObject):
                     Qt.CheckState.Checked if item.identity in self.selection.checked else Qt.CheckState.Unchecked
                 )
             cell.setToolTip(tooltip if column == 1 else value)
+            if column == PROMPT_COLUMN:
+                self._tag_prompt_cell(cell, item)
         film_button, film_painter = self._film_entries[item.identity]
         film_button.setAccessibleName(f"Open {filename}")
         film_button.setToolTip(tooltip)
         film_painter.badges = (dimensions, size)
         button.update()
         film_button.update()
+
+    @staticmethod
+    def _tag_prompt_cell(cell: QTableWidgetItem, item: GalleryItem) -> None:
+        """Hand the list view's prompt cell the parts its prompt variation produced; its delegate paints them."""
+        runs = stored_runs(item.request_json) if item.prompt else ()
+        cell.setData(PROMPT_RUNS_ROLE, runs or None)
+        if runs:
+            cell.setToolTip(f"<p style='white-space:pre-wrap'>{tagged_html(item.prompt, runs)}</p>")
 
     def _entry_fields(self, item):
         loras = "; ".join(f"{identifier} · {weight:g} · Unknown" for identifier, weight in item.loras) or "None"
