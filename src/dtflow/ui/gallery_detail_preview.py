@@ -57,6 +57,7 @@ class CoverPainter(QObject):
         self.zoom = 1.0
         self.offset = [0.0, 0.0]
         self.drag = None
+        self.on_zoom = None  # called after the wheel changes zoom, so a slider can follow
         widget.installEventFilter(self)
         widget.setMouseTracking(True)
 
@@ -139,6 +140,8 @@ class CoverPainter(QObject):
                 self.drag = None
             if event.type() == QEvent.Wheel:
                 self.zoom = max(0.1, min(8, self.zoom * (1.1 if event.angleDelta().y() > 0 else 1 / 1.1)))
+                if self.on_zoom is not None:
+                    self.on_zoom()
                 obj.update()
                 return True
         return False
@@ -330,10 +333,28 @@ def apply_gallery(page, assets=ASSETS, sample=False):
     get("galleryZoomInButton").setToolTip("Zoom in")
     get("galleryActualSizeButton").setToolTip("Actual size")
 
+    zoom_slider = get("galleryZoomSlider")
+
+    def sync_slider():
+        zoom_slider.blockSignals(True)
+        zoom_slider.setValue(round(paint.zoom * 100))
+        zoom_slider.blockSignals(False)
+        zoom_slider.setToolTip(f"{round(paint.zoom * 100)}%")
+
+    def slider_zoomed(value):
+        paint.zoom = value / 100
+        zoom_slider.setToolTip(f"{value}%")
+        surface.update()
+
+    paint.on_zoom = sync_slider
+    zoom_slider.setEnabled(True)
+    zoom_slider.valueChanged.connect(slider_zoomed)
+
     def set_view(mode):
         paint.mode = mode
         paint.zoom = 1
         paint.offset = [0, 0]
+        sync_slider()
         surface.update()
 
     for name, factor in [("galleryZoomInButton", 1.1), ("galleryZoomOutButton", 1 / 1.1)]:
@@ -342,6 +363,7 @@ def apply_gallery(page, assets=ASSETS, sample=False):
 
     def zoom(factor):
         paint.zoom = max(0.1, min(8, paint.zoom * factor))
+        sync_slider()
         surface.update()
 
     get("galleryActualSizeButton").setEnabled(True)
@@ -377,6 +399,7 @@ def apply_gallery(page, assets=ASSETS, sample=False):
         get("galleryDimensionsOverlay").setText(f"{paint.pixmap.width()} × {paint.pixmap.height()}")
         paint.zoom = 1
         paint.offset = [0, 0]
+        sync_slider()
         filename = assets / "portrait.jpg" if index == 1 else paths[index - 1]
         get("galleryAdditionalFilenameValue").setText(f"{filename.name} (illustrative fixture)")
         get("galleryAdditionalFileSizeValue").setText(f"{filename.stat().st_size / 1024:.0f} KB (fixture file)")
