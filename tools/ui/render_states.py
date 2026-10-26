@@ -2137,6 +2137,30 @@ def render_gallery_composition_states(shell, state, out):
         gallery._image_done(gallery._image_generation, gallery.selected_id, (image, ""), None)
         snap("images-98-detail-navigation-first-image")
 
+        # Hover card: normal (short prompt + LoRAs) and long scrolling prompt. Shown directly; the
+        # real pointer path is timer/cursor driven and owner-smoke-tested.
+        card = gallery.hover_card
+        hover_record = replace(
+            chevron_records[0],
+            prompt="Long recorded prompt. " * 80,
+            loras=(("portrait_enhancer_v2", 0.8), ("film_grain_xl", 0.35)),
+        )
+        gallery.items[0] = hover_record
+        gallery._presented_item = None
+        gallery._present_item(hover_record)
+        card.reposition()
+        card.show()
+        QTest.qWait(30)
+        assert card.isVisible() and gallery.surface.rect().contains(card.geometry())
+        assert card.prompt.verticalScrollBar().maximum() > 0
+        snap("images-99-detail-hover-card-long-prompt")
+        gallery._present_item(replace(hover_record, identity="offline-chevron:x", prompt="", loras=()))
+        assert not card.isVisible()
+        card.reposition()
+        card.show()
+        snap("images-99a-detail-hover-card-empty")
+        card.dismiss()
+
         present(item)
         gallery.show_view("Grid")
         gallery._unselect_all()

@@ -2026,3 +2026,15 @@ QTableView#queueItemsView::item:hover { background: ${color.buttonHover}; }
 QTableView#queueItemsView::item:selected { background: ${color.selection}; color: ${color.selectionText}; }
 QTableView#queueItemsView QHeaderView::section { background: ${color.sectionHeader}; color: ${color.secondary}; padding: 5px 7px; border: 0; border-bottom: 1px solid ${color.sectionBorder}; }
 QLabel#queueThumbPreview { background: ${color.canvas}; border: 1px solid ${color.borderStrong}; border-radius: ${size.panelRadius}; padding: 5px; color: ${color.secondary}; }
+
+QFrame[role="galleryHoverCard"] {
+  background: ${color.surface};
+  border: 1px solid ${color.border};
+  border-radius: 8px;
+}
+QFrame[role="galleryHoverCard"] QPlainTextEdit {
+  background: ${color.canvas};
+  color: ${color.text};
+  border: 0;
+  border-radius: 6px;
+}
