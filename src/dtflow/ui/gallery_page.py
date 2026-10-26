@@ -621,7 +621,6 @@ class GalleryPage(QObject):
         self.surface_painter = self._presentation_painters[0]
         self.surface_painter.pixmap = QPixmap()
         self.surface = self._widget("galleryImageSurface", QLabel)
-        self.surface.setToolTip("Saved output preview")
         self.hover_card = GalleryHoverCard(self.surface)
         self._widget("galleryFixtureOverlay").hide()
 
@@ -3387,7 +3386,7 @@ class GalleryPage(QObject):
         self.folder_button.setEnabled(available)
         if image_changed:
             self.external_button.setEnabled(available)
-            self.surface.setToolTip(item.issue or item.path)
+            self.surface.setToolTip(item.issue or "")
             self.surface_painter.pixmap = QPixmap()
             self.surface_painter.zoom = 1.0
             self.surface_painter.offset = [0.0, 0.0]
