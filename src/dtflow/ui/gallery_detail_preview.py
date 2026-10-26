@@ -324,7 +324,11 @@ def apply_gallery(page, assets=ASSETS, sample=False):
             button.setIconSize(placeholder.size())
 
     slider.valueChanged.connect(resize_strip)
-    get("galleryViewMode").currentTextChanged.connect(lambda mode: set_view(mode))
+    get("galleryFitButton").setEnabled(True)
+    get("galleryFitButton").clicked.connect(lambda: set_view("Fit"))
+    get("galleryZoomOutButton").setToolTip("Zoom out")
+    get("galleryZoomInButton").setToolTip("Zoom in")
+    get("galleryActualSizeButton").setToolTip("Actual size")
 
     def set_view(mode):
         paint.mode = mode
