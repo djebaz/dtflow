@@ -81,6 +81,7 @@ from dtflow.ui.generation_presenter import (
 from dtflow.ui.inline_feedback import InlineNotice, edit_text
 from dtflow.ui.inpaint_editor import EditJob, InpaintEditor
 from dtflow.ui.lora_panel import LoraAssetPanel
+from dtflow.ui.prompt_tags import style_prompt_tags
 from dtflow.ui.runner import AsyncRunner, EventRelay
 
 UNCLASSIFIED_FAMILY = "__unclassified__"  # base-model combo data for checkpoints without a catalogue family
@@ -370,6 +371,7 @@ class GenerationPage:
         page.modelCombo.custom_prompt = "Exact checkpoint identifier"
         page.modelCombo.setToolTip("Select a checkpoint. Search matches any part of its name.")
         page.promptEdit.setTabChangesFocus(True)
+        self._prompt_tags = style_prompt_tags(page.promptEdit)
         icons = Path(__file__).parents[1] / "resources" / "images" / "gallery"
         self._expand_icon = QIcon(str(icons / "fullscreen.svg"))
         self._collapse_icon = QIcon(str(icons / "minimize.svg"))

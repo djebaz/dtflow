@@ -105,6 +105,7 @@ from dtflow.ui.queue_presenter import (
     summarize,
     up_next_ids,
 )
+from dtflow.ui.prompt_tags import style_prompt_tags
 from dtflow.ui.queue_widgets import ENTRY_ROLE, HEADING_ROLE, QueueListDelegate
 from dtflow.ui.runner import AsyncRunner, EventRelay
 
@@ -330,6 +331,7 @@ class QueuePage:
         page.editInGenerateButton.clicked.connect(self.use_generate_settings)
         page.copyToGenerateButton.clicked.connect(self.copy_to_generate)
         page.composerPromptEdit.textChanged.connect(self._plan_changed)
+        self._prompt_tags = [style_prompt_tags(page.composerPromptEdit), style_prompt_tags(page.planPromptsEdit)]
         page.queueCopyPromptButton.setIcon(QIcon(str(refresh_icon.with_name("copy.svg"))))
         page.queueCopyPromptButton.setIconSize(QSize(16, 16))
         page.queueCopyPromptButton.clicked.connect(self.copy_queue_prompt)
