@@ -16,6 +16,7 @@ from dtflow.core.models import (
     PreflightDiagnostic,
     ResolvedGenerationRequest,
 )
+from dtflow.services.dynamic_prompts import PROMPT_TAGS_KEY, decode_runs, encode_runs
 
 BLOCKING = ("architecture_mismatch", "not_available")
 # Successful generation never proves a LoRA was applied, so the evidence level is fixed until the backend reports it.
@@ -105,5 +106,13 @@ def apply_trigger_prefixes(
     prefixes = [prefix for prefix in prefixes if prefix not in request.prompt]
     if not prefixes:
         return request
-    evidence = (*request.resolution_evidence, ("trigger_prefixes", "|".join(prefixes)))
-    return replace(request, prompt=" ".join((*prefixes, request.prompt)).strip(), resolution_evidence=evidence)
+    prompt = " ".join((*prefixes, request.prompt)).strip()
+    evidence = []
+    for key, value in request.resolution_evidence:
+        if key == PROMPT_TAGS_KEY:  # the prefixes push the variation runs along; the checksum follows the new text
+            shift = len(" ".join(prefixes)) + 1 - (len(request.prompt) - len(request.prompt.lstrip()))
+            runs = tuple((start + shift, length) for start, length in decode_runs(request.prompt, value))
+            value = encode_runs(prompt, runs)
+        evidence.append((key, value))
+    evidence.append(("trigger_prefixes", "|".join(prefixes)))
+    return replace(request, prompt=prompt, resolution_evidence=tuple(evidence))

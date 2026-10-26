@@ -4,6 +4,7 @@ from html import escape
 from PySide6.QtCore import QAbstractTableModel, QModelIndex, QPointF, QRectF, Qt
 from PySide6.QtGui import QColor, QIcon, QPainter, QPen, QPixmap
 
+from dtflow.ui.prompt_tags import tagged_html
 from dtflow.ui.queue_presenter import LORA_GAUGE_MIN_SCALE, ItemRow, display_name, gauge_scale
 from dtflow.ui.theme import load_tokens
 
@@ -55,7 +56,7 @@ def _tooltip(row: ItemRow, column: int) -> str:
         # tooltip would decode the full original on the GUI thread.
         return "" if row.outputs else "No saved image"
     if column == 1:
-        positive = escape(row.prompt) or "—"
+        positive = tagged_html(row.prompt, row.prompt_runs) or "—"
         negative = escape(row.negative_prompt) or "—"
         return f"<p style='white-space:pre-wrap'><b>Positive</b><br>{positive}</p><p><b>Negative</b><br>{negative}</p>"
     if column == 2:
