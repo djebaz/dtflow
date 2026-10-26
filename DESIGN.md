@@ -350,8 +350,8 @@ label. Grid keeps uniform aspect-fit tiles; List has metadata columns and
 row-wide hover. Original shipped viewer behavior was single-focus browsing; Phase 8E's draft branch adds checkboxes and a checked-image selection layer without changing Detail focus or tile geometry.
 
 Detail defaults to Fit so the complete saved image is visible on entry. The
-image toolbar uses the Generate preview's controls and styling (Fit, 100%, −, + in the shared toolbar frame; the
-Cover/Fit select is gone); 100%, zoom, pan, previous/next,
+image toolbar uses the Generate preview's controls and styling (Fit, 100%, −, zoom slider, + in the shared toolbar frame, floating top left; the
+Cover/Fit select is gone) and the position/size labels sit bottom left; 100%, zoom, pan, previous/next,
 independent window fullscreen (F11), optimized layout (Images icon/Escape) and the right-hand filmstrip remain available. Optimization only collapses/restores the filter row, selection bar and metadata/prompt panels; it never calls native window show/state methods. Escape toggles it outside text editors, popups and active inline feedback. The filmstrip
 spans the content height beside the preview and its metadata/prompt/disclosure
 panels. Image overlays have a separate 10 px interior inset.
