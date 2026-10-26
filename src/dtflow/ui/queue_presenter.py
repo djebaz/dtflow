@@ -41,7 +41,7 @@ def _eta_eligible(view: dict) -> bool:
 def estimate_remaining(view: dict, minimum_samples: int = MIN_ETA_SAMPLES) -> float | None:
     """Estimate remaining wall time from succeeded item timings and observed parallel work, never the configured cap.
 
-    Backend durations may include provider queueing. This does not predict per-item progress or elapsed running time.
+    Provider durations may include provider queueing. This does not predict per-item progress or elapsed running time.
     """
     samples = _duration_samples(view)
     if not _eta_eligible(view) or len(samples) < max(1, minimum_samples):
@@ -162,13 +162,13 @@ STATUS_CHIP = {
     "cancelled": "Cancelled",
 }
 CONCURRENCY_HINT = (
-    "Maximum items this queue runs at once (1 to 10). Cloud text-to-image reserves 32 MiB per request against a "
-    "320 MiB shared memory budget; image edits may reserve more. Local Draw Things remains one effective lane. "
-    "The setting is a client policy, not verified cloud entitlement."
+    "Maximum number of images generated at the same time (1 to 10). Cloud text-to-image reserves 32 MiB per request "
+    "from a 320 MiB shared memory budget; image edits may reserve more. Local Draw Things always runs one at a time. "
+    "This is a DTFlow setting, not a verified cloud entitlement."
 )
 NEW_CAP_HINT = (
-    "Maximum items a new queue runs at once (1 to 10). With cloud chosen this also saves the shared default for "
-    "new cloud queues. Local Draw Things remains one effective lane; provider and memory limits still apply."
+    "Maximum number of images generated at the same time (1 to 10). With cloud chosen, this also saves the default "
+    "for new cloud queues. Local Draw Things always runs one at a time; provider and memory limits still apply."
 )
 GROUPS = (("running", "Running"), ("queued", "Up next"), ("paused", "Paused"), ("history", "History"))
 VARIED_LABELS = {
@@ -402,7 +402,7 @@ def summarize(view: dict) -> QueueSummary:
 
 
 def progress_text(summary: QueueSummary) -> str:
-    return f"{summary.settled} of {summary.total} settled · {summary.succeeded} succeeded"
+    return f"Progress: {summary.settled}/{summary.total} · {summary.succeeded} succeeded"
 
 
 @dataclass(frozen=True, slots=True)

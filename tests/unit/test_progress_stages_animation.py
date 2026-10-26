@@ -12,16 +12,16 @@ from dtflow.ui.progress_stages import event_stage
     ("kind", "stage", "label"),
     [
         ("preparing", "validating_request", "Validating generation request"),
-        ("preparing", "opening_session", "Opening backend session"),
-        ("preparing", "waiting_backend_response", "Request sent; waiting for backend response"),
-        ("preparing", "backend_response_received", "Backend processing; awaiting generation progress"),
-        ("preparing", "resolving_model", "Resolving model description"),
+        ("preparing", "opening_session", "Opening connection"),
+        ("preparing", "waiting_backend_response", "Waiting for the provider's reply"),
+        ("preparing", "backend_response_received", "Request accepted; waiting for first progress"),
+        ("preparing", "resolving_model", "Looking up model details"),
         ("preparing", "unknown_optional_stage", "Preparing request"),
-        ("submission_possible", None, "Submitting request / waiting for backend"),
+        ("submission_possible", None, "Sending request; waiting for response"),
         ("progress", "sampling", "Generating"),
         ("progress", "text_encoded", "text encoded"),
-        ("progress", None, "Backend progress"),
-        ("terminal", None, "Backend finished; validating and saving output"),
+        ("progress", None, "Progress"),
+        ("terminal", None, "Finished; checking and saving output"),
     ],
 )
 def test_stage_uses_only_reported_event_kind_and_stage(kind, stage, label):

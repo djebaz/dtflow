@@ -10,7 +10,7 @@ from dtflow.ui.theme import load_tokens
 
 # Preview, Prompt, Model, LoRAs, Parameters, Status and a duration column whose header is a painted stopwatch icon.
 COLUMNS = ("Preview", "Prompt", "Model", "LoRAs", "Parameters", "Status", "")
-DURATION_HEADER = "Backend duration"
+DURATION_HEADER = "Provider duration"
 # Shared state tokens; "secondary" keeps the default text color. Unknown is neutral gray, never tinted.
 _TOKENS = load_tokens()
 LEVEL_COLORS = {
