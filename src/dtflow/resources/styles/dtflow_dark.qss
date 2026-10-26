@@ -2038,3 +2038,13 @@ QFrame[role="galleryHoverCard"] QTextEdit {
   border: 0;
   border-radius: 6px;
 }
+
+QPushButton[role="galleryInfo"] {
+  background: ${color.canvas};
+  border: 1px solid ${color.border};
+  border-radius: 8px;
+  padding: 0;
+}
+QPushButton[role="galleryInfo"]:hover {
+  border: 1px solid ${color.focus};
+}

@@ -1,16 +1,17 @@
-"""Compact prompt and LoRA overlay shown while hovering the Images Detail image.
+"""Compact prompt and LoRA overlay shown while hovering the info button on the Images Detail image.
 
 Presentation only: it renders the already loaded GalleryItem and never reads metadata,
 touches the backend or changes zoom, pan or navigation.
 """
 
 from PySide6.QtCore import QEvent, QObject, QSize, Qt, QTimer
-from PySide6.QtGui import QCursor, QTextOption
+from PySide6.QtGui import QCursor, QIcon, QTextOption
 from PySide6.QtWidgets import (
     QApplication,
     QFrame,
     QHBoxLayout,
     QLabel,
+    QPushButton,
     QSizePolicy,
     QTextEdit,
     QVBoxLayout,
@@ -18,8 +19,10 @@ from PySide6.QtWidgets import (
 )
 
 from dtflow.core.gallery import GalleryItem
+from dtflow.ui.gallery_detail_preview import ASSETS
 
-HOVER_DELAY_MS = 400
+HOVER_DELAY_MS = 200
+BUTTON_SIDE = 30
 LEAVE_GRACE_MS = 150
 EDGE_MARGIN = 12
 MAX_WIDTH = 440
@@ -85,6 +88,17 @@ class GalleryHoverCard(QFrame):
         layout.addWidget(self.lora_label)
         layout.addLayout(self.lora_rows)
 
+        self.button = QPushButton(surface)
+        self.button.setObjectName("galleryInfoButton")
+        self.button.setProperty("role", "galleryInfo")
+        self.button.setIcon(QIcon(str(ASSETS / "info.svg")))
+        self.button.setIconSize(QSize(18, 18))
+        self.button.setFixedSize(BUTTON_SIDE, BUTTON_SIDE)
+        self.button.setAccessibleName("Image details")
+        self.button.setFocusPolicy(Qt.FocusPolicy.NoFocus)  # keyboard users keep the Detail panels
+        self.button.setMouseTracking(True)
+        self.button.hide()
+
         self.show_timer = QTimer(self)
         self.show_timer.setSingleShot(True)
         self.show_timer.setInterval(HOVER_DELAY_MS)
@@ -97,6 +111,7 @@ class GalleryHoverCard(QFrame):
         self._dirty = False
         self._watcher = _SurfaceWatcher(self)
         surface.installEventFilter(self._watcher)
+        self.button.installEventFilter(self._watcher)
 
     def set_item(self, item: GalleryItem | None) -> None:
         """Track the selection. The card closes only when what it shows would change."""
@@ -111,6 +126,8 @@ class GalleryHoverCard(QFrame):
         self.dismiss()
         self._item = item
         self._dirty = item is not None
+        self.button.setVisible(item is not None)
+        self._place_button()
 
     def _populate(self) -> None:
         item = self._item
@@ -143,13 +160,12 @@ class GalleryHoverCard(QFrame):
         row.addWidget(status)
         return chip
 
+    def _place_button(self) -> None:
+        self.button.move(self.surface.width() - EDGE_MARGIN - BUTTON_SIDE, EDGE_MARGIN)
+        self.button.raise_()
+
     def start_hover(self) -> None:
         self.hide_timer.stop()
-        if not self.isVisible() and self._item is not None:
-            self.show_timer.start()
-
-    def restart_hover(self) -> None:
-        """Pointer moved over the image: keep waiting while the card is not yet shown."""
         if not self.isVisible() and self._item is not None:
             self.show_timer.start()
 
@@ -175,8 +191,9 @@ class GalleryHoverCard(QFrame):
         return bottom
 
     def reposition(self) -> None:
-        """Anchor to the image's top right; the prompt grows to show everything the space allows."""
-        left, top = EDGE_MARGIN, EDGE_MARGIN
+        """Anchor under the info button at the image's top right; the prompt grows to show everything."""
+        self._place_button()
+        left, top = EDGE_MARGIN, EDGE_MARGIN + BUTTON_SIDE + TOOLBAR_GAP
         right = self.surface.rect().right() - EDGE_MARGIN
         bottom = self._bottom_limit()
         if right <= left or bottom <= top:
@@ -221,7 +238,7 @@ class GalleryHoverCard(QFrame):
         return under is not None and (under is widget or widget.isAncestorOf(under))
 
     def _show_if_hovered(self) -> None:
-        if self._item is None or not self.surface.isVisible() or not self._is_over(self.surface):
+        if self._item is None or not self.surface.isVisible() or not self._is_over(self.button):
             return
         if self._dirty:
             self._populate()
@@ -230,7 +247,7 @@ class GalleryHoverCard(QFrame):
         self.raise_()
 
     def _hide_if_left(self) -> None:
-        if not self._is_over(self.surface):
+        if not self._is_over(self) and not self._is_over(self.button):
             self.dismiss()
 
     def enterEvent(self, event):
@@ -258,19 +275,14 @@ class _SurfaceWatcher(QObject):
 
     def eventFilter(self, watched, event):
         kind = event.type()
-        if kind == QEvent.Type.Enter:
-            self.card.start_hover()
-        elif kind == QEvent.Type.MouseMove:
-            if event.buttons() == Qt.MouseButton.NoButton:
-                self.card.restart_hover()
-            else:
-                self.card.dismiss()
-        elif kind in (QEvent.Type.MouseButtonPress, QEvent.Type.Wheel):
+        if watched is self.card.button:
+            if kind == QEvent.Type.Enter:
+                self.card.start_hover()
+            elif kind == QEvent.Type.Leave:
+                self.card.begin_leave()
+            return False
+        if kind in (QEvent.Type.MouseButtonPress, QEvent.Type.Wheel, QEvent.Type.Hide):
             self.card.dismiss()
-        elif kind == QEvent.Type.Leave:
-            self.card.begin_leave()
-        elif kind == QEvent.Type.Hide:
-            self.card.dismiss()
-        elif kind == QEvent.Type.Resize and self.card.isVisible():
-            self.card.reposition()
+        elif kind == QEvent.Type.Resize:
+            self.card.reposition() if self.card.isVisible() else self.card._place_button()
         return False

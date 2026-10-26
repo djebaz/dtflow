@@ -2149,6 +2149,9 @@ def render_gallery_composition_states(shell, state, out):
         gallery._presented_item = None
         gallery._present_item(hover_record)
         card._populate()
+        QTest.qWait(30)
+        assert card.button.isVisible() and not card.isVisible()
+        snap("images-98a-detail-info-button")
         card.reposition()
         card.show()
         QTest.qWait(30)
