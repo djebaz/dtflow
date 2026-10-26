@@ -1127,8 +1127,8 @@ def render_active_queue_states(shell, out):
         for stage_name, screenshot in (
             ("Starting; waiting for response", "queues-11a-admitted-waiting"),
             ("Validating generation request", "queues-11b-preparing-request"),
-            ("Request sent; waiting for response", "queues-11c-awaiting-backend"),
-            ("Generating; waiting for first progress", "queues-11d-backend-processing"),
+            ("Waiting for the provider's reply", "queues-11c-awaiting-backend"),
+            ("Request accepted; waiting for first progress", "queues-11d-backend-processing"),
         ):
             queue._run_stages[running_key] = stage_name
             queue._run_progress.pop(running_key, None)

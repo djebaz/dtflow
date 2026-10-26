@@ -356,7 +356,7 @@ class MainWindow:
             self.activity,
             form,
             changed=lambda label: arrow.setToolTip(
-                f"{label}: Repeat N or the composer plan, now or behind running work."
+                f"{label}: Repeat N or the New queue plan, now or behind running work."
             ),
         )
         self.shell.quickQueueButton.setIcon(QIcon(str(ASSETS_CONTROLS.parent / "gallery" / "layers.svg")))
@@ -1097,7 +1097,7 @@ class MainWindow:
             return
         labels = {item.name: f"{self._human_bytes(item.bytes)} ({item.files} files)" for item in usage}
         self.form.cacheStatusLabel.setText(
-            f"Inventory {labels['inventory']} · Thumbnails {labels['thumbnails']} · Derived {labels['derived']}"
+            f"Models {labels['inventory']} · Thumbnails {labels['thumbnails']} · Derived {labels['derived']}"
         )
 
     def clear_cache(self, categories: tuple[str, ...]) -> None:

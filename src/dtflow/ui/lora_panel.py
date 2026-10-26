@@ -35,7 +35,7 @@ UPLOAD_NOTICE = (
     "Uploading does not consume credits, but a later generation using this LoRA may."
 )
 DEFAULT_LORA_WEIGHT = 1.0
-CLOUD_ONLY = "Asset actions need the cloud backend (choose it on the Connection page)."
+CLOUD_ONLY = "Asset actions need the cloud provider (choose it on the Connection page)."
 log = logging.getLogger(__name__)
 
 

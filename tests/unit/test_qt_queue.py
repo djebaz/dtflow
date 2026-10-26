@@ -404,8 +404,8 @@ def test_composer_keeps_its_source_prompt_and_only_copies_to_generate_explicitly
     assert page.composerPromptEdit.toPlainText() == "Explicit replacement"
     # A Generate backend change must not relabel or change the captured draft's cap policy.
     monkeypatch.setattr(queue, "_backend", lambda: ("cloud", None))
-    assert "Connection: fake" in queue.quick_disclosure(plan=True)
-    assert "Connection: cloud" in queue.quick_disclosure(plan=False)
+    assert "Provider: fake" in queue.quick_disclosure(plan=True)
+    assert "Provider: cloud" in queue.quick_disclosure(plan=False)
     shared_epoch = queue._shared_epoch
     page.newQueueCapSpinBox.setValue(3)
     queue._show_new_cap()
@@ -413,8 +413,8 @@ def test_composer_keeps_its_source_prompt_and_only_copies_to_generate_explicitly
     assert page.newQueueCapSpinBox.value() == 3
     window.queue_popover.plan_option.setChecked(True)
     window.queue_popover.refresh()
-    assert "composer's draft" in window.queue_popover.note_label.text()
-    assert "Connection: fake" in window.queue_popover.note_label.text()
+    assert "new queue's draft" in window.queue_popover.note_label.text()
+    assert "Provider: fake" in window.queue_popover.note_label.text()
 
 
 def test_queue_templates_save_load_cancel_dirty_and_create_without_touching_generate(window, qtbot):

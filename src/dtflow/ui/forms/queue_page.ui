@@ -99,7 +99,7 @@
       <item>
        <widget class="QLineEdit" name="queueFilterEdit">
         <property name="placeholderText">
-         <string>Filter by prompt, model, backend or status</string>
+         <string>Filter by prompt, model, provider or status</string>
         </property>
         <property name="clearButtonEnabled">
          <bool>true</bool>
@@ -205,7 +205,7 @@
            <string>+ New queue</string>
           </property>
           <property name="toolTip">
-           <string>Opens the composer in the center. Nothing is created until Start now, Add to queue or Save paused.</string>
+           <string>Opens New queue in the center. Nothing is created until Start now, Add to queue or Save paused.</string>
           </property>
           <property name="accessibleName">
            <string>New queue</string>
@@ -353,7 +353,7 @@
               </sizepolicy>
              </property>
              <property name="text">
-              <string>Connection</string>
+              <string>Provider</string>
              </property>
              <property name="alignment">
               <set>Qt::AlignLeading|Qt::AlignLeft|Qt::AlignTop</set>
@@ -381,7 +381,7 @@
               <string>value</string>
              </property>
              <property name="accessibleName">
-              <string>Queue backend</string>
+              <string>Queue provider</string>
              </property>
             </widget>
            </item>
@@ -583,7 +583,7 @@
               <string>Edit as new</string>
              </property>
              <property name="toolTip">
-              <string>Loads this queue's settings into Generate and the composer to change them and save a new queue. Nothing is created until Add to queue or Start now; this queue is untouched.</string>
+              <string>Loads this queue's settings into Generate and New queue to change them and save a new queue. Nothing is created until Add to queue or Start now; this queue is untouched.</string>
              </property>
              <property name="accessibleName">
               <string>Edit the queue as a new queue</string>
@@ -625,7 +625,7 @@
               <number>4</number>
              </property>
              <property name="accessibleName">
-              <string>Maximum items this queue runs at once</string>
+              <string>Concurrency</string>
              </property>
             </widget>
            </item>
@@ -791,7 +791,7 @@
                <number>4</number>
               </property>
               <property name="accessibleName">
-               <string>Maximum items a new queue runs at once</string>
+               <string>Concurrency</string>
               </property>
              </widget>
             </item>
@@ -801,7 +801,7 @@
                <string>Save paused</string>
               </property>
               <property name="toolTip">
-               <string>Saves the queue paused, also while another queue runs. Contacts no backend and uploads nothing.</string>
+               <string>Saves the queue paused, also while another queue runs. Contacts no provider and uploads nothing.</string>
               </property>
               <property name="accessibleName">
                <string>Create a durable queue</string>
@@ -843,10 +843,10 @@
                <string>Close</string>
               </property>
               <property name="toolTip">
-               <string>Back to the selected queue; the composer keeps its values.</string>
+               <string>Back to the selected queue; New queue keeps its values.</string>
               </property>
               <property name="accessibleName">
-               <string>Close the queue composer</string>
+               <string>Close New queue</string>
               </property>
              </widget>
             </item>
@@ -1159,7 +1159,7 @@
                         <string>Plan models</string>
                        </property>
                        <property name="toolTip">
-                        <string>Models from the inventory; Add… searches every listed checkpoint.</string>
+                        <string>Models from the provider's list; Add… searches every listed checkpoint.</string>
                        </property>
                       </widget>
                      </item>
@@ -1827,7 +1827,7 @@
             <item row="0" column="0">
              <widget class="QLabel" name="composerSummaryBackendCaption">
               <property name="text">
-               <string>Connection</string>
+               <string>Provider</string>
               </property>
               <property name="textRole" stdset="0">
                <string>caption</string>
@@ -2197,7 +2197,7 @@
             <item row="2" column="0">
              <widget class="QLabel" name="backendCaption">
               <property name="text">
-               <string>Connection</string>
+               <string>Provider</string>
               </property>
               <property name="textRole" stdset="0">
                <string>caption</string>

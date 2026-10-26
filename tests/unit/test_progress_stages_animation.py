@@ -13,8 +13,8 @@ from dtflow.ui.progress_stages import event_stage
     [
         ("preparing", "validating_request", "Validating generation request"),
         ("preparing", "opening_session", "Opening connection"),
-        ("preparing", "waiting_backend_response", "Request sent; waiting for response"),
-        ("preparing", "backend_response_received", "Generating; waiting for first progress"),
+        ("preparing", "waiting_backend_response", "Waiting for the provider's reply"),
+        ("preparing", "backend_response_received", "Request accepted; waiting for first progress"),
         ("preparing", "resolving_model", "Looking up model details"),
         ("preparing", "unknown_optional_stage", "Preparing request"),
         ("submission_possible", None, "Sending request; waiting for response"),

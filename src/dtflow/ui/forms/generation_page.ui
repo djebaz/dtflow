@@ -391,7 +391,7 @@
                <string>Include DT+ Cloud</string>
               </property>
               <property name="toolTip">
-               <string>Local bridge mode: include classified catalogue checkpoints that the local inventory may not report.</string>
+               <string>Local bridge mode: include classified catalogue checkpoints that the local model list may not report.</string>
               </property>
               <property name="visible">
                <bool>false</bool>
@@ -1219,7 +1219,7 @@
              <string>Queue this request</string>
             </property>
             <property name="toolTip">
-             <string>Queue ×1: Repeat N or the composer plan, now or behind running work.</string>
+             <string>Queue ×1: Repeat N or the New queue plan, now or behind running work.</string>
             </property>
            </widget>
           </item>
@@ -1538,7 +1538,7 @@
             <item>
              <widget class="QLabel" name="assetStatusLabel">
               <property name="text">
-               <string>Asset actions need the cloud backend.</string>
+               <string>Asset actions need the cloud provider.</string>
               </property>
               <property name="wordWrap">
                <bool>true</bool>

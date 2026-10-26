@@ -160,7 +160,7 @@ def present_generation_failure(exc: Exception) -> Presentation:
             return Presentation("error", "Generated image not fully saved", failure.message)
         if api:
             # PERMISSION_DENIED also covers throttling and request validation upstream.
-            return Presentation("error", "Backend request failed", detail)
+            return Presentation("error", "Provider request failed", detail)
         if failure.category in (ErrorCategory.CREDENTIALS, ErrorCategory.AUTHENTICATION):
             return Presentation("error", "Credentials problem", failure.code)
         return Presentation("error", "Generation failed", failure.code)

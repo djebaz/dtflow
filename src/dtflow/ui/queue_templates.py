@@ -146,7 +146,7 @@ class QueueTemplates(QObject):
         def selection_changed():
             template = selected()
             lines = [
-                service.summary(template) if template else "No matching template. Save a new recipe from the composer."
+                service.summary(template) if template else "No matching template. Save a new recipe from New queue."
             ]
             html = [escape(lines[0])]
             if template:

@@ -1266,7 +1266,7 @@ class QueuePage:
     def quick_disclosure(self, *, plan: bool) -> str:
         name, _ = self._composer_backend() if plan else self._backend()
         source = "the new queue's draft and plan" if plan else "Generate's current request"
-        return f"Uses {source}. Connection: {name}. A cloud run may use credits."
+        return f"Uses {source}. Provider: {name}. A cloud run may use credits."
 
     def _set_draft(self, request, name, endpoint, asset_ids, job) -> None:
         self._draft = request, name, endpoint, tuple(asset_ids)
@@ -1858,7 +1858,7 @@ class QueuePage:
     def last_plan(self) -> tuple[str, str]:
         """(level, text) of the composer's Pair/Cross plan for the popover; ``ok`` when it can be used as is."""
         if not self._planned():
-            return "none", "Set up Pair or Cross in the Queues composer to reuse it here."
+            return "none", "Set up Pair or Cross in New queue to reuse it here."
         level, text = self._count()
         return level, f"{self.page.planModeCombo.currentText()} · {text}" if level == "ok" else sentence(text)
 

@@ -1001,7 +1001,7 @@ class GenerationPage:
         self.page.resultPreviewLabel.clear()
         self.page.resultPreviewLabel.setProperty("designation", "")
         self.page.previewHost.setMinimumHeight(PREVIEW_MIN_HEIGHT)
-        self._status(Presentation("warning", "Generating", f"Waiting on the selected backend. {note or ''}".strip()))
+        self._status(Presentation("warning", "Generating", f"Waiting on the selected provider. {note or ''}".strip()))
         self._stage_started = time.monotonic()
         self._stage_seen = {}
         self._generating = True
@@ -1106,7 +1106,7 @@ class GenerationPage:
         elif event.kind in {"preparing", "submission_possible", "terminal"}:
             stage = {
                 "preparing": "Preparing",
-                "submission_possible": "Submitting to backend",
+                "submission_possible": "Sending request",
                 "terminal": "Finalizing",
             }[event.kind]
             from dtflow.ui.progress_stages import event_stage
