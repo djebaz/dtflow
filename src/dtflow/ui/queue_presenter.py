@@ -11,6 +11,7 @@ from pathlib import Path
 
 from dtflow.core.queue_eta import estimate_queue_seconds
 from dtflow.services.connection import local_time
+from dtflow.services.dynamic_prompts import decode_runs
 
 MIN_ETA_SAMPLES = 1
 
@@ -251,6 +252,7 @@ class ItemRow:
     width: int | float | None = None
     height: int | float | None = None
     gallery_identity: str | None = None  # "attempt:ordinal" of the first saved image, as the Images gallery names it
+    prompt_runs: tuple[tuple[int, int], ...] = ()  # (start, length) of the prompt parts a prompt variation produced
 
     @property
     def dimensions_text(self) -> str:
@@ -370,6 +372,7 @@ def item_rows(view: dict) -> tuple[ItemRow, ...]:
                 item.get("width"),
                 item.get("height"),
                 identity,
+                decode_runs(item.get("prompt") or "", item.get("prompt_runs")),
             )
         )
     return tuple(rows)

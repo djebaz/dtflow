@@ -102,6 +102,7 @@ from dtflow.ui.gallery_pager import GalleryPager
 from dtflow.ui.gallery_preparation import GalleryPreparation, GalleryRetirement
 from dtflow.ui.inline_feedback import feedback
 from dtflow.ui.live_control_fx import LiveFollowFx, live_dot_icon
+from dtflow.ui.prompt_tags import PromptTagHighlighter, request_runs
 from dtflow.ui.runner import AsyncRunner
 from dtflow.ui.theme import load_tokens
 
@@ -3311,6 +3312,15 @@ class GalleryPage(QObject):
         self.previous_button.setEnabled(index > 0 or self.offset > 0)
         self.next_button.setEnabled(index + 1 < len(self.items) or self.offset + len(self.items) < self.total)
 
+    def _show_positive_prompt(self, text: str, runs) -> None:
+        """The saved prompt with the parts its prompt variation produced styled as tags."""
+        edit = self._widget("galleryPositivePrompt")
+        tags = getattr(self, "_prompt_tags", None)
+        if tags is None:
+            tags = self._prompt_tags = PromptTagHighlighter(edit, scan=False)
+        edit.setPlainText(text)
+        tags.set_runs(runs)
+
     _USE_TIP = "Populate Generate from this recorded request without submitting."
     _REGENERATE_TIP = "Create a fresh generation attempt from these recorded settings after confirmation."
 
@@ -3334,7 +3344,7 @@ class GalleryPage(QObject):
         self._widget("galleryGuidanceValue", QLabel).setText(self._value(request.get("guidance")))
         self._widget("gallerySamplerValue", QLabel).setText(self._value(request.get("sampler_id")))
         self._widget("galleryDateValue", QLabel).setText(_local_timestamp(item.saved_at_utc))
-        self._widget("galleryPositivePrompt").setPlainText(item.prompt or "Not recorded")
+        self._show_positive_prompt(item.prompt or "Not recorded", request_runs(request) if item.prompt else ())
         self._widget("galleryAdditionalNegativePromptValue", QLabel).setText(item.negative or "Not recorded")
         self._widget("galleryAdditionalSeedValue", QLabel).setText(self._value(request.get("seed")))
         operation = request.get("operation")
@@ -4295,7 +4305,7 @@ class GalleryPage(QObject):
         self._widget("galleryLoRAChip2").hide()
         for name in ("galleryStepsValue", "galleryGuidanceValue", "gallerySamplerValue", "galleryDateValue"):
             self._widget(name, QLabel).setText("—")
-        self._widget("galleryPositivePrompt").setPlainText("No saved output selected.")
+        self._show_positive_prompt("No saved output selected.", ())
         for name in (
             "galleryAdditionalNegativePromptValue",
             "galleryAdditionalSeedValue",

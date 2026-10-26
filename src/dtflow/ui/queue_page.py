@@ -105,7 +105,8 @@ from dtflow.ui.queue_presenter import (
     summarize,
     up_next_ids,
 )
-from dtflow.ui.prompt_tags import style_prompt_tags
+from dtflow.services.dynamic_prompts import decode_runs
+from dtflow.ui.prompt_tags import style_prompt_tags, tagged_html
 from dtflow.ui.queue_widgets import ENTRY_ROLE, HEADING_ROLE, QueueListDelegate
 from dtflow.ui.runner import AsyncRunner, EventRelay
 
@@ -633,7 +634,12 @@ class QueuePage:
         page = self.page
         summary = summarize(view)
         page.queueTitleLabel.setText(queue_title(view))
-        page.queueTitleLabel.setToolTip((view.get("first") or {}).get("prompt") or "")
+        first = view.get("first") or {}
+        prompt = first.get("prompt") or ""
+        runs = decode_runs(prompt, first.get("prompt_runs"))
+        page.queueTitleLabel.setToolTip(
+            f"<p style='white-space:pre-wrap'>{tagged_html(prompt, runs)}</p>" if runs else prompt
+        )
         for name, value in queue_facts(view).items():
             getattr(page, f"queueFact{name}Label").setText(value)
         page.queueFactPlanLabel.setToolTip(f"Queue {view['queue_id']}")

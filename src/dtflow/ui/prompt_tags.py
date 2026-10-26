@@ -1,10 +1,12 @@
 """Tag styling for prompt-variation keywords in prompt editors (#129 syntax: ``{a|b}`` choices, ``__name__`` wildcards)."""
 
 import re
+from html import escape
 
 from PySide6.QtGui import QColor, QSyntaxHighlighter, QTextCharFormat
 from PySide6.QtWidgets import QPlainTextEdit
 
+from dtflow.services.dynamic_prompts import PROMPT_TAGS_KEY, Runs, decode_runs
 from dtflow.ui.theme import load_tokens
 
 _WILDCARD = re.compile(r"__([A-Za-z0-9]+(?:[_\-][A-Za-z0-9]+)*)__")
@@ -57,8 +59,9 @@ class PromptTagHighlighter(QSyntaxHighlighter):
     Groups are found per document and re-applied when they change, so a group spanning lines is tagged on each one.
     """
 
-    def __init__(self, edit: QPlainTextEdit) -> None:
+    def __init__(self, edit: QPlainTextEdit, *, scan: bool = True) -> None:
         super().__init__(edit.document())
+        self._scan = scan  # a display of an already resolved prompt only tags the runs it is told about
         tokens = load_tokens()
         self._format = QTextCharFormat()
         self._format.setBackground(QColor(tokens["color.accent"]))
@@ -69,7 +72,12 @@ class PromptTagHighlighter(QSyntaxHighlighter):
         self._retag()
 
     def _retag(self) -> None:
-        spans = tag_spans(self.document().toPlainText())
+        if self._scan:
+            self.set_runs(tag_spans(self.document().toPlainText()))
+
+    def set_runs(self, runs: Runs) -> None:
+        """Tag exactly these ``(start, length)`` runs of the document text."""
+        spans = list(runs)
         if spans != self._spans:
             self._spans = spans
             self.rehighlight()
@@ -83,6 +91,31 @@ class PromptTagHighlighter(QSyntaxHighlighter):
                 self.setFormat(lo - offset, hi - lo, self._format)
 
 
-def style_prompt_tags(edit: QPlainTextEdit) -> PromptTagHighlighter:
+def style_prompt_tags(edit: QPlainTextEdit, *, scan: bool = True) -> PromptTagHighlighter:
     """Attach the highlighter to ``edit``; it lives as long as the editor's document."""
-    return PromptTagHighlighter(edit)
+    return PromptTagHighlighter(edit, scan=scan)
+
+
+def request_runs(request: dict) -> Runs:
+    """The runs of a stored request's prompt that its prompt variation produced (none once the prompt was edited)."""
+    prompt = request.get("prompt")
+    evidence = request.get("resolution_evidence")
+    if not isinstance(prompt, str) or not isinstance(evidence, list):
+        return ()
+    value = next(
+        (pair[1] for pair in evidence if isinstance(pair, list) and len(pair) == 2 and pair[0] == PROMPT_TAGS_KEY), None
+    )
+    return decode_runs(prompt, value if isinstance(value, str) else None)
+
+
+def tagged_html(text: str, runs: Runs) -> str:
+    """``text`` as escaped rich text with each run styled like the editor tags (for tooltips and labels)."""
+    tokens = load_tokens()
+    style = f"background-color:{tokens['color.accent']};color:{tokens['color.onAccent']}"
+    out: list[str] = []
+    position = 0
+    for start, length in runs:
+        out += [escape(text[position:start]), f"<span style='{style}'>{escape(text[start : start + length])}</span>"]
+        position = start + length
+    out.append(escape(text[position:]))
+    return "".join(out)

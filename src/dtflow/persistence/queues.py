@@ -1029,6 +1029,7 @@ def read_queue_summaries(directory: Path, *, described: Sequence[str] = ()) -> t
             request = request if isinstance(request, dict) else {}
             queue["first"] = {
                 "prompt": request.get("prompt") if isinstance(request.get("prompt"), str) else "",
+                "prompt_runs": _item_request_fields(request)["prompt_runs"],
                 "model": request.get("model_id") if isinstance(request.get("model_id"), str) else "",
                 "operation": request.get("operation") or "txt2img",
                 "loras": [
@@ -1118,8 +1119,22 @@ def _item_request_fields(request: dict) -> dict[str, Any]:
         value = request.get(key)
         return value if type(value) in (int, float) else None
 
+    evidence = request.get("resolution_evidence")
+    runs = (
+        next(
+            (
+                pair[1]
+                for pair in evidence
+                if isinstance(pair, list) and len(pair) == 2 and pair[0] == "prompt.variation_runs"
+            ),
+            "",
+        )
+        if isinstance(evidence, list)
+        else ""
+    )
     return {
         "prompt": text("prompt"),
+        "prompt_runs": runs if isinstance(runs, str) else "",  # which parts a prompt variation produced
         "negative_prompt": text("negative_prompt"),
         "model": text("model_id"),
         "loras": [

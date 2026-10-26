@@ -91,6 +91,7 @@ class Plan:
     seed_policy: str | None = None  # None: ``seed`` mode increments, pair/cross keep the base seed
     rng_seed: int | None = None  # the one recorded seed behind every random dimension and a random prompt sample
     evidence: tuple[tuple[str, str], ...] = ()  # filled by ``resolve_plan``: how the random values were drawn
+    prompt_tags: tuple[tuple[str, str], ...] = ()  # filled by ``resolve_plan``: resolved prompt -> its variation runs
 
     def __post_init__(self) -> None:
         # Lists (from JSON or widgets) become tuples so values are hashable and the plan is immutable.
@@ -211,6 +212,7 @@ def resolve_plan(plan: Plan, prompt: str | None = None) -> Plan:
     seed = plan.rng_seed if plan.rng_seed is not None else 0
     evidence: list[tuple[str, str]] = [("plan.rng_seed", str(plan.rng_seed))] if plan.rng_seed is not None else []
     dimensions = []
+    tags = list(plan.prompt_tags)
     for name, values in plan.dimensions:
         if isinstance(values, RandomSpec):
             _check_spec(name, values)
@@ -223,7 +225,7 @@ def resolve_plan(plan: Plan, prompt: str | None = None) -> Plan:
             template = values.template if values.template is not None else prompt
             if template is None:
                 raise PlanError("Prompt variation needs a template or a base prompt.")
-            resolved, used = dynamic_prompts.variants(
+            tagged, used = dynamic_prompts.tagged_variants(
                 template,
                 dict(values.wildcards),
                 strategy=values.strategy,
@@ -231,6 +233,8 @@ def resolve_plan(plan: Plan, prompt: str | None = None) -> Plan:
                 rng_seed=seed,
                 mutation=values.mutation,
             )
+            resolved = tuple(text for text, _ in tagged)
+            tags.extend((text, dynamic_prompts.encode_runs(text, runs)) for text, runs in tagged if runs)
             sources = dict(values.sources)
             evidence.append(("plan.prompt_strategy", values.strategy + (f" {values.count}" if values.count else "")))
             evidence.append(("plan.prompt_template", template))
@@ -239,7 +243,7 @@ def resolve_plan(plan: Plan, prompt: str | None = None) -> Plan:
             evidence.extend((f"plan.wildcard.{wild}", sources.get(wild, "inline")) for wild in used)
             values = resolved
         dimensions.append((name, values))
-    return replace(plan, dimensions=tuple(dimensions), evidence=(*plan.evidence, *evidence))
+    return replace(plan, dimensions=tuple(dimensions), evidence=(*plan.evidence, *evidence), prompt_tags=tuple(tags))
 
 
 def plan_size(plan: Plan, prompt: str | None = None, *, bound: bool = True) -> int:
@@ -425,6 +429,7 @@ def expand_plan(
     base_evidence = tuple(
         pair for pair in base.resolution_evidence if not (LORA_SETS in varied and pair[0] == "prepared_assets")
     )
+    prompt_tags = dict(plan.prompt_tags)
     items = []
     for index, combo in enumerate(_combinations(plan, total)):
         loras = list(base.loras)
@@ -439,6 +444,8 @@ def expand_plan(
                     changes.pop("strength")
                 text = f"{value[0]}x{value[1]}" if name == "size" else str(value)
                 evidence.append((f"plan.dimension.{name}", lora_set_text(loras) if name == LORA_SETS else text))
+                if name == "prompt" and value in prompt_tags:
+                    evidence.append((dynamic_prompts.PROMPT_TAGS_KEY, prompt_tags[value]))
             if LORA_SETS in varied:
                 # Each item carries the confirmed receipts of the LoRAs it selects; nothing is inferred for others.
                 bound = tuple(pool[item.identifier] for item in loras if item.identifier in pool)

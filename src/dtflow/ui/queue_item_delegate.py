@@ -85,7 +85,7 @@ class QueueItemDelegate(QStyledItemDelegate):
         if column == COL_PREVIEW:
             self._thumb(painter, rect, row, secondary, getattr(index.model(), "thumbnails", None))
         elif column == COL_PROMPT:
-            self._lines(painter, rect, wrapped_lines(row.prompt, option.font, rect.width(), 2), option.font, text)
+            self._prompt(painter, rect, row, option.font, text)
         elif column == COL_MODEL:
             bold = QFont(option.font)
             bold.setWeight(QFont.Weight.Bold)
@@ -115,6 +115,34 @@ class QueueItemDelegate(QStyledItemDelegate):
             painter.setPen(text)
             painter.drawText(rect, Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter, row.duration_text)
         painter.restore()
+
+    @classmethod
+    def _prompt(cls, painter, rect, row, font, color) -> None:
+        """The wrapped prompt; parts a prompt variation produced get the accent tag background and on-accent text."""
+        lines = wrapped_lines(row.prompt, font, rect.width(), 2)
+        cls._lines(painter, rect, lines, font, color)
+        if not row.prompt_runs:
+            return
+        metrics = QFontMetrics(font)
+        height = metrics.height() + 1
+        cursor = 0
+        for number, line in enumerate(lines):
+            elided = line.endswith("…") and number == len(lines) - 1
+            core = line[:-1] if elided else line
+            start = row.prompt.find(core, cursor) if core else -1
+            if start < 0:
+                continue
+            cursor = start + len(core)
+            for run_start, length in row.prompt_runs:
+                low, high = max(run_start, start), min(run_start + length, cursor)
+                if low >= high:
+                    continue
+                x = rect.left() + metrics.horizontalAdvance(core[: low - start])
+                piece = core[low - start : high - start]
+                tag = QRect(x, rect.top() + number * height, metrics.horizontalAdvance(piece), height)
+                painter.fillRect(tag, QColor(_TOKENS["color.accent"]))
+                painter.setPen(QColor(_TOKENS["color.onAccent"]))
+                painter.drawText(tag, Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter, piece)
 
     @staticmethod
     def _lines(painter, rect, lines, font, color) -> None:
