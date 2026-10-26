@@ -5,14 +5,14 @@ touches the backend or changes zoom, pan or navigation.
 """
 
 from PySide6.QtCore import QEvent, QObject, QSize, Qt, QTimer
-from PySide6.QtGui import QCursor
+from PySide6.QtGui import QCursor, QTextOption
 from PySide6.QtWidgets import (
     QApplication,
     QFrame,
     QHBoxLayout,
     QLabel,
-    QPlainTextEdit,
     QSizePolicy,
+    QTextEdit,
     QVBoxLayout,
     QWidget,
 )
@@ -65,11 +65,15 @@ class GalleryHoverCard(QFrame):
         layout.setSpacing(6)
         self.prompt_label = QLabel("Positive prompt", self)
         self.prompt_label.setProperty("role", "secondary")
-        self.prompt = QPlainTextEdit(self)
+        self.prompt = QTextEdit(self)
         self.prompt.setObjectName("galleryHoverPrompt")
         self.prompt.setReadOnly(True)
         self.prompt.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         self.prompt.setFrameShape(QFrame.Shape.NoFrame)
+        # The card is sized to the whole prompt, so the box never scrolls or clips.
+        self.prompt.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.prompt.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.prompt.setWordWrapMode(QTextOption.WrapMode.WrapAtWordBoundaryOrAnywhere)
         self.lora_label = QLabel("LoRAs", self)
         self.lora_label.setProperty("role", "secondary")
         self.lora_rows = QVBoxLayout()
@@ -89,6 +93,7 @@ class GalleryHoverCard(QFrame):
         self.hide_timer.timeout.connect(self._hide_if_left)
         self._item: GalleryItem | None = None
         self._dirty = False
+        self._base_size: float | None = None
         self._watcher = _SurfaceWatcher(self)
         surface.installEventFilter(self._watcher)
 
@@ -110,7 +115,6 @@ class GalleryHoverCard(QFrame):
         item = self._item
         self._dirty = False
         self.prompt.setPlainText(item.prompt or "Not recorded")
-        self.prompt.verticalScrollBar().setValue(0)
         while self.lora_rows.count():
             row = self.lora_rows.takeAt(0).widget()
             if row is not None:
@@ -184,18 +188,30 @@ class GalleryHoverCard(QFrame):
         self.setFixedWidth(width)
         margins = self.layout().contentsMargins()
         document = self.prompt.document()
-        # Wrap at the viewport width the box will really have (a scrollbar may take part of it).
+        # Wrap at the viewport width the box will really have (no scrollbar).
         text_width = max(1, width - margins.left() - margins.right() - 2 * self.prompt.frameWidth())
-        document.setTextWidth(text_width)
-        wanted = int(document.size().height() + 2 * document.documentMargin()) + 4
         minimum = self.fontMetrics().height() + 8
         self.prompt.setFixedHeight(minimum)
         self.layout().activate()
         chrome = self.layout().sizeHint().height() - minimum
         room = max(minimum, bottom - top + 1 - chrome)
-        self.prompt.setFixedHeight(max(minimum, min(wanted, room)))
+        font = self.prompt.font()
+        if self._base_size is None:
+            self._base_size = font.pointSizeF()
+        base_size = self._base_size
+        wanted = minimum
+        # Never scroll: if the whole prompt does not fit, shrink its type until it does.
+        for size in [base_size - step * 0.5 for step in range(0, 9)]:
+            font.setPointSizeF(max(size, 6.0))
+            self.prompt.setFont(font)
+            document.setDefaultFont(font)
+            document.setTextWidth(text_width)
+            wanted = int(document.size().height() + 2 * document.documentMargin()) + 4
+            if wanted <= room:
+                break
+        self.prompt.setFixedHeight(max(minimum, wanted))
         self.layout().activate()
-        height = min(self.layout().sizeHint().height(), bottom - top + 1)
+        height = self.layout().sizeHint().height()
         self.setFixedHeight(height)
         self.move(right - width + 1, top)
 

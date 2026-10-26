@@ -2032,7 +2032,7 @@ QFrame[role="galleryHoverCard"] {
   border: 1px solid ${color.border};
   border-radius: 8px;
 }
-QFrame[role="galleryHoverCard"] QPlainTextEdit {
+QFrame[role="galleryHoverCard"] QTextEdit {
   background: ${color.canvas};
   color: ${color.text};
   border: 0;
