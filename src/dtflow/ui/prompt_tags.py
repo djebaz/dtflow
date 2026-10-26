@@ -13,37 +13,48 @@ _WILDCARD = re.compile(r"__([A-Za-z0-9]+(?:[_\-][A-Za-z0-9]+)*)__")
 def tag_spans(text: str) -> list[tuple[int, int]]:
     """``(start, length)`` of each outermost balanced ``{...}`` group and each top-level wildcard.
 
-    Lenient on purpose: it runs on half-typed text, so an unclosed ``{`` or a stray ``}`` is simply not a tag.
+    Lenient on purpose: it runs on half-typed text, so a stray ``}`` is not a tag and an unclosed ``{`` is skipped
+    without hiding the tags that follow it.
     """
     spans: list[tuple[int, int]] = []
-    depth = 0
-    start = 0
     i = 0
     while i < len(text):
         char = text[i]
         if char == "\\":
             i += 2
-            continue
-        if char == "{":
-            if depth == 0:
-                start = i
-            depth += 1
-        elif char == "}" and depth:
-            depth -= 1
-            if depth == 0:
-                spans.append((start, i + 1 - start))
-        elif depth == 0 and char == "_" and (match := _WILDCARD.match(text, i)):
+        elif char == "{" and (end := _group_end(text, i)) is not None:
+            spans.append((i, end - i))
+            i = end
+        elif char == "_" and (match := _WILDCARD.match(text, i)):
             spans.append((i, match.end() - i))
             i = match.end()
-            continue
-        i += 1
+        else:
+            i += 1
     return spans
+
+
+def _group_end(text: str, start: int) -> int | None:
+    """Index just past the ``}`` that closes the ``{`` at ``start``, or ``None`` when it never closes."""
+    depth = 0
+    i = start
+    while i < len(text):
+        char = text[i]
+        if char == "\\":
+            i += 1
+        elif char == "{":
+            depth += 1
+        elif char == "}":
+            depth -= 1
+            if depth == 0:
+                return i + 1
+        i += 1
+    return None
 
 
 class PromptTagHighlighter(QSyntaxHighlighter):
     """Blue-background, white-text tags over variation keywords; the text itself is never changed.
 
-    Groups are found per document, so a group spanning several lines is tagged on every line it covers.
+    Groups are found per document and re-applied when they change, so a group spanning lines is tagged on each one.
     """
 
     def __init__(self, edit: QPlainTextEdit) -> None:
@@ -52,14 +63,18 @@ class PromptTagHighlighter(QSyntaxHighlighter):
         self._format = QTextCharFormat()
         self._format.setBackground(QColor(tokens["color.accent"]))
         self._format.setForeground(QColor(tokens["color.onAccent"]))
-        self._revision = -1
         self._spans: list[tuple[int, int]] = []
+        # A group can span lines, so an edit may change tags on blocks the editor never re-highlights by itself.
+        self.document().contentsChanged.connect(self._retag)
+        self._retag()
+
+    def _retag(self) -> None:
+        spans = tag_spans(self.document().toPlainText())
+        if spans != self._spans:
+            self._spans = spans
+            self.rehighlight()
 
     def highlightBlock(self, text: str) -> None:
-        document = self.document()
-        if document.revision() != self._revision:  # one scan per edit, not one per re-highlighted block
-            self._revision = document.revision()
-            self._spans = tag_spans(document.toPlainText())
         offset = self.currentBlock().position()
         end = offset + len(text)
         for start, length in self._spans:
