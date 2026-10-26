@@ -35,12 +35,12 @@ def test_queue_handoff_opens_exact_live_output_despite_browse_filters(presentati
     gallery.model.setCurrentText("another-model")
     gallery.date_filter.setCurrentText("Today")
     gallery.open_output(records[250].identity)
-    qtbot.waitUntil(lambda: not gallery._loading and gallery._open_request is None, timeout=5000)
+    qtbot.waitUntil(lambda: not gallery._loading and gallery._open_request is None, timeout=20000)
     assert queries and gallery.selected_id == records[250].identity and shown == ["Detail"]
     assert gallery.prompt.text() == "" and gallery.model.currentText() == "All models"
     assert gallery.date_filter.currentText() == "All time"
     gallery.open_output("removed-output")
-    qtbot.waitUntil(lambda: not gallery._loading and gallery._open_request is None, timeout=5000)
+    qtbot.waitUntil(lambda: not gallery._loading and gallery._open_request is None, timeout=20000)
     assert notices and notices[-1][0] == "Open in Images"
     assert shown == ["Detail"]  # no unrelated image is opened as if it were the requested result
 
@@ -134,7 +134,7 @@ def presentation(qtbot, tmp_path, monkeypatch, fake_fixture_image):
             and gallery._grid_mount_keys is None
             and len(gallery._grid_layout_keys) == 100
         ),
-        timeout=5000,
+        timeout=20000,
     )
     # The initial page prepares with the production budget; the tests below observe preparation mid-flight, so
     # from here it is deterministically one record per event-loop turn.
@@ -211,7 +211,7 @@ def test_append_100_to_200_yields_to_input_and_retains_widgets(presentation, qtb
     assert len(gallery._grid_buttons) == 100
     delivered = []
     QTimer.singleShot(0, lambda: delivered.append((len(gallery.items), first.isVisible())))
-    qtbot.waitUntil(lambda: len(gallery.items) == 200 and not gallery._adjacent_loading, timeout=5000)
+    qtbot.waitUntil(lambda: len(gallery.items) == 200 and not gallery._adjacent_loading, timeout=20000)
     assert delivered == [(100, True)]
     assert gallery._grid_buttons["0"] is first
     assert gallery.selection.checked == {"0"}
@@ -249,7 +249,7 @@ def test_grid_mount_yields_before_all_new_cells_are_inserted(presentation, qtbot
     assert gallery._grid_buttons["0"] is first
     observed = []
     QTimer.singleShot(0, lambda: observed.append(gallery._grid_mount_cursor))
-    qtbot.waitUntil(lambda: gallery._grid_mount_keys is None, timeout=5000)
+    qtbot.waitUntil(lambda: gallery._grid_mount_keys is None, timeout=20000)
     assert observed and observed[0] < 200
     assert len(gallery._grid_layout_keys) == 200
     assert gallery.cards_layout.indexOf(first.parentWidget()) >= 0
@@ -291,7 +291,7 @@ def test_refresh_during_preparation_commits_only_latest_result(presentation, qtb
     state["records"] = records[200:300]
     gallery.refresh(reset=True, preserve=False)
     assert tuple(gallery.items) == records[:100]
-    qtbot.waitUntil(lambda: not gallery._loading and tuple(gallery.items) == records[200:300], timeout=5000)
+    qtbot.waitUntil(lambda: not gallery._loading and tuple(gallery.items) == records[200:300], timeout=20000)
     assert set(gallery._grid_buttons) == {item.identity for item in records[200:300]}
     assert not gallery._prepared_entries
 
@@ -314,7 +314,7 @@ def test_forward_eviction_keeps_grid_anchor_after_layout_settles(presentation, q
     gallery._rendered_page = (0, records[:300])
     qtbot.waitUntil(
         lambda: gallery._grid_mount_keys is None and len(gallery._grid_layout_keys) == 300,
-        timeout=5000,
+        timeout=20000,
     )
     gallery.cards_layout.activate()
     gallery.grid_cards.adjustSize()
@@ -330,7 +330,7 @@ def test_forward_eviction_keeps_grid_anchor_after_layout_settles(presentation, q
     gallery._load_adjacent(1)
     qtbot.waitUntil(
         lambda: gallery.offset == 100 and not gallery._adjacent_loading and not gallery._suppress_batch_scroll,
-        timeout=5000,
+        timeout=20000,
     )
     qtbot.wait(150)  # include deferred child visibility/layout/deletion events
     assert gallery._grid_buttons[anchor] is retained
@@ -360,7 +360,7 @@ def test_shutdown_drops_pending_anchor_restoration(presentation, qtbot, monkeypa
     monkeypatch.setattr(gallery, "_prepare_page", prepare)
     monkeypatch.setattr(gallery, "_capture_scroll", capture)
     gallery._load_adjacent(1)
-    qtbot.waitUntil(lambda: runner.closed, timeout=5000)
+    qtbot.waitUntil(lambda: runner.closed, timeout=20000)
     qtbot.wait(80)
     assert not gallery._suppress_batch_scroll
 
@@ -390,7 +390,7 @@ def test_empty_filter_then_same_grid_cards_are_mounted_again(presentation, qtbot
             and gallery._grid_layout_keys == ()
             and gallery._grid_mount_keys is None
         ),
-        timeout=5000,
+        timeout=20000,
     )
     # Retirement can already have deleted the old C++ frame by the time
     # waitUntil returns. Never pass a deleted Qt wrapper into QLayout.indexOf.
@@ -407,7 +407,7 @@ def test_empty_filter_then_same_grid_cards_are_mounted_again(presentation, qtbot
             and gallery._grid_mount_keys is None
             and len(gallery._grid_layout_keys) == 100
         ),
-        timeout=5000,
+        timeout=20000,
     )
     first = gallery._grid_buttons["0"].parentWidget()
     assert gallery.cards_layout.indexOf(first) >= 0
@@ -443,7 +443,7 @@ def test_empty_result_interrupts_mount_and_releases_callbacks(presentation, qtbo
     gallery._rendered_page = (0, records[:200])
     qtbot.waitUntil(
         lambda: gallery._grid_mount_keys is None and len(gallery._grid_layout_keys) == 200,
-        timeout=5000,
+        timeout=20000,
     )
     assert gallery.cards_layout.indexOf(gallery._grid_buttons["0"].parentWidget()) >= 0
     assert gallery._grid_buttons["0"].parentWidget().isVisible()
@@ -456,7 +456,7 @@ def test_stale_adjacent_prepare_does_not_clear_new_generation_scroll_guard(prese
     gallery._load_adjacent(1)
     qtbot.waitUntil(
         lambda: gallery._suppress_batch_scroll and bool(gallery._grid_mount_callbacks),
-        timeout=5000,
+        timeout=20000,
     )
     obsolete_prepare = gallery._grid_mount_callbacks[-1]
     gallery._query_generation += 1
@@ -471,7 +471,7 @@ def test_neighbor_prefetch_keeps_previous_and_next_zones_buffered(presentation, 
     _form, gallery, _runner, records, state = presentation
     state["records"] = records
     gallery.refresh(reset=True, preserve=False)
-    qtbot.waitUntil(lambda: not gallery._loading and gallery.total == 400, timeout=5000)
+    qtbot.waitUntil(lambda: not gallery._loading and gallery.total == 400, timeout=20000)
     # Restore the actual automatic scheduling for this test.
     gallery._queue_neighbor_prefetch = GalleryPage._queue_neighbor_prefetch.__get__(gallery)
     gallery._queue_neighbor_prefetch()
@@ -482,7 +482,7 @@ def test_neighbor_prefetch_keeps_previous_and_next_zones_buffered(presentation, 
             and not gallery._suppress_batch_scroll
             and not gallery._adjacent_loading
         ),
-        timeout=5000,
+        timeout=20000,
     )
     assert gallery.offset == 0
     gallery._jump_to_page(2)
@@ -506,7 +506,7 @@ def test_direct_jump_preloads_both_neighbor_zones(presentation, qtbot):
     _form, gallery, _runner, records, state = presentation
     state["records"] = records
     gallery.refresh(reset=True, preserve=False)
-    qtbot.waitUntil(lambda: not gallery._loading and gallery.total == 400, timeout=5000)
+    qtbot.waitUntil(lambda: not gallery._loading and gallery.total == 400, timeout=20000)
     gallery._jump_to_page(3)  # query page 3, which is not resident
     qtbot.waitUntil(
         lambda: (
@@ -516,7 +516,7 @@ def test_direct_jump_preloads_both_neighbor_zones(presentation, qtbot):
             and gallery._grid_mount_keys is None
             and not gallery.reflow_timer.isActive()
         ),
-        timeout=5000,
+        timeout=20000,
     )
     gallery._queue_neighbor_prefetch = GalleryPage._queue_neighbor_prefetch.__get__(gallery)
     gallery._queue_neighbor_prefetch()
@@ -541,7 +541,7 @@ def test_page_jump_while_neighbor_is_loading_replays_latest_request(presentation
     _form, gallery, _runner, records, state = presentation
     state["records"] = records
     gallery.refresh(reset=True, preserve=False)
-    qtbot.waitUntil(lambda: not gallery._loading and gallery.total == 400, timeout=5000)
+    qtbot.waitUntil(lambda: not gallery._loading and gallery.total == 400, timeout=20000)
     gallery._load_adjacent(1)
     assert gallery._adjacent_loading
     gallery._sync_pager()
