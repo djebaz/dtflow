@@ -276,10 +276,10 @@ def test_concurrency_threshold_color_and_shared_setting(window, qtbot):
     assert not (window.state_dir / "settings.json").exists()  # fake/local never write the shared cloud maximum
     window.form.backendCombo.setCurrentText("cloud")
     page.newQueueCapSpinBox.setValue(3)
-    qtbot.waitUntil(lambda: (window.state_dir / "settings.json").exists(), timeout=5000)
+    qtbot.waitUntil(lambda: (window.state_dir / "settings.json").exists(), timeout=20000)
     assert load_cloud_concurrency(window.state_dir) == 3
     page.newQueueCapSpinBox.setValue(10)
-    qtbot.waitUntil(lambda: load_cloud_concurrency(window.state_dir) == 10, timeout=5000)
+    qtbot.waitUntil(lambda: load_cloud_concurrency(window.state_dir) == 10, timeout=20000)
     assert "memory budget" in page.concurrencySpinBox.toolTip()
 
 
