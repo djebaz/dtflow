@@ -108,8 +108,8 @@ from dtflow.ui.queue_presenter import (
     summarize,
     up_next_ids,
 )
-from dtflow.ui.submit_shortcut import SubmitShortcut
 from dtflow.ui.prompt_tags import PROMPT_RUNS_ROLE, TagCellDelegate, style_prompt_tags, tag_spans, tagged_html
+from dtflow.ui.submit_shortcut import SubmitShortcut
 from dtflow.ui.queue_widgets import ENTRY_ROLE, HEADING_ROLE, QueueListDelegate
 from dtflow.ui.runner import AsyncRunner, EventRelay
 

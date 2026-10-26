@@ -24,6 +24,7 @@ class SubmitShortcut(QObject):
         self._edit = edit
         self._target = target
         edit.installEventFilter(self)
+        edit.viewport().installEventFilter(self)  # tooltip events are delivered to the viewport, not the editor
 
     def eventFilter(self, watched, event) -> bool:
         kind = event.type()
@@ -37,7 +38,7 @@ class SubmitShortcut(QObject):
             return False
         button = self._target()
         panel = feedback(self._edit)
-        if event.isAutoRepeat() or button is None or not button.isEnabled() or panel._armed or panel._editor:
+        if event.isAutoRepeat() or button is None or not button.isEnabled() or panel.owns_keyboard():
             return True  # still not a newline: the shortcut owns the combination
         button.click()
         return True

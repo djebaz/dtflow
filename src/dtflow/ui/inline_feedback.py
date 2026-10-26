@@ -83,6 +83,10 @@ class InlineFeedback(QObject):
         """True while a pending consent, editor or notice owns Escape."""
         return bool(self._armed or self._editor or self.form.isVisible())
 
+    def owns_keyboard(self) -> bool:
+        """True while a pending consent or inline editor takes keyboard input; a plain notice does not."""
+        return self._armed is not None or self._editor is not None
+
     def reset(self):
         self._watch_outside(False)
         self.escape.setEnabled(False)

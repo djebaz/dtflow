@@ -81,8 +81,8 @@ from dtflow.ui.generation_presenter import (
 from dtflow.ui.inline_feedback import InlineNotice, edit_text
 from dtflow.ui.inpaint_editor import EditJob, InpaintEditor
 from dtflow.ui.lora_panel import LoraAssetPanel
-from dtflow.ui.submit_shortcut import SubmitShortcut
 from dtflow.ui.prompt_tags import style_prompt_tags
+from dtflow.ui.submit_shortcut import SubmitShortcut
 from dtflow.ui.runner import AsyncRunner, EventRelay
 
 UNCLASSIFIED_FAMILY = "__unclassified__"  # base-model combo data for checkpoints without a catalogue family
