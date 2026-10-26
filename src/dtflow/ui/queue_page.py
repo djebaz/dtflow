@@ -25,6 +25,7 @@ from dtflow.core.request_records import request_from_record
 from dtflow.persistence.settings import SettingsError, load_cloud_concurrency, validate_concurrency
 from dtflow.persistence.store import StateBusyError
 from dtflow.services.connection import Presentation, present_generation_failure
+from dtflow.services.dynamic_prompts import decode_runs
 from dtflow.services.image_preparation import prepare_edit_inputs
 from dtflow.services.plan_errors import PlanError
 from dtflow.services.planning import Plan, PlanTable, describe_plan, expand_plan, new_rng_seed, plan_size, resolve_plan
@@ -105,7 +106,6 @@ from dtflow.ui.queue_presenter import (
     summarize,
     up_next_ids,
 )
-from dtflow.services.dynamic_prompts import decode_runs
 from dtflow.ui.prompt_tags import style_prompt_tags, tagged_html
 from dtflow.ui.queue_widgets import ENTRY_ROLE, HEADING_ROLE, QueueListDelegate
 from dtflow.ui.runner import AsyncRunner, EventRelay
@@ -638,7 +638,7 @@ class QueuePage:
         prompt = first.get("prompt") or ""
         runs = decode_runs(prompt, first.get("prompt_runs"))
         page.queueTitleLabel.setToolTip(
-            f"<p style='white-space:pre-wrap'>{tagged_html(prompt, runs)}</p>" if runs else prompt
+            f"<p style='white-space:pre-wrap'>{tagged_html(prompt, runs)}</p>" if prompt else ""
         )
         for name, value in queue_facts(view).items():
             getattr(page, f"queueFact{name}Label").setText(value)

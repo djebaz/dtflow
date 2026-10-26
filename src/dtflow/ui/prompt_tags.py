@@ -13,6 +13,16 @@ from dtflow.ui.theme import load_tokens
 _WILDCARD = re.compile(r"__([A-Za-z0-9]+(?:[_\-][A-Za-z0-9]+)*)__")
 
 
+def utf16_runs(text: str, runs: Runs) -> Runs:
+    """``(start, length)`` runs counted in code points, re-counted in the UTF-16 units Qt documents use."""
+    if text.isascii() or all(ord(char) <= 0xFFFF for char in text):
+        return tuple(runs)
+    units = [0]
+    for char in text:
+        units.append(units[-1] + (2 if ord(char) > 0xFFFF else 1))
+    return tuple((units[start], units[start + length] - units[start]) for start, length in runs)
+
+
 def tag_spans(text: str) -> list[tuple[int, int]]:
     """``(start, length)`` of each outermost balanced ``{...}`` group and each top-level wildcard.
 
@@ -77,8 +87,8 @@ class PromptTagHighlighter(QSyntaxHighlighter):
             self.set_runs(tag_spans(self.document().toPlainText()))
 
     def set_runs(self, runs: Runs) -> None:
-        """Tag exactly these ``(start, length)`` runs of the document text."""
-        spans = list(runs)
+        """Tag exactly these ``(start, length)`` runs of the document text, counted in code points."""
+        spans = list(utf16_runs(self.document().toPlainText(), runs))
         if spans != self._spans:
             self._spans = spans
             self.rehighlight()

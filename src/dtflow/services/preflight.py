@@ -8,7 +8,6 @@ service does not model them: every selection is a whole-model (``All``) LoRA on 
 
 from dataclasses import replace
 
-from dtflow.services.dynamic_prompts import PROMPT_TAGS_KEY, decode_runs, encode_runs
 from dtflow.core.models import (
     BackendError,
     BackendFailure,
@@ -17,6 +16,7 @@ from dtflow.core.models import (
     PreflightDiagnostic,
     ResolvedGenerationRequest,
 )
+from dtflow.services.dynamic_prompts import PROMPT_TAGS_KEY, decode_runs, encode_runs
 
 BLOCKING = ("architecture_mismatch", "not_available")
 # Successful generation never proves a LoRA was applied, so the evidence level is fixed until the backend reports it.

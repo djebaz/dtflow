@@ -14,6 +14,7 @@ Pure: no I/O, no network, and error messages name positions and wildcards, never
 import random
 import re
 import zlib
+from contextvars import ContextVar
 from collections.abc import Mapping
 from dataclasses import dataclass
 from itertools import combinations, product
@@ -27,7 +28,9 @@ _HEADER = re.compile(r"\s*(\d+)(?:-(\d+))?\$\$")
 _WEIGHT = re.compile(r"\s*(\d+(?:\.\d+)?)::")
 _WILDCARD = re.compile(r"__([A-Za-z0-9]+(?:[_\-][A-Za-z0-9]+)*)__")
 PROMPT_TAGS_KEY = "prompt.variation_runs"  # request evidence: ``encode_runs`` of the runs variations produced
-_TAG = "\ue000"  # private-use marker placed before each character that came from a variation, removed by ``_untag``
+_marker: ContextVar[str] = ContextVar("dtflow_prompt_marker", default="\ue000")
+# ``_resolve`` picks a private-use marker character absent from its inputs; ``_mark`` puts it before each character that
+# came from a variation and ``_untag`` removes it, so a literal private-use character in a prompt is left alone.
 
 
 @dataclass(frozen=True, slots=True)
@@ -205,16 +208,19 @@ def _node_count(node: Node, lists: Lists, depth: int) -> int:
     return min(CAP, sum(ways[node.low : node.high + 1]))
 
 
+Runs = tuple[tuple[int, int], ...]
+
+
 def _mark(text: str) -> str:
     """Tag every character that is not whitespace or a comma (the separators edits split on); idempotent."""
     out: list[str] = []
     tagged = False
     for char in text:
-        if char == _TAG:
+        if char == _marker.get():
             tagged = True
             out.append(char)
             continue
-        out.append(char if tagged or char.isspace() or char == "," else _TAG + char)
+        out.append(char if tagged or char.isspace() or char == "," else _marker.get() + char)
         tagged = False
     return "".join(out)
 
@@ -229,7 +235,7 @@ def _untag(text: str) -> tuple[str, tuple[tuple[int, int], ...]]:
     tagged = False
     gap_is_space = False
     for char in text:
-        if char == _TAG:
+        if char == _marker.get():
             tagged = True
             continue
         position = len(clean)
@@ -356,6 +362,30 @@ def _resolve(
     strategy: str,
     n: int | None,
     rng_seed: int,
+    limit: int,
+    mutation: Mutation | None,
+) -> tuple[tuple[tuple[str, Runs], ...], tuple[str, ...]]:
+    """(each distinct prompt with its variation runs, wildcard names used)."""
+    present = set(template).union(*(set(entry) for entries in wildcards.values() for entry in entries))
+    present.update(char for part in (mutation.add if mutation is not None else ()) for char in part)
+    marker = next(chr(code) for code in range(0xE000, 0xF900) if chr(code) not in present)
+    token = _marker.set(marker)
+    try:
+        marked, used = _resolve_marked(
+            template, wildcards, strategy=strategy, n=n, rng_seed=rng_seed, limit=limit, mutation=mutation
+        )
+        return tuple(_untag(text) for text in marked), used
+    finally:
+        _marker.reset(token)
+
+
+def _resolve_marked(
+    template: str,
+    wildcards: Mapping[str, tuple[str, ...]],
+    *,
+    strategy: str,
+    n: int | None,
+    rng_seed: int,
     limit: int = MAX_QUEUE_ITEMS,
     mutation: Mutation | None = None,
 ) -> tuple[tuple[str, ...], tuple[str, ...]]:
@@ -437,10 +467,10 @@ def variants(
     mutation: Mutation | None = None,
 ) -> tuple[tuple[str, ...], tuple[str, ...]]:
     """(resolved prompts, wildcard names used). ``random`` draws ``n`` distinct prompts, ``all`` lists every one."""
-    marked, used = _resolve(
+    resolved, used = _resolve(
         template, wildcards, strategy=strategy, n=n, rng_seed=rng_seed, limit=limit, mutation=mutation
     )
-    return tuple(_untag(text)[0] for text in marked), used
+    return tuple(text for text, _ in resolved), used
 
 
 def tagged_variants(
@@ -457,13 +487,7 @@ def tagged_variants(
 
     Text that is only whitespace or commas is never part of a run, so a bare ``, `` joining two picks stays plain.
     """
-    marked, used = _resolve(
-        template, wildcards, strategy=strategy, n=n, rng_seed=rng_seed, limit=limit, mutation=mutation
-    )
-    return tuple(_untag(text) for text in marked), used
-
-
-Runs = tuple[tuple[int, int], ...]
+    return _resolve(template, wildcards, strategy=strategy, n=n, rng_seed=rng_seed, limit=limit, mutation=mutation)
 
 
 def encode_runs(prompt: str, runs: Runs) -> str:
@@ -480,4 +504,9 @@ def decode_runs(prompt: str, value: str | None) -> Runs:
         runs = tuple((int(a), int(b)) for a, b in (part.split(":") for part in body.split(",") if part))
     except ValueError:
         return ()
-    return runs if all(0 <= start and 0 < length and start + length <= len(prompt) for start, length in runs) else ()
+    end = 0
+    for start, length in runs:  # sorted, non-empty and non-overlapping, all inside the prompt
+        if start < end or length <= 0 or start + length > len(prompt):
+            return ()
+        end = start + length
+    return runs
