@@ -1096,23 +1096,13 @@ QWidget#GalleryDetailPage QPushButton#galleryNextButton {
   color: ${color.text};
 }
 QFrame#galleryImageToolbar {
-  background: ${color.surface};
-  border: 1px solid ${color.border};
-  border-radius: ${size.radiusPill};
-}
-QFrame#galleryImageToolbar QPushButton,
-QFrame#galleryImageToolbar QComboBox {
-  background: transparent;
-  border: 0;
-  min-height: 0;
-  padding: 0 4px;
-  color: ${color.text};
+  background: ${color.toolbar};
+  border: 1px solid ${color.buttonBorder};
+  border-radius: ${size.radius};
 }
 QFrame#galleryImageToolbar QPushButton {
-  font-size: 22px;
-}
-QFrame#galleryImageToolbar QPushButton#galleryActualSizeButton {
-  font-size: 14px;
+  padding: 4px 7px;
+  min-height: 20px;
 }
 QScrollArea#galleryMetadataScroll,
 QWidget#galleryMetadataScrollContents,
@@ -1196,14 +1186,6 @@ QLabel[role="galleryOverlay"] {
 }
 QWidget#GalleryDetailPage QComboBox {
   min-width: 0;
-}
-/* The compact toolbar select keeps a bare chevron, without the segment. */
-QFrame#galleryImageToolbar QComboBox::drop-down,
-QFrame#galleryImageToolbar QComboBox:hover::drop-down,
-QFrame#galleryImageToolbar QComboBox:on::drop-down {
-  width: 16px;
-  border: 0;
-  background: transparent;
 }
 
 QWidget#galleryBrandSlot,

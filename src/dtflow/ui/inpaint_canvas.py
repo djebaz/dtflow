@@ -83,7 +83,7 @@ class InpaintCanvas(ImagePreview):
         self._refresh.setInterval(33)
         self._refresh.timeout.connect(self._rebuild_overlay)
         self.setText("Choose a source image, then paint the area to change.")
-        self.setAccessibleName("Inpaint canvas. Space-drag pans; Control-wheel zooms. Alt reverses painting.")
+        self.setAccessibleName("Inpaint canvas. Space-drag pans; mouse wheel zooms. Alt reverses painting.")
 
     def _icon_button(self, row, path, color, tip, name, slot):
         button = QPushButton()
