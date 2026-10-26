@@ -117,6 +117,7 @@ LIVE_FOLLOW_TIPS = {
 }
 
 PAGE_SIZE = gallery_limits.DEFAULT_BATCH
+FILENAME_COLUMN = 2
 PROMPT_COLUMN = 8  # the list view's prompt cell, see ``_entry_fields``
 MAX_MOUNTED_IMAGES = gallery_limits.DEFAULT_CARDS  # five default batches; bounded buffered Qt cards
 MAX_QUERY_ITEMS = gallery_limits.MAX_READ  # GalleryQuery retains its existing per-read safety cap
@@ -801,6 +802,7 @@ class GalleryPage(QObject):
         self.table.horizontalHeader().setStretchLastSection(True)
         for column, width in enumerate((36, 80, 160, 180, 300, 120, 90, 145, 360)):
             self.table.setColumnWidth(column, width)
+        self.table.setColumnHidden(FILENAME_COLUMN, True)  # the name stays in the cell data; the list shows no Filename
         self.table.itemClicked.connect(self._table_clicked)
         self.table.itemActivated.connect(self._table_activated)
         self.table.itemChanged.connect(self._table_item_changed)

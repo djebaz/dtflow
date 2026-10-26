@@ -545,6 +545,7 @@ class DetailFixture(QObject):
                 self.table.setItem(row, column, item)
         for column, width in enumerate((36, 80, 150, 150, 270, 120, 85, 130, 320)):
             self.table.setColumnWidth(column, width)
+        self.table.setColumnHidden(2, True)  # no Filename column in the list view
         self.table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Interactive)
         self.table.horizontalHeader().setStretchLastSection(True)
         self.table.itemClicked.connect(
