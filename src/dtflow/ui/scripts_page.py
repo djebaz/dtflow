@@ -617,6 +617,12 @@ class ScriptsPage:
         """Update Scripts layout without recycling unchanged Qt geometry."""
         narrow = self.owner.form.width() < 1100
         self.form.set_narrow(narrow)
+        # The shared outer scroll can inherit oversized stacked-page size hints.
+        # Bound the library list to the actual viewport and reserve space for
+        # New, Import, Reload and the storage caption on both window sizes.
+        library_max = max(180, min(670, self.owner.form.height() - 350))
+        if self.library.maximumHeight() != library_max:
+            self.library.setMaximumHeight(library_max)
         if self.details_button.isHidden() == narrow:
             self.details_button.setVisible(narrow)
         active = self.owner._scripts_active and (
