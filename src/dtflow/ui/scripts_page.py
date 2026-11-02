@@ -346,6 +346,7 @@ class ScriptsPage:
         banner_layout = QVBoxLayout(self.inspect_banner)
         banner_layout.setContentsMargins(16, 12, 16, 12)
         self.banner_title = _label("No blocking issues found", role="scriptsBannerTitle")
+        self.banner_title.setProperty("feedbackState", "ok")
         banner_layout.addWidget(self.banner_title)
         self.banner_desc = _label(
             "Syntax valid, 3 hooks supported, 1 deferred. Inspection is not a promise of success.",
@@ -688,6 +689,22 @@ class ScriptsPage:
             return
         self._set_script(REFERENCE_SCRIPTS[row])
 
+    def _set_inspect_banner(self, title: str, description: str, state: str) -> None:
+        """Keep the inspection title and surface in the same semantic state.
+
+        Qt does not reliably restyle children when only a parent dynamic
+        property changes, so the title owns its state and is repolished.
+        """
+        if state not in ("ok", "warning", "error"):
+            raise ValueError(f"Unsupported inspection feedback state: {state}")
+        self.banner_title.setText(title)
+        self.banner_desc.setText(description)
+        for widget in (self.inspect_banner, self.banner_title):
+            widget.setProperty("feedbackState", state)
+            widget.style().unpolish(widget)
+            widget.style().polish(widget)
+        self.banner_title.update()
+
     def _set_script(self, script):
         self._current_script = script
         filename, sha, _tier, support = script
@@ -715,14 +732,12 @@ class ScriptsPage:
         self.status.style().polish(self.status)
         verdict = "No blocking issues found" if support == "supported" else "Not runnable · unsupported hooks"
         self.hook_status.setText(verdict)
-        self.banner_title.setText(verdict)
-        self.banner_desc.setText(
+        self._set_inspect_banner(
+            verdict,
             "Syntax valid, 3 hooks supported, 1 deferred. This is not a promise of success."
-            if support == "supported" else "Required photo/file picker hooks are unsupported."
+            if support == "supported" else "Required photo/file picker hooks are unsupported.",
+            "ok" if support == "supported" else "error",
         )
-        self.inspect_banner.setProperty("feedbackState", "ok" if support == "supported" else "error")
-        self.inspect_banner.style().unpolish(self.inspect_banner)
-        self.inspect_banner.style().polish(self.inspect_banner)
         self.drawer_summary.setText(
             self.hook_status.text() + "\n" +
             "\n".join(f"{hook} · {status}" for hook, status, _ in REFERENCE_HOOKS)
@@ -955,10 +970,11 @@ class ScriptsPage:
                 self.status.setProperty("feedbackState", "warning")
                 self.status.style().unpolish(self.status)
                 self.status.style().polish(self.status)
-                self.banner_title.setText("Preflight incomplete")
-                self.inspect_banner.setProperty("feedbackState", "warning")
-                self.inspect_banner.style().unpolish(self.inspect_banner)
-                self.inspect_banner.style().polish(self.inspect_banner)
+                self._set_inspect_banner(
+                    "Preflight incomplete",
+                    "Static inspection has unresolved requirements. Confirm before starting.",
+                    "warning",
+                )
                 self.acknowledge.show()
             elif state == "scripts_imported_unsupported":
                 self.inspect_summary.setText("Cannot start: unsupported native picker hooks.")
