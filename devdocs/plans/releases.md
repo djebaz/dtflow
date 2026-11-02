@@ -130,3 +130,7 @@ At release time, update the authoritative project version through the repository
 Agree the supported feature set before declaring 1.0. Require target-Windows executable verification, separate deployed-cloud evidence, responsive Qt execution, bounded resource use, safe output persistence, queue/restart/uncertainty handling, supported upgrade paths and documented limitations.
 
 Full TanqueStudio parity is not the definition of 1.0. Keep outstanding parity work tracked beyond it. Public distribution additionally needs GPL-3.0-only packaging compliance, corresponding-source/notice handling and suitable release documentation; personal acceptance does not establish those conditions.
+
+### Scripting feature under development (PR #199)
+
+The headless scripting Tier A slice is open for review, not a shipped release commitment. Owner Windows fake-backend smoke on 2026-11-02 established two linked generation attempts and a pre-submission empty-model rejection. First usable scripting milestone under [epic #112](https://github.com/djebaz/dtflow/issues/112) also includes canvas/masks and validated detection hooks, plus separately approved desktop UX; do not claim that the headless smoke covers those capabilities. No automated tests were added or run by explicit owner direction.

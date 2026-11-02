@@ -101,6 +101,23 @@ uses the vendored Acorn parser. `dtflow script --check-engine [-o result.json]` 
 the manual child-containment diagnostic (kill the printed parent pid and check the child disappears). See the
 [scripting layer](../architecture/scripting.md).
 
+### Headless script execution (Tier A)
+
+`uv run dtflow script FILE --run -b fake|local|cloud` executes a local Draw Things `//@api-1.0` JavaScript file through the shared generation service. Unlike inspection, `--run` submits work: local Draw Things may forward requests to DT+ and cloud may consume credits. There is no implicit backend fallback. Supply an initial valid request with `-p/--prompt` or `--config` (and a model for local/cloud); the CLI validates its starting settings **before** evaluating JavaScript, even when the script supplies prompts in `pipeline.run`.
+
+Offline owner smoke commands from the repository root (the first intentionally generates two **fake** outputs, the second intentionally fails):
+
+```powershell
+uv run dtflow script tests/fixtures/scripting/tier_a_fake.js --run -b fake -p "Offline scripting smoke test" --max-generations 4
+uv run dtflow script tests/fixtures/scripting/empty_model_rejected.js --run -b fake -p "Offline model validation smoke test"
+```
+
+Execution has a per-run generation cap (`--max-generations`, default 4, valid range 1–32), per-generation `--timeout` (default 600 seconds), an optional `--answers` JSON file (a list of ordered answer lists, one per `requestFromUser` call), `--state` (default `.dtflow`), and `--outputs` (default `<state>/outputs`). Request flags `-m/--model`, `-s/--seed`, `-w/--width`, `-y/--height`, `-i/--steps`, `-g/--guidance`, `-a/--sampler`, `-n/--negative`, `-l/--lora` and `-z/--asset` provide starting settings. `--endpoint` selects the local server.
+
+Script-set fields are currently limited to width, height, seed, steps, guidanceScale, model, sampler and LoRAs (mode `all`). Unchanged inherited values of other fields are tolerated; changed unsupported fields and masks are rejected before the affected call. Dimensions are rounded down to multiples of 64 with an upstream-compatible warning, and seed `-1` resolves to an explicit recorded seed. `createControl` is lookup only. `downloadBuiltins` never downloads. File hooks use `<state>/script_files/<run-id>/` rather than the real Pictures folder; canvas save operations use the last committed final image, without editing the recorded output. Headless `requestFromUser` uses supplied answers or defaults where possible; it is **not** a native interactive form and some answer types remain unverified. Canvas geometry, masks, image-operation dispatch and detection/guidance are separate issues #116/#117, and the desktop experience is #118.
+
+The JSON report includes ScriptRun status, ordered child attempt IDs, the latest committed output paths and bounded console messages. Script runs are recorded in `<state>/script_runs.sqlite3`; linked generation attempts retain their own durable records. Stop interrupts waiting, not remote generation; an unresolved outcome must not be replayed. Do not interpret a failed script as evidence that a submitted attempt was cancelled. The fixtures are for manual smoke evidence, not automatic test execution.
+
 ## Exit codes
 
 `0` success; `2` invalid input, config, preflight or missing credentials (nothing was dispatched); `3` backend rejection or failure with a known outcome; `4` unknown remote outcome (never replayed); `5` local state, output or deadline failure; `130` local interruption. Nonzero results print one JSON error line on stderr.
