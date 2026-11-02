@@ -768,8 +768,18 @@ class MainWindow:
             page = stack.widget(index)
             policy = page.sizePolicy()
             shown = page is stack.currentWidget()
-            policy.setHorizontalPolicy(QSizePolicy.Policy.Preferred if shown else QSizePolicy.Policy.Ignored)
-            page.setSizePolicy(policy)
+            # Scripts has long hook identifiers inside a scroll viewport whose
+            # horizontal bar is intentionally disabled. Ignore its size hint
+            # when active, so it cannot overflow the shared right rail.
+            scripts_inspector = page is self.scripts.right
+            horizontal = (
+                QSizePolicy.Policy.Ignored
+                if (not shown or scripts_inspector)
+                else QSizePolicy.Policy.Preferred
+            )
+            if policy.horizontalPolicy() != horizontal:
+                policy.setHorizontalPolicy(horizontal)
+                page.setSizePolicy(policy)
 
     def _responsive_workspace(self) -> None:
         shell = self.shell
