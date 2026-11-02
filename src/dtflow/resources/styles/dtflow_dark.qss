@@ -2213,3 +2213,16 @@ QLabel#scriptsStepThumbnail {
   border: 1px solid ${color.border};
   border-radius: ${size.inputRadius};
 }
+
+/* Scripts: a previous unresolved attempt is a separate warning, not a compatibility error. */
+QFrame#scriptsUnresolvedNotice {
+  border: 1px solid ${color.warning};
+  border-radius: ${size.panelRadius};
+  background: ${color.warningSurface};
+}
+QLabel#scriptsWarningGlyph, QLabel#scriptsWarningTitle {
+  color: ${color.warning};
+}
+QLabel#scriptsWarningTitle {
+  font-weight: ${type.weightEmphasis};
+}
