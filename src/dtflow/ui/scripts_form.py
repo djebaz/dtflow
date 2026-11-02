@@ -247,27 +247,35 @@ class ScriptForm(QWidget):
     def __init__(self, parent: QWidget | None = None):
         super().__init__(parent)
         self.setObjectName("scriptsForm")
+        self._narrow: bool | None = None
         self.layout_ = QVBoxLayout(self)
         self.layout_.setContentsMargins(10, 10, 10, 10)
         self.layout_.setSpacing(8)
         self.layout_.addStretch(1)
 
     def set_narrow(self, narrow: bool) -> None:
-        """Stack field captions above inputs at 800 px and similar widths."""
+        """Stack field captions above inputs only when the width mode changes.
+
+        Avoid invalidating layouts on every shell resize/event-filter callback.
+        A rebuilt set of fields clears the cached width mode.
+        """
         from PySide6.QtWidgets import QBoxLayout
 
+        if self._narrow is narrow:
+            return
+        self._narrow = narrow
+        direction = QBoxLayout.Direction.TopToBottom if narrow else QBoxLayout.Direction.LeftToRight
+        label_max = 16777215 if narrow else 190
         for row in self.findChildren(QWidget, "scriptsFieldRow"):
             layout = row.layout()
-            if layout is not None:
-                layout.setDirection(
-                    QBoxLayout.Direction.TopToBottom if narrow
-                    else QBoxLayout.Direction.LeftToRight
-                )
+            if isinstance(layout, QBoxLayout) and layout.direction() != direction:
+                layout.setDirection(direction)
             heading = row.findChild(QLabel, "scriptFieldLabel")
-            if heading is not None:
-                heading.setMaximumWidth(16777215 if narrow else 190)
+            if heading is not None and heading.maximumWidth() != label_max:
+                heading.setMaximumWidth(label_max)
 
     def set_fields(self, fields: list[dict], *, long_values: bool = False) -> None:
+        self._narrow = None
         while self.layout_.count():
             item = self.layout_.takeAt(0)
             if item.widget() is not None:
