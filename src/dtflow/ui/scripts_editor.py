@@ -10,6 +10,7 @@ import re
 
 from PySide6.QtCore import QRect, QSize, Qt
 from PySide6.QtGui import QColor, QFont, QPainter, QSyntaxHighlighter, QTextCharFormat, QTextCursor
+from dtflow.ui.inpaint_canvas import REDO_PATH, UNDO_PATH, _arrow_icon
 from dtflow.ui.theme import load_tokens
 
 from PySide6.QtWidgets import (
@@ -160,11 +161,14 @@ class ScriptEditor(QWidget):
         history_row = QHBoxLayout(history)
         history_row.setContentsMargins(0, 0, 0, 0)
         history_row.setSpacing(0)
-        for label, caption, edge, callback in (
-            ("↶", "Undo (Ctrl+Z)", "first", self.editor.undo),
-            ("↷", "Redo (Ctrl+Y)", "last", self.editor.redo),
+        icon_color = load_tokens()["color.secondary"]
+        for path, caption, edge, callback in (
+            (UNDO_PATH, "Undo (Ctrl+Z)", "first", self.editor.undo),
+            (REDO_PATH, "Redo (Ctrl+Shift+Z)", "last", self.editor.redo),
         ):
-            button = QPushButton(label)
+            button = QPushButton()
+            button.setIcon(_arrow_icon(path, icon_color))
+            button.setIconSize(QSize(16, 16))
             button.setAccessibleName(caption)
             button.setToolTip(caption)
             button.setProperty("segmentEdge", edge)
