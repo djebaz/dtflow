@@ -8,6 +8,8 @@ caller, and are never removed.
 
 from __future__ import annotations
 
+import errno
+import logging
 import sqlite3
 import sys
 import uuid
@@ -16,6 +18,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 
+log = logging.getLogger("dtflow.script")
 SCHEMA_VERSION = 1
 STATES = ("running", "completed", "failed", "stopped", "interrupted")
 TERMINAL = ("completed", "failed", "stopped", "interrupted")
@@ -41,6 +44,11 @@ class ScriptRun:
     children: tuple[str, ...]
 
 
+def _lock_is_held(exc: OSError) -> bool:
+    """True only for "another holder has the lock"; anything else (ENOLCK, EOPNOTSUPP, EINVAL...) means unsupported."""
+    return isinstance(exc, BlockingIOError) or exc.errno in (errno.EACCES, errno.EAGAIN, errno.EDEADLK)
+
+
 def _try_lock(path: Path):
     """Take an exclusive OS lock on ``path`` and return the open file, or ``None`` if another holder has it.
 
@@ -61,9 +69,13 @@ def _try_lock(path: Path):
             import fcntl
 
             fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
-    except OSError:
+    except OSError as exc:
         handle.close()
-        return None
+        if _lock_is_held(exc):
+            return None
+        raise ScriptRunStoreError(
+            f"This filesystem does not support the script-run ownership lock ({type(exc).__name__}: {exc})."
+        ) from exc
     return handle
 
 
@@ -84,6 +96,7 @@ class ScriptRunStore:
         self.path = Path(state) / "script_runs.sqlite3"
         self.path.parent.mkdir(parents=True, exist_ok=True)
         self._held: dict[str, object] = {}
+        self.unverified: list[str] = []  # running rows whose liveness could not be decided (no lock support)
         with closing(self._connect()) as connection:
             version = connection.execute("PRAGMA user_version").fetchone()[0]
             if version > SCHEMA_VERSION:
@@ -118,7 +131,12 @@ class ScriptRunStore:
             with connection:
                 for (run_id,) in connection.execute("SELECT run_id FROM script_runs WHERE state='running'").fetchall():
                     lock = self._lock_path(run_id)
-                    handle = _try_lock(lock)
+                    try:
+                        handle = _try_lock(lock)
+                    except ScriptRunStoreError:
+                        self.unverified.append(run_id)
+                        log.warning("Script run %s left running: ownership lock unsupported here.", run_id)
+                        continue
                     if handle is not None:
                         connection.execute(
                             "UPDATE script_runs SET state='interrupted', finished_at=? WHERE run_id=? AND state='running'",
@@ -151,6 +169,17 @@ class ScriptRunStore:
         if handle is None:
             raise ScriptRunStoreError("Could not take the script-run ownership lock.")
         self._held[run_id] = handle
+        try:
+            self._insert(
+                run_id, source_name, source_sha256, api_version, vendored_js_sha256, answers_json, context_json
+            )
+        except Exception:
+            self._held.pop(run_id, None)
+            _release(handle, self._lock_path(run_id))
+            raise
+        return run_id
+
+    def _insert(self, run_id, source_name, source_sha256, api_version, vendored_js_sha256, answers_json, context_json):
         with closing(self._connect()) as connection, connection:
             connection.execute(
                 "INSERT INTO script_runs (run_id, state, source_name, source_sha256, api_version, vendored_js_sha256,"
@@ -166,7 +195,6 @@ class ScriptRunStore:
                     _now(),
                 ),
             )
-        return run_id
 
     def link_child(self, run_id: str, attempt_id: str) -> int:
         """Reserve the next ordinal for a child attempt; call before the attempt is submitted."""

@@ -13,6 +13,7 @@ The child is also contained so it cannot outlive the app (Linux parent-death sig
 
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import multiprocessing
@@ -24,7 +25,8 @@ from typing import Any
 
 from dtflow.diagnostics import event as diagnostic_event
 from dtflow.scripting.containment import contain_child
-from dtflow.scripting.engine import MAX_CALL_BYTES, ScriptLimits
+from dtflow.persistence.script_runs import ScriptRunStore
+from dtflow.scripting.engine import MAX_CALL_BYTES, ScriptLimits, api_version, shared_script_sha256
 from dtflow.scripting.hooks import HOOKS, UNSUPPORTED
 from dtflow.scripting.worker import main as worker_main
 from dtflow.scripting.worker import syntax_main
@@ -50,7 +52,10 @@ class RunResult:
     console: list[tuple[int, str]] = field(default_factory=list)
     host_calls: int = 0
     startup_seconds: float | None = None  # spawn until the child announced ready
-    contained: bool = False  # child is bound to the app's lifetime by the OS
+    contained: bool = False  # the parent bound the child to the app's lifetime (best effort, see containment.py)
+    spawned_pid: int | None = None  # process started by multiprocessing (the launcher stub in a onefile build)
+    child_pid: int | None = None  # process that runs JavaScript; differs from spawned_pid behind a launcher
+    child_in_job: bool | None = None  # Windows: the JS process reported being inside a Job Object (evidence only)
 
 
 class HookDispatcher:
@@ -127,8 +132,11 @@ def run_script(
     *,
     limits: ScriptLimits | None = None,
     cancel: threading.Event | None = None,
+    on_started: Callable[[RunResult], None] | None = None,
 ) -> RunResult:
-    """Evaluate ``source`` in a child process. Blocks the calling thread; never call it from the Qt GUI thread."""
+    """Evaluate ``source`` in a child process. Blocks the calling thread; never call it from the Qt GUI thread.
+
+    ``on_started`` is called once, from the supervising loop, when the JS process has announced its pid."""
     limits = limits or ScriptLimits()
     cancel = cancel or threading.Event()
     dispatcher = HookDispatcher(implementations, cancel)
@@ -141,6 +149,7 @@ def run_script(
     child.close()
     containment = contain_child(process)
     result.contained = containment.active or _linux_contained()
+    result.spawned_pid = process.pid
     phase = "starting"  # starting -> js <-> hook
     busy_since = spawned
     stop_deadline: float | None = None
@@ -182,6 +191,11 @@ def run_script(
                 result.startup_seconds = round(time.monotonic() - spawned, 3)
                 parent.send({"source": source, "limits": asdict(limits)})
                 phase, busy_since = "js", time.monotonic()
+            elif "started" in message:
+                result.child_pid = message["started"].get("pid")
+                result.child_in_job = message["started"].get("in_job")
+                if on_started is not None:
+                    on_started(result)
             elif "call" in message:
                 hook = _HookThread(dispatcher, message["call"], message["payload"])
                 hook.start()
@@ -199,6 +213,50 @@ def run_script(
             process.join(timeout=2.0)
         containment.close()
     return result
+
+
+def run_recorded(
+    store: ScriptRunStore,
+    source: str,
+    implementations: Mapping[str, Callable[..., Any]]
+    | Callable[[Callable[[str], int]], Mapping[str, Callable[..., Any]]]
+    | None = None,
+    *,
+    source_name: str,
+    answers_json: str = "{}",
+    context_json: str = "{}",
+    limits: ScriptLimits | None = None,
+    cancel: threading.Event | None = None,
+) -> tuple[str, RunResult]:
+    """Run a script and keep its durable ledger row in step: created (and owned) before the child starts, settled from
+    the result afterwards, and settled as failed if anything raises. Returns ``(run_id, result)``.
+
+    ``implementations`` may be a callable taking ``link_child(attempt_id) -> ordinal``; hooks that submit work call it
+    before submitting so the child attempt is recorded first. A run that was already interrupted is left as it is."""
+    run_id = store.create(
+        source_name=source_name,
+        source_sha256=hashlib.sha256(source.encode("utf-8")).hexdigest(),
+        api_version=api_version(source),
+        vendored_js_sha256=shared_script_sha256(),
+        answers_json=answers_json,
+        context_json=context_json,
+    )
+    state, error = "failed", "Script run ended unexpectedly."
+    try:
+        hooks = (
+            implementations(lambda attempt_id: store.link_child(run_id, attempt_id))
+            if callable(implementations)
+            else implementations
+        )
+        result = run_script(source, hooks, limits=limits, cancel=cancel)
+        state, error = result.status, result.error
+        return run_id, result
+    except BaseException as exc:
+        error = f"Script run failed: {type(exc).__name__}."
+        raise
+    finally:
+        if not store.finish(run_id, state, error):
+            log.warning("Script run %s was no longer running when it finished; its ledger state was kept.", run_id)
 
 
 def _linux_contained() -> bool:

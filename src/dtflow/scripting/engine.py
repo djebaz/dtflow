@@ -24,6 +24,7 @@ MAX_SOURCE_BYTES = 1_048_576
 MAX_CALL_BYTES = 8 * 1024 * 1024
 SHARED_SCRIPT_RESOURCE = "shared_script.js"
 ACORN_RESOURCE = "acorn.js"
+ACORN_VERSION = "8.14.0"
 
 BRIDGE = """
 globalThis.console = {};  // JavaScriptCore provides `console`; the vendored script only assigns its methods.
@@ -75,6 +76,23 @@ def shared_script() -> str:
 def acorn_source() -> str:
     """Vendored Acorn 8.14.0 (see resources/acorn.NOTICE.txt); used only by the parse-only analyzer."""
     return resources.files("dtflow.scripting").joinpath("resources", ACORN_RESOURCE).read_text("utf-8")
+
+
+def engine_versions() -> dict[str, str]:
+    """Parser and engine versions for reports, so a parse/run syntax mismatch is traceable."""
+    from importlib import metadata
+
+    try:
+        engine = metadata.version("quickjs-ng")
+    except metadata.PackageNotFoundError:
+        engine = "unknown"
+    return {"acorn": ACORN_VERSION, "quickjs-ng": engine}
+
+
+def shared_script_sha256() -> str:
+    import hashlib
+
+    return hashlib.sha256(shared_script().encode("utf-8")).hexdigest()
 
 
 def api_version(source: str) -> str | None:

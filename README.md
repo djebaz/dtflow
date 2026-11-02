@@ -127,5 +127,6 @@ Manage dependencies through uv and commit `pyproject.toml` and `uv.lock` togethe
 
 ## License
 
-DTFlow is licensed under **GPL-3.0-only**. See [LICENSE](LICENSE) and the
+DTFlow is licensed under **GPL-3.0-only**. It bundles the MIT-licensed Acorn parser unmodified; see
+[its notice](src/dtflow/scripting/resources/acorn.NOTICE.txt). See [LICENSE](LICENSE) and the
 [dependency licensing decision](devdocs/decisions/0001-drawthings-py-license.md).

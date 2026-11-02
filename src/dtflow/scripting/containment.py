@@ -20,6 +20,27 @@ def die_with_parent() -> None:
         pass
 
 
+def child_in_job() -> bool | None:
+    """Child side (Windows): whether this process is in any Job Object. ``None`` elsewhere or when unknown.
+
+    Evidence only: a job inherited from a launcher or shell also answers True."""
+    if sys.platform != "win32":
+        return None
+    try:
+        import ctypes
+        from ctypes import wintypes
+
+        kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+        kernel32.GetCurrentProcess.restype = wintypes.HANDLE
+        kernel32.IsProcessInJob.argtypes = [wintypes.HANDLE, wintypes.HANDLE, ctypes.POINTER(wintypes.BOOL)]
+        result = wintypes.BOOL()
+        if not kernel32.IsProcessInJob(kernel32.GetCurrentProcess(), None, ctypes.byref(result)):
+            return None
+        return bool(result.value)
+    except Exception:
+        return None
+
+
 class Containment:
     """Parent side (Windows): a Job Object with KILL_ON_JOB_CLOSE holding the child; closing it kills the child."""
 

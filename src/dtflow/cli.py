@@ -156,6 +156,13 @@ def parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Run the non-generative engine self-check (child process, Stop, deadline, memory); no network.",
     )
+    script.add_argument(
+        "--hold-child",
+        type=Path,
+        metavar="PIDS_JSON",
+        help="Manual diagnostic: run a busy script child, write the parent and child pids to this file and wait "
+        "(kill the parent to check the child dies with it).",
+    )
     script.add_argument("-o", "--out", type=Path, help="With --check-engine, write the JSON report to this file.")
     add_edit_command(commands)
     add_queue_commands(commands)
@@ -670,6 +677,10 @@ async def run_edit(args: argparse.Namespace) -> int:
 
 def run_script_command(args: argparse.Namespace) -> int:
     """Offline analysis or engine self-check; no provider, credentials, state directory or generation."""
+    if args.hold_child is not None:
+        from dtflow.scripting.selfcheck import hold_child
+
+        return hold_child(args.hold_child)
     if args.check_engine:
         from dtflow.scripting.selfcheck import main as selfcheck
 

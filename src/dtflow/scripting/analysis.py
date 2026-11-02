@@ -13,7 +13,7 @@ from functools import cache
 from pathlib import Path
 
 
-from dtflow.scripting.engine import MAX_SOURCE_BYTES, api_version, shared_script
+from dtflow.scripting.engine import MAX_SOURCE_BYTES, api_version, engine_versions, shared_script
 from dtflow.scripting.hooks import HOOKS, IMPLEMENTED, PLANNED, UNSUPPORTED
 
 _SCOPE = re.compile(r"^(?:const|class|function)\s+([A-Za-z_]\w*)")
@@ -144,6 +144,7 @@ def analyze_script(path: Path) -> dict:
         "sha256": hashlib.sha256(data).hexdigest(),
         "bytes": len(data),
         "api_version": version,
+        "versions": engine_versions(),
         "syntax_valid": syntax is None,
         "syntax_error": syntax,
         "calls": calls,

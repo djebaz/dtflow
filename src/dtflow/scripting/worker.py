@@ -9,7 +9,9 @@ from __future__ import annotations
 
 import json
 
-from dtflow.scripting.containment import die_with_parent
+import os
+
+from dtflow.scripting.containment import child_in_job, die_with_parent
 from dtflow.scripting.engine import MAX_CALL_BYTES, ScriptEngine, ScriptEngineError, ScriptLimits
 
 
@@ -19,6 +21,8 @@ def main(connection) -> None:
         connection.send({"ready": True})
         request = connection.recv()
         limits = ScriptLimits(**request["limits"])
+        # The parent contains this process before it sends the script request, so this is evidence about containment order.
+        connection.send({"started": {"pid": os.getpid(), "in_job": child_in_job()}})
 
         def call(name: str, payload: str) -> str:
             if len(payload) > MAX_CALL_BYTES:  # refuse before the parent has to receive and unpickle it
@@ -42,7 +46,8 @@ def syntax_main(connection) -> None:
     QuickJS context that has no host bridge and no hooks.
 
     The script reaches the parser only as a string value, so no part of it is compiled or run by the engine. The options
-    mirror upstream's wrapper: scripts are function bodies, so top-level ``return`` is accepted. The child exists only to
+    mirror upstream's wrapper: scripts are function bodies, so top-level ``return`` is accepted and a leading ``#!``
+    line is not (the runtime wrapper rejects it too). The child exists only to
     bound memory and time on pathological input."""
     die_with_parent()
     try:
@@ -59,7 +64,7 @@ def syntax_main(connection) -> None:
             context.set("__source", source)
             context.eval(
                 'acorn.parse(__source, {ecmaVersion: "latest", sourceType: "script", '
-                "allowReturnOutsideFunction: true, allowHashBang: true}); true"
+                "allowReturnOutsideFunction: true, allowHashBang: false}); true"
             )
             connection.send({"error": None})
         except quickjs.JSException as exc:

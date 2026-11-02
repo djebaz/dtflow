@@ -17,7 +17,7 @@ import threading
 import time
 from pathlib import Path
 
-from dtflow.scripting.engine import ScriptLimits
+from dtflow.scripting.engine import ScriptLimits, engine_versions
 from dtflow.scripting.runner import RunResult, run_script
 
 CHECKS = (
@@ -28,14 +28,17 @@ CHECKS = (
     ("Stop terminates a busy JS loop", "stop"),
     ("segment deadline terminates a busy JS loop", "deadline"),
     ("memory limit stops runaway allocation", "memory"),
+    ("analyzer parses without evaluating (valid, broken and breakout scripts)", "analyzer"),
 )
 MARKER = "started"
 startup_samples: list[float] = []
+containment_samples: list[RunResult] = []
 
 
 def _record(result: RunResult) -> RunResult:
     if result.startup_seconds is not None:
         startup_samples.append(result.startup_seconds)
+    containment_samples.append(result)
     return result
 
 
@@ -99,6 +102,17 @@ def _run(kind: str) -> str:
         )
         assert MARKER in seen and result.status == "failed" and "memory" in (result.error or "").lower(), (seen, result)
         return result.error or ""
+    if kind == "analyzer":
+        from dtflow.scripting.runner import check_syntax
+
+        started = time.monotonic()
+        valid = check_syntax("const a = 1;\nreturn a;")
+        broken = check_syntax("let = = 1")
+        breakout = check_syntax("}); while (true) {}; (function(){")
+        assert valid is None, valid
+        assert broken and "SyntaxError" in broken, broken
+        assert breakout and "SyntaxError" in breakout, breakout
+        return f"3 scripts parsed in {round(time.monotonic() - started, 2)}s; breakout rejected: {breakout}"
     raise AssertionError(kind)
 
 
@@ -138,6 +152,17 @@ def run_selfcheck() -> dict:
             "min": min(startup_samples) if startup_samples else None,
             "max": max(startup_samples) if startup_samples else None,
         },
+        "versions": engine_versions(),
+        "containment": {
+            # Evidence for the owner, not proof: contained is what the parent managed; child_in_job is what the JS
+            # process itself reported (Windows only); differing pids mean a launcher stub sits between them.
+            "contained": all(item.contained for item in containment_samples) if containment_samples else None,
+            "child_in_job": sorted({str(item.child_in_job) for item in containment_samples}),
+            "launcher_stub": any(
+                item.spawned_pid and item.child_pid and item.spawned_pid != item.child_pid
+                for item in containment_samples
+            ),
+        },
         "ok": all(item["status"] == "ok" for item in results),
         "checks": results,
     }
@@ -154,3 +179,34 @@ def main(out: Path | None = None) -> int:
     else:
         print(text, end="")
     return 0 if report["ok"] else 1
+
+
+def hold_child(out: Path) -> int:
+    """Manual diagnostic: start the real contained script child on a busy loop and wait, so the owner can kill this
+    process and check whether the child disappears (``taskkill /F /PID <parent>``, then ``tasklist``). Ctrl+C stops it.
+    Writes the pids to ``out`` as soon as the child can run JavaScript and prints them too (when there is a console)."""
+    out = Path(out)
+
+    def announce(result: RunResult) -> None:
+        info = {
+            "parent_pid": os.getpid(),
+            "spawned_pid": result.spawned_pid,
+            "child_pid": result.child_pid,
+            "contained": result.contained,
+            "child_in_job": result.child_in_job,
+            "note": "Kill parent_pid, wait 3 s, then check child_pid and spawned_pid are gone (tasklist /FI).",
+        }
+        temporary = out.with_name(out.name + ".part")
+        temporary.write_text(json.dumps(info, indent=2) + "\n", encoding="utf-8")
+        os.replace(temporary, out)
+        print(json.dumps(info, indent=2), flush=True)
+
+    cancel = threading.Event()
+    try:
+        result = run_script(
+            "while (true) {}", limits=ScriptLimits(js_segment_seconds=3600.0), cancel=cancel, on_started=announce
+        )
+    except KeyboardInterrupt:
+        return 130
+    print(f"Run ended: {result.status} {result.error or ''}", flush=True)
+    return 0
