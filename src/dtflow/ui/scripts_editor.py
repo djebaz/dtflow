@@ -22,20 +22,24 @@ class _LineNumbers(QWidget):
     def __init__(self, editor: "ScriptCodeEdit"):
         super().__init__(editor)
         self.editor = editor
+        tokens = load_tokens()
+        self._background = QColor(tokens["color.scriptEditorGutter"])
+        self._line_number_color = QColor(tokens["color.scriptEditorLineNumber"])
+        self._separator = QColor(tokens["color.border"])
 
     def sizeHint(self):
         return QSize(self.editor.line_number_width(), 0)
 
     def paintEvent(self, event):
         painter = QPainter(self)
-        painter.fillRect(event.rect(), QColor("#252525"))
+        painter.fillRect(event.rect(), self._background)
         first = self.editor.firstVisibleBlock()
         number = first.blockNumber()
         top = round(self.editor.blockBoundingGeometry(first).translated(self.editor.contentOffset()).top())
         bottom = top + round(self.editor.blockBoundingRect(first).height())
         while first.isValid() and top <= event.rect().bottom():
             if first.isVisible() and bottom >= event.rect().top():
-                painter.setPen(QColor("#8f8f8f"))
+                painter.setPen(self._line_number_color)
                 painter.drawText(
                     0, top, self.width() - 7, self.editor.fontMetrics().height(),
                     Qt.AlignmentFlag.AlignRight, str(number + 1)
@@ -44,6 +48,8 @@ class _LineNumbers(QWidget):
             top = bottom
             bottom = top + round(self.editor.blockBoundingRect(first).height())
             number += 1
+        painter.setPen(self._separator)
+        painter.drawLine(self.width() - 1, event.rect().top(), self.width() - 1, event.rect().bottom())
 
 
 class _JavaScriptColors(QSyntaxHighlighter):
@@ -94,7 +100,7 @@ class ScriptCodeEdit(QPlainTextEdit):
 
     def line_number_width(self) -> int:
         digits = len(str(max(1, self.blockCount())))
-        return 10 + self.fontMetrics().horizontalAdvance("9") * digits
+        return max(40, 16 + self.fontMetrics().horizontalAdvance("9") * digits)
 
     def _update_gutter_width(self, _):
         self.setViewportMargins(self.line_number_width(), 0, 0, 0)
