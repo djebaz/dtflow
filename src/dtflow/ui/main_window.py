@@ -363,6 +363,7 @@ class MainWindow:
         )
         self.scripts.run_start = self.queue.start_script
         self.scripts.settings_source = self._script_settings
+        self.scripts.generate_form = self.generation_page
         self.scripts.go_generate_hook = lambda: self._leave_scripts(inpaint=False)
         startup.mark("queue and image operation controllers")
         self.generation_page.inpaintModeButton.toggled.connect(lambda _on: self.queue.sync_edit_fields())

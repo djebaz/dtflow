@@ -17,6 +17,7 @@ from PySide6.QtCore import QSize, Qt, QTimer
 from PySide6.QtGui import QFont, QImage, QPixmap
 from PySide6.QtWidgets import (
     QButtonGroup,
+    QComboBox,
     QFileDialog,
     QFrame,
     QHBoxLayout,
@@ -25,6 +26,7 @@ from PySide6.QtWidgets import (
     QPushButton,
     QScrollArea,
     QSizePolicy,
+    QSpinBox,
     QVBoxLayout,
     QWidget,
 )
@@ -372,6 +374,35 @@ class ScriptsPage:
         panel_layout.insertWidget(1, self.run_settings)
         panel_layout.insertWidget(2, self.go_generate)
         self.run_settings.hide()
+        # Minimal pickers: the same values Start uses, written through to the Generate form (one source of truth).
+        self.generate_form = None  # the Generate page widgets (modelCombo, widthSpinBox, heightSpinBox, stepsSpinBox)
+        self.picker_row = QWidget()
+        row = QHBoxLayout(self.picker_row)
+        row.setContentsMargins(0, 0, 0, 0)
+        row.setSpacing(6)
+        self.pick_model = QComboBox()
+        self.pick_model.setEditable(True)
+        self.pick_model.setInsertPolicy(QComboBox.InsertPolicy.NoInsert)
+        self.pick_model.setAccessibleName("Model for this run")
+        self.pick_model.setToolTip("Same model as on Generate. Pick one from the list or type its identifier.")
+        row.addWidget(self.pick_model, 1)
+        self.pick_spins = {}
+        for key, label, low, high, step in (
+            ("widthSpinBox", "W", 64, 4096, 64),
+            ("heightSpinBox", "H", 64, 4096, 64),
+            ("stepsSpinBox", "Steps", 1, 200, 1),
+        ):
+            row.addWidget(_label(label, role="scriptsMuted"))
+            spin = QSpinBox()
+            spin.setRange(low, high)
+            spin.setSingleStep(step)
+            spin.setAccessibleName(f"{label} for this run")
+            spin.valueChanged.connect(lambda value, name=key: self._push_picker(name, value))
+            row.addWidget(spin)
+            self.pick_spins[key] = spin
+        self.pick_model.currentTextChanged.connect(lambda text: self._push_picker("modelCombo", text))
+        panel_layout.insertWidget(1, self.picker_row)
+        self.picker_row.hide()
         self.acknowledge.toggled.connect(self._refresh_readiness)
         self.designer.backToFormButton.clicked.connect(self._review_run)
         self.designer.reviewRunButton.clicked.connect(self._review_run)
@@ -1208,6 +1239,7 @@ class ScriptsPage:
         ready = self._reference_mode and supported and not missing_source and self._run_state not in LIVE_STATES
         problem = None
         if self._live_mode():
+            self._sync_pickers()
             partial = False
             summary, problem = self.settings_source() if self.settings_source else ("", None)
             self.run_settings.setText(summary)
@@ -1782,6 +1814,40 @@ class ScriptsPage:
         "interrupted_before_submission": "not submitted",
         None: "recorded, no state yet",
     }
+
+    def _sync_pickers(self) -> None:
+        """Pull the Generate form's model, size and steps into the pickers (without writing back)."""
+        form = self.generate_form
+        show = form is not None and self._live_mode()
+        self.picker_row.setVisible(show)
+        if not show:
+            return
+        widgets = [self.pick_model, *self.pick_spins.values()]
+        for widget in widgets:
+            widget.blockSignals(True)
+        try:
+            combo = form.modelCombo
+            names = [combo.itemText(i) for i in range(combo.count())]
+            if [self.pick_model.itemText(i) for i in range(self.pick_model.count())] != names:
+                self.pick_model.clear()
+                self.pick_model.addItems(names)
+            self.pick_model.setCurrentText(combo.currentText())
+            for key, spin in self.pick_spins.items():
+                spin.setValue(getattr(form, key).value())
+        finally:
+            for widget in widgets:
+                widget.blockSignals(False)
+
+    def _push_picker(self, name: str, value) -> None:
+        form = self.generate_form
+        if form is None:
+            return
+        widget = getattr(form, name)
+        if name == "modelCombo":
+            widget.setCurrentText(value)
+        else:
+            widget.setValue(value)
+        self._refresh_readiness()
 
     def _live_mode(self) -> bool:
         return self._live and not self._reference_mode and self.run_start is not None
