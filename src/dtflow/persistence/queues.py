@@ -1373,7 +1373,16 @@ def _read(connection: sqlite3.Connection, queue_id: str | None) -> tuple[dict[st
                     **_item_request_fields(request),
                     "failure": json.loads(item["failure_json"]) if item["failure_json"] else None,
                     "artifacts": json.loads(item["artifacts_json"]) if item["artifacts_json"] else [],
-                    **({"script": script, "prompt": f"Script: {request.get('source_name', '')}"} if script else {}),
+                    **(
+                        {
+                            "script": script,
+                            "prompt": f"Script: {request.get('source_name', '')}",
+                            # every step's saved files in call order, so the item row shows what the run produced
+                            "artifacts": [path for child in script["children"] for path in child["artifacts"]],
+                        }
+                        if script
+                        else {}
+                    ),
                 }
             )
         durations = _item_durations(connection, row["queue_id"])
