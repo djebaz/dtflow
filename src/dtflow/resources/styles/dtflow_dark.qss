@@ -2155,3 +2155,31 @@ QFrame#scriptsInspectBanner[feedbackState="warning"] QLabel#scriptsBannerTitle {
 QFrame#scriptsInspectBanner[feedbackState="error"] QLabel#scriptsBannerTitle {
   color: ${color.error};
 }
+
+/* Scripts: mockup-consistent empty canvas and structured compatibility rows. */
+QFrame#scriptsEmptyCanvas {
+  background: ${color.canvas};
+  border: 1px solid ${color.border};
+  border-radius: ${size.panelRadius};
+}
+QLabel#scriptsEmptyTitle {
+  color: ${color.title};
+  font-weight: ${type.weightEmphasis};
+  font-size: ${type.section};
+}
+QFrame#scriptsHookItem {
+  border: 0;
+  border-bottom: 1px solid ${color.sectionBorder};
+  background: transparent;
+}
+QLabel#scriptsHookName {
+  color: ${color.text};
+  font-family: ${type.monoFamily};
+}
+QLabel#scriptsHookVerdict {
+  font-size: ${type.small};
+  color: ${color.secondary};
+}
+QLabel#scriptsHookVerdict[feedbackState="supported"] { color: ${color.success}; }
+QLabel#scriptsHookVerdict[feedbackState="deferred"] { color: ${color.warning}; }
+QLabel#scriptsHookVerdict[feedbackState="unsupported"] { color: ${color.error}; }
