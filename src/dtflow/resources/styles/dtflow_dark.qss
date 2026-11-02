@@ -2054,3 +2054,79 @@ QPlainTextEdit#scriptsCodeEditor {
   border: 1px solid ${color.borderStrong};
   border-radius: ${size.inputRadius};
 }
+
+/* Native Generate > Scripts. No local palette outside the editor. */
+QLabel#scriptsPageTitle {
+  color: ${color.title};
+  font-size: ${type.section};
+  font-weight: ${type.weightEmphasis};
+}
+QLabel#scriptsCardTitle, QLabel#scriptsFormSection {
+  color: ${color.title};
+  font-size: ${type.section};
+  font-weight: ${type.weightEmphasis};
+  padding: 4px 0;
+  border-bottom: 1px solid ${color.sectionBorder};
+}
+QLabel#scriptsMuted, QLabel#scriptsFormSupporting,
+QLabel#scriptsFieldLabel, QLabel#scriptsEditorDiagnostic {
+  color: ${color.secondary};
+}
+QLabel#scriptsCompatibility[feedbackState="ok"] { color: ${color.success}; }
+QLabel#scriptsCompatibility[feedbackState="warning"] { color: ${color.warning}; }
+QLabel#scriptsCompatibility[feedbackState="error"] { color: ${color.error}; }
+QLabel#scriptsEditorDiagnostic[feedbackState="error"] {
+  color: ${color.error};
+  font-weight: ${type.weightEmphasis};
+}
+QLabel#scriptsFieldValue {
+  color: ${color.text};
+  font-family: ${type.monoFamily};
+}
+QLabel#scriptsImageTile {
+  background: ${color.canvas};
+  border: 1px solid ${color.border};
+  border-radius: ${size.inputRadius};
+  color: ${color.secondary};
+}
+QLabel#scriptsCanvasPreview {
+  background: ${color.canvas};
+  border: 1px solid ${color.border};
+  border-radius: ${size.panelRadius};
+  color: ${color.secondary};
+}
+QFrame#scriptsStartPanel, QFrame#scriptsDetailsDrawer {
+  background: ${color.surface};
+  border: 1px solid ${color.sectionBorder};
+  border-radius: ${size.panelRadius};
+}
+QLabel#scriptsEditorRunNote {
+  color: ${color.warning};
+  background: ${color.warningSurface};
+  border: 1px solid ${color.warning};
+  border-radius: ${size.inputRadius};
+  padding: 7px;
+}
+QPlainTextEdit#scriptsRunConsole {
+  background: ${color.canvas};
+  color: ${color.secondary};
+  font-family: ${type.monoFamily};
+  border: 1px solid ${color.border};
+  border-radius: ${size.inputRadius};
+}
+QListWidget#scriptsLibraryList, QListWidget#scriptsHistoryList,
+QListWidget#scriptsResultsList {
+  background: ${color.canvas};
+  color: ${color.text};
+  border: 1px solid ${color.sectionBorder};
+  border-radius: ${size.inputRadius};
+}
+QListWidget#scriptsLibraryList::item {
+  min-height: 36px;
+  padding: 5px 8px;
+  border-bottom: 1px solid ${color.sectionBorder};
+}
+QListWidget#scriptsLibraryList::item:selected {
+  color: ${color.selectionText};
+  background: ${color.selection};
+}
