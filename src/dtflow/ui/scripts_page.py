@@ -216,28 +216,35 @@ class ScriptsPage:
 
     def _build_center(self):
         layout = self.center.layout()
-        mode = QHBoxLayout()
+        mode_row = QHBoxLayout()
+        mode_row.setContentsMargins(0, 0, 0, 0)
+        mode_frame = QFrame(self.center)
+        mode_frame.setObjectName("scriptsModeSwitch")
+        mode_frame.setProperty("role", "segmented")
+        mode = QHBoxLayout(mode_frame)
+        mode.setContentsMargins(0, 0, 0, 0)
         mode.setSpacing(0)
-        self.mode_group = QButtonGroup(self.center)
+        self.mode_group = QButtonGroup(mode_frame)
         self.mode_group.setExclusive(True)
-        for text, attr in (
-            ("Text to image", "text_mode"),
-            ("Inpaint", "inpaint_mode"),
-            ("Scripts", "scripts_mode"),
+        for text, attr, edge in (
+            ("Text to image", "text_mode", "first"),
+            ("Inpaint", "inpaint_mode", "middle"),
+            ("Scripts", "scripts_mode", "last"),
         ):
             button = QPushButton(text)
             button.setCheckable(True)
-            button.setProperty("role", "mode")
+            button.setProperty("segmentEdge", edge)
             setattr(self, attr, button)
             self.mode_group.addButton(button)
             mode.addWidget(button)
         self.scripts_mode.setChecked(True)
-        mode.addStretch(1)
+        mode_row.addWidget(mode_frame)
+        mode_row.addStretch(1)
         self.details_button = QPushButton("Details")
         self.details_button.setAccessibleName("Show Scripts inspector details")
         self.details_button.clicked.connect(self.toggle_details)
-        mode.addWidget(self.details_button)
-        layout.addLayout(mode)
+        mode_row.addWidget(self.details_button)
+        layout.addLayout(mode_row)
         title = QHBoxLayout()
         self.script_title = _label("No script selected", role="scriptsPageTitle")
         title.addWidget(self.script_title, 1)
@@ -249,18 +256,29 @@ class ScriptsPage:
         self.run_identity = _label("Run #5 · version 9f3a1c2 · started 22 Oct 21:12", role="scriptsMuted")
         self.run_identity.hide()
         layout.addWidget(self.run_identity)
-        tabs = QHBoxLayout()
+        tab_row = QHBoxLayout()
+        tab_row.setContentsMargins(0, 0, 0, 0)
+        tab_frame = QFrame(self.center)
+        tab_frame.setObjectName("scriptsViewSwitch")
+        tab_frame.setProperty("role", "segmented")
+        tabs = QHBoxLayout(tab_frame)
+        tabs.setContentsMargins(0, 0, 0, 0)
         tabs.setSpacing(0)
         self.tab_buttons: list[QPushButton] = []
-        for name, index in (("Inspect", 0), ("Configure", 1), ("Code", 2)):
+        for name, index, edge in (
+            ("Inspect", 0, "first"),
+            ("Configure", 1, "middle"),
+            ("Code", 2, "last"),
+        ):
             tab = QPushButton(name)
             tab.setCheckable(True)
-            tab.setProperty("role", "mode")
+            tab.setProperty("segmentEdge", edge)
             tab.clicked.connect(lambda checked=False, target=index: self.show_view(target))
             self.tab_buttons.append(tab)
             tabs.addWidget(tab)
-        tabs.addStretch(1)
-        layout.addLayout(tabs)
+        tab_row.addWidget(tab_frame)
+        tab_row.addStretch(1)
+        layout.addLayout(tab_row)
         self.views = QStackedWidget()
         self.views.setObjectName("scriptsContentStack")
         self._build_inspect()
