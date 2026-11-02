@@ -38,7 +38,7 @@ REFERENCE_SCRIPTS = (
 )
 
 REFERENCE_HOOKS = (
-    ("pipeline.run", "supported", "Each call is one generation attempt"),
+    ("pipeline.run", "supported", "Each call is a child step of the run's queue item"),
     ("canvas.saveImage", "supported", "Stored in the run sandbox"),
     ("requestFromUser", "supported", "Rendered as an inline form"),
     ("canvas.moveCanvas", "deferred", "Virtual until a generation"),
@@ -93,9 +93,15 @@ EDITOR_BASE = "\n".join(
 
 
 RUN_STATUSES = {
-    "queued": ("Queued behind 3 items", "Nothing submitted. Waiting 0:42 · Cancel is free."),
+    "queued": (
+        "Queued behind 3 items",
+        "Queue item waiting for admission. Nothing submitted · waiting 0:42 · Cancel is free.",
+    ),
     "cancelled_before_start": ("Cancelled before start", "No provider submission and no charge."),
-    "running": ("Running", "Generation 3 submitted · latest committed result below."),
+    "running": (
+        "Running",
+        "Queue item running · generation 3 submitted as a child step · latest committed result below.",
+    ),
     "waiting_input": (
         "Waiting for your input",
         "The script is paused. A generation already submitted may still complete.",
@@ -1022,10 +1028,10 @@ class ScriptsPage:
         for hook, state, detail in self._current_hooks:
             layout.addWidget(_hook_item(hook, state, detail))
         entries = [
-            ("#4 · Succeeded", "0:41", "4 generations · version 9f3a1c2", "ok"),
-            ("#3 · Stopped locally", "0:19", "2 generations · version 9f3a1c2", "warning"),
-            ("#2 · Failed", "0:13", "21 Oct 22:13 · version b81e07d", "error"),
-            ("#1 · Outcome unknown", "", "21 Oct 21:58 · version b81e07d", "warning"),
+            ("#4 · Succeeded", "0:41", "Queue item q-0004 · 4 child steps · version 9f3a1c2", "ok"),
+            ("#3 · Stopped locally", "0:19", "Queue item q-0003 · 2 child steps · version 9f3a1c2", "warning"),
+            ("#2 · Failed", "0:13", "Queue item q-0002 · 21 Oct 22:13 · version b81e07d", "error"),
+            ("#1 · Outcome unknown", "", "Queue item q-0001 · 21 Oct 21:58 · version b81e07d", "warning"),
         ]
         if self._run_state and self._run_state != "results":
             entries.insert(
@@ -1033,21 +1039,24 @@ class ScriptsPage:
                 (
                     f"#{self._run_number} · {RUN_STATUSES[self._run_state][0]}",
                     "0:42" if self._run_state == "queued" else "",
-                    f"Preview run · version {self._run_version}",
+                    f"Queue item q-{self._run_number:04d} · preview run · version {self._run_version}",
                     self._run_color(),
                 ),
             )
         if self._prior_unresolved and (
             self._run_number != 5 or self._run_state not in ("interrupted", "outcome_unknown")
         ):
-            entries.insert(0, ("#5 · Outcome unknown", "", "Generation 3 unresolved · may be billed", "warning"))
+            entries.insert(
+                0,
+                ("#5 · Outcome unknown", "", "Queue item q-0005 · child step 3 unresolved · may be billed", "warning"),
+            )
         if self._run_state == "results" and self._run_number != 4:
             entries.insert(
                 0,
                 (
                     f"#{self._run_number} · Succeeded",
                     "0:41",
-                    f"{min(4, self._run_cap)} generations · version {self._run_version}",
+                    f"Queue item q-{self._run_number:04d} · {min(4, self._run_cap)} child steps · version {self._run_version}",
                     "ok",
                 ),
             )
@@ -1178,7 +1187,7 @@ class ScriptsPage:
         if key == "results":
             self.show_view(4)
             self.run_identity.setText(
-                f"Run #{self._run_number} · version {self._run_version} · completed 22 Oct 20:41 · offline fixture"
+                f"Run #{self._run_number} · queue item q-{self._run_number:04d} · version {self._run_version} · completed 22 Oct 20:41 · offline fixture"
             )
             self.results_header.setText("Committed steps · offline fixtures")
             self._populate_results()
@@ -1186,7 +1195,7 @@ class ScriptsPage:
             self.show_view(3)
             queued = key in ("queued", "cancelled_before_start")
             self.run_identity.setText(
-                f"Run #{self._run_number} · version {self._run_version} · {'queued' if queued else 'started'} 22 Oct 21:12 · offline fixture"
+                f"Run #{self._run_number} · queue item q-{self._run_number:04d} · version {self._run_version} · {'queued' if queued else 'started'} 22 Oct 21:12 · offline fixture"
             )
             status, detail = RUN_STATUSES[key]
             if key == "running" and self._run_cap < 3:
@@ -1206,15 +1215,15 @@ class ScriptsPage:
                     f"Offline result illustration · generation {min(2, self._run_cap)} · 512 × 320 · seed 4182"
                 )
             self.console.setPlainText(
-                "0:00.0 Waiting for admission behind 3 items. Nothing submitted."
+                "0:00.0 Queue item waiting for admission behind 3 items. Nothing submitted."
                 if key == "queued"
-                else "0:42.0 Cancelled before admission. Nothing submitted or charged."
+                else "0:42.0 Queue item cancelled before admission. Nothing submitted or charged."
                 if key == "cancelled_before_start"
-                else f"0:00.0 Script started · version {self._run_version}\n0:02.1 Step 1 · red · committed\n0:11.8 Step 2 · green · committed\nOffline fixture only: no provider was called."
+                else f"0:00.0 Script started as one queue item · version {self._run_version}\n0:02.1 Child step 1 · red · committed\n0:11.8 Child step 2 · green · committed\nOffline fixture only: no provider was called."
             )
             if not queued and self._run_cap == 1:
                 self.console.setPlainText(
-                    f"0:00.0 Script started · version {self._run_version}\n0:02.1 Step 1 · red · committed\nOffline fixture only · cap 1; no provider was called."
+                    f"0:00.0 Script started as one queue item · version {self._run_version}\n0:02.1 Child step 1 · red · committed\nOffline fixture only · cap 1; no provider was called."
                 )
         self.run_footer.setText(
             "Stop script in the activity bar ends local waiting; remote work may still complete. Text-only console · last 500 lines kept."
@@ -1314,11 +1323,11 @@ class ScriptsPage:
                 key,
                 0,
                 0,
-                detail="Nothing submitted; waiting for admission."
+                detail="One queue item · nothing submitted; waiting for admission."
                 if queued
                 else f"Run #{self._run_number} · waiting for input; remote work may still complete."
                 if state == "waiting_input"
-                else f"Run #{self._run_number} · offline running fixture",
+                else f"Run #{self._run_number} · one queue item · child step 2 of up to {self._run_cap}",
                 elapsed="Waiting 0:42" if queued else "0:12",
                 stage="Queued behind 3 items"
                 if queued

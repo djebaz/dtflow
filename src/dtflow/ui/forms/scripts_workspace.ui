@@ -2812,7 +2812,7 @@ Create one or import a local .js file.</string>
          <item>
           <widget class="QLabel" name="startDisclosure">
            <property name="text">
-            <string>Starting settings estimate: unavailable; backend is unchecked. Scripts can override settings on every call. Cloud sources may be uploaded and generations may be charged. A busy backend queues the run for serialized admission; cancellation before admission is free. Offline preview: no work is submitted.</string>
+            <string>Starting settings estimate: unavailable; backend is unchecked. Scripts can override settings on every call. Cloud sources may be uploaded and generations may be charged. The whole run is one queue item with the usual admission; if the backend is busy it waits in the queue, and cancelling before admission is free. Offline preview: no work is submitted.</string>
            </property>
            <property name="role" stdset="0">
             <string>scriptsMuted</string>

@@ -63,9 +63,9 @@ The two proposed extras are not in the issue's list; drop them if not wanted.
 
 ## Owner questions: recommendations
 2. **Canvas entry:** both (Inpaint handoff and a source picker in Scripts); the mockup shows the handoff only.
-3. **Same backend queue:** shared admission, serialized dispatch. The start bar says so. Refusing Start would hide a paid run's availability.
-4. **History:** Scripts history only, with child attempts linked into Images and Queues ("Created by script X, step N"). No queue entries.
-5. **Persistent user-file area:** no; per-run sandbox only.
+3. **Same backend queue:** a script run is one queue item with the same admission, scheduling and Queues listing as any queue item; no script-specific dispatcher. The start bar says so.
+4. **History and queue:** one queue item per whole script run (not per generation). Its `generateImage` calls appear as child steps ("Created by script X, run #N, step M"), linked into Images and Queues. One Stop/Cancel for the whole item. The durable ScriptRun record stays and History lists it with its queue item. (Reverses the earlier "Scripts history only, no queue entries" recommendation.)
+5. **Persistent user-file area:** no; per-run sandbox only, and no per-script folder is shown anywhere in the UI.
 6. **loadLayerFromPhotos / Files:** native pickers are supported in the target design (owner reaffirmed 2026-11-02). Runtime hooks are not wired by the desktop preview; `console.repl` supplies the unsupported example instead.
 
 ## Not designed here
@@ -88,9 +88,9 @@ Import errors (file too large, not UTF-8), the library full state (50 versions),
 
 ## Owner decisions (resolved, round 1–5)
 1. **Canvas entry:** both. Inpaint handoff plus a **Source image** row at the top of Configure (No source / Images gallery… / Local file… / Inpaint canvas). Optional unless the script header says required (then Start is disabled with the reason in red text). The source is an immutable copy taken at Start; changing it needs a new run.
-2. **Backend busy:** shared admission, serialized dispatch. Start stays enabled; the run shows **Queued behind N items** (nothing submitted, nothing charged). The activity bar shows `Queued behind 3 items`, a separate `Waiting 0:42` counter, and **Cancel** instead of Stop script. Elapsed starts at admission.
-3. **Cancel while queued:** free; the run stays in History as *Cancelled before start* and the activity bar shows a stopped-style result.
-4. **History:** Scripts history only, children linked into Images and Queues.
+2. **Backend busy:** the run is one queue item using shared admission and scheduling. Start stays enabled; the run shows **Queued behind N items** (nothing submitted, nothing charged). The activity bar shows `Queued behind 3 items`, a separate `Waiting 0:42` counter, and **Cancel** instead of Stop script. Elapsed starts at admission.
+3. **Cancel while queued:** free (cancels the queue item); the run stays in History as *Cancelled before start* and the activity bar shows a stopped-style result.
+4. **History and queue:** one queue item for the whole script run, generations shown as child steps linked into Images and Queues; the ScriptRun record is kept (Run #N shows its queue item id). Fixtures show queued, running and history rows as "Queue item q-NNNN · N child steps".
 5. **Files:** per-run sandbox only.
 6. **Photos / Files pickers:** native pickers supported in the target design; runtime hook integration remains separate from this offline UI slice.
 7. **Form discovery:** static inspection only, nothing is executed. Configure shows the source, starting settings, cap and (when statically known) the script's controls; dynamic forms appear when the run asks (requestFromUser).
