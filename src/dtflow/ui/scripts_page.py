@@ -483,8 +483,13 @@ class ScriptsPage:
         """Build non-interactive attempt cards for the offline screenshot fixtures."""
         while self.results_layout.count():
             item = self.results_layout.takeAt(0)
-            if item.widget() is not None:
-                item.widget().deleteLater()
+            widget = item.widget()
+            if widget is not None:
+                # deleteLater() alone leaves visible orphans until Qt handles
+                # DeferredDelete. Hide and detach before rebuilding a live page.
+                widget.hide()
+                widget.setParent(None)
+                widget.deleteLater()
         for number, color in enumerate(("red", "green", "blue", "amber"), 1):
             card = QFrame()
             card.setObjectName("scriptsStepCard")
@@ -681,8 +686,13 @@ class ScriptsPage:
         )
         while self.hook_list.count():
             item = self.hook_list.takeAt(0)
-            if item.widget() is not None:
-                item.widget().deleteLater()
+            widget = item.widget()
+            if widget is not None:
+                # deleteLater() alone leaves visible orphans until Qt handles
+                # DeferredDelete. Hide and detach before rebuilding a live page.
+                widget.hide()
+                widget.setParent(None)
+                widget.deleteLater()
         for hook, state, detail in REFERENCE_HOOKS:
             self.hook_list.addWidget(_hook_item(hook, state, detail))
 
