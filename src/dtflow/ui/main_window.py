@@ -601,7 +601,8 @@ class MainWindow:
         self.form.workspaceStack.setCurrentWidget(self.generation_page)
         self.generation_page.scriptsModeButton.setChecked(True)
         self.scripts.activate()
-        self._responsive_workspace()
+        # Let the library fill the left rail without inheriting a taller page.
+        self._workspace_changed(self.form.workspaceStack.currentIndex())
 
     def _leave_scripts(self, *, inpaint: bool) -> None:
         """Return to the canonical Generate form and restore its mode selection."""
@@ -665,14 +666,19 @@ class MainWindow:
         # Queues owns scrolling in queueList: the shared outer scroll must not
         # create a second wheel/scrollbar over the fixed filter and Clear action.
         queues_active = index == 2
+        scripts_active = index == 1 and self._scripts_active
         scroll = self.shell.leftScroll
         stack_policy = self.shell.leftStack.sizePolicy()
-        vertical = QSizePolicy.Policy.Ignored if queues_active else QSizePolicy.Policy.Preferred
+        vertical = (
+            QSizePolicy.Policy.Ignored
+            if (queues_active or scripts_active)
+            else QSizePolicy.Policy.Preferred
+        )
         if stack_policy.verticalPolicy() != vertical:
             stack_policy.setVerticalPolicy(vertical)
             self.shell.leftStack.setSizePolicy(stack_policy)
         scroll.setVerticalScrollBarPolicy(
-            Qt.ScrollBarPolicy.ScrollBarAlwaysOff if queues_active else Qt.ScrollBarPolicy.ScrollBarAsNeeded
+            Qt.ScrollBarPolicy.ScrollBarAlwaysOff if (queues_active or scripts_active) else Qt.ScrollBarPolicy.ScrollBarAsNeeded
         )
         buttons = (
             self.form.connectionNavigationButton,
