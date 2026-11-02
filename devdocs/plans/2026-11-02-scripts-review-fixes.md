@@ -12,7 +12,7 @@
 - [x] Bind inspection facts, source metadata and compatibility rows to the selected fixture script.
 - [x] Distinguish saved inspection from draft diagnostics; remove Start from Code views; implement literal Find/Replace/count/Next and Ctrl+F.
 - [x] Protect dirty drafts on New/Import/library replacement and use shared inline discard consent.
-- [x] Synchronize the existing shell inspector toggle with the narrow drawer; wrap hook names, correct history newlines, and add separate source/mask offline thumbnails and coverage summary.
+- [x] Synchronize the Scripts toolbar Inspector toggle with the desktop rail and narrow drawer; wrap hook names, correct history newlines, and add separate source/mask offline thumbnails and coverage summary.
 - [x] Extend existing offline render states to expose corrected controls, Find/Replace, and long-value geometry without executing scripts; run the owner-authorized `uv run python tools/ui/render_states.py --category scripts --out tmp/ui-renders-scripts-codex` and inspect all 24 PNGs after corrections.
 - [x] Synchronize design/status/release documentation and record permitted static checks, commit and push to the same draft PR.
 
@@ -27,11 +27,11 @@
 
 ## Validation
 - [x] Repository readiness, Ruff formatting/lint, Python compilation and Designer XML/structural inspection only.
-- [x] Final diff reviewed; follow-up prepared for commit/push to the same draft PR. Remote-head and clean-tree confirmation are reported in the handoff after pushing.
+- [x] Final diff reviewed and corrections committed/pushed to draft PR #201: `e2f5086` (shared cards/icons) and `41c3ddd` (Inspector toggle). Remote PR head matched `41c3ddd2c4ed40106f5895f959df41c5a3fdf0fc` and the working tree was clean before this documentation-only reconciliation.
 - Tests, smoke tests, interactive app launches, model/provider calls and billable actions are not run. Offline screenshot rendering is authorized; it establishes layout evidence only, not interactive/DPI acceptance.
 
 ## Results
-- Final owner-authorized offline render: 24 states in 17.6 seconds, exit 0, under `tmp/ui-renders-scripts-codex`. Reviewed every state using six contact sheets, with full-size inspection of the queued and unresolved-review layouts; earlier iterations also received full-size inspection of the form, source, inspection and side-rail corrections. Generated PNGs and contact sheets remain ignored.
+- Main correction-pass offline render: 24 states in 17.6 seconds, exit 0, under `tmp/ui-renders-scripts-codex`. Reviewed every state using six contact sheets, with full-size inspection of the queued and unresolved-review layouts; earlier iterations also received full-size inspection of the form, source, inspection and side-rail corrections. The toggle follow-up subsequently refreshed all 24 PNGs in 18.6 seconds, as recorded below. Generated PNGs and contact sheets remain ignored.
 - Both side rails now use canonical QGroupBox section-card surfaces/borders, section headers, existing SVG icons and transparent contents. The library list uses the shared background token; New/Import/Reload and storage caption remain visible at desktop and narrow widths. Editor toolbar groups reuse native segmented styling.
 - Final readiness: Python 3.13.13 / SQLite 3.53.1. Ruff lint, Ruff format check (seven files), Python compilation (seven files), five Designer XML/name/encoding checks and `git diff --check` passed. Side-rail structural inspection confirms one library card and four inspector cards with icons. No test files changed and no tests ran.
 - An intermediate render exceeded the existing 30-second diagnostic threshold but completed successfully; the final run completed in 17.6 seconds without that diagnostic. One initial structural assertion incorrectly treated center QFrame sections as side-rail cards; the corrected scope checks the actual QGroupBox side rails.
@@ -40,5 +40,9 @@
 
 ## Follow-up: inspector toggle placement
 - Owner feedback: the grid-like Unicode glyph beside the product logo was ambiguous and suggested global scope. Move the control to the right edge of the Scripts sub-mode toolbar, beside the region it controls; use a labelled Inspector button and a right-sidebar outline SVG. Preserve synchronized checked state, desktop rail and narrow drawer behavior.
-- Plan: update canonical Designer ownership and shell references, add shared-token selected styling, extend existing desktop/narrow render diagnostics, rerender the same 24 offline states, inspect control placement and commit/push the focused follow-up. No tests or providers.
+- [x] Update canonical Designer ownership and remove the old shell-header control/references.
+- [x] Add a right-sidebar SVG, Inspector label and shared-token selected styling at the right edge of the Scripts toolbar.
+- [x] Extend existing desktop/narrow render diagnostics and rerender all 24 offline states.
+- [x] Inspect desktop, narrow closed and narrow open control placement and state.
+- [x] Commit/push the focused follow-up as `41c3ddd`; verify the remote PR head and retain draft status.
 - Completed: 24 offline states rerendered in 18.6 seconds (exit 0). Full-size desktop, narrow closed and narrow open captures inspected; the labelled SVG control stays visible above the drawer. Render diagnostics confirm modeRow ownership, non-null icon and checked states true/false/true. Ruff lint/format, readiness, Designer/SVG XML and diff whitespace checks passed. No tests or provider calls.
