@@ -2030,3 +2030,27 @@ QPushButton[role="galleryInfo"] {
 QPushButton[role="galleryInfo"]:hover {
   border: 1px solid ${color.focus};
 }
+
+/* Generate > Scripts: native offline workspace and editor-scoped palette. */
+QFrame#scriptsLibraryPanel, QFrame#scriptsWorkPanel, QFrame#scriptsInspectorPanel {
+  background: ${color.surface};
+  border: 1px solid ${color.sectionBorder};
+  border-radius: ${size.panelRadius};
+}
+QLabel#scriptsNameLabel, QLabel#scriptsLibraryTitle, QLabel#scriptsInspectorTitle {
+  color: ${color.title};
+  font-weight: ${type.weightEmphasis};
+}
+QLabel#scriptsIdentityLabel, QLabel#scriptsLibraryNote, QLabel#scriptsSettingsSummary,
+QLabel#scriptsSourceSummary, QLabel#scriptsStartDisclosure {
+  color: ${color.secondary};
+}
+QLabel#scriptsStatusLabel { color: ${color.warning}; }
+QPlainTextEdit#scriptsCodeEditor {
+  font-family: ${type.monoFamily};
+  background: ${color.scriptEditorBackground};
+  color: ${color.scriptEditorText};
+  selection-background-color: ${color.scriptEditorSelection};
+  border: 1px solid ${color.borderStrong};
+  border-radius: ${size.inputRadius};
+}
