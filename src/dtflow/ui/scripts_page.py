@@ -104,7 +104,7 @@ def _scroll(widget: QWidget) -> QScrollArea:
     return scroll
 
 
-def _line(layout: QVBoxLayout, left: str, right: str) -> None:
+def _line(layout: QVBoxLayout, left: str, right: str) -> QLabel:
     row = QWidget()
     row_layout = QHBoxLayout(row)
     row_layout.setContentsMargins(0, 0, 0, 0)
