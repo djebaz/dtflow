@@ -65,6 +65,9 @@ class HookDispatcher:
         self.cancel = cancel
         self.result = RunResult("failed")
         self.implementations: dict[str, Callable[..., Any]] = {"log": self.log, "sleep": self.sleep}
+        self.add(implementations)
+
+    def add(self, implementations: Mapping[str, Callable[..., Any]] | None) -> None:
         for name, function in (implementations or {}).items():
             if name not in HOOKS:
                 raise ValueError(f"Unknown hook {name!r}.")
@@ -128,7 +131,9 @@ class _HookThread(threading.Thread):
 
 def run_script(
     source: str,
-    implementations: Mapping[str, Callable[..., Any]] | None = None,
+    implementations: Mapping[str, Callable[..., Any]]
+    | Callable[[HookDispatcher], Mapping[str, Callable[..., Any]]]
+    | None = None,
     *,
     limits: ScriptLimits | None = None,
     cancel: threading.Event | None = None,
@@ -139,7 +144,9 @@ def run_script(
     ``on_started`` is called once, from the supervising loop, when the JS process has announced its pid."""
     limits = limits or ScriptLimits()
     cancel = cancel or threading.Event()
-    dispatcher = HookDispatcher(implementations, cancel)
+    dispatcher = HookDispatcher(None, cancel)
+    # A callable receives the dispatcher (for ``log`` and ``cancel``) so host hooks can report through the run.
+    dispatcher.add(implementations(dispatcher) if callable(implementations) else implementations)
     result = dispatcher.result
     context = multiprocessing.get_context("spawn")
     parent, child = context.Pipe()
@@ -215,11 +222,21 @@ def run_script(
     return result
 
 
+@dataclass(frozen=True, slots=True)
+class RunContext:
+    """What a hook factory gets from ``run_recorded``: the ledger link, the console and the Stop event."""
+
+    run_id: str
+    link_child: Callable[[str], int]
+    console: Callable[[str, int], None]
+    cancel: threading.Event
+
+
 def run_recorded(
     store: ScriptRunStore,
     source: str,
     implementations: Mapping[str, Callable[..., Any]]
-    | Callable[[Callable[[str], int]], Mapping[str, Callable[..., Any]]]
+    | Callable[[RunContext], Mapping[str, Callable[..., Any]]]
     | None = None,
     *,
     source_name: str,
@@ -231,8 +248,8 @@ def run_recorded(
     """Run a script and keep its durable ledger row in step: created (and owned) before the child starts, settled from
     the result afterwards, and settled as failed if anything raises. Returns ``(run_id, result)``.
 
-    ``implementations`` may be a callable taking ``link_child(attempt_id) -> ordinal``; hooks that submit work call it
-    before submitting so the child attempt is recorded first. A run that was already interrupted is left as it is."""
+    ``implementations`` may be a callable taking a ``RunContext``; hooks that submit work call ``link_child`` before
+    submitting so the child attempt is recorded first. A run that was already interrupted is left as it is."""
     run_id = store.create(
         source_name=source_name,
         source_sha256=hashlib.sha256(source.encode("utf-8")).hexdigest(),
@@ -244,7 +261,13 @@ def run_recorded(
     state, error = "failed", "Script run ended unexpectedly."
     try:
         hooks = (
-            implementations(lambda attempt_id: store.link_child(run_id, attempt_id))
+            (
+                lambda dispatcher: implementations(
+                    RunContext(
+                        run_id, lambda attempt: store.link_child(run_id, attempt), dispatcher.log, dispatcher.cancel
+                    )
+                )
+            )
             if callable(implementations)
             else implementations
         )

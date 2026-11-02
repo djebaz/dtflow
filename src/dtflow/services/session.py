@@ -268,6 +268,7 @@ async def run_generation(
     prefix: bool = False,
     on_event: EventSink | None = None,
     prepared_inputs: PreparedImageInputs | None = None,
+    attempt_id: str | None = None,
 ) -> GenerationOutcome:
     """Refresh inventory, optionally apply trigger prefixes, run LoRA preflight, generate and save."""
     if request.operation not in service.backend.capabilities.operations:
@@ -292,6 +293,8 @@ async def run_generation(
         request = apply_trigger_prefixes(request, snapshot)
     diagnostics = await service.preflight(request) if request.loras else ()
     options = {"prepared_inputs": prepared_inputs} if prepared_inputs is not None else {}
+    if attempt_id is not None:
+        options["attempt_id"] = attempt_id
     result = await service.generate(request, on_event=on_event, **options)
     backend_id = service.backend.capabilities.backend_id
     final = next((x.encoded for x in result.backend_result.artifacts if x.designation == Designation.FINAL), None)

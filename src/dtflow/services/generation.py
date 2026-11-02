@@ -123,7 +123,10 @@ class GenerationService:
         *,
         on_event: EventSink | None = None,
         prepared_inputs: PreparedImageInputs | None = None,
+        attempt_id: str | None = None,
     ) -> SavedGeneration:
+        """``attempt_id`` lets a caller that records the attempt elsewhere first (script runs) name it up front."""
+
         def preparation(stage: str) -> None:
             if on_event is not None:
                 on_event(BackendEvent(request.request_id, 0, "preparing", datetime.now(UTC).isoformat(), stage=stage))
@@ -225,7 +228,7 @@ class GenerationService:
                 )
             ) from exc
         reserved = False
-        attempt_id = uuid4().hex
+        attempt_id = attempt_id or uuid4().hex
         if image_operation:
             request = replace(request, image_inputs=replace(request.image_inputs, attempt_id=attempt_id))
         ATTEMPT.set(attempt_id)
