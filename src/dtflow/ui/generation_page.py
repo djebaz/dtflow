@@ -132,6 +132,7 @@ METADATA_LIMIT = 256_000
 WIRED_CONTROLS = (
     "textToImageModeButton",
     "inpaintModeButton",
+    "scriptsModeButton",
     "promptEdit",
     "negativePromptEdit",
     "seedEdit",

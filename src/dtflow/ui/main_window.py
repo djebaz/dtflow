@@ -67,6 +67,7 @@ from dtflow.ui.queue_popover import QueuePopover
 from dtflow.ui.queue_composer import ValueChips
 from dtflow.ui.queue_widgets import SegmentedBar
 from dtflow.ui.run_control import RunControl
+from dtflow.ui.scripts_page import ScriptsPage
 from dtflow.ui.runner import AsyncRunner
 from dtflow.ui.search_select import SearchableComboBox
 from dtflow.ui.system_trash import TRASH_NAME, trash_supported
@@ -81,6 +82,7 @@ FORMS_DIR = Path(__file__).with_name("forms")
 ASSETS_CONTROLS = Path(__file__).parents[1] / "resources" / "images" / "controls"
 UI_FILE = FORMS_DIR / "main_window.ui"
 GENERATION_UI_FILE = FORMS_DIR / "generation_page.ui"
+SCRIPTS_UI_FILE = FORMS_DIR / "scripts_workspace.ui"
 QUEUE_UI_FILE = FORMS_DIR / "queue_page.ui"
 PREVIEW_CONTROL_TYPES = (
     QAbstractButton,
@@ -209,6 +211,9 @@ class MainWindow:
         self.activity = Activity()
         form = self.form
         self.shell = load_ui(FORMS_DIR / "workspace_shell.ui", form.centralWidget())
+        # Restore the standard left-stack width policy outside Scripts.
+        # The scroll viewport has horizontal overflow hidden.
+        self._left_stack_default_horizontal_policy = self.shell.leftStack.sizePolicy().horizontalPolicy()
         # Mount presentation regions once; page controllers retain their widget references.
         for page, names in (
             (form, ("contextRail", "workspaceFrame", "inspectorPanel")),
@@ -253,6 +258,12 @@ class MainWindow:
         self._logs_previous_page = form.connectionPage
         self._logs_active = False
         startup.mark("workspace: Logs placeholders mounted")
+        # Scripts reuses the existing shell rails. Add its panels only after all
+        # other page stacks have been mounted, preserving their index contracts.
+        self.scripts_designer = load_ui(SCRIPTS_UI_FILE)
+        self.scripts = ScriptsPage(self.scripts_designer, owner=self)
+        self.scripts.mount(self.shell)
+        self._scripts_active = False
         form.workspaceStack.hide()
         startup.mark("workspace: legacy stack hidden")
         form.rootLayout.addWidget(self.shell)
@@ -349,6 +360,11 @@ class MainWindow:
         )
         startup.mark("queue and image operation controllers")
         self.generation_page.inpaintModeButton.toggled.connect(lambda _on: self.queue.sync_edit_fields())
+        self.generation_page.scriptsModeButton.clicked.connect(self._show_scripts)
+        self.generation.inpaint.script_handoff = self._scripts_from_inpaint
+        self.generation.inpaint._controls()
+        self.scripts.text_mode.clicked.connect(lambda: self._leave_scripts(inpaint=False))
+        self.scripts.inpaint_mode.clicked.connect(lambda: self._leave_scripts(inpaint=True))
         # One-click Queue (#135): the same popover from the header and from Generate's prompt header.
         arrow = self.generation_page.queueGenerateButton
         self.queue_popover = QueuePopover(
@@ -581,6 +597,49 @@ class MainWindow:
     def _show_generation(self) -> None:
         self.generation.sync_backend()
         self.form.workspaceStack.setCurrentWidget(self.generation_page)
+        if self._scripts_active:
+            self.scripts.activate()
+
+    def _set_scripts_left_rail(self, active: bool) -> None:
+        """Size the shared left rail without restarting workspace-navigation side effects."""
+        if not active:
+            self.shell.leftStack.setMinimumHeight(0)
+            self.shell.leftStack.setMaximumHeight(16777215)
+        policy = self.shell.leftStack.sizePolicy()
+        vertical = QSizePolicy.Policy.Ignored if active else QSizePolicy.Policy.Preferred
+        horizontal = QSizePolicy.Policy.Ignored if active else self._left_stack_default_horizontal_policy
+        if policy.verticalPolicy() != vertical or policy.horizontalPolicy() != horizontal:
+            policy.setVerticalPolicy(vertical)
+            policy.setHorizontalPolicy(horizontal)
+            self.shell.leftStack.setSizePolicy(policy)
+        self.shell.leftScroll.setVerticalScrollBarPolicy(
+            Qt.ScrollBarPolicy.ScrollBarAlwaysOff if active else Qt.ScrollBarPolicy.ScrollBarAsNeeded
+        )
+
+    def _show_scripts(self) -> None:
+        """Switch Generate to its third sub-mode without touching active work."""
+        self._scripts_active = True
+        self.form.workspaceStack.setCurrentWidget(self.generation_page)
+        self.generation_page.scriptsModeButton.setChecked(True)
+        self.scripts.activate()
+        self._set_scripts_left_rail(True)
+        self._responsive_workspace()
+
+    def _scripts_from_inpaint(self, source, mask, thumbnail) -> None:
+        """Offline, detached source/mask handoff only; no runtime script entry point."""
+        if self.scripts.accept_inpaint_snapshot(source, mask, thumbnail):
+            self._show_scripts()
+
+    def _leave_scripts(self, *, inpaint: bool) -> None:
+        """Return to the canonical Generate form without resetting another workspace."""
+        self._scripts_active = False
+        self.scripts.drawer.hide()
+        target = self.generation_page.inpaintModeButton if inpaint else self.generation_page.textToImageModeButton
+        target.setChecked(True)
+        for stack in (self.shell.leftStack, self.shell.centerStack, self.shell.rightStack):
+            stack.setCurrentIndex(1)
+        self._set_scripts_left_rail(False)
+        self._responsive_workspace()
 
     def _toggle_logs(self) -> None:
         if self.form.workspaceStack.currentWidget() is self.logs_marker:
@@ -631,17 +690,27 @@ class MainWindow:
             self.refresh_cache()
         for stack in (self.shell.leftStack, self.shell.centerStack, self.shell.rightStack):
             stack.setCurrentIndex(index)
+        if index == 1 and self._scripts_active:
+            self.scripts.activate()
         # Queues owns scrolling in queueList: the shared outer scroll must not
         # create a second wheel/scrollbar over the fixed filter and Clear action.
         queues_active = index == 2
+        scripts_active = index == 1 and self._scripts_active
+        if not scripts_active:
+            self.shell.leftStack.setMinimumHeight(0)
+            self.shell.leftStack.setMaximumHeight(16777215)
         scroll = self.shell.leftScroll
         stack_policy = self.shell.leftStack.sizePolicy()
-        vertical = QSizePolicy.Policy.Ignored if queues_active else QSizePolicy.Policy.Preferred
-        if stack_policy.verticalPolicy() != vertical:
+        vertical = QSizePolicy.Policy.Ignored if (queues_active or scripts_active) else QSizePolicy.Policy.Preferred
+        horizontal = QSizePolicy.Policy.Ignored if scripts_active else self._left_stack_default_horizontal_policy
+        if stack_policy.verticalPolicy() != vertical or stack_policy.horizontalPolicy() != horizontal:
             stack_policy.setVerticalPolicy(vertical)
+            stack_policy.setHorizontalPolicy(horizontal)
             self.shell.leftStack.setSizePolicy(stack_policy)
         scroll.setVerticalScrollBarPolicy(
-            Qt.ScrollBarPolicy.ScrollBarAlwaysOff if queues_active else Qt.ScrollBarPolicy.ScrollBarAsNeeded
+            Qt.ScrollBarPolicy.ScrollBarAlwaysOff
+            if (queues_active or scripts_active)
+            else Qt.ScrollBarPolicy.ScrollBarAsNeeded
         )
         buttons = (
             self.form.connectionNavigationButton,
@@ -716,8 +785,16 @@ class MainWindow:
             page = stack.widget(index)
             policy = page.sizePolicy()
             shown = page is stack.currentWidget()
-            policy.setHorizontalPolicy(QSizePolicy.Policy.Preferred if shown else QSizePolicy.Policy.Ignored)
-            page.setSizePolicy(policy)
+            # Scripts has long hook identifiers inside a scroll viewport whose
+            # horizontal bar is intentionally disabled. Ignore its size hint
+            # when active, so it cannot overflow the shared right rail.
+            scripts_inspector = page is self.scripts.right
+            horizontal = (
+                QSizePolicy.Policy.Ignored if (not shown or scripts_inspector) else QSizePolicy.Policy.Preferred
+            )
+            if policy.horizontalPolicy() != horizontal:
+                policy.setHorizontalPolicy(horizontal)
+                page.setSizePolicy(policy)
 
     def _responsive_workspace(self) -> None:
         shell = self.shell
@@ -782,6 +859,10 @@ class MainWindow:
             self._logs_form.logsBrandSlot.setVisible(logs)
             self._logs_form.logsNavigationSlot.setVisible(logs)
         shell.runControl.setVisible(True)
+        if self._scripts_active and self.form.workspaceStack.currentWidget() is self.generation_page:
+            self.scripts.sync_responsive()
+        elif hasattr(self, "scripts"):
+            self.scripts.drawer.hide()
         self._align_run_control()
 
     def _sync_activity_progress(self):

@@ -36,6 +36,7 @@ class BarModel:
     tooltip: str = ""
     stop_label: str = ""  # what Stop does, from the job ("Stop waiting locally", "Cancel export", ...)
     stop_visible: bool = True
+    stop_action: str = "Stop"  # concise visible action, distinct from its explanatory tooltip
 
 
 def clock(seconds: float) -> str:
@@ -220,7 +221,7 @@ class ActivityBar(QWidget):
         self.strip.model = model
         watch(self.strip)
         self._running = model.kind == "running"
-        self.button.setText("Stop" if self._running else "×")
+        self.button.setText(model.stop_action if self._running else "×")
         if self.button.property("result") != (not self._running):
             self.button.setProperty("result", not self._running)  # QSS drops the side padding for ×
             self.button.style().unpolish(self.button)

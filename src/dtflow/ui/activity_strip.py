@@ -236,6 +236,7 @@ class ActivityStrip(QObject):
             tooltip=" · ".join(part for part in (label, detail, reported_eta) if part),
             stop_label=stop.text(),
             stop_visible=not stop.isHidden(),
+            stop_action=chosen.property("stopActionText") or "Stop",
         )
         effect = chosen.graphicsEffect()
         self.bar.present(
@@ -354,13 +355,16 @@ class ActivityStrip(QObject):
             row.activityStatusText.setAccessibleName(text)
         self._position()
 
-    def start(self, key, label, stop=None, stop_text="Stop after current image", total=0, detail=""):
+    def start(
+        self, key, label, stop=None, stop_text="Stop after current image", total=0, detail="", *, action_text="Stop"
+    ):
         if not self._live():
             return
         self.finish(key)
         row = _load("activity_progress_row.ui", self.form)
         row.setProperty("feedbackState", "progress")
         row.setProperty("startedAt", monotonic())
+        row.setProperty("stopActionText", action_text)
         if key.split("-")[0] == "trash":
             row.activitySymbol.setPixmap(trash_icon_pixmap())
         else:
@@ -386,7 +390,9 @@ class ActivityStrip(QObject):
             def request_stop():
                 row.activityStopButton.setEnabled(False)
                 row.activityDetail.setText(
-                    "Stopping local wait; remote cancellation is not confirmed."
+                    "Cancelling before admission; nothing was submitted."
+                    if stop_text == "Cancel before start"
+                    else "Stopping local wait; remote cancellation is not confirmed."
                     if stop_text == "Stop waiting locally"
                     else "Stopping after the current item; completed work remains."
                 )
