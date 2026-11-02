@@ -10,6 +10,8 @@ import re
 
 from PySide6.QtCore import QRect, QSize, Qt
 from PySide6.QtGui import QColor, QFont, QPainter, QSyntaxHighlighter, QTextCharFormat, QTextCursor
+from dtflow.ui.theme import load_tokens
+
 from PySide6.QtWidgets import (
     QHBoxLayout, QLabel, QLineEdit, QPlainTextEdit, QPushButton, QTextEdit,
     QVBoxLayout, QWidget,
@@ -48,19 +50,21 @@ class _JavaScriptColors(QSyntaxHighlighter):
     """Scoped VS2019 Dark syntax decoration; not a JavaScript parser."""
 
     PATTERNS = (
-        (r"//[^\n]*", "#57a64a"),
-        (r'"(?:[^"\\]|\\.)*"|\'(?:[^\'\\]|\\.)*\'', "#f09b87"),
-        (r"\b(?:const|let|var|function|return|if|else|for|while|of|in|new|true|false|null|this)\b", "#e67ddc"),
-        (r"\b(?:pipeline|canvas|configuration|requestFromUser|Math|Array|Object|String|Number)\b", "#65c9fe"),
-        (r"\b\d+(?:\.\d+)?\b", "#32eb87"),
+        (r"//[^\\n]*", "color.scriptEditorComment"),
+        (r'"(?:[^"\\\\]|\\\\.)*"|\\'(?:[^\\'\\\\]|\\\\.)*\\'', "color.scriptEditorString"),
+        (r"\\b(?:const|let|var|function|return|if|else|for|while|of|in|new|true|false|null|this)\\b", "color.scriptEditorKeyword"),
+        (r"\\b(?:pipeline|canvas|configuration|requestFromUser|Math|Array|Object|String|Number)\\b", "color.scriptEditorType"),
+        (r"\\b\\d+(?:\\.\\d+)?\\b", "color.scriptEditorNumber"),
+        (r"[=+*/<>!&|?:%-]+", "color.scriptEditorOperator"),
     )
 
     def __init__(self, document):
         super().__init__(document)
         self.rules = []
-        for pattern, color in self.PATTERNS:
+        colors = load_tokens()
+        for pattern, token in self.PATTERNS:
             fmt = QTextCharFormat()
-            fmt.setForeground(QColor(color))
+            fmt.setForeground(QColor(colors[token]))
             self.rules.append((re.compile(pattern), fmt))
 
     def highlightBlock(self, text: str):
