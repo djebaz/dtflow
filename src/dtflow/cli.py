@@ -146,6 +146,17 @@ def parser() -> argparse.ArgumentParser:
             child.add_argument("-o", "--out", type=Path, help="Final output root (default: state directory/outputs).")
             add_scenario_option(child)
             child.add_argument("-t", "--timeout", type=float, default=600.0, help="Total backend deadline in seconds.")
+    script = commands.add_parser("script", help=COMMAND_HELP["script"], description=COMMAND_HELP["script"])
+    script.add_argument(
+        "file", type=Path, nargs="?", help="Script (.js) to analyze: parsed and scanned, never executed."
+    )
+    script.add_argument(
+        "-c",
+        "--check-engine",
+        action="store_true",
+        help="Run the non-generative engine self-check (child process, Stop, deadline, memory); no network.",
+    )
+    script.add_argument("-o", "--out", type=Path, help="With --check-engine, write the JSON report to this file.")
     add_edit_command(commands)
     add_queue_commands(commands)
     add_asset_commands(commands)
@@ -405,6 +416,7 @@ COMMAND_HELP = {
     "settings": "Show or persist shared settings such as the cloud concurrency maximum.",
     "assets": "Cloud LoRA assets: prepare (may upload), list, show, reconcile. Local receipts are not remote inventory.",
     "queue": "Durable queues with rolling dispatch: add, list, show, start, pause, resume, cancel, cap, relaunch.",
+    "script": "Analyze a Draw Things JavaScript script offline (never runs it), or self-check the script engine.",
 }
 
 
@@ -656,7 +668,29 @@ async def run_edit(args: argparse.Namespace) -> int:
     return EXIT_OK
 
 
+def run_script_command(args: argparse.Namespace) -> int:
+    """Offline analysis or engine self-check; no provider, credentials, state directory or generation."""
+    if args.check_engine:
+        from dtflow.scripting.selfcheck import main as selfcheck
+
+        return selfcheck(args.out)
+    if args.file is None:
+        print("Invalid request: give a script file to analyze, or --check-engine.", file=sys.stderr)
+        return EXIT_INVALID
+    from dtflow.scripting.analysis import analyze_script
+
+    try:
+        report = analyze_script(args.file)
+    except (OSError, UnicodeDecodeError, ValueError) as exc:
+        print(f"Invalid request: script could not be read ({type(exc).__name__}).", file=sys.stderr)
+        return EXIT_INVALID
+    print(json.dumps(report, indent=2))
+    return EXIT_OK if report["syntax_valid"] else EXIT_INVALID
+
+
 async def run(args: argparse.Namespace) -> int:
+    if args.command == "script":
+        return run_script_command(args)
     if args.command == "edit":
         return await run_edit(args)
     if args.command == "gallery":
