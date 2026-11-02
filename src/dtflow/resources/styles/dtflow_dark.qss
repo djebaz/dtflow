@@ -2226,3 +2226,7 @@ QLabel#scriptsWarningGlyph, QLabel#scriptsWarningTitle {
 QLabel#scriptsWarningTitle {
   font-weight: ${type.weightEmphasis};
 }
+
+/* Required source is a blocking preflight error, not secondary help copy. */
+QLabel#scriptsSourceNote { color: ${color.secondary}; }
+QLabel#scriptsSourceNote[feedbackState="error"] { color: ${color.error}; }
