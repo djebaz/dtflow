@@ -116,6 +116,7 @@ def _line(layout: QVBoxLayout, left: str, right: str) -> None:
     value.setToolTip(right)
     row_layout.addWidget(value, 1)
     layout.addWidget(row)
+    return value
 
 
 def _hook_item(hook: str, state: str, detail: str) -> QFrame:
@@ -565,9 +566,10 @@ class ScriptsPage:
         ))
         layout.addWidget(settings)
         source, section = _card("Source")
+        self.inspector_source_values = {}
         for key, value in (("File", "Wildcard prompt sweep.js"), ("Version SHA-256", "9f3a1c2e4b7d08…"),
                            ("Size", "6.2 KB"), ("Imported", "21 Oct 2026 21:54")):
-            _line(section, key, value)
+            self.inspector_source_values[key] = _line(section, key, value)
         layout.addWidget(source)
         history, h = _card("History")
         self.history = QListWidget()
@@ -618,13 +620,14 @@ class ScriptsPage:
             _line(settings_layout, name, value)
         self.drawer_layout.addWidget(settings)
         source, source_layout = _card("Source")
+        self.drawer_source_values = {}
         for name, value in (
             ("File", "Wildcard prompt sweep.js"),
             ("Version SHA-256", "9f3a1c2e4b7d08…"),
             ("Size", "6.2 KB"),
             ("Imported", "21 Oct 2026 21:54"),
         ):
-            _line(source_layout, name, value)
+            self.drawer_source_values[name] = _line(source_layout, name, value)
         self.drawer_layout.addWidget(source)
         history, history_layout = _card("History")
         history_layout.addWidget(_label(
@@ -692,6 +695,16 @@ class ScriptsPage:
         self.script_title.setToolTip(filename)
         self.sha.setText(f"version {sha}")
         self.sha.setToolTip(f"SHA prefix: {sha}; exact identity requires a saved source.")
+        metadata = {
+            "File": filename,
+            "Version SHA-256": f"{sha}…",
+            "Size": "3.8 KB" if filename.startswith("Hires") else "6.2 KB",
+            "Imported": "19 Oct 2026 09:12" if filename.startswith("Hires") else "21 Oct 2026 21:54",
+        }
+        for values in (self.inspector_source_values, self.drawer_source_values):
+            for key, label in values.items():
+                label.setText(metadata[key])
+                label.setToolTip(metadata[key])
         self.status.setText(
             "● Syntax valid   ● API calls observed   ● No blocking issues found"
             if support == "supported" else
