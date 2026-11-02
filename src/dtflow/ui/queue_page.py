@@ -265,6 +265,8 @@ class QueuePage:
         self._reading = False
         self._syncing = False
         self._detail: dict | None = None
+        self._run_detail: dict | None = None  # the dispatched script queue's items, when it is not the selected one
+        self._reading_run = False
         self._varied: dict[str, dict] = {}  # items never change after creation, so their variation is read once
         self._shared_cap: int | None = None
         self._shared_epoch = 0  # bumped by each save, so a read that started before it cannot undo it
@@ -490,6 +492,28 @@ class QueuePage:
         self._reading = True
         epoch = self._shared_epoch
         self._runner.submit(self._read(self._selected, tuple(self._varied)), lambda r, f: self._read_done(r, f, epoch))
+        self._refresh_script_run()
+
+    def _refresh_script_run(self) -> None:
+        """The running script's steps are read for the global bar whichever queue is selected."""
+        run = self._dispatching
+        if run is None or self._reading_run or (self._views.get(run) or {}).get("kind") != "script":
+            self._run_detail = None
+            return
+        if run == self._selected:
+            return  # the selected queue's own detail already carries the steps
+        self._reading_run = True
+
+        async def work():
+            views = await read_queue_views(self._state, run)
+            return views[0] if views else None
+
+        def done(result, failure) -> None:
+            self._reading_run = False
+            self._run_detail = result if failure is None else None
+            self._publish_run_state()
+
+        self._runner.submit(work(), done)
 
     async def _read(self, selected: str | None, described: tuple[str, ...] = ()):
         views = await read_queue_list(self._state, described)
@@ -767,7 +791,10 @@ class QueuePage:
         summary = summarize(view)
         completed = total = None
         running = view["summary"]["running"]
-        items = (self._detail_for(view) or {}).get("items", ())
+        shown = self._detail_for(view)
+        if shown is None and self._run_detail is not None and self._run_detail["queue_id"] == queue_id:
+            shown = self._run_detail
+        items = (shown or {}).get("items", ())
         running_items = [item for item in items if item["state"] == "running"]
         detail = f"Queue {queue_id[:8]} · {summary.headline}"
         waiting = len(up_next_ids(self._views.values())) if dispatching_here else 0
