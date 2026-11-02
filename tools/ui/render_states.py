@@ -141,6 +141,8 @@ def render_category(target):
     path = Path(target)
     if "image-navigation" in path.parts:
         return "image-navigation"
+    if path.stem.startswith("scripts_"):
+        return "scripts"
     return path.stem.split("-", 1)[0]
 
 
