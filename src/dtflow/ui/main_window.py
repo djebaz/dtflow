@@ -67,6 +67,7 @@ from dtflow.ui.queue_popover import QueuePopover
 from dtflow.ui.queue_composer import ValueChips
 from dtflow.ui.queue_widgets import SegmentedBar
 from dtflow.ui.run_control import RunControl
+from dtflow.ui.scripts_page import ScriptsPage
 from dtflow.ui.runner import AsyncRunner
 from dtflow.ui.search_select import SearchableComboBox
 from dtflow.ui.system_trash import TRASH_NAME, trash_supported
@@ -81,6 +82,7 @@ FORMS_DIR = Path(__file__).with_name("forms")
 ASSETS_CONTROLS = Path(__file__).parents[1] / "resources" / "images" / "controls"
 UI_FILE = FORMS_DIR / "main_window.ui"
 GENERATION_UI_FILE = FORMS_DIR / "generation_page.ui"
+SCRIPTS_UI_FILE = FORMS_DIR / "scripts_workspace.ui"
 QUEUE_UI_FILE = FORMS_DIR / "queue_page.ui"
 PREVIEW_CONTROL_TYPES = (
     QAbstractButton,
@@ -253,6 +255,12 @@ class MainWindow:
         self._logs_previous_page = form.connectionPage
         self._logs_active = False
         startup.mark("workspace: Logs placeholders mounted")
+        # Scripts reuses the existing shell rails. Add its panels only after all
+        # other page stacks have been mounted, preserving their index contracts.
+        self.scripts_designer = load_ui(SCRIPTS_UI_FILE)
+        self.scripts = ScriptsPage(self.scripts_designer, owner=self)
+        self.scripts.mount(self.shell)
+        self._scripts_active = False
         form.workspaceStack.hide()
         startup.mark("workspace: legacy stack hidden")
         form.rootLayout.addWidget(self.shell)
@@ -349,6 +357,9 @@ class MainWindow:
         )
         startup.mark("queue and image operation controllers")
         self.generation_page.inpaintModeButton.toggled.connect(lambda _on: self.queue.sync_edit_fields())
+        self.generation_page.scriptsModeButton.clicked.connect(self._show_scripts)
+        self.scripts.text_mode.clicked.connect(lambda: self._leave_scripts(inpaint=False))
+        self.scripts.inpaint_mode.clicked.connect(lambda: self._leave_scripts(inpaint=True))
         # One-click Queue (#135): the same popover from the header and from Generate's prompt header.
         arrow = self.generation_page.queueGenerateButton
         self.queue_popover = QueuePopover(
@@ -581,6 +592,24 @@ class MainWindow:
     def _show_generation(self) -> None:
         self.generation.sync_backend()
         self.form.workspaceStack.setCurrentWidget(self.generation_page)
+        if self._scripts_active:
+            self.scripts.activate()
+
+    def _show_scripts(self) -> None:
+        """Switch Generate to its third sub-mode without touching active work."""
+        self._scripts_active = True
+        self.form.workspaceStack.setCurrentWidget(self.generation_page)
+        self.generation_page.scriptsModeButton.setChecked(True)
+        self.scripts.activate()
+        self._responsive_workspace()
+
+    def _leave_scripts(self, *, inpaint: bool) -> None:
+        """Return to the canonical Generate form and restore its mode selection."""
+        self._scripts_active = False
+        self.scripts.drawer.hide()
+        target = self.generation_page.inpaintModeButton if inpaint else self.generation_page.textToImageModeButton
+        target.setChecked(True)
+        self._workspace_changed(self.form.workspaceStack.currentIndex())
 
     def _toggle_logs(self) -> None:
         if self.form.workspaceStack.currentWidget() is self.logs_marker:
@@ -631,6 +660,8 @@ class MainWindow:
             self.refresh_cache()
         for stack in (self.shell.leftStack, self.shell.centerStack, self.shell.rightStack):
             stack.setCurrentIndex(index)
+        if index == 1 and self._scripts_active:
+            self.scripts.activate()
         # Queues owns scrolling in queueList: the shared outer scroll must not
         # create a second wheel/scrollbar over the fixed filter and Clear action.
         queues_active = index == 2
