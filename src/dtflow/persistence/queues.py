@@ -38,6 +38,15 @@ from dtflow.core.models import (
     ValidationError,
 )
 from dtflow.core.request_records import request_from_record as decode_request
+from dtflow.persistence.script_items import (
+    KIND_SCRIPT,
+    TERMINAL_ATTEMPTS,
+    child_states,
+    is_script_record,
+    item_outcome,
+    read_run_snapshot,
+    script_request_from_record,
+)
 
 QUEUE_STATES = ("paused", "queued", "running", "cancelled")
 UP_NEXT_ACTIONS = ("enqueue", "dequeue", "cancel", "earlier", "later")
@@ -54,7 +63,8 @@ QUEUE_SCHEMA = (
         cap INTEGER NOT NULL,
         created_at_utc TEXT NOT NULL,
         updated_at_utc TEXT NOT NULL,
-        up_next INTEGER
+        up_next INTEGER,
+        kind TEXT NOT NULL DEFAULT 'generation'
     )""",
     """CREATE TABLE IF NOT EXISTS queue_items (
         item_id TEXT PRIMARY KEY,
@@ -108,6 +118,12 @@ def add_up_next(db: sqlite3.Connection) -> None:
         db.execute("ALTER TABLE queues ADD COLUMN up_next INTEGER")
 
 
+def add_kind(db: sqlite3.Connection) -> None:
+    """Schema 5 migration step: the queue kind (``generation`` or ``script``) on a queues table from schema 2 to 4."""
+    if "kind" not in {row[1] for row in db.execute("PRAGMA table_info(queues)")}:
+        db.execute("ALTER TABLE queues ADD COLUMN kind TEXT NOT NULL DEFAULT 'generation'")
+
+
 def check_queueable(request: ResolvedGenerationRequest) -> None:
     """Text-to-image, or a staged single-output edit that carries its recorded per-item owner-probe consent."""
     if request.operation == "txt2img":
@@ -149,14 +165,30 @@ def _check_new_queue(requests: Sequence[ResolvedGenerationRequest]) -> None:
         raise QueueError(str(exc)) from exc
 
 
+def _check_script_record(record: Any) -> None:
+    try:
+        script_request_from_record(record)
+    except ValidationError as exc:
+        raise QueueError(str(exc)) from exc
+
+
 def _insert_paused(
-    db: sqlite3.Connection, backend, cap, requests, now: str, *, up_next: bool = False, composer_source=None
+    db: sqlite3.Connection,
+    backend,
+    cap,
+    requests,
+    now: str,
+    *,
+    up_next: bool = False,
+    composer_source=None,
+    kind: str = "generation",
+    records: Sequence[dict[str, Any]] | None = None,
 ) -> str:
     """Insert one paused (or, behind a live owner, queued) queue with pending items in the caller's transaction."""
     queue_id = uuid4().hex
     db.execute(
-        "INSERT INTO queues (queue_id, backend_key, backend_json, state, cap, created_at_utc, updated_at_utc, up_next)"
-        " VALUES (?,?,?,?,?,?,?,?)",
+        "INSERT INTO queues (queue_id, backend_key, backend_json, state, cap, created_at_utc, updated_at_utc, up_next,"
+        " kind) VALUES (?,?,?,?,?,?,?,?,?)",
         (
             queue_id,
             backend_key(backend),
@@ -166,17 +198,20 @@ def _insert_paused(
             now,
             now,
             _last_up_next(db) + 1 if up_next else None,
+            kind,
         ),
+    )
+    stored = (
+        [json.dumps(record, allow_nan=False) for record in records]
+        if records is not None
+        else [json.dumps(asdict(request), allow_nan=False) for request in requests]
     )
     db.executemany(
         "INSERT INTO queue_items (item_id, queue_id, position, request_json, state, updated_at_utc)"
         " VALUES (?,?,?,?,'pending',?)",
-        [
-            (uuid4().hex, queue_id, index, json.dumps(asdict(request), allow_nan=False), now)
-            for index, request in enumerate(requests, 1)
-        ],
+        [(uuid4().hex, queue_id, index, request_json, now) for index, request_json in enumerate(stored, 1)],
     )
-    QueueMixin._event(db, queue_id, "created", now, {"items": len(requests), "cap": cap})
+    QueueMixin._event(db, queue_id, "created", now, {"items": len(stored), "cap": cap})
     if composer_source is not None:
         if not isinstance(composer_source, dict):
             raise QueueError("Composer source must be an object.")
@@ -284,6 +319,14 @@ class QueueMixin:
         _check_new_queue(requests)
         with self._txn() as db:
             return _insert_paused(db, backend, cap, requests, self._now(), composer_source=composer_source)
+
+    async def create_script_queue(self, backend: dict[str, Any], record: dict[str, Any]) -> str:
+        return await self._run(self._create_script_queue, backend, record)
+
+    def _create_script_queue(self, backend, record) -> str:
+        _check_script_record(record)
+        with self._txn() as db:
+            return _insert_paused(db, backend, 1, (), self._now(), kind=KIND_SCRIPT, records=(record,))
 
     # -- controls -------------------------------------------------------------------------------------------------
 
@@ -450,7 +493,7 @@ class QueueMixin:
                 )
             return _release_queued(db, now, reason)
 
-    async def claim_next(self, queue_id: str, limit: int) -> tuple[str, ResolvedGenerationRequest] | None:
+    async def claim_next(self, queue_id: str, limit: int) -> tuple[str, Any] | None:
         """Reserve the next eligible item, or None when paused, capped or exhausted."""
         return await self._run(self._claim_next, queue_id, limit)
 
@@ -463,6 +506,7 @@ class QueueMixin:
                 return None
             if self._reserved(db, queue["backend_key"]) >= min(queue["cap"], limit):
                 return None
+            decode = script_request_from_record if queue["kind"] == KIND_SCRIPT else request_from_record
             # Bound one claim transaction even if externally corrupted rows exceed
             # the normal queue creation limit. Never reserve an invalid request.
             for _ in range(MAX_ITEMS):
@@ -476,7 +520,7 @@ class QueueMixin:
                 record = None
                 try:
                     record = json.loads(row["request_json"])
-                    request = request_from_record(record)
+                    request = decode(record)
                 except (TypeError, ValueError):
                     request_id = record.get("request_id") if isinstance(record, dict) else None
                     associated = (
@@ -538,7 +582,15 @@ class QueueMixin:
             item = db.execute("SELECT request_json FROM queue_items WHERE item_id=?", (item_id,)).fetchone()
             if item is None:
                 raise QueueError("Unknown queue item.")
-            request_id = json.loads(item["request_json"])["request_id"]
+            record = json.loads(item["request_json"])
+            if is_script_record(record):
+                state, failure_json = self._script_outcome(db, record, failure)
+                db.execute(
+                    "UPDATE queue_items SET state=?, failure_json=?, updated_at_utc=? WHERE item_id=?",
+                    (state, failure_json, self._now(), item_id),
+                )
+                return state
+            request_id = record["request_id"]
             attempt = db.execute(
                 "SELECT attempt_id, state, failure_json FROM attempts WHERE request_id=?", (request_id,)
             ).fetchone()
@@ -552,6 +604,14 @@ class QueueMixin:
                 (state, attempt_id, failure_json, self._now(), item_id),
             )
         return state
+
+    def _script_outcome(self, db: sqlite3.Connection, record: dict, failure) -> tuple[str, str | None]:
+        """A script item's end state comes from its run row and children, never from a lone attempt."""
+        run = read_run_snapshot(self.directory, record["run_id"])
+        if run is None:
+            return "failed", json.dumps(failure or {"code": "script_not_started"})
+        state, failure_json = item_outcome(run, child_states(db, run.children))
+        return state, failure_json
 
     async def image_scopes(self, queue_id: str) -> tuple[tuple[str, str, str], ...]:
         """Distinct (checkpoint, operation, consent evidence id) of the queue's pending image items."""
@@ -578,14 +638,20 @@ class QueueMixin:
     # -- restart reconciliation -----------------------------------------------------------------------------------
 
     @staticmethod
-    def reconcile(db: sqlite3.Connection, now: str) -> None:
+    def reconcile(db: sqlite3.Connection, now: str, directory: Path | None = None) -> None:
         """Run once by the new owner, inside the open transaction, after attempts were reconciled.
 
         Reserved items take their attempt's end state (never replayed). A reservation with no attempt crashed before
         anything could be submitted and returns to pending. Every live queue is restored paused.
         """
-        for item in db.execute("SELECT item_id, queue_id, request_json FROM queue_items WHERE state='running'"):
-            request_id = json.loads(item["request_json"])["request_id"]
+        for item in db.execute(
+            "SELECT item_id, queue_id, request_json FROM queue_items WHERE state='running'"
+        ).fetchall():
+            record = json.loads(item["request_json"])
+            if is_script_record(record):
+                _reconcile_script_item(db, item, record, now, directory)
+                continue
+            request_id = record["request_id"]
             attempt = db.execute(
                 "SELECT attempt_id, state, failure_json FROM attempts WHERE request_id=?", (request_id,)
             ).fetchone()
@@ -607,6 +673,33 @@ class QueueMixin:
             QueueMixin._event(db, item["queue_id"], "reconciled", now, {"item_id": item["item_id"]})
         db.execute("UPDATE queues SET state='paused', updated_at_utc=? WHERE state='running'", (now,))
         _release_queued(db, now, "restart")
+
+
+def _reconcile_script_item(db: sqlite3.Connection, item, record: dict, now: str, directory: Path | None) -> None:
+    """A reserved script item takes its run's end state. A run is never resumed; a missing run row means it never
+    started, so the item returns to pending; an unreadable ledger leaves it ``unknown``."""
+    state, failure_json = "pending", None
+    try:
+        if directory is not None:
+            _recover_runs(directory)
+            run = read_run_snapshot(directory, record["run_id"])
+            if run is not None:
+                state, failure_json = item_outcome(run, child_states(db, run.children))
+    except Exception:
+        state, failure_json = "unknown", json.dumps({"code": "script_ledger_unreadable"})
+    db.execute(
+        "UPDATE queue_items SET state=?, failure_json=?, updated_at_utc=? WHERE item_id=?",
+        (state, failure_json, now, item["item_id"]),
+    )
+    QueueMixin._event(db, item["queue_id"], "reconciled", now, {"item_id": item["item_id"]})
+
+
+def _recover_runs(directory: Path) -> None:
+    """Opening the run store turns runs left ``running`` by a crash (free ownership lock) into ``interrupted``."""
+    from dtflow.persistence.script_runs import ScriptRunStore
+
+    if (Path(directory) / "script_runs.sqlite3").is_file():
+        ScriptRunStore(directory)
 
 
 def _release_queued(db: sqlite3.Connection, now: str, reason: str) -> int:
@@ -636,7 +729,7 @@ def _shared_connection(directory: Path, *, readonly: bool = False) -> sqlite3.Co
     )
     connection.row_factory = sqlite3.Row
     connection.execute("PRAGMA busy_timeout=2000")
-    supported = (2, 3, SCHEMA_VERSION) if readonly else (SCHEMA_VERSION,)
+    supported = (2, 3, 4, SCHEMA_VERSION) if readonly else (SCHEMA_VERSION,)
     if connection.execute("PRAGMA user_version").fetchone()[0] not in supported:
         connection.close()
         raise QueueError(
@@ -710,6 +803,35 @@ def insert_queue(
                 datetime.now(UTC).isoformat(),
                 up_next=live,
                 composer_source=composer_source,
+            )
+            connection.execute("COMMIT")
+        except BaseException:
+            connection.execute("ROLLBACK")
+            raise
+    finally:
+        connection.close()
+    return queue_id
+
+
+def insert_script_queue(
+    directory: Path, backend: dict[str, Any], record: dict[str, Any], *, up_next: bool = False
+) -> str:
+    """Add one paused script queue (one item, cap 1) while another owner holds the state; see ``insert_queue``."""
+    _check_script_record(record)
+    connection = _shared_connection(directory)
+    try:
+        connection.execute("BEGIN IMMEDIATE")
+        try:
+            live = up_next and _dispatch_live(connection)
+            queue_id = _insert_paused(
+                connection,
+                backend,
+                1,
+                (),
+                datetime.now(UTC).isoformat(),
+                up_next=live,
+                kind=KIND_SCRIPT,
+                records=(record,),
             )
             connection.execute("COMMIT")
         except BaseException:
@@ -969,6 +1091,7 @@ def read_queue_summaries(directory: Path, *, described: Sequence[str] = ()) -> t
             queue = {key: row[key] for key in row.keys() if key not in ("backend_json",)}
             queue["backend"] = json.loads(row["backend_json"])
             queue.setdefault("up_next", None)  # a schema 2 or 3 database read without migrating
+            queue.setdefault("kind", "generation")  # a schema 2 to 4 database read without migrating
             summary = counts.get(row["queue_id"], {state: 0 for state in ITEM_STATES})
             queue["summary"] = summary
             queue["status"] = _status(row["state"], summary)
@@ -1027,8 +1150,11 @@ def read_queue_summaries(directory: Path, *, described: Sequence[str] = ()) -> t
             except (TypeError, ValueError):
                 request = {}
             request = request if isinstance(request, dict) else {}
+            script_name = request.get("source_name") if is_script_record(request) else None
             queue["first"] = {
-                "prompt": request.get("prompt") if isinstance(request.get("prompt"), str) else "",
+                "prompt": f"Script: {script_name}"
+                if isinstance(script_name, str)
+                else (request.get("prompt") if isinstance(request.get("prompt"), str) else ""),
                 "prompt_runs": _item_request_fields(request)["prompt_runs"],
                 "model": request.get("model_id") if isinstance(request.get("model_id"), str) else "",
                 "operation": request.get("operation") or "txt2img",
@@ -1150,6 +1276,46 @@ def _item_request_fields(request: dict) -> dict[str, Any]:
     }
 
 
+def _script_view(connection: sqlite3.Connection, request: dict) -> dict[str, Any]:
+    """A script item's run (name, SHA, run id, run state) and its ordered child steps, read through to their attempts.
+
+    ``steps_failed`` is derived from the children (a script may swallow a failed generation and still complete).
+    """
+    path = connection.execute("PRAGMA database_list").fetchone()["file"]
+    view: dict[str, Any] = {
+        "name": request.get("source_name"),
+        "source_sha256": request.get("source_sha256"),
+        "run_id": request.get("run_id"),
+        "run_state": None,
+        "error": None,
+        "children": [],
+        "steps_failed": 0,
+    }
+    try:
+        run = read_run_snapshot(Path(path).parent, str(request.get("run_id")))
+    except Exception:
+        return view | {"run_state": "unreadable"}
+    if run is None:
+        return view
+    view["run_state"], view["error"] = run.state, run.error
+    for ordinal, attempt_id in enumerate(run.children, 1):
+        row = connection.execute(
+            "SELECT state, artifacts_json FROM attempts WHERE attempt_id=?", (attempt_id,)
+        ).fetchone()
+        state = row["state"] if row else None
+        view["children"].append(
+            {
+                "ordinal": ordinal,
+                "attempt_id": attempt_id,
+                "state": state,
+                "artifacts": json.loads(row["artifacts_json"]) if row and row["artifacts_json"] else [],
+            }
+        )
+        if state in TERMINAL_ATTEMPTS and state != "succeeded":
+            view["steps_failed"] += 1
+    return view
+
+
 def _item_durations(connection: sqlite3.Connection, queue_id: str) -> dict[str, float]:
     """Observed backend seconds per settled item; an item without a recorded duration is simply absent."""
     durations: dict[str, float] = {}
@@ -1177,6 +1343,7 @@ def _read(connection: sqlite3.Connection, queue_id: str | None) -> tuple[dict[st
         queue = {key: row[key] for key in row.keys() if key not in ("backend_json",)}
         queue["backend"] = json.loads(row["backend_json"])
         queue.setdefault("up_next", None)  # a schema 2 or 3 database read without migrating
+        queue.setdefault("kind", "generation")  # a schema 2 to 4 database read without migrating
         items = []
         for item in connection.execute(
             """SELECT i.item_id, i.position, i.state, i.attempt_id, i.updated_at_utc, i.failure_json, i.request_json,
@@ -1191,6 +1358,7 @@ def _read(connection: sqlite3.Connection, queue_id: str | None) -> tuple[dict[st
                 request = {}
             if not isinstance(request, dict):
                 request = {}
+            script = _script_view(connection, request) if is_script_record(request) else None
             items.append(
                 {
                     "position": item["position"],
@@ -1198,13 +1366,14 @@ def _read(connection: sqlite3.Connection, queue_id: str | None) -> tuple[dict[st
                     "state": item["state"],
                     "updated_at_utc": item["updated_at_utc"],
                     "attempt_id": item["attempt_id"],
-                    "request_id": request.get("request_id"),
+                    "request_id": request.get("run_id") if script is not None else request.get("request_id"),
                     "seed": request.get("seed"),
                     "operation": request.get("operation") or "txt2img",
                     "strength": request.get("strength"),
                     **_item_request_fields(request),
                     "failure": json.loads(item["failure_json"]) if item["failure_json"] else None,
                     "artifacts": json.loads(item["artifacts_json"]) if item["artifacts_json"] else [],
+                    **({"script": script, "prompt": f"Script: {request.get('source_name', '')}"} if script else {}),
                 }
             )
         durations = _item_durations(connection, row["queue_id"])

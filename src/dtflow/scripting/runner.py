@@ -245,6 +245,7 @@ def run_recorded(
     context_json: str = "{}",
     limits: ScriptLimits | None = None,
     cancel: threading.Event | None = None,
+    run_id: str | None = None,
 ) -> tuple[str, RunResult]:
     """Run a script and keep its durable ledger row in step: created (and owned) before the child starts, settled from
     the result afterwards, and settled as failed if anything raises. Returns ``(run_id, result)``.
@@ -258,6 +259,7 @@ def run_recorded(
         vendored_js_sha256=shared_script_sha256(),
         answers_json=answers_json,
         context_json=context_json,
+        run_id=run_id,
     )
     state, error = "failed", "Script run ended unexpectedly."
     try:

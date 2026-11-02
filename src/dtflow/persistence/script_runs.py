@@ -164,8 +164,11 @@ class ScriptRunStore:
         vendored_js_sha256: str,
         answers_json: str = "{}",
         context_json: str = "{}",
+        run_id: str | None = None,
     ) -> str:
-        run_id = uuid.uuid4().hex
+        """Create the run row, owned before it exists. ``run_id`` lets a queue item name its run durably beforehand;
+        it must be unused."""
+        run_id = run_id or uuid.uuid4().hex
         handle = _try_lock(self._lock_path(run_id))  # held before the row exists so no opener can see it unowned
         if handle is None:
             raise ScriptRunStoreError("Could not take the script-run ownership lock.")

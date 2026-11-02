@@ -131,6 +131,7 @@ class ScriptHost:
         prefix: bool = False,
         answers: Sequence[Sequence[Any]] | None = None,
         record_answers: Callable[[dict], int] | None = None,
+        run_id: str | None = None,
     ) -> None:
         if base.operation != "txt2img" or base.image_inputs is not None:
             raise ValueError("Scripts start from text-to-image settings only.")
@@ -141,6 +142,7 @@ class ScriptHost:
         self.max_generations, self.prefix = max_generations, prefix
         self._answers = list(answers) if answers is not None else None
         self._record_answers = record_answers
+        self.run_id = run_id
         self._forms = 0
         self.baseline = normalize_configuration(decode_configuration(baseline_configuration(base)).values)
         self.generations = 0
@@ -231,6 +233,8 @@ class ScriptHost:
         seed = values["seed"]
         evidence = list(self.base.resolution_evidence)
         evidence += [("source", "script"), ("script_call", str(self.generations + 1))]
+        if self.run_id:
+            evidence.append(("script_run", self.run_id))  # "created by script X, step N" resolves without scanning runs
         if seed < 0:
             seed = secrets.randbelow(SEED_LIMIT + 1)
             evidence.append(("field.seed", "script_random"))
@@ -523,3 +527,38 @@ def starting_context(
         if answers is None
         else hashlib.sha256(json.dumps(answers, sort_keys=True).encode("utf-8")).hexdigest(),
     }
+
+
+def script_hooks(
+    service_of: Callable[[], Any],
+    *,
+    base: ResolvedGenerationRequest,
+    loop: asyncio.AbstractEventLoop,
+    state: Path,
+    max_generations: int,
+    answers: Sequence[Sequence[Any]] | None,
+    hosts: list[ScriptHost],
+) -> Callable[[Any], dict[str, Callable[..., Any]]]:
+    """The hook factory ``run_recorded`` takes, shared by the CLI and the queue item so both run the same host.
+
+    ``service_of`` is read when the run starts (the service exists only once its session is open); every host built is
+    appended to ``hosts`` so the caller can drain its in-flight work."""
+
+    def hooks(context):
+        host = ScriptHost(
+            service=service_of(),
+            base=base,
+            loop=loop,
+            link_child=context.link_child,
+            console=context.console,
+            cancel=context.cancel,
+            sandbox=Path(state) / "script_files" / context.run_id,
+            max_generations=max_generations,
+            answers=answers,
+            record_answers=context.record_answers,
+            run_id=context.run_id,
+        )
+        hosts.append(host)
+        return host.hooks()
+
+    return hooks
