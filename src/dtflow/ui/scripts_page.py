@@ -463,9 +463,44 @@ class ScriptsPage:
         close.clicked.connect(self.toggle_details)
         close_row.addWidget(close)
         panel.addLayout(close_row)
-        self.drawer_summary = _label("", wrap=True)
-        panel.addWidget(self.drawer_summary)
-        panel.addStretch(1)
+        content = QWidget()
+        self.drawer_layout = QVBoxLayout(content)
+        self.drawer_layout.setContentsMargins(0, 0, 0, 0)
+        self.drawer_layout.setSpacing(8)
+        compatibility, compat_layout = _card("Compatibility")
+        self.drawer_summary = _label("No script inspected", wrap=True)
+        compat_layout.addWidget(self.drawer_summary)
+        for hook, state, detail in REFERENCE_HOOKS:
+            compat_layout.addWidget(_hook_item(hook, state, detail))
+        self.drawer_layout.addWidget(compatibility)
+        settings, settings_layout = _card("Starting settings")
+        for name, value in (
+            ("Checkpoint", "z_image_turbo_1.0_q6p"),
+            ("Size", "320 × 192"), ("Steps", "4"),
+            ("Sampler", "euler_a"), ("Seed", "0"),
+        ):
+            _line(settings_layout, name, value)
+        self.drawer_layout.addWidget(settings)
+        source, source_layout = _card("Source")
+        for name, value in (
+            ("File", "Wildcard prompt sweep.js"),
+            ("Version SHA-256", "9f3a1c2e4b7d08…"),
+            ("Size", "6.2 KB"),
+            ("Imported", "21 Oct 2026 21:54"),
+        ):
+            _line(source_layout, name, value)
+        self.drawer_layout.addWidget(source)
+        history, history_layout = _card("History")
+        history_layout.addWidget(_label(
+            "#6 · Cancelled before start · 0:42\\n"
+            "#4 · Succeeded · 4 generations\\n"
+            "#3 · Stopped locally · 2 generations\\n"
+            "#2 · Failed\\n#1 · Outcome unknown",
+            role="scriptsMuted", wrap=True,
+        ))
+        self.drawer_layout.addWidget(history)
+        self.drawer_layout.addStretch(1)
+        panel.addWidget(_scroll(content), 1)
         self.drawer.hide()
 
     def toggle_details(self):
