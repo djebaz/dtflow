@@ -6,6 +6,9 @@ preview values never become provider requests or mutate a saved ScriptRun.
 
 from __future__ import annotations
 
+import html
+import re
+
 from PySide6.QtCore import QSize, Qt
 from PySide6.QtGui import QColor, QPainter, QPen
 from dtflow.ui.theme import load_tokens
@@ -162,6 +165,8 @@ def _path_control(spec: dict) -> QWidget:
     path.setPlaceholderText("No image chosen" if spec["type"] == "imageField" else "No folder selected")
     path.setToolTip(path.text())
     path.textChanged.connect(path.setToolTip)
+    path.setCursorPosition(len(path.text()))  # Keep the folder name visible for long paths.
+    path.textChanged.connect(lambda text: path.setCursorPosition(len(text)))
     choose = QPushButton("Choose…")
     choose.setAccessibleName("Choose " + spec["label"])
     def choose_file():
@@ -274,10 +279,19 @@ class ScriptForm(QWidget):
                 heading.setObjectName("scriptsFormSection")
                 self.layout_.addWidget(heading)
             elif kind in ("plainText", "markdown"):
-                # UI-only subset intentionally renders formatting as text, not HTML.
-                body = QLabel(spec["text"].replace("**", "").replace("`", ""))
+                body = QLabel()
                 body.setObjectName("scriptsFormSupporting")
                 body.setWordWrap(True)
+                if kind == "markdown":
+                    # Only bold and code are allowed. Escape script text before
+                    # adding these two formatting elements; never render raw HTML.
+                    value = html.escape(spec["text"])
+                    value = re.sub(r"\\*\\*([^*]+)\\*\\*", r"<b>\\1</b>", value)
+                    value = re.sub(r"`([^`]+)`", r"<code>\\1</code>", value)
+                    body.setTextFormat(Qt.TextFormat.RichText)
+                    body.setText(value)
+                else:
+                    body.setText(spec["text"])
                 self.layout_.addWidget(body)
             else:
                 self.layout_.addWidget(_row(spec["label"], _control(spec)))
