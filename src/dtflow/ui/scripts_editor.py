@@ -175,6 +175,7 @@ class ScriptEditor(QWidget):
         tools.addWidget(history)
 
         find = QPushButton("Find…")
+        find.setFixedHeight(32)
         find.setAccessibleName("Find in script")
         find.setToolTip("Find (Ctrl+F)")
         find.clicked.connect(self._toggle_find)
@@ -200,6 +201,7 @@ class ScriptEditor(QWidget):
         tools.addWidget(font_group)
         tools.addStretch(1)
         self.check_syntax = QPushButton("Check syntax")
+        self.check_syntax.setFixedHeight(32)
         self.check_syntax.setToolTip("Parse-only check will be available when the editor connects to the script engine.")
         self.check_syntax.setEnabled(False)
         tools.addWidget(self.check_syntax)
