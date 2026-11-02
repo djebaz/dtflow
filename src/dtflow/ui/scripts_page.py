@@ -384,6 +384,25 @@ class ScriptsPage:
         outer = QVBoxLayout(body)
         outer.setContentsMargins(4, 4, 4, 4)
         outer.setSpacing(8)
+        self.unresolved_notice = QFrame()
+        self.unresolved_notice.setObjectName("scriptsUnresolvedNotice")
+        warning = QHBoxLayout(self.unresolved_notice)
+        warning.setContentsMargins(14, 11, 14, 11)
+        warning.addWidget(_label("●", role="scriptsWarningGlyph"))
+        message = QVBoxLayout()
+        message.addWidget(_label("Previous run #5 is unresolved", role="scriptsWarningTitle"))
+        message.addWidget(_label(
+            "Generation 3 was submitted and no result was recorded; it may still be billed. "
+            "A new run is separate work and may be charged again.",
+            role="scriptsMuted", wrap=True,
+        ))
+        warning.addLayout(message, 1)
+        view = QPushButton("View run #5")
+        view.setToolTip("Offline presentation only: no persisted ScriptRun is linked.")
+        view.setEnabled(False)
+        warning.addWidget(view)
+        outer.addWidget(self.unresolved_notice)
+        self.unresolved_notice.hide()
         note = QHBoxLayout()
         note.addWidget(_label("Answers belong to this script version.", role="scriptsMuted"), 1)
         self.reset_fields = QPushButton("Reset to defaults")
@@ -788,6 +807,10 @@ class ScriptsPage:
             "Optional. An immutable copy is taken at Start; changing it requires a new run."
         )
         self.start.setText("Start script")
+        self.unresolved_notice.hide()
+        self.form_note.setText(
+            "No form controls were discovered. Dynamic requestFromUser inputs appear only during a run."
+        )
         self.library_note.setText(
             "Local files only. Each version is copied and kept by SHA-256 (3 of 50 stored)."
         )
@@ -845,7 +868,9 @@ class ScriptsPage:
                 self.status.style().polish(self.status)
                 self.hook_status.setText("Preflight incomplete")
             if state == "scripts_form_after_unknown":
-                self.status.setText("Previous run #5 · outcome unknown · may be billed")
+                # Compatibility remains supported. A *separate* amber card
+                # describes the unsettled previous run, without claiming a retry.
+                self.unresolved_notice.show()
                 self.start.setText("Start new run")
             if state == "scripts_form_long_values":
                 fields = [dict(item) for item in REFERENCE_FORM]
