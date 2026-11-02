@@ -2032,10 +2032,16 @@ QPushButton[role="galleryInfo"]:hover {
 }
 
 /* Generate > Scripts: native offline workspace and editor-scoped palette. */
-QFrame#scriptsLibraryPanel, QFrame#scriptsWorkPanel, QFrame#scriptsInspectorPanel {
+QFrame#scriptsLibraryPanel, QFrame#scriptsInspectorPanel {
   background: ${color.surface};
   border: 1px solid ${color.sectionBorder};
   border-radius: ${size.panelRadius};
+}
+/* The center is a workspace, not a second nested section card. Its children
+   provide their own input/canvas borders; the shared splitter owns gutters. */
+QFrame#scriptsWorkPanel {
+  background: transparent;
+  border: 0;
 }
 QLabel#scriptsNameLabel, QLabel#scriptsLibraryTitle, QLabel#scriptsInspectorTitle {
   color: ${color.title};
