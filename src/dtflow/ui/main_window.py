@@ -813,7 +813,7 @@ class MainWindow:
             self._logs_form.logsBrandSlot.setVisible(logs)
             self._logs_form.logsNavigationSlot.setVisible(logs)
         shell.runControl.setVisible(True)
-        if self._scripts_active:
+        if self._scripts_active and self.form.workspaceStack.currentWidget() is self.generation_page:
             self.scripts.sync_responsive()
         elif hasattr(self, "scripts"):
             self.scripts.drawer.hide()
