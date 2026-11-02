@@ -7,7 +7,7 @@ preview values never become provider requests or mutate a saved ScriptRun.
 from __future__ import annotations
 
 from PySide6.QtCore import QSize, Qt
-from PySide6.QtGui import QPainter, QPen
+from PySide6.QtGui import QColor, QPainter, QPen
 from dtflow.ui.theme import load_tokens
 from PySide6.QtWidgets import (
     QCheckBox, QComboBox, QDoubleSpinBox, QFileDialog, QFrame, QHBoxLayout,
@@ -95,12 +95,12 @@ class _RangeControl(QWidget):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         y = self.height() // 2
-        painter.setPen(QPen(colors["color.groove"], 4))
+        painter.setPen(QPen(QColor(colors["color.groove"]), 4))
         painter.drawLine(10, y, self.width() - 10, y)
-        painter.setPen(QPen(colors["color.accent"], 4))
+        painter.setPen(QPen(QColor(colors["color.accent"]), 4))
         painter.drawLine(self._x(self.lower), y, self._x(self.upper), y)
-        painter.setPen(QPen(colors["color.handleBorder"], 1))
-        painter.setBrush(colors["color.handle"])
+        painter.setPen(QPen(QColor(colors["color.handleBorder"]), 1))
+        painter.setBrush(QColor(colors["color.handle"]))
         painter.drawEllipse(self._x(self.lower) - 7, y - 7, 14, 14)
         painter.drawEllipse(self._x(self.upper) - 7, y - 7, 14, 14)
 
@@ -134,7 +134,7 @@ class _RangeControl(QWidget):
             self.update()
             if self.on_change:
                 self.on_change(self.lower, self.upper)
-        elif event.key() == Qt.Key.Key_Tab:
+        elif event.key() == Qt.Key.Key_Space:
             self.active_thumb = 1 - self.active_thumb
             self.update()
         else:
