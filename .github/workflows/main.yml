@@ -30,6 +30,7 @@ on:
           - shell
           - inpaint
           - logs
+          - scripts
       upload_mode:
         description: "Google Drive upload format (images uploads every PNG with four workers)"
         required: true
@@ -139,7 +140,7 @@ jobs:
                   2>&1 | sed -u "s/^/[$category] /"
               }
               export -f render_one
-              printf '%s\n' connection generate images queues shell inpaint logs \
+              printf '%s\n' connection generate images queues shell inpaint logs scripts \
                 | xargs -n1 -P3 bash -c 'render_one "$0"' \
                 2>&1 | tee tmp/render.log || status=$?
             else
