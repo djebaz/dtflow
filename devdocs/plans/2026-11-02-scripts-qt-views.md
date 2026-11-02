@@ -52,7 +52,7 @@ All captures must be of the actual Qt screen, using the existing shell, at the c
 ## Existing PR #201 shortcomings — must be repaired before review
 
 - `scripts_workspace.ui` is an isolated three-panel form without the actual DTFlow shell, correct composition or complete controls.
-- `render_scripts_states.py` renders only that isolated form; its synthetic text is **not** the owner-approved 24 screens.
+- `render_scripts_states.py` now mounts the preliminary panels in the **real DTFlow shell** for offline capture (rather than taking screenshots of an independent window), but its synthetic content is **not** the owner-approved 24 screens and has not yet been visually verified on Qt. Actual Generate sub-mode integration remains missing.
 - The form exposes only a tiny subset of the 14 form controls and a plain text editor rather than the illustrated code editor.
 - The mock run states do not use the shared activity bar, native overlays or run lifecycle. Narrow/details is a hidden or shown splitter panel, **not a drawer**.
 - No visual comparison was performed against the supplied captures, and no native screenshot rendering was verified.
