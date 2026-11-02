@@ -20,8 +20,9 @@ slice (the engine, the hook table and the ledger; issues #119 and #113) does and
   so the parent enforces Stop, the JavaScript-segment deadline (default 300 s without a host call; hook time excluded),
   memory and stack limits and size bounds. After Stop the child gets a 1 s grace and is then killed. Killing a child
   never cancels provider work a hook already submitted; that stays owned by its durable attempt.
-- The child cannot outlive the app: Linux parent-death signal, Windows kill-on-close Job Object (not yet verified on
-  Windows). The frozen entry point calls `multiprocessing.freeze_support()`.
+- The child is bound to the app's lifetime on a best-effort basis: Linux parent-death signal and a Windows kill-on-close
+  Job Object (not independently verified on Windows). If assignment fails, or on another platform, an orphaned child can
+  outlive the app until it notices the closed pipe and exits. The frozen entry point calls `multiprocessing.freeze_support()`.
 - `console.info`/`console.debug` and a cancellable `__dtSleep` are a small DTFlow overlay kept outside the vendored file.
 
 ## Analyzer (`dtflow script <file>`)

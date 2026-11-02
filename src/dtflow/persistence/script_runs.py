@@ -121,7 +121,8 @@ class ScriptRunStore:
                     handle = _try_lock(lock)
                     if handle is not None:
                         connection.execute(
-                            "UPDATE script_runs SET state='interrupted', finished_at=? WHERE run_id=?", (_now(), run_id)
+                            "UPDATE script_runs SET state='interrupted', finished_at=? WHERE run_id=? AND state='running'",
+                            (_now(), run_id),
                         )
                         _release(handle, lock)
 
