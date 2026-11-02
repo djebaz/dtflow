@@ -224,12 +224,13 @@ def run_script(
 
 @dataclass(frozen=True, slots=True)
 class RunContext:
-    """What a hook factory gets from ``run_recorded``: the ledger link, the console and the Stop event."""
+    """What a hook factory gets from ``run_recorded``: the ledger link, the answers record, the console and the Stop event."""
 
     run_id: str
     link_child: Callable[[str], int]
     console: Callable[[str, int], None]
     cancel: threading.Event
+    record_answers: Callable[[dict], int]
 
 
 def run_recorded(
@@ -240,7 +241,7 @@ def run_recorded(
     | None = None,
     *,
     source_name: str,
-    answers_json: str = "{}",
+    answers_json: str = "[]",
     context_json: str = "{}",
     limits: ScriptLimits | None = None,
     cancel: threading.Event | None = None,
@@ -264,7 +265,11 @@ def run_recorded(
             (
                 lambda dispatcher: implementations(
                     RunContext(
-                        run_id, lambda attempt: store.link_child(run_id, attempt), dispatcher.log, dispatcher.cancel
+                        run_id,
+                        lambda attempt: store.link_child(run_id, attempt),
+                        dispatcher.log,
+                        dispatcher.cancel,
+                        lambda entry: store.append_answers(run_id, entry),
                     )
                 )
             )

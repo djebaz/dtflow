@@ -130,6 +130,7 @@ class ScriptHost:
         max_generations: int = DEFAULT_MAX_GENERATIONS,
         prefix: bool = False,
         answers: Sequence[Sequence[Any]] | None = None,
+        record_answers: Callable[[dict], int] | None = None,
     ) -> None:
         if base.operation != "txt2img" or base.image_inputs is not None:
             raise ValueError("Scripts start from text-to-image settings only.")
@@ -139,6 +140,8 @@ class ScriptHost:
         self.sandbox.mkdir(parents=True, exist_ok=True)
         self.max_generations, self.prefix = max_generations, prefix
         self._answers = list(answers) if answers is not None else None
+        self._record_answers = record_answers
+        self._forms = 0
         self.baseline = normalize_configuration(decode_configuration(baseline_configuration(base)).values)
         self.generations = 0
         self.last: GenerationOutcome | None = None
@@ -343,17 +346,30 @@ class ScriptHost:
         wrong count or type, fails the call. Answer shapes for sections, images and image fields are an assumption (see
         the PR); the complete form is #196."""
         kinds = _answer_kinds(components)
+        source = "file" if self._answers is not None else "initial"
         if self._answers is None:
             if any(kind in ("imageField", "directory", "selectableImage") for kind in kinds):
                 raise ValueError("This form needs an answer for an image or directory field; supply --answers.")
-            return _initial_answers(components)
-        if not self._answers:
-            raise ValueError("The supplied answers ran out before this form; the script was not continued.")
-        answers = list(self._answers.pop(0))
-        if len(answers) != len(kinds):
-            raise ValueError(f"Expected {len(kinds)} answers for this form, got {len(answers)}.")
-        for kind, answer in zip(kinds, answers, strict=True):
-            _check_answer(kind, answer)
+            answers = _initial_answers(components)
+        else:
+            if not self._answers:
+                raise ValueError("The supplied answers ran out before this form; the script was not continued.")
+            answers = list(self._answers.pop(0))
+            if len(answers) != len(kinds):
+                raise ValueError(f"Expected {len(kinds)} answers for this form, got {len(answers)}.")
+            for kind, answer in zip(kinds, answers, strict=True):
+                _check_answer(kind, answer)
+        self._forms += 1
+        if self._record_answers is not None:
+            # Durable before the script continues; if it cannot be recorded the call fails and the script stops here.
+            self._record_answers(
+                {
+                    "call": self._forms,
+                    "title": title if isinstance(title, str) else "",
+                    "source": source,
+                    "answers": answers,
+                }
+            )
         return answers
 
     def screen_size(self) -> dict[str, float]:
@@ -476,3 +492,32 @@ def _check_answer(kind: str, answer: Any) -> None:
     }.get(kind, False)
     if not ok:
         raise ValueError(f"Answer for a {kind} field has the wrong type.")
+
+
+def starting_context(
+    base: ResolvedGenerationRequest, *, backend: str, max_generations: int, answers: Sequence[Sequence[Any]] | None
+) -> dict[str, Any]:
+    """Validated starting settings for the ScriptRun record. Credentials, endpoints, state paths and prepared-asset
+    references are deliberately left out; only the number of prepared assets is kept."""
+    import hashlib
+    import json
+
+    return {
+        "backend": backend,
+        "model_id": base.model_id,
+        "prompt": base.prompt,
+        "negative_prompt": base.negative_prompt,
+        "seed": base.seed,
+        "width": base.width_px,
+        "height": base.height_px,
+        "steps": base.steps,
+        "guidance": base.guidance,
+        "sampler": str(base.sampler_id),
+        "loras": [{"identifier": item.identifier, "weight": item.weight} for item in base.loras],
+        "prepared_assets": len(base.prepared_assets),
+        "max_generations": max_generations,
+        "answers_supplied": None if answers is None else len(answers),
+        "answers_sha256": None
+        if answers is None
+        else hashlib.sha256(json.dumps(answers, sort_keys=True).encode("utf-8")).hexdigest(),
+    }

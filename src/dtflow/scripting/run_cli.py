@@ -16,7 +16,7 @@ from pathlib import Path
 from dtflow.core.models import TimeoutPolicy, ValidationError
 from dtflow.persistence.script_runs import ScriptRunStore
 from dtflow.scripting.engine import MAX_SOURCE_BYTES
-from dtflow.scripting.host import ScriptHost
+from dtflow.scripting.host import ScriptHost, starting_context
 from dtflow.scripting.runner import RunContext, check_syntax, run_recorded
 from dtflow.services.session import open_session, selection_for
 
@@ -67,6 +67,7 @@ async def run_script_file(args: argparse.Namespace, *, exit_ok: int, exit_failed
             sandbox=Path(args.state) / "script_files" / context.run_id,
             max_generations=args.max_generations,
             answers=answers,
+            record_answers=context.record_answers,
         )
         hosts.append(host)
         return host.hooks()
@@ -75,7 +76,17 @@ async def run_script_file(args: argparse.Namespace, *, exit_ok: int, exit_failed
         selection, args.state, output=args.outputs, timeouts=TimeoutPolicy(total=args.timeout)
     ) as service:
         task = asyncio.ensure_future(
-            asyncio.to_thread(run_recorded, store, source, hooks, source_name=Path(args.file).name, cancel=cancel)
+            asyncio.to_thread(
+                run_recorded,
+                store,
+                source,
+                hooks,
+                source_name=Path(args.file).name,
+                cancel=cancel,
+                context_json=json.dumps(
+                    starting_context(base, backend=args.backend, max_generations=args.max_generations, answers=answers)
+                ),
+            )
         )
         interrupted = False
         try:
