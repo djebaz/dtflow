@@ -213,9 +213,7 @@ class MainWindow:
         self.shell = load_ui(FORMS_DIR / "workspace_shell.ui", form.centralWidget())
         # Restore the standard left-stack width policy outside Scripts.
         # The scroll viewport has horizontal overflow hidden.
-        self._left_stack_default_horizontal_policy = (
-            self.shell.leftStack.sizePolicy().horizontalPolicy()
-        )
+        self._left_stack_default_horizontal_policy = self.shell.leftStack.sizePolicy().horizontalPolicy()
         # Mount presentation regions once; page controllers retain their widget references.
         for page, names in (
             (form, ("contextRail", "workspaceFrame", "inspectorPanel")),
@@ -602,19 +600,19 @@ class MainWindow:
 
     def _set_scripts_left_rail(self, active: bool) -> None:
         """Size the shared left rail without restarting workspace-navigation side effects."""
+        self.shell.scriptsInspectorToggle.setVisible(active)
+        if not active:
+            self.shell.leftStack.setMinimumHeight(0)
+            self.shell.leftStack.setMaximumHeight(16777215)
         policy = self.shell.leftStack.sizePolicy()
         vertical = QSizePolicy.Policy.Ignored if active else QSizePolicy.Policy.Preferred
-        horizontal = (
-            QSizePolicy.Policy.Ignored if active
-            else self._left_stack_default_horizontal_policy
-        )
+        horizontal = QSizePolicy.Policy.Ignored if active else self._left_stack_default_horizontal_policy
         if policy.verticalPolicy() != vertical or policy.horizontalPolicy() != horizontal:
             policy.setVerticalPolicy(vertical)
             policy.setHorizontalPolicy(horizontal)
             self.shell.leftStack.setSizePolicy(policy)
         self.shell.leftScroll.setVerticalScrollBarPolicy(
-            Qt.ScrollBarPolicy.ScrollBarAlwaysOff if active
-            else Qt.ScrollBarPolicy.ScrollBarAsNeeded
+            Qt.ScrollBarPolicy.ScrollBarAlwaysOff if active else Qt.ScrollBarPolicy.ScrollBarAsNeeded
         )
 
     def _show_scripts(self) -> None:
@@ -692,23 +690,22 @@ class MainWindow:
         # create a second wheel/scrollbar over the fixed filter and Clear action.
         queues_active = index == 2
         scripts_active = index == 1 and self._scripts_active
+        self.shell.scriptsInspectorToggle.setVisible(scripts_active)
+        if not scripts_active:
+            self.shell.leftStack.setMinimumHeight(0)
+            self.shell.leftStack.setMaximumHeight(16777215)
         scroll = self.shell.leftScroll
         stack_policy = self.shell.leftStack.sizePolicy()
-        vertical = (
-            QSizePolicy.Policy.Ignored
-            if (queues_active or scripts_active)
-            else QSizePolicy.Policy.Preferred
-        )
-        horizontal = (
-            QSizePolicy.Policy.Ignored if scripts_active
-            else self._left_stack_default_horizontal_policy
-        )
+        vertical = QSizePolicy.Policy.Ignored if (queues_active or scripts_active) else QSizePolicy.Policy.Preferred
+        horizontal = QSizePolicy.Policy.Ignored if scripts_active else self._left_stack_default_horizontal_policy
         if stack_policy.verticalPolicy() != vertical or stack_policy.horizontalPolicy() != horizontal:
             stack_policy.setVerticalPolicy(vertical)
             stack_policy.setHorizontalPolicy(horizontal)
             self.shell.leftStack.setSizePolicy(stack_policy)
         scroll.setVerticalScrollBarPolicy(
-            Qt.ScrollBarPolicy.ScrollBarAlwaysOff if (queues_active or scripts_active) else Qt.ScrollBarPolicy.ScrollBarAsNeeded
+            Qt.ScrollBarPolicy.ScrollBarAlwaysOff
+            if (queues_active or scripts_active)
+            else Qt.ScrollBarPolicy.ScrollBarAsNeeded
         )
         buttons = (
             self.form.connectionNavigationButton,
@@ -788,9 +785,7 @@ class MainWindow:
             # when active, so it cannot overflow the shared right rail.
             scripts_inspector = page is self.scripts.right
             horizontal = (
-                QSizePolicy.Policy.Ignored
-                if (not shown or scripts_inspector)
-                else QSizePolicy.Policy.Preferred
+                QSizePolicy.Policy.Ignored if (not shown or scripts_inspector) else QSizePolicy.Policy.Preferred
             )
             if policy.horizontalPolicy() != horizontal:
                 policy.setHorizontalPolicy(horizontal)

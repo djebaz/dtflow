@@ -4,6 +4,8 @@ Mockup: `ui_kits/scripts/index.html` (state picker at the top; `?state=<name>` d
 
 ## Proposed DESIGN.md section
 
+The initial proposal below is historical where it conflicts with the resolved owner decisions and corrections later on this page. Those resolved sections are the implementation contract.
+
 **Scripts mode.** Scripts is the third joined sub-mode of Generate (Text to image | Inpaint | Scripts), a row of `mode` buttons at the top of the centre column, 6 px outer corners, 1 px overlap. No top-level tab. Switching mode never cancels, pauses or resumes a running script; the activity bar keeps showing it on every tab.
 
 **Layout.** Left rail: shell chrome, then *Script library* (SectionCard: list, Import…, Reload from disk, storage caption). Centre: sub-mode row, script header, view, start bar. Right inspector (272 px, same toggle as the other tabs): Compatibility, Starting settings, Source, History. The inspector is hidden at 800 × 680 with nothing relocated (as Queues does below 1100 px); the hook table stays reachable from the header status.
@@ -75,13 +77,13 @@ Import errors (file too large, not UTF-8), the library full state (50 versions),
 - **Unresolved outcomes:** "Review and start again" after *outcome unknown* or *interrupted* carries a warning card into the form (previous run #5, may be billed, a new run is separate work), keeps the run in History as unresolved, and relabels the button "Start new run".
 - **Stop:** only the shared activity bar owns Stop; the Scripts footer carries a caption. Cancel input answers the script with no value and the run continues.
 - **Waiting wording:** "Waiting for your input · the script is paused. A generation already submitted may still complete."
-- **Feedback:** failed / interrupted use the red overlay (retained until dismissed), outcome unknown the amber overlay, both with × and Esc, no text Dismiss. Durable status stays in the state line and History.
+- **Feedback:** failure uses the persistent red overlay; interrupted and outcome unknown use the six-second amber warning row, with × and Escape. Durable status stays in the state line and History after transient feedback expires.
 - **Identity:** runs are "Run #N" with a separate "version <sha>"; steps read "Created by script X, run #N, step M".
 - **Accessibility:** every control has a programmatic label (Width, Height, minimum, maximum, switch name, Choose <field>, Open run N step M in Images); long labels wrap; hook names wrap; paths expand on hover or focus.
 - **Estimates:** the disclosure names the settings the estimate describes, says later calls can differ, and shows backend as unchecked while the connection is unknown.
 - **Creator / editor:** library gets New script…; the centre has an Inspect | Configure | Code switch. The editor is a real code area (syntax highlighting, line numbers, undo/redo, Find, font size, line/column diagnostics with Go to line), "Draft · unsaved changes", Discard (inline confirm) and Save as new version (immutable SHA, re-inspected, runs stay pinned). Check syntax is parse-only. New states: `scripts_editor_new`, `scripts_editor_dirty`, `scripts_editor_syntax_error`, `scripts_editor_run_active`, `scripts_editor_narrow`, plus `scripts_form_after_unknown` and `scripts_narrow_details`.
-- **Form discovery:** Configure comes from a non-generative dry-run that stubs generation, network and files; dynamic `requestFromUser` forms may only appear at run time (stated in Inspect).
-- **Owner decisions still open:** canvas entry (both recommended), queue coexistence (shared admission recommended), history placement (Scripts only), persistent files (no), Photos/Files pickers (unsupported first).
+- **Form discovery:** static inspection only; no script evaluation or discovery dry-run. Dynamic `requestFromUser` forms appear only when an explicitly started run asks.
+- **Owner decisions:** resolved in the following section; the earlier questions are historical.
 - **Not done:** real fixture images (placeholders remain).
 
 ## Owner decisions (resolved, round 1–5)

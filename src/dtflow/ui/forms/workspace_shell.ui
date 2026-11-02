@@ -120,6 +120,18 @@
            </layout>
           </item>
           <item>
+           <widget class="QToolButton" name="scriptsInspectorToggle">
+            <property name="text"><string>▥</string></property>
+            <property name="accessibleName"><string>Toggle Scripts inspector details</string></property>
+            <property name="toolTip"><string>Show or hide Scripts inspector details</string></property>
+            <property name="checkable"><bool>true</bool></property>
+            <property name="visible"><bool>false</bool></property>
+            <property name="autoRaise"><bool>true</bool></property>
+            <property name="minimumSize"><size><width>30</width><height>30</height></size></property>
+            <property name="maximumSize"><size><width>30</width><height>30</height></size></property>
+           </widget>
+          </item>
+          <item>
            <widget class="QWidget" name="runControlOffset">
             <property name="minimumSize">
              <size>

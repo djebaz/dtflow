@@ -10,6 +10,8 @@ Changes through 5.4.0 are consolidated in [DTFlow 5.4.0](v5.4.0.md). This file t
 
 ## Fixed
 
+- PR #201 Scripts desktop preview: Designer-owned static views, visible library actions, wrapped form rows, distinct queued/cancelled evidence and Cancel/waiting presentation, selected-script inspection facts, saved-versus-draft status, Find/Replace and inline dirty-draft protection. Inspector drawer and offline source/mask fixtures remain presentation-only; runtime Start/save/history integration is not included.
+
 
 ## Scripting (PR #199, pending merge)
 
@@ -19,5 +21,5 @@ Changes through 5.4.0 are consolidated in [DTFlow 5.4.0](v5.4.0.md). This file t
 
 ## Release audit
 
-- PRs: #193.
-- Scope: Version bump 5.4.0 and release-note consolidation; exact Windows artifact acceptance and publication remain separate.
+- PRs: #193, #201.
+- Scope: Version bump 5.4.0 and release-note consolidation; Scripts Qt preview review corrections and canonical Designer layout migration, without runtime execution integration; exact Windows artifact acceptance and publication remain separate.

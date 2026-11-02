@@ -10,11 +10,19 @@ from __future__ import annotations
 import hashlib
 from pathlib import Path
 
-from PySide6.QtCore import QSize, Qt
+from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
-    QButtonGroup, QCheckBox, QComboBox, QFileDialog, QFrame, QGridLayout, QHBoxLayout, QLabel,
-    QLineEdit, QListWidget, QListWidgetItem, QPushButton, QScrollArea,
-    QSizePolicy, QSpinBox, QStackedWidget, QVBoxLayout, QWidget,
+    QButtonGroup,
+    QFileDialog,
+    QFrame,
+    QHBoxLayout,
+    QLabel,
+    QListWidgetItem,
+    QPushButton,
+    QScrollArea,
+    QSizePolicy,
+    QVBoxLayout,
+    QWidget,
 )
 
 from dtflow.ui.scripts_editor import ScriptEditor
@@ -37,39 +45,46 @@ REFERENCE_HOOKS = (
 
 # Illustrative source code is copied from the owner-approved Scripts UI kit,
 # not inferred from a live user script. It never runs in the offline renderer.
-EDITOR_STARTER = "\n".join((
-    "// New script: a small supported starter.",
-    'const wild = ["red", "green", "blue"];',
-    "const configuration = pipeline.configuration;",
-    "",
-    "for (const w of wild) {",
-    '  pipeline.run({ configuration: configuration, prompt: "a lamp, " + w });',
-    '  canvas.saveImage("lamp-" + w + ".png", true);',
-    "}",
-))
-EDITOR_BASE = "\n".join((
-    "// Wildcard prompt sweep",
-    'const answers = requestFromUser("Sweep", "Start", function () {',
-    "  return [",
-    '    this.textField("red, green, blue, amber", "Wildcards", false, 100),',
-    '    this.slider(75, this.slider.percent, 0, 100, "Strength")',
-    "  ];",
-    "});",
-    "",
-    "const configuration = pipeline.configuration;",
-    "configuration.strength = answers[1] / 100;",
-    'for (const w of answers[0].split(",")) {',
-    '  pipeline.run({ configuration: configuration, prompt: "a lamp, " + w.trim() });',
-    '  canvas.saveImage("sweep-" + w.trim() + ".png", true);',
-    "}",
-))
+EDITOR_STARTER = "\n".join(
+    (
+        "// New script: a small supported starter.",
+        'const wild = ["red", "green", "blue"];',
+        "const configuration = pipeline.configuration;",
+        "",
+        "for (const w of wild) {",
+        '  pipeline.run({ configuration: configuration, prompt: "a lamp, " + w });',
+        '  canvas.saveImage("lamp-" + w + ".png", true);',
+        "}",
+    )
+)
+EDITOR_BASE = "\n".join(
+    (
+        "// Wildcard prompt sweep",
+        'const answers = requestFromUser("Sweep", "Start", function () {',
+        "  return [",
+        '    this.textField("red, green, blue, amber", "Wildcards", false, 100),',
+        '    this.slider(75, this.slider.percent, 0, 100, "Strength")',
+        "  ];",
+        "});",
+        "",
+        "const configuration = pipeline.configuration;",
+        "configuration.strength = answers[1] / 100;",
+        'for (const w of answers[0].split(",")) {',
+        '  pipeline.run({ configuration: configuration, prompt: "a lamp, " + w.trim() });',
+        '  canvas.saveImage("sweep-" + w.trim() + ".png", true);',
+        "}",
+    )
+)
 
 
 RUN_STATUSES = {
     "queued": ("Queued behind 3 items", "Nothing submitted. Waiting 0:42 · Cancel is free."),
     "cancelled_before_start": ("Cancelled before start", "No provider submission and no charge."),
     "running": ("Running · Run #5", "Generation 3 submitted · latest committed result below."),
-    "waiting_input": ("Waiting for your input", "The script is paused. A generation already submitted may still complete."),
+    "waiting_input": (
+        "Waiting for your input",
+        "The script is paused. A generation already submitted may still complete.",
+    ),
     "stopped": ("Stopped locally", "Remote work may continue; inspect linked attempts."),
     "failed": ("Failed · Run #5", "See the durable error details in History."),
     "interrupted": ("Interrupted · Run #5", "Do not replay unresolved attempts."),
@@ -131,9 +146,12 @@ def _hook_item(hook: str, state: str, detail: str) -> QFrame:
     layout.setContentsMargins(0, 5, 0, 5)
     layout.setSpacing(3)
     heading = QHBoxLayout()
-    name = _label(hook, role="scriptsHookName", wrap=True)
+    import re
+
+    wrapped_hook = re.sub(r"(?<=[a-z])(?=[A-Z])", "\u200b", hook).replace(".", ".\u200b")
+    name = _label(wrapped_hook, role="scriptsHookName", wrap=True)
     name.setMinimumWidth(0)
-    name.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
+    name.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Minimum)
     name.setToolTip(hook)
     heading.addWidget(name, 1)
     verdict = _label(state, role="scriptsHookVerdict")
@@ -159,6 +177,7 @@ class ScriptsPage:
         self._reference_mode = False
         self._draft_text = ""
         self._drawer_requested = False
+        self._wide_details_requested = True
         self._current_script: tuple[str, str, str, str] | None = None
         self._build_library()
         self._build_center()
@@ -173,11 +192,10 @@ class ScriptsPage:
         self.left.setMinimumWidth(0)
         policy = self.left.sizePolicy()
         policy.setHorizontalPolicy(QSizePolicy.Policy.Ignored)
+        policy.setVerticalPolicy(QSizePolicy.Policy.Ignored)
         self.left.setSizePolicy(policy)
         self.panels = (self.left, self.center, self.right)
-        for stack, panel in zip(
-            (shell.leftStack, shell.centerStack, shell.rightStack), self.panels, strict=True
-        ):
+        for stack, panel in zip((shell.leftStack, shell.centerStack, shell.rightStack), self.panels, strict=True):
             panel.setParent(None)
             stack.addWidget(panel)
         self.shell = shell
@@ -190,356 +208,110 @@ class ScriptsPage:
         self.scripts_mode.setChecked(True)
 
     def _build_library(self):
-        layout = self.left.layout()
-        heading = _label("Script library", role="scriptsCardTitle")
-        heading.setFixedHeight(34)
-        heading.setAlignment(Qt.AlignmentFlag.AlignVCenter)
-        layout.addWidget(heading)
-        self.library = QListWidget()
-        self.library.setObjectName("scriptsLibraryList")
-        self.library.setAccessibleName("Script library")
-        self.library.setMinimumHeight(110)
+        ui = self.designer
+        self.library = ui.scriptsLibraryList
+        self.new_button = ui.newScriptButton
+        self.import_button = ui.importScriptButton
+        self.reload_button = ui.reloadScriptButton
+        self.library_note = ui.libraryNote
         self.library.currentRowChanged.connect(self._selected)
-        # The list owns the flexible height; the footer controls have reserved
-        # heights and must never be pushed beyond the left-rail viewport.
-        layout.addWidget(self.library, 1)
-        new = QPushButton("New script…")
-        new.setFixedHeight(34)
-        new.clicked.connect(self.new_draft)
-        layout.addWidget(new)
-        actions = QHBoxLayout()
-        self.import_button = QPushButton("Import…")
-        self.import_button.setFixedHeight(34)
+        self.new_button.clicked.connect(self.new_draft)
         self.import_button.clicked.connect(self.import_preview)
-        actions.addWidget(self.import_button)
-        self.reload_button = QPushButton("Reload from disk")
-        self.reload_button.setFixedHeight(34)
-        self.reload_button.setToolTip("Persistent library discovery is not connected in this UI slice.")
-        self.reload_button.setEnabled(False)
-        actions.addWidget(self.reload_button)
-        layout.addLayout(actions)
-        self.library_note = _label(
-            "Preview mode: imported files stay in memory. Immutable version storage is not connected.",
-            role="scriptsMuted", wrap=True
-        )
-        self.library_note.setFixedHeight(54)
-        self.library_note.setAlignment(Qt.AlignmentFlag.AlignVCenter)
-        layout.addWidget(self.library_note)
 
     def _build_center(self):
-        layout = self.center.layout()
-        mode_row = QHBoxLayout()
-        mode_row.setContentsMargins(0, 0, 0, 0)
-        mode_frame = QFrame(self.center)
-        mode_frame.setObjectName("scriptsModeSwitch")
-        mode_frame.setProperty("role", "segmented")
-        mode = QHBoxLayout(mode_frame)
-        mode.setContentsMargins(0, 0, 0, 0)
-        mode.setSpacing(0)
-        self.mode_group = QButtonGroup(mode_frame)
+        ui = self.designer
+        self.text_mode, self.inpaint_mode, self.scripts_mode = (
+            ui.textModeButton,
+            ui.inpaintModeButton,
+            ui.scriptsModeButton,
+        )
+        self.mode_group = QButtonGroup(self.center)
         self.mode_group.setExclusive(True)
-        for text, attr, edge in (
-            ("Text to image", "text_mode", "first"),
-            ("Inpaint", "inpaint_mode", "middle"),
-            ("Scripts", "scripts_mode", "last"),
-        ):
-            button = QPushButton(text)
-            button.setCheckable(True)
-            button.setProperty("segmentEdge", edge)
-            setattr(self, attr, button)
+        for button in (self.text_mode, self.inpaint_mode, self.scripts_mode):
             self.mode_group.addButton(button)
-            mode.addWidget(button)
         self.scripts_mode.setChecked(True)
-        mode_row.addWidget(mode_frame)
-        mode_row.addStretch(1)
-        self.details_button = QPushButton("Details")
-        self.details_button.setAccessibleName("Show Scripts inspector details")
+        self.details_button = self.owner.shell.scriptsInspectorToggle
         self.details_button.clicked.connect(self.toggle_details)
-        mode_row.addWidget(self.details_button)
-        layout.addLayout(mode_row)
-        title = QHBoxLayout()
-        self.script_title = _label("No script selected", role="scriptsPageTitle")
-        title.addWidget(self.script_title, 1)
-        self.sha = _label("", role="scriptsMuted")
-        title.addWidget(self.sha)
-        layout.addLayout(title)
-        self.status = _label("Select or import a script", role="scriptsCompatibility", wrap=True)
-        layout.addWidget(self.status)
-        self.run_identity = _label("Run #5 · version 9f3a1c2 · started 22 Oct 21:12", role="scriptsMuted")
-        self.run_identity.hide()
-        layout.addWidget(self.run_identity)
-        tab_row = QHBoxLayout()
-        tab_row.setContentsMargins(0, 0, 0, 0)
-        tab_frame = QFrame(self.center)
-        tab_frame.setObjectName("scriptsViewSwitch")
-        tab_frame.setProperty("role", "segmented")
-        tabs = QHBoxLayout(tab_frame)
-        tabs.setContentsMargins(0, 0, 0, 0)
-        tabs.setSpacing(0)
-        self.tab_buttons: list[QPushButton] = []
-        for name, index, edge in (
-            ("Inspect", 0, "first"),
-            ("Configure", 1, "middle"),
-            ("Code", 2, "last"),
-        ):
-            tab = QPushButton(name)
-            tab.setCheckable(True)
-            tab.setProperty("segmentEdge", edge)
-            tab.clicked.connect(lambda checked=False, target=index: self.show_view(target))
-            self.tab_buttons.append(tab)
-            tabs.addWidget(tab)
-        tab_row.addWidget(tab_frame)
-        tab_row.addStretch(1)
-        layout.addLayout(tab_row)
-        self.views = QStackedWidget()
-        self.views.setObjectName("scriptsContentStack")
+        self.script_title, self.sha, self.status = ui.scriptTitle, ui.scriptSha, ui.scriptCompatibility
+        self.run_identity, self.views = ui.runIdentity, ui.scriptsContentStack
+        self.tab_buttons = [ui.inspectTab, ui.configureTab, ui.codeTab]
+        for index, button in enumerate(self.tab_buttons):
+            button.clicked.connect(lambda checked=False, target=index: self.show_view(target))
         self._build_inspect()
         self._build_form()
-        self.editor = ScriptEditor()
-        self.views.addWidget(self.editor)
+        self.editor = ScriptEditor(consent=self._confirm_discard)
+        ui.scriptEditorHost.layout().addWidget(self.editor)
         self._build_run()
         self._build_results()
         self._build_empty()
-        layout.addWidget(self.views, 1)
-        footer, footer_layout = _card("")
-        footer.setObjectName("scriptsStartPanel")
-        self.start_panel = footer
-        footer_layout.itemAt(0).widget().hide()
-        cap_row = QHBoxLayout()
-        cap_row.addWidget(_label("Generation cap"))
-        self.cap = QSpinBox()
-        self.cap.setRange(1, 32)
-        self.cap.setValue(8)
-        self.cap.setAccessibleName("Generation cap")
-        cap_row.addWidget(self.cap)
-        cap_row.addStretch(1)
-        self.start = QPushButton("Start script")
-        self.start.setObjectName("scriptsStartButton")
-        self.start.setMinimumWidth(120)
-        self.start.setEnabled(False)
-        self.start.setToolTip("Script dispatch is not connected to this UI view yet.")
-        cap_row.addWidget(self.start)
-        footer_layout.addLayout(cap_row)
-        self.disclosure = _label(
-            "Cloud: up to 8 generations. An estimate covers only the starting settings; later calls may differ. "
-            "Backend: not checked. Source images may be uploaded. No work starts in this UI preview.",
-            role="scriptsMuted", wrap=True
-        )
-        footer_layout.addWidget(self.disclosure)
-        self.acknowledge = QCheckBox("I understand preflight is incomplete")
+        self.start_panel, self.cap, self.start = ui.scriptsStartPanel, ui.generationCap, ui.scriptsStartButton
+        self.disclosure, self.acknowledge = ui.startDisclosure, ui.preflightAcknowledgement
+        self.run_footer = ui.runFooter
         self.acknowledge.hide()
-        footer_layout.addWidget(self.acknowledge)
-        layout.addWidget(footer)
-        self.run_footer = _label(
-            "Stop is in the shared activity bar. It ends local waiting; an already submitted generation may still complete.",
-            role="scriptsMuted", wrap=True,
-        )
         self.run_footer.hide()
-        layout.addWidget(self.run_footer)
         self.show_view(0)
 
     def _build_empty(self):
-        """The empty gallery-like canvas follows the owner mockup, not an Inspect card."""
         from dtflow.ui.brand import brand_mark
 
-        canvas = QFrame()
-        canvas.setObjectName("scriptsEmptyCanvas")
-        layout = QVBoxLayout(canvas)
-        layout.addStretch(1)
-        mark = QLabel()
         logo = brand_mark()
         if not logo.isNull():
-            mark.setPixmap(logo.scaled(64, 64, Qt.AspectRatioMode.KeepAspectRatio,
-                                       Qt.TransformationMode.SmoothTransformation))
-        mark.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        layout.addWidget(mark)
-        headline = _label("No scripts yet", role="scriptsEmptyTitle")
-        headline.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        layout.addWidget(headline)
-        desc = _label(
-            "Create one or import a local .js file. Nothing is run on import.",
-            role="scriptsMuted", wrap=True,
-        )
-        desc.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        layout.addWidget(desc)
-        layout.addStretch(1)
-        self.views.addWidget(canvas)
+            self.designer.emptyMark.setPixmap(
+                logo.scaled(64, 64, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
+            )
 
     def _build_inspect(self):
-        body = QWidget()
-        outer = QVBoxLayout(body)
-        outer.setContentsMargins(2, 2, 2, 2)
-        outer.setSpacing(10)
-        self.inspect_banner = QFrame()
-        self.inspect_banner.setObjectName("scriptsInspectBanner")
-        self.inspect_banner.setProperty("feedbackState", "ok")
-        banner_layout = QVBoxLayout(self.inspect_banner)
-        banner_layout.setContentsMargins(16, 12, 16, 12)
-        self.banner_title = _label("No blocking issues found", role="scriptsBannerTitle")
-        self.banner_title.setProperty("feedbackState", "ok")
-        banner_layout.addWidget(self.banner_title)
-        self.banner_desc = _label(
-            "Syntax valid, 3 hooks supported, 1 deferred. Inspection is not a promise of success.",
-            role="scriptsMuted", wrap=True
-        )
-        banner_layout.addWidget(self.banner_desc)
-        outer.addWidget(self.inspect_banner)
-        self.inspect_card, card = _card("Inspection")
-        facts = QGridLayout()
-        facts.setHorizontalSpacing(14)
-        facts.setVerticalSpacing(6)
-        for row, (name, value) in enumerate((
-            ("Header", "Wildcard prompt sweep.js · by “example”"),
-            ("Tier", "Tier 1"),
-            ("Dynamic paths", "none"),
-            ("Models", "z_image_turbo_1.0"),
-            ("LoRAs", "none required"),
-            ("Inspected with", "Static parse · no generation, network or sign-in"),
-        )):
-            label = _label(name, role="scriptsMuted")
-            label.setAlignment(Qt.AlignmentFlag.AlignTop)
-            facts.addWidget(label, row, 0)
-            current = _label(value, wrap=True)
-            current.setToolTip(value)
-            facts.addWidget(current, row, 1)
-        card.addLayout(facts)
-        outer.addWidget(self.inspect_card)
-        self.inspect_summary = _label(
-            "Inspection is static: nothing is executed. Configure shows known inputs; "
-            "a dynamically built form is requested only when its run asks.",
-            role="scriptsMuted", wrap=True
-        )
-        outer.addWidget(self.inspect_summary)
-        actions = QHBoxLayout()
-        self.configure_from_inspect = QPushButton("Configure…")
+        ui = self.designer
+        self.inspect_banner, self.inspect_card = ui.scriptsInspectBanner, ui.inspectionCard
+        self.banner_title, self.banner_desc = ui.inspectBannerTitle, ui.inspectBannerDescription
+        self.inspect_summary = ui.inspectSummary
+        self.inspection_values = {
+            key: getattr(ui, "inspection" + key + "Value")
+            for key in ("Header", "Tier", "Dynamic", "Models", "Loras", "Method")
+        }
+        self.configure_from_inspect = ui.configureFromInspect
         self.configure_from_inspect.clicked.connect(lambda: self.show_view(1))
-        actions.addWidget(self.configure_from_inspect)
-        edit = QPushButton("Edit code")
-        edit.clicked.connect(lambda: self.show_view(2))
-        actions.addWidget(edit)
-        actions.addStretch(1)
-        outer.addLayout(actions)
-        outer.addStretch(1)
-        self.views.addWidget(_scroll(body))
+        ui.editFromInspect.clicked.connect(lambda: self.show_view(2))
 
     def _build_form(self):
-        body = QWidget()
-        outer = QVBoxLayout(body)
-        outer.setContentsMargins(4, 4, 4, 4)
-        outer.setSpacing(8)
-        self.unresolved_notice = QFrame()
-        self.unresolved_notice.setObjectName("scriptsUnresolvedNotice")
-        warning = QHBoxLayout(self.unresolved_notice)
-        warning.setContentsMargins(14, 11, 14, 11)
-        warning.addWidget(_label("●", role="scriptsWarningGlyph"))
-        message = QVBoxLayout()
-        message.addWidget(_label("Previous run #5 is unresolved", role="scriptsWarningTitle"))
-        message.addWidget(_label(
-            "Generation 3 was submitted and no result was recorded; it may still be billed. "
-            "A new run is separate work and may be charged again.",
-            role="scriptsMuted", wrap=True,
-        ))
-        warning.addLayout(message, 1)
-        view = QPushButton("View run #5")
-        view.setToolTip("Offline presentation only: no persisted ScriptRun is linked.")
-        view.setEnabled(False)
-        warning.addWidget(view)
-        outer.addWidget(self.unresolved_notice)
+        ui = self.designer
+        self.unresolved_notice, self.reset_fields = ui.scriptsUnresolvedNotice, ui.resetFieldsButton
+        self.source, self.source_note = ui.scriptSource, ui.scriptsSourceNote
+        self.handoff, self.form_note = ui.handoffPanel, ui.formNote
         self.unresolved_notice.hide()
-        note = QHBoxLayout()
-        note.addWidget(_label("Answers belong to this script version.", role="scriptsMuted"), 1)
-        self.reset_fields = QPushButton("Reset to defaults")
-        self.reset_fields.clicked.connect(self._reset_fields)
-        self.reset_fields.setEnabled(False)
-        note.addWidget(self.reset_fields)
-        outer.addLayout(note)
-        source_title = _label("Source", role="scriptsFormSection")
-        outer.addWidget(source_title)
-        source = QHBoxLayout()
-        source.addWidget(_label("Source image", role="scriptsMuted"))
-        self.source = QComboBox()
-        self.source.setAccessibleName("Source image")
-        self.source.addItems(("No source", "Images gallery…", "Local file…", "Inpaint canvas"))
-        source.addWidget(self.source, 1)
-        outer.addLayout(source)
-        self.source_note = _label(
-            "Optional. An immutable copy is taken at Start; changing it requires a new run.",
-            role="scriptsSourceNote", wrap=True
-        )
-        outer.addWidget(self.source_note)
-        self.handoff = _label("Image + mask snapshot · 512 × 512 · Detach", role="scriptsMuted")
         self.handoff.hide()
-        outer.addWidget(self.handoff)
         self.form = ScriptForm()
-        self.form_note = _label(
-            "No form controls were discovered. Dynamic requestFromUser inputs appear only during a run.",
-            role="scriptsMuted", wrap=True
-        )
-        outer.addWidget(self.form_note)
-        outer.addWidget(self.form, 1)
-        self.views.addWidget(_scroll(body))
+        ui.scriptFieldsHost.layout().addWidget(self.form)
+        self.reset_fields.clicked.connect(self._reset_fields)
+        ui.detachSourceButton.clicked.connect(self._detach_source)
+        self.source.currentIndexChanged.connect(self._source_changed)
+        from PySide6.QtGui import QColor, QPainter, QPixmap
+        from dtflow.ui.theme import load_tokens
+
+        tokens = load_tokens()
+        for label, mask in ((ui.sourceThumbnail, False), (ui.maskThumbnail, True)):
+            tile = QPixmap(56, 56)
+            tile.fill(QColor(tokens["color.canvas"]))
+            painter = QPainter(tile)
+            painter.fillRect(
+                0, 0, 21 if mask else 56, 56 if mask else 28, QColor("#ffffff" if mask else tokens["color.accent"])
+            )
+            painter.end()
+            label.setPixmap(tile)
 
     def _build_run(self):
-        body = QWidget()
-        outer = QVBoxLayout(body)
-        outer.setContentsMargins(4, 4, 4, 4)
-        outer.setSpacing(8)
-        self.run_status = _label("No run started", role="scriptsRunStatus", wrap=True)
-        self.run_detail = _label("", role="scriptsMuted", wrap=True)
-        preview = QFrame()
-        preview.setObjectName("scriptsResultCanvas")
-        pv = QVBoxLayout(preview)
-        pv.setContentsMargins(12, 8, 12, 8)
-        pv.addStretch(1)
-        self.result_image = _label("No committed result", role="scriptsResultTile")
-        self.result_image.setFixedSize(220, 220)
-        self.result_image.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        pv.addWidget(self.result_image, 0, Qt.AlignmentFlag.AlignHCenter)
-        pv.addStretch(1)
-        self.result_caption = _label("No committed output yet", role="scriptsResultCaption")
-        pv.addWidget(self.result_caption)
-        outer.addWidget(preview)
-        outer.addWidget(self.run_status)
-        outer.addWidget(self.run_detail)
-        self.waiting_form, wait = _card("Wildcards for the next pass")
-        wait.addWidget(_label("Provide the next values to continue this script.", wrap=True))
-        field = QLineEdit("amber, rose")
-        field.setAccessibleName("Next wildcard values")
-        wait.addWidget(field)
-        buttons = QHBoxLayout()
-        cancel = QPushButton("Cancel input")
-        cancel.setToolTip("Answer without a value. The script continues unless it chooses to stop.")
-        cancel.setEnabled(False)
-        buttons.addWidget(cancel)
-        proceed = QPushButton("Continue")
-        proceed.setEnabled(False)
-        buttons.addWidget(proceed)
-        wait.addLayout(buttons)
-        outer.addWidget(self.waiting_form)
+        ui = self.designer
+        self.run_status, self.run_detail = ui.runStatus, ui.runDetail
+        self.result_image, self.result_caption = ui.scriptsResultTile, ui.resultCaption
+        self.waiting_form, self.console = ui.waitingForm, ui.scriptsRunConsole
         self.waiting_form.hide()
-        from PySide6.QtWidgets import QPlainTextEdit
-        self.console = QPlainTextEdit()
-        self.console.setReadOnly(True)
-        self.console.setObjectName("scriptsRunConsole")
-        self.console.setMinimumHeight(240)
+        self.console.document().setMaximumBlockCount(500)
         self.console.setPlainText("[offline fixture] No script was executed.")
-        outer.addWidget(self.console, 1)
-        self.views.addWidget(_scroll(body))
 
     def _build_results(self):
-        body = QWidget()
-        outer = QVBoxLayout(body)
-        outer.setContentsMargins(4, 4, 4, 4)
-        outer.setSpacing(8)
-        self.results_header = _label("Run #4 · Succeeded · version 9f3a1c2", role="scriptsPageTitle")
-        outer.addWidget(self.results_header)
-        outer.addWidget(_label("Ordered child attempts · results also appear in Images", role="scriptsMuted"))
-        self.results_content = QWidget()
-        self.results_layout = QVBoxLayout(self.results_content)
-        self.results_layout.setSpacing(7)
-        self.results_layout.setContentsMargins(0, 0, 0, 0)
-        outer.addWidget(_scroll(self.results_content), 1)
-        self.views.addWidget(body)
+        self.results_header = self.designer.resultsHeader
+        self.results_content = self.designer.resultsContent
+        self.results_layout = self.results_content.layout()
 
     def _populate_results(self):
         """Build non-interactive attempt cards for the offline screenshot fixtures."""
@@ -562,10 +334,13 @@ class ScriptsPage:
             row.addWidget(thumbnail)
             details = QVBoxLayout()
             details.addWidget(_label(f"Step {number} · {color} · committed", role="scriptsCardTitle"))
-            details.addWidget(_label(
-                f"Created by Wildcard prompt sweep.js · run #4 · step {number}",
-                role="scriptsMuted", wrap=True,
-            ))
+            details.addWidget(
+                _label(
+                    f"Created by Wildcard prompt sweep.js · run #4 · step {number}",
+                    role="scriptsMuted",
+                    wrap=True,
+                )
+            )
             row.addLayout(details, 1)
             open_button = QPushButton("Open in Images")
             open_button.setAccessibleName(f"Open run 4 step {number} in Images")
@@ -576,143 +351,58 @@ class ScriptsPage:
         self.results_layout.addStretch(1)
 
     def _build_inspector(self):
-        # The shared rightScroll disables horizontal scrolling. Keep the Scripts
-        # page shrinkable inside that viewport, with room to show card borders
-        # before the scroll bar / right window edge.
-        self.right.setMinimumWidth(0)
-        self.right.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
-        layout = self.right.layout()
-        layout.setContentsMargins(0, 0, 8, 8)
-        layout.setAlignment(Qt.AlignmentFlag.AlignTop)
-        self.inspect_panels: list[QFrame] = []
-        hooks, h = _card("Compatibility")
-        hooks.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Maximum)
-        self.hook_status = _label("No script inspected", wrap=True)
-        self.hook_status.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop)
-        h.addWidget(self.hook_status)
-        self.hook_list = QVBoxLayout()
-        h.addLayout(self.hook_list)
-        self.inspect_panels.append(hooks)
-        layout.addWidget(hooks)
-        settings, s = _card("Starting settings")
-        for key, value in (
-            ("Checkpoint", "z_image_turbo_1.0_q6p"), ("Size", "320 × 192"),
-            ("Steps", "4"), ("Sampler", "euler_a"), ("Seed", "0")
-        ):
-            _line(s, key, value)
-        s.addWidget(_label(
-            "Read-only, inherited from Text to image. A script may override values per generation.",
-            role="scriptsMuted", wrap=True
-        ))
-        layout.addWidget(settings)
-        source, section = _card("Source")
-        self.inspector_source_values = {}
-        for key, value in (("File", "Wildcard prompt sweep.js"), ("Version SHA-256", "9f3a1c2e4b7d08…"),
-                           ("Size", "6.2 KB"), ("Imported", "21 Oct 2026 21:54")):
-            self.inspector_source_values[key] = _line(section, key, value)
-        layout.addWidget(source)
-        history, h = _card("History")
-        self.history = QListWidget()
-        self.history.setObjectName("scriptsHistoryList")
-        self.history.setMinimumWidth(0)
-        self.history.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
-        self.history.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-        for text in (
-            "#6    cancelled before start    0:42 waited\n22 Oct 21:30 · version 9f3a1c2 · 0 gen",
-            "#4    succeeded    1:12\n22 Oct 20:41 · version 9f3a1c2 · 4 gen",
-            "#3    stopped locally    0:58\n22 Oct 19:05 · version 9f3a1c2 · 2 gen",
-            "#2    failed    0:07\n21 Oct 22:13 · version b81e07d · 0 gen",
-            "#1    outcome unknown\n21 Oct 21:58 · version b81e07d · 1 gen",
-        ):
-            item = QListWidgetItem(text)
-            item.setSizeHint(QSize(190, 50))
-            self.history.addItem(item)
-        h.addWidget(self.history)
-        layout.addWidget(history)
-        layout.addStretch(1)
-        self.inspector_panels = (hooks, settings, source, history)
-        for card in self.inspector_panels:
-            # Empty/short cards must stay content-height and top-aligned;
-            # otherwise Qt gives their title labels spare height, centering text.
-            card.setMinimumWidth(0)
-            card.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Maximum)
-            card.layout().setAlignment(Qt.AlignmentFlag.AlignTop)
-            heading = card.layout().itemAt(0).widget()
-            if isinstance(heading, QLabel):
-                heading.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop)
-                heading.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
+        from dtflow.ui.main_window import FORMS_DIR, load_ui
+
+        self.inspector = load_ui(FORMS_DIR / "scripts_inspector.ui", self.right)
+        self.right.layout().addWidget(self.inspector)
+        self.hook_status = self.inspector.hookStatus
+        self.hook_list = self.inspector.hooksHost.layout()
+        self.history = self.inspector.scriptsHistoryList
+        self.inspector_panels = tuple(
+            getattr(self.inspector, name) for name in ("compatibilityCard", "settingsCard", "sourceCard", "historyCard")
+        )
+        self.inspector_source_values = self._source_values(self.inspector)
 
     def _build_drawer(self):
-        # The overlay is native Qt, not a relocated QSplitter child.
-        self.drawer = QFrame(self.owner.form)
-        self.drawer.setObjectName("scriptsDetailsDrawer")
-        self.drawer.setProperty("role", "sectionCard")
-        panel = QVBoxLayout(self.drawer)
-        close_row = QHBoxLayout()
-        close_row.addWidget(_label("Details", role="scriptsCardTitle"), 1)
-        close = QPushButton("Close")
-        close.clicked.connect(self.toggle_details)
-        close_row.addWidget(close)
-        panel.addLayout(close_row)
-        content = QWidget()
-        self.drawer_layout = QVBoxLayout(content)
-        self.drawer_layout.setContentsMargins(0, 0, 0, 0)
-        self.drawer_layout.setSpacing(8)
-        compatibility, compat_layout = _card("Compatibility")
-        self.drawer_summary = _label("No script inspected", wrap=True)
-        compat_layout.addWidget(self.drawer_summary)
-        for hook, state, detail in REFERENCE_HOOKS:
-            compat_layout.addWidget(_hook_item(hook, state, detail))
-        self.drawer_layout.addWidget(compatibility)
-        settings, settings_layout = _card("Starting settings")
-        for name, value in (
-            ("Checkpoint", "z_image_turbo_1.0_q6p"),
-            ("Size", "320 × 192"), ("Steps", "4"),
-            ("Sampler", "euler_a"), ("Seed", "0"),
-        ):
-            _line(settings_layout, name, value)
-        self.drawer_layout.addWidget(settings)
-        source, source_layout = _card("Source")
-        self.drawer_source_values = {}
-        for name, value in (
-            ("File", "Wildcard prompt sweep.js"),
-            ("Version SHA-256", "9f3a1c2e4b7d08…"),
-            ("Size", "6.2 KB"),
-            ("Imported", "21 Oct 2026 21:54"),
-        ):
-            self.drawer_source_values[name] = _line(source_layout, name, value)
-        self.drawer_layout.addWidget(source)
-        history, history_layout = _card("History")
-        history_layout.addWidget(_label(
-            "#6 · Cancelled before start · 0:42\\n"
-            "#4 · Succeeded · 4 generations\\n"
-            "#3 · Stopped locally · 2 generations\\n"
-            "#2 · Failed\\n#1 · Outcome unknown",
-            role="scriptsMuted", wrap=True,
-        ))
-        self.drawer_layout.addWidget(history)
-        self.drawer_layout.addStretch(1)
-        panel.addWidget(_scroll(content), 1)
+        from dtflow.ui.main_window import FORMS_DIR, load_ui
+
+        self.drawer = load_ui(FORMS_DIR / "scripts_details.ui", self.owner.form)
+        self.drawer.closeDetailsButton.clicked.connect(self.toggle_details)
+        self.drawer_inspector = load_ui(FORMS_DIR / "scripts_inspector.ui", self.drawer)
+        self.drawer.drawerInspectorHost.layout().addWidget(self.drawer_inspector)
+        self.drawer_summary = self.drawer_inspector.hookStatus
+        self.drawer_source_values = self._source_values(self.drawer_inspector)
         self.drawer.hide()
 
     def toggle_details(self):
-        self._drawer_requested = not self._drawer_requested
+        if self.owner.form.width() < 1100:
+            self._drawer_requested = not self._drawer_requested
+        else:
+            self._wide_details_requested = not self._wide_details_requested
         self.sync_responsive()
 
     def sync_responsive(self):
         """Update Scripts layout without recycling unchanged Qt geometry."""
         narrow = self.owner.form.width() < 1100
         self.form.set_narrow(narrow)
-        if self.details_button.isHidden() == narrow:
-            self.details_button.setVisible(narrow)
         active = self.owner._scripts_active and (
             self.owner.form.workspaceStack.currentWidget() is self.owner.generation_page
         )
         rail = self.owner.shell.rightRail
+        self.details_button.setVisible(active)
+        self.details_button.setChecked(self._drawer_requested if narrow else self._wide_details_requested)
         if not active:
             if self.drawer.isVisible():
                 self.drawer.hide()
             return
+        # QStackedWidget otherwise inherits taller inactive pages' minimum hints.
+        # Keep the library footer in the *actual* shared scroll viewport; its
+        # QListWidget is the only vertically expanding part of this rail.
+        available = self.owner.shell.leftScroll.viewport().height()
+        if available > 0:
+            for panel in (self.owner.shell.leftStack, self.left):
+                if panel.minimumHeight() != available or panel.maximumHeight() != available:
+                    panel.setFixedHeight(available)
         if narrow:
             if rail.isVisible():
                 rail.hide()
@@ -720,8 +410,10 @@ class ScriptsPage:
                 from PySide6.QtCore import QRect
 
                 geometry = QRect(
-                    max(0, self.owner.form.width() - 310), 55,
-                    min(300, self.owner.form.width()), max(300, self.owner.form.height() - 90)
+                    max(0, self.owner.form.width() - 310),
+                    55,
+                    min(300, self.owner.form.width()),
+                    max(300, self.owner.form.height() - 90),
                 )
                 if self.drawer.geometry() != geometry:
                     self.drawer.setGeometry(geometry)
@@ -733,13 +425,29 @@ class ScriptsPage:
         else:
             if self.drawer.isVisible():
                 self.drawer.hide()
-            if not rail.isVisible():
-                rail.show()
+            rail.setVisible(self._wide_details_requested)
 
     def _selected(self, row: int):
         if not self._reference_mode or row < 0 or row >= len(REFERENCE_SCRIPTS):
             return
+        if self.editor.is_dirty():
+            previous = (
+                REFERENCE_SCRIPTS.index(self._current_script) if self._current_script in REFERENCE_SCRIPTS else -1
+            )
+            self.library.blockSignals(True)
+            self.library.setCurrentRow(previous)
+            self.library.blockSignals(False)
+            self.owner.inline.notice(
+                "Unsaved script draft", "Discard the draft explicitly before selecting another script.", "warning"
+            )
+            return
         self._set_script(REFERENCE_SCRIPTS[row])
+        if self._current_script[0].startswith("Hires"):
+            self.form.set_fields([])
+            self.form_note.setText("This script asks for its settings when it runs.")
+            self.form_note.show()
+        else:
+            self._load_reference_form()
         for panel in self.inspector_panels:
             panel.show()
         self.inspect_banner.show()
@@ -764,7 +472,25 @@ class ScriptsPage:
 
     def _set_script(self, script):
         self._current_script = script
-        filename, sha, _tier, support = script
+        filename, sha, tier, support = script
+        for button in self.tab_buttons:
+            button.setEnabled(True)
+        self._current_hooks = (
+            tuple(REFERENCE_HOOKS[index] for index in (0, 3, 2)) if filename.startswith("Hires") else REFERENCE_HOOKS
+        )
+        for form in (self.inspector, self.drawer_inspector):
+            for name in ("settingsCard", "sourceCard", "historyCard"):
+                getattr(form, name).show()
+        facts = {
+            "Header": f"{filename} · by “example”",
+            "Tier": tier,
+            "Dynamic": "2 runtime-only paths" if filename.startswith("Hires") else "none",
+            "Models": "z_image_turbo_1.0",
+            "Loras": "none required",
+            "Method": "Static parse · no generation, network or sign-in",
+        }
+        for name, label in self.inspection_values.items():
+            label.setText(facts[name])
         self.script_title.setText(filename)
         self.script_title.setToolTip(filename)
         self.sha.setText(f"version {sha}")
@@ -781,24 +507,32 @@ class ScriptsPage:
                 label.setToolTip(metadata[key])
         self.status.setText(
             "● Syntax valid   ● API calls observed   ● No blocking issues found"
-            if support == "supported" else
-            "● Syntax valid   ● API calls observed   ● Not runnable · unsupported hooks"
+            if support == "supported"
+            else "● Syntax valid   ● API calls observed   ● Not runnable · unsupported hooks"
         )
-        self.status.setProperty("feedbackState", "ok" if support == "supported" else "error")
+        partial = filename.startswith("Hires")
+        if partial:
+            self.status.setText("● Syntax valid   ● API calls observed   ● Preflight incomplete")
+        self._saved_inspection = self.status.text()
+        self.status.setProperty("feedbackState", "warning" if partial else "ok" if support == "supported" else "error")
         self.status.style().unpolish(self.status)
         self.status.style().polish(self.status)
-        verdict = "No blocking issues found" if support == "supported" else "Not runnable · unsupported hooks"
+        verdict = (
+            "Preflight incomplete"
+            if partial
+            else "No blocking issues found"
+            if support == "supported"
+            else "Not runnable · unsupported hooks"
+        )
         self.hook_status.setText(verdict)
         self._set_inspect_banner(
             verdict,
             "Syntax valid, 3 hooks supported, 1 deferred. This is not a promise of success."
-            if support == "supported" else "Required photo/file picker hooks are unsupported.",
-            "ok" if support == "supported" else "error",
+            if support == "supported"
+            else "Required photo/file picker hooks are unsupported.",
+            "warning" if partial else "ok" if support == "supported" else "error",
         )
-        self.drawer_summary.setText(
-            self.hook_status.text() + "\n" +
-            "\n".join(f"{hook} · {status}" for hook, status, _ in REFERENCE_HOOKS)
-        )
+        self.drawer_summary.setText(self.hook_status.text())
         while self.hook_list.count():
             item = self.hook_list.takeAt(0)
             widget = item.widget()
@@ -808,11 +542,13 @@ class ScriptsPage:
                 widget.hide()
                 widget.setParent(None)
                 widget.deleteLater()
-        for hook, state, detail in REFERENCE_HOOKS:
+        for hook, state, detail in self._current_hooks:
             self.hook_list.addWidget(_hook_item(hook, state, detail))
+        self._sync_drawer_data()
 
     def clear(self):
         self._reference_mode = False
+        self._current_script = None
         self.library.clear()
         self.script_title.setText("No script selected")
         self.sha.clear()
@@ -826,9 +562,17 @@ class ScriptsPage:
         self.hook_status.setText("No script inspected")
         for panel in self.inspector_panels[1:]:
             panel.hide()
+        for name in ("settingsCard", "sourceCard", "historyCard"):
+            getattr(self.drawer_inspector, name).hide()
         self.show_view(5)
 
     def new_draft(self):
+        if self.editor.is_dirty():
+            self._confirm_discard(self.new_button, self._new_draft)
+            return
+        self._new_draft()
+
+    def _new_draft(self):
         """Open an unsaved draft without inherited compatibility or run evidence."""
         self._current_script = None
         self.library.blockSignals(True)
@@ -848,13 +592,25 @@ class ScriptsPage:
                 item.widget().hide()
         for panel in self.inspector_panels[1:]:
             panel.hide()
-        self.editor.set_draft("//@api-1.0\n\n", status="New draft · unsaved")
+        for name in ("settingsCard", "sourceCard", "historyCard"):
+            getattr(self.drawer_inspector, name).hide()
+        for child in self.drawer_inspector.hooksHost.findChildren(QFrame, "scriptsHookItem"):
+            child.hide()
+        self.editor.set_draft(EDITOR_STARTER, status="New draft · unsaved")
         self.show_view(2)
         self.sha.hide()
         self.status.hide()
         self.start_panel.hide()
+        for button in self.tab_buttons[:2]:
+            button.setEnabled(False)
 
     def import_preview(self):
+        if self.editor.is_dirty():
+            self._confirm_discard(self.import_button, self._import_preview)
+            return
+        self._import_preview()
+
+    def _import_preview(self):
         filename, _ = QFileDialog.getOpenFileName(
             self.owner.form, "Open JavaScript preview", "", "JavaScript (*.js);;All files (*)"
         )
@@ -869,6 +625,7 @@ class ScriptsPage:
             self.status.setText(f"Import unavailable · {type(exc).__name__}")
             return
         sha = hashlib.sha256(contents.encode("utf-8")).hexdigest()
+        self._new_draft()
         self._reference_mode = False
         self.library.addItem(f"{path.name}\n{sha[:7]} · local preview · not saved")
         self.script_title.setText(path.name)
@@ -897,7 +654,10 @@ class ScriptsPage:
         self.sha.setVisible(not empty and configuring)
         self.status.setVisible(not empty and configuring)
         self.run_identity.setVisible(running_or_results)
-        self.start_panel.setVisible(not empty and configuring)
+        self.start_panel.setVisible(index in (0, 1))
+        if self._current_script is not None:
+            saved = getattr(self, "_saved_inspection", self.status.text())
+            self.status.setText(f"Saved version {self._current_script[1]}: {saved}" if index == 2 else saved)
         self.run_footer.setVisible(running_or_results)
         for position, button in enumerate(self.tab_buttons):
             button.setChecked(index == position)
@@ -915,17 +675,16 @@ class ScriptsPage:
         self.source_note.setProperty("feedbackState", "")
         self.source_note.style().unpolish(self.source_note)
         self.source_note.style().polish(self.source_note)
-        self.source_note.setText(
-            "Optional. An immutable copy is taken at Start; changing it requires a new run."
-        )
+        self.source_note.setText("Optional. An immutable copy is taken at Start; changing it requires a new run.")
         self.start.setText("Start script")
+        self.run_footer.setText(
+            "Stop is in the shared activity bar. It ends local waiting; an already submitted generation may still complete."
+        )
         self.unresolved_notice.hide()
         self.form_note.setText(
             "No form controls were discovered. Dynamic requestFromUser inputs appear only during a run."
         )
-        self.library_note.setText(
-            "Local files only. Each version is copied and kept by SHA-256 (3 of 50 stored)."
-        )
+        self.library_note.setText("Local files only. Each version is copied and kept by SHA-256 (3 of 50 stored).")
         self.status.setProperty("feedbackState", "")
         self.status.style().unpolish(self.status)
         self.status.style().polish(self.status)
@@ -936,8 +695,10 @@ class ScriptsPage:
                 item = QListWidgetItem(f"{filename}\n{sha} · {tier} · {support}")
                 self.library.addItem(item)
         row = (
-            2 if state == "scripts_imported_unsupported"
-            else 1 if state in ("scripts_inspect_partial", "scripts_narrow_details")
+            2
+            if state == "scripts_imported_unsupported"
+            else 1
+            if state in ("scripts_inspect_partial", "scripts_narrow_details")
             else 0
         )
         self.library.setCurrentRow(row)
@@ -994,26 +755,29 @@ class ScriptsPage:
                         item["label"] = "🎨 Wildcards to sweep through the positive prompt, comma separated, no limit"
                         item["value"] = "red velvet curtain, emerald moss, blue hour sky, amber light, rose quartz"
                     elif item.get("label") == "Export folder":
-                        item["value"] = "C:\\Users\\me\\Pictures\\DrawThings\\Exports\\2026\\October\\wildcard-sweeps\\landscape-series-with-a-very-long-folder-name"
+                        item["value"] = (
+                            "C:\\Users\\me\\Pictures\\DrawThings\\Exports\\2026\\October\\wildcard-sweeps\\landscape-series-with-a-very-long-folder-name"
+                        )
                 self.form.set_fields(fields)
         elif state.startswith("scripts_editor"):
             self.show_view(2)
             self.editor.run_notice.hide()
             if state == "scripts_editor_new":
-                self.new_draft()
+                self._new_draft()
                 self.editor.set_draft(EDITOR_STARTER, status="New draft · unsaved")
             else:
                 self.editor.set_draft(EDITOR_BASE, status="Version 9f3a1c2")
                 # A draft belongs to a new version; the saved source stays intact.
                 self.editor.editor.setPlainText(EDITOR_BASE + "\n// Draft change")
+                if state == "scripts_editor_dirty":
+                    self.editor.find_row.show()
+                    self.editor.search.setText("pipeline")
                 if state == "scripts_editor_syntax_error":
                     invalid = EDITOR_BASE + "\nconst value = ;"
                     self.editor.editor.setPlainText(invalid)
                     self.editor.set_error(15, 15, "Unexpected token ';'")
                 elif state == "scripts_editor_run_active":
-                    self.editor.run_notice.setText(
-                        "Run #5 is active on version 9f3a1c2. Changes create a new version."
-                    )
+                    self.editor.run_notice.setText("Run #5 is active on version 9f3a1c2. Changes create a new version.")
                     self.editor.run_notice.show()
         elif state == "scripts_results":
             self.show_view(4)
@@ -1023,6 +787,11 @@ class ScriptsPage:
             self.show_view(3)
             self.run_identity.setText("Run #5 · version 9f3a1c2 · started 22 Oct 21:12")
             key = state.removeprefix("scripts_")
+            if key in ("queued", "cancelled_before_start"):
+                self.run_identity.setText("Run #5 · version 9f3a1c2 · queued 22 Oct 21:12")
+                self.run_footer.setText(
+                    "Cancel before admission is free. The cancelled run stays in History; nothing was submitted."
+                )
             status, detail = RUN_STATUSES[key]
             self.run_status.setText(status)
             self.run_detail.setText(detail)
@@ -1037,6 +806,10 @@ class ScriptsPage:
                 "[0:11.8] Step 2 · green · committed\n"
                 "[offline fixture] No provider was called"
             )
+            if key == "queued":
+                self.console.setPlainText("[0:00.0] Waiting for admission behind 3 items. Nothing submitted.")
+            elif key == "cancelled_before_start":
+                self.console.setPlainText("[0:42.0] Cancelled before admission. Nothing submitted or charged.")
         else:
             self.show_view(0)
             if state == "scripts_inspect_partial":
@@ -1060,3 +833,55 @@ class ScriptsPage:
         self.cap.setValue(8)
         self.start.setEnabled(False)
         self.drawer_summary.setText(self.hook_status.text() + "\nNo provider was called.")
+
+    @staticmethod
+    def _source_values(form):
+        return {
+            key: getattr(form, name)
+            for key, name in (
+                ("File", "sourceFileValue"),
+                ("Version SHA-256", "sourceShaValue"),
+                ("Size", "sourceSizeValue"),
+                ("Imported", "sourceImportedValue"),
+            )
+        }
+
+    def _sync_drawer_data(self):
+        layout = self.drawer_inspector.hooksHost.layout()
+        while layout.count():
+            widget = layout.takeAt(0).widget()
+            if widget is not None:
+                widget.hide()
+                widget.deleteLater()
+        for hook, state, detail in self._current_hooks:
+            layout.addWidget(_hook_item(hook, state, detail))
+        entries = (
+            "#6 · Cancelled before start · 0:42 waited\n22 Oct 21:30 · 0 generations",
+            "#4 · Succeeded · 4 generations\n22 Oct 20:41 · version 9f3a1c2",
+            "#3 · Stopped locally · 2 generations\n22 Oct 19:05 · version 9f3a1c2",
+            "#2 · Failed\n21 Oct 22:13 · version b81e07d",
+            "#1 · Outcome unknown\n21 Oct 21:58 · version b81e07d",
+        )
+        for history in (self.history, self.drawer_inspector.scriptsHistoryList):
+            history.clear()
+            history.addItems(entries)
+            for index in range(history.count()):
+                history.item(index).setToolTip(history.item(index).text())
+
+    def _confirm_discard(self, button, callback):
+        if self.owner.inline.commit(button):
+            return
+        self.owner.inline.arm(
+            button,
+            "Discard unsaved script changes?",
+            "The in-memory draft cannot be recovered after replacement. Nothing is run or submitted.",
+            callback,
+            danger=True,
+            confirm_text="Discard",
+        )
+
+    def _source_changed(self, index):
+        self.handoff.setVisible(index == 3)
+
+    def _detach_source(self):
+        self.source.setCurrentIndex(0)

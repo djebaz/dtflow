@@ -9,13 +9,26 @@ from __future__ import annotations
 import re
 
 from PySide6.QtCore import QRect, QSize, Qt
-from PySide6.QtGui import QColor, QFont, QPainter, QSyntaxHighlighter, QTextCharFormat, QTextCursor
+from PySide6.QtGui import (
+    QColor,
+    QFont,
+    QPainter,
+    QSyntaxHighlighter,
+    QTextCharFormat,
+    QTextCursor,
+    QShortcut,
+    QKeySequence,
+    QTextDocument,
+)
 from dtflow.ui.inpaint_canvas import REDO_PATH, UNDO_PATH, _arrow_icon
 from dtflow.ui.theme import load_tokens
 
 from PySide6.QtWidgets import (
-    QFrame, QHBoxLayout, QLabel, QLineEdit, QPlainTextEdit, QPushButton, QTextEdit,
-    QVBoxLayout, QWidget,
+    QPlainTextEdit,
+    QTextEdit,
+    QVBoxLayout,
+    QWidget,
+    QSizePolicy,
 )
 
 
@@ -42,8 +55,12 @@ class _LineNumbers(QWidget):
             if first.isVisible() and bottom >= event.rect().top():
                 painter.setPen(self._line_number_color)
                 painter.drawText(
-                    0, top, self.width() - 7, self.editor.fontMetrics().height(),
-                    Qt.AlignmentFlag.AlignRight, str(number + 1)
+                    0,
+                    top,
+                    self.width() - 7,
+                    self.editor.fontMetrics().height(),
+                    Qt.AlignmentFlag.AlignRight,
+                    str(number + 1),
                 )
             first = first.next()
             top = bottom
@@ -59,8 +76,14 @@ class _JavaScriptColors(QSyntaxHighlighter):
     PATTERNS = (
         (r"//[^\n]*", "color.scriptEditorComment"),
         (r'"(?:[^"\\]|\\.)*"|\'(?:[^\'\\]|\\.)*\'', "color.scriptEditorString"),
-        (r"\b(?:const|let|var|function|return|if|else|for|while|of|in|new|true|false|null|this)\b", "color.scriptEditorKeyword"),
-        (r"\b(?:pipeline|canvas|configuration|requestFromUser|Math|Array|Object|String|Number)\b", "color.scriptEditorType"),
+        (
+            r"\b(?:const|let|var|function|return|if|else|for|while|of|in|new|true|false|null|this)\b",
+            "color.scriptEditorKeyword",
+        ),
+        (
+            r"\b(?:pipeline|canvas|configuration|requestFromUser|Math|Array|Object|String|Number)\b",
+            "color.scriptEditorType",
+        ),
         (r"\b\d+(?:\.\d+)?\b", "color.scriptEditorNumber"),
         (r"[=+*/<>!&|?:%-]+", "color.scriptEditorOperator"),
     )
@@ -142,123 +165,57 @@ class ScriptCodeEdit(QPlainTextEdit):
 class ScriptEditor(QWidget):
     """Native draft editor with undo/redo, search and diagnostics presentation."""
 
-    def __init__(self, parent=None):
+    def __init__(self, parent=None, *, consent=None):
         super().__init__(parent)
-        self.setObjectName("scriptsEditorPanel")
-        self._saved_content = ""
+        from dtflow.ui.main_window import FORMS_DIR, load_ui
+
+        self.form = load_ui(FORMS_DIR / "scripts_editor.ui", self)
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(6)
-        toolbar = QFrame(self)
-        toolbar.setObjectName("scriptsEditorToolbar")
-        tools = QHBoxLayout(toolbar)
-        tools.setContentsMargins(0, 0, 0, 0)
-        tools.setSpacing(4)
+        layout.addWidget(self.form)
+        self._saved_content = ""
+        self._consent = consent
+        self._error_location = None
         self.editor = ScriptCodeEdit(self)
-
-        history = QFrame(toolbar)
-        history.setProperty("role", "segmented")
-        history_row = QHBoxLayout(history)
-        history_row.setContentsMargins(0, 0, 0, 0)
-        history_row.setSpacing(0)
-        icon_color = load_tokens()["color.secondary"]
-        for path, caption, edge, callback in (
-            (UNDO_PATH, "Undo (Ctrl+Z)", "first", self.editor.undo),
-            (REDO_PATH, "Redo (Ctrl+Shift+Z)", "last", self.editor.redo),
+        self.form.codeHost.layout().addWidget(self.editor)
+        self.form.codeHost.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+        for name, path, callback in (
+            ("undoButton", UNDO_PATH, self.editor.undo),
+            ("redoButton", REDO_PATH, self.editor.redo),
         ):
-            button = QPushButton()
-            button.setIcon(_arrow_icon(path, icon_color))
+            button = getattr(self.form, name)
+            button.setIcon(_arrow_icon(path, load_tokens()["color.secondary"]))
             button.setIconSize(QSize(16, 16))
-            button.setAccessibleName(caption)
-            button.setToolTip(caption)
-            button.setProperty("segmentEdge", edge)
-            button.setProperty("toolbarKind", "icon")
-            button.setFixedSize(32, 32)
+            button.setText("")
             button.clicked.connect(callback)
-            history_row.addWidget(button)
-        tools.addWidget(history)
-
-        find = QPushButton("Find…")
-        find.setFixedHeight(32)
-        find.setAccessibleName("Find in script")
-        find.setToolTip("Find (Ctrl+F)")
-        find.clicked.connect(self._toggle_find)
-        tools.addWidget(find)
-
-        font_group = QFrame(toolbar)
-        font_group.setProperty("role", "segmented")
-        font_row = QHBoxLayout(font_group)
-        font_row.setContentsMargins(0, 0, 0, 0)
-        font_row.setSpacing(0)
-        for label, caption, edge, delta in (
-            ("A−", "Smaller editor font", "first", -1),
-            ("A+", "Larger editor font", "last", 1),
-        ):
-            button = QPushButton(label)
-            button.setAccessibleName(caption)
-            button.setToolTip(caption)
-            button.setProperty("segmentEdge", edge)
-            button.setProperty("toolbarKind", "icon")
-            button.setFixedSize(32, 32)
-            button.clicked.connect(lambda _checked=False, amount=delta: self.editor.change_font_size(amount))
-            font_row.addWidget(button)
-        tools.addWidget(font_group)
-        tools.addStretch(1)
-        self.check_syntax = QPushButton("Check syntax")
-        self.check_syntax.setFixedHeight(32)
-        self.check_syntax.setToolTip("Parse-only check will be available when the editor connects to the script engine.")
-        self.check_syntax.setEnabled(False)
-        tools.addWidget(self.check_syntax)
-        layout.addWidget(toolbar)
-        self.find_row = QWidget()
-        find_layout = QHBoxLayout(self.find_row)
-        find_layout.setContentsMargins(0, 0, 0, 0)
-        self.search = QLineEdit()
-        self.search.setPlaceholderText("Find")
-        self.search.setAccessibleName("Find")
-        find_layout.addWidget(self.search)
-        next_button = QPushButton("Next")
-        next_button.clicked.connect(self.find_next)
-        find_layout.addWidget(next_button)
-        close = QPushButton("×")
-        close.setAccessibleName("Close search")
-        close.clicked.connect(lambda: self.find_row.hide())
-        find_layout.addWidget(close)
-        layout.addWidget(self.find_row)
+        self.form.smallerFontButton.clicked.connect(lambda: self.editor.change_font_size(-1))
+        self.form.largerFontButton.clicked.connect(lambda: self.editor.change_font_size(1))
+        self.check_syntax = self.form.checkSyntaxButton
+        self.check_syntax.setToolTip("Parse-only checking is not connected in this UI preview.")
+        self.find_row, self.search = self.form.findRow, self.form.searchField
+        self.replacement, self.match_count = self.form.replacementField, self.form.matchCount
+        self.form.findButton.clicked.connect(self._toggle_find)
+        self.form.findNextButton.clicked.connect(self.find_next)
+        self.form.replaceAllButton.clicked.connect(self.replace_all)
+        self.form.closeFindButton.clicked.connect(self.find_row.hide)
+        self.search.textChanged.connect(self._update_matches)
+        self.search.returnPressed.connect(self.find_next)
+        self.find_shortcut = QShortcut(QKeySequence("Ctrl+F"), self)
+        self.find_shortcut.setContext(Qt.ShortcutContext.WidgetWithChildrenShortcut)
+        self.find_shortcut.activated.connect(self._open_find)
         self.find_row.hide()
-        self.run_notice = QLabel("")
-        self.run_notice.setObjectName("scriptsEditorRunNote")
-        self.run_notice.setWordWrap(True)
+        self.run_notice = self.form.scriptsEditorRunNote
         self.run_notice.hide()
-        layout.addWidget(self.run_notice)
-        layout.addWidget(self.editor, 1)
-        status = QHBoxLayout()
-        self.diagnostic = QLabel("Syntax not checked yet")
-        self.diagnostic.setObjectName("scriptsEditorDiagnostic")
-        self.diagnostic.setWordWrap(True)
-        status.addWidget(self.diagnostic, 1)
-        self.go_to_error = QPushButton("Go to line")
-        self._error_location: tuple[int, int] | None = None
+        self.diagnostic, self.go_to_error = self.form.scriptsEditorDiagnostic, self.form.goToErrorButton
         self.go_to_error.clicked.connect(self._jump_to_error)
         self.go_to_error.hide()
-        status.addWidget(self.go_to_error)
-        self.cursor_status = QLabel("Ln 1 · Col 1 · JavaScript")
-        self.editor.cursorPositionChanged.connect(self._cursor_changed)
-        status.addWidget(self.cursor_status)
-        layout.addLayout(status)
-        footer = QHBoxLayout()
-        self.draft_status = QLabel("New draft · unsaved")
-        footer.addWidget(self.draft_status, 1)
-        self.discard = QPushButton("Discard")
-        self.discard.setEnabled(False)
-        self.discard.clicked.connect(self.restore)
-        footer.addWidget(self.discard)
-        self.save_new = QPushButton("Save as new version")
+        self.cursor_status, self.draft_status = self.form.cursorStatus, self.form.draftStatus
+        self.discard, self.save_new = self.form.discardButton, self.form.saveVersionButton
+        self.discard.clicked.connect(self._request_restore)
         self.save_new.setToolTip("Immutable version persistence is not connected yet.")
-        self.save_new.setEnabled(False)
-        footer.addWidget(self.save_new)
-        layout.addLayout(footer)
+        self.editor.cursorPositionChanged.connect(self._cursor_changed)
         self.editor.textChanged.connect(self._modified)
+        self.editor.textChanged.connect(self._update_matches)
 
     def _cursor_changed(self):
         cursor = self.editor.textCursor()
@@ -269,6 +226,43 @@ class ScriptEditor(QWidget):
         self.draft_status.setText("Draft · unsaved changes" if dirty else "No unsaved changes")
         self.discard.setEnabled(dirty)
 
+    def is_dirty(self) -> bool:
+        return self.editor.toPlainText() != self._saved_content
+
+    def _request_restore(self):
+        if self.is_dirty() and self._consent is not None:
+            self._consent(self.discard, self.restore)
+
+    def _open_find(self):
+        self.find_row.show()
+        self.search.setFocus()
+        self.search.selectAll()
+
+    def _update_matches(self):
+        query = self.search.text()
+        count = self.editor.toPlainText().count(query) if query else 0
+        self.match_count.setText(f"{count} match" + ("" if count == 1 else "es"))
+        self.form.findNextButton.setEnabled(count > 0)
+        self.form.replaceAllButton.setEnabled(count > 0)
+
+    def replace_all(self):
+        query = self.search.text()
+        if not query:
+            return
+        document = self.editor.document()
+        matches = []
+        cursor = QTextCursor(document)
+        while True:
+            cursor = document.find(query, cursor, QTextDocument.FindFlag.FindCaseSensitively)
+            if cursor.isNull():
+                break
+            matches.append(QTextCursor(cursor))
+        edit = QTextCursor(document)
+        edit.beginEditBlock()
+        for match in reversed(matches):
+            match.insertText(self.replacement.text())
+        edit.endEditBlock()
+
     def _toggle_find(self):
         self.find_row.setVisible(not self.find_row.isVisible())
         if self.find_row.isVisible():
@@ -276,9 +270,10 @@ class ScriptEditor(QWidget):
 
     def find_next(self):
         text = self.search.text()
-        if text and not self.editor.find(text):
+        flags = QTextDocument.FindFlag.FindCaseSensitively
+        if text and not self.editor.find(text, flags):
             self.editor.moveCursor(QTextCursor.MoveOperation.Start)
-            self.editor.find(text)
+            self.editor.find(text, flags)
 
     def restore(self):
         self.editor.setPlainText(self._saved_content)
@@ -314,6 +309,8 @@ class ScriptEditor(QWidget):
             self.editor.setExtraSelections([selection])
         self.diagnostic.setText(f"Syntax error · line {line}, column {column} · {message}")
         self.diagnostic.setProperty("feedbackState", "error")
+        self.diagnostic.style().unpolish(self.diagnostic)
+        self.diagnostic.style().polish(self.diagnostic)
         self._error_location = (line, column)
         self.go_to_error.setText(f"Go to line {line}")
         self.go_to_error.show()

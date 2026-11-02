@@ -13,16 +13,45 @@ from PySide6.QtCore import QSize, Qt
 from PySide6.QtGui import QColor, QPainter, QPen
 from dtflow.ui.theme import load_tokens
 from PySide6.QtWidgets import (
-    QCheckBox, QComboBox, QFileDialog, QHBoxLayout,
-    QLabel, QLineEdit, QPushButton, QSizePolicy, QSlider, QSpinBox,
-    QVBoxLayout, QWidget,
+    QCheckBox,
+    QComboBox,
+    QFileDialog,
+    QHBoxLayout,
+    QLabel,
+    QLineEdit,
+    QPushButton,
+    QSizePolicy,
+    QSlider,
+    QSpinBox,
+    QVBoxLayout,
+    QWidget,
 )
 
 
+class _FieldRow(QWidget):
+    """Reserve the wrapped caption and themed control heights before scrolling."""
+
+    def hasHeightForWidth(self):
+        return True
+
+    def heightForWidth(self, width):
+        layout = self.layout()
+        return max(layout.minimumSize().height(), layout.totalHeightForWidth(width))
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        height = self.heightForWidth(self.width())
+        if height > 0 and self.minimumHeight() != height:
+            self.setMinimumHeight(height)
+            self.updateGeometry()
+
+
 def _row(label: str, control: QWidget) -> QWidget:
-    row = QWidget()
+    row = _FieldRow()
     row.setObjectName("scriptsFieldRow")
-    row.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
+    policy = QSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Minimum)
+    policy.setHeightForWidth(True)
+    row.setSizePolicy(policy)
     layout = QHBoxLayout(row)
     layout.setContentsMargins(0, 3, 0, 3)
     layout.setSpacing(10)
@@ -39,6 +68,10 @@ def _row(label: str, control: QWidget) -> QWidget:
         # full-width fields instead of centering across the flexible row.
         layout.addStretch(1)
     control.setAccessibleName(label)
+    control.ensurePolished()
+    control.setMinimumHeight(
+        max(control.minimumHeight(), control.minimumSizeHint().height(), control.sizeHint().height())
+    )
     return row
 
 
@@ -62,10 +95,13 @@ def _slider(spec: dict) -> QWidget:
     value.setObjectName("scriptsFieldValue")
     value.setMinimumWidth(45)
     sub = spec.get("sub")
+
     def update(number: int) -> None:
         actual = number / scale
-        value.setText(f"{round(actual * 100)}%" if sub == "percent"
-                      else f"×{actual:g}" if sub == "scale" else f"{actual:.1f}")
+        value.setText(
+            f"{round(actual * 100)}%" if sub == "percent" else f"×{actual:g}" if sub == "scale" else f"{actual:.1f}"
+        )
+
     slider.valueChanged.connect(update)
     update(slider.value())
     return _group(slider, value)
@@ -94,9 +130,9 @@ class _RangeControl(QWidget):
         return round(10 + (self.width() - 20) * (value - self.low) / (self.high - self.low))
 
     def _value(self, x: int) -> int:
-        return max(self.low, min(self.high, round(
-            self.low + (x - 10) * (self.high - self.low) / max(1, self.width() - 20)
-        )))
+        return max(
+            self.low, min(self.high, round(self.low + (x - 10) * (self.high - self.low) / max(1, self.width() - 20)))
+        )
 
     def paintEvent(self, event):
         colors = load_tokens()
@@ -156,8 +192,10 @@ def _range_slider(spec: dict) -> QWidget:
     value = QLabel()
     value.setObjectName("scriptsFieldValue")
     value.setMinimumWidth(45)
+
     def update(lower, upper):
         value.setText(f"{lower}–{upper}")
+
     track.on_change = update
     update(track.lower, track.upper)
     return _group(track, value)
@@ -174,6 +212,7 @@ def _path_control(spec: dict) -> QWidget:
     path.textChanged.connect(lambda text: path.setCursorPosition(len(text)))
     choose = QPushButton("Choose…")
     choose.setAccessibleName("Choose " + spec["label"])
+
     def choose_file():
         if spec["type"] == "directory":
             selected = QFileDialog.getExistingDirectory(path, "Choose " + spec["label"])
@@ -183,6 +222,7 @@ def _path_control(spec: dict) -> QWidget:
             )
         if selected:
             path.setText(selected)
+
     choose.clicked.connect(choose_file)
     controls = [path, choose]
     if spec["type"] == "imageField":
@@ -210,9 +250,7 @@ def _control(spec: dict) -> QWidget:
             button.setChecked(button.text() == value)
             button.setAccessibleName(spec["label"] + " " + button.text())
             button.clicked.connect(
-                lambda checked=False, current=button: [
-                    other.setChecked(other is current) for other in buttons
-                ]
+                lambda checked=False, current=button: [other.setChecked(other is current) for other in buttons]
             )
         bar.setMaximumWidth(160)
         widget = bar
@@ -260,6 +298,7 @@ class ScriptForm(QWidget):
         self.layout_ = QVBoxLayout(self)
         self.layout_.setContentsMargins(10, 10, 10, 10)
         self.layout_.setSpacing(8)
+        self.layout_.setSizeConstraint(QVBoxLayout.SizeConstraint.SetMinimumSize)
         self.layout_.addStretch(1)
 
     def set_narrow(self, narrow: bool) -> None:
@@ -285,7 +324,7 @@ class ScriptForm(QWidget):
                 if heading.maximumWidth() != label_max:
                     heading.setMaximumWidth(label_max)
         self.layout_.activate()
-        self.setMinimumHeight(self.layout_.sizeHint().height())
+        self.updateGeometry()
 
     def set_fields(self, fields: list[dict], *, long_values: bool = False) -> None:
         self._narrow = None
@@ -325,7 +364,7 @@ class ScriptForm(QWidget):
         # The scroll area must honor the form content height rather than
         # compressing rows until controls overlap each other.
         self.layout_.activate()
-        self.setMinimumHeight(self.layout_.sizeHint().height())
+        self.updateGeometry()
 
 
 # All 14 upstream types are represented: section, plainText, markdown,
@@ -333,15 +372,23 @@ class ScriptForm(QWidget):
 # size, imageField, directory and image.
 REFERENCE_FORM: list[dict] = [
     {"type": "section", "label": "Prompt"},
-    {"type": "markdown", "text": "Sweeps **wildcards** through the prompt, one generation per value. Use `{a|b}` to group."},
+    {
+        "type": "markdown",
+        "text": "Sweeps **wildcards** through the prompt, one generation per value. Use `{a|b}` to group.",
+    },
     {"type": "textField", "label": "Wildcards", "value": "red, green, blue, amber"},
-    {"type": "comboBox", "label": "Style", "options": ["Photographic", "Illustration", "Line art"], "value": "Photographic"},
+    {
+        "type": "comboBox",
+        "label": "Style",
+        "options": ["Photographic", "Illustration", "Line art"],
+        "value": "Photographic",
+    },
     {"type": "segmented", "label": "Aspect", "options": ["1:1", "3:2", "16:9"], "value": "3:2"},
     {"type": "menu", "label": "Sweep order", "options": ["Sequential", "Shuffled", "Random"], "value": "Sequential"},
     {"type": "section", "label": "Sampling"},
-    {"type": "slider", "label": "Strength", "sub": "percent", "min": 0, "max": 1, "step": 0.01, "value": .75},
-    {"type": "slider", "label": "Guidance", "sub": "fractional", "min": 1, "max": 20, "step": .1, "value": 5.5},
-    {"type": "slider", "label": "Upscale", "sub": "scale", "min": 1, "max": 4, "step": .25, "value": 2},
+    {"type": "slider", "label": "Strength", "sub": "percent", "min": 0, "max": 1, "step": 0.01, "value": 0.75},
+    {"type": "slider", "label": "Guidance", "sub": "fractional", "min": 1, "max": 20, "step": 0.1, "value": 5.5},
+    {"type": "slider", "label": "Upscale", "sub": "scale", "min": 1, "max": 4, "step": 0.25, "value": 2},
     {"type": "doubleSlider", "label": "Step range", "min": 1, "max": 40, "value": (8, 28)},
     {"type": "size", "label": "Size", "value": (512, 512)},
     {"type": "switch", "label": "Tile results into a sheet", "value": False},

@@ -49,20 +49,34 @@ def _shared_overlay(window, state: str) -> None:
     key = "scripts-fixture"
     window.progress_strip.finish(key)
     if state == "scripts_queued":
-        window.progress_strip.start(key, "Queued behind 3 items", lambda: None, stop_text="Cancel")
+        window.progress_strip.start(key, "Script", lambda: None, stop_text="Cancel before start", action_text="Cancel")
+        window.progress_strip.update(
+            key,
+            0,
+            0,
+            detail="Nothing submitted; waiting for admission.",
+            elapsed="Waiting 0:42",
+            stage="Queued behind 3 items",
+        )
     elif state == "scripts_running":
         window.progress_strip.start(key, "Script running", lambda: None, stop_text="Stop waiting locally")
     elif state == "scripts_waiting_input":
         window.progress_strip.start(key, "Waiting for your input", lambda: None, stop_text="Stop waiting locally")
     elif state in ("scripts_stopped", "scripts_cancelled_before_start"):
-        window.progress_strip.complete(key, "Stopped locally" if state == "scripts_stopped"
-                                      else "Cancelled before start", "Offline render fixture", "stopped")
+        window.progress_strip.complete(
+            key,
+            "Stopped locally" if state == "scripts_stopped" else "Cancelled before start",
+            "Offline render fixture",
+            "stopped",
+        )
     elif state == "scripts_failed":
         window.progress_strip.complete(key, "Script failed", "Inspect the durable failure details.", "error")
     elif state in ("scripts_interrupted", "scripts_outcome_unknown"):
         window.progress_strip.complete(
-            key, "Script interrupted" if state == "scripts_interrupted" else "Outcome unknown",
-            "An earlier attempt may still complete; do not replay unknown work.", "warning"
+            key,
+            "Script interrupted" if state == "scripts_interrupted" else "Outcome unknown",
+            "An earlier attempt may still complete; do not replay unknown work.",
+            "warning",
         )
 
 
@@ -94,7 +108,11 @@ def render_scripts_states(out: Path, *, window_factory: Callable, state_names=ST
             _shared_overlay(window, state)
             if index == 0:
                 print(f"[scripts] First state prepared: {monotonic() - started:.1f}s", flush=True)
-            app.processEvents()
+            # Wrapped rows post parent layout requests after their first resize.
+            # Drain the bounded layout cascade before grabbing, not midway
+            # through a height-for-width update. No timers, scripts or providers.
+            for _ in range(5):
+                app.processEvents()
             if index == 0:
                 print(f"[scripts] First Qt event drain: {monotonic() - started:.1f}s", flush=True)
             if index == 0 or state == "scripts_narrow":
