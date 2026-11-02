@@ -223,7 +223,7 @@ class ScriptHost:
                 raise ValueError("Every LoRA needs a file; no image was requested.")
             if item["mode"] != "all":
                 raise ValueError("DTFlow supports LoRA mode 'all' only; no image was requested.")
-        number = values["sampler"]
+        if not values["model"]:\n            raise ValueError("configuration.model must specify a model; no image was requested.")\n        number = values["sampler"]
         if number not in SAMPLER_NUMBERS:
             raise ValueError(f"configuration.sampler {number} is not a known sampler; no image was requested.")
         seed = values["seed"]
@@ -245,7 +245,7 @@ class ScriptHost:
         return ResolvedGenerationRequest(
             uuid.uuid4().hex,
             self.base.prompt if prompt is None else prompt,
-            values["model"] or self.base.model_id,
+            values["model"],
             seed,
             negative_prompt=self.base.negative_prompt if negative is None else negative,
             width_px=values["width"],
