@@ -83,6 +83,17 @@ def _state(hooks: tuple[str, ...]) -> tuple[str, str]:
     return worst, owner
 
 
+_BRANCHING = re.compile(r"\b(?:for|while|if|switch)\s*\(|\bdo\s*\{|\.(?:forEach|map|reduce|filter)\s*\(|\?\s*[^:\n]+:")
+
+
+def static_run_count(code: str, counts: dict[str, int]) -> int | None:
+    """The number of ``pipeline.run`` calls a run will make, only when the source has no loops, branches or callbacks.
+
+    With any of those the count is unknowable statically (``None``); it is never a guess."""
+    runs = counts.get("pipeline.run", 0)
+    return runs if runs and not _BRANCHING.search(code) else None
+
+
 def syntax_error(source: str) -> str | None:
     """Parse the script with the vendored Acorn; the text is data and is never compiled or evaluated.
 
@@ -168,6 +179,7 @@ def analyze_bytes(data: bytes, name: str) -> dict:
         "unsupported_calls": blocked,
         "awaiting_issues": planned,
         "dynamic_constructs": dynamic,
+        "static_run_count": static_run_count(code, counts),
         "warnings": warnings,
         "preflight": "incomplete" if (dynamic or unknown or version is None) else "static-calls-listed",
         "note": (

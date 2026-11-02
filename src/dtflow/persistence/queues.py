@@ -1362,6 +1362,7 @@ def _script_view(connection: sqlite3.Connection, request: dict) -> dict[str, Any
     path = connection.execute("PRAGMA database_list").fetchone()["file"]
     view: dict[str, Any] = {
         "name": request.get("source_name"),
+        "expected_steps": request.get("expected_steps") if type(request.get("expected_steps")) is int else None,
         "source_sha256": request.get("source_sha256"),
         "run_id": request.get("run_id"),
         "run_state": None,

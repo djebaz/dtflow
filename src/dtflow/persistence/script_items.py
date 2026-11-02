@@ -47,6 +47,7 @@ def script_record(
     backend: str,
     max_generations: int,
     answers: list | None,
+    expected_steps: int | None = None,
 ) -> dict[str, Any]:
     return {
         "kind": KIND_SCRIPT,
@@ -54,6 +55,7 @@ def script_record(
         "source_name": source_name,
         "source_sha256": source_sha256,
         "answers": answers,
+        "expected_steps": expected_steps,
         "start": {"backend": backend, "max_generations": max_generations, "base": base},
     }
 

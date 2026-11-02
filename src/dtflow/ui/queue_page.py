@@ -817,16 +817,18 @@ class QueuePage:
                 script = next((item.get("script") for item in items if item.get("script")), None)
                 children = (script or {}).get("children") or []
                 committed = sum(1 for child in children if child["state"] == "succeeded")
+                expected = (script or {}).get("expected_steps")  # a static count, known only for plain scripts
+                of = f"{expected}" if expected else "?"
                 stage = (
-                    f"step {len(children)} running · {committed} committed"
+                    f"step {len(children)}/{of} running · {committed} committed"
                     if len(children) > committed
-                    else f"{committed} step(s) committed"
+                    else f"{committed}/{of} steps committed"
                     if children
                     else "Script running"
                 )
                 wide = f"Script {queue_id[:8]} · {stage}"
                 detail = f"Script {queue_id[:8]} · {stage}."
-                completed = total = None
+                completed, total = (committed, expected) if expected else (None, None)
             elif running == 1 and len(progress) == 1:
                 step, steps = progress[0]
                 # The item number is known only for the selected queue, whose items are read.
@@ -1924,7 +1926,9 @@ class QueuePage:
     def quick_create(self, action: str, *, count: int | None) -> None:
         self.create(action, count=count, quick=True)
 
-    def start_script(self, source: str, source_name: str, max_generations: int, done) -> None:
+    def start_script(
+        self, source: str, source_name: str, max_generations: int, done, expected_steps: int | None = None
+    ) -> None:
         """Scripts Start: save a one-item script queue from Generate's current text-to-image settings and dispatch it.
 
         ``done(result, failure)`` gets ``(queue id, run id, "started" | "paused")``. Nothing is created while this window
@@ -1942,7 +1946,13 @@ class QueuePage:
         async def work():
             base = await bind_prepared(self._state, backend["name"], request, asset_ids)
             return await create_script_queue(
-                self._state, backend, source, source_name, base, max_generations=max_generations
+                self._state,
+                backend,
+                source,
+                source_name,
+                base,
+                max_generations=max_generations,
+                expected_steps=expected_steps,
             )
 
         def created(result, failure) -> None:

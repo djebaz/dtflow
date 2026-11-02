@@ -1934,7 +1934,15 @@ class ScriptsPage:
         self._starting = True
         self.start.setEnabled(False)
         self.start.setText("Starting…")
-        self.run_start(source, name, cap, lambda result, failure: self._live_started(result, failure, name, short, cap))
+        inspection = self._inspections.get(self._selected_sha)
+        expected = inspection.report.get("static_run_count") if inspection is not None else None
+        self.run_start(
+            source,
+            name,
+            cap,
+            lambda result, failure: self._live_started(result, failure, name, short, cap),
+            expected_steps=expected,
+        )
 
     def _live_started(self, result, failure, name: str, short: str, cap: int) -> None:
         self._starting = False
