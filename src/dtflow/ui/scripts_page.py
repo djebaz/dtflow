@@ -706,6 +706,11 @@ class ScriptsPage:
         if not self._reference_mode or row < 0 or row >= len(REFERENCE_SCRIPTS):
             return
         self._set_script(REFERENCE_SCRIPTS[row])
+        for panel in self.inspector_panels:
+            panel.show()
+        self.inspect_banner.show()
+        self.inspect_card.show()
+        self.show_view(0)
 
     def _set_inspect_banner(self, title: str, description: str, state: str) -> None:
         """Keep the inspection title and surface in the same semantic state.
