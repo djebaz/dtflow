@@ -2183,3 +2183,33 @@ QLabel#scriptsHookVerdict {
 QLabel#scriptsHookVerdict[feedbackState="supported"] { color: ${color.success}; }
 QLabel#scriptsHookVerdict[feedbackState="deferred"] { color: ${color.warning}; }
 QLabel#scriptsHookVerdict[feedbackState="unsupported"] { color: ${color.error}; }
+
+/* ScriptRun presentation: compact committed preview, scrollable console and results. */
+QFrame#scriptsResultCanvas {
+  background: ${color.canvas};
+  border: 1px solid ${color.borderStrong};
+  border-radius: ${size.panelRadius};
+  min-height: 265px;
+}
+QLabel#scriptsResultTile {
+  background: ${color.button};
+  color: ${color.secondary};
+  border: 1px dashed ${color.borderStrong};
+  border-radius: ${size.inputRadius};
+}
+QLabel#scriptsResultCaption {
+  color: ${color.secondary};
+  font-size: ${type.small};
+}
+QLabel#scriptsRunStatus { color: ${color.text}; }
+QFrame#scriptsStepCard {
+  background: ${color.surface};
+  border: 1px solid ${color.sectionBorder};
+  border-radius: ${size.inputRadius};
+}
+QLabel#scriptsStepThumbnail {
+  background: ${color.button};
+  color: ${color.secondary};
+  border: 1px solid ${color.border};
+  border-radius: ${size.inputRadius};
+}
