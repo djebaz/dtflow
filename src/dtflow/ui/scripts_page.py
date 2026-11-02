@@ -92,7 +92,9 @@ def _card(title: str) -> tuple[QFrame, QVBoxLayout]:
     layout.setContentsMargins(12, 10, 12, 10)
     layout.setSpacing(8)
     heading = _label(title, role="scriptsCardTitle")
-    layout.addWidget(heading)
+    heading.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop)
+    heading.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
+    layout.addWidget(heading, 0, Qt.AlignmentFlag.AlignTop)
     return frame, layout
 
 
@@ -166,6 +168,12 @@ class ScriptsPage:
 
     def mount(self, shell) -> None:
         """Reuse the three established shell stacks; never add a second top-level tab."""
+        # The fixed-width left rail uses a scroll viewport with horizontal
+        # overflow hidden; do not let Scripts' size hint widen the stack.
+        self.left.setMinimumWidth(0)
+        policy = self.left.sizePolicy()
+        policy.setHorizontalPolicy(QSizePolicy.Policy.Ignored)
+        self.left.setSizePolicy(policy)
         self.panels = (self.left, self.center, self.right)
         for stack, panel in zip(
             (shell.leftStack, shell.centerStack, shell.rightStack), self.panels, strict=True
@@ -578,7 +586,9 @@ class ScriptsPage:
         layout.setAlignment(Qt.AlignmentFlag.AlignTop)
         self.inspect_panels: list[QFrame] = []
         hooks, h = _card("Compatibility")
+        hooks.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Maximum)
         self.hook_status = _label("No script inspected", wrap=True)
+        self.hook_status.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop)
         h.addWidget(self.hook_status)
         self.hook_list = QVBoxLayout()
         h.addLayout(self.hook_list)
