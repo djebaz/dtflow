@@ -12,7 +12,7 @@ from pathlib import Path
 
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
-    QCheckBox, QComboBox, QFileDialog, QFrame, QHBoxLayout, QLabel,
+    QButtonGroup, QCheckBox, QComboBox, QFileDialog, QFrame, QHBoxLayout, QLabel,
     QLineEdit, QListWidget, QListWidgetItem, QPushButton, QScrollArea,
     QSpinBox, QStackedWidget, QVBoxLayout, QWidget,
 )
@@ -153,6 +153,8 @@ class ScriptsPage:
         layout = self.center.layout()
         mode = QHBoxLayout()
         mode.setSpacing(0)
+        self.mode_group = QButtonGroup(self.center)
+        self.mode_group.setExclusive(True)
         for text, attr in (
             ("Text to image", "text_mode"),
             ("Inpaint", "inpaint_mode"),
@@ -162,6 +164,7 @@ class ScriptsPage:
             button.setCheckable(True)
             button.setProperty("role", "mode")
             setattr(self, attr, button)
+            self.mode_group.addButton(button)
             mode.addWidget(button)
         self.scripts_mode.setChecked(True)
         mode.addStretch(1)
@@ -406,6 +409,7 @@ class ScriptsPage:
 
     def sync_responsive(self):
         narrow = self.owner.form.width() < 1100
+        self.form.set_narrow(narrow)
         self.details_button.setVisible(narrow)
         if narrow:
             self.owner.shell.rightRail.hide()
