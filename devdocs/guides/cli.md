@@ -94,6 +94,13 @@ uv run dtflow assets reconcile ASSET_ID
 
 Only `assets prepare -f/--file FILE` may upload bytes. `-n/--name` selects an identifier instead of the filename. List and Show inspect the local registry without network access; these receipts are not complete remote account inventory. Reconcile is a metadata-only check under the current credential, never an upload. Bind a confirmed receipt with `-z/--asset ASSET_ID` on cloud generation or queue creation, alongside the matching `-l/--lora ID:WEIGHT`. Binding never uploads; the reference is revalidated before dispatch. Receipt bindings are not exported in generation configurations. See the [cloud integration contract](../architecture/cloud-integration.md) for protocol and uncertainty details.
 
+## Script analysis and engine self-check
+
+`dtflow script <file>` parses a Draw Things script (never runs it) and lists the facade calls it finds; syntax checking
+uses the vendored Acorn parser. `dtflow script --check-engine [-o result.json]` runs the engine self-check, and the hidden `dtflow script --hold-child pids.json` is
+the manual child-containment diagnostic (kill the printed parent pid and check the child disappears). See the
+[scripting layer](../architecture/scripting.md).
+
 ## Exit codes
 
 `0` success; `2` invalid input, config, preflight or missing credentials (nothing was dispatched); `3` backend rejection or failure with a known outcome; `4` unknown remote outcome (never replayed); `5` local state, output or deadline failure; `130` local interruption. Nonzero results print one JSON error line on stderr.
