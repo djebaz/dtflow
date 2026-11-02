@@ -153,7 +153,7 @@ class ScriptEditor(QWidget):
         toolbar.setObjectName("scriptsEditorToolbar")
         tools = QHBoxLayout(toolbar)
         tools.setContentsMargins(0, 0, 0, 0)
-        tools.setSpacing(6)
+        tools.setSpacing(4)
         self.editor = ScriptCodeEdit(self)
 
         history = QFrame(toolbar)
