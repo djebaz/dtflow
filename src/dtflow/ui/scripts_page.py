@@ -1241,7 +1241,8 @@ class ScriptsPage:
         if self._live_mode():
             self._sync_pickers()
             partial = False
-            summary, problem = self.settings_source() if self.settings_source else ("", None)
+            summary, problem, details = self.settings_source() if self.settings_source else ("", None, {})
+            self._show_starting_settings(details, problem)
             self.run_settings.setText(summary)
             self.run_settings.setVisible(bool(summary))
             ready = supported and not self._starting and self._run_state not in LIVE_STATES and problem is None
@@ -1837,6 +1838,26 @@ class ScriptsPage:
         finally:
             for widget in widgets:
                 widget.blockSignals(False)
+
+    def _show_starting_settings(self, details: dict, problem: str | None) -> None:
+        """The inspector's Starting settings card shows what Start will use, never fixture values."""
+        names = {
+            "Checkpoint": "settingsCheckpointValue",
+            "Size": "settingsSizeValue",
+            "Steps": "settingsStepsValue",
+            "Sampler": "settingsSamplerValue",
+            "Seed": "settingsSeedValue",
+        }
+        for form in (self.inspector, self.drawer_inspector):
+            for label, widget_name in names.items():
+                widget = getattr(form, widget_name)
+                widget.setText(details.get(label, "Not set on Generate" if label == "Checkpoint" else "—"))
+            form.settingsNote.setText(
+                "Read from the Generate tab; change them there or with the pickers next to Start. "
+                "The script may override values per generation."
+                if problem is None
+                else f"Start is blocked: {problem}."
+            )
 
     def _push_picker(self, name: str, value) -> None:
         form = self.generate_form

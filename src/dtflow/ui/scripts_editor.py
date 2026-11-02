@@ -390,8 +390,9 @@ class ScriptEditor(QWidget):
         self, source: str, *, status: str = "Draft · unsaved changes", based_on: str = "", saved: bool = True
     ):
         self._based_on = based_on
-        self._saved_content = source if saved else ""
         self.editor.setPlainText(source)
+        # Compare against the editor's own normalised text: a CRLF file would otherwise always look edited.
+        self._saved_content = self.editor.toPlainText() if saved else ""
         self.clear_error()
         self.draft_status.setText(status)
 

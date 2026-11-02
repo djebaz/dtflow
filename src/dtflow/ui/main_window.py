@@ -633,8 +633,8 @@ class MainWindow:
         self._set_scripts_left_rail(True)
         self._responsive_workspace()
 
-    def _script_settings(self) -> tuple[str, str | None]:
-        """(summary, problem): what Scripts Start would run with, read from the Generate form."""
+    def _script_settings(self) -> tuple[str, str | None, dict[str, str]]:
+        """(summary, problem, details): what Scripts Start would run with, from the very request Start validates."""
         from dtflow.ui.generation_presenter import FormError
 
         try:
@@ -643,12 +643,20 @@ class MainWindow:
             text = str(exc).rstrip(".")
             if "model" in text.lower():
                 text = "pick a model on the Generate tab (" + text + ")"
-            return "", text
+            return "", text, {}
         where = f"{name} @ {endpoint}" if endpoint else name
+        details = {
+            "Checkpoint": request.model_id,
+            "Size": f"{request.width_px} × {request.height_px}",
+            "Steps": str(request.steps),
+            "Sampler": str(request.sampler_id),
+            "Seed": str(request.seed),
+        }
         return (
             f"Runs with Generate's settings: {where} · {request.model_id} · {request.width_px}×{request.height_px} · "
             f"{request.steps} steps. The script may override size, steps, seed, model and LoRAs.",
             None,
+            details,
         )
 
     def _scripts_from_inpaint(self, source, mask, thumbnail) -> None:
