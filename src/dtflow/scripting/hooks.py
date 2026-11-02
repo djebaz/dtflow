@@ -50,7 +50,13 @@ HOOKS: dict[str, HookSpec] = dict(
         _hook("areModelsDownloaded", IMPLEMENTED, "#114", "inventory lookup (read-only)"),
         _hook("downloadBuiltins", IMPLEMENTED, "#114", "inventory lookup; never downloads"),
         _hook("requestFromUser", IMPLEMENTED, "#114", "form renderer", "simplified in #114, complete in #196"),
-        _hook("screenSize", IMPLEMENTED, "#114", "Qt screen geometry via the UI layer"),
+        _hook(
+            "screenSize",
+            IMPLEMENTED,
+            "#114",
+            "fixed headless value (1280x800)",
+            "upstream returns the real screen; DTFlow has no canvas screen yet",
+        ),
         # Filesystem sandbox.
         _hook("picturesPath", IMPLEMENTED, "#114", "per-run sandbox directory"),
         _hook("listFilesUnderPictures", IMPLEMENTED, "#114", "per-run sandbox directory"),

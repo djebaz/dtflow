@@ -21,9 +21,9 @@ from dtflow.scripting.runner import RunContext, check_syntax, run_recorded
 from dtflow.services.session import open_session, selection_for
 
 
-def read_answers(path: Path | None) -> list[list]:
+def read_answers(path: Path | None) -> list[list] | None:
     if path is None:
-        return []
+        return None
     data = json.loads(Path(path).read_text("utf-8"))
     if not isinstance(data, list) or not all(isinstance(item, list) for item in data):
         raise ValidationError("--answers must be a JSON list of answer lists, one per requestFromUser call.")
@@ -39,6 +39,9 @@ async def run_script_file(args: argparse.Namespace, *, exit_ok: int, exit_failed
     data = Path(args.file).read_bytes()
     if len(data) > MAX_SOURCE_BYTES:
         print("Invalid request: script source is too large.", file=sys.stderr)
+        return exit_invalid
+    if not 1 <= args.max_generations <= 32:
+        print("Invalid request: --max-generations must be between 1 and 32.", file=sys.stderr)
         return exit_invalid
     source = data.decode("utf-8")
     problem = check_syntax(source)
@@ -83,7 +86,12 @@ async def run_script_file(args: argparse.Namespace, *, exit_ok: int, exit_failed
             run_id, result = await task
         finally:
             pending = [future for host in hosts for future in host.pending]
-            await asyncio.gather(*(asyncio.wrap_future(future) for future in pending), return_exceptions=True)
+            drain = asyncio.gather(*(asyncio.wrap_future(future) for future in pending), return_exceptions=True)
+            while not drain.done():  # in-flight attempts finish (or hit their deadline) before the service closes
+                try:
+                    await asyncio.shield(drain)
+                except asyncio.CancelledError:
+                    continue
     host = hosts[0] if hosts else None
     report = {
         "run_id": run_id,

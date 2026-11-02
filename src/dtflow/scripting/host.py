@@ -38,6 +38,7 @@ from dtflow.core.models import (
 from dtflow.scripting.models import (
     CONFIGURATION_FIELDS,
     decode_configuration,
+    normalize_configuration,
     round_dimensions,
 )
 from dtflow.scripting.runner import ScriptCancelled
@@ -75,6 +76,9 @@ IGNORED_FIELDS = frozenset({"id"})
 DEFAULT_MAX_GENERATIONS = 4
 MAX_SANDBOX_LISTING = 1000
 MAX_SANDBOX_FILE_BYTES = 64 * 1024 * 1024
+MAX_SANDBOX_FILES = 200
+PIPELINE_RUN_KEYS = frozenset({"configuration", "prompt", "negativePrompt", "mask"})
+SAFE_FAILURES = (RemoteOutcome.NOT_STARTED, RemoteOutcome.FAILED, RemoteOutcome.CANCELLED_CONFIRMED)
 POLL_SECONDS = 0.1
 PNG_PREFIX = "data:image/png;base64,"
 SCREEN_SIZE = {"width": 1280.0, "height": 800.0}  # DTFlow has no canvas screen; a fixed, documented value
@@ -127,13 +131,15 @@ class ScriptHost:
         prefix: bool = False,
         answers: Sequence[Sequence[Any]] | None = None,
     ) -> None:
+        if base.operation != "txt2img" or base.image_inputs is not None:
+            raise ValueError("Scripts start from text-to-image settings only.")
         self.service, self.base, self.loop = service, base, loop
         self._link_child, self._console, self.cancel = link_child, console, cancel
         self.sandbox = Path(sandbox).resolve()
         self.sandbox.mkdir(parents=True, exist_ok=True)
         self.max_generations, self.prefix = max_generations, prefix
-        self._answers = list(answers or ())
-        self.baseline = decode_configuration(baseline_configuration(base)).values
+        self._answers = list(answers) if answers is not None else None
+        self.baseline = normalize_configuration(decode_configuration(baseline_configuration(base)).values)
         self.generations = 0
         self.last: GenerationOutcome | None = None
         self.pending: list[concurrent.futures.Future] = []  # in-flight work to drain before the service closes
@@ -163,6 +169,9 @@ class ScriptHost:
 
     def _await(self, coroutine, *, track: bool = False):
         """Run ``coroutine`` on the service loop and wait. Stop abandons the wait but never cancels the work."""
+        if self.cancel.is_set():
+            coroutine.close()  # never started
+            raise ScriptCancelled()
         future = asyncio.run_coroutine_threadsafe(coroutine, self.loop)
         if track:
             self.pending.append(future)
@@ -185,6 +194,8 @@ class ScriptHost:
     def _request(self, args: Mapping[str, Any]) -> ResolvedGenerationRequest:
         if args.get("mask") is not None:
             raise ValueError("pipeline.run() mask is not supported yet (virtual canvas and masks arrive with #116).")
+        for key in sorted(set(args) - PIPELINE_RUN_KEYS):
+            self._console(f"pipeline.run() - ignoring unknown argument {key}", 0)
         configuration = args.get("configuration")
         decoded = decode_configuration(configuration)  # raises "Missing configuration parameter" like upstream
         for key in decoded.unknown_keys:
@@ -192,6 +203,7 @@ class ScriptHost:
         values, warnings = round_dimensions(decoded.values)
         for warning in warnings:
             self._console(warning, 0)
+        values = normalize_configuration(values)  # upstream createGenerationConfiguration, before any comparison
         changed = sorted(
             name
             for name, value in values.items()
@@ -219,6 +231,14 @@ class ScriptHost:
             evidence.append(("field.seed", "script_random"))
         prompt = args.get("prompt")
         negative = args.get("negativePrompt")
+        selected = tuple(LoRASelection(item["file"], item["weight"]) for item in values["loras"])
+        chosen = {item.identifier for item in selected}
+        if self.base.prepared_assets and not chosen <= {item.identifier for item in self.base.loras}:
+            raise ValueError(
+                "This backend needs prepared assets for LoRAs; a script may not add a LoRA that has none. "
+                "No image was requested."
+            )
+        assets = tuple(item for item in self.base.prepared_assets if item.identifier in chosen)
         return ResolvedGenerationRequest(
             uuid.uuid4().hex,
             self.base.prompt if prompt is None else prompt,
@@ -230,7 +250,8 @@ class ScriptHost:
             steps=values["steps"],
             guidance=values["guidanceScale"],
             sampler_id=SAMPLER_NUMBERS[number],
-            loras=tuple(LoRASelection(item["file"], item["weight"]) for item in values["loras"]),
+            loras=selected,
+            prepared_assets=assets,
             resolution_evidence=tuple(evidence),
             allow_unlisted_model=self.base.allow_unlisted_model,
         )
@@ -243,6 +264,8 @@ class ScriptHost:
         if self.generations >= self.max_generations:
             raise RuntimeError(f"Script reached its generation limit ({self.max_generations}); no image was requested.")
         request = self._request(args)
+        if self.cancel.is_set():
+            raise ScriptCancelled()  # Stop landed after the dispatcher's check: nothing is linked or scheduled
         attempt_id = uuid.uuid4().hex
         self._link_child(attempt_id)  # recorded before anything can be submitted
         self.generations += 1
@@ -255,7 +278,8 @@ class ScriptHost:
             self._blocked = "Stopped; an earlier generation was left to finish on its own."
             raise
         except BackendError as exc:
-            if exc.failure.remote_outcome == RemoteOutcome.UNKNOWN:
+            if exc.failure.remote_outcome not in SAFE_FAILURES:
+                # unknown outcome, or a paid result whose save failed: never generate again in this run
                 self._blocked = "A previous generation's outcome is unresolved; not generating again."
             raise RuntimeError(f"{exc.failure.code}: {exc.failure.message}") from exc
         except Exception as exc:
@@ -313,13 +337,24 @@ class ScriptHost:
     # -- forms ---------------------------------------------------------------------------------------------------
 
     def request_from_user(self, title: str, confirm: str, components: Sequence[Mapping[str, Any]]) -> list[Any]:
-        """Headless form: ordered answers come from the supplied answer sets (one per call) or from the components'
-        own initial values. Sections contribute their children's answers in order; plain text, markdown and images
-        contribute none. The complete form renderer is #196."""
-        supplied = self._answers.pop(0) if self._answers else None
-        if supplied is not None:
-            return list(supplied)
-        return list(_initial_answers(components))
+        """Headless form. Ordered answers come from the supplied answer sets (one per call); without any answer file the
+        components' own initial values are used, except that forms with inputs that have no meaningful initial value
+        (image fields, directories, selectable images) fail. A supplied answer file that runs out, or an answer of the
+        wrong count or type, fails the call. Answer shapes for sections, images and image fields are an assumption (see
+        the PR); the complete form is #196."""
+        kinds = _answer_kinds(components)
+        if self._answers is None:
+            if any(kind in ("imageField", "directory", "selectableImage") for kind in kinds):
+                raise ValueError("This form needs an answer for an image or directory field; supply --answers.")
+            return _initial_answers(components)
+        if not self._answers:
+            raise ValueError("The supplied answers ran out before this form; the script was not continued.")
+        answers = list(self._answers.pop(0))
+        if len(answers) != len(kinds):
+            raise ValueError(f"Expected {len(kinds)} answers for this form, got {len(answers)}.")
+        for kind, answer in zip(kinds, answers, strict=True):
+            _check_answer(kind, answer)
+        return answers
 
     def screen_size(self) -> dict[str, float]:
         return dict(SCREEN_SIZE)
@@ -341,7 +376,10 @@ class ScriptHost:
     def _listing(self, directory: Path) -> list[str]:
         if not directory.is_dir():
             raise FileNotFoundError("Directory does not exist in the script's file area.")
-        return [str(item) for item in sorted(directory.iterdir())[:MAX_SANDBOX_LISTING]]
+        entries = sorted(directory.iterdir())
+        if len(entries) > MAX_SANDBOX_LISTING:
+            self._console(f"Listing truncated to {MAX_SANDBOX_LISTING} entries.", 1)
+        return [str(item) for item in entries[:MAX_SANDBOX_LISTING]]
 
     def list_files_under_pictures(self) -> list[str]:
         return self._listing(self.sandbox)
@@ -362,6 +400,8 @@ class ScriptHost:
         target = self._confine(file)
         if len(data) > MAX_SANDBOX_FILE_BYTES:
             raise ValueError("Image is too large to save.")
+        if sum(1 for item in self.sandbox.rglob("*") if item.is_file()) >= MAX_SANDBOX_FILES:
+            raise ValueError("The script's file area is full.")
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_bytes(data)
 
@@ -398,3 +438,41 @@ def _initial_answers(components: Sequence[Mapping[str, Any]]) -> list[Any]:
         elif kind == "directory":
             answers.append("")
     return answers
+
+
+def _answer_kinds(components: Sequence[Mapping[str, Any]]) -> list[str]:
+    kinds: list[str] = []
+    for component in components:
+        kind = component.get("type")
+        if kind == "section":
+            kinds.extend(_answer_kinds(component.get("views") or ()))
+        elif kind == "image":
+            if component.get("selectable"):
+                kinds.append("selectableImage")
+        elif kind in ("plainText", "markdown"):
+            continue
+        else:
+            kinds.append(str(kind))
+    return kinds
+
+
+def _is_number(value: Any) -> bool:
+    return isinstance(value, (int, float)) and not isinstance(value, bool)
+
+
+def _check_answer(kind: str, answer: Any) -> None:
+    ok = {
+        "switch": isinstance(answer, bool),
+        "slider": _is_number(answer),
+        "doubleSlider": isinstance(answer, list) and len(answer) == 2 and all(map(_is_number, answer)),
+        "textField": isinstance(answer, str),
+        "comboBox": isinstance(answer, str),
+        "segmented": isinstance(answer, int) and not isinstance(answer, bool),
+        "menu": isinstance(answer, int) and not isinstance(answer, bool),
+        "size": isinstance(answer, list) and len(answer) == 2 and all(map(_is_number, answer)),
+        "imageField": isinstance(answer, list) and all(isinstance(item, str) for item in answer),
+        "directory": isinstance(answer, str),
+        "selectableImage": isinstance(answer, (str, list)),
+    }.get(kind, False)
+    if not ok:
+        raise ValueError(f"Answer for a {kind} field has the wrong type.")
