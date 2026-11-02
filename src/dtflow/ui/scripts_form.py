@@ -14,15 +14,16 @@ from PySide6.QtGui import QColor, QPainter, QPen
 from dtflow.ui.theme import load_tokens
 from PySide6.QtWidgets import (
     QCheckBox, QComboBox, QFileDialog, QHBoxLayout,
-    QLabel, QLineEdit, QPushButton, QSlider, QSpinBox,
+    QLabel, QLineEdit, QPushButton, QSizePolicy, QSlider, QSpinBox,
     QVBoxLayout, QWidget,
 )
 
 
 def _row(label: str, control: QWidget) -> QWidget:
     row = QWidget()
-    layout = QHBoxLayout(row)
     row.setObjectName("scriptsFieldRow")
+    row.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
+    layout = QHBoxLayout(row)
     layout.setContentsMargins(0, 3, 0, 3)
     layout.setSpacing(10)
     heading = QLabel(label, row)
@@ -33,6 +34,10 @@ def _row(label: str, control: QWidget) -> QWidget:
     heading.setMaximumWidth(190)
     layout.addWidget(heading, 0)
     layout.addWidget(control, 1)
+    if control.maximumWidth() < 16777215:
+        # Compact segmented/size controls stay left-aligned alongside the
+        # full-width fields instead of centering across the flexible row.
+        layout.addStretch(1)
     control.setAccessibleName(label)
     return row
 
