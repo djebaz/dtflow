@@ -178,20 +178,29 @@ class ScriptsPage:
 
     def _build_library(self):
         layout = self.left.layout()
-        layout.addWidget(_label("Script library", role="scriptsCardTitle"))
+        heading = _label("Script library", role="scriptsCardTitle")
+        heading.setFixedHeight(34)
+        heading.setAlignment(Qt.AlignmentFlag.AlignVCenter)
+        layout.addWidget(heading)
         self.library = QListWidget()
         self.library.setObjectName("scriptsLibraryList")
         self.library.setAccessibleName("Script library")
+        self.library.setMinimumHeight(110)
         self.library.currentRowChanged.connect(self._selected)
+        # The list owns the flexible height; the footer controls have reserved
+        # heights and must never be pushed beyond the left-rail viewport.
         layout.addWidget(self.library, 1)
         new = QPushButton("New script…")
+        new.setFixedHeight(34)
         new.clicked.connect(self.new_draft)
         layout.addWidget(new)
         actions = QHBoxLayout()
         self.import_button = QPushButton("Import…")
+        self.import_button.setFixedHeight(34)
         self.import_button.clicked.connect(self.import_preview)
         actions.addWidget(self.import_button)
         self.reload_button = QPushButton("Reload from disk")
+        self.reload_button.setFixedHeight(34)
         self.reload_button.setToolTip("Persistent library discovery is not connected in this UI slice.")
         self.reload_button.setEnabled(False)
         actions.addWidget(self.reload_button)
@@ -200,6 +209,8 @@ class ScriptsPage:
             "Preview mode: imported files stay in memory. Immutable version storage is not connected.",
             role="scriptsMuted", wrap=True
         )
+        self.library_note.setFixedHeight(54)
+        self.library_note.setAlignment(Qt.AlignmentFlag.AlignVCenter)
         layout.addWidget(self.library_note)
 
     def _build_center(self):
@@ -636,12 +647,6 @@ class ScriptsPage:
         """Update Scripts layout without recycling unchanged Qt geometry."""
         narrow = self.owner.form.width() < 1100
         self.form.set_narrow(narrow)
-        # The shared outer scroll can inherit oversized stacked-page size hints.
-        # Bound the library list to the actual viewport and reserve space for
-        # New, Import, Reload and the storage caption on both window sizes.
-        library_max = max(180, min(670, self.owner.form.height() - 350))
-        if self.library.maximumHeight() != library_max:
-            self.library.setMaximumHeight(library_max)
         if self.details_button.isHidden() == narrow:
             self.details_button.setVisible(narrow)
         active = self.owner._scripts_active and (
