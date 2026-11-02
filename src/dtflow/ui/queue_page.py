@@ -971,7 +971,8 @@ class QueuePage:
         page.uncertaintyBox.setVisible(note is not None)
         if note is not None:
             self._show(page.uncertaintyLabel, *note)
-        page.itemRetryButton.setEnabled(row is not None and row.state in RELAUNCH_STATES)
+        scripted = view is not None and view.get("kind") == "script"
+        page.itemRetryButton.setEnabled(row is not None and row.state in RELAUNCH_STATES and not scripted)
         if row is None:
             for name in (
                 "itemIdLabel",

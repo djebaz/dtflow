@@ -1303,6 +1303,19 @@ def _script_item_fields(request: dict, script: dict[str, Any]) -> dict[str, Any]
     }
 
 
+def _step_fields(artifacts: list) -> dict[str, Any]:
+    """What one step actually asked for, from its attempt's saved metadata (empty when absent or unreadable)."""
+    path = next((p for p in artifacts if isinstance(p, str) and Path(p).name == "metadata.json"), None)
+    if path is None:
+        return {}
+    try:
+        record = json.loads(Path(path).read_text(encoding="utf-8"))
+        request = record.get("request") if isinstance(record, dict) else None
+        return _item_request_fields(request) | {"seed": request.get("seed")} if isinstance(request, dict) else {}
+    except (OSError, ValueError):
+        return {}
+
+
 def _script_view(connection: sqlite3.Connection, request: dict) -> dict[str, Any]:
     """A script item's run (name, SHA, run id, run state) and its ordered child steps, read through to their attempts.
 
@@ -1345,12 +1358,14 @@ def _script_view(connection: sqlite3.Connection, request: dict) -> dict[str, Any
             "SELECT state, artifacts_json FROM attempts WHERE attempt_id=?", (attempt_id,)
         ).fetchone()
         state = row["state"] if row else None
+        artifacts = json.loads(row["artifacts_json"]) if row and row["artifacts_json"] else []
         view["children"].append(
             {
                 "ordinal": ordinal,
                 "attempt_id": attempt_id,
                 "state": state,
-                "artifacts": json.loads(row["artifacts_json"]) if row and row["artifacts_json"] else [],
+                "artifacts": artifacts,
+                "fields": _step_fields(artifacts),
             }
         )
         if state in TERMINAL_ATTEMPTS and state != "succeeded":

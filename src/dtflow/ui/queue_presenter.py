@@ -334,9 +334,60 @@ class Controls:
     reorder: bool = False
 
 
+_STEP_ITEM_STATES = {"succeeded": "succeeded", "failed": "failed", "cancelled": "cancelled", "unknown": "unknown"}
+
+
+def _step_rows(item: dict, steps: list) -> list[ItemRow]:
+    rows = []
+    for step in steps:
+        paths = [path for path in step["artifacts"] if isinstance(path, str)]
+        metadata = next((path for path in paths if Path(path).name == "metadata.json"), None)
+        identity = next(
+            (
+                f"{step['attempt_id']}:{index}"
+                for index, path in enumerate(step["artifacts"])
+                if isinstance(path, str) and path != metadata
+            ),
+            None,
+        )
+        fields = step.get("fields") or {}
+        state = _STEP_ITEM_STATES.get(step["state"], "save_failed" if step["state"] == "save_failed" else "running")
+        rows.append(
+            ItemRow(
+                f"{step['ordinal']}:{item['item_id']}",
+                step["ordinal"],
+                state,
+                step["attempt_id"],
+                fields.get("seed") if type(fields.get("seed")) is int else (item.get("seed") or 0),
+                tuple(path for path in paths if path != metadata),
+                metadata,
+                None,
+                "txt2img",
+                None,
+                f"Step {step['ordinal']} · " + str(fields.get("prompt") or item.get("prompt") or ""),
+                fields.get("negative_prompt") or "",
+                fields.get("model") or item.get("model") or "",
+                tuple((str(name), weight) for name, weight in fields.get("loras") or ()),
+                fields.get("steps", item.get("steps")),
+                fields.get("guidance", item.get("guidance")),
+                fields.get("sampler") or item.get("sampler") or "",
+                None,
+                fields.get("width", item.get("width")),
+                fields.get("height", item.get("height")),
+                identity,
+                (),
+            )
+        )
+    return rows
+
+
 def item_rows(view: dict) -> tuple[ItemRow, ...]:
     rows = []
     for item in view["items"]:
+        steps = (item.get("script") or {}).get("children") or []
+        if steps:  # a script item shows one row per step, each with its own preview and settings
+            rows.extend(_step_rows(item, steps))
+            continue
         artifacts = [path for path in item["artifacts"] if isinstance(path, str)]
         metadata = next((path for path in artifacts if Path(path).name == "metadata.json"), None)
         failure = item.get("failure") or {}
