@@ -129,27 +129,64 @@ def _prepare(root, state):
         root.resize(1440, 900)
 
 
-def render_scripts_states(out: Path, *, state_names=STATES) -> list[Path]:
-    """Capture the named offline Qt states using the canonical Designer form."""
+def render_scripts_states(out: Path, *, window_factory, state_names=STATES) -> list[Path]:
+    """Capture Scripts panels mounted in the real DTFlow shell, not a fake top-level window.
+
+    These remain *incomplete* layout fixtures until compared with all owner screenshots.
+    No script or generation work is executed by this function.
+    """
     app = QApplication.instance()
     if app is None:
         raise RuntimeError("Create QApplication and apply the shared theme first.")
     out.mkdir(parents=True, exist_ok=True)
-    result = []
-    for state in state_names:
-        if state not in STATES:
-            raise ValueError(f"Unknown scripts render state: {state}")
-        root = _load()
-        try:
-            _prepare(root, state)
-            root.show()
-            app.processEvents()
-            path = out / f"{state}.png"
-            if not root.grab().save(str(path)):
-                raise RuntimeError(f"Failed to render {path.name}")
-            result.append(path)
-        finally:
-            root.close()
-            root.deleteLater()
-            app.processEvents()
-    return result
+    window = window_factory()
+    results = []
+    try:
+        window.form.resize(1600, 1000)
+        window.show()
+        window.form.workspaceStack.setCurrentWidget(window.generation_page)
+        app.processEvents()
+        rails = (
+            (window.shell.leftStack, "scriptsLibraryPanel"),
+            (window.shell.centerStack, "scriptsWorkPanel"),
+            (window.shell.rightStack, "scriptsInspectorPanel"),
+        )
+        for state in state_names:
+            if state not in STATES:
+                raise ValueError(f"Unknown scripts render state: {state}")
+            root = _load()
+            widgets = []
+            try:
+                _prepare(root, state)
+                for stack, name in rails:
+                    panel = _widget(root, name)
+                    panel.setParent(None)
+                    stack.addWidget(panel)
+                    stack.setCurrentWidget(panel)
+                    widgets.append((stack, panel))
+                narrow = state in ("scripts_narrow", "scripts_narrow_details", "scripts_editor_narrow")
+                window.form.resize(800, 680) if narrow else window.form.resize(1600, 1000)
+                window.shell.workspaceSplitter.setSizes([300, 700, 300])
+                if narrow and state != "scripts_narrow_details":
+                    window.shell.rightRail.hide()
+                else:
+                    window.shell.rightRail.show()
+                # Screens with shared shell chrome are the actual Qt evidence; the
+                # app's existing connection and activity fixtures remain isolated.
+                app.processEvents()
+                path = out / f"{state}.png"
+                if not window.form.grab().save(str(path)):
+                    raise RuntimeError(f"Failed to render {path.name}")
+                results.append(path)
+            finally:
+                for stack, panel in reversed(widgets):
+                    stack.setCurrentIndex(window.form.workspaceStack.currentIndex())
+                    stack.removeWidget(panel)
+                    panel.setParent(None)
+                root.deleteLater()
+                app.processEvents()
+        return results
+    finally:
+        window.runner.shutdown()
+        window.form.close()
+        app.processEvents()
