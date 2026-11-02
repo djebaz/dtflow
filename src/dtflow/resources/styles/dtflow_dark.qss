@@ -2145,14 +2145,16 @@ QFrame#scriptsInspectBanner[feedbackState="error"] {
   border: 1px solid ${color.error};
 }
 QLabel#scriptsBannerTitle {
-  color: ${color.success};
   font-size: ${type.section};
   font-weight: ${type.weightEmphasis};
 }
-QFrame#scriptsInspectBanner[feedbackState="warning"] QLabel#scriptsBannerTitle {
+QLabel#scriptsBannerTitle[feedbackState="ok"] {
+  color: ${color.success};
+}
+QLabel#scriptsBannerTitle[feedbackState="warning"] {
   color: ${color.warning};
 }
-QFrame#scriptsInspectBanner[feedbackState="error"] QLabel#scriptsBannerTitle {
+QLabel#scriptsBannerTitle[feedbackState="error"] {
   color: ${color.error};
 }
 
