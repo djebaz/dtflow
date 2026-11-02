@@ -1152,6 +1152,7 @@ def read_queue_summaries(directory: Path, *, described: Sequence[str] = ()) -> t
                 request = {}
             request = request if isinstance(request, dict) else {}
             script_name = request.get("source_name") if is_script_record(request) else None
+            queue["script_elapsed"] = _script_queue_elapsed(directory, request) if script_name is not None else None
             queue["first"] = {
                 "prompt": f"Script: {script_name}"
                 if isinstance(script_name, str)
@@ -1301,6 +1302,26 @@ def _script_item_fields(request: dict, script: dict[str, Any]) -> dict[str, Any]
         "seed": base.get("seed"),
         "artifacts": artifacts,
     }
+
+
+_FINISHED_ELAPSED: dict[str, float | None] = {}  # run id -> wall seconds of a finished run (it never changes)
+
+
+def _script_queue_elapsed(directory: Path, request: dict) -> float | None:
+    """Wall seconds of a script queue's run for the list; finished runs are read once."""
+    run_id = str(request.get("run_id"))
+    if run_id in _FINISHED_ELAPSED:
+        return _FINISHED_ELAPSED[run_id]
+    try:
+        run = read_run_snapshot(Path(directory), run_id)
+    except Exception:
+        return None
+    if run is None:
+        return None
+    seconds = _elapsed(run.created_at, run.finished_at)
+    if run.finished_at is not None:
+        _FINISHED_ELAPSED[run_id] = seconds
+    return seconds
 
 
 def _elapsed(start: str | None, end: str | None) -> float | None:
