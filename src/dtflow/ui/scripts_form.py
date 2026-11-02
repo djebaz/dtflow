@@ -286,8 +286,13 @@ class ScriptForm(QWidget):
         self._narrow = None
         while self.layout_.count():
             item = self.layout_.takeAt(0)
-            if item.widget() is not None:
-                item.widget().deleteLater()
+            widget = item.widget()
+            if widget is not None:
+                # deleteLater() alone leaves visible orphans until Qt handles
+                # DeferredDelete. Hide and detach before rebuilding a live page.
+                widget.hide()
+                widget.setParent(None)
+                widget.deleteLater()
         for spec in fields:
             kind = spec["type"]
             if kind == "section":
