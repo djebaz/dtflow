@@ -1,13 +1,16 @@
 """Generate > Scripts: native UI regions mounted in DTFlow's shared Qt shell.
 
-This module owns presentation and local draft interaction only. Script execution,
-provider dispatch, service admission, history writes and immutable-version storage
-are intentionally not attached in this UI implementation slice.
+This module owns presentation and local draft interaction. The managed script library
+(import, immutable versions) and the static analyzer (syntax check, hook verdicts) are bound
+to the real services; script execution, provider dispatch, service admission and history
+writes are intentionally not attached yet, so Start stays disabled outside the offline preview.
 """
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
+from datetime import datetime
 from pathlib import Path
 
 from PySide6.QtCore import Qt, QSize
@@ -26,6 +29,8 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from dtflow.persistence.script_library import MAX_VERSIONS, ScriptLibraryError, ScriptVersion
+from dtflow.services.script_inspection import Inspection, inspect_source
 from dtflow.ui.brand import tinted_icon
 from dtflow.ui.scripts_editor import ScriptEditor
 from dtflow.ui.scripts_form import REFERENCE_FORM, ScriptForm
@@ -223,9 +228,16 @@ class _ResultImage(QLabel):
 class ScriptsPage:
     """UI controller for library, central content, inspector and narrow drawer."""
 
-    def __init__(self, designer: QWidget, *, owner):
+    def __init__(self, designer: QWidget, *, owner, library_factory=None):
         self.designer = designer
         self.owner = owner
+        self._library_factory = library_factory
+        self._library = None
+        self._library_ready = False
+        self._live = library_factory is not None
+        self._versions: list[ScriptVersion] = []
+        self._inspections: dict[str, Inspection] = {}
+        self._selected_sha = ""
         self.left = designer.scriptsLibraryPanel
         self.center = designer.scriptsWorkPanel
         self.right = designer.scriptsInspectorPanel
@@ -271,6 +283,7 @@ class ScriptsPage:
         ):
             stack.setCurrentWidget(panel)
         self.scripts_mode.setChecked(True)
+        self.refresh_library()
 
     def _build_library(self):
         ui = self.designer
@@ -312,14 +325,16 @@ class ScriptsPage:
         self._build_inspect()
         self._build_form()
         self.editor = ScriptEditor(consent=self._confirm_discard, saved=self._saved_preview_version)
-        self.editor.enable_preview(
-            {
-                EDITOR_STARTER: None,
-                EDITOR_BASE: None,
-                EDITOR_BASE + "\n// Draft change": None,
-                EDITOR_BASE + "\nconst value = ;": (15, 15, "Unexpected token ';' · fixture diagnostic"),
-            }
-        )
+        self._fixture_checks = {
+            EDITOR_STARTER: None,
+            EDITOR_BASE: None,
+            EDITOR_BASE + "\n// Draft change": None,
+            EDITOR_BASE + "\nconst value = ;": (15, 15, "Unexpected token ';' · fixture diagnostic"),
+        }
+        if self._live:
+            self.editor.enable_live(self._check_syntax_live)
+        else:
+            self.editor.enable_preview(self._fixture_checks)
         ui.scriptEditorHost.layout().addWidget(self.editor)
         self._build_run()
         self._build_results()
@@ -550,6 +565,9 @@ class ScriptsPage:
             rail.setVisible(self._wide_details_requested)
 
     def _selected(self, row: int):
+        if self._live and not self._reference_mode:
+            self._select_live(row)
+            return
         if not self._reference_mode or row < 0 or row >= len(self._library_scripts):
             return
         if self.editor.is_dirty():
@@ -780,6 +798,9 @@ class ScriptsPage:
         self._import_preview()
 
     def _import_preview(self):
+        if self._live and not self._reference_mode:
+            self._import_live()
+            return
         filename, _ = QFileDialog.getOpenFileName(
             self.owner.form, "Open JavaScript preview", "", "JavaScript (*.js);;All files (*)"
         )
@@ -848,6 +869,9 @@ class ScriptsPage:
         """Populate an explicitly offline screenshot state; never executes a script."""
         self.active_state = state
         self._reference_mode = True
+        self.editor.disable_live()
+        self.editor.enable_preview(self._fixture_checks)
+        self._live = False
         self._run_state = ""
         self._prior_unresolved = state == "scripts_form_after_unknown"
         self._run_version = "9f3a1c2"
@@ -1027,12 +1051,17 @@ class ScriptsPage:
                 widget.deleteLater()
         for hook, state, detail in self._current_hooks:
             layout.addWidget(_hook_item(hook, state, detail))
-        entries = [
-            ("#4 · Succeeded", "0:41", "Queue item q-0004 · 4 child steps · version 9f3a1c2", "ok"),
-            ("#3 · Stopped locally", "0:19", "Queue item q-0003 · 2 child steps · version 9f3a1c2", "warning"),
-            ("#2 · Failed", "0:13", "Queue item q-0002 · 21 Oct 22:13 · version b81e07d", "error"),
-            ("#1 · Outcome unknown", "", "Queue item q-0001 · 21 Oct 21:58 · version b81e07d", "warning"),
-        ]
+        live = self._live and not self._reference_mode
+        entries = (
+            []
+            if live
+            else [
+                ("#4 · Succeeded", "0:41", "Queue item q-0004 · 4 child steps · version 9f3a1c2", "ok"),
+                ("#3 · Stopped locally", "0:19", "Queue item q-0003 · 2 child steps · version 9f3a1c2", "warning"),
+                ("#2 · Failed", "0:13", "Queue item q-0002 · 21 Oct 22:13 · version b81e07d", "error"),
+                ("#1 · Outcome unknown", "", "Queue item q-0001 · 21 Oct 21:58 · version b81e07d", "warning"),
+            ]
+        )
         if self._run_state and self._run_state != "results":
             entries.insert(
                 0,
@@ -1102,7 +1131,9 @@ class ScriptsPage:
         digest.setFont(QFont("Consolas", 9))
         identity.addWidget(digest)
         verdict = _label(f"{tier} · {support}", role="scriptsLibraryVerdict")
-        _feedback(verdict, "ok" if support == "supported" else "error")
+        _feedback(
+            verdict, "ok" if support == "supported" else "warning" if support in ("deferred", "unknown") else "error"
+        )
         identity.addWidget(verdict)
         identity.addStretch(1)
         col.addLayout(identity)
@@ -1111,7 +1142,10 @@ class ScriptsPage:
         active.hide()
         col.addWidget(active)
         self.library.setItemWidget(item, row)
-        item.setToolTip(f"{filename}\nVersion {sha} · {tier} · {support} · offline example")
+        item.setToolTip(
+            f"{filename}\nVersion {sha} · {tier} · {support}"
+            + ("" if self._live and not self._reference_mode else " · offline example")
+        )
 
     def _refresh_library_cues(self):
         for index, script in enumerate(self._library_scripts):
@@ -1135,7 +1169,9 @@ class ScriptsPage:
         _feedback(self.source_note, "error" if missing_source else "")
         supported = script is not None and script[3] == "supported"
         self.disclosure.setText(
-            "Cannot start: console.repl is unsupported. No script is executed in this preview."
+            self._live_disclosure()
+            if self._live and not self._reference_mode
+            else "Cannot start: console.repl is unsupported. No script is executed in this preview."
             if script is not None and not supported
             else self._base_disclosure
         )
@@ -1146,7 +1182,9 @@ class ScriptsPage:
         self.start.setEnabled(bool(ready))
         self.start.setText("Start new run" if self._prior_unresolved else "Start script")
         self.start.setToolTip(
-            "Offline preview only: no script executes or submits work."
+            "Starting scripts is not connected yet. Library and inspection are real; nothing executes or submits work."
+            if self._live and not self._reference_mode
+            else "Offline preview only: no script executes or submits work."
             if ready
             else "Select a supported example, provide any required source and acknowledge incomplete inspection. No real execution is connected."
         )
@@ -1289,6 +1327,9 @@ class ScriptsPage:
         self._sync_drawer_data()
 
     def _saved_preview_version(self, source, sha):
+        if self._live and not self._reference_mode:
+            self._save_live_version(source)
+            return
         self._preview_versions[sha[:7]] = source
         filename = self._current_script[0] if self._current_script else "Untitled.js"
         script = (filename, sha[:7], "Tier 1", "supported")
@@ -1398,3 +1439,264 @@ class ScriptsPage:
 
     def _detach_source(self):
         self.source.setCurrentIndex(0)
+
+    # ------------------------------------------------------------------
+    # Managed library and static analyzer (real services; no execution)
+    # ------------------------------------------------------------------
+
+    def _live_disclosure(self) -> str:
+        script = self._current_script
+        if script is None:
+            return self._base_disclosure
+        inspection = self._inspections.get(self._selected_sha)
+        if inspection is not None and inspection.support != "supported":
+            return f"Cannot start: {inspection.summary}"
+        return "Start is not connected yet: this build can import, inspect and edit scripts but not run them."
+
+    def _library_store(self):
+        if self._library is None:
+            try:
+                self._library = self._library_factory()
+            except Exception as exc:  # noqa: BLE001 - surfaced to the user, the page stays usable offline
+                self.owner.inline.notice("Script library unavailable", str(exc), "error")
+                return None
+        return self._library
+
+    def _check_syntax_live(self, source: str, done) -> None:
+        def parse(text: str):
+            from dtflow.scripting.analysis import parse_syntax_error, syntax_error
+
+            error = syntax_error(text)
+            return parse_syntax_error(error) if error else None
+
+        self.owner.runner.submit(
+            asyncio.to_thread(parse, source),
+            lambda result, exception: done(
+                (1, 1, f"Syntax check failed: {exception}") if exception is not None else result
+            ),
+        )
+
+    def refresh_library(self) -> None:
+        """Re-read the index from disk (also what returning to the Scripts page does)."""
+        if not self._live or self._reference_mode:
+            return
+        library = self._library_store()
+        if library is None:
+            return
+        if self.editor.is_dirty():
+            return  # never rebuild the list under an unsaved draft
+        self._load_library(self._selected_sha)
+
+    def _load_library(self, select: str = "") -> None:
+        library = self._library
+        try:
+            versions = library.list_versions()
+        except Exception as exc:  # noqa: BLE001
+            self.owner.inline.notice("Script library unavailable", str(exc), "error")
+            return
+        same = [v.sha256 for v in versions] == [v.sha256 for v in self._versions]
+        self._versions = versions
+        self.designer.libraryEmptyHint.setVisible(not versions)
+        self.library_note.setText(
+            f"Local files only. Each version is copied and kept by SHA-256 ({len(versions)} of {MAX_VERSIONS} stored)."
+        )
+        if not versions:
+            self.clear()
+            self.library_note.setText(f"Local files only · 0 of {MAX_VERSIONS} versions stored.")
+            self._selected_sha = ""
+            return
+        if not same:
+            self.library.blockSignals(True)
+            self.library.clear()
+            self._library_scripts = []
+            for version in versions:
+                inspection = self._inspections.get(version.sha256)
+                script = (
+                    version.name,
+                    version.short,
+                    inspection.tier if inspection else "Not inspected",
+                    inspection.support if inspection else "unknown",
+                )
+                self._library_scripts.append(script)
+                self._add_library_item(script)
+            self.library.blockSignals(False)
+        row = next((i for i, v in enumerate(versions) if v.sha256 == select), -1)
+        if row >= 0:
+            self.library.blockSignals(True)
+            self.library.setCurrentRow(row)
+            self.library.blockSignals(False)
+            if select != self._selected_sha or self._current_script is None:
+                self._select_live(row)
+
+    def _select_live(self, row: int) -> None:
+        if row < 0 or row >= len(self._versions):
+            return
+        version = self._versions[row]
+        if self.editor.is_dirty() and version.sha256 != self._selected_sha:
+            previous = next((i for i, v in enumerate(self._versions) if v.sha256 == self._selected_sha), -1)
+            self.library.blockSignals(True)
+            self.library.setCurrentRow(previous)
+            self.library.blockSignals(False)
+            self.owner.inline.notice(
+                "Unsaved script draft", "Discard the draft explicitly before selecting another script.", "warning"
+            )
+            return
+        try:
+            source = self._library.read_source(version.sha256)
+        except ScriptLibraryError as exc:
+            self.owner.inline.notice("Cannot read stored script", str(exc), "error")
+            return
+        self._selected_sha = version.sha256
+        self._current_script = (version.name, version.short, "Not inspected", "unknown")
+        self.editor.set_draft(source, status=f"Version {version.short}", based_on=version.short)
+        self.script_title.setText(version.name)
+        self.script_title.setToolTip(version.name)
+        self.sha.setText(f"version {version.short}")
+        self.sha.setFont(QFont("Consolas", 9))
+        self.sha.setToolTip(f"SHA-256: {version.sha256}")
+        self.status.setText("Inspecting… (static parse only)")
+        _feedback(self.status, "")
+        self.form.set_fields([])
+        self.form_note.setText("Nothing to configure here. This script asks for its settings when it runs.")
+        self.form_note.show()
+        self.reset_fields.setEnabled(False)
+        for panel in self.inspector_panels:
+            panel.show()
+        self.inspect_banner.show()
+        self.inspect_card.show()
+        self.show_view(0)
+        cached = self._inspections.get(version.sha256)
+        if cached is not None:
+            self._apply_inspection(version, cached)
+            return
+        data = source.encode("utf-8")
+        self.owner.runner.submit(
+            asyncio.to_thread(inspect_source, data, version.name),
+            lambda result, exception, sha=version.sha256: self._inspected(sha, result, exception),
+        )
+
+    def _inspected(self, sha: str, result, exception) -> None:
+        if exception is not None:
+            if sha == self._selected_sha:
+                self.status.setText(f"Inspection failed · {type(exception).__name__}: {exception}")
+                _feedback(self.status, "error")
+            return
+        self._inspections[sha] = result
+        version = next((v for v in self._versions if v.sha256 == sha), None)
+        if version is None:
+            return
+        self._versions = []  # rebuild the list rows so the verdict chip shows the new inspection
+        self._load_library(self._selected_sha)
+        if sha == self._selected_sha:
+            self._apply_inspection(version, result)
+
+    def _apply_inspection(self, version: ScriptVersion, inspection: Inspection) -> None:
+        self._current_script = (version.name, version.short, inspection.tier, inspection.support)
+        self._current_hooks = tuple((row.api, row.state, row.detail) for row in inspection.hooks)
+        syntax_ok = inspection.syntax_error is None
+        label = (
+            f"● {'Syntax valid' if syntax_ok else 'Syntax error'}   ● {len(inspection.hooks)} API calls observed   ● "
+            + inspection.title
+        )
+        self.status.setText(label)
+        self._saved_inspection = label
+        _feedback(self.status, inspection.verdict)
+        self.hook_status.setText(inspection.title)
+        for widget in (self.hook_status, self.drawer_summary):
+            _feedback(widget, inspection.verdict)
+        self.drawer_summary.setText(inspection.title)
+        self.inspect_summary.setText(inspection.summary)
+        dynamic = inspection.report["dynamic_constructs"]
+        facts = {
+            "Header": f"{version.name} · API {inspection.api_version or 'header missing'}",
+            "Tier": inspection.tier,
+            "Dynamic": ", ".join(dynamic) if dynamic else "none found",
+            "Models": "Known only at run time",
+            "Loras": "Known only at run time",
+            "Method": "Static parse · no generation, network or sign-in",
+        }
+        for name, widget in self.inspection_values.items():
+            widget.setText(facts[name])
+        supported = sum(row.state == "supported" for row in inspection.hooks)
+        deferred = sum(row.state == "deferred" for row in inspection.hooks)
+        blocked = sum(row.state == "unsupported" for row in inspection.hooks)
+        self._set_inspect_banner(
+            inspection.title,
+            f"{supported} hooks supported, {deferred} deferred, {blocked} unsupported. Static analysis only; nothing was executed.",
+            inspection.verdict,
+        )
+        try:
+            created = datetime.fromisoformat(version.created_at).astimezone().strftime("%d %b %Y %H:%M")
+        except ValueError:
+            created = version.created_at
+        metadata = {
+            "File": version.name,
+            "Version SHA-256": version.sha256,
+            "Size": f"{version.size} bytes",
+            "Imported": created,
+        }
+        for values in (self.inspector_source_values, self.drawer_source_values):
+            for key, widget in values.items():
+                widget.setText(metadata[key])
+                widget.setToolTip(metadata[key])
+        for form in (self.inspector, self.drawer_inspector):
+            for name in ("settingsCard", "sourceCard", "historyCard"):
+                getattr(form, name).show()
+        while self.hook_list.count():
+            widget = self.hook_list.takeAt(0).widget()
+            if widget is not None:
+                widget.hide()
+                widget.setParent(None)
+                widget.deleteLater()
+        for hook, state, detail in self._current_hooks:
+            self.hook_list.addWidget(_hook_item(hook, state, detail))
+        if not self._current_hooks:
+            self.hook_list.addWidget(
+                _label("No facade calls were found in the source.", role="scriptsMuted", wrap=True)
+            )
+        self._sync_drawer_data()
+        if inspection.syntax_error is not None and not self.editor.is_dirty():
+            self.editor.set_error(*inspection.syntax_error)
+        self._refresh_readiness()
+
+    def _import_live(self) -> None:
+        library = self._library_store()
+        if library is None:
+            return
+        filename, _ = QFileDialog.getOpenFileName(
+            self.owner.form, "Import JavaScript", "", "JavaScript (*.js);;All files (*)"
+        )
+        if not filename:
+            return
+        try:
+            version, existing = library.import_file(Path(filename))
+        except ScriptLibraryError as exc:
+            self.owner.inline.notice("Import failed", str(exc), "error")
+            return
+        if existing:
+            self.owner.inline.notice(
+                "Already in the library",
+                f"This exact file is stored as version {version.short} ({version.name}).",
+                "info",
+            )
+        self._selected_sha = ""
+        self._current_script = None
+        self._versions = []  # force the list to be rebuilt
+        self._load_library(version.sha256)
+
+    def _save_live_version(self, source: str) -> None:
+        library = self._library_store()
+        if library is None:
+            return
+        name = self._current_script[0] if self._current_script else "Untitled.js"
+        based_on = self._selected_sha
+        try:
+            version, _ = library.add_source(name, source, based_on=based_on)
+        except ScriptLibraryError as exc:
+            self.owner.inline.notice("Save failed", str(exc), "error")
+            return
+        self._selected_sha = ""
+        self._current_script = None
+        self._versions = []
+        self._load_library(version.sha256)
+        self.show_view(2)

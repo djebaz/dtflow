@@ -188,6 +188,7 @@ class ScriptEditor(QWidget):
         self._checked_source = None
         self._based_on = ""
         self._saved_callback = saved
+        self._live_check = None
         self.editor = ScriptCodeEdit(self)
         self.form.codeHost.layout().addWidget(self.editor)
         self.form.codeHost.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
@@ -263,9 +264,45 @@ class ScriptEditor(QWidget):
         self._preview_checks = dict(outcomes)
         self.check_syntax.setEnabled(True)
 
+    def enable_live(self, check) -> None:
+        """Bind Check syntax to the real analyzer. ``check(source, done)`` calls ``done((line, column, message) | None)``
+        later on the GUI thread; the source is only ever parsed."""
+        self._live_check = check
+        self._preview_enabled = True
+        self._preview_checks = {}
+        self.check_syntax.setEnabled(True)
+        self.check_syntax.setToolTip("Parse the script with the bundled Acorn parser. Nothing is executed.")
+        self.save_new.setToolTip("Store the checked text as a new immutable version in the script library.")
+
+    def disable_live(self) -> None:
+        self._live_check = None
+
+    def _check_live(self, source: str) -> None:
+        self.diagnostic.setText("Checking syntax…")
+        self.check_syntax.setEnabled(False)
+
+        def done(error) -> None:
+            self.check_syntax.setEnabled(True)
+            if self.editor.toPlainText() != source or self._live_check is None:
+                return  # the text changed while the parser ran; the result no longer describes it
+            self._checked_source = source
+            if error is not None:
+                self.set_error(*error)
+            else:
+                self.diagnostic.setText("● Syntax valid · parsed, not executed")
+                self.diagnostic.setProperty("feedbackState", "ok")
+                self.diagnostic.style().unpolish(self.diagnostic)
+                self.diagnostic.style().polish(self.diagnostic)
+            self._modified()
+
+        self._live_check(source, done)
+
     def check_preview(self):
         source = self.editor.toPlainText()
         self.clear_error()
+        if self._live_check is not None:
+            self._check_live(source)
+            return
         if not self._preview_enabled or source not in self._preview_checks:
             self.diagnostic.setText(
                 "Not checked: no offline fixture diagnostic for this text. Real parsing is not connected."
@@ -288,7 +325,12 @@ class ScriptEditor(QWidget):
         self._based_on = sha[:7]
         self._saved_content = source
         self._modified()
-        self.draft_status.setText(f"Preview version {sha[:7]} · memory only, not persisted")
+        live = self._live_check is not None
+        self.draft_status.setText(
+            f"Version {sha[:7]} saved to the script library"
+            if live
+            else f"Preview version {sha[:7]} · memory only, not persisted"
+        )
         if self._saved_callback is not None:
             self._saved_callback(source, sha)
 
