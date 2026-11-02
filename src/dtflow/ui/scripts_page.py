@@ -224,9 +224,11 @@ class ScriptsPage:
         self.views.addWidget(self.editor)
         self._build_run()
         self._build_results()
+        self._build_empty()
         layout.addWidget(self.views, 1)
         footer, footer_layout = _card("")
         footer.setObjectName("scriptsStartPanel")
+        self.start_panel = footer
         footer_layout.itemAt(0).widget().hide()
         cap_row = QHBoxLayout()
         cap_row.addWidget(_label("Generation cap"))
@@ -254,6 +256,33 @@ class ScriptsPage:
         footer_layout.addWidget(self.acknowledge)
         layout.addWidget(footer)
         self.show_view(0)
+
+    def _build_empty(self):
+        """The empty gallery-like canvas follows the owner mockup, not an Inspect card."""
+        from dtflow.ui.brand import brand_mark
+
+        canvas = QFrame()
+        canvas.setObjectName("scriptsEmptyCanvas")
+        layout = QVBoxLayout(canvas)
+        layout.addStretch(1)
+        mark = QLabel()
+        logo = brand_mark()
+        if not logo.isNull():
+            mark.setPixmap(logo.scaled(64, 64, Qt.AspectRatioMode.KeepAspectRatio,
+                                       Qt.TransformationMode.SmoothTransformation))
+        mark.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        layout.addWidget(mark)
+        headline = _label("No scripts yet", role="scriptsEmptyTitle")
+        headline.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        layout.addWidget(headline)
+        desc = _label(
+            "Create one or import a local .js file. Nothing is run on import.",
+            role="scriptsMuted", wrap=True,
+        )
+        desc.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        layout.addWidget(desc)
+        layout.addStretch(1)
+        self.views.addWidget(canvas)
 
     def _build_inspect(self):
         body = QWidget()
@@ -450,6 +479,7 @@ class ScriptsPage:
         h.addWidget(self.history)
         layout.addWidget(history)
         layout.addStretch(1)
+        self.inspector_panels = (hooks, settings, source, history)
 
     def _build_drawer(self):
         # The overlay is native Qt, not a relocated QSplitter child.
@@ -598,7 +628,9 @@ class ScriptsPage:
         self.inspect_banner.hide()
         self.inspect_card.hide()
         self.hook_status.setText("No script inspected")
-        self.show_view(0)
+        for panel in self.inspector_panels[1:]:
+            panel.hide()
+        self.show_view(5)
 
     def new_draft(self):
         self.script_title.setText("Untitled script")
@@ -643,9 +675,14 @@ class ScriptsPage:
 
     def show_view(self, index: int):
         self.views.setCurrentIndex(index)
+        empty = index == 5
+        self.script_title.setVisible(not empty)
+        self.sha.setVisible(not empty)
+        self.start_panel.setVisible(not empty)
         for position, button in enumerate(self.tab_buttons):
             button.setChecked(index == position)
-        self.status.setVisible(index <= 2)
+            button.setVisible(not empty)
+        self.status.setVisible(index <= 2 and not empty)
         self.start.setVisible(index <= 2)
         self.cap.setEnabled(index <= 2)
 
@@ -663,11 +700,13 @@ class ScriptsPage:
         self.library.setCurrentRow(row)
         self.library.blockSignals(False)
         if state == "scripts_empty":
-            self.script_title.setText("No script selected")
-            self.status.setText("Import a script to inspect its API calls")
-            self.show_view(0)
+            self.clear()
+            self._reference_mode = True
+            self.library_note.setText("Local files only · 0 of 50 versions stored.")
             return
         self._set_script(REFERENCE_SCRIPTS[row])
+        for panel in self.inspector_panels:
+            panel.show()
         self.inspect_banner.show()
         self.inspect_card.show()
         self._load_reference_form()
