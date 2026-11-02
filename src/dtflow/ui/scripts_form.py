@@ -279,6 +279,8 @@ class ScriptForm(QWidget):
                 heading.setMinimumWidth(0 if narrow else 190)
                 if heading.maximumWidth() != label_max:
                     heading.setMaximumWidth(label_max)
+        self.layout_.activate()
+        self.setMinimumHeight(self.layout_.sizeHint().height())
 
     def set_fields(self, fields: list[dict], *, long_values: bool = False) -> None:
         self._narrow = None
