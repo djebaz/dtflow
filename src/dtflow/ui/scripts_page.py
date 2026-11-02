@@ -34,6 +34,7 @@ from PySide6.QtWidgets import (
 from dtflow.persistence.script_library import MAX_VERSIONS, ScriptLibraryError, ScriptVersion
 from dtflow.services.script_inspection import Inspection, inspect_source
 from dtflow.ui.brand import tinted_icon
+from dtflow.ui.rail_fit import fit_rail
 from dtflow.ui.scripts_editor import ScriptEditor
 from dtflow.ui.scripts_form import REFERENCE_FORM, ScriptForm
 
@@ -1755,6 +1756,7 @@ class ScriptsPage:
                 _label("No facade calls were found in the source.", role="scriptsMuted", wrap=True)
             )
         self._sync_drawer_data()
+        self._fit_rails()
         if inspection.syntax_error is not None and not self.editor.is_dirty():
             self.editor.set_error(*inspection.syntax_error)
         self._refresh_readiness()
@@ -1869,6 +1871,10 @@ class ScriptsPage:
         else:
             widget.setValue(value)
         self._refresh_readiness()
+
+    def _fit_rails(self) -> None:
+        for panel in (self.right, self.drawer_inspector):
+            fit_rail(panel)
 
     def _live_mode(self) -> bool:
         return self._live and not self._reference_mode and self.run_start is not None
@@ -2051,6 +2057,7 @@ class ScriptsPage:
         self.console.setPlainText("\n".join(lines))
         self.run_footer.setText(self._footer_for(key))
         self._sync_drawer_data()
+        self._fit_rails()
 
     def _clear_results(self) -> None:
         while self.results_layout.count():
@@ -2152,3 +2159,4 @@ class ScriptsPage:
                 self._prior_unresolved = True
         self._live_history = list(reversed(entries))
         self._sync_drawer_data()
+        self._fit_rails()

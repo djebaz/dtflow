@@ -72,6 +72,7 @@ from dtflow.ui.planning_presenter import (
     SEED_POLICY_TEXT,
     summary_text,
 )
+from dtflow.ui.rail_fit import fit_rail
 from dtflow.ui.queue_composer import SIZE_PRESETS, ActionsFit, ComposerGridFit, SummaryLabelHeightFit
 from dtflow.ui.queue_item_delegate import ROW_HEIGHT, ItemTableHeader, ItemTableLayout, QueueItemDelegate
 from dtflow.ui.queue_model import ITEM_ID_ROLE, QueueItemModel
@@ -1012,6 +1013,7 @@ class QueuePage:
             and self.model.thumbnails.available(row.outputs[0], row.gallery_identity)
         )
         page.itemOpenImagesButton.setEnabled(verified and self._images_hook is not None)
+        fit_rail(page.queueInspector)
 
     def _thumbnail_changed(self, path: str) -> None:
         if self._runner.closed or not self.page.queueItemsView.isVisible():
