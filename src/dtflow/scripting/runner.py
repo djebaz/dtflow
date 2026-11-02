@@ -1,9 +1,14 @@
 """Parent-side script runner: disposable child process, host-call dispatch, deadline and Stop.
 
-The JS engine lives only in the child. Every hook call arrives here as a message; implementations run in the calling
-(worker) thread and must poll ``cancel`` if they can block. Stop refuses further hook calls (they return the upstream
-``cancelled`` error) and kills a child that does not finish within ``STOP_GRACE_SECONDS``. The deadline kills the child
-unconditionally. Killing never cancels provider work that a hook already submitted; that stays owned by its attempt.
+The JS engine lives only in the child. Each hook call arrives here as a message and runs on a short-lived hook thread so
+the supervising loop stays free: Stop and the JS-segment deadline are enforced even while a hook blocks. A hook should
+still poll ``cancel`` so it can end promptly; after Stop the child is killed once ``STOP_GRACE_SECONDS`` pass, and the
+run is reported stopped without waiting for a hook that ignores it. Killing never cancels provider work that a hook
+already submitted; that stays owned by its durable attempt.
+
+Clocks: the startup wait and the segment deadline start only when the child has announced ``ready`` or received a hook
+reply. The segment deadline bounds JavaScript that runs without making a host call; time spent inside hooks is excluded.
+The child is also contained so it cannot outlive the app (Linux parent-death signal, Windows kill-on-close Job Object).
 """
 
 from __future__ import annotations
@@ -18,7 +23,8 @@ from dataclasses import asdict, dataclass, field
 from typing import Any
 
 from dtflow.diagnostics import event as diagnostic_event
-from dtflow.scripting.engine import MAX_CALL_BYTES, ScriptLimits, ScriptOutcome
+from dtflow.scripting.containment import contain_child
+from dtflow.scripting.engine import MAX_CALL_BYTES, ScriptLimits
 from dtflow.scripting.hooks import HOOKS, UNSUPPORTED
 from dtflow.scripting.worker import main as worker_main
 
@@ -28,6 +34,7 @@ MAX_CONSOLE_LINES = 2000
 MAX_CONSOLE_LINE_CHARS = 4000
 MAX_SLEEP_SECONDS = 3600.0
 STOP_GRACE_SECONDS = 1.0
+STARTUP_TIMEOUT_SECONDS = 120.0
 POLL_SECONDS = 0.05
 
 
@@ -41,10 +48,12 @@ class RunResult:
     error: str | None = None
     console: list[tuple[int, str]] = field(default_factory=list)
     host_calls: int = 0
+    startup_seconds: float | None = None  # spawn until the child announced ready
+    contained: bool = False  # child is bound to the app's lifetime by the OS
 
 
 class HookDispatcher:
-    """Runs hook implementations for the parent side; enforces Stop, argument bounds and error forwarding."""
+    """Runs hook implementations for the parent side; enforces Stop, size bounds and error forwarding."""
 
     def __init__(self, implementations: Mapping[str, Callable[..., Any]] | None, cancel: threading.Event) -> None:
         self.cancel = cancel
@@ -91,11 +100,24 @@ class HookDispatcher:
                     else "is not implemented in this DTFlow build yet"
                 )
                 raise NotImplementedError(f"{name} {reason}.")
-            return json.dumps({"value": function(*json.loads(payload))})
+            reply = json.dumps({"value": function(*json.loads(payload))})
+            if len(reply) > MAX_CALL_BYTES:
+                raise ValueError(f"The result of {name} is too large.")
+            return reply
         except ScriptCancelled:
-            return json.dumps({"error": "cancelled"})
+            return json.dumps({"error": "cancelled", "cancelled": True})
         except Exception as exc:  # forwarded to JS like upstream forwardExceptionsToJS
             return json.dumps({"error": str(exc) or type(exc).__name__})
+
+
+class _HookThread(threading.Thread):
+    def __init__(self, dispatcher: HookDispatcher, name: str, payload: str) -> None:
+        super().__init__(name=f"dtflow-hook-{name}", daemon=True)
+        self._dispatcher, self._hook, self._payload = dispatcher, name, payload
+        self.reply: str | None = None
+
+    def run(self) -> None:
+        self.reply = self._dispatcher.call(self._hook, self._payload)
 
 
 def run_script(
@@ -112,23 +134,39 @@ def run_script(
     result = dispatcher.result
     context = multiprocessing.get_context("spawn")
     parent, child = context.Pipe()
+    spawned = time.monotonic()
     process = context.Process(target=worker_main, args=(child,), name="dtflow-script", daemon=True)
     process.start()
     child.close()
-    started = time.monotonic()
+    containment = contain_child(process)
+    result.contained = containment.active or _linux_contained()
+    phase = "starting"  # starting -> js <-> hook
+    busy_since = spawned
     stop_deadline: float | None = None
+    hook: _HookThread | None = None
     try:
-        parent.send({"source": source, "limits": asdict(limits)})
         while True:
             now = time.monotonic()
-            if now - started > limits.deadline_seconds:
-                result.status, result.error = "failed", "Script exceeded its time limit and was terminated."
-                break
             if cancel.is_set():
                 stop_deadline = stop_deadline if stop_deadline is not None else now + STOP_GRACE_SECONDS
                 if now > stop_deadline:
                     result.status, result.error = "stopped", None
                     break
+            if phase == "starting" and now - spawned > STARTUP_TIMEOUT_SECONDS:
+                result.status, result.error = "failed", "The script process did not start."
+                break
+            if phase == "js" and now - busy_since > limits.js_segment_seconds:
+                result.status = "failed"
+                result.error = "Script ran JavaScript for too long without a host call and was terminated."
+                break
+            if phase == "hook":
+                assert hook is not None
+                hook.join(POLL_SECONDS)
+                if hook.is_alive():
+                    continue
+                parent.send({"reply": hook.reply})
+                hook, phase, busy_since = None, "js", time.monotonic()
+                continue
             if not parent.poll(POLL_SECONDS):
                 if not process.is_alive() and not parent.poll(0):
                     result.status, result.error = "failed", "Script process ended unexpectedly."
@@ -139,21 +177,30 @@ def run_script(
             except (EOFError, OSError):
                 result.status, result.error = "failed", "Script process ended unexpectedly."
                 break
-            if "call" in message:
-                parent.send({"reply": dispatcher.call(message["call"], message["payload"])})
+            if "ready" in message:
+                result.startup_seconds = round(time.monotonic() - spawned, 3)
+                parent.send({"source": source, "limits": asdict(limits)})
+                phase, busy_since = "js", time.monotonic()
+            elif "call" in message:
+                hook = _HookThread(dispatcher, message["call"], message["payload"])
+                hook.start()
+                phase = "hook"
             elif "done" in message:
-                outcome = ScriptOutcome(message["done"], message.get("error"))
-                result.status, result.error = outcome.status, outcome.error
-                if cancel.is_set() and result.status == "completed":
-                    result.status = "stopped"
+                result.status, result.error = message["done"], message.get("error")
                 break
     except (BrokenPipeError, OSError):
-        if result.status == "failed" and result.error is None:
-            result.error = "Script process ended unexpectedly."
+        result.status, result.error = "failed", "Script process ended unexpectedly."
     finally:
         parent.close()
         process.join(timeout=0.5)
         if process.is_alive():
             process.kill()
             process.join(timeout=2.0)
+        containment.close()
     return result
+
+
+def _linux_contained() -> bool:
+    import sys
+
+    return sys.platform.startswith("linux")

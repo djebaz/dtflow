@@ -10,7 +10,8 @@ if __name__ == "__main__":
 
         from dtflow.scripting.selfcheck import main as selfcheck
 
-        raise SystemExit(selfcheck(Path(sys.argv[2]) if len(sys.argv) > 2 else None))
+        # The Windows build is windowed (no stdout): always write a result file, default next to the working directory.
+        raise SystemExit(selfcheck(Path(sys.argv[2] if len(sys.argv) > 2 else "dtflow-script-selfcheck.json")))
     from dtflow.ui.desktop import main
 
     raise SystemExit(main())

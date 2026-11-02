@@ -36,7 +36,11 @@ for (const name of %s) {
 }
 """
 # DTFlow overlay (kept out of the vendored file): upstream __dtSleep busy-spins; this waits cancellably in the host.
-OVERLAY = "globalThis.__dtSleep = function (seconds) { __dtHooks.sleep(seconds); };\n"
+# JavaScriptCore also provides console.info/debug; the vendored script only assigns log/warn/error.
+OVERLAY = (
+    "globalThis.__dtSleep = function (seconds) { __dtHooks.sleep(seconds); };\n"
+    "console.info = console.debug = console.log;\n"
+)
 
 
 class ScriptEngineError(Exception):
@@ -47,7 +51,7 @@ class ScriptEngineError(Exception):
 class ScriptLimits:
     memory_bytes: int = 256 * 1024 * 1024
     stack_bytes: int = 1024 * 1024
-    deadline_seconds: float = 3600.0
+    js_segment_seconds: float = 300.0  # longest stretch of JS allowed without a host call; hook time is excluded
     source_bytes: int = MAX_SOURCE_BYTES
 
 
@@ -55,6 +59,13 @@ class ScriptLimits:
 class ScriptOutcome:
     status: str  # completed | failed | stopped
     error: str | None = None
+
+
+def wrap_user_script(source: str, *, call: bool = True) -> str:
+    """Upstream evaluates every script as ``(function(){ <script> })();`` so top-level ``return`` and declarations that
+    shadow facade names work. The opening is placed on the script's first line so reported line numbers are unchanged.
+    ``call=False`` yields the function expression only: the analyzer parses with it and never runs the script."""
+    return "(function(){" + source + "\n})" + ("();" if call else ";")
 
 
 def shared_script() -> str:
@@ -80,7 +91,14 @@ class ScriptEngine:
 
     def __init__(self, call: Callable[[str, str], str], limits: ScriptLimits | None = None) -> None:
         self.limits = limits or ScriptLimits()
-        self._call = call
+        self._host_call = call
+        self.cancel_acknowledged = False
+
+    def _call(self, name: str, payload: str) -> str:
+        reply = self._host_call(name, payload)
+        if '"cancelled": true' in reply:
+            self.cancel_acknowledged = True  # only a host-sent cancellation counts as Stop, never a script's own text
+        return reply
 
     def run(self, source: str) -> ScriptOutcome:
         if len(source.encode("utf-8")) > self.limits.source_bytes:
@@ -93,13 +111,18 @@ class ScriptEngine:
             context.eval(BRIDGE % json.dumps(sorted(HOOKS)))
             context.eval(shared_script())
             context.eval(OVERLAY)
-            context.eval(source)
+            context.eval(wrap_user_script(source))
+            while context.execute_pending_job():  # JavaScriptCore drains promise jobs after evaluation
+                pass
         except quickjs.JSException as exc:
             lines = str(exc).splitlines()
             message = lines[0] if lines else "JavaScript error"
-            if message.endswith("cancelled"):
+            if message.strip() in ("", "null", "undefined"):
+                # QuickJS cannot build an Error object once its heap limit is hit, so the exception arrives empty.
+                return ScriptOutcome("failed", "Script ran out of memory (or threw an empty value).")
+            if self.cancel_acknowledged and message.endswith("cancelled"):
                 return ScriptOutcome("stopped")
-            return ScriptOutcome("failed", message)
+            return ScriptOutcome("failed", "\n".join(lines[:4]) if lines else message)
         except quickjs.StackOverflow:
             return ScriptOutcome("failed", "Script exceeded the stack limit.")
         return ScriptOutcome("completed")

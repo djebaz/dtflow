@@ -83,6 +83,13 @@ HOOKS: dict[str, HookSpec] = dict(
         _hook("createForegroundMask", PLANNED, "#117", "services/person_selection adapter"),
         _hook("createBackgroundMask", PLANNED, "#117", "services/person_selection adapter"),
         _hook("createBodyMask", PLANNED, "#117", "services/person_selection adapter"),
+        _hook(
+            "detectHands",
+            PLANNED,
+            "#117",
+            "services/person_selection adapter",
+            "in upstream JSInterop but not called by the vendored JS; reachable only by raw __dtHooks calls",
+        ),
         # Guidance.
         _hook("extractDepthMap", PLANNED, "#117", "depth guidance, backend evidence required"),
         _hook("clearMoodboard", PLANNED, "#117", "moodboard guidance"),
