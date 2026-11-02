@@ -36,7 +36,11 @@ async def run_script_file(args: argparse.Namespace, *, exit_ok: int, exit_failed
     if args.file is None or args.backend is None:
         print("Invalid request: --run needs a script file and an explicit --backend.", file=sys.stderr)
         return exit_invalid
-    data = Path(args.file).read_bytes()
+    try:
+        data = Path(args.file).read_bytes()
+    except OSError as exc:
+        print(f"Invalid script file: {type(exc).__name__}: {exc}", file=sys.stderr)
+        return exit_invalid
     if len(data) > MAX_SOURCE_BYTES:
         print("Invalid request: script source is too large.", file=sys.stderr)
         return exit_invalid
