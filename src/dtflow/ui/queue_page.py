@@ -906,8 +906,12 @@ class QueuePage:
             feedback(page).dismiss()  # the queue started or went away: the pending consent no longer applies
         page.removeQueueButton.setEnabled(removable)
         has_items = view is not None and bool(sum(view["summary"].values()))
-        page.relaunchQueueButton.setEnabled(has_items)
-        page.editAsNewQueueButton.setEnabled(has_items)
+        copyable = has_items and view.get("kind") != "script"  # a script run is started again from Scripts
+        scripted = " (a script queue: press Start on the script)" if has_items and not copyable else ""
+        page.relaunchQueueButton.setEnabled(copyable)
+        page.editAsNewQueueButton.setEnabled(copyable)
+        page.relaunchQueueButton.setToolTip("Run this queue's requests again." + scripted)
+        page.editAsNewQueueButton.setToolTip("Open this queue's settings as a new draft." + scripted)
         # Saving only persists a paused queue (over a short shared connection while a run owns the state).
         page.createQueueButton.setEnabled(True)
         running = self._live_run()
@@ -1071,6 +1075,9 @@ class QueuePage:
         self._relaunch_actions(relaunch, queue_id)
         edit = menu.addAction("Edit as new queue…")
         edit.triggered.connect(lambda _=False: self.edit_as_new(queue_id))
+        if (self._views.get(queue_id) or {}).get("kind") == "script":
+            relaunch.setEnabled(False)
+            edit.setEnabled(False)
         remove = menu.addAction("Remove queue…")
         remove.setEnabled(self._removable(self._views.get(queue_id)))
         if menu.exec(self.page.queueList.viewport().mapToGlobal(position)) is remove:
@@ -1199,7 +1206,7 @@ class QueuePage:
 
     def _last_queue(self) -> str | None:
         """The most recently created queue with items, for the empty state's Relaunch last."""
-        views = [v for v in self._views.values() if sum(v["summary"].values())]
+        views = [v for v in self._views.values() if sum(v["summary"].values()) and v.get("kind") != "script"]
         return max(views, key=lambda v: (v["created_at_utc"], v["queue_id"]))["queue_id"] if views else None
 
     def relaunch_last(self) -> None:

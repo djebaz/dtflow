@@ -1277,6 +1277,32 @@ def _item_request_fields(request: dict) -> dict[str, Any]:
     }
 
 
+def _script_item_fields(request: dict, script: dict[str, Any]) -> dict[str, Any]:
+    """Row fields of a script item: the run, the settings it started with, and its steps' files in call order.
+
+    The first step's attempt stands for the row (preview, Open in Images); later steps contribute their images only, so
+    the item counts one metadata file and one image per step.
+    """
+    start = (request.get("start") or {}).get("base")
+    base = start if isinstance(start, dict) else {}
+    children = script["children"]
+    artifacts: list[Any] = []
+    for index, child in enumerate(children):
+        artifacts += [
+            path
+            for path in child["artifacts"]
+            if index == 0 or not str(path).replace("\\", "/").endswith("/metadata.json")
+        ]
+    return {
+        **_item_request_fields(base),
+        "script": script,
+        "prompt": f"Script: {request.get('source_name', '')}",
+        "attempt_id": children[0]["attempt_id"] if children else None,
+        "seed": base.get("seed"),
+        "artifacts": artifacts,
+    }
+
+
 def _script_view(connection: sqlite3.Connection, request: dict) -> dict[str, Any]:
     """A script item's run (name, SHA, run id, run state) and its ordered child steps, read through to their attempts.
 
@@ -1389,16 +1415,7 @@ def _read(connection: sqlite3.Connection, queue_id: str | None) -> tuple[dict[st
                     **_item_request_fields(request),
                     "failure": json.loads(item["failure_json"]) if item["failure_json"] else None,
                     "artifacts": json.loads(item["artifacts_json"]) if item["artifacts_json"] else [],
-                    **(
-                        {
-                            "script": script,
-                            "prompt": f"Script: {request.get('source_name', '')}",
-                            # every step's saved files in call order, so the item row shows what the run produced
-                            "artifacts": [path for child in script["children"] for path in child["artifacts"]],
-                        }
-                        if script
-                        else {}
-                    ),
+                    **(_script_item_fields(request, script) if script else {}),
                 }
             )
         durations = _item_durations(connection, row["queue_id"])
