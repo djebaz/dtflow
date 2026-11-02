@@ -778,6 +778,9 @@ class ScriptsPage:
         # One native window is reused across all screenshots. Restore every
         # mutable fixture choice so screenshots are independent of render order.
         self.source.setCurrentIndex(0)
+        self.source_note.setText(
+            "Optional. An immutable copy is taken at Start; changing it requires a new run."
+        )
         self.start.setText("Start script")
         self.library_note.setText(
             "Local files only. Each version is copied and kept by SHA-256 (3 of 50 stored)."
@@ -791,7 +794,11 @@ class ScriptsPage:
             for filename, sha, tier, support in REFERENCE_SCRIPTS:
                 item = QListWidgetItem(f"{filename}\n{sha} · {tier} · {support}")
                 self.library.addItem(item)
-        row = 2 if state == "scripts_imported_unsupported" else 1 if state == "scripts_inspect_partial" else 0
+        row = (
+            2 if state == "scripts_imported_unsupported"
+            else 1 if state in ("scripts_inspect_partial", "scripts_narrow_details")
+            else 0
+        )
         self.library.setCurrentRow(row)
         self.library.blockSignals(False)
         if state == "scripts_empty":
@@ -819,6 +826,18 @@ class ScriptsPage:
             if state == "scripts_from_inpaint":
                 self.source.setCurrentText("Inpaint canvas")
                 self.handoff.show()
+            if state == "scripts_narrow_details":
+                self.form.set_fields([])
+                self.form_note.setText("This script asks for its settings when it runs.")
+                self.form_note.show()
+                self.source_note.setText(
+                    "Required by this script: choose a source to Start; changing it needs a new run."
+                )
+                self.status.setText("● Syntax valid   ● API calls observed   ● Preflight incomplete")
+                self.status.setProperty("feedbackState", "warning")
+                self.status.style().unpolish(self.status)
+                self.status.style().polish(self.status)
+                self.hook_status.setText("Preflight incomplete")
             if state == "scripts_form_after_unknown":
                 self.status.setText("Previous run #5 · outcome unknown · may be billed")
                 self.start.setText("Start new run")
