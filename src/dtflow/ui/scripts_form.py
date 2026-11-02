@@ -29,7 +29,7 @@ def _row(label: str, control: QWidget) -> QWidget:
     heading.setObjectName("scriptFieldLabel")
     heading.setToolTip(label)
     heading.setWordWrap(True)
-    heading.setMinimumWidth(115)
+    heading.setMinimumWidth(190)
     heading.setMaximumWidth(190)
     layout.addWidget(heading, 0)
     layout.addWidget(control, 1)
@@ -209,6 +209,7 @@ def _control(spec: dict) -> QWidget:
                     other.setChecked(other is current) for other in buttons
                 ]
             )
+        bar.setMaximumWidth(160)
         widget = bar
     elif kind == "switch":
         widget = QCheckBox("On" if value else "Off")
@@ -226,7 +227,10 @@ def _control(spec: dict) -> QWidget:
             field.setSingleStep(64)
             field.setValue(amount)
             field.setAccessibleName(spec["label"] + suffix)
+        width.setMaximumWidth(108)
+        height.setMaximumWidth(108)
         widget = _group(width, QLabel("×"), height)
+        widget.setMaximumWidth(245)
     elif kind in ("imageField", "directory"):
         widget = _path_control(spec)
     elif kind == "image":
@@ -271,8 +275,10 @@ class ScriptForm(QWidget):
             if isinstance(layout, QBoxLayout) and layout.direction() != direction:
                 layout.setDirection(direction)
             heading = row.findChild(QLabel, "scriptFieldLabel")
-            if heading is not None and heading.maximumWidth() != label_max:
-                heading.setMaximumWidth(label_max)
+            if heading is not None:
+                heading.setMinimumWidth(0 if narrow else 190)
+                if heading.maximumWidth() != label_max:
+                    heading.setMaximumWidth(label_max)
 
     def set_fields(self, fields: list[dict], *, long_values: bool = False) -> None:
         self._narrow = None
@@ -304,6 +310,10 @@ class ScriptForm(QWidget):
             else:
                 self.layout_.addWidget(_row(spec["label"], _control(spec)))
         self.layout_.addStretch(1)
+        # The scroll area must honor the form content height rather than
+        # compressing rows until controls overlap each other.
+        self.layout_.activate()
+        self.setMinimumHeight(self.layout_.sizeHint().height())
 
 
 # All 14 upstream types are represented: section, plainText, markdown,
