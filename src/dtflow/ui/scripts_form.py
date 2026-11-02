@@ -286,8 +286,8 @@ class ScriptForm(QWidget):
                     # Only bold and code are allowed. Escape script text before
                     # adding these two formatting elements; never render raw HTML.
                     value = html.escape(spec["text"])
-                    value = re.sub(r"\\*\\*([^*]+)\\*\\*", r"<b>\\1</b>", value)
-                    value = re.sub(r"`([^`]+)`", r"<code>\\1</code>", value)
+                    value = re.sub(r"\*\*([^*]+)\*\*", r"<b>\1</b>", value)
+                    value = re.sub(r"`([^`]+)`", r"<code>\1</code>", value)
                     body.setTextFormat(Qt.TextFormat.RichText)
                     body.setText(value)
                 else:
