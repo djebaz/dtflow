@@ -231,6 +231,7 @@ class RunContext:
     console: Callable[[str, int], None]
     cancel: threading.Event
     record_answers: Callable[[dict], int]
+    ask: Callable[[str, str, list], list | None]  # publish a form and wait for its answers (None: cancelled or Stopped)
 
 
 def run_recorded(
@@ -272,6 +273,7 @@ def run_recorded(
                         dispatcher.log,
                         dispatcher.cancel,
                         lambda entry: store.append_answers(run_id, entry),
+                        lambda title, confirm, components: _ask(store, run_id, title, confirm, components, cancel),
                     )
                 )
             )
@@ -286,12 +288,23 @@ def run_recorded(
         raise
     finally:
         try:
+            store.cancel_prompts(run_id)  # a form left open by a stopped or ended run is resolved, never left waiting
+        except Exception:
+            log.exception("Script run %s: open forms could not be resolved.", run_id)
+        try:
             if not store.finish(run_id, state, error):
                 log.warning("Script run %s was no longer running when it finished; its ledger state was kept.", run_id)
         except Exception:  # never mask the script's own outcome or error; the row stays recoverable as interrupted
             log.exception(
                 "Script run %s could not be settled in the ledger; it will be recovered as interrupted.", run_id
             )
+
+
+def _ask(store: ScriptRunStore, run_id: str, title: str, confirm: str, components: list, cancel) -> list | None:
+    if cancel is not None and cancel.is_set():
+        return None
+    ordinal = store.open_prompt(run_id, title, confirm, components)
+    return store.wait_for_answer(run_id, ordinal, cancel if cancel is not None else threading.Event())
 
 
 def _linux_contained() -> bool:

@@ -9,9 +9,12 @@ caller, and are never removed.
 from __future__ import annotations
 
 import errno
+import json
 import logging
 import sqlite3
 import sys
+import threading
+import time
 import uuid
 from contextlib import closing
 from dataclasses import dataclass
@@ -19,7 +22,9 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 log = logging.getLogger("dtflow.script")
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
+PROMPT_POLL_SECONDS = 0.25
+MAX_PROMPT_JSON_CHARS = 1_000_000
 MAX_ANSWERS_JSON_CHARS = 1_000_000
 STATES = ("running", "completed", "failed", "stopped", "interrupted")
 TERMINAL = ("completed", "failed", "stopped", "interrupted")
@@ -43,6 +48,33 @@ class ScriptRun:
     finished_at: str | None
     error: str | None
     children: tuple[str, ...]
+
+
+_PROMPTS_SQL = """
+CREATE TABLE IF NOT EXISTS script_run_prompts (
+    run_id TEXT NOT NULL REFERENCES script_runs(run_id),
+    ordinal INTEGER NOT NULL,
+    title TEXT NOT NULL,
+    confirm TEXT NOT NULL,
+    components_json TEXT NOT NULL,
+    answer_json TEXT,
+    state TEXT NOT NULL CHECK (state IN ('open','answered','cancelled')),
+    created_at TEXT NOT NULL,
+    answered_at TEXT,
+    PRIMARY KEY (run_id, ordinal)
+);
+"""
+
+
+@dataclass(frozen=True, slots=True)
+class ScriptPrompt:
+    run_id: str
+    ordinal: int
+    title: str
+    confirm: str
+    components: list
+    state: str
+    answers: list | None
 
 
 def _lock_is_held(exc: OSError) -> bool:
@@ -126,6 +158,8 @@ class ScriptRunStore:
                     );
                     """
                 )
+            if version < 2:  # schema 2 adds the mid-run input prompts; a v1 file keeps all of its rows
+                connection.executescript(_PROMPTS_SQL)
                 connection.execute(f"PRAGMA user_version={SCHEMA_VERSION}")
             # A run is live while its owner holds the run's OS lock. Only runs whose lock is free were interrupted by a
             # crash; a second app instance sharing this state directory must not invalidate a live run.
@@ -275,3 +309,101 @@ class ScriptRunStore:
     def list_ids(self) -> tuple[str, ...]:
         with closing(self._connect()) as connection:
             return tuple(r[0] for r in connection.execute("SELECT run_id FROM script_runs ORDER BY created_at DESC"))
+
+    # -- mid-run input (requestFromUser) --------------------------------------------------------------------------
+
+    def open_prompt(self, run_id: str, title: str, confirm: str, components: list) -> int:
+        """Durably publish a form for the run and return its ordinal. Any earlier open prompt of the run is superseded."""
+        text = json.dumps(components, separators=(",", ":"))
+        if len(text) > MAX_PROMPT_JSON_CHARS:
+            raise ScriptRunStoreError("The form is too large.")
+        with closing(self._connect()) as connection, connection:
+            connection.execute("BEGIN IMMEDIATE")
+            state = connection.execute("SELECT state FROM script_runs WHERE run_id=?", (run_id,)).fetchone()
+            if state is None or state[0] != "running":
+                raise ScriptRunStoreError("A form can only be opened for a running script run.")
+            connection.execute(
+                "UPDATE script_run_prompts SET state='cancelled', answered_at=? WHERE run_id=? AND state='open'",
+                (_now(), run_id),
+            )
+            ordinal = connection.execute(
+                "SELECT COALESCE(MAX(ordinal), 0) + 1 FROM script_run_prompts WHERE run_id=?", (run_id,)
+            ).fetchone()[0]
+            connection.execute(
+                "INSERT INTO script_run_prompts (run_id, ordinal, title, confirm, components_json, state, created_at)"
+                " VALUES (?, ?, ?, ?, ?, 'open', ?)",
+                (run_id, ordinal, title, confirm, text, _now()),
+            )
+        return ordinal
+
+    def answer_prompt(self, run_id: str, ordinal: int, answers: list) -> bool:
+        """Record the answers of an open prompt; False (nothing changed) if it is no longer open."""
+        text = json.dumps(answers, separators=(",", ":"))
+        if len(text) > MAX_PROMPT_JSON_CHARS:
+            raise ScriptRunStoreError("The answers are too large.")
+        with closing(self._connect()) as connection, connection:
+            return (
+                connection.execute(
+                    "UPDATE script_run_prompts SET state='answered', answer_json=?, answered_at=?"
+                    " WHERE run_id=? AND ordinal=? AND state='open'",
+                    (text, _now(), run_id, ordinal),
+                ).rowcount
+                == 1
+            )
+
+    def cancel_prompts(self, run_id: str) -> None:
+        """Resolve every open prompt of the run as cancelled (Stop, or the script ended)."""
+        with closing(self._connect()) as connection, connection:
+            connection.execute(
+                "UPDATE script_run_prompts SET state='cancelled', answered_at=? WHERE run_id=? AND state='open'",
+                (_now(), run_id),
+            )
+
+    def prompt(self, run_id: str, ordinal: int) -> ScriptPrompt | None:
+        with closing(self._connect()) as connection:
+            row = connection.execute(_PROMPT_SELECT + " WHERE run_id=? AND ordinal=?", (run_id, ordinal)).fetchone()
+        return _prompt(row)
+
+    def wait_for_answer(
+        self, run_id: str, ordinal: int, cancel: threading.Event, poll: float = PROMPT_POLL_SECONDS
+    ) -> list | None:
+        """Block until the prompt is answered; ``None`` when it was cancelled or Stop was requested."""
+        while True:
+            if cancel.is_set():
+                self.cancel_prompts(run_id)
+                return None
+            found = self.prompt(run_id, ordinal)
+            if found is None or found.state == "cancelled":
+                return None
+            if found.state == "answered":
+                return found.answers
+            time.sleep(poll)
+
+
+_PROMPT_SELECT = "SELECT run_id, ordinal, title, confirm, components_json, state, answer_json FROM script_run_prompts"
+
+
+def _prompt(row) -> ScriptPrompt | None:
+    if row is None:
+        return None
+    return ScriptPrompt(
+        row[0], row[1], row[2], row[3], json.loads(row[4]), row[5], None if row[6] is None else json.loads(row[6])
+    )
+
+
+def read_open_prompt(directory: Path, run_id: str) -> ScriptPrompt | None:
+    """The run's open prompt, read-only; ``None`` when there is none (or the ledger predates prompts)."""
+    path = Path(directory) / "script_runs.sqlite3"
+    if not path.is_file():
+        return None
+    with closing(sqlite3.connect(path.resolve().as_uri() + "?mode=ro", uri=True, timeout=2.0)) as connection:
+        connection.execute("PRAGMA query_only=ON")
+        try:
+            row = connection.execute(
+                _PROMPT_SELECT + " WHERE run_id=? AND state='open' ORDER BY ordinal DESC LIMIT 1", (run_id,)
+            ).fetchone()
+        except sqlite3.OperationalError as exc:
+            if "no such table" in str(exc):
+                return None
+            raise
+    return _prompt(row)
