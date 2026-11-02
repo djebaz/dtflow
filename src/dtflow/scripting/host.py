@@ -223,7 +223,9 @@ class ScriptHost:
                 raise ValueError("Every LoRA needs a file; no image was requested.")
             if item["mode"] != "all":
                 raise ValueError("DTFlow supports LoRA mode 'all' only; no image was requested.")
-        if not values["model"]:\n            raise ValueError("configuration.model must specify a model; no image was requested.")\n        number = values["sampler"]
+        if not values["model"]:
+            raise ValueError("configuration.model must specify a model; no image was requested.")
+        number = values["sampler"]
         if number not in SAMPLER_NUMBERS:
             raise ValueError(f"configuration.sampler {number} is not a known sampler; no image was requested.")
         seed = values["seed"]
