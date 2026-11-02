@@ -570,7 +570,7 @@ class ScriptsPage:
             self.results.clear()
             for i, color in enumerate(("red", "green", "blue", "amber"), 1):
                 self.results.addItem(f"Run #4 · step {i} · {color} · committed · Open in Images")
-        elif state in RUN_STATUSES or state in ("scripts_running", "scripts_waiting_input"):
+        elif state.removeprefix("scripts_") in RUN_STATUSES:
             self.show_view(3)
             key = state.removeprefix("scripts_")
             status, detail = RUN_STATUSES[key]
