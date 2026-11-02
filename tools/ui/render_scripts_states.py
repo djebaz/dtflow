@@ -9,6 +9,7 @@ durable script history. Reference parity needs owner visual verification.
 from __future__ import annotations
 
 from pathlib import Path
+from time import monotonic
 from typing import Callable
 
 from PySide6.QtWidgets import QApplication
@@ -71,12 +72,17 @@ def render_scripts_states(out: Path, *, window_factory: Callable, state_names=ST
         raise RuntimeError("The canonical renderer must initialize QApplication and shared theme first.")
     out.mkdir(parents=True, exist_ok=True)
     results = []
+    started = monotonic()
+    print("[scripts] Building native MainWindow...", flush=True)
     window = window_factory()
+    print(f"[scripts] MainWindow built: {monotonic() - started:.1f}s", flush=True)
     try:
         window.form.resize(1600, 1000)
         window.show()
+        print(f"[scripts] Window shown: {monotonic() - started:.1f}s", flush=True)
         window._show_scripts()
-        for state in state_names:
+        print(f"[scripts] Scripts mode mounted: {monotonic() - started:.1f}s", flush=True)
+        for index, state in enumerate(state_names):
             if state not in STATES:
                 raise ValueError(f"Unknown scripting render state: {state}")
             narrow = state in ("scripts_narrow", "scripts_narrow_details", "scripts_editor_narrow")
@@ -85,7 +91,11 @@ def render_scripts_states(out: Path, *, window_factory: Callable, state_names=ST
             window.scripts.preview(state)
             window.scripts.sync_responsive()
             _shared_overlay(window, state)
+            if index == 0:
+                print(f"[scripts] First state prepared: {monotonic() - started:.1f}s", flush=True)
             app.processEvents()
+            if index == 0:
+                print(f"[scripts] First Qt event drain: {monotonic() - started:.1f}s", flush=True)
             target = out / f"{state}.png"
             if not window.form.grab().save(str(target)):
                 raise RuntimeError(f"Could not save Scripts Qt screenshot {target}")
