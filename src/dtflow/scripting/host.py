@@ -131,6 +131,7 @@ class ScriptHost:
         prefix: bool = False,
         answers: Sequence[Sequence[Any]] | None = None,
         record_answers: Callable[[dict], int] | None = None,
+        ask: Callable[[str, str, list], list | None] | None = None,
         run_id: str | None = None,
     ) -> None:
         if base.operation != "txt2img" or base.image_inputs is not None:
@@ -142,6 +143,7 @@ class ScriptHost:
         self.max_generations, self.prefix = max_generations, prefix
         self._answers = list(answers) if answers is not None else None
         self._record_answers = record_answers
+        self._ask = ask  # set only for a run whose forms are answered interactively (a queue item)
         self.run_id = run_id
         self._forms = 0
         self.baseline = normalize_configuration(decode_configuration(baseline_configuration(base)).values)
@@ -355,7 +357,15 @@ class ScriptHost:
         the PR); the complete form is #196."""
         kinds = _answer_kinds(components)
         source = "file" if self._answers is not None else "initial"
-        if self._answers is None:
+        if self._answers is None and self._ask is not None:
+            source = "user"
+            answers = self._ask(
+                title if isinstance(title, str) else "", confirm if isinstance(confirm, str) else "", list(components)
+            )
+            if answers is None:
+                raise ScriptCancelled()
+            validate_answers(components, answers)
+        elif self._answers is None:
             if any(kind in ("imageField", "directory", "selectableImage") for kind in kinds):
                 raise ValueError("This form needs an answer for an image or directory field; supply --answers.")
             answers = _initial_answers(components)
@@ -480,6 +490,15 @@ def _answer_kinds(components: Sequence[Mapping[str, Any]]) -> list[str]:
     return kinds
 
 
+def validate_answers(components: Sequence[Mapping[str, Any]], answers: Any) -> None:
+    """Raise ``ValueError`` unless ``answers`` is one correctly typed answer per input of the form."""
+    kinds = _answer_kinds(components)
+    if not isinstance(answers, list) or len(answers) != len(kinds):
+        raise ValueError(f"Expected {len(kinds)} answers for this form.")
+    for kind, answer in zip(kinds, answers, strict=True):
+        _check_answer(kind, answer)
+
+
 def _is_number(value: Any) -> bool:
     return isinstance(value, (int, float)) and not isinstance(value, bool)
 
@@ -540,6 +559,7 @@ def script_hooks(
     max_generations: int,
     answers: Sequence[Sequence[Any]] | None,
     hosts: list[ScriptHost],
+    interactive: bool = False,
 ) -> Callable[[Any], dict[str, Callable[..., Any]]]:
     """The hook factory ``run_recorded`` takes, shared by the CLI and the queue item so both run the same host.
 
@@ -558,6 +578,7 @@ def script_hooks(
             max_generations=max_generations,
             answers=answers,
             record_answers=context.record_answers,
+            ask=context.ask if interactive else None,
             run_id=context.run_id,
         )
         hosts.append(host)
