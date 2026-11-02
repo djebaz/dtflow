@@ -252,7 +252,7 @@ class ScriptEditor(QWidget):
             selection = QTextEdit.ExtraSelection()
             selection.cursor = QTextCursor(block)
             selection.cursor.select(QTextCursor.SelectionType.LineUnderCursor)
-            selection.format.setBackground(QColor("#432323"))
+            selection.format.setBackground(QColor(load_tokens()["color.dangerSurface"]))
             self.editor.setExtraSelections([selection])
         self.diagnostic.setText(f"Syntax error · line {line}, column {column} · {message}")
         self.diagnostic.setProperty("feedbackState", "error")
