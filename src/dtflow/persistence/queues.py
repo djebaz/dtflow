@@ -38,6 +38,7 @@ from dtflow.core.models import (
     ValidationError,
 )
 from dtflow.core.request_records import request_from_record as decode_request
+from dtflow.persistence.script_runs import read_open_prompt
 from dtflow.persistence.script_items import (
     KIND_SCRIPT,
     TERMINAL_ATTEMPTS,
@@ -1290,6 +1291,8 @@ def _script_view(connection: sqlite3.Connection, request: dict) -> dict[str, Any
         "error": None,
         "children": [],
         "steps_failed": 0,
+        "waiting_for_input": False,
+        "prompt": None,
     }
     try:
         run = read_run_snapshot(Path(path).parent, str(request.get("run_id")))
@@ -1298,6 +1301,19 @@ def _script_view(connection: sqlite3.Connection, request: dict) -> dict[str, Any
     if run is None:
         return view
     view["run_state"], view["error"] = run.state, run.error
+    if run.state == "running":  # an open form keeps the item running; the view only flags it (no new item state)
+        try:
+            prompt = read_open_prompt(Path(path).parent, str(request.get("run_id")))
+        except Exception:
+            prompt = None
+        if prompt is not None:
+            view["waiting_for_input"] = True
+            view["prompt"] = {
+                "ordinal": prompt.ordinal,
+                "title": prompt.title,
+                "confirm": prompt.confirm,
+                "components": prompt.components,
+            }
     for ordinal, attempt_id in enumerate(run.children, 1):
         row = connection.execute(
             "SELECT state, artifacts_json FROM attempts WHERE attempt_id=?", (attempt_id,)

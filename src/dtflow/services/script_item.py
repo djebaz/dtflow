@@ -19,9 +19,9 @@ from dtflow.core.request_records import request_from_record
 from dtflow.core.tasks import settle
 from dtflow.diagnostics import event as diagnostic_event
 from dtflow.persistence.script_items import ScriptRequest, load_source
-from dtflow.persistence.script_runs import ScriptRunStore
+from dtflow.persistence.script_runs import ScriptRunStore, read_open_prompt
 from dtflow.persistence.store import PersistenceError, SQLiteAttempts
-from dtflow.scripting.host import ScriptHost, script_hooks, starting_context
+from dtflow.scripting.host import ScriptHost, script_hooks, starting_context, validate_answers
 from dtflow.scripting.runner import run_recorded
 from dtflow.services.generation import GenerationService
 
@@ -85,6 +85,7 @@ class ScriptItemRunner:
                     max_generations=request.max_generations,
                     answers=request.answers,
                     hosts=hosts,
+                    interactive=request.answers is None,  # no answer file: forms wait for the person
                 )
                 task = asyncio.ensure_future(
                     asyncio.to_thread(
@@ -141,3 +142,20 @@ class ScriptItemRunner:
         diagnostic_event(log, "queue.item_settled", level=logging.INFO, data={"item_id": item_id, "state": state})
         if interrupted:
             raise asyncio.CancelledError
+
+
+def answer_script_prompt(state: Path, run_id: str, answers: list, ordinal: int | None = None) -> int:
+    """Answer the run's open form from any process sharing ``state``; returns the form's ordinal.
+
+    The answers are validated against the form before they are stored. Raises ``ValidationError`` when the run has no
+    open form (never started, already answered, or Stopped) or when the answers do not fit the form."""
+    prompt = read_open_prompt(state, run_id)
+    if prompt is None or (ordinal is not None and prompt.ordinal != ordinal):
+        raise ValidationError("This script run is not waiting for input.")
+    try:
+        validate_answers(prompt.components, answers)
+    except ValueError as exc:
+        raise ValidationError(str(exc)) from exc
+    if not ScriptRunStore(state).answer_prompt(run_id, prompt.ordinal, answers):
+        raise ValidationError("This form was already answered or closed.")
+    return prompt.ordinal
