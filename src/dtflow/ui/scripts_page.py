@@ -35,6 +35,36 @@ REFERENCE_HOOKS = (
     ("canvas.loadLayerFromPhotos", "unsupported", "No native picker mapping yet"),
 )
 
+# Illustrative source code is copied from the owner-approved Scripts UI kit,
+# not inferred from a live user script. It never runs in the offline renderer.
+EDITOR_STARTER = "\n".join((
+    "// New script: a small supported starter.",
+    'const wild = ["red", "green", "blue"];',
+    "const configuration = pipeline.configuration;",
+    "",
+    "for (const w of wild) {",
+    '  pipeline.run({ configuration: configuration, prompt: "a lamp, " + w });',
+    '  canvas.saveImage("lamp-" + w + ".png", true);',
+    "}",
+))
+EDITOR_BASE = "\n".join((
+    "// Wildcard prompt sweep",
+    'const answers = requestFromUser("Sweep", "Start", function () {',
+    "  return [",
+    '    this.textField("red, green, blue, amber", "Wildcards", false, 100),',
+    '    this.slider(75, this.slider.percent, 0, 100, "Strength")',
+    "  ];",
+    "});",
+    "",
+    "const configuration = pipeline.configuration;",
+    "configuration.strength = answers[1] / 100;",
+    'for (const w of answers[0].split(",")) {',
+    '  pipeline.run({ configuration: configuration, prompt: "a lamp, " + w.trim() });',
+    '  canvas.saveImage("sweep-" + w.trim() + ".png", true);',
+    "}",
+))
+
+
 RUN_STATUSES = {
     "queued": ("Queued behind 3 items", "Nothing submitted. Waiting 0:42 · Cancel is free."),
     "cancelled_before_start": ("Cancelled before start", "No provider submission and no charge."),
@@ -734,25 +764,25 @@ class ScriptsPage:
                 self.form.set_fields(fields)
         elif state.startswith("scripts_editor"):
             self.show_view(2)
-            self.editor.set_draft(
-                "//@api-1.0\nconst config = pipeline.configuration;\n"
-                "config.seed = -1;\npipeline.run({configuration: config});\n",
-                status="Draft · unsaved changes"
-            )
             self.editor.run_notice.hide()
             if state == "scripts_editor_new":
-                self.new_draft()
-            elif state == "scripts_editor_syntax_error":
-                self.editor.editor.setPlainText(
-                    "//@api-1.0\\nconst config = pipeline.configuration;\\n" +
-                    "config.seed = -1;\\nconst value = ;\\n"
-                )
-                self.editor.set_error(4, 15, "Unexpected token ';'")
-            elif state == "scripts_editor_run_active":
-                self.editor.run_notice.setText(
-                    "A run is active. Existing runs keep their saved version; edit a new draft."
-                )
-                self.editor.run_notice.show()
+                self.script_title.setText("Untitled script")
+                self.sha.setText("New draft")
+                self.status.setText("Unsaved source · not inspected")
+                self.editor.set_draft(EDITOR_STARTER, status="New draft · unsaved")
+            else:
+                self.editor.set_draft(EDITOR_BASE, status="Version 9f3a1c2")
+                # A draft belongs to a new version; the saved source stays intact.
+                self.editor.editor.setPlainText(EDITOR_BASE + "\n// Draft change")
+                if state == "scripts_editor_syntax_error":
+                    invalid = EDITOR_BASE + "\nconst value = ;"
+                    self.editor.editor.setPlainText(invalid)
+                    self.editor.set_error(15, 15, "Unexpected token ';'")
+                elif state == "scripts_editor_run_active":
+                    self.editor.run_notice.setText(
+                        "Run #5 is active on version 9f3a1c2. Changes create a new version."
+                    )
+                    self.editor.run_notice.show()
         elif state == "scripts_results":
             self.show_view(4)
             self.results.clear()
