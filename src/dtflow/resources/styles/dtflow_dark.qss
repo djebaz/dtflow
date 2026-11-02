@@ -2232,3 +2232,24 @@ QLabel#scriptsWarningTitle {
 /* Required source is a blocking preflight error, not secondary help copy. */
 QLabel#scriptsSourceNote { color: ${color.secondary}; }
 QLabel#scriptsSourceNote[feedbackState="error"] { color: ${color.error}; }
+
+/* Scripts editor controls follow the compact native Inpaint toolbar density.
+   Reuse ordinary neutral/selection/focus tokens from QPushButton and the
+   shared segmented-control corner rules; only dimensions are scoped here. */
+QFrame#scriptsEditorToolbar {
+  background: transparent;
+  border: 0;
+}
+QFrame#scriptsEditorToolbar QPushButton {
+  min-height: 0;
+  min-width: 0;
+  padding: 0 8px;
+}
+QFrame#scriptsEditorToolbar QPushButton[toolbarKind="icon"] {
+  min-height: 0;
+  min-width: 0;
+  max-height: 32px;
+  max-width: 32px;
+  padding: 0;
+  font-size: ${type.section};
+}
