@@ -128,6 +128,13 @@ def render_scripts_states(out: Path, *, window_factory: Callable, state_names=ST
                     f"panel-right={right_edge} excess={max(0, right_edge - viewport.width())}",
                     flush=True,
                 )
+            if state in ("scripts_form_default", "scripts_narrow", "scripts_narrow_details"):
+                toggle = window.scripts.details_button
+                print(
+                    f"[scripts] {state} inspector toggle: parent={toggle.parentWidget().objectName()} "
+                    f"checked={toggle.isChecked()} icon-null={toggle.icon().isNull()}",
+                    flush=True,
+                )
             target = out / f"{state}.png"
             if not window.form.grab().save(str(target)):
                 raise RuntimeError(f"Could not save Scripts Qt screenshot {target}")

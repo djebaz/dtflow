@@ -2032,6 +2032,13 @@ QPushButton[role="galleryInfo"]:hover {
 }
 
 /* Generate > Scripts: native offline workspace and editor-scoped palette. */
+QPushButton#scriptsInspectorToggle:checked {
+  background: ${color.selection};
+  border-color: ${color.selectionBorder};
+}
+QPushButton#scriptsInspectorToggle:checked:hover {
+  background: ${color.selectionHover};
+}
 /* Side-rail cards use the existing QGroupBox sectionCard/header/contents
    selectors, including their shared surfaces, borders and SVG icons. */
 /* The inspector is a shell rail: individual section cards draw borders.

@@ -600,7 +600,6 @@ class MainWindow:
 
     def _set_scripts_left_rail(self, active: bool) -> None:
         """Size the shared left rail without restarting workspace-navigation side effects."""
-        self.shell.scriptsInspectorToggle.setVisible(active)
         if not active:
             self.shell.leftStack.setMinimumHeight(0)
             self.shell.leftStack.setMaximumHeight(16777215)
@@ -690,7 +689,6 @@ class MainWindow:
         # create a second wheel/scrollbar over the fixed filter and Clear action.
         queues_active = index == 2
         scripts_active = index == 1 and self._scripts_active
-        self.shell.scriptsInspectorToggle.setVisible(scripts_active)
         if not scripts_active:
             self.shell.leftStack.setMinimumHeight(0)
             self.shell.leftStack.setMaximumHeight(16777215)

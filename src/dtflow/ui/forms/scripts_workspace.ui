@@ -454,6 +454,15 @@
            </property>
           </spacer>
          </item>
+         <item>
+          <widget class="QPushButton" name="scriptsInspectorToggle">
+           <property name="text"><string>Inspector</string></property>
+           <property name="accessibleName"><string>Scripts inspector</string></property>
+           <property name="toolTip"><string>Show or hide the Scripts inspector; opens a drawer in narrow layouts</string></property>
+           <property name="checkable"><bool>true</bool></property>
+           <property name="iconSize"><size><width>16</width><height>16</height></size></property>
+          </widget>
+         </item>
         </layout>
         <property name="role" stdset="0">
          <string>sectionContents</string>

@@ -72,7 +72,7 @@ The two proposed extras are not in the issue's list; drop them if not wanted.
 Import errors (file too large, not UTF-8), the library full state (50 versions), a cloud-credit-exhausted block, and the Qt sizes for the Stop and Start buttons beyond the kit's 32 px height.
 
 ## Revision after UX review (corrections applied)
-- **Narrow details:** at 800 × 680 the inspector is a right-hand drawer opened by the shell's details toggle (toggle state = drawer visible), with a Close button; the form stays behind it.
+- **Narrow details:** at 800 × 680 the inspector is a right-hand drawer opened by the Scripts toolbar's labelled Inspector toggle (toggle state = drawer visible), with a Close button; the form stays behind it.
 - **Compatibility vs run:** the header shows compatibility (Syntax valid, API calls observed, verdict) only in Inspect / Configure / Code. Run and results views show the run identity and status instead. "Ready for explicit run" is now "No blocking issues found" (not a promise of success).
 - **Unresolved outcomes:** "Review and start again" after *outcome unknown* or *interrupted* carries a warning card into the form (previous run #5, may be billed, a new run is separate work), keeps the run in History as unresolved, and relabels the button "Start new run".
 - **Stop:** only the shared activity bar owns Stop; the Scripts footer carries a caption. Cancel input answers the script with no value and the run continues.

@@ -25,6 +25,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from dtflow.ui.brand import tinted_icon
 from dtflow.ui.scripts_editor import ScriptEditor
 from dtflow.ui.scripts_form import REFERENCE_FORM, ScriptForm
 
@@ -230,7 +231,14 @@ class ScriptsPage:
         for button in (self.text_mode, self.inpaint_mode, self.scripts_mode):
             self.mode_group.addButton(button)
         self.scripts_mode.setChecked(True)
-        self.details_button = self.owner.shell.scriptsInspectorToggle
+        self.details_button = ui.scriptsInspectorToggle
+        self.details_button.setIcon(
+            tinted_icon(
+                Path(__file__).parents[1] / "resources" / "images" / "gallery" / "panel-right.svg",
+                "color.glyphNeutral",
+                16,
+            )
+        )
         self.details_button.clicked.connect(self.toggle_details)
         self.script_title, self.sha, self.status = ui.scriptTitle, ui.scriptSha, ui.scriptCompatibility
         self.run_identity, self.views = ui.runIdentity, ui.scriptsContentStack
