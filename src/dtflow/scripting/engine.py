@@ -64,7 +64,7 @@ class ScriptOutcome:
 def wrap_user_script(source: str, *, call: bool = True) -> str:
     """Upstream evaluates every script as ``(function(){ <script> })();`` so top-level ``return`` and declarations that
     shadow facade names work. The opening is placed on the script's first line so reported line numbers are unchanged.
-    ``call=False`` yields the function expression only: the analyzer parses with it and never runs the script."""
+    ``call=False`` yields the function expression only."""
     return "(function(){" + source + "\n})" + ("();" if call else ";")
 
 
@@ -120,9 +120,11 @@ class ScriptEngine:
             if message.strip() in ("", "null", "undefined"):
                 # QuickJS cannot build an Error object once its heap limit is hit, so the exception arrives empty.
                 return ScriptOutcome("failed", "Script ran out of memory (or threw an empty value).")
-            if self.cancel_acknowledged and message.endswith("cancelled"):
-                return ScriptOutcome("stopped")
+            if self.cancel_acknowledged:
+                return ScriptOutcome("stopped")  # after a host-sent cancellation, whatever the script then threw
             return ScriptOutcome("failed", "\n".join(lines[:4]) if lines else message)
         except quickjs.StackOverflow:
             return ScriptOutcome("failed", "Script exceeded the stack limit.")
+        if self.cancel_acknowledged:
+            return ScriptOutcome("stopped")  # a script that caught the cancelled error is still stopped
         return ScriptOutcome("completed")

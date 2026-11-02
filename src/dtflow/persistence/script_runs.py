@@ -8,7 +8,9 @@ caller, and are never removed.
 
 from __future__ import annotations
 
+import os
 import sqlite3
+import sys
 import uuid
 from contextlib import closing
 from dataclasses import dataclass
@@ -40,6 +42,32 @@ class ScriptRun:
     children: tuple[str, ...]
 
 
+def _process_alive(pid: int) -> bool:
+    """Whether a process with this id exists (never signals it; ``os.kill(pid, 0)`` is unsafe on Windows)."""
+    if pid <= 0:
+        return False
+    if sys.platform == "win32":
+        import ctypes
+
+        kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+        kernel32.OpenProcess.restype = ctypes.c_void_p
+        handle = kernel32.OpenProcess(0x1000, False, pid)  # PROCESS_QUERY_LIMITED_INFORMATION
+        if not handle:
+            return ctypes.get_last_error() == 5  # access denied: it exists
+        try:
+            code = ctypes.c_ulong()
+            return bool(kernel32.GetExitCodeProcess(ctypes.c_void_p(handle), ctypes.byref(code))) and code.value == 259
+        finally:
+            kernel32.CloseHandle(ctypes.c_void_p(handle))
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    return True
+
+
 def _now() -> str:
     return datetime.now(UTC).isoformat(timespec="milliseconds")
 
@@ -66,7 +94,8 @@ class ScriptRunStore:
                         context_json TEXT NOT NULL DEFAULT '{}',
                         created_at TEXT NOT NULL,
                         finished_at TEXT,
-                        error TEXT
+                        error TEXT,
+                        owner_pid INTEGER NOT NULL
                     );
                     CREATE TABLE IF NOT EXISTS script_run_children (
                         run_id TEXT NOT NULL REFERENCES script_runs(run_id),
@@ -77,10 +106,16 @@ class ScriptRunStore:
                     """
                 )
                 connection.execute(f"PRAGMA user_version={SCHEMA_VERSION}")
+            # Only runs whose owning process is gone were interrupted by a crash; a second app instance sharing this
+            # state directory must not invalidate the first instance's live run.
             with connection:
-                connection.execute(
-                    "UPDATE script_runs SET state='interrupted', finished_at=? WHERE state='running'", (_now(),)
-                )
+                for run_id, pid in connection.execute(
+                    "SELECT run_id, owner_pid FROM script_runs WHERE state='running'"
+                ).fetchall():
+                    if pid != os.getpid() and not _process_alive(pid):
+                        connection.execute(
+                            "UPDATE script_runs SET state='interrupted', finished_at=? WHERE run_id=?", (_now(), run_id)
+                        )
 
     def _connect(self) -> sqlite3.Connection:
         connection = sqlite3.connect(self.path, timeout=2.0)
@@ -103,7 +138,7 @@ class ScriptRunStore:
         with closing(self._connect()) as connection, connection:
             connection.execute(
                 "INSERT INTO script_runs (run_id, state, source_name, source_sha256, api_version, vendored_js_sha256,"
-                " answers_json, context_json, created_at) VALUES (?, 'running', ?, ?, ?, ?, ?, ?, ?)",
+                " answers_json, context_json, created_at, owner_pid) VALUES (?, 'running', ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     run_id,
                     source_name,
@@ -113,6 +148,7 @@ class ScriptRunStore:
                     answers_json,
                     context_json,
                     _now(),
+                    os.getpid(),
                 ),
             )
         return run_id
@@ -132,14 +168,16 @@ class ScriptRunStore:
             )
         return ordinal
 
-    def finish(self, run_id: str, state: str, error: str | None = None) -> None:
+    def finish(self, run_id: str, state: str, error: str | None = None) -> bool:
+        """Settle a running run; returns False (changing nothing) if it was no longer running, e.g. interrupted."""
         if state not in TERMINAL:
             raise ScriptRunStoreError("Unknown terminal script-run state.")
         with closing(self._connect()) as connection, connection:
-            connection.execute(
+            changed = connection.execute(
                 "UPDATE script_runs SET state=?, error=?, finished_at=? WHERE run_id=? AND state='running'",
                 (state, error, _now(), run_id),
-            )
+            ).rowcount
+        return changed == 1
 
     def get(self, run_id: str) -> ScriptRun | None:
         with closing(self._connect()) as connection:

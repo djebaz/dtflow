@@ -1,6 +1,6 @@
 """Conservative, non-generative script analysis (``dtflow script <file>``).
 
-Nothing here runs the script: the source is read, syntax-checked by *parsing* it in QuickJS with the engine's own wrapper, and
+Nothing here runs the script: the source is read, syntax-checked by compiling it, never calling it, in a disposable hook-less child process, and
 scanned for facade calls. The facade-to-hook mapping is derived from the vendored upstream JS so it cannot drift.
 A static scan cannot see calls reached through dynamic expressions; the report says so instead of promising readiness.
 """
@@ -12,9 +12,8 @@ import re
 from functools import cache
 from pathlib import Path
 
-import quickjs
 
-from dtflow.scripting.engine import MAX_SOURCE_BYTES, api_version, shared_script, wrap_user_script
+from dtflow.scripting.engine import MAX_SOURCE_BYTES, api_version, shared_script
 from dtflow.scripting.hooks import HOOKS, IMPLEMENTED, PLANNED, UNSUPPORTED
 
 _SCOPE = re.compile(r"^(?:const|class|function)\s+([A-Za-z_]\w*)")
@@ -25,7 +24,7 @@ _NESTED = re.compile(r"^ {2}([A-Za-z_]\w*): \{$")
 _HOOK = re.compile(r"__dtHooks\.([A-Za-z_]\w*)")
 _FACADE_CALL = re.compile(r"\b(canvas|pipeline|filesystem|device)\.((?:pictures\.)?[A-Za-z_]\w*)")
 _STRIP = re.compile(r"\"(?:\\.|[^\"\\\n])*\"|'(?:\\.|[^'\\\n])*'|//[^\n]*|/\*.*?\*/", re.DOTALL)
-_GLOBALS = ("requestFromUser", "__dtSleep", "console.log", "console.warn", "console.error")
+_GLOBALS = ("requestFromUser", "__dtSleep", "console.log", "console.warn", "console.error", "console.repl")
 _DYNAMIC = (
     (re.compile(r"\b(?:canvas|pipeline|filesystem|device)\s*\["), "computed member access on a facade object"),
     (re.compile(r"\beval\s*\("), "eval"),
@@ -85,14 +84,13 @@ def _state(hooks: tuple[str, ...]) -> tuple[str, str]:
 
 
 def syntax_error(source: str) -> str | None:
-    """Parse exactly as the engine does (function-wrapped), without calling: only the function expression is built."""
-    context = quickjs.Context()
-    try:
-        context.eval(wrap_user_script(source, call=False))
-    except quickjs.JSException as exc:
-        lines = str(exc).splitlines()
-        return lines[0] if lines else "Syntax error"
-    return None
+    """Compile the script (function-wrapped, never called) in a disposable, hook-less child process.
+
+    The analyzer's own process never evaluates script text. QuickJS can run code during compilation of a hostile
+    script, so compilation happens in a memory-capped child that the parent kills after a few seconds."""
+    from dtflow.scripting.runner import check_syntax
+
+    return check_syntax(source)
 
 
 def analyze_script(path: Path) -> dict:
@@ -113,6 +111,8 @@ def analyze_script(path: Path) -> dict:
     for api, count in sorted(counts.items()):
         if api in ("console.log", "console.warn", "console.error"):
             hooks: tuple[str, ...] = ("log",)
+        elif api == "console.repl":
+            hooks = ("repl",)
         elif api == "requestFromUser":
             hooks = ("requestFromUser",)
         elif api == "__dtSleep":

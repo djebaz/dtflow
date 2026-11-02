@@ -27,6 +27,7 @@ from dtflow.scripting.containment import contain_child
 from dtflow.scripting.engine import MAX_CALL_BYTES, ScriptLimits
 from dtflow.scripting.hooks import HOOKS, UNSUPPORTED
 from dtflow.scripting.worker import main as worker_main
+from dtflow.scripting.worker import syntax_main
 
 log = logging.getLogger("dtflow.script")
 
@@ -204,3 +205,28 @@ def _linux_contained() -> bool:
     import sys
 
     return sys.platform.startswith("linux")
+
+
+def check_syntax(source: str, *, timeout_seconds: float = 5.0) -> str | None:
+    """Syntax error text, or ``None`` when the script compiles. Runs in a disposable hook-less child (see
+    ``worker.syntax_main``); a script that loops or exhausts memory during compilation is killed and reported."""
+    context = multiprocessing.get_context("spawn")
+    parent, child = context.Pipe()
+    process = context.Process(target=syntax_main, args=(child,), name="dtflow-syntax", daemon=True)
+    process.start()
+    child.close()
+    containment = contain_child(process)
+    try:
+        parent.send(source)
+        if not parent.poll(timeout_seconds):
+            return "The script did not finish compiling in time and was terminated."
+        return parent.recv()["error"]
+    except (EOFError, OSError):
+        return "The syntax check process ended unexpectedly."
+    finally:
+        parent.close()
+        process.join(timeout=0.5)
+        if process.is_alive():
+            process.kill()
+            process.join(timeout=2.0)
+        containment.close()

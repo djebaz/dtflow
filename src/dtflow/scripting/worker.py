@@ -35,3 +35,31 @@ def main(connection) -> None:
         return  # the parent went away or killed this process
     finally:
         connection.close()
+
+
+def syntax_main(connection) -> None:
+    """Child entry for the analyzer: compile (never call) a script inside a hook-less, memory-capped QuickJS context.
+
+    QuickJS builds ``new Function`` bodies by string concatenation, so a hostile script such as
+    ``}); while (true) {}; (function(){`` can run code during compilation. That is why this runs in a disposable child
+    with no host bridge, no hooks and a parent-enforced kill, never in the analyzer's own process."""
+    die_with_parent()
+    try:
+        import quickjs
+
+        from dtflow.scripting.engine import wrap_user_script
+
+        source = connection.recv()
+        context = quickjs.Context()
+        context.set_memory_limit(64 * 1024 * 1024)
+        context.set_max_stack_size(512 * 1024)
+        try:
+            context.eval(wrap_user_script(source, call=False))
+            connection.send({"error": None})
+        except quickjs.JSException as exc:
+            lines = str(exc).splitlines()
+            connection.send({"error": lines[0] if lines else "Syntax error"})
+    except (EOFError, BrokenPipeError, OSError):
+        return
+    finally:
+        connection.close()
