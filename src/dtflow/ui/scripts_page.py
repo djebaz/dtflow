@@ -234,6 +234,9 @@ class ScriptsPage:
         layout.addLayout(title)
         self.status = _label("Select or import a script", role="scriptsCompatibility", wrap=True)
         layout.addWidget(self.status)
+        self.run_identity = _label("Run #5 · version 9f3a1c2 · started 22 Oct 21:12", role="scriptsMuted")
+        self.run_identity.hide()
+        layout.addWidget(self.run_identity)
         tabs = QHBoxLayout()
         tabs.setSpacing(0)
         self.tab_buttons: list[QPushButton] = []
@@ -285,6 +288,12 @@ class ScriptsPage:
         self.acknowledge.hide()
         footer_layout.addWidget(self.acknowledge)
         layout.addWidget(footer)
+        self.run_footer = _label(
+            "Stop is in the shared activity bar. It ends local waiting; an already submitted generation may still complete.",
+            role="scriptsMuted", wrap=True,
+        )
+        self.run_footer.hide()
+        layout.addWidget(self.run_footer)
         self.show_view(0)
 
     def _build_empty(self):
@@ -738,15 +747,19 @@ class ScriptsPage:
     def show_view(self, index: int):
         self.views.setCurrentIndex(index)
         empty = index == 5
+        configuring = index <= 2
+        running_or_results = index in (3, 4)
         self.script_title.setVisible(not empty)
-        self.sha.setVisible(not empty)
-        self.start_panel.setVisible(not empty)
+        self.sha.setVisible(not empty and configuring)
+        self.status.setVisible(not empty and configuring)
+        self.run_identity.setVisible(running_or_results)
+        self.start_panel.setVisible(not empty and configuring)
+        self.run_footer.setVisible(running_or_results)
         for position, button in enumerate(self.tab_buttons):
             button.setChecked(index == position)
-            button.setVisible(not empty)
-        self.status.setVisible(index <= 2 and not empty)
-        self.start.setVisible(index <= 2)
-        self.cap.setEnabled(index <= 2)
+            button.setVisible(not empty and configuring)
+        self.start.setVisible(configuring)
+        self.cap.setEnabled(configuring)
 
     def preview(self, state: str):
         """Populate an explicitly offline screenshot state; never executes a script."""
@@ -818,9 +831,11 @@ class ScriptsPage:
                     self.editor.run_notice.show()
         elif state == "scripts_results":
             self.show_view(4)
+            self.run_identity.setText("Run #4 · version 9f3a1c2 · completed 22 Oct 20:41")
             self._populate_results()
         elif state.removeprefix("scripts_") in RUN_STATUSES:
             self.show_view(3)
+            self.run_identity.setText("Run #5 · version 9f3a1c2 · started 22 Oct 21:12")
             key = state.removeprefix("scripts_")
             status, detail = RUN_STATUSES[key]
             self.run_status.setText(status)
