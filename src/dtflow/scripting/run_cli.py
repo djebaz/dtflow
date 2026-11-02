@@ -114,6 +114,11 @@ async def run_script_file(args: argparse.Namespace, *, exit_ok: int, exit_failed
         "error": result.error,
         "attempts": list(host.attempts) if host else [],
         "outputs": list(host.last.output_paths) if host and host.last else [],
+        "attempt_outputs": (
+            [{"attempt_id": attempt, "outputs": paths} for attempt, paths in host.attempt_outputs.items()]
+            if host
+            else []
+        ),
         "console": [{"kind": ("log", "warn", "error")[kind], "text": text} for kind, text in result.console],
     }
     print(json.dumps(report, indent=2))
