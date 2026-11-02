@@ -208,8 +208,8 @@ def _linux_contained() -> bool:
 
 
 def check_syntax(source: str, *, timeout_seconds: float = 5.0) -> str | None:
-    """Syntax error text, or ``None`` when the script compiles. Runs in a disposable hook-less child (see
-    ``worker.syntax_main``); a script that loops or exhausts memory during compilation is killed and reported."""
+    """Syntax error text, or ``None`` when the script parses. Parse-only: the script is data for the vendored Acorn and is
+    never evaluated. Runs in a disposable hook-less child (see ``worker.syntax_main``) that only bounds memory and time."""
     context = multiprocessing.get_context("spawn")
     parent, child = context.Pipe()
     process = context.Process(target=syntax_main, args=(child,), name="dtflow-syntax", daemon=True)
@@ -219,7 +219,7 @@ def check_syntax(source: str, *, timeout_seconds: float = 5.0) -> str | None:
     try:
         parent.send(source)
         if not parent.poll(timeout_seconds):
-            return "The script did not finish compiling in time and was terminated."
+            return "The script did not finish parsing in time and was terminated."
         return parent.recv()["error"]
     except (EOFError, OSError):
         return "The syntax check process ended unexpectedly."

@@ -23,6 +23,7 @@ API_HEADER = re.compile(r"^\s*//\s*@api-(\d+(?:\.\d+)*)\s*$")
 MAX_SOURCE_BYTES = 1_048_576
 MAX_CALL_BYTES = 8 * 1024 * 1024
 SHARED_SCRIPT_RESOURCE = "shared_script.js"
+ACORN_RESOURCE = "acorn.js"
 
 BRIDGE = """
 globalThis.console = {};  // JavaScriptCore provides `console`; the vendored script only assigns its methods.
@@ -61,15 +62,19 @@ class ScriptOutcome:
     error: str | None = None
 
 
-def wrap_user_script(source: str, *, call: bool = True) -> str:
+def wrap_user_script(source: str) -> str:
     """Upstream evaluates every script as ``(function(){ <script> })();`` so top-level ``return`` and declarations that
-    shadow facade names work. The opening is placed on the script's first line so reported line numbers are unchanged.
-    ``call=False`` yields the function expression only."""
-    return "(function(){" + source + "\n})" + ("();" if call else ";")
+    shadow facade names work. The opening is placed on the script's first line so reported line numbers are unchanged."""
+    return "(function(){" + source + "\n})();"
 
 
 def shared_script() -> str:
     return resources.files("dtflow.scripting").joinpath("resources", SHARED_SCRIPT_RESOURCE).read_text("utf-8")
+
+
+def acorn_source() -> str:
+    """Vendored Acorn 8.14.0 (see resources/acorn.NOTICE.txt); used only by the parse-only analyzer."""
+    return resources.files("dtflow.scripting").joinpath("resources", ACORN_RESOURCE).read_text("utf-8")
 
 
 def api_version(source: str) -> str | None:

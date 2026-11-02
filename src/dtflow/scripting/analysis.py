@@ -1,7 +1,7 @@
 """Conservative, non-generative script analysis (``dtflow script <file>``).
 
-Nothing here runs the script: the source is read, syntax-checked by compiling it, never calling it, in a disposable hook-less child process, and
-scanned for facade calls. The facade-to-hook mapping is derived from the vendored upstream JS so it cannot drift.
+Nothing here runs the script: the source is read, parsed (never compiled or evaluated) by the vendored Acorn 8.14.0 in a
+disposable hook-less child process, and scanned for facade calls. The facade-to-hook mapping is derived from the vendored upstream JS so it cannot drift.
 A static scan cannot see calls reached through dynamic expressions; the report says so instead of promising readiness.
 """
 
@@ -84,10 +84,11 @@ def _state(hooks: tuple[str, ...]) -> tuple[str, str]:
 
 
 def syntax_error(source: str) -> str | None:
-    """Compile the script (function-wrapped, never called) in a disposable, hook-less child process.
+    """Parse the script with the vendored Acorn; the text is data and is never compiled or evaluated.
 
-    The analyzer's own process never evaluates script text. QuickJS can run code during compilation of a hostile
-    script, so compilation happens in a memory-capped child that the parent kills after a few seconds."""
+    Top-level ``return`` is accepted like upstream. Acorn follows the latest ECMAScript, so syntax newer than the
+    execution engine supports can parse here and still fail at run time. The parse runs in a memory-capped child that
+    the parent kills after a few seconds."""
     from dtflow.scripting.runner import check_syntax
 
     return check_syntax(source)

@@ -38,27 +38,35 @@ def main(connection) -> None:
 
 
 def syntax_main(connection) -> None:
-    """Child entry for the analyzer: compile (never call) a script inside a hook-less, memory-capped QuickJS context.
+    """Child entry for the analyzer: parse (never evaluate) a script with the vendored Acorn inside a memory-capped
+    QuickJS context that has no host bridge and no hooks.
 
-    QuickJS builds ``new Function`` bodies by string concatenation, so a hostile script such as
-    ``}); while (true) {}; (function(){`` can run code during compilation. That is why this runs in a disposable child
-    with no host bridge, no hooks and a parent-enforced kill, never in the analyzer's own process."""
+    The script reaches the parser only as a string value, so no part of it is compiled or run by the engine. The options
+    mirror upstream's wrapper: scripts are function bodies, so top-level ``return`` is accepted. The child exists only to
+    bound memory and time on pathological input."""
     die_with_parent()
     try:
         import quickjs
 
-        from dtflow.scripting.engine import wrap_user_script
+        from dtflow.scripting.engine import acorn_source
 
         source = connection.recv()
         context = quickjs.Context()
         context.set_memory_limit(64 * 1024 * 1024)
         context.set_max_stack_size(512 * 1024)
         try:
-            context.eval(wrap_user_script(source, call=False))
+            context.eval(acorn_source())
+            context.set("__source", source)
+            context.eval(
+                'acorn.parse(__source, {ecmaVersion: "latest", sourceType: "script", '
+                "allowReturnOutsideFunction: true, allowHashBang: true}); true"
+            )
             connection.send({"error": None})
         except quickjs.JSException as exc:
             lines = str(exc).splitlines()
             connection.send({"error": lines[0] if lines else "Syntax error"})
+        except quickjs.StackOverflow:
+            connection.send({"error": "Script is nested too deeply to analyze."})
     except (EOFError, BrokenPipeError, OSError):
         return
     finally:

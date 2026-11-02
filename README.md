@@ -101,7 +101,8 @@ See the [CLI reference](devdocs/guides/cli.md) for backends, options and example
   [structured diagnostics](devdocs/architecture/structured-diagnostics.md) with its
   [event catalogue](devdocs/architecture/diagnostic-event-schema.md) and
   [JSON Schema](devdocs/schemas/diagnostic-record-v1.schema.json), and
-  [image-operation preparation](devdocs/architecture/image-operations.md) (developer-only)
+  [image-operation preparation](devdocs/architecture/image-operations.md) (developer-only), and the
+  [scripting layer](devdocs/architecture/scripting.md) (developer-only)
 - [Efficient Qt model/view patterns](devdocs/guides/qt-model-view-patterns.md)
 - [DESIGN.md](DESIGN.md), the [design system](devdocs/design-system/README.md), the
   [Logs workspace specification](devdocs/design-system/logs-workspace.md) and [UI mockups](devdocs/mockups/)
