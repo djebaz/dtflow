@@ -145,6 +145,7 @@ class ScriptHost:
         self.baseline = normalize_configuration(decode_configuration(baseline_configuration(base)).values)
         self.generations = 0
         self.last: GenerationOutcome | None = None
+        self.attempt_outputs: dict[str, list[str]] = {}  # every committed attempt's output paths, in order
         self.pending: list[concurrent.futures.Future] = []  # in-flight work to drain before the service closes
         self.attempts: list[str] = []
         self._blocked: str | None = None
@@ -291,6 +292,7 @@ class ScriptHost:
             self._blocked = "A previous generation did not finish cleanly; not generating again."
             raise RuntimeError(f"{type(exc).__name__}: {exc}") from exc
         self.last = outcome
+        self.attempt_outputs[attempt_id] = [str(path) for path in outcome.output_paths]
 
     # -- catalogue lookups ----------------------------------------------------------------------------------------
 
