@@ -13,8 +13,8 @@ from PySide6.QtCore import QSize, Qt
 from PySide6.QtGui import QColor, QPainter, QPen
 from dtflow.ui.theme import load_tokens
 from PySide6.QtWidgets import (
-    QCheckBox, QComboBox, QDoubleSpinBox, QFileDialog, QFrame, QHBoxLayout,
-    QLabel, QLineEdit, QPushButton, QScrollArea, QSlider, QSpinBox,
+    QCheckBox, QComboBox, QFileDialog, QHBoxLayout,
+    QLabel, QLineEdit, QPushButton, QSlider, QSpinBox,
     QVBoxLayout, QWidget,
 )
 
