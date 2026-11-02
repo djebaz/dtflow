@@ -50,11 +50,11 @@ class _JavaScriptColors(QSyntaxHighlighter):
     """Scoped VS2019 Dark syntax decoration; not a JavaScript parser."""
 
     PATTERNS = (
-        (r"//[^\\n]*", "color.scriptEditorComment"),
-        (r'"(?:[^"\\\\]|\\\\.)*"|\\'(?:[^\\'\\\\]|\\\\.)*\\'', "color.scriptEditorString"),
-        (r"\\b(?:const|let|var|function|return|if|else|for|while|of|in|new|true|false|null|this)\\b", "color.scriptEditorKeyword"),
-        (r"\\b(?:pipeline|canvas|configuration|requestFromUser|Math|Array|Object|String|Number)\\b", "color.scriptEditorType"),
-        (r"\\b\\d+(?:\\.\\d+)?\\b", "color.scriptEditorNumber"),
+        (r"//[^\n]*", "color.scriptEditorComment"),
+        (r'"(?:[^"\\]|\\.)*"|\'(?:[^\'\\]|\\.)*\'', "color.scriptEditorString"),
+        (r"\b(?:const|let|var|function|return|if|else|for|while|of|in|new|true|false|null|this)\b", "color.scriptEditorKeyword"),
+        (r"\b(?:pipeline|canvas|configuration|requestFromUser|Math|Array|Object|String|Number)\b", "color.scriptEditorType"),
+        (r"\b\d+(?:\.\d+)?\b", "color.scriptEditorNumber"),
         (r"[=+*/<>!&|?:%-]+", "color.scriptEditorOperator"),
     )
 
