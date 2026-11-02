@@ -243,6 +243,8 @@ jobs:
           def area(path):
               if path.relative_to(out).parts[:1] == ("image-navigation",):
                   return "Image Navigation"
+              if path.stem.startswith("scripts_"):
+                  return "Scripts"
               parts = path.stem.split("-", 2)
               if len(parts) == 3 and parts[1].isdigit():
                   return parts[0]
