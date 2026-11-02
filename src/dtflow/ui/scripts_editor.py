@@ -13,7 +13,7 @@ from PySide6.QtGui import QColor, QFont, QPainter, QSyntaxHighlighter, QTextChar
 from dtflow.ui.theme import load_tokens
 
 from PySide6.QtWidgets import (
-    QHBoxLayout, QLabel, QLineEdit, QPlainTextEdit, QPushButton, QTextEdit,
+    QFrame, QHBoxLayout, QLabel, QLineEdit, QPlainTextEdit, QPushButton, QTextEdit,
     QVBoxLayout, QWidget,
 )
 
@@ -142,33 +142,62 @@ class ScriptEditor(QWidget):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(6)
-        tools = QHBoxLayout()
-        tools.setSpacing(4)
+        toolbar = QFrame(self)
+        toolbar.setObjectName("scriptsEditorToolbar")
+        tools = QHBoxLayout(toolbar)
+        tools.setContentsMargins(0, 0, 0, 0)
+        tools.setSpacing(6)
         self.editor = ScriptCodeEdit(self)
-        for label, callback in (
-            ("Undo", self.editor.undo),
-            ("Redo", self.editor.redo),
+
+        history = QFrame(toolbar)
+        history.setProperty("role", "segmented")
+        history_row = QHBoxLayout(history)
+        history_row.setContentsMargins(0, 0, 0, 0)
+        history_row.setSpacing(0)
+        for label, caption, edge, callback in (
+            ("↶", "Undo (Ctrl+Z)", "first", self.editor.undo),
+            ("↷", "Redo (Ctrl+Y)", "last", self.editor.redo),
         ):
             button = QPushButton(label)
+            button.setAccessibleName(caption)
+            button.setToolTip(caption)
+            button.setProperty("segmentEdge", edge)
+            button.setProperty("toolbarKind", "icon")
+            button.setFixedSize(32, 32)
             button.clicked.connect(callback)
-            tools.addWidget(button)
+            history_row.addWidget(button)
+        tools.addWidget(history)
+
         find = QPushButton("Find…")
+        find.setAccessibleName("Find in script")
+        find.setToolTip("Find (Ctrl+F)")
         find.clicked.connect(self._toggle_find)
         tools.addWidget(find)
-        smaller = QPushButton("A−")
-        smaller.setAccessibleName("Smaller editor font")
-        smaller.clicked.connect(lambda: self.editor.change_font_size(-1))
-        tools.addWidget(smaller)
-        larger = QPushButton("A+")
-        larger.setAccessibleName("Larger editor font")
-        larger.clicked.connect(lambda: self.editor.change_font_size(1))
-        tools.addWidget(larger)
+
+        font_group = QFrame(toolbar)
+        font_group.setProperty("role", "segmented")
+        font_row = QHBoxLayout(font_group)
+        font_row.setContentsMargins(0, 0, 0, 0)
+        font_row.setSpacing(0)
+        for label, caption, edge, delta in (
+            ("A−", "Smaller editor font", "first", -1),
+            ("A+", "Larger editor font", "last", 1),
+        ):
+            button = QPushButton(label)
+            button.setAccessibleName(caption)
+            button.setToolTip(caption)
+            button.setProperty("segmentEdge", edge)
+            button.setProperty("toolbarKind", "icon")
+            button.setFixedSize(32, 32)
+            button.clicked.connect(lambda _checked=False, amount=delta: self.editor.change_font_size(amount))
+            font_row.addWidget(button)
+        tools.addWidget(font_group)
         tools.addStretch(1)
         self.check_syntax = QPushButton("Check syntax")
         self.check_syntax.setToolTip("Parse-only check will be available when the editor connects to the script engine.")
         self.check_syntax.setEnabled(False)
         tools.addWidget(self.check_syntax)
-        layout.addLayout(tools)
+        layout.addWidget(toolbar)
         self.find_row = QWidget()
         find_layout = QHBoxLayout(self.find_row)
         find_layout.setContentsMargins(0, 0, 0, 0)
