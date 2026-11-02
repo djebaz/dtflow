@@ -163,6 +163,20 @@ def parser() -> argparse.ArgumentParser:
         help=argparse.SUPPRESS,  # manual owner diagnostic, documented in devdocs/guides/cli.md
     )
     script.add_argument("-o", "--out", type=Path, help="With --check-engine, write the JSON report to this file.")
+    script.add_argument(
+        "--run",
+        action="store_true",
+        help="Run the script through the normal generation path (may spend credits on local/cloud). Needs --backend.",
+    )
+    script.add_argument("-b", "--backend", choices=BACKENDS, help="With --run: explicit backend. No fallback.")
+    script.add_argument("-e", "--endpoint", help="With --run: local Draw Things HOST:PORT.")
+    script.add_argument("-d", "--state", type=Path, default=Path(".dtflow"), help="With --run: state directory.")
+    script.add_argument("--config", type=Path, help="With --run: generation config for the starting settings.")
+    script.add_argument("--outputs", type=Path, help="With --run: final output root (default: state/outputs).")
+    script.add_argument("--timeout", type=float, default=600.0, help="With --run: total deadline per generation.")
+    script.add_argument("--max-generations", type=int, default=4, help="With --run: generations a script may request.")
+    script.add_argument("--answers", type=Path, help="With --run: JSON list of answer lists for requestFromUser calls.")
+    add_request_options(script)
     add_edit_command(commands)
     add_queue_commands(commands)
     add_asset_commands(commands)
@@ -422,7 +436,7 @@ COMMAND_HELP = {
     "settings": "Show or persist shared settings such as the cloud concurrency maximum.",
     "assets": "Cloud LoRA assets: prepare (may upload), list, show, reconcile. Local receipts are not remote inventory.",
     "queue": "Durable queues with rolling dispatch: add, list, show, start, pause, resume, cancel, cap, relaunch.",
-    "script": "Analyze a Draw Things JavaScript script offline (never runs it), or self-check the script engine.",
+    "script": "Analyze a Draw Things JavaScript script offline (never runs it), self-check the engine, or --run it.",
 }
 
 
@@ -700,6 +714,10 @@ def run_script_command(args: argparse.Namespace) -> int:
 
 async def run(args: argparse.Namespace) -> int:
     if args.command == "script":
+        if args.run:
+            from dtflow.scripting.run_cli import run_script_file
+
+            return await run_script_file(args, exit_ok=EXIT_OK, exit_failed=EXIT_FAILED, exit_invalid=EXIT_INVALID)
         return run_script_command(args)
     if args.command == "edit":
         return await run_edit(args)

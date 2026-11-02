@@ -2,6 +2,7 @@
 
 import asyncio
 import logging
+import re
 from collections.abc import Callable
 from dataclasses import replace
 from datetime import UTC, datetime
@@ -123,7 +124,10 @@ class GenerationService:
         *,
         on_event: EventSink | None = None,
         prepared_inputs: PreparedImageInputs | None = None,
+        attempt_id: str | None = None,
     ) -> SavedGeneration:
+        """``attempt_id`` lets a caller that records the attempt elsewhere first (script runs) name it up front."""
+
         def preparation(stage: str) -> None:
             if on_event is not None:
                 on_event(BackendEvent(request.request_id, 0, "preparing", datetime.now(UTC).isoformat(), stage=stage))
@@ -225,7 +229,10 @@ class GenerationService:
                 )
             ) from exc
         reserved = False
-        attempt_id = uuid4().hex
+        if attempt_id is None:
+            attempt_id = uuid4().hex
+        elif not re.fullmatch(r"[0-9a-f]{32}", attempt_id):
+            raise ValueError("A caller-named attempt id must be 32 lowercase hex characters.")
         if image_operation:
             request = replace(request, image_inputs=replace(request.image_inputs, attempt_id=attempt_id))
         ATTEMPT.set(attempt_id)

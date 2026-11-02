@@ -20,6 +20,7 @@ from pathlib import Path
 
 log = logging.getLogger("dtflow.script")
 SCHEMA_VERSION = 1
+MAX_ANSWERS_JSON_CHARS = 1_000_000
 STATES = ("running", "completed", "failed", "stopped", "interrupted")
 TERMINAL = ("completed", "failed", "stopped", "interrupted")
 
@@ -195,6 +196,28 @@ class ScriptRunStore:
                     _now(),
                 ),
             )
+
+    def append_answers(self, run_id: str, entry: dict) -> int:
+        """Durably append one form-answer record (before the script sees the answers). Returns the entry count."""
+        import json
+
+        with closing(self._connect()) as connection, connection:
+            connection.execute("BEGIN IMMEDIATE")
+            row = connection.execute("SELECT state, answers_json FROM script_runs WHERE run_id=?", (run_id,)).fetchone()
+            if row is None or row[0] != "running":
+                raise ScriptRunStoreError("Answers can only be recorded for a running script run.")
+            try:
+                entries = json.loads(row[1])
+            except ValueError:
+                entries = []
+            if not isinstance(entries, list):
+                entries = []
+            entries.append(entry)
+            text = json.dumps(entries, separators=(",", ":"))
+            if len(text) > MAX_ANSWERS_JSON_CHARS:
+                raise ScriptRunStoreError("Recorded answers exceed the size limit.")
+            connection.execute("UPDATE script_runs SET answers_json=? WHERE run_id=?", (text, run_id))
+        return len(entries)
 
     def link_child(self, run_id: str, attempt_id: str) -> int:
         """Reserve the next ordinal for a child attempt; call before the attempt is submitted."""

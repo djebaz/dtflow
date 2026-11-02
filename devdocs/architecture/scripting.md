@@ -77,3 +77,11 @@ that store stay `running`, listed in `ScriptRunStore.unverified` and logged, ins
 
 Per project convention the first slice adds no tests; CI runs the existing suite. Tests and edits follow after the
 smoke test has been validated.
+
+## Tier A headless generation (PR #199)
+
+The ScriptHost in `scripting/host.py` implements the subset of upstream hooks for read-only configuration/prompt lookup, generation, model/LoRA lookup, headless form answers, and confined file access. One `generateImage` maps to one existing `run_generation` / `GenerationService` attempt. A caller-named attempt identifier is linked to the ScriptRun before the provider submission can begin. Remote outcome uncertainty blocks subsequent generation in the run; Stop only stops local waiting, and the service drains submitted attempts before closing. `--max-generations` defaults to four per run.
+
+The start configuration is resolved with the normal CLI validator before JS evaluation and never mutates the live Generate form. Only width, height, seed, steps, guidance, model, sampler, and LoRAs (`mode: all`) are script-changeable in this slice. The pinned upstream field model decodes the full configuration, but changing another field is rejected before that generation, rather than silently discarded. An empty model is explicitly rejected. A `mask` is rejected until #116. For headless forms, `--answers` supplies ordered answer lists or usable initial values are applied; native mid-run interaction is outside this PR. File hooks operate within `<state>/script_files/<run-id>/`, not the user's Pictures directory. Canvas saves expose the latest committed result only; full virtual canvas behavior belongs to #116.
+
+On Windows source execution, the owner reported a successful fake-backend run with two linked attempts and a final PNG, plus a rejected empty-model run with zero attempts (2026-11-02). These two manually invoked fixtures are tracked in `tests/fixtures/scripting/`; no automated scripting tests were added or run for this PR. This evidence does not establish local/cloud backend acceptance, native Qt UI, interactive forms, arbitrary Tier A sample compatibility, or Windows packaged-executable acceptance for this new slice.
