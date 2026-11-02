@@ -477,6 +477,9 @@ class ScriptsPage:
             if support == "supported" else
             "● Syntax valid   ● API calls observed   ● Not runnable · unsupported hooks"
         )
+        self.status.setProperty("feedbackState", "ok" if support == "supported" else "error")
+        self.status.style().unpolish(self.status)
+        self.status.style().polish(self.status)
         verdict = "No blocking issues found" if support == "supported" else "Not runnable · unsupported hooks"
         self.hook_status.setText(verdict)
         self.banner_title.setText(verdict)
@@ -640,6 +643,13 @@ class ScriptsPage:
             self.show_view(0)
             if state == "scripts_inspect_partial":
                 self.status.setText("● Syntax valid   ● API calls observed   ● Preflight incomplete")
+                self.status.setProperty("feedbackState", "warning")
+                self.status.style().unpolish(self.status)
+                self.status.style().polish(self.status)
+                self.banner_title.setText("Preflight incomplete")
+                self.inspect_banner.setProperty("feedbackState", "warning")
+                self.inspect_banner.style().unpolish(self.inspect_banner)
+                self.inspect_banner.style().polish(self.inspect_banner)
                 self.acknowledge.show()
             elif state == "scripts_imported_unsupported":
                 self.inspect_summary.setText("Cannot start: unsupported native picker hooks.")
