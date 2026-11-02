@@ -12,7 +12,7 @@ from pathlib import Path
 
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
-    QButtonGroup, QCheckBox, QComboBox, QFileDialog, QFrame, QHBoxLayout, QLabel,
+    QButtonGroup, QCheckBox, QComboBox, QFileDialog, QFrame, QGridLayout, QHBoxLayout, QLabel,
     QLineEdit, QListWidget, QListWidgetItem, QPushButton, QScrollArea,
     QSpinBox, QStackedWidget, QVBoxLayout, QWidget,
 )
@@ -237,21 +237,54 @@ class ScriptsPage:
         outer = QVBoxLayout(body)
         outer.setContentsMargins(2, 2, 2, 2)
         outer.setSpacing(10)
-        self.inspect_card, card = _card("Inspection")
-        self.inspect_summary = _label(
-            "Import a JavaScript file for static inspection. No script or provider is run.",
-            wrap=True
-        )
-        card.addWidget(self.inspect_summary)
-        self.inspect_facts = _label(
-            "Syntax · not checked\nHook inventory · not checked\nDynamic forms are only available during a run.",
+        self.inspect_banner = QFrame()
+        self.inspect_banner.setObjectName("scriptsInspectBanner")
+        self.inspect_banner.setProperty("feedbackState", "ok")
+        banner_layout = QVBoxLayout(self.inspect_banner)
+        banner_layout.setContentsMargins(16, 12, 16, 12)
+        self.banner_title = _label("No blocking issues found", role="scriptsBannerTitle")
+        banner_layout.addWidget(self.banner_title)
+        self.banner_desc = _label(
+            "Syntax valid, 3 hooks supported, 1 deferred. Inspection is not a promise of success.",
             role="scriptsMuted", wrap=True
         )
-        card.addWidget(self.inspect_facts)
+        banner_layout.addWidget(self.banner_desc)
+        outer.addWidget(self.inspect_banner)
+        self.inspect_card, card = _card("Inspection")
+        facts = QGridLayout()
+        facts.setHorizontalSpacing(14)
+        facts.setVerticalSpacing(6)
+        for row, (name, value) in enumerate((
+            ("Header", "Wildcard prompt sweep.js · by “example”"),
+            ("Tier", "Tier 1"),
+            ("Dynamic paths", "none"),
+            ("Models", "z_image_turbo_1.0"),
+            ("LoRAs", "none required"),
+            ("Inspected with", "Static parse · no generation, network or sign-in"),
+        )):
+            label = _label(name, role="scriptsMuted")
+            label.setAlignment(Qt.AlignmentFlag.AlignTop)
+            facts.addWidget(label, row, 0)
+            current = _label(value, wrap=True)
+            current.setToolTip(value)
+            facts.addWidget(current, row, 1)
+        card.addLayout(facts)
+        outer.addWidget(self.inspect_card)
+        self.inspect_summary = _label(
+            "Inspection is static: nothing is executed. Configure shows known inputs; "
+            "a dynamically built form is requested only when its run asks.",
+            role="scriptsMuted", wrap=True
+        )
+        outer.addWidget(self.inspect_summary)
+        actions = QHBoxLayout()
         self.configure_from_inspect = QPushButton("Configure…")
         self.configure_from_inspect.clicked.connect(lambda: self.show_view(1))
-        card.addWidget(self.configure_from_inspect)
-        outer.addWidget(self.inspect_card)
+        actions.addWidget(self.configure_from_inspect)
+        edit = QPushButton("Edit code")
+        edit.clicked.connect(lambda: self.show_view(2))
+        actions.addWidget(edit)
+        actions.addStretch(1)
+        outer.addLayout(actions)
         outer.addStretch(1)
         self.views.addWidget(_scroll(body))
 
@@ -444,7 +477,16 @@ class ScriptsPage:
             if support == "supported" else
             "● Syntax valid   ● API calls observed   ● Not runnable · unsupported hooks"
         )
-        self.hook_status.setText("No blocking issues found" if support == "supported" else "Unsupported hooks")
+        verdict = "No blocking issues found" if support == "supported" else "Not runnable · unsupported hooks"
+        self.hook_status.setText(verdict)
+        self.banner_title.setText(verdict)
+        self.banner_desc.setText(
+            "Syntax valid, 3 hooks supported, 1 deferred. This is not a promise of success."
+            if support == "supported" else "Required photo/file picker hooks are unsupported."
+        )
+        self.inspect_banner.setProperty("feedbackState", "ok" if support == "supported" else "error")
+        self.inspect_banner.style().unpolish(self.inspect_banner)
+        self.inspect_banner.style().polish(self.inspect_banner)
         self.drawer_summary.setText(
             self.hook_status.text() + "\n" +
             "\n".join(f"{hook} · {status}" for hook, status, _ in REFERENCE_HOOKS)
@@ -465,6 +507,8 @@ class ScriptsPage:
         self.sha.clear()
         self.status.setText("Import a JavaScript file or create a draft")
         self.inspect_summary.setText("Nothing has been inspected. Scripts do not run during inspection.")
+        self.inspect_banner.hide()
+        self.inspect_card.hide()
         self.hook_status.setText("No script inspected")
         self.show_view(0)
 
@@ -529,6 +573,8 @@ class ScriptsPage:
             self.show_view(0)
             return
         self._set_script(REFERENCE_SCRIPTS[row])
+        self.inspect_banner.show()
+        self.inspect_card.show()
         self._load_reference_form()
         self.handoff.hide()
         self.acknowledge.hide()
