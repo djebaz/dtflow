@@ -132,6 +132,7 @@ RENDER_CATEGORIES = (
     "shell",
     "inpaint",
     "logs",
+    "scripts",
 )
 
 
@@ -4074,6 +4075,14 @@ def main():
     args.out.mkdir(parents=True, exist_ok=True)
     app = QApplication([])
     apply_theme(app)
+    if wants("scripts"):
+        from render_scripts_states import render_scripts_states
+
+        for screenshot in render_scripts_states(args.out):
+            report(screenshot)
+        if args.category == "scripts":
+            summarize()
+            return
     cloud = DtPlus()
     scenario, gate = "success", None
 
