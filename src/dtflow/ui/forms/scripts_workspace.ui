@@ -2,65 +2,34 @@
 <ui version="4.0">
  <class>ScriptsWorkspace</class>
  <widget class="QWidget" name="ScriptsWorkspace">
-  <property name="minimumSize"><size><width>640</width><height>480</height></size></property>
-  <layout class="QVBoxLayout" name="scriptsRootLayout">
-   <property name="leftMargin"><number>8</number></property><property name="topMargin"><number>8</number></property><property name="rightMargin"><number>8</number></property><property name="bottomMargin"><number>8</number></property><property name="spacing"><number>8</number></property>
-   <item><layout class="QHBoxLayout" name="scriptsModeLayout">
-    <item><widget class="QPushButton" name="scriptsTextModeButton"><property name="text"><string>Text to image</string></property><property name="checkable"><bool>true</bool></property></widget></item>
-    <item><widget class="QPushButton" name="scriptsInpaintModeButton"><property name="text"><string>Inpaint</string></property><property name="checkable"><bool>true</bool></property></widget></item>
-    <item><widget class="QPushButton" name="scriptsModeButton"><property name="text"><string>Scripts</string></property><property name="checkable"><bool>true</bool></property><property name="checked"><bool>true</bool></property></widget></item>
-    <item><spacer name="scriptsModeSpacer"><property name="orientation"><enum>Qt::Horizontal</enum></property><property name="sizeHint" stdset="0"><size><width>40</width><height>20</height></size></property></spacer></item>
-   </layout></item>
-   <item><widget class="QSplitter" name="scriptsSplitter"><property name="orientation"><enum>Qt::Horizontal</enum></property>
-    <widget class="QFrame" name="scriptsLibraryPanel">
-     <property name="minimumSize"><size><width>180</width><height>0</height></size></property><property name="maximumSize"><size><width>300</width><height>16777215</height></size></property>
-     <layout class="QVBoxLayout" name="scriptsLibraryLayout">
-      <item><widget class="QLabel" name="scriptsLibraryTitle"><property name="text"><string>Script library</string></property><property name="textRole" stdset="0"><string>section</string></property></widget></item>
-      <item><widget class="QListWidget" name="scriptsLibraryList"><property name="accessibleName"><string>Imported scripts</string></property></widget></item>
-      <item><widget class="QPushButton" name="scriptsImportButton"><property name="text"><string>Import…</string></property></widget></item>
-      <item><widget class="QPushButton" name="scriptsNewButton"><property name="text"><string>New script…</string></property></widget></item>
-      <item><widget class="QPushButton" name="scriptsReloadButton"><property name="text"><string>Reload from disk</string></property></widget></item>
-      <item><widget class="QLabel" name="scriptsLibraryNote"><property name="text"><string>Local scripts · immutable versions</string></property><property name="wordWrap"><bool>true</bool></property></widget></item>
-     </layout>
-    </widget>
-    <widget class="QFrame" name="scriptsWorkPanel">
-     <layout class="QVBoxLayout" name="scriptsWorkLayout">
-      <item><widget class="QLabel" name="scriptsNameLabel"><property name="text"><string>No script selected</string></property><property name="textRole" stdset="0"><string>section</string></property></widget></item>
-      <item><widget class="QLabel" name="scriptsIdentityLabel"><property name="text"><string>Version — · inspect only</string></property></widget></item>
-      <item><widget class="QLabel" name="scriptsStatusLabel"><property name="text"><string>Select or import a script</string></property><property name="wordWrap"><bool>true</bool></property></widget></item>
-      <item><layout class="QHBoxLayout" name="scriptsViewSelectLayout">
-       <item><widget class="QPushButton" name="scriptsInspectButton"><property name="text"><string>Inspect</string></property><property name="checkable"><bool>true</bool></property><property name="checked"><bool>true</bool></property></widget></item>
-       <item><widget class="QPushButton" name="scriptsConfigureButton"><property name="text"><string>Configure</string></property><property name="checkable"><bool>true</bool></property></widget></item>
-       <item><widget class="QPushButton" name="scriptsCodeButton"><property name="text"><string>Code</string></property><property name="checkable"><bool>true</bool></property></widget></item>
-      </layout></item>
-      <item><widget class="QStackedWidget" name="scriptsContentStack">
-       <widget class="QWidget" name="scriptsInspectView"><layout class="QVBoxLayout" name="scriptsInspectLayout"><item><widget class="QLabel" name="scriptsInspectHeading"><property name="text"><string>Inspection</string></property></widget></item><item><widget class="QLabel" name="scriptsInspectDetails"><property name="text"><string>Import a JavaScript file to inspect API calls. Inspection does not run scripts or contact providers.</string></property><property name="wordWrap"><bool>true</bool></property></widget></item><item><spacer name="scriptsInspectSpacer"><property name="orientation"><enum>Qt::Vertical</enum></property><property name="sizeHint" stdset="0"><size><width>20</width><height>40</height></size></property></spacer></item></layout></widget>
-       <widget class="QWidget" name="scriptsFormView"><layout class="QVBoxLayout" name="scriptsFormLayout"><item><widget class="QLabel" name="scriptsFormHeader"><property name="text"><string>Configure · script inputs</string></property></widget></item><item><widget class="QScrollArea" name="scriptsFormScroll"><property name="widgetResizable"><bool>true</bool></property><widget class="QWidget" name="scriptsFormHost"><layout class="QFormLayout" name="scriptsFieldsLayout"><item row="0" column="0"><widget class="QLabel" name="scriptsSourceLabel"><property name="text"><string>Source image</string></property></widget></item><item row="0" column="1"><widget class="QComboBox" name="scriptsSourceCombo"><item><property name="text"><string>No source</string></property></item><item><property name="text"><string>Images gallery…</string></property></item><item><property name="text"><string>Local file…</string></property></item><item><property name="text"><string>Inpaint canvas</string></property></item></widget></item><item row="1" column="0"><widget class="QLabel" name="scriptsPromptLabel"><property name="text"><string>Prompt</string></property></widget></item><item row="1" column="1"><widget class="QLineEdit" name="scriptsPromptInput"><property name="text"><string>Illustrative offline prompt</string></property></widget></item><item row="2" column="0"><widget class="QLabel" name="scriptsCapLabel"><property name="text"><string>Generation cap</string></property></widget></item><item row="2" column="1"><widget class="QSpinBox" name="scriptsCapSpin"><property name="minimum"><number>1</number></property><property name="maximum"><number>32</number></property><property name="value"><number>8</number></property></widget></item></layout></widget></widget></item></layout></widget>
-       <widget class="QWidget" name="scriptsCodeView"><layout class="QVBoxLayout" name="scriptsCodeLayout"><item><widget class="QPlainTextEdit" name="scriptsCodeEditor"><property name="plainText"><string>//@api-1.0
-// Offline illustrative editor · no execution</string></property><property name="accessibleName"><string>JavaScript source editor</string></property></widget></item><item><widget class="QLabel" name="scriptsEditorStatus"><property name="text"><string>Draft · no saved version</string></property></widget></item></layout></widget>
-       <widget class="QWidget" name="scriptsRunView"><layout class="QVBoxLayout" name="scriptsRunLayout"><item><widget class="QLabel" name="scriptsRunState"><property name="text"><string>Run state · fixture only</string></property></widget></item><item><widget class="QLabel" name="scriptsRunResult"><property name="text"><string>Latest committed result appears here.</string></property></widget></item><item><widget class="QPlainTextEdit" name="scriptsConsole"><property name="readOnly"><bool>true</bool></property><property name="plainText"><string>[fixture] No provider was called.</string></property></widget></item></layout></widget>
-       <widget class="QWidget" name="scriptsResultsView"><layout class="QVBoxLayout" name="scriptsResultsLayout"><item><widget class="QLabel" name="scriptsResultsHeader"><property name="text"><string>ScriptRun history · offline fixture</string></property></widget></item><item><widget class="QListWidget" name="scriptsAttemptsList"/></item></layout></widget>
-      </widget></item>
-      <item><widget class="QLabel" name="scriptsStartDisclosure"><property name="text"><string>Starting a script can submit multiple generations. Local/cloud may consume credits; estimates are not billing guarantees.</string></property><property name="wordWrap"><bool>true</bool></property></widget></item>
-      <item><widget class="QPushButton" name="scriptsStartButton"><property name="text"><string>Start script</string></property><property name="enabled"><bool>false</bool></property></widget></item>
-     </layout>
-    </widget>
-    <widget class="QFrame" name="scriptsInspectorPanel"><property name="minimumSize"><size><width>200</width><height>0</height></size></property><property name="maximumSize"><size><width>300</width><height>16777215</height></size></property>
-     <layout class="QVBoxLayout" name="scriptsInspectorLayout">
-      <item><widget class="QLabel" name="scriptsInspectorTitle"><property name="text"><string>Compatibility</string></property></widget></item>
-      <item><widget class="QLabel" name="scriptsHooksLabel"><property name="text"><string>Hook inventory · inspect only</string></property><property name="wordWrap"><bool>true</bool></property></widget></item>
-      <item><widget class="QLabel" name="scriptsSettingsTitle"><property name="text"><string>Starting settings</string></property></widget></item>
-      <item><widget class="QLabel" name="scriptsSettingsSummary"><property name="text"><string>Backend · not checked
-Model · not selected
-Generation cap · 8</string></property></widget></item>
-      <item><widget class="QLabel" name="scriptsSourceTitle"><property name="text"><string>Source</string></property></widget></item>
-      <item><widget class="QLabel" name="scriptsSourceSummary"><property name="text"><string>Local version · SHA-256 identity</string></property><property name="wordWrap"><bool>true</bool></property></widget></item>
-      <item><widget class="QLabel" name="scriptsHistoryTitle"><property name="text"><string>History</string></property></widget></item>
-      <item><widget class="QListWidget" name="scriptsHistoryList"/></item>
-     </layout>
-    </widget>
+  <layout class="QHBoxLayout" name="scriptsBaseLayout">
+   <property name="leftMargin"><number>0</number></property><property name="topMargin"><number>0</number></property>
+   <property name="rightMargin"><number>0</number></property><property name="bottomMargin"><number>0</number></property>
+   <property name="spacing"><number>8</number></property>
+   <item><widget class="QFrame" name="scriptsLibraryPanel">
+    <property name="role" stdset="0"><string>sectionCard</string></property>
+    <layout class="QVBoxLayout" name="scriptsLibraryLayout">
+     <property name="leftMargin"><number>8</number></property><property name="topMargin"><number>8</number></property>
+     <property name="rightMargin"><number>8</number></property><property name="bottomMargin"><number>8</number></property>
+     <property name="spacing"><number>8</number></property>
+    </layout>
+   </widget></item>
+   <item><widget class="QFrame" name="scriptsWorkPanel">
+    <layout class="QVBoxLayout" name="scriptsWorkLayout">
+     <property name="leftMargin"><number>0</number></property><property name="topMargin"><number>0</number></property>
+     <property name="rightMargin"><number>0</number></property><property name="bottomMargin"><number>0</number></property>
+     <property name="spacing"><number>8</number></property>
+    </layout>
+   </widget></item>
+   <item><widget class="QFrame" name="scriptsInspectorPanel">
+    <layout class="QVBoxLayout" name="scriptsInspectorLayout">
+     <property name="leftMargin"><number>0</number></property><property name="topMargin"><number>0</number></property>
+     <property name="rightMargin"><number>0</number></property><property name="bottomMargin"><number>0</number></property>
+     <property name="spacing"><number>8</number></property>
+    </layout>
    </widget></item>
   </layout>
  </widget>
- <resources/><connections/>
+ <resources/>
+ <connections/>
 </ui>
