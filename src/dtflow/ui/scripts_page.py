@@ -467,7 +467,7 @@ class ScriptsPage:
 
     def _set_script(self, script):
         self._current_script = script
-        filename, sha, tier, support = script
+        filename, sha, _tier, support = script
         self.script_title.setText(filename)
         self.script_title.setToolTip(filename)
         self.sha.setText(f"version {sha}")
