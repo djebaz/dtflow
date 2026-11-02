@@ -433,7 +433,7 @@ class ScriptsPage:
         outer.addLayout(source)
         self.source_note = _label(
             "Optional. An immutable copy is taken at Start; changing it requires a new run.",
-            role="scriptsMuted", wrap=True
+            role="scriptsSourceNote", wrap=True
         )
         outer.addWidget(self.source_note)
         self.handoff = _label("Image + mask snapshot · 512 × 512 · Detach", role="scriptsMuted")
@@ -821,6 +821,9 @@ class ScriptsPage:
         # One native window is reused across all screenshots. Restore every
         # mutable fixture choice so screenshots are independent of render order.
         self.source.setCurrentIndex(0)
+        self.source_note.setProperty("feedbackState", "")
+        self.source_note.style().unpolish(self.source_note)
+        self.source_note.style().polish(self.source_note)
         self.source_note.setText(
             "Optional. An immutable copy is taken at Start; changing it requires a new run."
         )
@@ -880,6 +883,9 @@ class ScriptsPage:
                 self.source_note.setText(
                     "Required by this script: choose a source to Start; changing it needs a new run."
                 )
+                self.source_note.setProperty("feedbackState", "error")
+                self.source_note.style().unpolish(self.source_note)
+                self.source_note.style().polish(self.source_note)
                 self.status.setText("● Syntax valid   ● API calls observed   ● Preflight incomplete")
                 self.status.setProperty("feedbackState", "warning")
                 self.status.style().unpolish(self.status)
