@@ -775,6 +775,16 @@ class ScriptsPage:
         """Populate an explicitly offline screenshot state; never executes a script."""
         self.active_state = state
         self._reference_mode = True
+        # One native window is reused across all screenshots. Restore every
+        # mutable fixture choice so screenshots are independent of render order.
+        self.source.setCurrentIndex(0)
+        self.start.setText("Start script")
+        self.library_note.setText(
+            "Local files only. Each version is copied and kept by SHA-256 (3 of 50 stored)."
+        )
+        self.status.setProperty("feedbackState", "")
+        self.status.style().unpolish(self.status)
+        self.status.style().polish(self.status)
         self.library.blockSignals(True)
         self.library.clear()
         if state != "scripts_empty" and state != "scripts_editor_new":
@@ -798,6 +808,9 @@ class ScriptsPage:
         self.handoff.hide()
         self.acknowledge.hide()
         self.waiting_form.hide()
+        self.run_status.setText("No run started")
+        self.run_detail.clear()
+        self.result_caption.setText("No committed output yet")
         self.result_image.setText("No committed result")
         self.result_caption.setText("No committed output yet")
         self.console.setPlainText("[offline fixture] No provider was called.")
