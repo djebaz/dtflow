@@ -147,6 +147,8 @@ def run_selfcheck() -> dict:
         "processor": _processor_name(),
         "cpu_count": os.cpu_count(),
         "frozen": bool(getattr(sys, "frozen", False)),
+        "app_pid": os.getpid(),
+        "outer_launcher_pid": os.getppid() if getattr(sys, "frozen", False) else None,
         "child_startup_seconds": {
             "samples": len(startup_samples),
             "min": min(startup_samples) if startup_samples else None,
@@ -190,11 +192,14 @@ def hold_child(out: Path) -> int:
     def announce(result: RunResult) -> None:
         info = {
             "parent_pid": os.getpid(),
+            # Frozen onefile builds run the app under a bootloader process, normally this process's parent. It is
+            # reported so cleanup checks cover it; confirm in tasklist that its image name is the same exe.
+            "outer_launcher_pid": os.getppid() if getattr(sys, "frozen", False) else None,
             "spawned_pid": result.spawned_pid,
             "child_pid": result.child_pid,
             "contained": result.contained,
             "child_in_job": result.child_in_job,
-            "note": "Kill parent_pid, wait 3 s, then check child_pid and spawned_pid are gone (tasklist /FI).",
+            "note": "Kill parent_pid, wait 3 s, then check child_pid, spawned_pid and outer_launcher_pid (if any) are gone (tasklist /FI).",
         }
         temporary = out.with_name(out.name + ".part")
         temporary.write_text(json.dumps(info, indent=2) + "\n", encoding="utf-8")

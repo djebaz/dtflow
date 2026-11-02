@@ -255,8 +255,13 @@ def run_recorded(
         error = f"Script run failed: {type(exc).__name__}."
         raise
     finally:
-        if not store.finish(run_id, state, error):
-            log.warning("Script run %s was no longer running when it finished; its ledger state was kept.", run_id)
+        try:
+            if not store.finish(run_id, state, error):
+                log.warning("Script run %s was no longer running when it finished; its ledger state was kept.", run_id)
+        except Exception:  # never mask the script's own outcome or error; the row stays recoverable as interrupted
+            log.exception(
+                "Script run %s could not be settled in the ledger; it will be recovered as interrupted.", run_id
+            )
 
 
 def _linux_contained() -> bool:

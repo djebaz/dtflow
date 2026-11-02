@@ -213,17 +213,21 @@ class ScriptRunStore:
 
     def finish(self, run_id: str, state: str, error: str | None = None) -> bool:
         """Settle a running run; returns False (changing nothing) if it was no longer running, e.g. interrupted."""
-        if state not in TERMINAL:
-            raise ScriptRunStoreError("Unknown terminal script-run state.")
-        with closing(self._connect()) as connection, connection:
-            changed = connection.execute(
-                "UPDATE script_runs SET state=?, error=?, finished_at=? WHERE run_id=? AND state='running'",
-                (state, error, _now(), run_id),
-            ).rowcount
-        handle = self._held.pop(run_id, None)
-        if handle is not None:
-            _release(handle, self._lock_path(run_id))
-        return changed == 1
+        try:
+            if state not in TERMINAL:
+                raise ScriptRunStoreError("Unknown terminal script-run state.")
+            with closing(self._connect()) as connection, connection:
+                changed = connection.execute(
+                    "UPDATE script_runs SET state=?, error=?, finished_at=? WHERE run_id=? AND state='running'",
+                    (state, error, _now(), run_id),
+                ).rowcount
+            return changed == 1
+        finally:
+            # Always give up ownership, even if settlement failed (SQLite timeout or write error): the row then stays
+            # 'running' with a free lock, so the next open recovers it as interrupted instead of treating it as live.
+            handle = self._held.pop(run_id, None)
+            if handle is not None:
+                _release(handle, self._lock_path(run_id))
 
     def get(self, run_id: str) -> ScriptRun | None:
         with closing(self._connect()) as connection:

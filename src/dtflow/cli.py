@@ -160,8 +160,7 @@ def parser() -> argparse.ArgumentParser:
         "--hold-child",
         type=Path,
         metavar="PIDS_JSON",
-        help="Manual diagnostic: run a busy script child, write the parent and child pids to this file and wait "
-        "(kill the parent to check the child dies with it).",
+        help=argparse.SUPPRESS,  # manual owner diagnostic, documented in devdocs/guides/cli.md
     )
     script.add_argument("-o", "--out", type=Path, help="With --check-engine, write the JSON report to this file.")
     add_edit_command(commands)

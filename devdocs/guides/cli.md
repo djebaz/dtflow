@@ -97,7 +97,7 @@ Only `assets prepare -f/--file FILE` may upload bytes. `-n/--name` selects an id
 ## Script analysis and engine self-check
 
 `dtflow script <file>` parses a Draw Things script (never runs it) and lists the facade calls it finds; syntax checking
-uses the vendored Acorn parser. `dtflow script --check-engine [-o result.json]` runs the engine self-check, and `dtflow script --hold-child pids.json` is
+uses the vendored Acorn parser. `dtflow script --check-engine [-o result.json]` runs the engine self-check, and the hidden `dtflow script --hold-child pids.json` is
 the manual child-containment diagnostic (kill the printed parent pid and check the child disappears). See the
 [scripting layer](../architecture/scripting.md).
 

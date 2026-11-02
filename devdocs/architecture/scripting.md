@@ -34,7 +34,8 @@ the runtime wrapper `(function(){ <script> })();` rejects it too (upstream behav
 Caveat: Acorn follows the newest ECMAScript, so syntax the execution engine does not support yet can parse cleanly and
 still fail at run time. The report lists facade calls found by a conservative static scan; calls reached through dynamic
 expressions are not visible and the report says so. The report records the parser and engine versions (`acorn`,
-`quickjs-ng`) so a parse/run mismatch can be traced; re-check the gap when either is bumped.
+`quickjs-ng`) so a parse/run mismatch can be traced; re-check the gap when either is bumped. The packaged build copies the `quickjs-ng`
+distribution metadata so frozen reports do not fall back to `unknown`.
 
 Acorn is vendored unmodified (MIT). Version, source URL, checksums and the licence text are in
 `src/dtflow/scripting/resources/acorn.NOTICE.txt`.
@@ -51,10 +52,11 @@ inherited job also answers true) and whether a launcher stub sits between the tw
 
 ### Manual containment diagnostic
 
-`dtflow script --hold-child pids.json` (frozen: `--dtflow-script-hold-child pids.json`) starts the real contained child on
-a busy loop, writes `parent_pid`, `spawned_pid` and `child_pid` to the file and waits. Kill the parent (`taskkill /F /PID
+`dtflow script --hold-child pids.json` (hidden from `--help`; frozen: `--dtflow-script-hold-child pids.json`) starts the real contained child on
+a busy loop, writes `parent_pid`, `outer_launcher_pid` (frozen onefile builds only: the bootloader process above the app), `spawned_pid` and
+`child_pid` to the file and waits. Kill the parent (`taskkill /F /PID
 <parent_pid>`), wait three seconds and check that `tasklist /FI "PID eq <child_pid>"` (and `spawned_pid`) report no
-task. Ctrl+C stops the run normally. This is a manual check for the owner; it is not run by CI and its result is the
+task, and likewise for `outer_launcher_pid`. Ctrl+C stops the run normally. This is a manual check for the owner; it is not run by CI and its result is the
 only evidence that Windows containment, including the order in which a onefile launcher joins the Job Object, works.
 
 ## ScriptRun ledger
@@ -64,7 +66,8 @@ the application. States: running, completed, failed, stopped, interrupted. A run
 interrupted when the store is next opened and is never resumed or replayed. Child attempts are linked in order, before
 submission, and never removed. `run_recorded` (in `runner.py`) ties the ledger to a run: it creates and locks the row
 before the child starts, settles it from the result (completed, failed or stopped) and settles it as failed if anything
-raises; hooks receive `link_child(attempt_id)` to record child attempts before submitting them. Liveness is decided by an OS file lock per run in `script_run_locks/` (`flock` on POSIX,
+raises; if settlement itself fails, ownership is still released, the original outcome or error is kept and the row is
+recovered as interrupted on the next open; hooks receive `link_child(attempt_id)` to record child attempts before submitting them. Liveness is decided by an OS file lock per run in `script_run_locks/` (`flock` on POSIX,
 `msvcrt.locking` on Windows) taken before the row exists, so a second app instance does not interrupt a run whose lock is
 held and process-id reuse cannot confuse ownership. Only a genuine "lock is held" error counts as held; on a filesystem
 without lock support (some network mounts, WSL1 `/mnt/c`) creating a run fails with a clear error and crashed runs on
