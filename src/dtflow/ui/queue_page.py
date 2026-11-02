@@ -812,7 +812,22 @@ class QueuePage:
                     stage += f" · step {step}/{steps}"
             if running:
                 wide = f"Queue {queue_id[:8]} · {stage} · {summary.settled}/{summary.total}"
-            if running == 1 and len(progress) == 1:
+            if view.get("kind") == "script":
+                # A script is one item whose step count is known only as it runs: show steps, never "0/1 items".
+                script = next((item.get("script") for item in items if item.get("script")), None)
+                children = (script or {}).get("children") or []
+                committed = sum(1 for child in children if child["state"] == "succeeded")
+                stage = (
+                    f"step {len(children)} running · {committed} committed"
+                    if len(children) > committed
+                    else f"{committed} step(s) committed"
+                    if children
+                    else "Script running"
+                )
+                wide = f"Script {queue_id[:8]} · {stage}"
+                detail = f"Script {queue_id[:8]} · {stage}."
+                completed = total = None
+            elif running == 1 and len(progress) == 1:
                 step, steps = progress[0]
                 # The item number is known only for the selected queue, whose items are read.
                 position = f"Item #{running_items[0]['position']}" if len(running_items) == 1 else "Item"

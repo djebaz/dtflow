@@ -267,6 +267,7 @@ class ScriptsPage:
         self._live_run: dict | None = None
         self._live_reading = False
         self._live_history: list = []
+        self._inspecting: set[str] = set()
         self._history_ids: list[str] = []
         self._live_timer = QTimer(designer)
         self._live_timer.setInterval(1000)
@@ -1225,6 +1226,7 @@ class ScriptsPage:
     def _refresh_readiness(self, *_args):
         if not hasattr(self, "start"):
             return
+        self.designer.scriptsOfflineNotice.setVisible(not self._live_mode())  # a real run is not an offline preview
         script = self._current_script
         partial = script is not None and script[0].startswith("Hires")
         missing_source = partial and self.source.currentIndex() == 0
@@ -1621,6 +1623,9 @@ class ScriptsPage:
                 tag = f"version {position} of {len(same_name)}" + (" · latest" if position == len(same_name) else "")
                 self._add_library_item(script, f"{tag} · {when}" if len(same_name) > 1 else when)
             self.library.blockSignals(False)
+        for version in versions:  # every version gets its verdict, not only the selected one
+            if version.sha256 not in self._inspections and version.sha256 not in self._inspecting:
+                self._inspect_in_background(version)
         row = next((i for i, v in enumerate(versions) if v.sha256 == select), -1)
         if row >= 0:
             self.library.blockSignals(True)
@@ -1675,6 +1680,27 @@ class ScriptsPage:
             asyncio.to_thread(inspect_source, data, version.name),
             lambda result, exception, sha=version.sha256: self._inspected(sha, result, exception),
         )
+
+    def _inspect_in_background(self, version: ScriptVersion) -> None:
+        if version.sha256 == self._selected_sha or self._library is None:
+            return  # the selected version is inspected by its own selection
+        try:
+            data = self._library.read_source(version.sha256).encode("utf-8")
+        except ScriptLibraryError:
+            return
+        self._inspecting.add(version.sha256)
+        self.owner.runner.submit(
+            asyncio.to_thread(inspect_source, data, version.name),
+            lambda result, exception, sha=version.sha256: self._background_inspected(sha, result, exception),
+        )
+
+    def _background_inspected(self, sha: str, result, exception) -> None:
+        self._inspecting.discard(sha)
+        if exception is not None:
+            return
+        self._inspections[sha] = result
+        self._versions = []  # rebuild the rows so the verdict chip shows
+        self._load_library(self._selected_sha)
 
     def _inspected(self, sha: str, result, exception) -> None:
         if exception is not None:
