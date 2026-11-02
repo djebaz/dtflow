@@ -4077,14 +4077,6 @@ def main():
     args.out.mkdir(parents=True, exist_ok=True)
     app = QApplication([])
     apply_theme(app)
-    if wants("scripts"):
-        from render_scripts_states import render_scripts_states
-
-        for screenshot in render_scripts_states(args.out):
-            report(screenshot)
-        if args.category == "scripts":
-            summarize()
-            return
     cloud = DtPlus()
     scenario, gate = "success", None
 
@@ -4098,6 +4090,22 @@ def main():
         patch.object(session, "create_backend", backend),
     ):
         state = Path(temporary)
+        if wants("scripts"):
+            from render_scripts_states import render_scripts_states
+
+            def script_window():
+                return MainWindow(
+                    saved=SavedCredentials(Vault()),
+                    environ={},
+                    state_dir=state / "scripts-fixtures",
+                    no_cache=True,
+                )
+
+            for screenshot in render_scripts_states(args.out, window_factory=script_window):
+                report(screenshot)
+            if args.category == "scripts":
+                summarize()
+                return
         if any(wants(category) for category in ("connection", "generate", "queues", "images")):
             render_workspace_states(app, state, args.out)
         if wants("shell"):
