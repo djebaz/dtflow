@@ -67,6 +67,7 @@ from dtflow.ui.queue_popover import QueuePopover
 from dtflow.ui.queue_composer import ValueChips
 from dtflow.ui.queue_widgets import SegmentedBar
 from dtflow.ui.run_control import RunControl
+from dtflow.persistence.script_library import ScriptLibrary
 from dtflow.ui.scripts_page import ScriptsPage
 from dtflow.ui.runner import AsyncRunner
 from dtflow.ui.search_select import SearchableComboBox
@@ -261,7 +262,9 @@ class MainWindow:
         # Scripts reuses the existing shell rails. Add its panels only after all
         # other page stacks have been mounted, preserving their index contracts.
         self.scripts_designer = load_ui(SCRIPTS_UI_FILE)
-        self.scripts = ScriptsPage(self.scripts_designer, owner=self)
+        self.scripts = ScriptsPage(
+            self.scripts_designer, owner=self, library_factory=lambda: ScriptLibrary(self.state_dir)
+        )
         self.scripts.mount(self.shell)
         self._scripts_active = False
         form.workspaceStack.hide()

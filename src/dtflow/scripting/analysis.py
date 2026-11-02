@@ -94,8 +94,24 @@ def syntax_error(source: str) -> str | None:
     return check_syntax(source)
 
 
+_ERROR_LOCATION = re.compile(r"^(?:SyntaxError: )?(?P<message>.*?)\s*\((?P<line>\d+):(?P<column>\d+)\)$", re.DOTALL)
+
+
+def parse_syntax_error(text: str) -> tuple[int, int, str]:
+    """``(line, column, message)`` from Acorn's ``SyntaxError: message (line:column)``; line/column are 1-based.
+    Text without a location (timeouts, nesting limits) maps to line 1, column 1."""
+    match = _ERROR_LOCATION.match(text.strip())
+    if match is None:
+        return 1, 1, text
+    return int(match["line"]), int(match["column"]) + 1, match["message"]
+
+
 def analyze_script(path: Path) -> dict:
     data = Path(path).read_bytes()
+    return analyze_bytes(data, Path(path).name)
+
+
+def analyze_bytes(data: bytes, name: str) -> dict:
     if len(data) > MAX_SOURCE_BYTES:
         raise ValueError("Script source is too large.")
     source = data.decode("utf-8")
@@ -140,7 +156,7 @@ def analyze_script(path: Path) -> dict:
     if dynamic:
         warnings.append("Dynamic constructs prevent a complete static call list: " + ", ".join(dynamic) + ".")
     return {
-        "file": Path(path).name,
+        "file": name,
         "sha256": hashlib.sha256(data).hexdigest(),
         "bytes": len(data),
         "api_version": version,
