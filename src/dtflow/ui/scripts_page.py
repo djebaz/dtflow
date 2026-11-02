@@ -972,9 +972,10 @@ class ScriptsPage:
                 self.status.style().polish(self.status)
                 self._set_inspect_banner(
                     "Preflight incomplete",
-                    "Static inspection has unresolved requirements. Confirm before starting.",
+                    "Syntax valid, 3 hooks supported, 1 deferred. This is not a promise of success.",
                     "warning",
                 )
+                self.hook_status.setText("Preflight incomplete")
                 self.acknowledge.show()
             elif state == "scripts_imported_unsupported":
                 self.inspect_summary.setText("Cannot start: unsupported native picker hooks.")
