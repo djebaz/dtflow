@@ -471,7 +471,7 @@ Create one or import a local .js file.</string>
          <item>
           <widget class="QPushButton" name="scriptsInspectorToggle">
            <property name="text">
-            <string>Inspector</string>
+            <string />
            </property>
            <property name="accessibleName">
             <string>Scripts inspector</string>
