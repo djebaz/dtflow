@@ -1,5 +1,7 @@
 # Current development status
 
+**Scripts desktop preview — PR #201 independent-review alignment (2026-11-02):** Offline-only Start/queue/input/review transitions, fixture Check/in-memory Save, active/unresolved history cues and a detached Inpaint source/mask entry are implemented for preview. Native Photos/Files pickers are the target UX, not a claim that runtime hooks are wired. Shared overlays, breakpoint and rail/editor conventions are retained. No parser/execution, durable script library, backend admission or provider integration is connected by this slice; no tests run. [Scope and render evidence](plans/2026-11-02-scripts-independent-review.md).
+
 
 **Scripting Tier A — PR #199 (2026-11-02, open):** The headless `dtflow script FILE --run --backend ...` path implements selected upstream hooks with shared generation, a durable ScriptRun/child-attempt link, a per-run file sandbox, conservative field mapping, bounded generation count and headless form answers. Owner-run Windows source smoke on fake backend completed two generations (attempt IDs `a266fb20c099481088710c2fea45a797` and `47170a57b53549368a8778d56aff520d`) and confirmed empty-model rejection with zero attempts. No automated tests added or run by owner request. #114/#115 remain partial; #116 canvas/masks, #117 detection/guidance, and #118 desktop UX are separate. This is not local/cloud or packaged acceptance; PR review/merge remains pending.
 

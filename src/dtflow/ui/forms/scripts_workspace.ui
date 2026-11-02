@@ -114,13 +114,27 @@
       </item>
       <item>
        <widget class="QWidget" name="scriptsLibraryPanelContents">
-        <layout class="QVBoxLayout" name="scriptsLibraryPanelContentsLayout" stretch="1,0">
+        <layout class="QVBoxLayout" name="scriptsLibraryPanelContentsLayout" stretch="0,1,0">
          <property name="spacing">
           <number>8</number>
          </property>
          <property name="sizeConstraint">
           <enum>QLayout::SetMinimumSize</enum>
          </property>
+         <item>
+          <widget class="QLabel" name="libraryEmptyHint">
+           <property name="role" stdset="0">
+            <string>scriptsMuted</string>
+           </property>
+           <property name="wordWrap">
+            <bool>true</bool>
+           </property>
+           <property name="text">
+            <string>No scripts
+Create one or import a local .js file.</string>
+           </property>
+          </widget>
+         </item>
          <item>
           <widget class="QListWidget" name="scriptsLibraryList">
            <property name="accessibleName">
@@ -456,11 +470,24 @@
          </item>
          <item>
           <widget class="QPushButton" name="scriptsInspectorToggle">
-           <property name="text"><string>Inspector</string></property>
-           <property name="accessibleName"><string>Scripts inspector</string></property>
-           <property name="toolTip"><string>Show or hide the Scripts inspector; opens a drawer in narrow layouts</string></property>
-           <property name="checkable"><bool>true</bool></property>
-           <property name="iconSize"><size><width>16</width><height>16</height></size></property>
+           <property name="text">
+            <string>Inspector</string>
+           </property>
+           <property name="accessibleName">
+            <string>Scripts inspector</string>
+           </property>
+           <property name="toolTip">
+            <string>Show or hide the Scripts inspector; opens a drawer in narrow layouts</string>
+           </property>
+           <property name="checkable">
+            <bool>true</bool>
+           </property>
+           <property name="iconSize">
+            <size>
+             <width>16</width>
+             <height>16</height>
+            </size>
+           </property>
           </widget>
          </item>
         </layout>
@@ -681,6 +708,19 @@
        </widget>
       </item>
       <item>
+       <widget class="QLabel" name="scriptsLiveRunNote">
+        <property name="role" stdset="0">
+         <string>scriptsActiveRunNote</string>
+        </property>
+        <property name="wordWrap">
+         <bool>true</bool>
+        </property>
+        <property name="text">
+         <string>Run #5 is active. Stop is in the shared activity bar.</string>
+        </property>
+       </widget>
+      </item>
+      <item>
        <widget class="QStackedWidget" name="scriptsContentStack">
         <property name="sizePolicy">
          <sizepolicy hsizetype="Expanding" vsizetype="Expanding">
@@ -853,16 +893,16 @@
                  <item>
                   <widget class="QWidget" name="inspectionHeaderRow">
                    <layout class="QHBoxLayout" name="inspectionHeaderRowLayout">
+                    <property name="bottomMargin">
+                     <number>2</number>
+                    </property>
+                    <property name="topMargin">
+                     <number>2</number>
+                    </property>
                     <property name="leftMargin">
                      <number>0</number>
                     </property>
-                    <property name="topMargin">
-                     <number>0</number>
-                    </property>
                     <property name="rightMargin">
-                     <number>0</number>
-                    </property>
-                    <property name="bottomMargin">
                      <number>0</number>
                     </property>
                     <property name="spacing">
@@ -930,16 +970,16 @@
                  <item>
                   <widget class="QWidget" name="inspectionTierRow">
                    <layout class="QHBoxLayout" name="inspectionTierRowLayout">
+                    <property name="bottomMargin">
+                     <number>2</number>
+                    </property>
+                    <property name="topMargin">
+                     <number>2</number>
+                    </property>
                     <property name="leftMargin">
                      <number>0</number>
                     </property>
-                    <property name="topMargin">
-                     <number>0</number>
-                    </property>
                     <property name="rightMargin">
-                     <number>0</number>
-                    </property>
-                    <property name="bottomMargin">
                      <number>0</number>
                     </property>
                     <property name="spacing">
@@ -1007,16 +1047,16 @@
                  <item>
                   <widget class="QWidget" name="inspectionDynamicRow">
                    <layout class="QHBoxLayout" name="inspectionDynamicRowLayout">
+                    <property name="bottomMargin">
+                     <number>2</number>
+                    </property>
+                    <property name="topMargin">
+                     <number>2</number>
+                    </property>
                     <property name="leftMargin">
                      <number>0</number>
                     </property>
-                    <property name="topMargin">
-                     <number>0</number>
-                    </property>
                     <property name="rightMargin">
-                     <number>0</number>
-                    </property>
-                    <property name="bottomMargin">
                      <number>0</number>
                     </property>
                     <property name="spacing">
@@ -1084,16 +1124,16 @@
                  <item>
                   <widget class="QWidget" name="inspectionModelsRow">
                    <layout class="QHBoxLayout" name="inspectionModelsRowLayout">
+                    <property name="bottomMargin">
+                     <number>2</number>
+                    </property>
+                    <property name="topMargin">
+                     <number>2</number>
+                    </property>
                     <property name="leftMargin">
                      <number>0</number>
                     </property>
-                    <property name="topMargin">
-                     <number>0</number>
-                    </property>
                     <property name="rightMargin">
-                     <number>0</number>
-                    </property>
-                    <property name="bottomMargin">
                      <number>0</number>
                     </property>
                     <property name="spacing">
@@ -1161,16 +1201,16 @@
                  <item>
                   <widget class="QWidget" name="inspectionLorasRow">
                    <layout class="QHBoxLayout" name="inspectionLorasRowLayout">
+                    <property name="bottomMargin">
+                     <number>2</number>
+                    </property>
+                    <property name="topMargin">
+                     <number>2</number>
+                    </property>
                     <property name="leftMargin">
                      <number>0</number>
                     </property>
-                    <property name="topMargin">
-                     <number>0</number>
-                    </property>
                     <property name="rightMargin">
-                     <number>0</number>
-                    </property>
-                    <property name="bottomMargin">
                      <number>0</number>
                     </property>
                     <property name="spacing">
@@ -1238,16 +1278,16 @@
                  <item>
                   <widget class="QWidget" name="inspectionMethodRow">
                    <layout class="QHBoxLayout" name="inspectionMethodRowLayout">
+                    <property name="bottomMargin">
+                     <number>2</number>
+                    </property>
+                    <property name="topMargin">
+                     <number>2</number>
+                    </property>
                     <property name="leftMargin">
                      <number>0</number>
                     </property>
-                    <property name="topMargin">
-                     <number>0</number>
-                    </property>
                     <property name="rightMargin">
-                     <number>0</number>
-                    </property>
-                    <property name="bottomMargin">
                      <number>0</number>
                     </property>
                     <property name="spacing">
@@ -1357,6 +1397,9 @@
                  </property>
                  <item>
                   <widget class="QPushButton" name="configureFromInspect">
+                   <property name="role" stdset="0">
+                    <string>primary</string>
+                   </property>
                    <property name="text">
                     <string>Configure…</string>
                    </property>
@@ -1660,11 +1703,11 @@
               </item>
               <item>
                <widget class="QLabel" name="sourceTitle">
+                <property name="role" stdset="0">
+                 <string>scriptsSectionTitle</string>
+                </property>
                 <property name="text">
                  <string>Source</string>
-                </property>
-                <property name="role" stdset="0">
-                 <string>scriptsFormSection</string>
                 </property>
                 <property name="wordWrap">
                  <bool>true</bool>
@@ -1917,7 +1960,7 @@
               <item>
                <widget class="QLabel" name="formNote">
                 <property name="text">
-                 <string>Dynamic requestFromUser inputs appear only during a run.</string>
+                 <string>Nothing to configure here. This script asks for its settings when it runs.</string>
                 </property>
                 <property name="role" stdset="0">
                  <string>scriptsMuted</string>
@@ -2090,7 +2133,7 @@
               </property>
               <item>
                <widget class="QFrame" name="scriptsResultCanvas">
-                <layout class="QVBoxLayout" name="resultCanvasLayout">
+                <layout class="QVBoxLayout" name="resultCanvasLayout" stretch="1,0">
                  <property name="leftMargin">
                   <number>8</number>
                  </property>
@@ -2110,19 +2153,6 @@
                   <enum>QLayout::SetMinimumSize</enum>
                  </property>
                  <item>
-                  <spacer name="previewTop">
-                   <property name="orientation">
-                    <enum>Qt::Vertical</enum>
-                   </property>
-                   <property name="sizeHint">
-                    <size>
-                     <width>0</width>
-                     <height>0</height>
-                    </size>
-                   </property>
-                  </spacer>
-                 </item>
-                 <item alignment="Qt::AlignHCenter">
                   <widget class="QLabel" name="scriptsResultTile">
                    <property name="text">
                     <string>No committed result</string>
@@ -2139,35 +2169,10 @@
                      <verstretch>0</verstretch>
                     </sizepolicy>
                    </property>
-                   <property name="minimumSize">
-                    <size>
-                     <width>220</width>
-                     <height>220</height>
-                    </size>
-                   </property>
-                   <property name="maximumSize">
-                    <size>
-                     <width>220</width>
-                     <height>220</height>
-                    </size>
-                   </property>
                    <property name="alignment">
                     <set>Qt::AlignCenter</set>
                    </property>
                   </widget>
-                 </item>
-                 <item>
-                  <spacer name="previewBottom">
-                   <property name="orientation">
-                    <enum>Qt::Vertical</enum>
-                   </property>
-                   <property name="sizeHint">
-                    <size>
-                     <width>0</width>
-                     <height>0</height>
-                    </size>
-                   </property>
-                  </spacer>
                  </item>
                  <item>
                   <widget class="QLabel" name="resultCaption">
@@ -2181,7 +2186,7 @@
                     <bool>true</bool>
                    </property>
                    <property name="sizePolicy">
-                    <sizepolicy hsizetype="Preferred" vsizetype="Minimum">
+                    <sizepolicy hsizetype="Preferred" vsizetype="Fixed">
                      <horstretch>0</horstretch>
                      <verstretch>0</verstretch>
                     </sizepolicy>
@@ -2193,11 +2198,11 @@
               </item>
               <item>
                <widget class="QLabel" name="runStatus">
+                <property name="role" stdset="0">
+                 <string>scriptsRunState</string>
+                </property>
                 <property name="text">
                  <string>No run started</string>
-                </property>
-                <property name="role" stdset="0">
-                 <string>scriptsRunStatus</string>
                 </property>
                 <property name="wordWrap">
                  <bool>true</bool>
@@ -2262,7 +2267,7 @@
                  <item>
                   <widget class="QLabel" name="waitingFormTitle">
                    <property name="text">
-                    <string>Wildcards for the next pass</string>
+                    <string>Script asks: “Keep going?”</string>
                    </property>
                    <property name="role" stdset="0">
                     <string>scriptsCardTitle</string>
@@ -2281,7 +2286,7 @@
                  <item>
                   <widget class="QLabel" name="waitingInstructions">
                    <property name="text">
-                    <string>Provide the next values to continue this script.</string>
+                    <string>Preview input for the next pass. An already submitted generation may still complete.</string>
                    </property>
                    <property name="role" stdset="0">
                     <string>scriptsMuted</string>
@@ -2298,13 +2303,24 @@
                   </widget>
                  </item>
                  <item>
-                  <widget class="QLineEdit" name="waitingInput">
-                   <property name="text">
-                    <string>amber, rose</string>
-                   </property>
-                   <property name="accessibleName">
-                    <string>Next wildcard values</string>
-                   </property>
+                  <widget class="QWidget" name="waitingFieldsHost">
+                   <layout class="QVBoxLayout" name="waitingFieldsLayout">
+                    <property name="spacing">
+                     <number>6</number>
+                    </property>
+                    <property name="bottomMargin">
+                     <number>0</number>
+                    </property>
+                    <property name="topMargin">
+                     <number>0</number>
+                    </property>
+                    <property name="rightMargin">
+                     <number>0</number>
+                    </property>
+                    <property name="leftMargin">
+                     <number>0</number>
+                    </property>
+                   </layout>
                   </widget>
                  </item>
                  <item>
@@ -2330,11 +2346,11 @@
                     </property>
                     <item>
                      <widget class="QPushButton" name="cancelInputButton">
+                      <property name="enabled">
+                       <bool>true</bool>
+                      </property>
                       <property name="text">
                        <string>Cancel input</string>
-                      </property>
-                      <property name="enabled">
-                       <bool>false</bool>
                       </property>
                       <property name="accessibleName">
                        <string>Cancel input</string>
@@ -2349,11 +2365,11 @@
                     </item>
                     <item>
                      <widget class="QPushButton" name="continueInputButton">
+                      <property name="enabled">
+                       <bool>true</bool>
+                      </property>
                       <property name="text">
                        <string>Continue</string>
-                      </property>
-                      <property name="enabled">
-                       <bool>false</bool>
                       </property>
                       <property name="accessibleName">
                        <string>Continue</string>
@@ -2369,6 +2385,19 @@
                    </layout>
                    <property name="role" stdset="0">
                     <string>sectionContents</string>
+                   </property>
+                  </widget>
+                 </item>
+                 <item>
+                  <widget class="QLabel" name="waitingHelp">
+                   <property name="role" stdset="0">
+                    <string>scriptsMuted</string>
+                   </property>
+                   <property name="wordWrap">
+                    <bool>true</bool>
+                   </property>
+                   <property name="text">
+                    <string>Cancel input answers with no value; it does not stop the script. Use Stop script in the activity bar.</string>
                    </property>
                   </widget>
                  </item>
@@ -2426,7 +2455,7 @@
           <item>
            <widget class="QLabel" name="resultsHeader">
             <property name="text">
-             <string>Run #4 · Succeeded · version 9f3a1c2</string>
+             <string>Committed steps · offline fixtures</string>
             </property>
             <property name="role" stdset="0">
              <string>scriptsPageTitle</string>
@@ -2783,7 +2812,7 @@
          <item>
           <widget class="QLabel" name="startDisclosure">
            <property name="text">
-            <string>Cloud: up to 8 generations. Later settings can differ. Backend: not checked. Source images may be uploaded. No work starts in this UI preview.</string>
+            <string>Starting settings estimate: unavailable; backend is unchecked. Scripts can override settings on every call. Cloud sources may be uploaded and generations may be charged. A busy backend queues the run for serialized admission; cancellation before admission is free. Offline preview: no work is submitted.</string>
            </property>
            <property name="role" stdset="0">
             <string>scriptsMuted</string>
@@ -2825,6 +2854,68 @@
           <horstretch>0</horstretch>
           <verstretch>0</verstretch>
          </sizepolicy>
+        </property>
+       </widget>
+      </item>
+      <item>
+       <widget class="QWidget" name="scriptsRunActions">
+        <layout class="QHBoxLayout" name="scriptsRunActionsLayout">
+         <property name="spacing">
+          <number>6</number>
+         </property>
+         <property name="bottomMargin">
+          <number>0</number>
+         </property>
+         <property name="topMargin">
+          <number>0</number>
+         </property>
+         <property name="rightMargin">
+          <number>0</number>
+         </property>
+         <property name="leftMargin">
+          <number>0</number>
+         </property>
+         <item>
+          <widget class="QPushButton" name="backToFormButton">
+           <property name="text">
+            <string>Back to form</string>
+           </property>
+          </widget>
+         </item>
+         <item>
+          <widget class="QPushButton" name="checkQueuesButton">
+           <property name="text">
+            <string>Check Queues</string>
+           </property>
+          </widget>
+         </item>
+         <item>
+          <widget class="QPushButton" name="reviewRunButton">
+           <property name="text">
+            <string>Review and start again</string>
+           </property>
+          </widget>
+         </item>
+         <item>
+          <widget class="QPushButton" name="advancePreviewButton">
+           <property name="text">
+            <string>Advance preview</string>
+           </property>
+          </widget>
+         </item>
+        </layout>
+       </widget>
+      </item>
+      <item>
+       <widget class="QLabel" name="scriptsOfflineNotice">
+        <property name="role" stdset="0">
+         <string>scriptsMuted</string>
+        </property>
+        <property name="wordWrap">
+         <bool>true</bool>
+        </property>
+        <property name="text">
+         <string>Offline interaction preview · nothing executes, submits, uploads or saves to disk.</string>
         </property>
        </widget>
       </item>

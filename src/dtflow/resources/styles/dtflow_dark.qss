@@ -2053,6 +2053,10 @@ QFrame#scriptsWorkPanel {
   background: transparent;
   border: 0;
 }
+QScrollArea#configureScroll {
+  border: 1px solid ${color.sectionBorder};
+  border-radius: ${size.inputRadius};
+}
 QLabel#scriptsNameLabel, QLabel#scriptsLibraryTitle, QLabel#scriptsInspectorTitle {
   color: ${color.title};
   font-weight: ${type.weightEmphasis};
@@ -2077,13 +2081,32 @@ QLabel#scriptsPageTitle, QLabel[role="scriptsPageTitle"] {
   font-size: ${type.section};
   font-weight: ${type.weightEmphasis};
 }
-QLabel#scriptsCardTitle, QLabel[role="scriptsCardTitle"], QLabel#scriptsFormSection, QLabel[role="scriptsFormSection"] {
+QLabel#scriptsCardTitle, QLabel[role="scriptsCardTitle"], QLabel#scriptsFormSection, QLabel[role="scriptsFormSection"], QLabel[role="scriptsSectionTitle"] {
   color: ${color.title};
   font-size: ${type.section};
   font-weight: ${type.weightEmphasis};
   padding: 4px 0;
   border-bottom: 1px solid ${color.sectionBorder};
 }
+QLabel#scriptsStepTitle, QLabel[role="scriptsStepTitle"], QLabel#runStatus {
+  font-weight: ${type.weightEmphasis};
+}
+QLabel#scriptsLibraryVerdict[feedbackState="ok"], QLabel#scriptsHistoryStatus[feedbackState="ok"], QLabel#hookStatus[feedbackState="ok"] { color: ${color.success}; }
+QLabel#scriptsLibraryVerdict[feedbackState="error"], QLabel#scriptsHistoryStatus[feedbackState="error"], QLabel#hookStatus[feedbackState="error"], QLabel#runStatus[feedbackState="error"] { color: ${color.error}; }
+QLabel#scriptsLibraryActive[feedbackState="warning"], QLabel#scriptsHistoryStatus[feedbackState="warning"], QLabel#hookStatus[feedbackState="warning"], QLabel#runStatus[feedbackState="warning"] { color: ${color.warning}; }
+QLabel#scriptsLiveRunNote, QLabel#scriptsEditorRunNote {
+  color: ${color.warning};
+  background: ${color.warningSurface};
+  border: 1px solid ${color.warning};
+  border-radius: ${size.inputRadius};
+  padding: 7px;
+}
+QFrame#editorFooter {
+  background: ${color.surface};
+  border: 1px solid ${color.sectionBorder};
+  border-radius: ${size.inputRadius};
+}
+QFrame#scriptsHistoryEntry { border-bottom: 1px solid ${color.sectionBorder}; }
 QLabel#scriptsMuted, QLabel[role="scriptsMuted"], QLabel#scriptsFormSupporting, QLabel[role="scriptsFormSupporting"],
 QLabel#scriptsFieldLabel, QLabel[role="scriptsFieldLabel"], QLabel#scriptsEditorDiagnostic, QLabel[role="scriptsEditorDiagnostic"] {
   color: ${color.secondary};
@@ -2260,13 +2283,17 @@ QFrame#scriptsEditorToolbar {
   border: 0;
 }
 QFrame#scriptsEditorToolbar QPushButton {
-  min-height: 0;
+  min-height: 30px;
   min-width: 0;
   padding: 0 8px;
 }
-QFrame#scriptsEditorToolbar QPushButton[toolbarKind="icon"] {
-  min-height: 0;
-  min-width: 0;
+QFrame#scriptsEditorToolbar QPushButton[toolbarKind="icon"],
+QFrame#scriptsEditorToolbar QPushButton#undoButton,
+QFrame#scriptsEditorToolbar QPushButton#redoButton,
+QFrame#scriptsEditorToolbar QPushButton#smallerFontButton,
+QFrame#scriptsEditorToolbar QPushButton#largerFontButton {
+  min-height: 30px;
+  min-width: 30px;
   max-height: 32px;
   max-width: 32px;
   padding: 0;

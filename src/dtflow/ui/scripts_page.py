@@ -10,7 +10,8 @@ from __future__ import annotations
 import hashlib
 from pathlib import Path
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QSize
+from PySide6.QtGui import QFont, QImage, QPixmap
 from PySide6.QtWidgets import (
     QButtonGroup,
     QFileDialog,
@@ -41,8 +42,21 @@ REFERENCE_HOOKS = (
     ("canvas.saveImage", "supported", "Stored in the run sandbox"),
     ("requestFromUser", "supported", "Rendered as an inline form"),
     ("canvas.moveCanvas", "deferred", "Virtual until a generation"),
-    ("canvas.loadLayerFromPhotos", "unsupported", "No native picker mapping yet"),
+    ("canvas.loadLayerFromPhotos", "supported", "Target: native picker · runtime hook not wired in this UI preview"),
+    ("canvas.loadLayerFromFiles", "supported", "Target: native picker · runtime hook not wired in this UI preview"),
 )
+
+WAITING_FIELDS = (
+    {"type": "spinBox", "label": "More generations", "min": 1, "max": 8, "value": 2},
+    {
+        "type": "comboBox",
+        "label": "Next pass",
+        "options": ["Continue sweep", "Finish after this pass"],
+        "value": "Continue sweep",
+    },
+)
+
+LIVE_STATES = ("queued", "running", "waiting_input")
 
 # Illustrative source code is copied from the owner-approved Scripts UI kit,
 # not inferred from a live user script. It never runs in the offline renderer.
@@ -81,15 +95,15 @@ EDITOR_BASE = "\n".join(
 RUN_STATUSES = {
     "queued": ("Queued behind 3 items", "Nothing submitted. Waiting 0:42 · Cancel is free."),
     "cancelled_before_start": ("Cancelled before start", "No provider submission and no charge."),
-    "running": ("Running · Run #5", "Generation 3 submitted · latest committed result below."),
+    "running": ("Running", "Generation 3 submitted · latest committed result below."),
     "waiting_input": (
         "Waiting for your input",
         "The script is paused. A generation already submitted may still complete.",
     ),
     "stopped": ("Stopped locally", "Remote work may continue; inspect linked attempts."),
-    "failed": ("Failed · Run #5", "See the durable error details in History."),
-    "interrupted": ("Interrupted · Run #5", "Do not replay unresolved attempts."),
-    "outcome_unknown": ("Outcome unknown · Run #5", "A submitted attempt may still complete or be billed."),
+    "failed": ("Failed", "See the retained error details in History."),
+    "interrupted": ("Interrupted", "Do not replay unresolved attempts."),
+    "outcome_unknown": ("Outcome unknown", "A submitted attempt may still complete or be billed."),
 }
 
 
@@ -165,6 +179,41 @@ def _hook_item(hook: str, state: str, detail: str) -> QFrame:
     return row
 
 
+def _feedback(widget, state):
+    if widget.property("feedbackState") == state:
+        return
+    widget.setProperty("feedbackState", state)
+    widget.style().unpolish(widget)
+    widget.style().polish(widget)
+
+
+class _ResultImage(QLabel):
+    """Keep an offline image aspect-correct inside the resizable canvas."""
+
+    def __init__(self, parent):
+        super().__init__(parent)
+        self.image = QPixmap()
+        self.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.setMinimumHeight(160)
+        self.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Expanding)
+
+    def set_image(self, image):
+        self.image = image
+        self._fit()
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        self._fit()
+
+    def _fit(self):
+        if not self.image.isNull():
+            self.setPixmap(
+                self.image.scaled(
+                    self.size(), Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation
+                )
+            )
+
+
 class ScriptsPage:
     """UI controller for library, central content, inspector and narrow drawer."""
 
@@ -180,6 +229,15 @@ class ScriptsPage:
         self._drawer_requested = False
         self._wide_details_requested = True
         self._current_script: tuple[str, str, str, str] | None = None
+        self._run_state = ""
+        self._run_number = 5
+        self._run_cap = 8
+        self._input_answered = False
+        self._prior_unresolved = False
+        self._inpaint_snapshot = None
+        self._run_snapshot = None
+        self._preview_versions = {}
+        self._library_scripts = []
         self._build_library()
         self._build_center()
         self._build_inspector()
@@ -247,16 +305,45 @@ class ScriptsPage:
             button.clicked.connect(lambda checked=False, target=index: self.show_view(target))
         self._build_inspect()
         self._build_form()
-        self.editor = ScriptEditor(consent=self._confirm_discard)
+        self.editor = ScriptEditor(consent=self._confirm_discard, saved=self._saved_preview_version)
+        self.editor.enable_preview(
+            {
+                EDITOR_STARTER: None,
+                EDITOR_BASE: None,
+                EDITOR_BASE + "\n// Draft change": None,
+                EDITOR_BASE + "\nconst value = ;": (15, 15, "Unexpected token ';' · fixture diagnostic"),
+            }
+        )
         ui.scriptEditorHost.layout().addWidget(self.editor)
         self._build_run()
         self._build_results()
         self._build_empty()
         self.start_panel, self.cap, self.start = ui.scriptsStartPanel, ui.generationCap, ui.scriptsStartButton
         self.disclosure, self.acknowledge = ui.startDisclosure, ui.preflightAcknowledgement
+        self._base_disclosure = self.disclosure.text()
         self.run_footer = ui.runFooter
         self.acknowledge.hide()
         self.run_footer.hide()
+        self.start.clicked.connect(self._start_preview)
+        self.acknowledge.toggled.connect(self._refresh_readiness)
+        self.designer.backToFormButton.clicked.connect(self._review_run)
+        self.designer.reviewRunButton.clicked.connect(self._review_run)
+        self.designer.checkQueuesButton.clicked.connect(
+            lambda: self.owner.inline.notice(
+                "Offline linked attempts",
+                "No real queue or durable attempt exists for this preview. The unresolved example remains in Scripts History.",
+                "info",
+            )
+        )
+        self.designer.advancePreviewButton.clicked.connect(self._advance_preview)
+        self.designer.viewUnresolvedRun.setEnabled(True)
+        self.designer.viewUnresolvedRun.clicked.connect(
+            lambda: self.owner.inline.notice(
+                "Run #5 · Outcome unknown",
+                "Offline history inspection: generation 3 was submitted in the example and no result was recorded. It may still complete or be billed. A separate new preview run is not a retry; inspecting this notice does not change its state.",
+                "info",
+            )
+        )
         self.show_view(0)
 
     def _build_empty(self):
@@ -297,6 +384,8 @@ class ScriptsPage:
         from dtflow.ui.theme import load_tokens
 
         tokens = load_tokens()
+        self._fixture_thumbnails = []
+        self._fixture_handoff_text = ui.handoffDescription.text()
         for label, mask in ((ui.sourceThumbnail, False), (ui.maskThumbnail, True)):
             tile = QPixmap(56, 56)
             tile.fill(QColor(tokens["color.canvas"]))
@@ -306,15 +395,27 @@ class ScriptsPage:
             )
             painter.end()
             label.setPixmap(tile)
+            self._fixture_thumbnails.append(tile)
 
     def _build_run(self):
         ui = self.designer
         self.run_status, self.run_detail = ui.runStatus, ui.runDetail
         self.result_image, self.result_caption = ui.scriptsResultTile, ui.resultCaption
         self.waiting_form, self.console = ui.waitingForm, ui.scriptsRunConsole
+        self.waiting_fields = ScriptForm()
+        ui.waitingFieldsHost.layout().addWidget(self.waiting_fields)
+        self.waiting_fields.set_fields(WAITING_FIELDS)
+        ui.continueInputButton.clicked.connect(lambda: self._continue_preview(cancel=False))
+        ui.cancelInputButton.clicked.connect(lambda: self._continue_preview(cancel=True))
+        self.result_picture = _ResultImage(ui.scriptsResultTile.parentWidget())
+        ui.scriptsResultTile.parentWidget().layout().replaceWidget(ui.scriptsResultTile, self.result_picture)
+        ui.scriptsResultTile.parentWidget().layout().setAlignment(self.result_picture, Qt.AlignmentFlag(0))
+        ui.scriptsResultTile.parentWidget().layout().setStretch(0, 1)
+        ui.scriptsResultTile.hide()
         self.waiting_form.hide()
         self.console.document().setMaximumBlockCount(500)
         self.console.setPlainText("[offline fixture] No script was executed.")
+        self.designer.waitingFormTitle.setText("Script asks: “Keep going?”")
 
     def _build_results(self):
         self.results_header = self.designer.resultsHeader
@@ -332,26 +433,26 @@ class ScriptsPage:
                 widget.hide()
                 widget.setParent(None)
                 widget.deleteLater()
-        for number, color in enumerate(("red", "green", "blue", "amber"), 1):
+        for number, color in enumerate(("red", "green", "blue", "amber")[: self._run_cap], 1):
             card = QFrame()
             card.setObjectName("scriptsStepCard")
             row = QHBoxLayout(card)
             thumbnail = _label(color, role="scriptsStepThumbnail")
-            thumbnail.setFixedSize(64, 64)
+            thumbnail.setFixedSize(48, 48)
             thumbnail.setAlignment(Qt.AlignmentFlag.AlignCenter)
             row.addWidget(thumbnail)
             details = QVBoxLayout()
-            details.addWidget(_label(f"Step {number} · {color} · committed", role="scriptsCardTitle"))
+            details.addWidget(_label(f"Step {number} · {color} · committed", role="scriptsStepTitle"))
             details.addWidget(
                 _label(
-                    f"Created by Wildcard prompt sweep.js · run #4 · step {number}",
+                    f"Created by {self._current_script[0]} · run #{self._run_number} · step {number}",
                     role="scriptsMuted",
                     wrap=True,
                 )
             )
             row.addLayout(details, 1)
             open_button = QPushButton("Open in Images")
-            open_button.setAccessibleName(f"Open run 4 step {number} in Images")
+            open_button.setAccessibleName(f"Open run {self._run_number} step {number} in Images")
             open_button.setToolTip("Offline fixture: no durable attempt is linked.")
             open_button.setEnabled(False)
             row.addWidget(open_button)
@@ -393,6 +494,13 @@ class ScriptsPage:
         """Update Scripts layout without recycling unchanged Qt geometry."""
         narrow = self.owner.form.width() < 1100
         self.form.set_narrow(narrow)
+        self.waiting_fields.set_narrow(narrow)
+        if hasattr(self, "inspector_source_values"):
+            for values in (self.inspector_source_values, self.drawer_source_values):
+                for label in values.values():
+                    full = label.toolTip()
+                    if full and label.width() > 0:
+                        label.setText(label.fontMetrics().elidedText(full, Qt.TextElideMode.ElideMiddle, label.width()))
         active = self.owner._scripts_active and (
             self.owner.form.workspaceStack.currentWidget() is self.owner.generation_page
         )
@@ -436,11 +544,13 @@ class ScriptsPage:
             rail.setVisible(self._wide_details_requested)
 
     def _selected(self, row: int):
-        if not self._reference_mode or row < 0 or row >= len(REFERENCE_SCRIPTS):
+        if not self._reference_mode or row < 0 or row >= len(self._library_scripts):
             return
         if self.editor.is_dirty():
             previous = (
-                REFERENCE_SCRIPTS.index(self._current_script) if self._current_script in REFERENCE_SCRIPTS else -1
+                self._library_scripts.index(self._current_script)
+                if self._current_script in self._library_scripts
+                else -1
             )
             self.library.blockSignals(True)
             self.library.setCurrentRow(previous)
@@ -449,10 +559,13 @@ class ScriptsPage:
                 "Unsaved script draft", "Discard the draft explicitly before selecting another script.", "warning"
             )
             return
-        self._set_script(REFERENCE_SCRIPTS[row])
+        self._set_script(self._library_scripts[row])
+        self.editor.set_draft(
+            self._preview_versions.get(self._current_script[1], EDITOR_BASE), based_on=self._current_script[1]
+        )
         if self._current_script[0].startswith("Hires"):
             self.form.set_fields([])
-            self.form_note.setText("This script asks for its settings when it runs.")
+            self.form_note.setText("Nothing to configure here. This script asks for its settings when it runs.")
             self.form_note.show()
         else:
             self._load_reference_form()
@@ -461,6 +574,7 @@ class ScriptsPage:
         self.inspect_banner.show()
         self.inspect_card.show()
         self.show_view(0)
+        self._refresh_readiness()
 
     def _set_inspect_banner(self, title: str, description: str, state: str) -> None:
         """Keep the inspection title and surface in the same semantic state.
@@ -486,6 +600,11 @@ class ScriptsPage:
         self._current_hooks = (
             tuple(REFERENCE_HOOKS[index] for index in (0, 3, 2)) if filename.startswith("Hires") else REFERENCE_HOOKS
         )
+        if support == "unsupported":
+            self._current_hooks = (
+                *REFERENCE_HOOKS,
+                ("console.repl", "unsupported", "Interactive REPL is not available"),
+            )
         for form in (self.inspector, self.drawer_inspector):
             for name in ("settingsCard", "sourceCard", "historyCard"):
                 getattr(form, name).show()
@@ -502,6 +621,7 @@ class ScriptsPage:
         self.script_title.setText(filename)
         self.script_title.setToolTip(filename)
         self.sha.setText(f"version {sha}")
+        self.sha.setFont(QFont("Consolas", 9))
         self.sha.setToolTip(f"SHA prefix: {sha}; exact identity requires a saved source.")
         metadata = {
             "File": filename,
@@ -509,6 +629,16 @@ class ScriptsPage:
             "Size": "3.8 KB" if filename.startswith("Hires") else "6.2 KB",
             "Imported": "19 Oct 2026 09:12" if filename.startswith("Hires") else "21 Oct 2026 21:54",
         }
+        if sha in self._preview_versions:
+            source = self._preview_versions[sha]
+            digest = hashlib.sha256(source.encode("utf-8")).hexdigest()
+            metadata.update(
+                {
+                    "Version SHA-256": digest,
+                    "Size": f"{len(source.encode('utf-8'))} bytes",
+                    "Imported": "This preview · memory only",
+                }
+            )
         for values in (self.inspector_source_values, self.drawer_source_values):
             for key, label in values.items():
                 label.setText(metadata[key])
@@ -533,26 +663,28 @@ class ScriptsPage:
             else "Not runnable · unsupported hooks"
         )
         self.hook_status.setText(verdict)
+        for label in (self.hook_status, self.drawer_summary):
+            _feedback(label, "warning" if partial else "ok" if support == "supported" else "error")
         self.inspect_summary.setText(
             "Static inspection is incomplete: two paths are known only at run time. No script was executed."
             if partial
             else "Static inspection identified supported calls. Dynamic forms can appear at run time."
             if support == "supported"
-            else "Cannot start: unsupported native picker hooks."
+            else "Cannot start: console.repl is unsupported. Native pickers are supported in the target design."
         )
         self.source_note.setText(
             "Required by this script: choose a source to Start; changing it needs a new run."
             if partial
             else "Optional. An immutable copy is taken at Start; changing it needs a new run."
         )
-        self.source_note.setProperty("feedbackState", "error" if partial else "")
+        self.source_note.setProperty("feedbackState", "error" if partial and self.source.currentIndex() == 0 else "")
         self.source_note.style().unpolish(self.source_note)
         self.source_note.style().polish(self.source_note)
         self._set_inspect_banner(
             verdict,
-            "Syntax valid, 3 hooks supported, 1 deferred. This is not a promise of success."
+            f"Syntax valid, {sum(h[1] == 'supported' for h in self._current_hooks)} hooks supported, 1 deferred. Target-design fixture, not runtime verification."
             if support == "supported"
-            else "Required photo/file picker hooks are unsupported.",
+            else "console.repl is unsupported; native Photos/Files pickers are supported in the target design.",
             "warning" if partial else "ok" if support == "supported" else "error",
         )
         self.drawer_summary.setText(self.hook_status.text())
@@ -572,7 +704,10 @@ class ScriptsPage:
     def clear(self):
         self._reference_mode = False
         self._current_script = None
+        self._run_state = ""
+        self._library_scripts = []
         self.library.clear()
+        self.designer.libraryEmptyHint.show()
         self.script_title.setText("No script selected")
         self.sha.clear()
         self.status.setText("Import a JavaScript file or create a draft")
@@ -582,7 +717,10 @@ class ScriptsPage:
         self.reset_fields.setEnabled(False)
         self.inspect_banner.hide()
         self.inspect_card.hide()
-        self.hook_status.setText("No script inspected")
+        self.hook_status.setText("Select or import a script to see compatibility, source and history.")
+        self.drawer_summary.setText(self.hook_status.text())
+        _feedback(self.hook_status, "")
+        _feedback(self.drawer_summary, "")
         for panel in self.inspector_panels[1:]:
             panel.hide()
         for name in ("settingsCard", "sourceCard", "historyCard"):
@@ -608,6 +746,8 @@ class ScriptsPage:
         self.status.style().unpolish(self.status)
         self.status.style().polish(self.status)
         self.hook_status.setText("Select or import a script to see compatibility, source and history.")
+        _feedback(self.hook_status, "")
+        _feedback(self.drawer_summary, "")
         self.drawer_summary.setText("New draft · not inspected")
         for index in range(self.hook_list.count()):
             item = self.hook_list.itemAt(index)
@@ -619,7 +759,7 @@ class ScriptsPage:
             getattr(self.drawer_inspector, name).hide()
         for child in self.drawer_inspector.hooksHost.findChildren(QFrame, "scriptsHookItem"):
             child.hide()
-        self.editor.set_draft(EDITOR_STARTER, status="New draft · unsaved")
+        self.editor.set_draft(EDITOR_STARTER, status="New draft · unsaved", saved=False)
         self.show_view(2)
         self.sha.hide()
         self.status.hide()
@@ -655,7 +795,7 @@ class ScriptsPage:
         self.sha.setText(f"SHA-256 {sha[:7]}")
         self.sha.setToolTip(sha)
         self.status.setText("Source loaded for editing · compatibility not inspected")
-        self.editor.set_draft(contents, status="Imported in memory · unsaved")
+        self.editor.set_draft(contents, status="Imported in memory · unsaved", saved=False)
         self.show_view(2)
 
     def _load_reference_form(self):
@@ -686,12 +826,29 @@ class ScriptsPage:
             button.setChecked(index == position)
             button.setVisible(not empty and configuring)
         self.start.setVisible(configuring)
-        self.cap.setEnabled(configuring)
+        self.cap.setEnabled(configuring and self._run_state not in LIVE_STATES)
+        live = self._run_state in LIVE_STATES
+        self.designer.scriptsLiveRunNote.setVisible(live and index in (0, 1))
+        self.designer.scriptsLiveRunNote.setText(
+            f"Run #{self._run_number} is {self._run_state.replace('_', ' ')} on version {getattr(self, '_run_version', '9f3a1c2')}. Stop is in the activity bar."
+        )
+        self.editor.run_notice.setVisible(live and index == 2)
+        self.editor.run_notice.setText(self.designer.scriptsLiveRunNote.text())
+        self.designer.scriptsRunActions.setVisible(running_or_results)
+        self._refresh_run_actions()
+        self._refresh_readiness()
 
     def preview(self, state: str):
         """Populate an explicitly offline screenshot state; never executes a script."""
         self.active_state = state
         self._reference_mode = True
+        self._run_state = ""
+        self._prior_unresolved = state == "scripts_form_after_unknown"
+        self._run_version = "9f3a1c2"
+        self._run_number = 4 if state == "scripts_results" else 5
+        self._run_cap = 8
+        self._input_answered = False
+        self.designer.libraryEmptyHint.setVisible(state == "scripts_empty")
         # One native window is reused across all screenshots. Restore every
         # mutable fixture choice so screenshots are independent of render order.
         self.source.setCurrentIndex(0)
@@ -713,10 +870,10 @@ class ScriptsPage:
         self.status.style().polish(self.status)
         self.library.blockSignals(True)
         self.library.clear()
+        self._library_scripts = list(REFERENCE_SCRIPTS) if state != "scripts_empty" else []
         if state != "scripts_empty":
-            for filename, sha, tier, support in REFERENCE_SCRIPTS:
-                item = QListWidgetItem(f"{filename}\n{sha} · {tier} · {support}")
-                self.library.addItem(item)
+            for script in self._library_scripts:
+                self._add_library_item(script)
         row = (
             2
             if state == "scripts_imported_unsupported"
@@ -732,13 +889,19 @@ class ScriptsPage:
             self.library_note.setText("Local files only · 0 of 50 versions stored.")
             return
         self._set_script(REFERENCE_SCRIPTS[row])
+        self.editor.set_draft(EDITOR_BASE, based_on=self._current_script[1])
         for panel in self.inspector_panels:
             panel.show()
         self.inspect_banner.show()
         self.inspect_card.show()
         self._load_reference_form()
+        if self._current_script[0].startswith("Hires"):
+            self.form.set_fields([])
+            self.form_note.setText("Nothing to configure here. This script asks for its settings when it runs.")
+            self.form_note.show()
         self.handoff.hide()
         self.acknowledge.hide()
+        self.acknowledge.setChecked(False)
         self.waiting_form.hide()
         self.run_status.setText("No run started")
         self.run_detail.clear()
@@ -753,7 +916,7 @@ class ScriptsPage:
                 self.handoff.show()
             if state == "scripts_narrow_details":
                 self.form.set_fields([])
-                self.form_note.setText("This script asks for its settings when it runs.")
+                self.form_note.setText("Nothing to configure here. This script asks for its settings when it runs.")
                 self.form_note.show()
                 self.source_note.setText(
                     "Required by this script: choose a source to Start; changing it needs a new run."
@@ -771,6 +934,7 @@ class ScriptsPage:
                 # describes the unsettled previous run, without claiming a retry.
                 self.unresolved_notice.show()
                 self.start.setText("Start new run")
+                self._sync_drawer_data()
             if state == "scripts_form_long_values":
                 fields = [dict(item) for item in REFERENCE_FORM]
                 for item in fields:
@@ -787,52 +951,28 @@ class ScriptsPage:
             self.editor.run_notice.hide()
             if state == "scripts_editor_new":
                 self._new_draft()
-                self.editor.set_draft(EDITOR_STARTER, status="New draft · unsaved")
+                self.editor.set_draft(EDITOR_STARTER, status="New draft · unsaved", saved=False)
             else:
-                self.editor.set_draft(EDITOR_BASE, status="Version 9f3a1c2")
+                self.editor.set_draft(EDITOR_BASE, status="Version 9f3a1c2", based_on="9f3a1c2")
                 # A draft belongs to a new version; the saved source stays intact.
                 self.editor.editor.setPlainText(EDITOR_BASE + "\n// Draft change")
                 if state == "scripts_editor_dirty":
                     self.editor.find_row.show()
                     self.editor.search.setText("pipeline")
+                    self.editor.check_preview()
                 if state == "scripts_editor_syntax_error":
                     invalid = EDITOR_BASE + "\nconst value = ;"
                     self.editor.editor.setPlainText(invalid)
                     self.editor.set_error(15, 15, "Unexpected token ';'")
                 elif state == "scripts_editor_run_active":
-                    self.editor.run_notice.setText("Run #5 is active on version 9f3a1c2. Changes create a new version.")
-                    self.editor.run_notice.show()
+                    self._run_state = "running"
+                    self.show_view(2)
+                    self._sync_drawer_data()
         elif state == "scripts_results":
-            self.show_view(4)
-            self.run_identity.setText("Run #4 · version 9f3a1c2 · completed 22 Oct 20:41")
-            self._populate_results()
+            self._show_run_state("results")
         elif state.removeprefix("scripts_") in RUN_STATUSES:
-            self.show_view(3)
-            self.run_identity.setText("Run #5 · version 9f3a1c2 · started 22 Oct 21:12")
             key = state.removeprefix("scripts_")
-            if key in ("queued", "cancelled_before_start"):
-                self.run_identity.setText("Run #5 · version 9f3a1c2 · queued 22 Oct 21:12")
-                self.run_footer.setText(
-                    "Cancel before admission is free. The cancelled run stays in History; nothing was submitted."
-                )
-            status, detail = RUN_STATUSES[key]
-            self.run_status.setText(status)
-            self.run_detail.setText(detail)
-            if key in ("running", "waiting_input", "stopped", "failed", "interrupted", "outcome_unknown"):
-                self.result_image.setText("generation 2 · green")
-                self.result_caption.setText("Latest committed · generation 2 · 512 × 512 · seed 4182")
-            if key == "waiting_input":
-                self.waiting_form.show()
-            self.console.setPlainText(
-                "[0:00.0] Script started · version 9f3a1c2\n"
-                "[0:02.1] Step 1 · red · committed\n"
-                "[0:11.8] Step 2 · green · committed\n"
-                "[offline fixture] No provider was called"
-            )
-            if key == "queued":
-                self.console.setPlainText("[0:00.0] Waiting for admission behind 3 items. Nothing submitted.")
-            elif key == "cancelled_before_start":
-                self.console.setPlainText("[0:42.0] Cancelled before admission. Nothing submitted or charged.")
+            self._show_run_state(key)
         else:
             self.show_view(0)
             if state == "scripts_inspect_partial":
@@ -848,14 +988,17 @@ class ScriptsPage:
                 self.hook_status.setText("Preflight incomplete")
                 self.acknowledge.show()
             elif state == "scripts_imported_unsupported":
-                self.inspect_summary.setText("Cannot start: unsupported native picker hooks.")
+                self.inspect_summary.setText(
+                    "Cannot start: console.repl is unsupported. Native pickers are supported in the target design."
+                )
             else:
                 self.inspect_summary.setText(
                     "Static inspection identified supported calls. Dynamic forms can appear at run time."
                 )
         self.cap.setValue(8)
-        self.start.setEnabled(False)
-        self.drawer_summary.setText(self.hook_status.text() + "\nNo provider was called.")
+        self.drawer_summary.setText(self.hook_status.text())
+        self._refresh_readiness()
+        self._present_activity()
 
     @staticmethod
     def _source_values(form):
@@ -878,18 +1021,324 @@ class ScriptsPage:
                 widget.deleteLater()
         for hook, state, detail in self._current_hooks:
             layout.addWidget(_hook_item(hook, state, detail))
-        entries = (
-            "#6 · Cancelled before start · 0:42 waited\n22 Oct 21:30 · 0 generations",
-            "#4 · Succeeded · 4 generations\n22 Oct 20:41 · version 9f3a1c2",
-            "#3 · Stopped locally · 2 generations\n22 Oct 19:05 · version 9f3a1c2",
-            "#2 · Failed\n21 Oct 22:13 · version b81e07d",
-            "#1 · Outcome unknown\n21 Oct 21:58 · version b81e07d",
-        )
+        entries = [
+            ("#4 · Succeeded", "0:41", "4 generations · version 9f3a1c2", "ok"),
+            ("#3 · Stopped locally", "0:19", "2 generations · version 9f3a1c2", "warning"),
+            ("#2 · Failed", "0:13", "21 Oct 22:13 · version b81e07d", "error"),
+            ("#1 · Outcome unknown", "", "21 Oct 21:58 · version b81e07d", "warning"),
+        ]
+        if self._run_state and self._run_state != "results":
+            entries.insert(
+                0,
+                (
+                    f"#{self._run_number} · {RUN_STATUSES[self._run_state][0]}",
+                    "0:42" if self._run_state == "queued" else "",
+                    f"Preview run · version {self._run_version}",
+                    self._run_color(),
+                ),
+            )
+        if self._prior_unresolved and (
+            self._run_number != 5 or self._run_state not in ("interrupted", "outcome_unknown")
+        ):
+            entries.insert(0, ("#5 · Outcome unknown", "", "Generation 3 unresolved · may be billed", "warning"))
+        if self._run_state == "results" and self._run_number != 4:
+            entries.insert(
+                0,
+                (
+                    f"#{self._run_number} · Succeeded",
+                    "0:41",
+                    f"{min(4, self._run_cap)} generations · version {self._run_version}",
+                    "ok",
+                ),
+            )
         for history in (self.history, self.drawer_inspector.scriptsHistoryList):
-            history.clear()
-            history.addItems(entries)
-            for index in range(history.count()):
-                history.item(index).setToolTip(history.item(index).text())
+            rows = history.layout()
+            while rows.count():
+                widget = rows.takeAt(0).widget()
+                if widget is not None:
+                    widget.hide()
+                    widget.deleteLater()
+            for title, duration, detail, state in entries:
+                card = QFrame()
+                card.setObjectName("scriptsHistoryEntry")
+                body = QVBoxLayout(card)
+                body.setContentsMargins(0, 5, 0, 5)
+                body.setSpacing(3)
+                line = QHBoxLayout()
+                status = _label(title, role="scriptsHistoryStatus", wrap=True)
+                _feedback(status, state)
+                line.addWidget(status, 1)
+                line.addWidget(_label(duration, role="scriptsMuted"))
+                body.addLayout(line)
+                body.addWidget(_label(detail, role="scriptsMuted", wrap=True))
+                rows.addWidget(card)
+        self._refresh_library_cues()
+
+    def _add_library_item(self, script):
+        filename, sha, tier, support = script
+        item = QListWidgetItem()
+        item.setSizeHint(QSize(0, 66))
+        self.library.addItem(item)
+        row = QWidget()
+        row.setProperty("role", "sectionContents")
+        col = QVBoxLayout(row)
+        col.setContentsMargins(10, 5, 10, 5)
+        col.setSpacing(2)
+        name = _label(filename, wrap=True)
+        col.addWidget(name)
+        identity = QHBoxLayout()
+        identity.setContentsMargins(0, 0, 0, 0)
+        identity.setSpacing(8)
+        digest = _label(sha, role="scriptsVersion")
+        digest.setFont(QFont("Consolas", 9))
+        identity.addWidget(digest)
+        verdict = _label(f"{tier} · {support}", role="scriptsLibraryVerdict")
+        _feedback(verdict, "ok" if support == "supported" else "error")
+        identity.addWidget(verdict)
+        identity.addStretch(1)
+        col.addLayout(identity)
+        active = _label("Run active", role="scriptsLibraryActive")
+        _feedback(active, "warning")
+        active.hide()
+        col.addWidget(active)
+        self.library.setItemWidget(item, row)
+        item.setToolTip(f"{filename}\nVersion {sha} · {tier} · {support} · offline example")
+
+    def _refresh_library_cues(self):
+        for index, script in enumerate(self._library_scripts):
+            item = self.library.item(index)
+            if item is None:
+                continue
+            row = self.library.itemWidget(item)
+            if row is None:
+                continue
+            active = row.findChild(QLabel, "scriptsLibraryActive")
+            live = self._run_state in LIVE_STATES and script[1] == getattr(self, "_run_version", "")
+            active.setVisible(live)
+            item.setSizeHint(QSize(0, 84 if live else 66))
+
+    def _refresh_readiness(self, *_args):
+        if not hasattr(self, "start"):
+            return
+        script = self._current_script
+        partial = script is not None and script[0].startswith("Hires")
+        missing_source = partial and self.source.currentIndex() == 0
+        _feedback(self.source_note, "error" if missing_source else "")
+        supported = script is not None and script[3] == "supported"
+        self.disclosure.setText(
+            "Cannot start: console.repl is unsupported. No script is executed in this preview."
+            if script is not None and not supported
+            else self._base_disclosure
+        )
+        ready = self._reference_mode and supported and not missing_source and self._run_state not in LIVE_STATES
+        if partial:
+            self.acknowledge.show()
+            ready = ready and self.acknowledge.isChecked()
+        self.start.setEnabled(bool(ready))
+        self.start.setText("Start new run" if self._prior_unresolved else "Start script")
+        self.start.setToolTip(
+            "Offline preview only: no script executes or submits work."
+            if ready
+            else "Select a supported example, provide any required source and acknowledge incomplete inspection. No real execution is connected."
+        )
+        self.unresolved_notice.setVisible(self._prior_unresolved and self.views.currentIndex() == 1)
+
+    def _run_color(self):
+        return (
+            "error"
+            if self._run_state == "failed"
+            else "warning"
+            if self._run_state
+            in ("queued", "waiting_input", "stopped", "interrupted", "outcome_unknown", "cancelled_before_start")
+            else ""
+        )
+
+    def _refresh_run_actions(self):
+        ui = self.designer
+        live = self._run_state in LIVE_STATES
+        unresolved = self._run_state in ("interrupted", "outcome_unknown") or self._prior_unresolved
+        ui.backToFormButton.setVisible(not live)
+        ui.checkQueuesButton.setVisible(unresolved)
+        ui.reviewRunButton.setVisible(not live)
+        ui.reviewRunButton.setText("Review and start again" if unresolved else "Run again…")
+        ui.advancePreviewButton.setVisible(self._reference_mode and self._run_state in ("queued", "running"))
+        ui.advancePreviewButton.setText(
+            "Preview admission"
+            if self._run_state == "queued"
+            else "Preview completion"
+            if self._input_answered
+            else "Preview input request"
+        )
+
+    def _show_run_state(self, key):
+        """Present a fixture transition only; never invoke runtime or generation services."""
+        self._run_state = key
+        if key in ("interrupted", "outcome_unknown"):
+            self._prior_unresolved = True
+        if key == "results":
+            self.show_view(4)
+            self.run_identity.setText(
+                f"Run #{self._run_number} · version {self._run_version} · completed 22 Oct 20:41 · offline fixture"
+            )
+            self.results_header.setText("Committed steps · offline fixtures")
+            self._populate_results()
+        else:
+            self.show_view(3)
+            queued = key in ("queued", "cancelled_before_start")
+            self.run_identity.setText(
+                f"Run #{self._run_number} · version {self._run_version} · {'queued' if queued else 'started'} 22 Oct 21:12 · offline fixture"
+            )
+            status, detail = RUN_STATUSES[key]
+            if key == "running" and self._run_cap < 3:
+                detail = f"Generation {self._run_cap} · preview cap {self._run_cap}. No provider was called."
+            self.run_status.setText(f"{status} · {detail}")
+            _feedback(self.run_status, self._run_color())
+            self.run_detail.hide()
+            self.waiting_form.setVisible(key == "waiting_input")
+            if queued:
+                self.result_picture.set_image(QPixmap())
+                self.result_picture.clear()
+                self.result_picture.setText("No committed result")
+                self.result_caption.setText("Nothing submitted")
+            else:
+                self.result_picture.set_image(self._fixture_result())
+                self.result_caption.setText(
+                    f"Offline result illustration · generation {min(2, self._run_cap)} · 512 × 320 · seed 4182"
+                )
+            self.console.setPlainText(
+                "0:00.0 Waiting for admission behind 3 items. Nothing submitted."
+                if key == "queued"
+                else "0:42.0 Cancelled before admission. Nothing submitted or charged."
+                if key == "cancelled_before_start"
+                else f"0:00.0 Script started · version {self._run_version}\n0:02.1 Step 1 · red · committed\n0:11.8 Step 2 · green · committed\nOffline fixture only: no provider was called."
+            )
+            if not queued and self._run_cap == 1:
+                self.console.setPlainText(
+                    f"0:00.0 Script started · version {self._run_version}\n0:02.1 Step 1 · red · committed\nOffline fixture only · cap 1; no provider was called."
+                )
+        self.run_footer.setText(
+            "Stop script in the activity bar ends local waiting; remote work may still complete. Text-only console · last 500 lines kept."
+            if key in ("running", "waiting_input")
+            else "Waiting for admission. Cancel is free; nothing has been submitted."
+            if key == "queued"
+            else "Cancelled before admission. No submission or charge; the example remains in History."
+            if key == "cancelled_before_start"
+            else "Unresolved previous work may still complete or be billed. Review starts separate work; it never retries that attempt."
+            if key in ("interrupted", "outcome_unknown")
+            else "Review settings before starting a separate run. Existing results and history are retained."
+        )
+        self._sync_drawer_data()
+        self._present_activity()
+
+    @staticmethod
+    def _fixture_result():
+        from PySide6.QtGui import QColor, QPainter
+
+        pixmap = QPixmap(512, 320)
+        pixmap.fill(QColor("#243a31"))
+        painter = QPainter(pixmap)
+        painter.fillRect(60, 60, 140, 200, QColor("#49725c"))
+        painter.fillRect(230, 100, 200, 160, QColor("#7c9f70"))
+        painter.setPen(QColor("#ffffff"))
+        painter.drawText(pixmap.rect(), Qt.AlignmentFlag.AlignCenter, "Offline result illustration")
+        painter.end()
+        return pixmap
+
+    def _start_preview(self):
+        if not self.start.isEnabled() or not self._reference_mode or self._current_script is None:
+            return
+        # Snapshot the already detached input; it is never submitted or written.
+        self._run_snapshot = self._inpaint_snapshot
+        self._run_cap = self.cap.value()
+        self._run_version = self._current_script[1]
+        self._run_number = 6 if self._prior_unresolved else 5
+        self._input_answered = False
+        self.start.setEnabled(False)
+        self.start.setText("Starting…")
+        self._show_run_state("queued")
+
+    def _advance_preview(self):
+        if self._run_state == "queued":
+            self._show_run_state("running")
+        elif self._run_state == "running":
+            self._show_run_state("results" if self._input_answered else "waiting_input")
+
+    def _continue_preview(self, *, cancel=False):
+        if self._reference_mode and self._run_state == "waiting_input":
+            self._input_answered = True
+            self._show_run_state("running")
+            self.console.appendPlainText(
+                "0:12.0 Input answered with no value; script continues (offline)."
+                if cancel
+                else "0:12.0 Preview inputs accepted; script continues (offline)."
+            )
+
+    def _review_run(self):
+        # Never auto-submit. Unknown work remains referenced while reviewing.
+        self._prior_unresolved |= self._run_state in ("interrupted", "outcome_unknown")
+        self.show_view(1)
+        self._sync_drawer_data()
+
+    def _saved_preview_version(self, source, sha):
+        self._preview_versions[sha[:7]] = source
+        filename = self._current_script[0] if self._current_script else "Untitled.js"
+        script = (filename, sha[:7], "Tier 1", "supported")
+        self._reference_mode = True
+        self._library_scripts.append(script)
+        self.library.blockSignals(True)
+        self._add_library_item(script)
+        self.library.setCurrentRow(len(self._library_scripts) - 1)
+        self.library.blockSignals(False)
+        self.designer.libraryEmptyHint.hide()
+        self.library_note.setText(
+            f"{len(self._library_scripts)} versions in this preview · memory only, not persisted."
+        )
+        self._set_script(script)
+        self.show_view(2)
+
+    def _present_activity(self):
+        strip = self.owner.progress_strip
+        key = "scripts-fixture"
+        strip.finish(key)
+        state = self._run_state
+        if state in LIVE_STATES:
+            queued = state == "queued"
+            strip.start(
+                key,
+                f"Script · {self._current_script[0] if self._current_script else 'offline example'}",
+                self._stop_preview,
+                stop_text="Cancel before start" if queued else "Stop script locally",
+                action_text="Cancel" if queued else "Stop script",
+            )
+            strip.update(
+                key,
+                0,
+                0,
+                detail="Nothing submitted; waiting for admission."
+                if queued
+                else f"Run #{self._run_number} · waiting for input; remote work may still complete."
+                if state == "waiting_input"
+                else f"Run #{self._run_number} · offline running fixture",
+                elapsed="Waiting 0:42" if queued else "0:12",
+                stage="Queued behind 3 items"
+                if queued
+                else "Waiting for input"
+                if state == "waiting_input"
+                else "Running",
+            )
+        elif state in ("stopped", "cancelled_before_start"):
+            strip.complete(key, RUN_STATUSES[state][0], "Offline preview · no real work", "stopped")
+        elif state in ("failed", "interrupted", "outcome_unknown"):
+            strip.complete(
+                key,
+                RUN_STATUSES[state][0],
+                "Inspect the retained status in Scripts History; do not replay unknown work.",
+                "error" if state == "failed" else "warning",
+            )
+
+    def _stop_preview(self):
+        if self._reference_mode and self._run_state in LIVE_STATES:
+            self._show_run_state("cancelled_before_start" if self._run_state == "queued" else "stopped")
 
     def _confirm_discard(self, button, callback):
         if self.owner.inline.commit(button):
@@ -905,6 +1354,38 @@ class ScriptsPage:
 
     def _source_changed(self, index):
         self.handoff.setVisible(index == 3)
+        if index != 3:
+            self._inpaint_snapshot = None
+        elif self._inpaint_snapshot is None:
+            self.designer.sourceThumbnail.setPixmap(self._fixture_thumbnails[0])
+            self.designer.maskThumbnail.setPixmap(self._fixture_thumbnails[1])
+            self.designer.handoffDescription.setText(self._fixture_handoff_text)
+        self._refresh_readiness()
+
+    def accept_inpaint_snapshot(self, source, mask: bytes, thumbnail: QPixmap):
+        """Retain immutable encoded content and detached mask bytes, never the editable canvas."""
+        if self.editor.is_dirty():
+            self.owner.inline.notice(
+                "Unsaved draft retained", "Discard or save the draft before opening the Inpaint handoff.", "warning"
+            )
+            return False
+        self.preview("scripts_from_inpaint")
+        self._inpaint_snapshot = (source, bytes(mask))
+        self.designer.sourceThumbnail.setPixmap(
+            thumbnail.scaled(56, 56, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
+        )
+        if mask:
+            image = QImage(mask, source.width, source.height, source.width, QImage.Format.Format_Grayscale8).copy()
+            self.designer.maskThumbnail.setPixmap(
+                QPixmap.fromImage(image).scaled(
+                    56, 56, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation
+                )
+            )
+        coverage = 100 * (len(mask) - mask.count(b"\x00")) / len(mask) if mask else 0
+        self.designer.handoffDescription.setText(
+            f"Detached offline snapshot · {source.width} × {source.height} · mask covers {coverage:.0f}% · never submitted"
+        )
+        return True
 
     def _detach_source(self):
         self.source.setCurrentIndex(0)

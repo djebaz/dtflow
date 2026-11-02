@@ -1,12 +1,13 @@
 """Native JavaScript editor: line numbers, scoped syntax colors and draft operations.
 
-The editor manipulates in-memory draft text. Saving and parse validation are
-intentionally disconnected until the immutable script-library service is wired.
+The editor manipulates in-memory draft text. Preview checks use explicit fixture
+outcomes, never a parser or script evaluation. Preview saves never write to disk.
 """
 
 from __future__ import annotations
 
 import re
+import hashlib
 
 from PySide6.QtCore import QRect, QSize, Qt
 from PySide6.QtGui import (
@@ -19,6 +20,7 @@ from PySide6.QtGui import (
     QShortcut,
     QKeySequence,
     QTextDocument,
+    QTextFormat,
 )
 from dtflow.ui.inpaint_canvas import REDO_PATH, UNDO_PATH, _arrow_icon
 from dtflow.ui.theme import load_tokens
@@ -53,7 +55,11 @@ class _LineNumbers(QWidget):
         bottom = top + round(self.editor.blockBoundingRect(first).height())
         while first.isValid() and top <= event.rect().bottom():
             if first.isVisible() and bottom >= event.rect().top():
-                painter.setPen(self._line_number_color)
+                painter.setPen(
+                    QColor(load_tokens()["color.error"])
+                    if number + 1 == self.editor.error_line
+                    else self._line_number_color
+                )
                 painter.drawText(
                     0,
                     top,
@@ -117,6 +123,7 @@ class ScriptCodeEdit(QPlainTextEdit):
         self.setFont(font)
         self.gutter = _LineNumbers(self)
         self.highlighter = _JavaScriptColors(self.document())
+        self.error_line = None
         self.blockCountChanged.connect(self._update_gutter_width)
         self.updateRequest.connect(self._update_gutter)
         self.cursorPositionChanged.connect(self._update_cursor)
@@ -165,7 +172,7 @@ class ScriptCodeEdit(QPlainTextEdit):
 class ScriptEditor(QWidget):
     """Native draft editor with undo/redo, search and diagnostics presentation."""
 
-    def __init__(self, parent=None, *, consent=None):
+    def __init__(self, parent=None, *, consent=None, saved=None):
         super().__init__(parent)
         from dtflow.ui.main_window import FORMS_DIR, load_ui
 
@@ -176,6 +183,11 @@ class ScriptEditor(QWidget):
         self._saved_content = ""
         self._consent = consent
         self._error_location = None
+        self._preview_enabled = False
+        self._preview_checks = {}
+        self._checked_source = None
+        self._based_on = ""
+        self._saved_callback = saved
         self.editor = ScriptCodeEdit(self)
         self.form.codeHost.layout().addWidget(self.editor)
         self.form.codeHost.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
@@ -191,7 +203,10 @@ class ScriptEditor(QWidget):
         self.form.smallerFontButton.clicked.connect(lambda: self.editor.change_font_size(-1))
         self.form.largerFontButton.clicked.connect(lambda: self.editor.change_font_size(1))
         self.check_syntax = self.form.checkSyntaxButton
-        self.check_syntax.setToolTip("Parse-only checking is not connected in this UI preview.")
+        self.check_syntax.setToolTip(
+            "Offline preview: known examples show fixture diagnostics; no code is parsed or executed."
+        )
+        self.check_syntax.clicked.connect(self.check_preview)
         self.find_row, self.search = self.form.findRow, self.form.searchField
         self.replacement, self.match_count = self.form.replacementField, self.form.matchCount
         self.form.findButton.clicked.connect(self._toggle_find)
@@ -212,19 +227,70 @@ class ScriptEditor(QWidget):
         self.cursor_status, self.draft_status = self.form.cursorStatus, self.form.draftStatus
         self.discard, self.save_new = self.form.discardButton, self.form.saveVersionButton
         self.discard.clicked.connect(self._request_restore)
-        self.save_new.setToolTip("Immutable version persistence is not connected yet.")
+        self.save_new.setToolTip("Offline preview: keep a version in memory only, never on disk.")
+        self.save_new.clicked.connect(self.save_preview)
         self.editor.cursorPositionChanged.connect(self._cursor_changed)
         self.editor.textChanged.connect(self._modified)
         self.editor.textChanged.connect(self._update_matches)
 
     def _cursor_changed(self):
         cursor = self.editor.textCursor()
-        self.cursor_status.setText(f"Ln {cursor.blockNumber() + 1} · Col {cursor.positionInBlock() + 1} · JavaScript")
+        self.cursor_status.setText(
+            f"Ln {cursor.blockNumber() + 1} · Col {cursor.positionInBlock() + 1} · "
+            f"{self.editor.blockCount()} lines · JavaScript"
+        )
 
     def _modified(self):
         dirty = self.editor.toPlainText() != self._saved_content
-        self.draft_status.setText("Draft · unsaved changes" if dirty else "No unsaved changes")
+        self.draft_status.setText(
+            ("Draft · unsaved changes" if dirty else "No unsaved changes")
+            + (f" · based on version {self._based_on}" if self._based_on else "")
+        )
         self.discard.setEnabled(dirty)
+        if self._checked_source != self.editor.toPlainText():
+            self.clear_error()
+        self.save_new.setEnabled(
+            self._preview_enabled
+            and dirty
+            and self._checked_source == self.editor.toPlainText()
+            and self._error_location is None
+        )
+        self._cursor_changed()
+
+    def enable_preview(self, outcomes: dict[str, tuple | None]) -> None:
+        """Known fixture text maps to explicit outcomes; arbitrary text is never guessed valid."""
+        self._preview_enabled = True
+        self._preview_checks = dict(outcomes)
+        self.check_syntax.setEnabled(True)
+
+    def check_preview(self):
+        source = self.editor.toPlainText()
+        self.clear_error()
+        if not self._preview_enabled or source not in self._preview_checks:
+            self.diagnostic.setText(
+                "Not checked: no offline fixture diagnostic for this text. Real parsing is not connected."
+            )
+            self.save_new.setEnabled(False)
+            return
+        self._checked_source = source
+        error = self._preview_checks[source]
+        if error is not None:
+            self.set_error(*error)
+        else:
+            self.diagnostic.setText("● Syntax valid · fixture outcome only; no parser ran")
+        self._modified()
+
+    def save_preview(self):
+        source = self.editor.toPlainText()
+        if not self.save_new.isEnabled() or self._checked_source != source:
+            return
+        sha = hashlib.sha256(source.encode("utf-8")).hexdigest()
+        self._based_on = sha[:7]
+        self._saved_content = source
+        self._modified()
+        self.draft_status.setText(f"Preview version {sha[:7]} · memory only, not persisted")
+        if self._saved_callback is not None:
+            self._saved_callback(source, sha)
 
     def is_dirty(self) -> bool:
         return self.editor.toPlainText() != self._saved_content
@@ -278,8 +344,11 @@ class ScriptEditor(QWidget):
     def restore(self):
         self.editor.setPlainText(self._saved_content)
 
-    def set_draft(self, source: str, *, status: str = "Draft · unsaved changes"):
-        self._saved_content = source
+    def set_draft(
+        self, source: str, *, status: str = "Draft · unsaved changes", based_on: str = "", saved: bool = True
+    ):
+        self._based_on = based_on
+        self._saved_content = source if saved else ""
         self.editor.setPlainText(source)
         self.clear_error()
         self.draft_status.setText(status)
@@ -287,12 +356,16 @@ class ScriptEditor(QWidget):
     def clear_error(self) -> None:
         """Reset stale diagnostics when another draft or preview state is loaded."""
         self._error_location = None
+        self._checked_source = None
+        self.editor.error_line = None
+        self.editor.gutter.update()
         self.editor.setExtraSelections([])
         self.diagnostic.setText("Syntax not checked yet")
         self.diagnostic.setProperty("feedbackState", "")
         self.diagnostic.style().unpolish(self.diagnostic)
         self.diagnostic.style().polish(self.diagnostic)
         self.go_to_error.hide()
+        self.save_new.setEnabled(False)
 
     def _jump_to_error(self) -> None:
         if self._error_location is not None:
@@ -306,11 +379,17 @@ class ScriptEditor(QWidget):
             selection.cursor = QTextCursor(block)
             selection.cursor.select(QTextCursor.SelectionType.LineUnderCursor)
             selection.format.setBackground(QColor(load_tokens()["color.dangerSurface"]))
+            selection.format.setProperty(QTextFormat.Property.FullWidthSelection, True)
+            selection.format.setUnderlineStyle(QTextCharFormat.UnderlineStyle.WaveUnderline)
+            selection.format.setUnderlineColor(QColor(load_tokens()["color.error"]))
             self.editor.setExtraSelections([selection])
-        self.diagnostic.setText(f"Syntax error · line {line}, column {column} · {message}")
+        self.editor.error_line = line
+        self.editor.gutter.update()
+        self.diagnostic.setText(f"● Syntax error · line {line}, column {column} · {message}")
         self.diagnostic.setProperty("feedbackState", "error")
         self.diagnostic.style().unpolish(self.diagnostic)
         self.diagnostic.style().polish(self.diagnostic)
         self._error_location = (line, column)
         self.go_to_error.setText(f"Go to line {line}")
         self.go_to_error.show()
+        self.save_new.setEnabled(False)

@@ -10,6 +10,8 @@ Changes through 5.4.0 are consolidated in [DTFlow 5.4.0](v5.4.0.md). This file t
 
 ## Fixed
 
+- PR #201 independent-review follow-up: offline terminal/review actions, guarded Start/queue/input previews, fixture syntax checks and in-memory version Save, live/unresolved history cues, detached Inpaint source/mask entry and local form/editor/results polish. Native Photos/Files pickers are supported in the target design, with runtime hook integration deferred. No real script execution, parser, persistence or provider calls are connected.
+
 - PR #201 Scripts desktop preview: Designer-owned static views, visible library actions, wrapped form rows, distinct queued/cancelled evidence and Cancel/waiting presentation, selected-script inspection facts, saved-versus-draft status, Find/Replace and inline dirty-draft protection. The labelled Inspector toggle sits at the right edge of the Scripts toolbar with a right-sidebar SVG, not beside the product logo. Inspector drawer and offline source/mask fixtures remain presentation-only; runtime Start/save/history integration is not included.
 
 

@@ -1,4 +1,3 @@
-<?xml version="1.0" encoding="utf-8"?>
 <ui version="4.0">
  <class>scriptsEditorPanel</class>
  <widget class="QWidget" name="scriptsEditorPanel">
@@ -574,7 +573,10 @@
     </widget>
    </item>
    <item>
-    <widget class="QWidget" name="editorFooter">
+    <widget class="QFrame" name="editorFooter">
+     <property name="role" stdset="0">
+      <string>scriptsEditorFooter</string>
+     </property>
      <layout class="QHBoxLayout" name="editorFooterLayout" stretch="1,0,0">
       <property name="leftMargin">
        <number>0</number>
@@ -616,7 +618,7 @@
       <item>
        <widget class="QPushButton" name="discardButton">
         <property name="text">
-         <string>Discard</string>
+         <string>Discard changes</string>
         </property>
         <property name="enabled">
          <bool>false</bool>
@@ -634,6 +636,9 @@
       </item>
       <item>
        <widget class="QPushButton" name="saveVersionButton">
+        <property name="role" stdset="0">
+         <string>primary</string>
+        </property>
         <property name="text">
          <string>Save as new version</string>
         </property>
@@ -652,9 +657,6 @@
        </widget>
       </item>
      </layout>
-     <property name="role" stdset="0">
-      <string>sectionContents</string>
-     </property>
     </widget>
    </item>
   </layout>

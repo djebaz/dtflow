@@ -361,6 +361,8 @@ class MainWindow:
         startup.mark("queue and image operation controllers")
         self.generation_page.inpaintModeButton.toggled.connect(lambda _on: self.queue.sync_edit_fields())
         self.generation_page.scriptsModeButton.clicked.connect(self._show_scripts)
+        self.generation.inpaint.script_handoff = self._scripts_from_inpaint
+        self.generation.inpaint._controls()
         self.scripts.text_mode.clicked.connect(lambda: self._leave_scripts(inpaint=False))
         self.scripts.inpaint_mode.clicked.connect(lambda: self._leave_scripts(inpaint=True))
         # One-click Queue (#135): the same popover from the header and from Generate's prompt header.
@@ -622,6 +624,11 @@ class MainWindow:
         self.scripts.activate()
         self._set_scripts_left_rail(True)
         self._responsive_workspace()
+
+    def _scripts_from_inpaint(self, source, mask, thumbnail) -> None:
+        """Offline, detached source/mask handoff only; no runtime script entry point."""
+        if self.scripts.accept_inpaint_snapshot(source, mask, thumbnail):
+            self._show_scripts()
 
     def _leave_scripts(self, *, inpaint: bool) -> None:
         """Return to the canonical Generate form without resetting another workspace."""

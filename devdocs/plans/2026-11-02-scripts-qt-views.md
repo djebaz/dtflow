@@ -64,3 +64,6 @@ All captures must be of the actual Qt screen, using the existing shell, at the c
 5. Only after owner visual approval wire services and active interactions. No new automated unit tests by owner instruction.
 
 The existing workflow `--category scripts` hook is infrastructure only. Its presence is **not** evidence that renders match this matrix. No live generation or billable operation is authorized for UI validation.
+
+## Independent-review extension
+The original 24-state matrix remains reference history. The [independent-review alignment plan](2026-11-02-scripts-independent-review.md) adds native offline interaction coverage: partial-ready, live Inspect/Configure, review of unknown work, checked/saved/unverified editor drafts, Inpaint entry, Starting, cancelled input and fixture completion. Owner explicitly retained native rail widths, 1100px collapse, readable editor typography, icon-only Undo/Redo and shared overlays. No execution or durable library integration is authorized by these preview interactions.

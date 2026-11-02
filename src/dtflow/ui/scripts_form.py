@@ -15,6 +15,7 @@ from dtflow.ui.theme import load_tokens
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
+    QFrame,
     QFileDialog,
     QHBoxLayout,
     QLabel,
@@ -99,12 +100,15 @@ def _slider(spec: dict) -> QWidget:
     def update(number: int) -> None:
         actual = number / scale
         value.setText(
-            f"{round(actual * 100)}%" if sub == "percent" else f"×{actual:g}" if sub == "scale" else f"{actual:.1f}"
+            f"{round(actual * 100)}%" if sub == "percent" else f"×{actual:.1f}" if sub == "scale" else f"{actual:.1f}"
         )
 
     slider.valueChanged.connect(update)
     update(slider.value())
-    return _group(slider, value)
+    box = _group(slider, value)
+    box.layout().setStretch(0, 1)
+    value.setFixedWidth(45)
+    return box
 
 
 class _RangeControl(QWidget):
@@ -116,6 +120,7 @@ class _RangeControl(QWidget):
         self.high = high
         self.lower, self.upper = values
         self.active_thumb = 0
+        self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
         self.setAccessibleName("Step range minimum and maximum")
         self._sync_accessible()
@@ -141,7 +146,7 @@ class _RangeControl(QWidget):
         y = self.height() // 2
         painter.setPen(QPen(QColor(colors["color.groove"]), 4))
         painter.drawLine(10, y, self.width() - 10, y)
-        painter.setPen(QPen(QColor(colors["color.accent"]), 4))
+        painter.setPen(QPen(QColor(colors["color.selectionBorder"]), 4))
         painter.drawLine(self._x(self.lower), y, self._x(self.upper), y)
         painter.setPen(QPen(QColor(colors["color.handleBorder"]), 1))
         painter.setBrush(QColor(colors["color.handle"]))
@@ -198,7 +203,10 @@ def _range_slider(spec: dict) -> QWidget:
 
     track.on_change = update
     update(track.lower, track.upper)
-    return _group(track, value)
+    box = _group(track, value)
+    box.layout().setStretch(0, 1)
+    value.setFixedWidth(45)
+    return box
 
 
 def _path_control(spec: dict) -> QWidget:
@@ -238,21 +246,36 @@ def _control(spec: dict) -> QWidget:
     value = spec.get("value")
     if kind == "textField":
         widget = QLineEdit(str(value or ""))
+    elif kind == "spinBox":
+        widget = QSpinBox()
+        widget.setRange(spec.get("min", 0), spec.get("max", 100))
+        widget.setValue(value)
     elif kind in ("comboBox", "menu"):
         widget = QComboBox()
         widget.addItems(spec["options"])
         widget.setCurrentText(str(value))
     elif kind == "segmented":
-        bar = _group(*[QPushButton(option) for option in spec["options"]])
+        bar = QFrame()
+        bar.setProperty("role", "segmented")
+        joined = QHBoxLayout(bar)
+        joined.setContentsMargins(0, 0, 0, 0)
+        joined.setSpacing(0)
+        for option in spec["options"]:
+            joined.addWidget(QPushButton(option))
         buttons = bar.findChildren(QPushButton)
-        for button in buttons:
+        for index, button in enumerate(buttons):
+            button.setProperty(
+                "segmentEdge", "first" if index == 0 else "last" if index == len(buttons) - 1 else "middle"
+            )
             button.setCheckable(True)
             button.setChecked(button.text() == value)
             button.setAccessibleName(spec["label"] + " " + button.text())
             button.clicked.connect(
                 lambda checked=False, current=button: [other.setChecked(other is current) for other in buttons]
             )
-        bar.setMaximumWidth(160)
+        bar.ensurePolished()
+        bar.setMaximumWidth(bar.sizeHint().width())
+        bar.setSizePolicy(QSizePolicy.Policy.Maximum, QSizePolicy.Policy.Fixed)
         widget = bar
     elif kind == "switch":
         widget = QCheckBox("On" if value else "Off")
@@ -270,10 +293,11 @@ def _control(spec: dict) -> QWidget:
             field.setSingleStep(64)
             field.setValue(amount)
             field.setAccessibleName(spec["label"] + suffix)
-        width.setMaximumWidth(108)
-        height.setMaximumWidth(108)
-        widget = _group(width, QLabel("×"), height)
-        widget.setMaximumWidth(245)
+        separator = QLabel("×")
+        separator.setFixedWidth(16)
+        widget = _group(width, separator, height)
+        widget.layout().setStretch(0, 1)
+        widget.layout().setStretch(2, 1)
     elif kind in ("imageField", "directory"):
         widget = _path_control(spec)
     elif kind == "image":
@@ -296,7 +320,7 @@ class ScriptForm(QWidget):
         self.setObjectName("scriptsForm")
         self._narrow: bool | None = None
         self.layout_ = QVBoxLayout(self)
-        self.layout_.setContentsMargins(10, 10, 10, 10)
+        self.layout_.setContentsMargins(0, 0, 0, 0)
         self.layout_.setSpacing(8)
         self.layout_.setSizeConstraint(QVBoxLayout.SizeConstraint.SetMinimumSize)
         self.layout_.addStretch(1)

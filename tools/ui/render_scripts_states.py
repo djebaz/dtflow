@@ -41,43 +41,49 @@ STATES = (
     "scripts_editor_narrow",
     "scripts_narrow",
     "scripts_narrow_details",
+    "scripts_partial_ready",
+    "scripts_live_inspect",
+    "scripts_live_configure",
+    "scripts_review_unknown",
+    "scripts_editor_checked",
+    "scripts_editor_saved",
+    "scripts_inpaint_entry",
+    "scripts_starting",
+    "scripts_input_cancelled",
+    "scripts_preview_completed",
+    "scripts_editor_unverified",
+    "scripts_preview_capped",
+    "scripts_previous_run_inspection",
 )
 
 
 def _shared_overlay(window, state: str) -> None:
-    """Show real shared overlay widgets for the illustrative lifecycle states."""
-    key = "scripts-fixture"
-    window.progress_strip.finish(key)
-    if state == "scripts_queued":
-        window.progress_strip.start(key, "Script", lambda: None, stop_text="Cancel before start", action_text="Cancel")
-        window.progress_strip.update(
-            key,
-            0,
-            0,
-            detail="Nothing submitted; waiting for admission.",
-            elapsed="Waiting 0:42",
-            stage="Queued behind 3 items",
-        )
-    elif state == "scripts_running":
-        window.progress_strip.start(key, "Script running", lambda: None, stop_text="Stop waiting locally")
-    elif state == "scripts_waiting_input":
-        window.progress_strip.start(key, "Waiting for your input", lambda: None, stop_text="Stop waiting locally")
-    elif state in ("scripts_stopped", "scripts_cancelled_before_start"):
-        window.progress_strip.complete(
-            key,
-            "Stopped locally" if state == "scripts_stopped" else "Cancelled before start",
-            "Offline render fixture",
-            "stopped",
-        )
-    elif state == "scripts_failed":
-        window.progress_strip.complete(key, "Script failed", "Inspect the durable failure details.", "error")
-    elif state in ("scripts_interrupted", "scripts_outcome_unknown"):
-        window.progress_strip.complete(
-            key,
-            "Script interrupted" if state == "scripts_interrupted" else "Outcome unknown",
-            "An earlier attempt may still complete; do not replay unknown work.",
-            "warning",
-        )
+    """Use the presenter's real offline interaction path, not a competing render-only model."""
+    window.scripts._present_activity()
+
+
+def _prepare_inpaint_entry(window):
+    """A deterministic in-memory source, never a file/provider/model load."""
+    import hashlib
+    from PySide6.QtCore import QBuffer, QIODevice
+    from PySide6.QtGui import QImage, QPixmap
+    from dtflow.core.image_inputs import ImageContent
+
+    editor = window.generation.inpaint
+    pixels = bytes((45, 100, 65)) * (128 * 128)
+    image = QPixmap.fromImage(QImage(pixels, 128, 128, 128 * 3, QImage.Format.Format_RGB888).copy())
+    buffer = QBuffer()
+    buffer.open(QIODevice.OpenModeFlag.WriteOnly)
+    image.save(buffer, "PNG")
+    encoded = bytes(buffer.data())
+    editor._source = ImageContent(encoded, hashlib.sha256(encoded).hexdigest(), 128, 128, 3)
+    editor.canvas.set_source(pixels, 128, 128)
+    editor.canvas.replace_mask((b"\xff" * 48 + b"\x00" * 80) * 128)
+    editor.form.sourceFacts.setText("Offline source fixture · 128 × 128")
+    editor.form.sourceThumbnail.setPixmap(image.scaledToHeight(80))
+    editor._loading = False
+    editor._controls()
+    window._leave_scripts(inpaint=True)
 
 
 def render_scripts_states(out: Path, *, window_factory: Callable, state_names=STATES) -> list[Path]:
@@ -102,8 +108,79 @@ def render_scripts_states(out: Path, *, window_factory: Callable, state_names=ST
                 raise ValueError(f"Unknown scripting render state: {state}")
             narrow = state in ("scripts_narrow", "scripts_narrow_details", "scripts_editor_narrow")
             window.form.resize(800, 680) if narrow else window.form.resize(1600, 1000)
+            window._show_scripts()
             window.scripts._drawer_requested = state == "scripts_narrow_details"
-            window.scripts.preview(state)
+            base = {
+                "scripts_partial_ready": "scripts_inspect_partial",
+                "scripts_live_inspect": "scripts_running",
+                "scripts_live_configure": "scripts_running",
+                "scripts_review_unknown": "scripts_outcome_unknown",
+                "scripts_editor_checked": "scripts_editor_dirty",
+                "scripts_editor_saved": "scripts_editor_dirty",
+                "scripts_inpaint_entry": "scripts_form_default",
+                "scripts_starting": "scripts_form_default",
+                "scripts_input_cancelled": "scripts_waiting_input",
+                "scripts_preview_completed": "scripts_waiting_input",
+                "scripts_editor_unverified": "scripts_editor_dirty",
+                "scripts_preview_capped": "scripts_form_default",
+                "scripts_previous_run_inspection": "scripts_form_after_unknown",
+            }.get(state, state)
+            if state in (
+                "scripts_queued",
+                "scripts_running",
+                "scripts_waiting_input",
+                "scripts_cancelled_before_start",
+            ):
+                base = "scripts_form_default"
+            window.scripts.preview(base)
+            if state in (
+                "scripts_queued",
+                "scripts_running",
+                "scripts_waiting_input",
+                "scripts_cancelled_before_start",
+            ):
+                window.scripts.start.click()
+                if state == "scripts_cancelled_before_start":
+                    window.scripts._stop_preview()
+                elif state != "scripts_queued":
+                    window.scripts.designer.advancePreviewButton.click()
+                    if state == "scripts_waiting_input":
+                        window.scripts.designer.advancePreviewButton.click()
+            elif state == "scripts_partial_ready":
+                window.scripts.source.setCurrentIndex(3)
+                window.scripts.acknowledge.setChecked(True)
+                window.scripts.show_view(1)
+            elif state in ("scripts_live_inspect", "scripts_live_configure"):
+                window.scripts.show_view(0 if state == "scripts_live_inspect" else 1)
+            elif state == "scripts_review_unknown":
+                window.scripts.designer.reviewRunButton.click()
+            elif state in ("scripts_editor_checked", "scripts_editor_saved"):
+                window.scripts.editor.check_syntax.click()
+                if state == "scripts_editor_saved":
+                    window.scripts.editor.save_new.click()
+            elif state == "scripts_editor_unverified":
+                window.scripts.editor.editor.appendPlainText("// Arbitrary edited code: no fixture outcome")
+                window.scripts.editor.check_syntax.click()
+            elif state == "scripts_starting":
+                window.scripts.start.setEnabled(False)
+                window.scripts.start.setText("Starting…")
+            elif state == "scripts_preview_capped":
+                window.scripts.cap.setValue(1)
+                window.scripts.start.click()
+                window.scripts.designer.advancePreviewButton.click()
+                window.scripts.designer.advancePreviewButton.click()
+                window.scripts.designer.continueInputButton.click()
+                window.scripts.designer.advancePreviewButton.click()
+            elif state == "scripts_previous_run_inspection":
+                window.scripts.designer.viewUnresolvedRun.click()
+            elif state in ("scripts_input_cancelled", "scripts_preview_completed"):
+                window.scripts.designer.cancelInputButton.click() if state == "scripts_input_cancelled" else window.scripts.designer.continueInputButton.click()
+                if state == "scripts_preview_completed":
+                    window.scripts.designer.advancePreviewButton.click()
+            elif state in ("scripts_inpaint_entry", "scripts_from_inpaint"):
+                _prepare_inpaint_entry(window)
+                if state == "scripts_from_inpaint":
+                    window.generation.inpaint.form.runScriptOnImageButton.click()
             window.scripts.sync_responsive()
             _shared_overlay(window, state)
             if index == 0:
