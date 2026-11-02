@@ -813,6 +813,10 @@ class MainWindow:
             self._logs_form.logsBrandSlot.setVisible(logs)
             self._logs_form.logsNavigationSlot.setVisible(logs)
         shell.runControl.setVisible(True)
+        if self._scripts_active:
+            self.scripts.sync_responsive()
+        elif hasattr(self, "scripts"):
+            self.scripts.drawer.hide()
         self._align_run_control()
 
     def _sync_activity_progress(self):
