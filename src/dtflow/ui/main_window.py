@@ -595,22 +595,37 @@ class MainWindow:
         if self._scripts_active:
             self.scripts.activate()
 
+    def _set_scripts_left_rail(self, active: bool) -> None:
+        """Size the shared left rail without restarting workspace-navigation side effects."""
+        policy = self.shell.leftStack.sizePolicy()
+        vertical = QSizePolicy.Policy.Ignored if active else QSizePolicy.Policy.Preferred
+        if policy.verticalPolicy() != vertical:
+            policy.setVerticalPolicy(vertical)
+            self.shell.leftStack.setSizePolicy(policy)
+        self.shell.leftScroll.setVerticalScrollBarPolicy(
+            Qt.ScrollBarPolicy.ScrollBarAlwaysOff if active
+            else Qt.ScrollBarPolicy.ScrollBarAsNeeded
+        )
+
     def _show_scripts(self) -> None:
         """Switch Generate to its third sub-mode without touching active work."""
         self._scripts_active = True
         self.form.workspaceStack.setCurrentWidget(self.generation_page)
         self.generation_page.scriptsModeButton.setChecked(True)
         self.scripts.activate()
-        # Let the library fill the left rail without inheriting a taller page.
-        self._workspace_changed(self.form.workspaceStack.currentIndex())
+        self._set_scripts_left_rail(True)
+        self._responsive_workspace()
 
     def _leave_scripts(self, *, inpaint: bool) -> None:
-        """Return to the canonical Generate form and restore its mode selection."""
+        """Return to the canonical Generate form without resetting another workspace."""
         self._scripts_active = False
         self.scripts.drawer.hide()
         target = self.generation_page.inpaintModeButton if inpaint else self.generation_page.textToImageModeButton
         target.setChecked(True)
-        self._workspace_changed(self.form.workspaceStack.currentIndex())
+        for stack in (self.shell.leftStack, self.shell.centerStack, self.shell.rightStack):
+            stack.setCurrentIndex(1)
+        self._set_scripts_left_rail(False)
+        self._responsive_workspace()
 
     def _toggle_logs(self) -> None:
         if self.form.workspaceStack.currentWidget() is self.logs_marker:
