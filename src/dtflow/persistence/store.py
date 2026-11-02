@@ -23,11 +23,11 @@ from dtflow.core.models import (
 )
 from dtflow.core.request_records import upgraded_request_record
 from dtflow.core.tasks import settle
-from dtflow.persistence.queues import QUEUE_SCHEMA, QueueMixin, add_up_next
+from dtflow.persistence.queues import QUEUE_SCHEMA, QueueMixin, add_kind, add_up_next
 
-# 1: attempts only. 2: queues. 3: explicit request v2/image-input references.
+# 1: attempts only. 2: queues. 3: explicit request v2/image-input references. 4: up next. 5: queue kind (script).
 # A supported older writer open backs up, then migrates/reconciles transactionally.
-SCHEMA_VERSION = 4
+SCHEMA_VERSION = 5
 
 
 class PersistenceError(RuntimeError):
@@ -130,7 +130,7 @@ class SQLiteAttempts(QueueMixin):
             connection.execute("PRAGMA synchronous=FULL")
             connection.execute("PRAGMA foreign_keys=ON")
             connection.execute("PRAGMA busy_timeout=2000")
-            if version in (1, 2, 3):
+            if version in (1, 2, 3, 4):
                 # A fresh consistent backup for each migration attempt; never rely
                 # on an old/partial backup left by a previously failed upgrade.
                 copy = self.directory / f"attempts.pre-v{SCHEMA_VERSION}-from-v{version}-{uuid4().hex}.sqlite3"
@@ -156,6 +156,7 @@ class SQLiteAttempts(QueueMixin):
                 for statement in QUEUE_SCHEMA:
                     connection.execute(statement)
                 add_up_next(connection)
+                add_kind(connection)
                 if version in (1, 2):
                     self._migrate_requests(connection)
                 connection.execute(f"PRAGMA user_version={SCHEMA_VERSION}")
@@ -176,7 +177,7 @@ class SQLiteAttempts(QueueMixin):
                     updated_at_utc=? WHERE state='prepared'""",
                     (now,),
                 )
-                self.reconcile(connection, now)
+                self.reconcile(connection, now, self.directory)
                 connection.execute("COMMIT")
             except BaseException:
                 connection.execute("ROLLBACK")
