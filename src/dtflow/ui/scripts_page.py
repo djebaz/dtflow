@@ -790,11 +790,30 @@ class ScriptsPage:
         self.show_view(5)
 
     def new_draft(self):
-        self.script_title.setText("Untitled script")
-        self.sha.setText("New draft")
-        self.status.setText("Unsaved source · no compatibility check")
+        """Open an unsaved draft without inherited compatibility or run evidence."""
+        self._current_script = None
+        self.library.blockSignals(True)
+        self.library.setCurrentRow(-1)
+        self.library.blockSignals(False)
+        self.script_title.setText("Untitled.js · new draft")
+        self.sha.clear()
+        self.status.setText("Draft not inspected")
+        self.status.setProperty("feedbackState", "")
+        self.status.style().unpolish(self.status)
+        self.status.style().polish(self.status)
+        self.hook_status.setText("Select or import a script to see compatibility, source and history.")
+        self.drawer_summary.setText("New draft · not inspected")
+        for index in range(self.hook_list.count()):
+            item = self.hook_list.itemAt(index)
+            if item is not None and item.widget() is not None:
+                item.widget().hide()
+        for panel in self.inspector_panels[1:]:
+            panel.hide()
         self.editor.set_draft("//@api-1.0\n\n", status="New draft · unsaved")
         self.show_view(2)
+        self.sha.hide()
+        self.status.hide()
+        self.start_panel.hide()
 
     def import_preview(self):
         filename, _ = QFileDialog.getOpenFileName(
@@ -873,7 +892,7 @@ class ScriptsPage:
         self.status.style().polish(self.status)
         self.library.blockSignals(True)
         self.library.clear()
-        if state != "scripts_empty" and state != "scripts_editor_new":
+        if state != "scripts_empty":
             for filename, sha, tier, support in REFERENCE_SCRIPTS:
                 item = QListWidgetItem(f"{filename}\n{sha} · {tier} · {support}")
                 self.library.addItem(item)
@@ -942,9 +961,7 @@ class ScriptsPage:
             self.show_view(2)
             self.editor.run_notice.hide()
             if state == "scripts_editor_new":
-                self.script_title.setText("Untitled script")
-                self.sha.setText("New draft")
-                self.status.setText("Unsaved source · not inspected")
+                self.new_draft()
                 self.editor.set_draft(EDITOR_STARTER, status="New draft · unsaved")
             else:
                 self.editor.set_draft(EDITOR_BASE, status="Version 9f3a1c2")
