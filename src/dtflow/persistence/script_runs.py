@@ -8,7 +8,6 @@ caller, and are never removed.
 
 from __future__ import annotations
 
-import os
 import sqlite3
 import sys
 import uuid
@@ -42,30 +41,38 @@ class ScriptRun:
     children: tuple[str, ...]
 
 
-def _process_alive(pid: int) -> bool:
-    """Whether a process with this id exists (never signals it; ``os.kill(pid, 0)`` is unsafe on Windows)."""
-    if pid <= 0:
-        return False
-    if sys.platform == "win32":
-        import ctypes
+def _try_lock(path: Path):
+    """Take an exclusive OS lock on ``path`` and return the open file, or ``None`` if another holder has it.
 
-        kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
-        kernel32.OpenProcess.restype = ctypes.c_void_p
-        handle = kernel32.OpenProcess(0x1000, False, pid)  # PROCESS_QUERY_LIMITED_INFORMATION
-        if not handle:
-            return ctypes.get_last_error() == 5  # access denied: it exists
-        try:
-            code = ctypes.c_ulong()
-            return bool(kernel32.GetExitCodeProcess(ctypes.c_void_p(handle), ctypes.byref(code))) and code.value == 259
-        finally:
-            kernel32.CloseHandle(ctypes.c_void_p(handle))
+    The lock lives exactly as long as the owning process (the OS drops it on exit or crash), so ownership cannot be
+    confused by process-id reuse."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    handle = open(path, "a+b")  # noqa: SIM115 - the open file is the lock and is returned to the caller
     try:
-        os.kill(pid, 0)
-    except ProcessLookupError:
-        return False
-    except PermissionError:
-        return True
-    return True
+        if sys.platform == "win32":
+            import msvcrt
+
+            if handle.seek(0, 2) == 0:
+                handle.write(b"x")
+                handle.flush()
+            handle.seek(0)
+            msvcrt.locking(handle.fileno(), msvcrt.LK_NBLCK, 1)
+        else:
+            import fcntl
+
+            fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except OSError:
+        handle.close()
+        return None
+    return handle
+
+
+def _release(handle, path: Path) -> None:
+    handle.close()
+    try:
+        path.unlink()
+    except OSError:
+        pass
 
 
 def _now() -> str:
@@ -76,6 +83,7 @@ class ScriptRunStore:
     def __init__(self, state: Path) -> None:
         self.path = Path(state) / "script_runs.sqlite3"
         self.path.parent.mkdir(parents=True, exist_ok=True)
+        self._held: dict[str, object] = {}
         with closing(self._connect()) as connection:
             version = connection.execute("PRAGMA user_version").fetchone()[0]
             if version > SCHEMA_VERSION:
@@ -94,8 +102,7 @@ class ScriptRunStore:
                         context_json TEXT NOT NULL DEFAULT '{}',
                         created_at TEXT NOT NULL,
                         finished_at TEXT,
-                        error TEXT,
-                        owner_pid INTEGER NOT NULL
+                        error TEXT
                     );
                     CREATE TABLE IF NOT EXISTS script_run_children (
                         run_id TEXT NOT NULL REFERENCES script_runs(run_id),
@@ -106,16 +113,20 @@ class ScriptRunStore:
                     """
                 )
                 connection.execute(f"PRAGMA user_version={SCHEMA_VERSION}")
-            # Only runs whose owning process is gone were interrupted by a crash; a second app instance sharing this
-            # state directory must not invalidate the first instance's live run.
+            # A run is live while its owner holds the run's OS lock. Only runs whose lock is free were interrupted by a
+            # crash; a second app instance sharing this state directory must not invalidate a live run.
             with connection:
-                for run_id, pid in connection.execute(
-                    "SELECT run_id, owner_pid FROM script_runs WHERE state='running'"
-                ).fetchall():
-                    if pid != os.getpid() and not _process_alive(pid):
+                for (run_id,) in connection.execute("SELECT run_id FROM script_runs WHERE state='running'").fetchall():
+                    lock = self._lock_path(run_id)
+                    handle = _try_lock(lock)
+                    if handle is not None:
                         connection.execute(
                             "UPDATE script_runs SET state='interrupted', finished_at=? WHERE run_id=?", (_now(), run_id)
                         )
+                        _release(handle, lock)
+
+    def _lock_path(self, run_id: str) -> Path:
+        return self.path.parent / "script_run_locks" / f"{run_id}.lock"
 
     def _connect(self) -> sqlite3.Connection:
         connection = sqlite3.connect(self.path, timeout=2.0)
@@ -135,10 +146,14 @@ class ScriptRunStore:
         context_json: str = "{}",
     ) -> str:
         run_id = uuid.uuid4().hex
+        handle = _try_lock(self._lock_path(run_id))  # held before the row exists so no opener can see it unowned
+        if handle is None:
+            raise ScriptRunStoreError("Could not take the script-run ownership lock.")
+        self._held[run_id] = handle
         with closing(self._connect()) as connection, connection:
             connection.execute(
                 "INSERT INTO script_runs (run_id, state, source_name, source_sha256, api_version, vendored_js_sha256,"
-                " answers_json, context_json, created_at, owner_pid) VALUES (?, 'running', ?, ?, ?, ?, ?, ?, ?, ?)",
+                " answers_json, context_json, created_at) VALUES (?, 'running', ?, ?, ?, ?, ?, ?, ?)",
                 (
                     run_id,
                     source_name,
@@ -148,7 +163,6 @@ class ScriptRunStore:
                     answers_json,
                     context_json,
                     _now(),
-                    os.getpid(),
                 ),
             )
         return run_id
@@ -177,6 +191,9 @@ class ScriptRunStore:
                 "UPDATE script_runs SET state=?, error=?, finished_at=? WHERE run_id=? AND state='running'",
                 (state, error, _now(), run_id),
             ).rowcount
+        handle = self._held.pop(run_id, None)
+        if handle is not None:
+            _release(handle, self._lock_path(run_id))
         return changed == 1
 
     def get(self, run_id: str) -> ScriptRun | None:
