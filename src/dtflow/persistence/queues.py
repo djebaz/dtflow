@@ -1303,6 +1303,15 @@ def _script_item_fields(request: dict, script: dict[str, Any]) -> dict[str, Any]
     }
 
 
+def _elapsed(start: str | None, end: str | None) -> float | None:
+    """Wall seconds between two ISO timestamps; None while unfinished or unreadable (never zero by default)."""
+    try:
+        seconds = (datetime.fromisoformat(end) - datetime.fromisoformat(start)).total_seconds()
+    except (TypeError, ValueError):
+        return None
+    return seconds if seconds >= 0 else None
+
+
 def _step_fields(artifacts: list) -> dict[str, Any]:
     """What one step actually asked for, from its attempt's saved metadata (empty when absent or unreadable)."""
     path = next((p for p in artifacts if isinstance(p, str) and Path(p).name == "metadata.json"), None)
@@ -1311,7 +1320,15 @@ def _step_fields(artifacts: list) -> dict[str, Any]:
     try:
         record = json.loads(Path(path).read_text(encoding="utf-8"))
         request = record.get("request") if isinstance(record, dict) else None
-        return _item_request_fields(request) | {"seed": request.get("seed")} if isinstance(request, dict) else {}
+        if not isinstance(request, dict):
+            return {}
+        timing = record.get("timing")
+        seconds = timing.get("backend_elapsed_seconds") if isinstance(timing, dict) else None
+        return (
+            _item_request_fields(request)
+            | {"seed": request.get("seed")}
+            | ({"duration": float(seconds)} if type(seconds) in (int, float) else {})
+        )
     except (OSError, ValueError):
         return {}
 
@@ -1330,6 +1347,7 @@ def _script_view(connection: sqlite3.Connection, request: dict) -> dict[str, Any
         "error": None,
         "children": [],
         "steps_failed": 0,
+        "elapsed": None,
         "waiting_for_input": False,
         "prompt": None,
     }
@@ -1340,6 +1358,7 @@ def _script_view(connection: sqlite3.Connection, request: dict) -> dict[str, Any
     if run is None:
         return view
     view["run_state"], view["error"] = run.state, run.error
+    view["elapsed"] = _elapsed(run.created_at, run.finished_at)
     if run.state == "running":  # an open form keeps the item running; the view only flags it (no new item state)
         try:
             prompt = read_open_prompt(Path(path).parent, str(request.get("run_id")))
@@ -1436,6 +1455,8 @@ def _read(connection: sqlite3.Connection, queue_id: str | None) -> tuple[dict[st
         durations = _item_durations(connection, row["queue_id"])
         for item in items:
             item["duration"] = durations.get(item["item_id"])
+            if item["duration"] is None and item.get("script"):
+                item["duration"] = item["script"].get("elapsed")  # a script's wall time, start to finish
         queue["summary"] = _summary(items)
         queue["status"] = _status(row["state"], queue["summary"])
         queue["items"] = items

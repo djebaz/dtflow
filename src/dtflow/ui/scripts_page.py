@@ -2018,7 +2018,10 @@ class ScriptsPage:
         )
         artifacts = [path for child in children for path in self._images(child["artifacts"])]
         if key == "results":
-            self.results_header.setText(f"Committed steps · {len(children)} of up to {run['cap']}")
+            self.results_header.setText(
+                f"Committed steps · {len(children)} of up to {run['cap']}"
+                + self._seconds(script.get("elapsed")).replace(" · ", " · total ")
+            )
             self._populate_live_results(children, run)
         else:
             status, detail = RUN_STATUSES[key]
@@ -2049,7 +2052,10 @@ class ScriptsPage:
             lines.append(
                 f"Child step {child['ordinal']} · attempt {child['attempt_id'][:8]} · "
                 + self._STEP_STATES.get(child["state"], str(child["state"]))
+                + self._seconds((child.get("fields") or {}).get("duration"))
             )
+        if script.get("elapsed") is not None:
+            lines.append(f"Total {script['elapsed']:.1f} s")
         if script.get("steps_failed"):
             lines.append(f"{script['steps_failed']} step(s) did not complete; the script itself ran on.")
         if key == "queued":
@@ -2058,6 +2064,10 @@ class ScriptsPage:
         self.run_footer.setText(self._footer_for(key))
         self._sync_drawer_data()
         self._fit_rails()
+
+    @staticmethod
+    def _seconds(value) -> str:
+        return f" · {value:.1f} s" if type(value) in (int, float) else ""
 
     def _clear_results(self) -> None:
         while self.results_layout.count():
@@ -2089,7 +2099,12 @@ class ScriptsPage:
             row.addWidget(thumbnail)
             details = QVBoxLayout()
             state = self._STEP_STATES.get(child["state"], str(child["state"]))
-            details.addWidget(_label(f"Step {number} · {state}", role="scriptsStepTitle"))
+            details.addWidget(
+                _label(
+                    f"Step {number} · {state}" + self._seconds((child.get("fields") or {}).get("duration")),
+                    role="scriptsStepTitle",
+                )
+            )
             details.addWidget(
                 _label(
                     f"Created by {run['name']} · run #{self._run_number} · step {number}",

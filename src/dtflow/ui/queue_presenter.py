@@ -371,7 +371,7 @@ def _step_rows(item: dict, steps: list) -> list[ItemRow]:
                 fields.get("steps", item.get("steps")),
                 fields.get("guidance", item.get("guidance")),
                 fields.get("sampler") or item.get("sampler") or "",
-                None,
+                fields.get("duration"),
                 fields.get("width", item.get("width")),
                 fields.get("height", item.get("height")),
                 identity,

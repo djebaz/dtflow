@@ -116,6 +116,8 @@ class RunSnapshot:
     state: str
     error: str | None
     children: tuple[str, ...]  # attempt ids in call order
+    created_at: str | None = None
+    finished_at: str | None = None
 
 
 def read_run_snapshot(directory: Path, run_id: str) -> RunSnapshot | None:
@@ -126,7 +128,9 @@ def read_run_snapshot(directory: Path, run_id: str) -> RunSnapshot | None:
     with closing(sqlite3.connect(path.resolve().as_uri() + "?mode=ro", uri=True, timeout=2.0)) as connection:
         connection.execute("PRAGMA query_only=ON")
         try:
-            row = connection.execute("SELECT state, error FROM script_runs WHERE run_id=?", (run_id,)).fetchone()
+            row = connection.execute(
+                "SELECT state, error, created_at, finished_at FROM script_runs WHERE run_id=?", (run_id,)
+            ).fetchone()
             if row is None:
                 return None
             children = tuple(
@@ -139,7 +143,7 @@ def read_run_snapshot(directory: Path, run_id: str) -> RunSnapshot | None:
             if "no such table" in str(exc):
                 return None
             raise
-    return RunSnapshot(row[0], row[1], children)
+    return RunSnapshot(row[0], row[1], children, row[2], row[3])
 
 
 def child_states(db: sqlite3.Connection, children: tuple[str, ...]) -> list[str | None]:
