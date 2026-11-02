@@ -22,7 +22,7 @@
     <enum>QLayout::SetMinimumSize</enum>
    </property>
    <item>
-    <widget class="QFrame" name="compatibilityCard">
+    <widget class="QGroupBox" name="compatibilityCard">
      <property name="role" stdset="0">
       <string>sectionCard</string>
      </property>
@@ -32,92 +32,165 @@
        <verstretch>0</verstretch>
       </sizepolicy>
      </property>
-     <layout class="QVBoxLayout" name="compatibilityCardLayout">
+     <property name="title">
+      <string />
+     </property>
+     <property name="accessibleName">
+      <string>Compatibility</string>
+     </property>
+     <layout class="QVBoxLayout" name="compatibilityCardCardLayout">
       <property name="leftMargin">
-       <number>10</number>
-      </property>
-      <property name="topMargin">
-       <number>10</number>
+       <number>0</number>
       </property>
       <property name="rightMargin">
-       <number>10</number>
+       <number>0</number>
+      </property>
+      <property name="topMargin">
+       <number>0</number>
       </property>
       <property name="bottomMargin">
-       <number>10</number>
+       <number>0</number>
       </property>
       <property name="spacing">
-       <number>8</number>
-      </property>
-      <property name="sizeConstraint">
-       <enum>QLayout::SetMinimumSize</enum>
+       <number>0</number>
       </property>
       <item>
-       <widget class="QLabel" name="compatibilityCardTitle">
-        <property name="text">
-         <string>Compatibility</string>
-        </property>
+       <widget class="QFrame" name="compatibilityCardHeader">
         <property name="role" stdset="0">
-         <string>scriptsCardTitle</string>
+         <string>sectionHeader</string>
         </property>
-        <property name="wordWrap">
-         <bool>true</bool>
-        </property>
-        <property name="sizePolicy">
-         <sizepolicy hsizetype="Preferred" vsizetype="Minimum">
-          <horstretch>0</horstretch>
-          <verstretch>0</verstretch>
-         </sizepolicy>
-        </property>
-       </widget>
-      </item>
-      <item>
-       <widget class="QLabel" name="hookStatus">
-        <property name="text">
-         <string>No script inspected</string>
-        </property>
-        <property name="role" stdset="0">
-         <string>scriptsMuted</string>
-        </property>
-        <property name="wordWrap">
-         <bool>true</bool>
-        </property>
-        <property name="sizePolicy">
-         <sizepolicy hsizetype="Preferred" vsizetype="Minimum">
-          <horstretch>0</horstretch>
-          <verstretch>0</verstretch>
-         </sizepolicy>
-        </property>
-       </widget>
-      </item>
-      <item>
-       <widget class="QWidget" name="hooksHost">
-        <layout class="QVBoxLayout" name="hooksHostLayout">
+        <layout class="QHBoxLayout" name="compatibilityCardHeaderLayout" stretch="0,1">
          <property name="leftMargin">
-          <number>0</number>
+          <number>10</number>
          </property>
          <property name="topMargin">
-          <number>0</number>
+          <number>7</number>
          </property>
          <property name="rightMargin">
-          <number>0</number>
+          <number>10</number>
          </property>
          <property name="bottomMargin">
-          <number>0</number>
+          <number>7</number>
          </property>
+         <property name="spacing">
+          <number>8</number>
+         </property>
+         <item>
+          <widget class="QLabel" name="compatibilityCardIcon">
+           <property name="role" stdset="0">
+            <string>sectionIcon</string>
+           </property>
+           <property name="iconKey" stdset="0">
+            <string>shield-check</string>
+           </property>
+           <property name="text">
+            <string />
+           </property>
+           <property name="minimumSize">
+            <size>
+             <width>16</width>
+             <height>16</height>
+            </size>
+           </property>
+           <property name="maximumSize">
+            <size>
+             <width>16</width>
+             <height>16</height>
+            </size>
+           </property>
+          </widget>
+         </item>
+         <item>
+          <widget class="QLabel" name="compatibilityCardHeading">
+           <property name="text">
+            <string>Compatibility</string>
+           </property>
+           <property name="textRole" stdset="0">
+            <string>panelHeading</string>
+           </property>
+          </widget>
+         </item>
+        </layout>
+       </widget>
+      </item>
+      <item>
+       <widget class="QWidget" name="compatibilityCardContents">
+        <layout class="QVBoxLayout" name="compatibilityCardContentsLayout">
          <property name="spacing">
           <number>8</number>
          </property>
          <property name="sizeConstraint">
           <enum>QLayout::SetMinimumSize</enum>
          </property>
+         <item>
+          <widget class="QLabel" name="hookStatus">
+           <property name="text">
+            <string>No script inspected</string>
+           </property>
+           <property name="role" stdset="0">
+            <string>scriptsMuted</string>
+           </property>
+           <property name="wordWrap">
+            <bool>true</bool>
+           </property>
+           <property name="sizePolicy">
+            <sizepolicy hsizetype="Preferred" vsizetype="Minimum">
+             <horstretch>0</horstretch>
+             <verstretch>0</verstretch>
+            </sizepolicy>
+           </property>
+          </widget>
+         </item>
+         <item>
+          <widget class="QWidget" name="hooksHost">
+           <layout class="QVBoxLayout" name="hooksHostLayout">
+            <property name="leftMargin">
+             <number>0</number>
+            </property>
+            <property name="topMargin">
+             <number>0</number>
+            </property>
+            <property name="rightMargin">
+             <number>0</number>
+            </property>
+            <property name="bottomMargin">
+             <number>0</number>
+            </property>
+            <property name="spacing">
+             <number>8</number>
+            </property>
+            <property name="sizeConstraint">
+             <enum>QLayout::SetMinimumSize</enum>
+            </property>
+           </layout>
+           <property name="role" stdset="0">
+            <string>sectionContents</string>
+           </property>
+          </widget>
+         </item>
+         <property name="leftMargin">
+          <number>10</number>
+         </property>
+         <property name="rightMargin">
+          <number>10</number>
+         </property>
+         <property name="topMargin">
+          <number>8</number>
+         </property>
+         <property name="bottomMargin">
+          <number>10</number>
+         </property>
         </layout>
+        <property name="role" stdset="0">
+         <string>sectionContents</string>
+        </property>
        </widget>
       </item>
      </layout>
     </widget>
    </item>
    <item>
-    <widget class="QFrame" name="settingsCard">
+    <widget class="QGroupBox" name="settingsCard">
      <property name="role" stdset="0">
       <string>sectionCard</string>
      </property>
@@ -127,112 +200,81 @@
        <verstretch>0</verstretch>
       </sizepolicy>
      </property>
-     <layout class="QVBoxLayout" name="settingsCardLayout">
+     <property name="title">
+      <string />
+     </property>
+     <property name="accessibleName">
+      <string>Starting settings</string>
+     </property>
+     <layout class="QVBoxLayout" name="settingsCardCardLayout">
       <property name="leftMargin">
-       <number>10</number>
-      </property>
-      <property name="topMargin">
-       <number>10</number>
+       <number>0</number>
       </property>
       <property name="rightMargin">
-       <number>10</number>
+       <number>0</number>
+      </property>
+      <property name="topMargin">
+       <number>0</number>
       </property>
       <property name="bottomMargin">
-       <number>10</number>
+       <number>0</number>
       </property>
       <property name="spacing">
-       <number>8</number>
-      </property>
-      <property name="sizeConstraint">
-       <enum>QLayout::SetMinimumSize</enum>
+       <number>0</number>
       </property>
       <item>
-       <widget class="QLabel" name="settingsCardTitle">
-        <property name="text">
-         <string>Starting settings</string>
-        </property>
+       <widget class="QFrame" name="settingsCardHeader">
         <property name="role" stdset="0">
-         <string>scriptsCardTitle</string>
+         <string>sectionHeader</string>
         </property>
-        <property name="wordWrap">
-         <bool>true</bool>
-        </property>
-        <property name="sizePolicy">
-         <sizepolicy hsizetype="Preferred" vsizetype="Minimum">
-          <horstretch>0</horstretch>
-          <verstretch>0</verstretch>
-         </sizepolicy>
-        </property>
-       </widget>
-      </item>
-      <item>
-       <widget class="QWidget" name="settingsCheckpointRow">
-        <layout class="QHBoxLayout" name="settingsCheckpointRowLayout">
+        <layout class="QHBoxLayout" name="settingsCardHeaderLayout" stretch="0,1">
          <property name="leftMargin">
-          <number>0</number>
+          <number>10</number>
          </property>
          <property name="topMargin">
-          <number>0</number>
+          <number>7</number>
          </property>
          <property name="rightMargin">
-          <number>0</number>
+          <number>10</number>
          </property>
          <property name="bottomMargin">
-          <number>0</number>
+          <number>7</number>
          </property>
          <property name="spacing">
-          <number>6</number>
-         </property>
-         <property name="sizeConstraint">
-          <enum>QLayout::SetMinimumSize</enum>
+          <number>8</number>
          </property>
          <item>
-          <widget class="QLabel" name="settingsCheckpointName">
-           <property name="text">
-            <string>Checkpoint</string>
-           </property>
+          <widget class="QLabel" name="settingsCardIcon">
            <property name="role" stdset="0">
-            <string>scriptsMuted</string>
+            <string>sectionIcon</string>
            </property>
-           <property name="wordWrap">
-            <bool>true</bool>
+           <property name="iconKey" stdset="0">
+            <string>settings</string>
            </property>
-           <property name="sizePolicy">
-            <sizepolicy hsizetype="Preferred" vsizetype="Minimum">
-             <horstretch>0</horstretch>
-             <verstretch>0</verstretch>
-            </sizepolicy>
+           <property name="text">
+            <string />
            </property>
            <property name="minimumSize">
             <size>
-             <width>100</width>
-             <height>0</height>
+             <width>16</width>
+             <height>16</height>
             </size>
            </property>
            <property name="maximumSize">
             <size>
-             <width>100</width>
-             <height>16777215</height>
+             <width>16</width>
+             <height>16</height>
             </size>
            </property>
           </widget>
          </item>
          <item>
-          <widget class="QLabel" name="settingsCheckpointValue">
+          <widget class="QLabel" name="settingsCardHeading">
            <property name="text">
-            <string>z_image_turbo_1.0_q6p</string>
+            <string>Starting settings</string>
            </property>
-           <property name="role" stdset="0">
-            <string>scriptsMuted</string>
-           </property>
-           <property name="wordWrap">
-            <bool>true</bool>
-           </property>
-           <property name="sizePolicy">
-            <sizepolicy hsizetype="Preferred" vsizetype="Minimum">
-             <horstretch>0</horstretch>
-             <verstretch>0</verstretch>
-            </sizepolicy>
+           <property name="textRole" stdset="0">
+            <string>panelHeading</string>
            </property>
           </widget>
          </item>
@@ -240,61 +282,403 @@
        </widget>
       </item>
       <item>
-       <widget class="QWidget" name="settingsSizeRow">
-        <layout class="QHBoxLayout" name="settingsSizeRowLayout">
-         <property name="leftMargin">
-          <number>0</number>
-         </property>
-         <property name="topMargin">
-          <number>0</number>
-         </property>
-         <property name="rightMargin">
-          <number>0</number>
-         </property>
-         <property name="bottomMargin">
-          <number>0</number>
-         </property>
+       <widget class="QWidget" name="settingsCardContents">
+        <layout class="QVBoxLayout" name="settingsCardContentsLayout">
          <property name="spacing">
-          <number>6</number>
+          <number>8</number>
          </property>
          <property name="sizeConstraint">
           <enum>QLayout::SetMinimumSize</enum>
          </property>
          <item>
-          <widget class="QLabel" name="settingsSizeName">
-           <property name="text">
-            <string>Size</string>
-           </property>
+          <widget class="QWidget" name="settingsCheckpointRow">
+           <layout class="QHBoxLayout" name="settingsCheckpointRowLayout">
+            <property name="leftMargin">
+             <number>0</number>
+            </property>
+            <property name="topMargin">
+             <number>0</number>
+            </property>
+            <property name="rightMargin">
+             <number>0</number>
+            </property>
+            <property name="bottomMargin">
+             <number>0</number>
+            </property>
+            <property name="spacing">
+             <number>6</number>
+            </property>
+            <property name="sizeConstraint">
+             <enum>QLayout::SetMinimumSize</enum>
+            </property>
+            <item>
+             <widget class="QLabel" name="settingsCheckpointName">
+              <property name="text">
+               <string>Checkpoint</string>
+              </property>
+              <property name="role" stdset="0">
+               <string>scriptsMuted</string>
+              </property>
+              <property name="wordWrap">
+               <bool>true</bool>
+              </property>
+              <property name="sizePolicy">
+               <sizepolicy hsizetype="Preferred" vsizetype="Minimum">
+                <horstretch>0</horstretch>
+                <verstretch>0</verstretch>
+               </sizepolicy>
+              </property>
+              <property name="minimumSize">
+               <size>
+                <width>100</width>
+                <height>0</height>
+               </size>
+              </property>
+              <property name="maximumSize">
+               <size>
+                <width>100</width>
+                <height>16777215</height>
+               </size>
+              </property>
+             </widget>
+            </item>
+            <item>
+             <widget class="QLabel" name="settingsCheckpointValue">
+              <property name="text">
+               <string>z_image_turbo_1.0_q6p</string>
+              </property>
+              <property name="role" stdset="0">
+               <string>scriptsMuted</string>
+              </property>
+              <property name="wordWrap">
+               <bool>true</bool>
+              </property>
+              <property name="sizePolicy">
+               <sizepolicy hsizetype="Preferred" vsizetype="Minimum">
+                <horstretch>0</horstretch>
+                <verstretch>0</verstretch>
+               </sizepolicy>
+              </property>
+             </widget>
+            </item>
+           </layout>
            <property name="role" stdset="0">
-            <string>scriptsMuted</string>
-           </property>
-           <property name="wordWrap">
-            <bool>true</bool>
-           </property>
-           <property name="sizePolicy">
-            <sizepolicy hsizetype="Preferred" vsizetype="Minimum">
-             <horstretch>0</horstretch>
-             <verstretch>0</verstretch>
-            </sizepolicy>
-           </property>
-           <property name="minimumSize">
-            <size>
-             <width>100</width>
-             <height>0</height>
-            </size>
-           </property>
-           <property name="maximumSize">
-            <size>
-             <width>100</width>
-             <height>16777215</height>
-            </size>
+            <string>sectionContents</string>
            </property>
           </widget>
          </item>
          <item>
-          <widget class="QLabel" name="settingsSizeValue">
+          <widget class="QWidget" name="settingsSizeRow">
+           <layout class="QHBoxLayout" name="settingsSizeRowLayout">
+            <property name="leftMargin">
+             <number>0</number>
+            </property>
+            <property name="topMargin">
+             <number>0</number>
+            </property>
+            <property name="rightMargin">
+             <number>0</number>
+            </property>
+            <property name="bottomMargin">
+             <number>0</number>
+            </property>
+            <property name="spacing">
+             <number>6</number>
+            </property>
+            <property name="sizeConstraint">
+             <enum>QLayout::SetMinimumSize</enum>
+            </property>
+            <item>
+             <widget class="QLabel" name="settingsSizeName">
+              <property name="text">
+               <string>Size</string>
+              </property>
+              <property name="role" stdset="0">
+               <string>scriptsMuted</string>
+              </property>
+              <property name="wordWrap">
+               <bool>true</bool>
+              </property>
+              <property name="sizePolicy">
+               <sizepolicy hsizetype="Preferred" vsizetype="Minimum">
+                <horstretch>0</horstretch>
+                <verstretch>0</verstretch>
+               </sizepolicy>
+              </property>
+              <property name="minimumSize">
+               <size>
+                <width>100</width>
+                <height>0</height>
+               </size>
+              </property>
+              <property name="maximumSize">
+               <size>
+                <width>100</width>
+                <height>16777215</height>
+               </size>
+              </property>
+             </widget>
+            </item>
+            <item>
+             <widget class="QLabel" name="settingsSizeValue">
+              <property name="text">
+               <string>320 × 192</string>
+              </property>
+              <property name="role" stdset="0">
+               <string>scriptsMuted</string>
+              </property>
+              <property name="wordWrap">
+               <bool>true</bool>
+              </property>
+              <property name="sizePolicy">
+               <sizepolicy hsizetype="Preferred" vsizetype="Minimum">
+                <horstretch>0</horstretch>
+                <verstretch>0</verstretch>
+               </sizepolicy>
+              </property>
+             </widget>
+            </item>
+           </layout>
+           <property name="role" stdset="0">
+            <string>sectionContents</string>
+           </property>
+          </widget>
+         </item>
+         <item>
+          <widget class="QWidget" name="settingsStepsRow">
+           <layout class="QHBoxLayout" name="settingsStepsRowLayout">
+            <property name="leftMargin">
+             <number>0</number>
+            </property>
+            <property name="topMargin">
+             <number>0</number>
+            </property>
+            <property name="rightMargin">
+             <number>0</number>
+            </property>
+            <property name="bottomMargin">
+             <number>0</number>
+            </property>
+            <property name="spacing">
+             <number>6</number>
+            </property>
+            <property name="sizeConstraint">
+             <enum>QLayout::SetMinimumSize</enum>
+            </property>
+            <item>
+             <widget class="QLabel" name="settingsStepsName">
+              <property name="text">
+               <string>Steps</string>
+              </property>
+              <property name="role" stdset="0">
+               <string>scriptsMuted</string>
+              </property>
+              <property name="wordWrap">
+               <bool>true</bool>
+              </property>
+              <property name="sizePolicy">
+               <sizepolicy hsizetype="Preferred" vsizetype="Minimum">
+                <horstretch>0</horstretch>
+                <verstretch>0</verstretch>
+               </sizepolicy>
+              </property>
+              <property name="minimumSize">
+               <size>
+                <width>100</width>
+                <height>0</height>
+               </size>
+              </property>
+              <property name="maximumSize">
+               <size>
+                <width>100</width>
+                <height>16777215</height>
+               </size>
+              </property>
+             </widget>
+            </item>
+            <item>
+             <widget class="QLabel" name="settingsStepsValue">
+              <property name="text">
+               <string>4</string>
+              </property>
+              <property name="role" stdset="0">
+               <string>scriptsMuted</string>
+              </property>
+              <property name="wordWrap">
+               <bool>true</bool>
+              </property>
+              <property name="sizePolicy">
+               <sizepolicy hsizetype="Preferred" vsizetype="Minimum">
+                <horstretch>0</horstretch>
+                <verstretch>0</verstretch>
+               </sizepolicy>
+              </property>
+             </widget>
+            </item>
+           </layout>
+           <property name="role" stdset="0">
+            <string>sectionContents</string>
+           </property>
+          </widget>
+         </item>
+         <item>
+          <widget class="QWidget" name="settingsSamplerRow">
+           <layout class="QHBoxLayout" name="settingsSamplerRowLayout">
+            <property name="leftMargin">
+             <number>0</number>
+            </property>
+            <property name="topMargin">
+             <number>0</number>
+            </property>
+            <property name="rightMargin">
+             <number>0</number>
+            </property>
+            <property name="bottomMargin">
+             <number>0</number>
+            </property>
+            <property name="spacing">
+             <number>6</number>
+            </property>
+            <property name="sizeConstraint">
+             <enum>QLayout::SetMinimumSize</enum>
+            </property>
+            <item>
+             <widget class="QLabel" name="settingsSamplerName">
+              <property name="text">
+               <string>Sampler</string>
+              </property>
+              <property name="role" stdset="0">
+               <string>scriptsMuted</string>
+              </property>
+              <property name="wordWrap">
+               <bool>true</bool>
+              </property>
+              <property name="sizePolicy">
+               <sizepolicy hsizetype="Preferred" vsizetype="Minimum">
+                <horstretch>0</horstretch>
+                <verstretch>0</verstretch>
+               </sizepolicy>
+              </property>
+              <property name="minimumSize">
+               <size>
+                <width>100</width>
+                <height>0</height>
+               </size>
+              </property>
+              <property name="maximumSize">
+               <size>
+                <width>100</width>
+                <height>16777215</height>
+               </size>
+              </property>
+             </widget>
+            </item>
+            <item>
+             <widget class="QLabel" name="settingsSamplerValue">
+              <property name="text">
+               <string>euler_a</string>
+              </property>
+              <property name="role" stdset="0">
+               <string>scriptsMuted</string>
+              </property>
+              <property name="wordWrap">
+               <bool>true</bool>
+              </property>
+              <property name="sizePolicy">
+               <sizepolicy hsizetype="Preferred" vsizetype="Minimum">
+                <horstretch>0</horstretch>
+                <verstretch>0</verstretch>
+               </sizepolicy>
+              </property>
+             </widget>
+            </item>
+           </layout>
+           <property name="role" stdset="0">
+            <string>sectionContents</string>
+           </property>
+          </widget>
+         </item>
+         <item>
+          <widget class="QWidget" name="settingsSeedRow">
+           <layout class="QHBoxLayout" name="settingsSeedRowLayout">
+            <property name="leftMargin">
+             <number>0</number>
+            </property>
+            <property name="topMargin">
+             <number>0</number>
+            </property>
+            <property name="rightMargin">
+             <number>0</number>
+            </property>
+            <property name="bottomMargin">
+             <number>0</number>
+            </property>
+            <property name="spacing">
+             <number>6</number>
+            </property>
+            <property name="sizeConstraint">
+             <enum>QLayout::SetMinimumSize</enum>
+            </property>
+            <item>
+             <widget class="QLabel" name="settingsSeedName">
+              <property name="text">
+               <string>Seed</string>
+              </property>
+              <property name="role" stdset="0">
+               <string>scriptsMuted</string>
+              </property>
+              <property name="wordWrap">
+               <bool>true</bool>
+              </property>
+              <property name="sizePolicy">
+               <sizepolicy hsizetype="Preferred" vsizetype="Minimum">
+                <horstretch>0</horstretch>
+                <verstretch>0</verstretch>
+               </sizepolicy>
+              </property>
+              <property name="minimumSize">
+               <size>
+                <width>100</width>
+                <height>0</height>
+               </size>
+              </property>
+              <property name="maximumSize">
+               <size>
+                <width>100</width>
+                <height>16777215</height>
+               </size>
+              </property>
+             </widget>
+            </item>
+            <item>
+             <widget class="QLabel" name="settingsSeedValue">
+              <property name="text">
+               <string>0</string>
+              </property>
+              <property name="role" stdset="0">
+               <string>scriptsMuted</string>
+              </property>
+              <property name="wordWrap">
+               <bool>true</bool>
+              </property>
+              <property name="sizePolicy">
+               <sizepolicy hsizetype="Preferred" vsizetype="Minimum">
+                <horstretch>0</horstretch>
+                <verstretch>0</verstretch>
+               </sizepolicy>
+              </property>
+             </widget>
+            </item>
+           </layout>
+           <property name="role" stdset="0">
+            <string>sectionContents</string>
+           </property>
+          </widget>
+         </item>
+         <item>
+          <widget class="QLabel" name="settingsNote">
            <property name="text">
-            <string>320 × 192</string>
+            <string>Read-only starting settings. The script may override values per generation.</string>
            </property>
            <property name="role" stdset="0">
             <string>scriptsMuted</string>
@@ -310,247 +694,21 @@
            </property>
           </widget>
          </item>
-        </layout>
-       </widget>
-      </item>
-      <item>
-       <widget class="QWidget" name="settingsStepsRow">
-        <layout class="QHBoxLayout" name="settingsStepsRowLayout">
          <property name="leftMargin">
-          <number>0</number>
-         </property>
-         <property name="topMargin">
-          <number>0</number>
+          <number>10</number>
          </property>
          <property name="rightMargin">
-          <number>0</number>
-         </property>
-         <property name="bottomMargin">
-          <number>0</number>
-         </property>
-         <property name="spacing">
-          <number>6</number>
-         </property>
-         <property name="sizeConstraint">
-          <enum>QLayout::SetMinimumSize</enum>
-         </property>
-         <item>
-          <widget class="QLabel" name="settingsStepsName">
-           <property name="text">
-            <string>Steps</string>
-           </property>
-           <property name="role" stdset="0">
-            <string>scriptsMuted</string>
-           </property>
-           <property name="wordWrap">
-            <bool>true</bool>
-           </property>
-           <property name="sizePolicy">
-            <sizepolicy hsizetype="Preferred" vsizetype="Minimum">
-             <horstretch>0</horstretch>
-             <verstretch>0</verstretch>
-            </sizepolicy>
-           </property>
-           <property name="minimumSize">
-            <size>
-             <width>100</width>
-             <height>0</height>
-            </size>
-           </property>
-           <property name="maximumSize">
-            <size>
-             <width>100</width>
-             <height>16777215</height>
-            </size>
-           </property>
-          </widget>
-         </item>
-         <item>
-          <widget class="QLabel" name="settingsStepsValue">
-           <property name="text">
-            <string>4</string>
-           </property>
-           <property name="role" stdset="0">
-            <string>scriptsMuted</string>
-           </property>
-           <property name="wordWrap">
-            <bool>true</bool>
-           </property>
-           <property name="sizePolicy">
-            <sizepolicy hsizetype="Preferred" vsizetype="Minimum">
-             <horstretch>0</horstretch>
-             <verstretch>0</verstretch>
-            </sizepolicy>
-           </property>
-          </widget>
-         </item>
-        </layout>
-       </widget>
-      </item>
-      <item>
-       <widget class="QWidget" name="settingsSamplerRow">
-        <layout class="QHBoxLayout" name="settingsSamplerRowLayout">
-         <property name="leftMargin">
-          <number>0</number>
+          <number>10</number>
          </property>
          <property name="topMargin">
-          <number>0</number>
-         </property>
-         <property name="rightMargin">
-          <number>0</number>
+          <number>8</number>
          </property>
          <property name="bottomMargin">
-          <number>0</number>
+          <number>10</number>
          </property>
-         <property name="spacing">
-          <number>6</number>
-         </property>
-         <property name="sizeConstraint">
-          <enum>QLayout::SetMinimumSize</enum>
-         </property>
-         <item>
-          <widget class="QLabel" name="settingsSamplerName">
-           <property name="text">
-            <string>Sampler</string>
-           </property>
-           <property name="role" stdset="0">
-            <string>scriptsMuted</string>
-           </property>
-           <property name="wordWrap">
-            <bool>true</bool>
-           </property>
-           <property name="sizePolicy">
-            <sizepolicy hsizetype="Preferred" vsizetype="Minimum">
-             <horstretch>0</horstretch>
-             <verstretch>0</verstretch>
-            </sizepolicy>
-           </property>
-           <property name="minimumSize">
-            <size>
-             <width>100</width>
-             <height>0</height>
-            </size>
-           </property>
-           <property name="maximumSize">
-            <size>
-             <width>100</width>
-             <height>16777215</height>
-            </size>
-           </property>
-          </widget>
-         </item>
-         <item>
-          <widget class="QLabel" name="settingsSamplerValue">
-           <property name="text">
-            <string>euler_a</string>
-           </property>
-           <property name="role" stdset="0">
-            <string>scriptsMuted</string>
-           </property>
-           <property name="wordWrap">
-            <bool>true</bool>
-           </property>
-           <property name="sizePolicy">
-            <sizepolicy hsizetype="Preferred" vsizetype="Minimum">
-             <horstretch>0</horstretch>
-             <verstretch>0</verstretch>
-            </sizepolicy>
-           </property>
-          </widget>
-         </item>
         </layout>
-       </widget>
-      </item>
-      <item>
-       <widget class="QWidget" name="settingsSeedRow">
-        <layout class="QHBoxLayout" name="settingsSeedRowLayout">
-         <property name="leftMargin">
-          <number>0</number>
-         </property>
-         <property name="topMargin">
-          <number>0</number>
-         </property>
-         <property name="rightMargin">
-          <number>0</number>
-         </property>
-         <property name="bottomMargin">
-          <number>0</number>
-         </property>
-         <property name="spacing">
-          <number>6</number>
-         </property>
-         <property name="sizeConstraint">
-          <enum>QLayout::SetMinimumSize</enum>
-         </property>
-         <item>
-          <widget class="QLabel" name="settingsSeedName">
-           <property name="text">
-            <string>Seed</string>
-           </property>
-           <property name="role" stdset="0">
-            <string>scriptsMuted</string>
-           </property>
-           <property name="wordWrap">
-            <bool>true</bool>
-           </property>
-           <property name="sizePolicy">
-            <sizepolicy hsizetype="Preferred" vsizetype="Minimum">
-             <horstretch>0</horstretch>
-             <verstretch>0</verstretch>
-            </sizepolicy>
-           </property>
-           <property name="minimumSize">
-            <size>
-             <width>100</width>
-             <height>0</height>
-            </size>
-           </property>
-           <property name="maximumSize">
-            <size>
-             <width>100</width>
-             <height>16777215</height>
-            </size>
-           </property>
-          </widget>
-         </item>
-         <item>
-          <widget class="QLabel" name="settingsSeedValue">
-           <property name="text">
-            <string>0</string>
-           </property>
-           <property name="role" stdset="0">
-            <string>scriptsMuted</string>
-           </property>
-           <property name="wordWrap">
-            <bool>true</bool>
-           </property>
-           <property name="sizePolicy">
-            <sizepolicy hsizetype="Preferred" vsizetype="Minimum">
-             <horstretch>0</horstretch>
-             <verstretch>0</verstretch>
-            </sizepolicy>
-           </property>
-          </widget>
-         </item>
-        </layout>
-       </widget>
-      </item>
-      <item>
-       <widget class="QLabel" name="settingsNote">
-        <property name="text">
-         <string>Read-only starting settings. The script may override values per generation.</string>
-        </property>
         <property name="role" stdset="0">
-         <string>scriptsMuted</string>
-        </property>
-        <property name="wordWrap">
-         <bool>true</bool>
-        </property>
-        <property name="sizePolicy">
-         <sizepolicy hsizetype="Preferred" vsizetype="Minimum">
-          <horstretch>0</horstretch>
-          <verstretch>0</verstretch>
-         </sizepolicy>
+         <string>sectionContents</string>
         </property>
        </widget>
       </item>
@@ -558,7 +716,7 @@
     </widget>
    </item>
    <item>
-    <widget class="QFrame" name="sourceCard">
+    <widget class="QGroupBox" name="sourceCard">
      <property name="role" stdset="0">
       <string>sectionCard</string>
      </property>
@@ -568,345 +726,427 @@
        <verstretch>0</verstretch>
       </sizepolicy>
      </property>
-     <layout class="QVBoxLayout" name="sourceCardLayout">
+     <property name="title">
+      <string />
+     </property>
+     <property name="accessibleName">
+      <string>Source</string>
+     </property>
+     <layout class="QVBoxLayout" name="sourceCardCardLayout">
       <property name="leftMargin">
-       <number>10</number>
-      </property>
-      <property name="topMargin">
-       <number>10</number>
+       <number>0</number>
       </property>
       <property name="rightMargin">
-       <number>10</number>
+       <number>0</number>
+      </property>
+      <property name="topMargin">
+       <number>0</number>
       </property>
       <property name="bottomMargin">
-       <number>10</number>
+       <number>0</number>
       </property>
       <property name="spacing">
-       <number>8</number>
-      </property>
-      <property name="sizeConstraint">
-       <enum>QLayout::SetMinimumSize</enum>
+       <number>0</number>
       </property>
       <item>
-       <widget class="QLabel" name="sourceCardTitle">
-        <property name="text">
-         <string>Source</string>
-        </property>
+       <widget class="QFrame" name="sourceCardHeader">
         <property name="role" stdset="0">
-         <string>scriptsCardTitle</string>
+         <string>sectionHeader</string>
         </property>
-        <property name="wordWrap">
-         <bool>true</bool>
+        <layout class="QHBoxLayout" name="sourceCardHeaderLayout" stretch="0,1">
+         <property name="leftMargin">
+          <number>10</number>
+         </property>
+         <property name="topMargin">
+          <number>7</number>
+         </property>
+         <property name="rightMargin">
+          <number>10</number>
+         </property>
+         <property name="bottomMargin">
+          <number>7</number>
+         </property>
+         <property name="spacing">
+          <number>8</number>
+         </property>
+         <item>
+          <widget class="QLabel" name="sourceCardIcon">
+           <property name="role" stdset="0">
+            <string>sectionIcon</string>
+           </property>
+           <property name="iconKey" stdset="0">
+            <string>document</string>
+           </property>
+           <property name="text">
+            <string />
+           </property>
+           <property name="minimumSize">
+            <size>
+             <width>16</width>
+             <height>16</height>
+            </size>
+           </property>
+           <property name="maximumSize">
+            <size>
+             <width>16</width>
+             <height>16</height>
+            </size>
+           </property>
+          </widget>
+         </item>
+         <item>
+          <widget class="QLabel" name="sourceCardHeading">
+           <property name="text">
+            <string>Source</string>
+           </property>
+           <property name="textRole" stdset="0">
+            <string>panelHeading</string>
+           </property>
+          </widget>
+         </item>
+        </layout>
+       </widget>
+      </item>
+      <item>
+       <widget class="QWidget" name="sourceCardContents">
+        <layout class="QVBoxLayout" name="sourceCardContentsLayout">
+         <property name="spacing">
+          <number>8</number>
+         </property>
+         <property name="sizeConstraint">
+          <enum>QLayout::SetMinimumSize</enum>
+         </property>
+         <item>
+          <widget class="QWidget" name="sourceFileRow">
+           <layout class="QHBoxLayout" name="sourceFileRowLayout">
+            <property name="leftMargin">
+             <number>0</number>
+            </property>
+            <property name="topMargin">
+             <number>0</number>
+            </property>
+            <property name="rightMargin">
+             <number>0</number>
+            </property>
+            <property name="bottomMargin">
+             <number>0</number>
+            </property>
+            <property name="spacing">
+             <number>6</number>
+            </property>
+            <property name="sizeConstraint">
+             <enum>QLayout::SetMinimumSize</enum>
+            </property>
+            <item>
+             <widget class="QLabel" name="sourceFileName">
+              <property name="text">
+               <string>File</string>
+              </property>
+              <property name="role" stdset="0">
+               <string>scriptsMuted</string>
+              </property>
+              <property name="wordWrap">
+               <bool>true</bool>
+              </property>
+              <property name="sizePolicy">
+               <sizepolicy hsizetype="Preferred" vsizetype="Minimum">
+                <horstretch>0</horstretch>
+                <verstretch>0</verstretch>
+               </sizepolicy>
+              </property>
+              <property name="minimumSize">
+               <size>
+                <width>100</width>
+                <height>0</height>
+               </size>
+              </property>
+              <property name="maximumSize">
+               <size>
+                <width>100</width>
+                <height>16777215</height>
+               </size>
+              </property>
+             </widget>
+            </item>
+            <item>
+             <widget class="QLabel" name="sourceFileValue">
+              <property name="text">
+               <string />
+              </property>
+              <property name="role" stdset="0">
+               <string>scriptsMuted</string>
+              </property>
+              <property name="wordWrap">
+               <bool>true</bool>
+              </property>
+              <property name="sizePolicy">
+               <sizepolicy hsizetype="Preferred" vsizetype="Minimum">
+                <horstretch>0</horstretch>
+                <verstretch>0</verstretch>
+               </sizepolicy>
+              </property>
+             </widget>
+            </item>
+           </layout>
+           <property name="role" stdset="0">
+            <string>sectionContents</string>
+           </property>
+          </widget>
+         </item>
+         <item>
+          <widget class="QWidget" name="sourceShaRow">
+           <layout class="QHBoxLayout" name="sourceShaRowLayout">
+            <property name="leftMargin">
+             <number>0</number>
+            </property>
+            <property name="topMargin">
+             <number>0</number>
+            </property>
+            <property name="rightMargin">
+             <number>0</number>
+            </property>
+            <property name="bottomMargin">
+             <number>0</number>
+            </property>
+            <property name="spacing">
+             <number>6</number>
+            </property>
+            <property name="sizeConstraint">
+             <enum>QLayout::SetMinimumSize</enum>
+            </property>
+            <item>
+             <widget class="QLabel" name="sourceShaName">
+              <property name="text">
+               <string>Version SHA-256</string>
+              </property>
+              <property name="role" stdset="0">
+               <string>scriptsMuted</string>
+              </property>
+              <property name="wordWrap">
+               <bool>true</bool>
+              </property>
+              <property name="sizePolicy">
+               <sizepolicy hsizetype="Preferred" vsizetype="Minimum">
+                <horstretch>0</horstretch>
+                <verstretch>0</verstretch>
+               </sizepolicy>
+              </property>
+              <property name="minimumSize">
+               <size>
+                <width>100</width>
+                <height>0</height>
+               </size>
+              </property>
+              <property name="maximumSize">
+               <size>
+                <width>100</width>
+                <height>16777215</height>
+               </size>
+              </property>
+             </widget>
+            </item>
+            <item>
+             <widget class="QLabel" name="sourceShaValue">
+              <property name="text">
+               <string />
+              </property>
+              <property name="role" stdset="0">
+               <string>scriptsMuted</string>
+              </property>
+              <property name="wordWrap">
+               <bool>true</bool>
+              </property>
+              <property name="sizePolicy">
+               <sizepolicy hsizetype="Preferred" vsizetype="Minimum">
+                <horstretch>0</horstretch>
+                <verstretch>0</verstretch>
+               </sizepolicy>
+              </property>
+             </widget>
+            </item>
+           </layout>
+           <property name="role" stdset="0">
+            <string>sectionContents</string>
+           </property>
+          </widget>
+         </item>
+         <item>
+          <widget class="QWidget" name="sourceSizeRow">
+           <layout class="QHBoxLayout" name="sourceSizeRowLayout">
+            <property name="leftMargin">
+             <number>0</number>
+            </property>
+            <property name="topMargin">
+             <number>0</number>
+            </property>
+            <property name="rightMargin">
+             <number>0</number>
+            </property>
+            <property name="bottomMargin">
+             <number>0</number>
+            </property>
+            <property name="spacing">
+             <number>6</number>
+            </property>
+            <property name="sizeConstraint">
+             <enum>QLayout::SetMinimumSize</enum>
+            </property>
+            <item>
+             <widget class="QLabel" name="sourceSizeName">
+              <property name="text">
+               <string>Size</string>
+              </property>
+              <property name="role" stdset="0">
+               <string>scriptsMuted</string>
+              </property>
+              <property name="wordWrap">
+               <bool>true</bool>
+              </property>
+              <property name="sizePolicy">
+               <sizepolicy hsizetype="Preferred" vsizetype="Minimum">
+                <horstretch>0</horstretch>
+                <verstretch>0</verstretch>
+               </sizepolicy>
+              </property>
+              <property name="minimumSize">
+               <size>
+                <width>100</width>
+                <height>0</height>
+               </size>
+              </property>
+              <property name="maximumSize">
+               <size>
+                <width>100</width>
+                <height>16777215</height>
+               </size>
+              </property>
+             </widget>
+            </item>
+            <item>
+             <widget class="QLabel" name="sourceSizeValue">
+              <property name="text">
+               <string />
+              </property>
+              <property name="role" stdset="0">
+               <string>scriptsMuted</string>
+              </property>
+              <property name="wordWrap">
+               <bool>true</bool>
+              </property>
+              <property name="sizePolicy">
+               <sizepolicy hsizetype="Preferred" vsizetype="Minimum">
+                <horstretch>0</horstretch>
+                <verstretch>0</verstretch>
+               </sizepolicy>
+              </property>
+             </widget>
+            </item>
+           </layout>
+           <property name="role" stdset="0">
+            <string>sectionContents</string>
+           </property>
+          </widget>
+         </item>
+         <item>
+          <widget class="QWidget" name="sourceImportedRow">
+           <layout class="QHBoxLayout" name="sourceImportedRowLayout">
+            <property name="leftMargin">
+             <number>0</number>
+            </property>
+            <property name="topMargin">
+             <number>0</number>
+            </property>
+            <property name="rightMargin">
+             <number>0</number>
+            </property>
+            <property name="bottomMargin">
+             <number>0</number>
+            </property>
+            <property name="spacing">
+             <number>6</number>
+            </property>
+            <property name="sizeConstraint">
+             <enum>QLayout::SetMinimumSize</enum>
+            </property>
+            <item>
+             <widget class="QLabel" name="sourceImportedName">
+              <property name="text">
+               <string>Imported</string>
+              </property>
+              <property name="role" stdset="0">
+               <string>scriptsMuted</string>
+              </property>
+              <property name="wordWrap">
+               <bool>true</bool>
+              </property>
+              <property name="sizePolicy">
+               <sizepolicy hsizetype="Preferred" vsizetype="Minimum">
+                <horstretch>0</horstretch>
+                <verstretch>0</verstretch>
+               </sizepolicy>
+              </property>
+              <property name="minimumSize">
+               <size>
+                <width>100</width>
+                <height>0</height>
+               </size>
+              </property>
+              <property name="maximumSize">
+               <size>
+                <width>100</width>
+                <height>16777215</height>
+               </size>
+              </property>
+             </widget>
+            </item>
+            <item>
+             <widget class="QLabel" name="sourceImportedValue">
+              <property name="text">
+               <string />
+              </property>
+              <property name="role" stdset="0">
+               <string>scriptsMuted</string>
+              </property>
+              <property name="wordWrap">
+               <bool>true</bool>
+              </property>
+              <property name="sizePolicy">
+               <sizepolicy hsizetype="Preferred" vsizetype="Minimum">
+                <horstretch>0</horstretch>
+                <verstretch>0</verstretch>
+               </sizepolicy>
+              </property>
+             </widget>
+            </item>
+           </layout>
+           <property name="role" stdset="0">
+            <string>sectionContents</string>
+           </property>
+          </widget>
+         </item>
+         <property name="leftMargin">
+          <number>10</number>
+         </property>
+         <property name="rightMargin">
+          <number>10</number>
+         </property>
+         <property name="topMargin">
+          <number>8</number>
+         </property>
+         <property name="bottomMargin">
+          <number>10</number>
+         </property>
+        </layout>
+        <property name="role" stdset="0">
+         <string>sectionContents</string>
         </property>
-        <property name="sizePolicy">
-         <sizepolicy hsizetype="Preferred" vsizetype="Minimum">
-          <horstretch>0</horstretch>
-          <verstretch>0</verstretch>
-         </sizepolicy>
-        </property>
-       </widget>
-      </item>
-      <item>
-       <widget class="QWidget" name="sourceFileRow">
-        <layout class="QHBoxLayout" name="sourceFileRowLayout">
-         <property name="leftMargin">
-          <number>0</number>
-         </property>
-         <property name="topMargin">
-          <number>0</number>
-         </property>
-         <property name="rightMargin">
-          <number>0</number>
-         </property>
-         <property name="bottomMargin">
-          <number>0</number>
-         </property>
-         <property name="spacing">
-          <number>6</number>
-         </property>
-         <property name="sizeConstraint">
-          <enum>QLayout::SetMinimumSize</enum>
-         </property>
-         <item>
-          <widget class="QLabel" name="sourceFileName">
-           <property name="text">
-            <string>File</string>
-           </property>
-           <property name="role" stdset="0">
-            <string>scriptsMuted</string>
-           </property>
-           <property name="wordWrap">
-            <bool>true</bool>
-           </property>
-           <property name="sizePolicy">
-            <sizepolicy hsizetype="Preferred" vsizetype="Minimum">
-             <horstretch>0</horstretch>
-             <verstretch>0</verstretch>
-            </sizepolicy>
-           </property>
-           <property name="minimumSize">
-            <size>
-             <width>100</width>
-             <height>0</height>
-            </size>
-           </property>
-           <property name="maximumSize">
-            <size>
-             <width>100</width>
-             <height>16777215</height>
-            </size>
-           </property>
-          </widget>
-         </item>
-         <item>
-          <widget class="QLabel" name="sourceFileValue">
-           <property name="text">
-            <string />
-           </property>
-           <property name="role" stdset="0">
-            <string>scriptsMuted</string>
-           </property>
-           <property name="wordWrap">
-            <bool>true</bool>
-           </property>
-           <property name="sizePolicy">
-            <sizepolicy hsizetype="Preferred" vsizetype="Minimum">
-             <horstretch>0</horstretch>
-             <verstretch>0</verstretch>
-            </sizepolicy>
-           </property>
-          </widget>
-         </item>
-        </layout>
-       </widget>
-      </item>
-      <item>
-       <widget class="QWidget" name="sourceShaRow">
-        <layout class="QHBoxLayout" name="sourceShaRowLayout">
-         <property name="leftMargin">
-          <number>0</number>
-         </property>
-         <property name="topMargin">
-          <number>0</number>
-         </property>
-         <property name="rightMargin">
-          <number>0</number>
-         </property>
-         <property name="bottomMargin">
-          <number>0</number>
-         </property>
-         <property name="spacing">
-          <number>6</number>
-         </property>
-         <property name="sizeConstraint">
-          <enum>QLayout::SetMinimumSize</enum>
-         </property>
-         <item>
-          <widget class="QLabel" name="sourceShaName">
-           <property name="text">
-            <string>Version SHA-256</string>
-           </property>
-           <property name="role" stdset="0">
-            <string>scriptsMuted</string>
-           </property>
-           <property name="wordWrap">
-            <bool>true</bool>
-           </property>
-           <property name="sizePolicy">
-            <sizepolicy hsizetype="Preferred" vsizetype="Minimum">
-             <horstretch>0</horstretch>
-             <verstretch>0</verstretch>
-            </sizepolicy>
-           </property>
-           <property name="minimumSize">
-            <size>
-             <width>100</width>
-             <height>0</height>
-            </size>
-           </property>
-           <property name="maximumSize">
-            <size>
-             <width>100</width>
-             <height>16777215</height>
-            </size>
-           </property>
-          </widget>
-         </item>
-         <item>
-          <widget class="QLabel" name="sourceShaValue">
-           <property name="text">
-            <string />
-           </property>
-           <property name="role" stdset="0">
-            <string>scriptsMuted</string>
-           </property>
-           <property name="wordWrap">
-            <bool>true</bool>
-           </property>
-           <property name="sizePolicy">
-            <sizepolicy hsizetype="Preferred" vsizetype="Minimum">
-             <horstretch>0</horstretch>
-             <verstretch>0</verstretch>
-            </sizepolicy>
-           </property>
-          </widget>
-         </item>
-        </layout>
-       </widget>
-      </item>
-      <item>
-       <widget class="QWidget" name="sourceSizeRow">
-        <layout class="QHBoxLayout" name="sourceSizeRowLayout">
-         <property name="leftMargin">
-          <number>0</number>
-         </property>
-         <property name="topMargin">
-          <number>0</number>
-         </property>
-         <property name="rightMargin">
-          <number>0</number>
-         </property>
-         <property name="bottomMargin">
-          <number>0</number>
-         </property>
-         <property name="spacing">
-          <number>6</number>
-         </property>
-         <property name="sizeConstraint">
-          <enum>QLayout::SetMinimumSize</enum>
-         </property>
-         <item>
-          <widget class="QLabel" name="sourceSizeName">
-           <property name="text">
-            <string>Size</string>
-           </property>
-           <property name="role" stdset="0">
-            <string>scriptsMuted</string>
-           </property>
-           <property name="wordWrap">
-            <bool>true</bool>
-           </property>
-           <property name="sizePolicy">
-            <sizepolicy hsizetype="Preferred" vsizetype="Minimum">
-             <horstretch>0</horstretch>
-             <verstretch>0</verstretch>
-            </sizepolicy>
-           </property>
-           <property name="minimumSize">
-            <size>
-             <width>100</width>
-             <height>0</height>
-            </size>
-           </property>
-           <property name="maximumSize">
-            <size>
-             <width>100</width>
-             <height>16777215</height>
-            </size>
-           </property>
-          </widget>
-         </item>
-         <item>
-          <widget class="QLabel" name="sourceSizeValue">
-           <property name="text">
-            <string />
-           </property>
-           <property name="role" stdset="0">
-            <string>scriptsMuted</string>
-           </property>
-           <property name="wordWrap">
-            <bool>true</bool>
-           </property>
-           <property name="sizePolicy">
-            <sizepolicy hsizetype="Preferred" vsizetype="Minimum">
-             <horstretch>0</horstretch>
-             <verstretch>0</verstretch>
-            </sizepolicy>
-           </property>
-          </widget>
-         </item>
-        </layout>
-       </widget>
-      </item>
-      <item>
-       <widget class="QWidget" name="sourceImportedRow">
-        <layout class="QHBoxLayout" name="sourceImportedRowLayout">
-         <property name="leftMargin">
-          <number>0</number>
-         </property>
-         <property name="topMargin">
-          <number>0</number>
-         </property>
-         <property name="rightMargin">
-          <number>0</number>
-         </property>
-         <property name="bottomMargin">
-          <number>0</number>
-         </property>
-         <property name="spacing">
-          <number>6</number>
-         </property>
-         <property name="sizeConstraint">
-          <enum>QLayout::SetMinimumSize</enum>
-         </property>
-         <item>
-          <widget class="QLabel" name="sourceImportedName">
-           <property name="text">
-            <string>Imported</string>
-           </property>
-           <property name="role" stdset="0">
-            <string>scriptsMuted</string>
-           </property>
-           <property name="wordWrap">
-            <bool>true</bool>
-           </property>
-           <property name="sizePolicy">
-            <sizepolicy hsizetype="Preferred" vsizetype="Minimum">
-             <horstretch>0</horstretch>
-             <verstretch>0</verstretch>
-            </sizepolicy>
-           </property>
-           <property name="minimumSize">
-            <size>
-             <width>100</width>
-             <height>0</height>
-            </size>
-           </property>
-           <property name="maximumSize">
-            <size>
-             <width>100</width>
-             <height>16777215</height>
-            </size>
-           </property>
-          </widget>
-         </item>
-         <item>
-          <widget class="QLabel" name="sourceImportedValue">
-           <property name="text">
-            <string />
-           </property>
-           <property name="role" stdset="0">
-            <string>scriptsMuted</string>
-           </property>
-           <property name="wordWrap">
-            <bool>true</bool>
-           </property>
-           <property name="sizePolicy">
-            <sizepolicy hsizetype="Preferred" vsizetype="Minimum">
-             <horstretch>0</horstretch>
-             <verstretch>0</verstretch>
-            </sizepolicy>
-           </property>
-          </widget>
-         </item>
-        </layout>
        </widget>
       </item>
      </layout>
     </widget>
    </item>
    <item>
-    <widget class="QFrame" name="historyCard">
+    <widget class="QGroupBox" name="historyCard">
      <property name="role" stdset="0">
       <string>sectionCard</string>
      </property>
@@ -916,57 +1156,127 @@
        <verstretch>0</verstretch>
       </sizepolicy>
      </property>
-     <layout class="QVBoxLayout" name="historyCardLayout">
+     <property name="title">
+      <string />
+     </property>
+     <property name="accessibleName">
+      <string>History</string>
+     </property>
+     <layout class="QVBoxLayout" name="historyCardCardLayout">
       <property name="leftMargin">
-       <number>10</number>
-      </property>
-      <property name="topMargin">
-       <number>10</number>
+       <number>0</number>
       </property>
       <property name="rightMargin">
-       <number>10</number>
+       <number>0</number>
+      </property>
+      <property name="topMargin">
+       <number>0</number>
       </property>
       <property name="bottomMargin">
-       <number>10</number>
+       <number>0</number>
       </property>
       <property name="spacing">
-       <number>8</number>
-      </property>
-      <property name="sizeConstraint">
-       <enum>QLayout::SetMinimumSize</enum>
+       <number>0</number>
       </property>
       <item>
-       <widget class="QLabel" name="historyCardTitle">
-        <property name="text">
-         <string>History</string>
-        </property>
+       <widget class="QFrame" name="historyCardHeader">
         <property name="role" stdset="0">
-         <string>scriptsCardTitle</string>
+         <string>sectionHeader</string>
         </property>
-        <property name="wordWrap">
-         <bool>true</bool>
-        </property>
-        <property name="sizePolicy">
-         <sizepolicy hsizetype="Preferred" vsizetype="Minimum">
-          <horstretch>0</horstretch>
-          <verstretch>0</verstretch>
-         </sizepolicy>
-        </property>
+        <layout class="QHBoxLayout" name="historyCardHeaderLayout" stretch="0,1">
+         <property name="leftMargin">
+          <number>10</number>
+         </property>
+         <property name="topMargin">
+          <number>7</number>
+         </property>
+         <property name="rightMargin">
+          <number>10</number>
+         </property>
+         <property name="bottomMargin">
+          <number>7</number>
+         </property>
+         <property name="spacing">
+          <number>8</number>
+         </property>
+         <item>
+          <widget class="QLabel" name="historyCardIcon">
+           <property name="role" stdset="0">
+            <string>sectionIcon</string>
+           </property>
+           <property name="iconKey" stdset="0">
+            <string>timer</string>
+           </property>
+           <property name="text">
+            <string />
+           </property>
+           <property name="minimumSize">
+            <size>
+             <width>16</width>
+             <height>16</height>
+            </size>
+           </property>
+           <property name="maximumSize">
+            <size>
+             <width>16</width>
+             <height>16</height>
+            </size>
+           </property>
+          </widget>
+         </item>
+         <item>
+          <widget class="QLabel" name="historyCardHeading">
+           <property name="text">
+            <string>History</string>
+           </property>
+           <property name="textRole" stdset="0">
+            <string>panelHeading</string>
+           </property>
+          </widget>
+         </item>
+        </layout>
        </widget>
       </item>
       <item>
-       <widget class="QListWidget" name="scriptsHistoryList">
-        <property name="accessibleName">
-         <string>Script run history</string>
-        </property>
-        <property name="horizontalScrollBarPolicy">
-         <enum>Qt::ScrollBarAlwaysOff</enum>
-        </property>
-        <property name="minimumSize">
-         <size>
-          <width>0</width>
-          <height>130</height>
-         </size>
+       <widget class="QWidget" name="historyCardContents">
+        <layout class="QVBoxLayout" name="historyCardContentsLayout">
+         <property name="spacing">
+          <number>8</number>
+         </property>
+         <property name="sizeConstraint">
+          <enum>QLayout::SetMinimumSize</enum>
+         </property>
+         <item>
+          <widget class="QListWidget" name="scriptsHistoryList">
+           <property name="accessibleName">
+            <string>Script run history</string>
+           </property>
+           <property name="horizontalScrollBarPolicy">
+            <enum>Qt::ScrollBarAlwaysOff</enum>
+           </property>
+           <property name="minimumSize">
+            <size>
+             <width>0</width>
+             <height>130</height>
+            </size>
+           </property>
+          </widget>
+         </item>
+         <property name="leftMargin">
+          <number>10</number>
+         </property>
+         <property name="rightMargin">
+          <number>10</number>
+         </property>
+         <property name="topMargin">
+          <number>8</number>
+         </property>
+         <property name="bottomMargin">
+          <number>10</number>
+         </property>
+        </layout>
+        <property name="role" stdset="0">
+         <string>sectionContents</string>
         </property>
        </widget>
       </item>

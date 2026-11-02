@@ -52,8 +52,8 @@ All captures must be of the actual Qt screen, using the existing shell, at the c
 ## Existing PR #201 shortcomings — must be repaired before review
 
 - **Implemented since initial rejection:** `scripts_workspace.ui` now supplies three Designer-owned rails mounted inside the real `MainWindow` shell; Generate includes the third Scripts sub-mode. `scripts_page.py`, `scripts_form.py` and `scripts_editor.py` provide native library, inspection, configured form, code editor, run/result presentation and 14-component control inventory. The offline renderer now captures these widgets and uses the shared activity strip; narrow details uses a top-level Qt overlay drawer.
-- **Still incomplete:** live source/version storage, actual parser-driven compatibility and forms, functional Start/Stop/admission and durable history bindings, interactive handoff, full drawer inspector parity, polished responsive/accessible handling, and screenshot-by-screenshot comparison. The reference examples appear only in offline fixtures. No actual Qt render or Windows screenshot acceptance has been verified.
-- No visual comparison was performed against the supplied captures, and no native screenshot rendering was verified.
+- **Still incomplete:** live source/version storage, actual parser-driven compatibility and forms, functional Start/Stop/admission and durable history bindings, interactive handoff, and native interactive/accessibility/DPI acceptance. The reference examples appear only in offline fixtures.
+- **2026-11-02 correction pass:** [review corrections](2026-11-02-scripts-review-fixes.md) records the Designer migration, shared side-rail surfaces/borders/icons, dirty-draft protection, queue/editor/drawer fixes and the owner-authorized offline Qt render. All 24 final PNGs in `tmp/ui-renders-scripts-codex` were visually inspected; this is layout evidence, not owner approval or interactive Windows acceptance.
 
 ## Review/verification sequence (not automatic unit tests)
 

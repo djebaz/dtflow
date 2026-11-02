@@ -5,15 +5,16 @@
 - Out: runtime execution/admission, provider calls, durable library/history integration, packaging, tests and smoke tests. The UI remains explicitly preview-only.
 
 ## Action items
-- [ ] Move static library, workspace, inspector/drawer and editor layouts into canonical Designer forms; retain handwritten dynamic script fields and result/hook rows.
-- [ ] Keep library actions inside the available rail and put overflow in the list/form, not clipped outer panels. Correct wrapped-label and control height negotiation.
-- [ ] Separate queued/cancelled fixture consoles and timestamps; show Cancel and a waiting clock through the shared activity bar.
-- [ ] Bind inspection facts, source metadata and compatibility rows to the selected fixture script.
-- [ ] Distinguish saved inspection from draft diagnostics; remove Start from Code views; implement literal Find/Replace/count/Next and Ctrl+F.
-- [ ] Protect dirty drafts on New/Import/library replacement and use shared inline discard consent.
-- [ ] Synchronize the existing shell inspector toggle with the narrow drawer; wrap hook names, correct history newlines, and add separate source/mask offline thumbnails and coverage summary.
-- [ ] Extend existing offline render states to expose corrected controls, Find/Replace, and long-value geometry without executing scripts; run the owner-authorized `uv run python tools/ui/render_states.py --category scripts --out tmp/ui-renders-scripts-codex` and inspect all 24 PNGs after corrections.
-- [ ] Synchronize design/status/release documentation and record permitted static checks, commit and push to the same draft PR.
+- [x] Move static library, workspace, inspector/drawer and editor layouts into canonical Designer forms; retain handwritten dynamic script fields and result/hook rows.
+- [x] Keep library actions inside the available rail and put overflow in the list/form, not clipped outer panels. Correct wrapped-label and control height negotiation.
+- [x] Match both side rails' shared section-card structure: QGroupBox surface/border, separate sectionHeader, existing SVG icon, panelHeading typography and sectionContents; verify the library's list/background and footer as well as the right rail/drawer.
+- [x] Separate queued/cancelled fixture consoles and timestamps; show Cancel and a waiting clock through the shared activity bar.
+- [x] Bind inspection facts, source metadata and compatibility rows to the selected fixture script.
+- [x] Distinguish saved inspection from draft diagnostics; remove Start from Code views; implement literal Find/Replace/count/Next and Ctrl+F.
+- [x] Protect dirty drafts on New/Import/library replacement and use shared inline discard consent.
+- [x] Synchronize the existing shell inspector toggle with the narrow drawer; wrap hook names, correct history newlines, and add separate source/mask offline thumbnails and coverage summary.
+- [x] Extend existing offline render states to expose corrected controls, Find/Replace, and long-value geometry without executing scripts; run the owner-authorized `uv run python tools/ui/render_states.py --category scripts --out tmp/ui-renders-scripts-codex` and inspect all 24 PNGs after corrections.
+- [x] Synchronize design/status/release documentation and record permitted static checks, commit and push to the same draft PR.
 
 ## Decisions and design changes
 - 2026-11-02: reviewed source baseline is `035da337`; supplied `ui-renders-scripts11` PNGs are pre-fix evidence, not acceptance of these corrections.
@@ -22,9 +23,17 @@
 - 2026-11-02: the owner explicitly authorized offline Qt rendering after the fixes; this supersedes the initial no-new-screenshots boundary, not the no-tests/no-provider boundary.
 
 ## Open questions
-- None blocking. Exact native geometry remains subject to the owner's next render and visual acceptance.
+- None blocking. Fresh offline renders have been inspected; owner visual approval and native interactive/DPI acceptance remain separate.
 
 ## Validation
-- [ ] Repository readiness, Ruff formatting/lint, Python compilation and Designer XML/structural inspection only.
-- [ ] Review final diff and clean working tree after commit/push; keep PR #201 draft.
+- [x] Repository readiness, Ruff formatting/lint, Python compilation and Designer XML/structural inspection only.
+- [x] Final diff reviewed; follow-up prepared for commit/push to the same draft PR. Remote-head and clean-tree confirmation are reported in the handoff after pushing.
 - Tests, smoke tests, interactive app launches, model/provider calls and billable actions are not run. Offline screenshot rendering is authorized; it establishes layout evidence only, not interactive/DPI acceptance.
+
+## Results
+- Final owner-authorized offline render: 24 states in 17.6 seconds, exit 0, under `tmp/ui-renders-scripts-codex`. Reviewed every state using six contact sheets, with full-size inspection of the queued and unresolved-review layouts; earlier iterations also received full-size inspection of the form, source, inspection and side-rail corrections. Generated PNGs and contact sheets remain ignored.
+- Both side rails now use canonical QGroupBox section-card surfaces/borders, section headers, existing SVG icons and transparent contents. The library list uses the shared background token; New/Import/Reload and storage caption remain visible at desktop and narrow widths. Editor toolbar groups reuse native segmented styling.
+- Final readiness: Python 3.13.13 / SQLite 3.53.1. Ruff lint, Ruff format check (seven files), Python compilation (seven files), five Designer XML/name/encoding checks and `git diff --check` passed. Side-rail structural inspection confirms one library card and four inspector cards with icons. No test files changed and no tests ran.
+- An intermediate render exceeded the existing 30-second diagnostic threshold but completed successfully; the final run completed in 17.6 seconds without that diagnostic. One initial structural assertion incorrectly treated center QFrame sections as side-rail cards; the corrected scope checks the actual QGroupBox side rails.
+- Existing concurrently created/pushed commit `a633f9b` was preserved. Remaining detailed surface/icon and metadata corrections are a separate follow-up; no history rewrite or merge.
+- Runtime Start, parser-driven inspection, saved library/history, service admission and real source handoff remain disconnected. Offline image/mask illustrations and result placeholders are not real output-sizing acceptance. Static/visual checks do not establish keyboard interaction, dirty-consent behavior, native DPI, provider behavior or owner approval.

@@ -525,6 +525,21 @@ class ScriptsPage:
             else "Not runnable · unsupported hooks"
         )
         self.hook_status.setText(verdict)
+        self.inspect_summary.setText(
+            "Static inspection is incomplete: two paths are known only at run time. No script was executed."
+            if partial
+            else "Static inspection identified supported calls. Dynamic forms can appear at run time."
+            if support == "supported"
+            else "Cannot start: unsupported native picker hooks."
+        )
+        self.source_note.setText(
+            "Required by this script: choose a source to Start; changing it needs a new run."
+            if partial
+            else "Optional. An immutable copy is taken at Start; changing it needs a new run."
+        )
+        self.source_note.setProperty("feedbackState", "error" if partial else "")
+        self.source_note.style().unpolish(self.source_note)
+        self.source_note.style().polish(self.source_note)
         self._set_inspect_banner(
             verdict,
             "Syntax valid, 3 hooks supported, 1 deferred. This is not a promise of success."
@@ -819,7 +834,7 @@ class ScriptsPage:
                 self.status.style().polish(self.status)
                 self._set_inspect_banner(
                     "Preflight incomplete",
-                    "Syntax valid, 3 hooks supported, 1 deferred. This is not a promise of success.",
+                    "Syntax valid, 2 hooks supported, 1 deferred. Two paths remain runtime-only.",
                     "warning",
                 )
                 self.hook_status.setText("Preflight incomplete")

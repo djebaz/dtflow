@@ -2032,11 +2032,8 @@ QPushButton[role="galleryInfo"]:hover {
 }
 
 /* Generate > Scripts: native offline workspace and editor-scoped palette. */
-QFrame#scriptsLibraryPanel {
-  background: ${color.surface};
-  border: 1px solid ${color.sectionBorder};
-  border-radius: ${size.panelRadius};
-}
+/* Side-rail cards use the existing QGroupBox sectionCard/header/contents
+   selectors, including their shared surfaces, borders and SVG icons. */
 /* The inspector is a shell rail: individual section cards draw borders.
    Avoid a second outer border clipped by the scroll area's right edge. */
 QFrame#scriptsInspectorPanel {
@@ -2132,6 +2129,9 @@ QListWidget#scriptsResultsList {
   color: ${color.text};
   border: 1px solid ${color.sectionBorder};
   border-radius: ${size.inputRadius};
+}
+QListWidget#scriptsLibraryList {
+  background: ${color.background};
 }
 QListWidget#scriptsLibraryList::item {
   min-height: 36px;
