@@ -197,6 +197,8 @@ class ScriptEditor(QWidget):
         self.diagnostic.setWordWrap(True)
         status.addWidget(self.diagnostic, 1)
         self.go_to_error = QPushButton("Go to line")
+        self._error_location: tuple[int, int] | None = None
+        self.go_to_error.clicked.connect(self._jump_to_error)
         self.go_to_error.hide()
         status.addWidget(self.go_to_error)
         self.cursor_status = QLabel("Ln 1 · Col 1 · JavaScript")
@@ -243,7 +245,22 @@ class ScriptEditor(QWidget):
     def set_draft(self, source: str, *, status: str = "Draft · unsaved changes"):
         self._saved_content = source
         self.editor.setPlainText(source)
+        self.clear_error()
         self.draft_status.setText(status)
+
+    def clear_error(self) -> None:
+        """Reset stale diagnostics when another draft or preview state is loaded."""
+        self._error_location = None
+        self.editor.setExtraSelections([])
+        self.diagnostic.setText("Syntax not checked yet")
+        self.diagnostic.setProperty("feedbackState", "")
+        self.diagnostic.style().unpolish(self.diagnostic)
+        self.diagnostic.style().polish(self.diagnostic)
+        self.go_to_error.hide()
+
+    def _jump_to_error(self) -> None:
+        if self._error_location is not None:
+            self.editor.go_to_line(*self._error_location)
 
     def set_error(self, line: int, column: int, message: str):
         """Show a visual diagnostic; the caller supplies actual parser evidence."""
@@ -256,10 +273,6 @@ class ScriptEditor(QWidget):
             self.editor.setExtraSelections([selection])
         self.diagnostic.setText(f"Syntax error · line {line}, column {column} · {message}")
         self.diagnostic.setProperty("feedbackState", "error")
-        self.go_to_error.show()
-        try:
-            self.go_to_error.clicked.disconnect()
-        except (RuntimeError, TypeError):
-            pass
+        self._error_location = (line, column)
         self.go_to_error.setText(f"Go to line {line}")
-        self.go_to_error.clicked.connect(lambda: self.editor.go_to_line(line, column))
+        self.go_to_error.show()
