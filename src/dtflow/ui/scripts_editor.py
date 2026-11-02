@@ -11,7 +11,7 @@ import re
 from PySide6.QtCore import QRect, QSize, Qt
 from PySide6.QtGui import QColor, QFont, QPainter, QSyntaxHighlighter, QTextCharFormat, QTextCursor
 from PySide6.QtWidgets import (
-    QHBoxLayout, QLabel, QLineEdit, QPlainTextEdit, QPushButton,
+    QHBoxLayout, QLabel, QLineEdit, QPlainTextEdit, QPushButton, QTextEdit,
     QSpinBox, QVBoxLayout, QWidget,
 )
 
@@ -242,6 +242,14 @@ class ScriptEditor(QWidget):
         self.draft_status.setText(status)
 
     def set_error(self, line: int, column: int, message: str):
+        """Show a visual diagnostic; the caller supplies actual parser evidence."""
+        block = self.editor.document().findBlockByNumber(max(0, line - 1))
+        if block.isValid():
+            selection = QTextEdit.ExtraSelection()
+            selection.cursor = QTextCursor(block)
+            selection.cursor.select(QTextCursor.SelectionType.LineUnderCursor)
+            selection.format.setBackground(QColor("#432323"))
+            self.editor.setExtraSelections([selection])
         self.diagnostic.setText(f"Syntax error · line {line}, column {column} · {message}")
         self.diagnostic.setProperty("feedbackState", "error")
         self.go_to_error.show()
