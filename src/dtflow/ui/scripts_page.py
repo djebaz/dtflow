@@ -1821,7 +1821,7 @@ class ScriptsPage:
         if state == "pending":
             return "queued"
         if state == "running":
-            return "running"
+            return "waiting_input" if (item.get("script") or {}).get("waiting_for_input") else "running"
         if state == "succeeded":
             return "results"
         if state == "cancelled":
