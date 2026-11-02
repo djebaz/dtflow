@@ -2162,10 +2162,11 @@ class ScriptsPage:
             except (KeyError, TypeError, ValueError):
                 created = ""
             name = str(view.get("first", {}).get("prompt", "")).removeprefix("Script: ")
+            elapsed = view.get("script_elapsed")
             entries.append(
                 (
                     f"#{number} · {title}",
-                    "",
+                    f"{elapsed:.0f} s" if type(elapsed) in (int, float) else "",
                     f"Queue item {view['queue_id'][:8]} · {name} · {created}".strip(" ·"),
                     color,
                 )
