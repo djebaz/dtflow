@@ -16,8 +16,8 @@
    </widget></item>
    <item><widget class="QFrame" name="scriptsWorkPanel">
     <layout class="QVBoxLayout" name="scriptsWorkLayout">
-     <property name="leftMargin"><number>0</number></property><property name="topMargin"><number>0</number></property>
-     <property name="rightMargin"><number>0</number></property><property name="bottomMargin"><number>0</number></property>
+     <property name="leftMargin"><number>8</number></property><property name="topMargin"><number>8</number></property>
+     <property name="rightMargin"><number>8</number></property><property name="bottomMargin"><number>8</number></property>
      <property name="spacing"><number>8</number></property>
     </layout>
    </widget></item>
