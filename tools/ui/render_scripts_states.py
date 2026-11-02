@@ -71,18 +71,18 @@ def render_scripts_states(out: Path, *, window_factory: Callable, state_names=ST
         raise RuntimeError("The canonical renderer must initialize QApplication and shared theme first.")
     out.mkdir(parents=True, exist_ok=True)
     results = []
-    for state in state_names:
-        if state not in STATES:
-            raise ValueError(f"Unknown scripting render state: {state}")
-        window = window_factory()
-        try:
+    window = window_factory()
+    try:
+        window.form.resize(1600, 1000)
+        window.show()
+        window._show_scripts()
+        for state in state_names:
+            if state not in STATES:
+                raise ValueError(f"Unknown scripting render state: {state}")
             narrow = state in ("scripts_narrow", "scripts_narrow_details", "scripts_editor_narrow")
             window.form.resize(800, 680) if narrow else window.form.resize(1600, 1000)
-            window.show()
-            window._show_scripts()
+            window.scripts._drawer_requested = state == "scripts_narrow_details"
             window.scripts.preview(state)
-            if narrow and state == "scripts_narrow_details":
-                window.scripts._drawer_requested = True
             window.scripts.sync_responsive()
             _shared_overlay(window, state)
             app.processEvents()
@@ -90,8 +90,8 @@ def render_scripts_states(out: Path, *, window_factory: Callable, state_names=ST
             if not window.form.grab().save(str(target)):
                 raise RuntimeError(f"Could not save Scripts Qt screenshot {target}")
             results.append(target)
-        finally:
-            window.runner.shutdown()
-            window.form.close()
-            app.processEvents()
+    finally:
+        window.runner.shutdown()
+        window.form.close()
+        app.processEvents()
     return results
