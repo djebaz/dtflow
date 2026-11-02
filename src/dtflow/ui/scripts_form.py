@@ -17,6 +17,7 @@ from PySide6.QtWidgets import (
 def _row(label: str, control: QWidget) -> QWidget:
     row = QWidget()
     layout = QHBoxLayout(row)
+    row.setObjectName("scriptsFieldRow")
     layout.setContentsMargins(0, 3, 0, 3)
     layout.setSpacing(10)
     heading = QLabel(label, row)
@@ -171,6 +172,21 @@ class ScriptForm(QWidget):
         self.layout_.setContentsMargins(10, 10, 10, 10)
         self.layout_.setSpacing(8)
         self.layout_.addStretch(1)
+
+    def set_narrow(self, narrow: bool) -> None:
+        """Stack field captions above inputs at 800 px and similar widths."""
+        from PySide6.QtWidgets import QBoxLayout
+
+        for row in self.findChildren(QWidget, "scriptsFieldRow"):
+            layout = row.layout()
+            if layout is not None:
+                layout.setDirection(
+                    QBoxLayout.Direction.TopToBottom if narrow
+                    else QBoxLayout.Direction.LeftToRight
+                )
+            heading = row.findChild(QLabel, "scriptFieldLabel")
+            if heading is not None:
+                heading.setMaximumWidth(16777215 if narrow else 190)
 
     def set_fields(self, fields: list[dict], *, long_values: bool = False) -> None:
         while self.layout_.count():
