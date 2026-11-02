@@ -447,24 +447,41 @@ class ScriptsPage:
         self.sync_responsive()
 
     def sync_responsive(self):
+        """Update Scripts layout without recycling unchanged Qt geometry."""
         narrow = self.owner.form.width() < 1100
         self.form.set_narrow(narrow)
-        self.details_button.setVisible(narrow)
+        if self.details_button.isHidden() == narrow:
+            self.details_button.setVisible(narrow)
+        active = self.owner._scripts_active and (
+            self.owner.form.workspaceStack.currentWidget() is self.owner.generation_page
+        )
+        rail = self.owner.shell.rightRail
+        if not active:
+            if self.drawer.isVisible():
+                self.drawer.hide()
+            return
         if narrow:
-            self.owner.shell.rightRail.hide()
-            if self._drawer_requested and self.owner._scripts_active:
-                self.drawer.setGeometry(
+            if rail.isVisible():
+                rail.hide()
+            if self._drawer_requested:
+                from PySide6.QtCore import QRect
+
+                geometry = QRect(
                     max(0, self.owner.form.width() - 310), 55,
                     min(300, self.owner.form.width()), max(300, self.owner.form.height() - 90)
                 )
-                self.drawer.raise_()
-                self.drawer.show()
-            else:
+                if self.drawer.geometry() != geometry:
+                    self.drawer.setGeometry(geometry)
+                if not self.drawer.isVisible():
+                    self.drawer.show()
+                    self.drawer.raise_()
+            elif self.drawer.isVisible():
                 self.drawer.hide()
         else:
-            self.drawer.hide()
-            if self.owner._scripts_active:
-                self.owner.shell.rightRail.show()
+            if self.drawer.isVisible():
+                self.drawer.hide()
+            if not rail.isVisible():
+                rail.show()
 
     def _selected(self, row: int):
         if not self._reference_mode or row < 0 or row >= len(REFERENCE_SCRIPTS):
