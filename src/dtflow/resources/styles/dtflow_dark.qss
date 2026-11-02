@@ -2130,3 +2130,28 @@ QListWidget#scriptsLibraryList::item:selected {
   color: ${color.selectionText};
   background: ${color.selection};
 }
+
+QFrame#scriptsInspectBanner {
+  background: ${color.connectionSurface};
+  border: 1px solid ${color.success};
+  border-radius: ${size.panelRadius};
+}
+QFrame#scriptsInspectBanner[feedbackState="warning"] {
+  background: ${color.warningSurface};
+  border: 1px solid ${color.warning};
+}
+QFrame#scriptsInspectBanner[feedbackState="error"] {
+  background: ${color.dangerSurface};
+  border: 1px solid ${color.error};
+}
+QLabel#scriptsBannerTitle {
+  color: ${color.success};
+  font-size: ${type.section};
+  font-weight: ${type.weightEmphasis};
+}
+QFrame#scriptsInspectBanner[feedbackState="warning"] QLabel#scriptsBannerTitle {
+  color: ${color.warning};
+}
+QFrame#scriptsInspectBanner[feedbackState="error"] QLabel#scriptsBannerTitle {
+  color: ${color.error};
+}
