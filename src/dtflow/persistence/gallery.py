@@ -86,7 +86,7 @@ def reader(state: Path):
         attach_read_only(connection, state)
         connection.execute("PRAGMA query_only=ON")
         version = connection.execute("PRAGMA user_version").fetchone()[0]
-        if version not in (1, 2, 3, SCHEMA_VERSION):
+        if version not in (1, 2, 3, 4, SCHEMA_VERSION):
             raise PersistenceError("Unsupported execution-state schema; browsing made no migration or reset.")
         connection.create_function("fold", 1, lambda text: str(text or "").casefold(), deterministic=True)
         connection.create_function("lora_order", 1, lora_order, deterministic=True)

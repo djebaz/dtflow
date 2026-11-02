@@ -8,7 +8,7 @@ import asyncio
 import logging
 import secrets
 from collections.abc import Callable
-from dataclasses import replace
+from dataclasses import asdict, replace
 from pathlib import Path
 from typing import Any
 from uuid import uuid4
@@ -33,6 +33,7 @@ from dtflow.persistence.queues import (
     delete_paused_queues,
     delete_queue,
     insert_queue,
+    insert_script_queue,
     post_control,
     read_queue_requests,
     read_queue_composer_source,
@@ -40,6 +41,7 @@ from dtflow.persistence.queues import (
     read_queues,
     request_from_record,
 )
+from dtflow.persistence.script_items import is_script_record, script_record, store_source
 from dtflow.persistence.settings import load_cloud_concurrency, save_cloud_concurrency, validate_concurrency
 from dtflow.persistence.store import SQLiteAttempts, StateBusyError, state_is_owned
 from dtflow.services import session
@@ -47,6 +49,7 @@ from dtflow.services.generation import GenerationService
 from dtflow.services.image_inputs import restore_image_inputs, snapshot_image_inputs
 from dtflow.services.planning import Plan, PlanError, expand_plan
 from dtflow.services.queue import QueueDispatcher
+from dtflow.services.script_item import ScriptItemRunner
 
 log = logging.getLogger(__name__)
 
@@ -60,6 +63,57 @@ def expand_items(base: ResolvedGenerationRequest, count: int) -> list[ResolvedGe
         return expand_plan(base, Plan("seed", count=count))
     except PlanError as exc:
         raise ValidationError(str(exc)) from exc
+
+
+SCRIPT_REFUSED = "A script queue cannot be relaunched, retried or edited as a copy; press Start on the script again."
+
+
+def refuse_script_records(records) -> None:
+    if any(is_script_record(record) for record in records):
+        raise ValidationError(SCRIPT_REFUSED)
+
+
+async def create_script_queue(
+    state: Path,
+    backend: dict[str, Any],
+    source: str,
+    source_name: str,
+    base: ResolvedGenerationRequest,
+    *,
+    max_generations: int = 4,
+    answers: list | None = None,
+    up_next: bool = False,
+) -> tuple[str, str]:
+    """Persist a paused script queue: exactly one item (a whole script run), cap 1. Returns ``(queue id, run id)``.
+
+    The run id is generated now, so the item names its run durably before anything starts. Contacts no backend, never
+    generates and never uploads; Start dispatches it like any queue.
+    """
+    if backend.get("name") == "local" and not backend.get("endpoint"):
+        raise ValidationError("The local backend requires --endpoint HOST:PORT.")
+    if not 1 <= max_generations <= 32:
+        raise ValidationError("max_generations must be between 1 and 32.")
+    if base.operation != "txt2img" or base.image_inputs is not None:
+        raise ValidationError("Scripts start from text-to-image settings only.")
+    sha = await asyncio.to_thread(store_source, state, source)
+    run_id = uuid4().hex
+    record = script_record(
+        run_id=run_id,
+        source_name=source_name,
+        source_sha256=sha,
+        base=asdict(base),
+        backend=backend["name"],
+        max_generations=max_generations,
+        answers=answers,
+    )
+    store = SQLiteAttempts(state)
+    try:
+        await store.open()
+        return await store.create_script_queue(backend, record), run_id
+    except StateBusyError:
+        return await asyncio.to_thread(insert_script_queue, state, backend, record, up_next=up_next), run_id
+    finally:
+        await store.aclose()
 
 
 def default_cap(state: Path, backend_name: str) -> int:
@@ -227,6 +281,7 @@ async def relaunch_queue(
     dispatcher validates again at Start; inputs that are gone refuse the relaunch.
     """
     backend, source_cap, items = await asyncio.to_thread(read_queue_requests, Path(state), queue_id)
+    refuse_script_records(record for _, _, record in items)
     requests = await asyncio.to_thread(
         _relaunch_items, Path(state), queue_id, items, new_seeds=new_seeds, failed_only=failed_only, positions=positions
     )
@@ -236,6 +291,7 @@ async def relaunch_queue(
 async def read_queue_records(state: Path, queue_id: str) -> tuple[dict[str, Any], ...]:
     """The stored request records of a queue's items in order (read-only), for editing it as a new queue."""
     _, _, items = await asyncio.to_thread(read_queue_requests, Path(state), queue_id)
+    refuse_script_records(record for _, _, record in items)
     if any(not isinstance(record, dict) for _, _, record in items):
         raise ValidationError("Some items' recorded requests are unreadable, so this queue cannot be edited.")
     return tuple(record for _, _, record in items)
@@ -446,6 +502,8 @@ async def _dispatch_one(store, state, queue_id, policy, saved, out, on_settle, o
         )
         if limits is not None:
             limits[queue_id] = backend.capabilities.max_concurrency
+        if queue.get("kind") == "script":  # a separate runner: a script bug must not enter the generation loop
+            return await ScriptItemRunner(store, service, state, on_settle=on_settle).run(queue_id)
         return await QueueDispatcher(store, service, on_settle=on_settle, on_event=on_event).run(queue_id)
     finally:
         if backend is not None:

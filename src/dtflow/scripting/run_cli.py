@@ -16,8 +16,8 @@ from pathlib import Path
 from dtflow.core.models import TimeoutPolicy, ValidationError
 from dtflow.persistence.script_runs import ScriptRunStore
 from dtflow.scripting.engine import MAX_SOURCE_BYTES
-from dtflow.scripting.host import ScriptHost, starting_context
-from dtflow.scripting.runner import RunContext, check_syntax, run_recorded
+from dtflow.scripting.host import ScriptHost, script_hooks, starting_context
+from dtflow.scripting.runner import check_syntax, run_recorded
 from dtflow.services.session import open_session, selection_for
 
 
@@ -54,27 +54,36 @@ async def run_script_file(args: argparse.Namespace, *, exit_ok: int, exit_failed
         return exit_invalid
     answers = read_answers(args.answers)
     base = await bind_assets(args, resolve_generation(args))
+    if getattr(args, "queue", False):
+        from dtflow.services.queue_session import create_script_queue  # lazy: services import this package
+
+        backend = {"name": args.backend, "endpoint": args.endpoint, "scenario": "success"}
+        queue_id, run_id = await create_script_queue(
+            Path(args.state),
+            backend,
+            source,
+            Path(args.file).name,
+            base,
+            max_generations=args.max_generations,
+            answers=answers,
+        )
+        print(json.dumps({"queue_id": queue_id, "run_id": run_id, "state": "paused", "items": 1, "cap": 1}))
+        return exit_ok
     store = ScriptRunStore(args.state)
     cancel = threading.Event()
     loop = asyncio.get_running_loop()
     selection = selection_for(args.backend, args.endpoint, args.state)
     hosts: list[ScriptHost] = []
 
-    def hooks(context: RunContext):
-        host = ScriptHost(
-            service=service,
-            base=base,
-            loop=loop,
-            link_child=context.link_child,
-            console=context.console,
-            cancel=context.cancel,
-            sandbox=Path(args.state) / "script_files" / context.run_id,
-            max_generations=args.max_generations,
-            answers=answers,
-            record_answers=context.record_answers,
-        )
-        hosts.append(host)
-        return host.hooks()
+    hooks = script_hooks(
+        lambda: service,
+        base=base,
+        loop=loop,
+        state=Path(args.state),
+        max_generations=args.max_generations,
+        answers=answers,
+        hosts=hosts,
+    )
 
     async with open_session(
         selection, args.state, output=args.outputs, timeouts=TimeoutPolicy(total=args.timeout)

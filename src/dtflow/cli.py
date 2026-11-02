@@ -175,6 +175,12 @@ def parser() -> argparse.ArgumentParser:
     script.add_argument("--outputs", type=Path, help="With --run: final output root (default: state/outputs).")
     script.add_argument("--timeout", type=float, default=600.0, help="With --run: total deadline per generation.")
     script.add_argument("--max-generations", type=int, default=4, help="With --run: generations a script may request.")
+    script.add_argument(
+        "--queue",
+        action="store_true",
+        help="With --run: save the run as a paused one-item script queue instead of running it now; "
+        "then `dtflow queue start QUEUE` runs it and `queue show` / `queue cancel` inspect and stop it.",
+    )
     script.add_argument("--answers", type=Path, help="With --run: JSON list of answer lists for requestFromUser calls.")
     add_request_options(script)
     add_edit_command(commands)
