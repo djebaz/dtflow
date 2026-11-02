@@ -298,6 +298,7 @@ class ScriptsPage:
         self.refresh_library()
         if self._live_mode():
             self._load_history()
+        self._refresh_readiness()
 
     def _build_library(self):
         ui = self.designer
@@ -360,6 +361,17 @@ class ScriptsPage:
         self.acknowledge.hide()
         self.run_footer.hide()
         self.start.clicked.connect(self._start_clicked)
+        # What Start will use is shown right here: the Generate tab's backend, model and size (or why it cannot run).
+        self.settings_source = None  # () -> (summary, problem); wired by the owner
+        self.go_generate_hook = None
+        self.run_settings = _label("", role="scriptsMuted", wrap=True)
+        self.go_generate = QPushButton("Open Generate settings")
+        self.go_generate.hide()
+        self.go_generate.clicked.connect(lambda: self.go_generate_hook and self.go_generate_hook())
+        panel_layout = self.start_panel.layout()
+        panel_layout.insertWidget(1, self.run_settings)
+        panel_layout.insertWidget(2, self.go_generate)
+        self.run_settings.hide()
         self.acknowledge.toggled.connect(self._refresh_readiness)
         self.designer.backToFormButton.clicked.connect(self._review_run)
         self.designer.reviewRunButton.clicked.connect(self._review_run)
@@ -1128,10 +1140,10 @@ class ScriptsPage:
                 rows.addWidget(card)
         self._refresh_library_cues()
 
-    def _add_library_item(self, script):
+    def _add_library_item(self, script, extra: str = ""):
         filename, sha, tier, support = script
         item = QListWidgetItem()
-        item.setSizeHint(QSize(0, 66))
+        item.setSizeHint(QSize(0, 84 if extra else 66))
         self.library.addItem(item)
         row = QWidget()
         row.setProperty("role", "sectionContents")
@@ -1153,6 +1165,8 @@ class ScriptsPage:
         identity.addWidget(verdict)
         identity.addStretch(1)
         col.addLayout(identity)
+        if extra:
+            col.addWidget(_label(extra, role="scriptsMuted"))
         active = _label("Run active", role="scriptsLibraryActive")
         _feedback(active, "warning")
         active.hide()
@@ -1192,13 +1206,22 @@ class ScriptsPage:
             else self._base_disclosure
         )
         ready = self._reference_mode and supported and not missing_source and self._run_state not in LIVE_STATES
+        problem = None
         if self._live_mode():
             partial = False
-            ready = supported and not self._starting and self._run_state not in LIVE_STATES
+            summary, problem = self.settings_source() if self.settings_source else ("", None)
+            self.run_settings.setText(summary)
+            self.run_settings.setVisible(bool(summary))
+            ready = supported and not self._starting and self._run_state not in LIVE_STATES and problem is None
+        else:
+            self.run_settings.hide()
+        self.go_generate.setVisible(problem is not None)
         if partial:
             self.acknowledge.show()
             ready = ready and self.acknowledge.isChecked()
         self.start.setEnabled(bool(ready))
+        if problem is not None and supported:
+            self.disclosure.setText(f"Cannot start yet: {problem}")
         if not self._starting:
             self.start.setText("Start new run" if self._prior_unresolved else "Start script")
         self.start.setToolTip(
@@ -1543,6 +1566,9 @@ class ScriptsPage:
             self.library.blockSignals(True)
             self.library.clear()
             self._library_scripts = []
+            groups: dict[str, list[str]] = {}
+            for version in sorted(versions, key=lambda v: v.created_at):
+                groups.setdefault(version.name, []).append(version.sha256)
             for version in versions:
                 inspection = self._inspections.get(version.sha256)
                 script = (
@@ -1552,7 +1578,14 @@ class ScriptsPage:
                     inspection.support if inspection else "unknown",
                 )
                 self._library_scripts.append(script)
-                self._add_library_item(script)
+                same_name = groups[version.name]
+                try:
+                    when = datetime.fromisoformat(version.created_at).astimezone().strftime("%d %b %H:%M")
+                except ValueError:
+                    when = version.created_at
+                position = same_name.index(version.sha256) + 1
+                tag = f"version {position} of {len(same_name)}" + (" · latest" if position == len(same_name) else "")
+                self._add_library_item(script, f"{tag} · {when}" if len(same_name) > 1 else when)
             self.library.blockSignals(False)
         row = next((i for i, v in enumerate(versions) if v.sha256 == select), -1)
         if row >= 0:

@@ -362,6 +362,8 @@ class MainWindow:
             activity=self.activity,
         )
         self.scripts.run_start = self.queue.start_script
+        self.scripts.settings_source = self._script_settings
+        self.scripts.go_generate_hook = lambda: self._leave_scripts(inpaint=False)
         startup.mark("queue and image operation controllers")
         self.generation_page.inpaintModeButton.toggled.connect(lambda _on: self.queue.sync_edit_fields())
         self.generation_page.scriptsModeButton.clicked.connect(self._show_scripts)
@@ -629,6 +631,24 @@ class MainWindow:
         self.scripts.activate()
         self._set_scripts_left_rail(True)
         self._responsive_workspace()
+
+    def _script_settings(self) -> tuple[str, str | None]:
+        """(summary, problem): what Scripts Start would run with, read from the Generate form."""
+        from dtflow.ui.generation_presenter import FormError
+
+        try:
+            request, name, endpoint, _ = self.generation.request_for_queue(preview=True)
+        except (ValidationError, FormError) as exc:
+            text = str(exc).rstrip(".")
+            if "model" in text.lower():
+                text = "pick a model on the Generate tab (" + text + ")"
+            return "", text
+        where = f"{name} @ {endpoint}" if endpoint else name
+        return (
+            f"Runs with Generate's settings: {where} · {request.model_id} · {request.width_px}×{request.height_px} · "
+            f"{request.steps} steps. The script may override size, steps, seed, model and LoRAs.",
+            None,
+        )
 
     def _scripts_from_inpaint(self, source, mask, thumbnail) -> None:
         """Offline, detached source/mask handoff only; no runtime script entry point."""
