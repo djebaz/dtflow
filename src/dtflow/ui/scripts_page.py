@@ -295,9 +295,10 @@ class ScriptsPage:
         outer.setSpacing(8)
         note = QHBoxLayout()
         note.addWidget(_label("Answers belong to this script version.", role="scriptsMuted"), 1)
-        reset = QPushButton("Reset to defaults")
-        reset.clicked.connect(self._load_reference_form)
-        note.addWidget(reset)
+        self.reset_fields = QPushButton("Reset to defaults")
+        self.reset_fields.clicked.connect(self._reset_fields)
+        self.reset_fields.setEnabled(False)
+        note.addWidget(self.reset_fields)
         outer.addLayout(note)
         source_title = _label("Source", role="scriptsFormSection")
         outer.addWidget(source_title)
@@ -317,6 +318,11 @@ class ScriptsPage:
         self.handoff.hide()
         outer.addWidget(self.handoff)
         self.form = ScriptForm()
+        self.form_note = _label(
+            "No form controls were discovered. Dynamic requestFromUser inputs appear only during a run.",
+            role="scriptsMuted", wrap=True
+        )
+        outer.addWidget(self.form_note)
         outer.addWidget(self.form, 1)
         self.views.addWidget(_scroll(body))
 
@@ -510,6 +516,9 @@ class ScriptsPage:
         self.sha.clear()
         self.status.setText("Import a JavaScript file or create a draft")
         self.inspect_summary.setText("Nothing has been inspected. Scripts do not run during inspection.")
+        self.form.set_fields([])
+        self.form_note.show()
+        self.reset_fields.setEnabled(False)
         self.inspect_banner.hide()
         self.inspect_card.hide()
         self.hook_status.setText("No script inspected")
@@ -547,7 +556,14 @@ class ScriptsPage:
         self.show_view(2)
 
     def _load_reference_form(self):
+        """Load explicitly illustrative fields for the offline screenshot harness."""
         self.form.set_fields(REFERENCE_FORM)
+        self.form_note.hide()
+        self.reset_fields.setEnabled(True)
+
+    def _reset_fields(self):
+        if self._reference_mode:
+            self._load_reference_form()
 
     def show_view(self, index: int):
         self.views.setCurrentIndex(index)
