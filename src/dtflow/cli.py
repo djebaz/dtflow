@@ -181,6 +181,12 @@ def parser() -> argparse.ArgumentParser:
         help="With --run: save the run as a paused one-item script queue instead of running it now; "
         "then `dtflow queue start QUEUE` runs it and `queue show` / `queue cancel` inspect and stop it.",
     )
+    script.add_argument(
+        "--answer-run",
+        metavar="RUN_ID",
+        help="Answer the open requestFromUser form of a waiting script run (JSON list of answers in --answers; "
+        "uses --state). Run ids are in `queue show`.",
+    )
     script.add_argument("--answers", type=Path, help="With --run: JSON list of answer lists for requestFromUser calls.")
     add_request_options(script)
     add_edit_command(commands)
@@ -694,12 +700,30 @@ async def run_edit(args: argparse.Namespace) -> int:
     return EXIT_OK
 
 
+def answer_waiting_run(args: argparse.Namespace) -> int:
+    from dtflow.core.models import ValidationError
+    from dtflow.services.script_item import answer_script_prompt
+
+    try:
+        answers = json.loads(args.answers.read_text(encoding="utf-8")) if args.answers else None
+        if not isinstance(answers, list):
+            raise ValidationError("--answers must be a JSON list with one answer per input of the form.")
+        ordinal = answer_script_prompt(args.state, args.answer_run, answers)
+    except (ValidationError, OSError, ValueError) as exc:
+        print(f"Invalid request: {exc}", file=sys.stderr)
+        return EXIT_INVALID
+    print(json.dumps({"run_id": args.answer_run, "form": ordinal, "answered": True}))
+    return EXIT_OK
+
+
 def run_script_command(args: argparse.Namespace) -> int:
     """Offline analysis or engine self-check; no provider, credentials, state directory or generation."""
     if args.hold_child is not None:
         from dtflow.scripting.selfcheck import hold_child
 
         return hold_child(args.hold_child)
+    if args.answer_run:
+        return answer_waiting_run(args)
     if args.check_engine:
         from dtflow.scripting.selfcheck import main as selfcheck
 
