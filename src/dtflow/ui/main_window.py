@@ -361,6 +361,7 @@ class MainWindow:
             reuse_hook=self._reuse_queue_request,
             activity=self.activity,
         )
+        self.scripts.run_start = self.queue.start_script
         startup.mark("queue and image operation controllers")
         self.generation_page.inpaintModeButton.toggled.connect(lambda _on: self.queue.sync_edit_fields())
         self.generation_page.scriptsModeButton.clicked.connect(self._show_scripts)
@@ -383,6 +384,7 @@ class MainWindow:
         self.shell.quickQueueButton.clicked.connect(lambda: self.queue_popover.open_at(self.shell.quickQueueButton))
         self.queue.plan_hook = self.queue_popover.sync_label
         self.queue.set_images_hook(self._open_output_in_images)
+        self.scripts.open_images = self._open_output_in_images
         for button in (self.queue_popover.start_button, self.queue_popover.add_button):
             button.clicked.connect(self.remember)  # a run start, like Generate image
         self.generation_page.queueGenerateButton.clicked.connect(

@@ -37,6 +37,7 @@ from dtflow.services.queue_session import (
     clear_queues,
     create_edit_queue,
     create_queue,
+    create_script_queue,
     dispatch_queue,
     expand_items,
     post_queue_control,
@@ -1897,6 +1898,42 @@ class QueuePage:
 
     def quick_create(self, action: str, *, count: int | None) -> None:
         self.create(action, count=count, quick=True)
+
+    def start_script(self, source: str, source_name: str, max_generations: int, done) -> None:
+        """Scripts Start: save a one-item script queue from Generate's current text-to-image settings and dispatch it.
+
+        ``done(result, failure)`` gets ``(queue id, run id, "started" | "paused")``. Nothing is created while this window
+        generates or dispatches; the script run is an ordinary queue the user can also see in Queues."""
+        if self.dispatching_here or self._activity.generating or self._runner.closed:
+            done(None, ValidationError("A generation or queue is running in this window. Press Start when it ends."))
+            return
+        try:
+            request, name, endpoint, asset_ids = self._request_source()
+        except (ValidationError, FormError) as exc:
+            done(None, ValidationError(f"On Generate: {exc}"))
+            return
+        backend = {"name": name, "endpoint": endpoint, "scenario": "success", **self._simulation()}
+
+        async def work():
+            base = await bind_prepared(self._state, backend["name"], request, asset_ids)
+            return await create_script_queue(
+                self._state, backend, source, source_name, base, max_generations=max_generations
+            )
+
+        def created(result, failure) -> None:
+            if failure is not None:
+                done(None, failure)
+                return
+            queue_id, run_id = result
+            self._created_hook()
+            if self.dispatching_here or self._activity.generating:
+                done((queue_id, run_id, "paused"), None)
+            else:
+                self._dispatch(queue_id, resume_fallback=None)
+                done((queue_id, run_id, "started"), None)
+            self.refresh()
+
+        self._runner.submit(work(), created)
 
     def _after_generation_ended(self) -> None:
         if self._after_generation and not self._activity.generating and not self._activity.dispatching:
