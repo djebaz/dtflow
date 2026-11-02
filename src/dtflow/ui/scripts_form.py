@@ -6,7 +6,9 @@ preview values never become provider requests or mutate a saved ScriptRun.
 
 from __future__ import annotations
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import QSize, Qt
+from PySide6.QtGui import QPainter, QPen
+from dtflow.ui.theme import load_tokens
 from PySide6.QtWidgets import (
     QCheckBox, QComboBox, QDoubleSpinBox, QFileDialog, QFrame, QHBoxLayout,
     QLabel, QLineEdit, QPushButton, QScrollArea, QSlider, QSpinBox,
@@ -61,24 +63,96 @@ def _slider(spec: dict) -> QWidget:
     return _group(slider, value)
 
 
+class _RangeControl(QWidget):
+    """One native-painted track with independently adjustable minimum/maximum thumbs."""
+
+    def __init__(self, low: int, high: int, values: tuple[int, int]):
+        super().__init__()
+        self.low = low
+        self.high = high
+        self.lower, self.upper = values
+        self.active_thumb = 0
+        self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+        self.setAccessibleName("Step range minimum and maximum")
+        self._sync_accessible()
+
+    def _sync_accessible(self):
+        self.setAccessibleDescription(f"Minimum {self.lower}, maximum {self.upper}")
+
+    def sizeHint(self):
+        return QSize(220, 26)
+
+    def _x(self, value: int) -> int:
+        return round(10 + (self.width() - 20) * (value - self.low) / (self.high - self.low))
+
+    def _value(self, x: int) -> int:
+        return max(self.low, min(self.high, round(
+            self.low + (x - 10) * (self.high - self.low) / max(1, self.width() - 20)
+        )))
+
+    def paintEvent(self, event):
+        colors = load_tokens()
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        y = self.height() // 2
+        painter.setPen(QPen(colors["color.groove"], 4))
+        painter.drawLine(10, y, self.width() - 10, y)
+        painter.setPen(QPen(colors["color.accent"], 4))
+        painter.drawLine(self._x(self.lower), y, self._x(self.upper), y)
+        painter.setPen(QPen(colors["color.handleBorder"], 1))
+        painter.setBrush(colors["color.handle"])
+        painter.drawEllipse(self._x(self.lower) - 7, y - 7, 14, 14)
+        painter.drawEllipse(self._x(self.upper) - 7, y - 7, 14, 14)
+
+    def mousePressEvent(self, event):
+        x = event.position().x()
+        self.active_thumb = 0 if abs(x - self._x(self.lower)) <= abs(x - self._x(self.upper)) else 1
+        self.mouseMoveEvent(event)
+        self.setFocus()
+
+    def mouseMoveEvent(self, event):
+        if not (event.buttons() & Qt.MouseButton.LeftButton):
+            return
+        value = self._value(round(event.position().x()))
+        if self.active_thumb == 0:
+            self.lower = min(value, self.upper)
+        else:
+            self.upper = max(self.lower, value)
+        self._sync_accessible()
+        self.update()
+        if self.on_change:
+            self.on_change(self.lower, self.upper)
+
+    def keyPressEvent(self, event):
+        if event.key() in (Qt.Key.Key_Left, Qt.Key.Key_Right):
+            delta = 1 if event.key() == Qt.Key.Key_Right else -1
+            if self.active_thumb == 0:
+                self.lower = max(self.low, min(self.upper, self.lower + delta))
+            else:
+                self.upper = min(self.high, max(self.lower, self.upper + delta))
+            self._sync_accessible()
+            self.update()
+            if self.on_change:
+                self.on_change(self.lower, self.upper)
+        elif event.key() == Qt.Key.Key_Tab:
+            self.active_thumb = 1 - self.active_thumb
+            self.update()
+        else:
+            super().keyPressEvent(event)
+
+    on_change = None
+
+
 def _range_slider(spec: dict) -> QWidget:
-    lower = QSlider(Qt.Orientation.Horizontal)
-    upper = QSlider(Qt.Orientation.Horizontal)
-    for control, amount in ((lower, spec["value"][0]), (upper, spec["value"][1])):
-        control.setRange(spec["min"], spec["max"])
-        control.setValue(amount)
-    lower.setAccessibleName(spec["label"] + " minimum")
-    upper.setAccessibleName(spec["label"] + " maximum")
-    lower.valueChanged.connect(lambda v: upper.setValue(max(v, upper.value())))
-    upper.valueChanged.connect(lambda v: lower.setValue(min(v, lower.value())))
+    track = _RangeControl(spec["min"], spec["max"], tuple(spec["value"]))
     value = QLabel()
     value.setObjectName("scriptsFieldValue")
-    def update(_=None):
-        value.setText(f"{lower.value()}–{upper.value()}")
-    lower.valueChanged.connect(update)
-    upper.valueChanged.connect(update)
-    update()
-    return _group(lower, upper, value)
+    value.setMinimumWidth(45)
+    def update(lower, upper):
+        value.setText(f"{lower}–{upper}")
+    track.on_change = update
+    update(track.lower, track.upper)
+    return _group(track, value)
 
 
 def _path_control(spec: dict) -> QWidget:
