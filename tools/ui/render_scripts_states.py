@@ -12,6 +12,7 @@ from pathlib import Path
 from time import monotonic
 from typing import Callable
 
+from PySide6.QtCore import QPoint
 from PySide6.QtWidgets import QApplication
 
 
@@ -96,6 +97,19 @@ def render_scripts_states(out: Path, *, window_factory: Callable, state_names=ST
             app.processEvents()
             if index == 0:
                 print(f"[scripts] First Qt event drain: {monotonic() - started:.1f}s", flush=True)
+            if index == 0 or state == "scripts_narrow":
+                # The left scroll disables horizontal scrolling; trace the
+                # actual panel's right edge, not inner list/item padding.
+                viewport = window.shell.leftScroll.viewport()
+                stack = window.shell.leftStack
+                panel = window.scripts.left
+                right_edge = panel.mapTo(viewport, QPoint(panel.width(), 0)).x()
+                print(
+                    f"[scripts] {state} left viewport={viewport.width()} "
+                    f"stack={stack.width()} panel={panel.width()} "
+                    f"panel-right={right_edge} excess={max(0, right_edge - viewport.width())}",
+                    flush=True,
+                )
             target = out / f"{state}.png"
             if not window.form.grab().save(str(target)):
                 raise RuntimeError(f"Could not save Scripts Qt screenshot {target}")
