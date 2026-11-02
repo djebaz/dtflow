@@ -628,7 +628,11 @@ class ScriptsPage:
             if state == "scripts_editor_new":
                 self.new_draft()
             elif state == "scripts_editor_syntax_error":
-                self.editor.set_error(4, 3, "Unexpected token ';'")
+                self.editor.editor.setPlainText(
+                    "//@api-1.0\\nconst config = pipeline.configuration;\\n" +
+                    "config.seed = -1;\\nconst value = ;\\n"
+                )
+                self.editor.set_error(4, 15, "Unexpected token ';'")
             elif state == "scripts_editor_run_active":
                 self.editor.run_notice.setText(
                     "A run is active. Existing runs keep their saved version; edit a new draft."
