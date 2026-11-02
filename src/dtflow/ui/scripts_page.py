@@ -10,7 +10,7 @@ from __future__ import annotations
 import hashlib
 from pathlib import Path
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import QSize, Qt
 from PySide6.QtWidgets import (
     QButtonGroup, QCheckBox, QComboBox, QFileDialog, QFrame, QGridLayout, QHBoxLayout, QLabel,
     QLineEdit, QListWidget, QListWidgetItem, QPushButton, QScrollArea,
@@ -78,12 +78,35 @@ def _line(layout: QVBoxLayout, left: str, right: str) -> None:
     row = QWidget()
     row_layout = QHBoxLayout(row)
     row_layout.setContentsMargins(0, 0, 0, 0)
-    row_layout.addWidget(_label(left, role="scriptsMuted"), 0)
+    name = _label(left, role="scriptsMuted")
+    name.setFixedWidth(106)
+    row_layout.addWidget(name, 0)
     value = _label(right)
     value.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
     value.setToolTip(right)
     row_layout.addWidget(value, 1)
     layout.addWidget(row)
+
+
+def _hook_item(hook: str, state: str, detail: str) -> QFrame:
+    """Show a hook name, semantic compatibility label and one explanation."""
+    row = QFrame()
+    row.setObjectName("scriptsHookItem")
+    layout = QVBoxLayout(row)
+    layout.setContentsMargins(0, 5, 0, 5)
+    layout.setSpacing(3)
+    heading = QHBoxLayout()
+    name = _label(hook, role="scriptsHookName", wrap=True)
+    name.setToolTip(hook)
+    heading.addWidget(name, 1)
+    verdict = _label(state, role="scriptsHookVerdict")
+    verdict.setProperty("feedbackState", state)
+    heading.addWidget(verdict)
+    layout.addLayout(heading)
+    explanation = _label(detail, role="scriptsMuted", wrap=True)
+    explanation.setToolTip(detail)
+    layout.addWidget(explanation)
+    return row
 
 
 class ScriptsPage:
@@ -415,12 +438,15 @@ class ScriptsPage:
         self.history = QListWidget()
         self.history.setObjectName("scriptsHistoryList")
         for text in (
-            "#6 · Cancelled before start · 0:42",
-            "#4 · Succeeded · 4 generations",
-            "#3 · Stopped locally · 2 generations",
-            "#2 · Failed", "#1 · Outcome unknown"
+            "#6    cancelled before start    0:42 waited\n22 Oct 21:30 · version 9f3a1c2 · 0 gen",
+            "#4    succeeded    1:12\n22 Oct 20:41 · version 9f3a1c2 · 4 gen",
+            "#3    stopped locally    0:58\n22 Oct 19:05 · version 9f3a1c2 · 2 gen",
+            "#2    failed    0:07\n21 Oct 22:13 · version b81e07d · 0 gen",
+            "#1    outcome unknown\n21 Oct 21:58 · version b81e07d · 1 gen",
         ):
-            self.history.addItem(text)
+            item = QListWidgetItem(text)
+            item.setSizeHint(QSize(190, 50))
+            self.history.addItem(item)
         h.addWidget(self.history)
         layout.addWidget(history)
         layout.addStretch(1)
@@ -522,9 +548,7 @@ class ScriptsPage:
             if item.widget() is not None:
                 item.widget().deleteLater()
         for hook, state, detail in REFERENCE_HOOKS:
-            name = _label(f"{hook} · {state}\n{detail}", role="scriptsHookRow", wrap=True)
-            name.setToolTip(detail)
-            self.hook_list.addWidget(name)
+            self.hook_list.addWidget(_hook_item(hook, state, detail))
 
     def clear(self):
         self._reference_mode = False
