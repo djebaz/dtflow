@@ -8,9 +8,9 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from PySide6.QtCore import QFile, QIODevice, Qt
+from PySide6.QtCore import QFile, QIODevice
 from PySide6.QtUiTools import QUiLoader
-from PySide6.QtWidgets import QApplication, QListWidgetItem, QWidget
+from PySide6.QtWidgets import QApplication, QWidget
 
 FORM = Path(__file__).resolve().parents[2] / "src/dtflow/ui/forms/scripts_workspace.ui"
 
