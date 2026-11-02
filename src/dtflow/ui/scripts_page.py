@@ -14,7 +14,7 @@ from PySide6.QtCore import QSize, Qt
 from PySide6.QtWidgets import (
     QButtonGroup, QCheckBox, QComboBox, QFileDialog, QFrame, QGridLayout, QHBoxLayout, QLabel,
     QLineEdit, QListWidget, QListWidgetItem, QPushButton, QScrollArea,
-    QSpinBox, QStackedWidget, QVBoxLayout, QWidget,
+    QSizePolicy, QSpinBox, QStackedWidget, QVBoxLayout, QWidget,
 )
 
 from dtflow.ui.scripts_editor import ScriptEditor
@@ -111,7 +111,9 @@ def _line(layout: QVBoxLayout, left: str, right: str) -> QLabel:
     name = _label(left, role="scriptsMuted")
     name.setFixedWidth(106)
     row_layout.addWidget(name, 0)
-    value = _label(right)
+    value = _label(right, wrap=True)
+    value.setMinimumWidth(0)
+    value.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
     value.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
     value.setToolTip(right)
     row_layout.addWidget(value, 1)
@@ -128,6 +130,8 @@ def _hook_item(hook: str, state: str, detail: str) -> QFrame:
     layout.setSpacing(3)
     heading = QHBoxLayout()
     name = _label(hook, role="scriptsHookName", wrap=True)
+    name.setMinimumWidth(0)
+    name.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
     name.setToolTip(hook)
     heading.addWidget(name, 1)
     verdict = _label(state, role="scriptsHookVerdict")
@@ -564,7 +568,14 @@ class ScriptsPage:
         self.results_layout.addStretch(1)
 
     def _build_inspector(self):
+        # The shared rightScroll disables horizontal scrolling. Keep the Scripts
+        # page shrinkable inside that viewport, with room to show card borders
+        # before the scroll bar / right window edge.
+        self.right.setMinimumWidth(0)
+        self.right.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
         layout = self.right.layout()
+        layout.setContentsMargins(0, 0, 8, 8)
+        layout.setAlignment(Qt.AlignmentFlag.AlignTop)
         self.inspect_panels: list[QFrame] = []
         hooks, h = _card("Compatibility")
         self.hook_status = _label("No script inspected", wrap=True)
@@ -593,6 +604,9 @@ class ScriptsPage:
         history, h = _card("History")
         self.history = QListWidget()
         self.history.setObjectName("scriptsHistoryList")
+        self.history.setMinimumWidth(0)
+        self.history.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
+        self.history.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         for text in (
             "#6    cancelled before start    0:42 waited\n22 Oct 21:30 · version 9f3a1c2 · 0 gen",
             "#4    succeeded    1:12\n22 Oct 20:41 · version 9f3a1c2 · 4 gen",
@@ -607,6 +621,16 @@ class ScriptsPage:
         layout.addWidget(history)
         layout.addStretch(1)
         self.inspector_panels = (hooks, settings, source, history)
+        for card in self.inspector_panels:
+            # Empty/short cards must stay content-height and top-aligned;
+            # otherwise Qt gives their title labels spare height, centering text.
+            card.setMinimumWidth(0)
+            card.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Maximum)
+            card.layout().setAlignment(Qt.AlignmentFlag.AlignTop)
+            heading = card.layout().itemAt(0).widget()
+            if isinstance(heading, QLabel):
+                heading.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop)
+                heading.setSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
 
     def _build_drawer(self):
         # The overlay is native Qt, not a relocated QSplitter child.
