@@ -452,7 +452,38 @@ def summarize(view: dict) -> QueueSummary:
     )
 
 
-def progress_text(summary: QueueSummary) -> str:
+def script_of(view: dict) -> dict | None:
+    """The script run of a script queue's single item, or None for an ordinary queue."""
+    if view.get("kind") != "script":
+        return None
+    return next((item["script"] for item in view.get("items", ()) if item.get("script")), None)
+
+
+def script_steps(script: dict) -> tuple[int, int, int | None]:
+    """(started, committed, expected) steps of a script run; expected is None when it cannot be known statically."""
+    children = script.get("children") or ()
+    committed = sum(1 for child in children if child.get("state") == "succeeded")
+    return len(children), committed, script.get("expected_steps") or None
+
+
+def script_progress(view: dict) -> tuple[int, int] | None:
+    """(committed, total) for the progress bar of a script queue with a known step total."""
+    script = script_of(view)
+    if script is None:
+        return None
+    _, committed, expected = script_steps(script)
+    return (committed, expected) if expected else None
+
+
+def progress_text(summary: QueueSummary, view: dict | None = None) -> str:
+    script = script_of(view) if view else None
+    if script is not None:
+        started, committed, expected = script_steps(script)
+        failed = script.get("steps_failed") or 0
+        tail = f" · {failed} failed" if failed else ""
+        if expected:
+            return f"Progress: {committed}/{expected} steps · {committed} committed{tail}"
+        return f"Progress: {started} step{'s' if started != 1 else ''} so far · {committed} committed{tail}"
     return f"Progress: {summary.settled}/{summary.total} · {summary.succeeded} succeeded"
 
 
@@ -524,6 +555,10 @@ def queue_title_runs(view: dict) -> tuple[tuple[int, int], ...]:
 
 def plan_text(view: dict) -> str:
     """Item count plus what the items differ in, e.g. ``4 items · 2 prompts, 2 step counts``."""
+    script = script_of(view)
+    if script is not None:
+        _, _, expected = script_steps(script)
+        return f"Script · {expected} step{'s' if expected != 1 else ''}" if expected else "Script · steps as it runs"
     total = sum(view["summary"].values())
     text = f"{total} item{'s' if total != 1 else ''}"
     varied = view.get("varied") or {}
@@ -760,7 +795,9 @@ def event_lines(view: dict) -> str:
             continue
         stamp = local_time(event["at_utc"])
 
-        if kind == "created":
+        if kind == "created" and script_of(view) is not None:
+            summary = "Script queued"
+        elif kind == "created":
             count, cap = detail.get("items"), detail.get("cap")
             summary = ""
             if count is not None:
@@ -782,6 +819,16 @@ def event_lines(view: dict) -> str:
                 summary = f"{_clock(elapsed)} + {_clock(eta)} = {_clock(elapsed + eta)}"
             else:
                 continue
+        elif kind == "item_settled" and script_of(view) is not None:
+            script = script_of(view)
+            started, committed, _ = script_steps(script)
+            state = str(detail.get("state", "settled"))
+            summary = f"Run finished · {started} step{'s' if started != 1 else ''}, {committed} committed"
+            if state != "succeeded":
+                summary += f" · {state.replace('_', ' ')}"
+            elapsed = script.get("elapsed")
+            if type(elapsed) in (int, float):
+                summary += f" · total {elapsed:.2f} s"
         elif kind == "item_settled":
             state = str(detail.get("state", "settled"))
             state = "no result" if state == "unknown" else state.replace("_", " ")
@@ -805,8 +852,27 @@ def event_lines(view: dict) -> str:
             if compact:
                 summary += " - " + ", ".join(compact)
         lines.append(f"{stamp}  {summary}")
+        if kind == "started" and script_of(view) is not None:
+            lines.extend(_step_lines(script_of(view)))
 
     return "\n".join(lines)
+
+
+def _step_lines(script: dict) -> list[str]:
+    """One or two log lines per step (started, then committed with its duration); steps carry no event clock."""
+    lines = []
+    blank = " " * 8
+    for child in script.get("children") or ():
+        n = child["ordinal"]
+        lines.append(f"{blank}  Step {n} started")
+        state = child.get("state")
+        if state == "succeeded":
+            duration = (child.get("fields") or {}).get("duration")
+            tail = f" - {duration:.2f} s" if type(duration) in (int, float) else ""
+            lines.append(f"{blank}  Step {n} committed{tail}")
+        elif state in ("failed", "save_failed", "unknown", "cancelled"):
+            lines.append(f"{blank}  Step {n} {state.replace('_', ' ')}")
+    return lines
 
 
 def outcome_text(view: dict) -> tuple[str, str, str]:

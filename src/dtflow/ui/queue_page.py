@@ -100,6 +100,7 @@ from dtflow.ui.queue_presenter import (
     outcome_text,
     primary_action,
     progress_text,
+    script_progress,
     queue_entries,
     lora_text,
     queue_facts,
@@ -687,8 +688,12 @@ class QueuePage:
             owner = ""
         self._show(page.queueStateLabel, level, chip)
         page.queueStateLabel.setToolTip(" ".join(part for part in (STATUS_TEXT.get(view["status"], ""), owner) if part))
-        page.queueProgressBar.set_counts(segments(view["summary"]), summary.settled, summary.total)
-        page.queueProgressLabel.setText(progress_text(summary))
+        steps = script_progress(view)
+        if steps is not None:
+            page.queueProgressBar.set_counts((("ok", steps[0]),) if steps[0] else (), steps[0], steps[1])
+        else:
+            page.queueProgressBar.set_counts(segments(view["summary"]), summary.settled, summary.total)
+        page.queueProgressLabel.setText(progress_text(summary, view))
         counts = filter_counts(view["summary"])
         for key, symbol, _, _ in FILTERS:
             button = getattr(page, FILTER_BUTTONS[key])
