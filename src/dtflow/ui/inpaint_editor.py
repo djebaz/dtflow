@@ -67,6 +67,7 @@ class InpaintEditor(QObject):
         self._source_path = None
         self._result_path = None
         self._run_source = None  # the source the running edit was taken from
+        self.script_handoff = None  # injected UI-only navigation; never generation dispatch
         self._models = PersonModels()
         self._models_issue = None
         self._model_readiness: dict[str, str | None] = {}
@@ -108,6 +109,7 @@ class InpaintEditor(QObject):
         self.form.sourceFacts.setMinimumWidth(0)
         self.form.chooseSourceButton.clicked.connect(self.choose_source)
         self.form.removeSourceButton.clicked.connect(self.remove_source)
+        self.form.runScriptOnImageButton.clicked.connect(self._open_scripts_preview)
         for name, tool in (
             ("toolBrush", "Brush"),
             ("toolErase", "Erase"),
@@ -380,6 +382,7 @@ class InpaintEditor(QObject):
         self.form.chooseSourceButton.setEnabled(available)
         self.form.useResultButton.setEnabled(available and self._result_path is not None)
         has_source = available and self._source is not None
+        self.form.runScriptOnImageButton.setEnabled(has_source and not self._busy and self.script_handoff is not None)
         for name in (
             "removeSourceButton",
             "toolBrush",
@@ -393,6 +396,7 @@ class InpaintEditor(QObject):
             getattr(self.form, name).setEnabled(has_source)
         for name in ("growSpin", "featherSpin", "strengthSpinBox", "keepOutsideCheck"):
             getattr(self.form, name).setEnabled(available)
+
         self.form.saveMaskButton.setEnabled(available and self._source is not None and self._coverage > 0)
         self.form.findPeopleButton.setEnabled(has_source and self._models.segmentation is not None)
         self.form.modelsButton.setEnabled(available)
@@ -412,6 +416,12 @@ class InpaintEditor(QObject):
         for button in self.canvas._view_buttons.values():
             button.setEnabled(has_source)
         self._sync_button()
+
+    def _open_scripts_preview(self):
+        """Copy the current input into a detached UI preview, without changing the editor."""
+        if self._source is None or self._loading or self._busy or self.script_handoff is None:
+            return
+        self.script_handoff(self._source, self.canvas.mask_pixels(), self.canvas.pixmap().copy())
 
     def _tool(self, value):
         self.canvas.cancel_stroke()

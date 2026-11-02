@@ -1,5 +1,7 @@
 # Current development status
 
+**Scripts desktop preview — PR #201 independent-review alignment (2026-11-02):** Offline-only Start/queue/input/review transitions, fixture Check/in-memory Save, active/unresolved history cues and a detached Inpaint source/mask entry are implemented for preview. Native Photos/Files pickers are the target UX, not a claim that runtime hooks are wired. Shared overlays, breakpoint and rail/editor conventions are retained. No parser/execution, durable script library, backend admission or provider integration is connected by this slice; no tests run. [Scope and render evidence](plans/2026-11-02-scripts-independent-review.md).
+
 
 **Scripting Tier A — PR #199 (2026-11-02, open):** The headless `dtflow script FILE --run --backend ...` path implements selected upstream hooks with shared generation, a durable ScriptRun/child-attempt link, a per-run file sandbox, conservative field mapping, bounded generation count and headless form answers. Owner-run Windows source smoke on fake backend completed two generations (attempt IDs `a266fb20c099481088710c2fea45a797` and `47170a57b53549368a8778d56aff520d`) and confirmed empty-model rejection with zero attempts. No automated tests added or run by owner request. #114/#115 remain partial; #116 canvas/masks, #117 detection/guidance, and #118 desktop UX are separate. This is not local/cloud or packaged acceptance; PR review/merge remains pending.
 
@@ -60,6 +62,8 @@ These are single-machine source runs, not controlled cold/warm, packaged or cros
 | 9 — Image operations, bounded delivered slice | Headless normalization/fitting and immutable input snapshots; Inpaint Paint/Select editor, local ONNX person/part selection, explicit edit dispatch and queued edits through shared services. Source/mode/settings are remembered, masks/history are not. | Dedicated owner-probe/permit boundaries remain; generic CLI/config generation is txt2img-only, and no universal checkpoint compatibility is claimed. [Inpaint plan](plans/2026-10-10-smart-mask-inpainting.md), [edit queues](plans/2026-10-10-inpaint-queues.md), [desktop guide](guides/desktop.md). |
 
 ## Delivered additions and cross-cutting behavior
+
+- **PR #201, draft UI-only Scripts preview:** static workspace/editor/inspector/drawer structure is owned by Designer forms; review corrections cover library clipping, form sizing, queued/cancelled fixture honesty, selection metadata, editor Find/Replace and dirty-draft protection. Start, durable versions/history and service integration remain disconnected. See the [correction plan and scoped render evidence](plans/2026-11-02-scripts-review-fixes.md); screenshots are layout evidence, not runtime/DPI acceptance.
 
 - **PR #156, source implemented/pending acceptance:** bounded sanitized HTTP/gRPC error explanations survive into WARNING diagnostics and shared error presentation across token exchange, authorization, BYOM, storage upload, Echo, FilesExist and generation. Stable status/code and remote uncertainty remain independent of server text; no retries, account switching or provider-policy changes. No tests, validation, renders or new live calls were run for this implementation. See the [API response plan](plans/2026-10-22-api-response-diagnostics.md).
 

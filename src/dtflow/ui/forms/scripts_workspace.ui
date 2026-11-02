@@ -1,0 +1,2953 @@
+<ui version="4.0">
+ <class>ScriptsWorkspace</class>
+ <widget class="QWidget" name="ScriptsWorkspace">
+  <layout class="QHBoxLayout" name="scriptsBaseLayout">
+   <property name="leftMargin">
+    <number>0</number>
+   </property>
+   <property name="topMargin">
+    <number>0</number>
+   </property>
+   <property name="rightMargin">
+    <number>0</number>
+   </property>
+   <property name="bottomMargin">
+    <number>0</number>
+   </property>
+   <property name="spacing">
+    <number>8</number>
+   </property>
+   <property name="sizeConstraint">
+    <enum>QLayout::SetMinimumSize</enum>
+   </property>
+   <item>
+    <widget class="QGroupBox" name="scriptsLibraryPanel">
+     <property name="role" stdset="0">
+      <string>sectionCard</string>
+     </property>
+     <property name="sizePolicy">
+      <sizepolicy hsizetype="Ignored" vsizetype="Ignored">
+       <horstretch>0</horstretch>
+       <verstretch>0</verstretch>
+      </sizepolicy>
+     </property>
+     <property name="title">
+      <string />
+     </property>
+     <property name="accessibleName">
+      <string>Script library</string>
+     </property>
+     <layout class="QVBoxLayout" name="scriptsLibraryPanelCardLayout">
+      <property name="leftMargin">
+       <number>0</number>
+      </property>
+      <property name="rightMargin">
+       <number>0</number>
+      </property>
+      <property name="topMargin">
+       <number>0</number>
+      </property>
+      <property name="bottomMargin">
+       <number>0</number>
+      </property>
+      <property name="spacing">
+       <number>0</number>
+      </property>
+      <item>
+       <widget class="QFrame" name="scriptsLibraryPanelHeader">
+        <property name="role" stdset="0">
+         <string>sectionHeader</string>
+        </property>
+        <layout class="QHBoxLayout" name="scriptsLibraryPanelHeaderLayout" stretch="0,1">
+         <property name="leftMargin">
+          <number>10</number>
+         </property>
+         <property name="topMargin">
+          <number>7</number>
+         </property>
+         <property name="rightMargin">
+          <number>10</number>
+         </property>
+         <property name="bottomMargin">
+          <number>7</number>
+         </property>
+         <property name="spacing">
+          <number>8</number>
+         </property>
+         <item>
+          <widget class="QLabel" name="scriptsLibraryPanelIcon">
+           <property name="role" stdset="0">
+            <string>sectionIcon</string>
+           </property>
+           <property name="iconKey" stdset="0">
+            <string>json</string>
+           </property>
+           <property name="text">
+            <string />
+           </property>
+           <property name="minimumSize">
+            <size>
+             <width>16</width>
+             <height>16</height>
+            </size>
+           </property>
+           <property name="maximumSize">
+            <size>
+             <width>16</width>
+             <height>16</height>
+            </size>
+           </property>
+          </widget>
+         </item>
+         <item>
+          <widget class="QLabel" name="scriptsLibraryPanelHeading">
+           <property name="text">
+            <string>Script library</string>
+           </property>
+           <property name="textRole" stdset="0">
+            <string>panelHeading</string>
+           </property>
+          </widget>
+         </item>
+        </layout>
+       </widget>
+      </item>
+      <item>
+       <widget class="QWidget" name="scriptsLibraryPanelContents">
+        <layout class="QVBoxLayout" name="scriptsLibraryPanelContentsLayout" stretch="0,1,0">
+         <property name="spacing">
+          <number>8</number>
+         </property>
+         <property name="sizeConstraint">
+          <enum>QLayout::SetMinimumSize</enum>
+         </property>
+         <item>
+          <widget class="QLabel" name="libraryEmptyHint">
+           <property name="role" stdset="0">
+            <string>scriptsMuted</string>
+           </property>
+           <property name="wordWrap">
+            <bool>true</bool>
+           </property>
+           <property name="text">
+            <string>No scripts
+Create one or import a local .js file.</string>
+           </property>
+          </widget>
+         </item>
+         <item>
+          <widget class="QListWidget" name="scriptsLibraryList">
+           <property name="accessibleName">
+            <string>Script library</string>
+           </property>
+           <property name="minimumSize">
+            <size>
+             <width>0</width>
+             <height>80</height>
+            </size>
+           </property>
+           <property name="sizePolicy">
+            <sizepolicy hsizetype="Ignored" vsizetype="Ignored">
+             <horstretch>0</horstretch>
+             <verstretch>0</verstretch>
+            </sizepolicy>
+           </property>
+          </widget>
+         </item>
+         <item>
+          <widget class="QWidget" name="libraryFooter">
+           <layout class="QVBoxLayout" name="libraryFooterLayout">
+            <property name="leftMargin">
+             <number>0</number>
+            </property>
+            <property name="topMargin">
+             <number>0</number>
+            </property>
+            <property name="rightMargin">
+             <number>0</number>
+            </property>
+            <property name="bottomMargin">
+             <number>0</number>
+            </property>
+            <property name="spacing">
+             <number>6</number>
+            </property>
+            <property name="sizeConstraint">
+             <enum>QLayout::SetMinimumSize</enum>
+            </property>
+            <item>
+             <widget class="QPushButton" name="newScriptButton">
+              <property name="text">
+               <string>New script…</string>
+              </property>
+              <property name="enabled">
+               <bool>true</bool>
+              </property>
+              <property name="accessibleName">
+               <string>New script…</string>
+              </property>
+              <property name="sizePolicy">
+               <sizepolicy hsizetype="Expanding" vsizetype="Fixed">
+                <horstretch>0</horstretch>
+                <verstretch>0</verstretch>
+               </sizepolicy>
+              </property>
+             </widget>
+            </item>
+            <item>
+             <widget class="QWidget" name="libraryActions">
+              <layout class="QHBoxLayout" name="libraryActionsLayout">
+               <property name="leftMargin">
+                <number>0</number>
+               </property>
+               <property name="topMargin">
+                <number>0</number>
+               </property>
+               <property name="rightMargin">
+                <number>0</number>
+               </property>
+               <property name="bottomMargin">
+                <number>0</number>
+               </property>
+               <property name="spacing">
+                <number>6</number>
+               </property>
+               <property name="sizeConstraint">
+                <enum>QLayout::SetMinimumSize</enum>
+               </property>
+               <item>
+                <widget class="QPushButton" name="importScriptButton">
+                 <property name="text">
+                  <string>Import…</string>
+                 </property>
+                 <property name="enabled">
+                  <bool>true</bool>
+                 </property>
+                 <property name="accessibleName">
+                  <string>Import…</string>
+                 </property>
+                 <property name="sizePolicy">
+                  <sizepolicy hsizetype="Expanding" vsizetype="Fixed">
+                   <horstretch>0</horstretch>
+                   <verstretch>0</verstretch>
+                  </sizepolicy>
+                 </property>
+                </widget>
+               </item>
+               <item>
+                <widget class="QPushButton" name="reloadScriptButton">
+                 <property name="text">
+                  <string>Reload from disk</string>
+                 </property>
+                 <property name="enabled">
+                  <bool>false</bool>
+                 </property>
+                 <property name="accessibleName">
+                  <string>Reload from disk</string>
+                 </property>
+                 <property name="sizePolicy">
+                  <sizepolicy hsizetype="Expanding" vsizetype="Fixed">
+                   <horstretch>0</horstretch>
+                   <verstretch>0</verstretch>
+                  </sizepolicy>
+                 </property>
+                </widget>
+               </item>
+              </layout>
+              <property name="role" stdset="0">
+               <string>sectionContents</string>
+              </property>
+             </widget>
+            </item>
+            <item>
+             <widget class="QLabel" name="libraryNote">
+              <property name="text">
+               <string>Preview mode: sources are in memory; version storage is not connected.</string>
+              </property>
+              <property name="role" stdset="0">
+               <string>scriptsMuted</string>
+              </property>
+              <property name="wordWrap">
+               <bool>true</bool>
+              </property>
+              <property name="sizePolicy">
+               <sizepolicy hsizetype="Preferred" vsizetype="Minimum">
+                <horstretch>0</horstretch>
+                <verstretch>0</verstretch>
+               </sizepolicy>
+              </property>
+             </widget>
+            </item>
+           </layout>
+           <property name="role" stdset="0">
+            <string>sectionContents</string>
+           </property>
+          </widget>
+         </item>
+         <property name="leftMargin">
+          <number>10</number>
+         </property>
+         <property name="rightMargin">
+          <number>10</number>
+         </property>
+         <property name="topMargin">
+          <number>8</number>
+         </property>
+         <property name="bottomMargin">
+          <number>10</number>
+         </property>
+        </layout>
+        <property name="role" stdset="0">
+         <string>sectionContents</string>
+        </property>
+       </widget>
+      </item>
+     </layout>
+    </widget>
+   </item>
+   <item>
+    <widget class="QFrame" name="scriptsWorkPanel">
+     <layout class="QVBoxLayout" name="scriptsWorkLayout">
+      <property name="leftMargin">
+       <number>8</number>
+      </property>
+      <property name="topMargin">
+       <number>8</number>
+      </property>
+      <property name="rightMargin">
+       <number>8</number>
+      </property>
+      <property name="bottomMargin">
+       <number>8</number>
+      </property>
+      <property name="spacing">
+       <number>8</number>
+      </property>
+      <property name="sizeConstraint">
+       <enum>QLayout::SetMinimumSize</enum>
+      </property>
+      <item>
+       <widget class="QWidget" name="modeRow">
+        <layout class="QHBoxLayout" name="modeRowLayout">
+         <property name="leftMargin">
+          <number>0</number>
+         </property>
+         <property name="topMargin">
+          <number>0</number>
+         </property>
+         <property name="rightMargin">
+          <number>0</number>
+         </property>
+         <property name="bottomMargin">
+          <number>0</number>
+         </property>
+         <property name="spacing">
+          <number>6</number>
+         </property>
+         <property name="sizeConstraint">
+          <enum>QLayout::SetMinimumSize</enum>
+         </property>
+         <item>
+          <widget class="QFrame" name="scriptsModeSwitch">
+           <property name="role" stdset="0">
+            <string>segmented</string>
+           </property>
+           <layout class="QHBoxLayout" name="modeLayout">
+            <property name="leftMargin">
+             <number>0</number>
+            </property>
+            <property name="topMargin">
+             <number>0</number>
+            </property>
+            <property name="rightMargin">
+             <number>0</number>
+            </property>
+            <property name="bottomMargin">
+             <number>0</number>
+            </property>
+            <property name="spacing">
+             <number>0</number>
+            </property>
+            <property name="sizeConstraint">
+             <enum>QLayout::SetMinimumSize</enum>
+            </property>
+            <item>
+             <widget class="QPushButton" name="textModeButton">
+              <property name="text">
+               <string>Text to image</string>
+              </property>
+              <property name="enabled">
+               <bool>true</bool>
+              </property>
+              <property name="accessibleName">
+               <string>Text to image</string>
+              </property>
+              <property name="checkable">
+               <bool>true</bool>
+              </property>
+              <property name="segmentEdge" stdset="0">
+               <string>first</string>
+              </property>
+              <property name="sizePolicy">
+               <sizepolicy hsizetype="Maximum" vsizetype="Fixed">
+                <horstretch>0</horstretch>
+                <verstretch>0</verstretch>
+               </sizepolicy>
+              </property>
+             </widget>
+            </item>
+            <item>
+             <widget class="QPushButton" name="inpaintModeButton">
+              <property name="text">
+               <string>Inpaint</string>
+              </property>
+              <property name="enabled">
+               <bool>true</bool>
+              </property>
+              <property name="accessibleName">
+               <string>Inpaint</string>
+              </property>
+              <property name="checkable">
+               <bool>true</bool>
+              </property>
+              <property name="segmentEdge" stdset="0">
+               <string>middle</string>
+              </property>
+              <property name="sizePolicy">
+               <sizepolicy hsizetype="Maximum" vsizetype="Fixed">
+                <horstretch>0</horstretch>
+                <verstretch>0</verstretch>
+               </sizepolicy>
+              </property>
+             </widget>
+            </item>
+            <item>
+             <widget class="QPushButton" name="scriptsModeButton">
+              <property name="text">
+               <string>Scripts</string>
+              </property>
+              <property name="enabled">
+               <bool>true</bool>
+              </property>
+              <property name="accessibleName">
+               <string>Scripts</string>
+              </property>
+              <property name="checkable">
+               <bool>true</bool>
+              </property>
+              <property name="segmentEdge" stdset="0">
+               <string>last</string>
+              </property>
+              <property name="sizePolicy">
+               <sizepolicy hsizetype="Maximum" vsizetype="Fixed">
+                <horstretch>0</horstretch>
+                <verstretch>0</verstretch>
+               </sizepolicy>
+              </property>
+             </widget>
+            </item>
+           </layout>
+           <property name="sizePolicy">
+            <sizepolicy hsizetype="Maximum" vsizetype="Fixed">
+             <horstretch>0</horstretch>
+             <verstretch>0</verstretch>
+            </sizepolicy>
+           </property>
+          </widget>
+         </item>
+         <item>
+          <spacer name="modeSpacer">
+           <property name="orientation">
+            <enum>Qt::Horizontal</enum>
+           </property>
+           <property name="sizeHint">
+            <size>
+             <width>0</width>
+             <height>0</height>
+            </size>
+           </property>
+          </spacer>
+         </item>
+         <item>
+          <widget class="QPushButton" name="scriptsInspectorToggle">
+           <property name="text">
+            <string />
+           </property>
+           <property name="accessibleName">
+            <string>Scripts inspector</string>
+           </property>
+           <property name="toolTip">
+            <string>Show or hide the Scripts inspector; opens a drawer in narrow layouts</string>
+           </property>
+           <property name="checkable">
+            <bool>true</bool>
+           </property>
+           <property name="iconSize">
+            <size>
+             <width>16</width>
+             <height>16</height>
+            </size>
+           </property>
+          </widget>
+         </item>
+        </layout>
+        <property name="role" stdset="0">
+         <string>sectionContents</string>
+        </property>
+       </widget>
+      </item>
+      <item>
+       <widget class="QWidget" name="titleRow">
+        <layout class="QHBoxLayout" name="titleRowLayout" stretch="1,0">
+         <property name="leftMargin">
+          <number>0</number>
+         </property>
+         <property name="topMargin">
+          <number>0</number>
+         </property>
+         <property name="rightMargin">
+          <number>0</number>
+         </property>
+         <property name="bottomMargin">
+          <number>0</number>
+         </property>
+         <property name="spacing">
+          <number>6</number>
+         </property>
+         <property name="sizeConstraint">
+          <enum>QLayout::SetMinimumSize</enum>
+         </property>
+         <item>
+          <widget class="QLabel" name="scriptTitle">
+           <property name="text">
+            <string>No script selected</string>
+           </property>
+           <property name="role" stdset="0">
+            <string>scriptsPageTitle</string>
+           </property>
+           <property name="wordWrap">
+            <bool>true</bool>
+           </property>
+           <property name="sizePolicy">
+            <sizepolicy hsizetype="Preferred" vsizetype="Minimum">
+             <horstretch>0</horstretch>
+             <verstretch>0</verstretch>
+            </sizepolicy>
+           </property>
+          </widget>
+         </item>
+         <item>
+          <widget class="QLabel" name="scriptSha">
+           <property name="text">
+            <string />
+           </property>
+           <property name="role" stdset="0">
+            <string>scriptsMuted</string>
+           </property>
+           <property name="wordWrap">
+            <bool>true</bool>
+           </property>
+           <property name="sizePolicy">
+            <sizepolicy hsizetype="Preferred" vsizetype="Minimum">
+             <horstretch>0</horstretch>
+             <verstretch>0</verstretch>
+            </sizepolicy>
+           </property>
+          </widget>
+         </item>
+        </layout>
+        <property name="role" stdset="0">
+         <string>sectionContents</string>
+        </property>
+       </widget>
+      </item>
+      <item>
+       <widget class="QLabel" name="scriptCompatibility">
+        <property name="text">
+         <string>Select or import a script</string>
+        </property>
+        <property name="role" stdset="0">
+         <string>scriptsCompatibility</string>
+        </property>
+        <property name="wordWrap">
+         <bool>true</bool>
+        </property>
+        <property name="sizePolicy">
+         <sizepolicy hsizetype="Preferred" vsizetype="Minimum">
+          <horstretch>0</horstretch>
+          <verstretch>0</verstretch>
+         </sizepolicy>
+        </property>
+       </widget>
+      </item>
+      <item>
+       <widget class="QLabel" name="runIdentity">
+        <property name="text">
+         <string />
+        </property>
+        <property name="role" stdset="0">
+         <string>scriptsMuted</string>
+        </property>
+        <property name="wordWrap">
+         <bool>true</bool>
+        </property>
+        <property name="sizePolicy">
+         <sizepolicy hsizetype="Preferred" vsizetype="Minimum">
+          <horstretch>0</horstretch>
+          <verstretch>0</verstretch>
+         </sizepolicy>
+        </property>
+       </widget>
+      </item>
+      <item>
+       <widget class="QFrame" name="scriptsViewSwitch">
+        <property name="role" stdset="0">
+         <string>segmented</string>
+        </property>
+        <layout class="QHBoxLayout" name="viewSwitchLayout">
+         <property name="leftMargin">
+          <number>0</number>
+         </property>
+         <property name="topMargin">
+          <number>0</number>
+         </property>
+         <property name="rightMargin">
+          <number>0</number>
+         </property>
+         <property name="bottomMargin">
+          <number>0</number>
+         </property>
+         <property name="spacing">
+          <number>0</number>
+         </property>
+         <property name="sizeConstraint">
+          <enum>QLayout::SetMinimumSize</enum>
+         </property>
+         <item>
+          <widget class="QPushButton" name="inspectTab">
+           <property name="text">
+            <string>Inspect</string>
+           </property>
+           <property name="enabled">
+            <bool>true</bool>
+           </property>
+           <property name="accessibleName">
+            <string>Inspect</string>
+           </property>
+           <property name="checkable">
+            <bool>true</bool>
+           </property>
+           <property name="segmentEdge" stdset="0">
+            <string>first</string>
+           </property>
+           <property name="sizePolicy">
+            <sizepolicy hsizetype="Maximum" vsizetype="Fixed">
+             <horstretch>0</horstretch>
+             <verstretch>0</verstretch>
+            </sizepolicy>
+           </property>
+          </widget>
+         </item>
+         <item>
+          <widget class="QPushButton" name="configureTab">
+           <property name="text">
+            <string>Configure</string>
+           </property>
+           <property name="enabled">
+            <bool>true</bool>
+           </property>
+           <property name="accessibleName">
+            <string>Configure</string>
+           </property>
+           <property name="checkable">
+            <bool>true</bool>
+           </property>
+           <property name="segmentEdge" stdset="0">
+            <string>middle</string>
+           </property>
+           <property name="sizePolicy">
+            <sizepolicy hsizetype="Maximum" vsizetype="Fixed">
+             <horstretch>0</horstretch>
+             <verstretch>0</verstretch>
+            </sizepolicy>
+           </property>
+          </widget>
+         </item>
+         <item>
+          <widget class="QPushButton" name="codeTab">
+           <property name="text">
+            <string>Code</string>
+           </property>
+           <property name="enabled">
+            <bool>true</bool>
+           </property>
+           <property name="accessibleName">
+            <string>Code</string>
+           </property>
+           <property name="checkable">
+            <bool>true</bool>
+           </property>
+           <property name="segmentEdge" stdset="0">
+            <string>last</string>
+           </property>
+           <property name="sizePolicy">
+            <sizepolicy hsizetype="Maximum" vsizetype="Fixed">
+             <horstretch>0</horstretch>
+             <verstretch>0</verstretch>
+            </sizepolicy>
+           </property>
+          </widget>
+         </item>
+        </layout>
+        <property name="sizePolicy">
+         <sizepolicy hsizetype="Maximum" vsizetype="Fixed">
+          <horstretch>0</horstretch>
+          <verstretch>0</verstretch>
+         </sizepolicy>
+        </property>
+       </widget>
+      </item>
+      <item>
+       <widget class="QLabel" name="scriptsLiveRunNote">
+        <property name="role" stdset="0">
+         <string>scriptsActiveRunNote</string>
+        </property>
+        <property name="wordWrap">
+         <bool>true</bool>
+        </property>
+        <property name="text">
+         <string>Run #5 is active. Stop is in the shared activity bar.</string>
+        </property>
+       </widget>
+      </item>
+      <item>
+       <widget class="QStackedWidget" name="scriptsContentStack">
+        <property name="sizePolicy">
+         <sizepolicy hsizetype="Expanding" vsizetype="Expanding">
+          <horstretch>0</horstretch>
+          <verstretch>0</verstretch>
+         </sizepolicy>
+        </property>
+        <widget class="QWidget" name="inspectPage">
+         <layout class="QVBoxLayout" name="inspectPageLayout">
+          <property name="leftMargin">
+           <number>0</number>
+          </property>
+          <property name="topMargin">
+           <number>0</number>
+          </property>
+          <property name="rightMargin">
+           <number>0</number>
+          </property>
+          <property name="bottomMargin">
+           <number>0</number>
+          </property>
+          <property name="spacing">
+           <number>8</number>
+          </property>
+          <property name="sizeConstraint">
+           <enum>QLayout::SetMinimumSize</enum>
+          </property>
+          <item>
+           <widget class="QScrollArea" name="inspectScroll">
+            <property name="widgetResizable">
+             <bool>true</bool>
+            </property>
+            <property name="frameShape">
+             <enum>QFrame::NoFrame</enum>
+            </property>
+            <property name="horizontalScrollBarPolicy">
+             <enum>Qt::ScrollBarAlwaysOff</enum>
+            </property>
+            <widget class="QWidget" name="inspectScrollContents">
+             <layout class="QVBoxLayout" name="inspectScrollLayout">
+              <property name="leftMargin">
+               <number>4</number>
+              </property>
+              <property name="topMargin">
+               <number>4</number>
+              </property>
+              <property name="rightMargin">
+               <number>4</number>
+              </property>
+              <property name="bottomMargin">
+               <number>4</number>
+              </property>
+              <property name="spacing">
+               <number>8</number>
+              </property>
+              <property name="sizeConstraint">
+               <enum>QLayout::SetMinimumSize</enum>
+              </property>
+              <item>
+               <widget class="QFrame" name="scriptsInspectBanner">
+                <layout class="QVBoxLayout" name="inspectBannerLayout">
+                 <property name="leftMargin">
+                  <number>12</number>
+                 </property>
+                 <property name="topMargin">
+                  <number>12</number>
+                 </property>
+                 <property name="rightMargin">
+                  <number>12</number>
+                 </property>
+                 <property name="bottomMargin">
+                  <number>12</number>
+                 </property>
+                 <property name="spacing">
+                  <number>8</number>
+                 </property>
+                 <property name="sizeConstraint">
+                  <enum>QLayout::SetMinimumSize</enum>
+                 </property>
+                 <item>
+                  <widget class="QLabel" name="inspectBannerTitle">
+                   <property name="text">
+                    <string>No script inspected</string>
+                   </property>
+                   <property name="role" stdset="0">
+                    <string>scriptsBannerTitle</string>
+                   </property>
+                   <property name="wordWrap">
+                    <bool>true</bool>
+                   </property>
+                   <property name="sizePolicy">
+                    <sizepolicy hsizetype="Preferred" vsizetype="Minimum">
+                     <horstretch>0</horstretch>
+                     <verstretch>0</verstretch>
+                    </sizepolicy>
+                   </property>
+                  </widget>
+                 </item>
+                 <item>
+                  <widget class="QLabel" name="inspectBannerDescription">
+                   <property name="text">
+                    <string />
+                   </property>
+                   <property name="role" stdset="0">
+                    <string>scriptsMuted</string>
+                   </property>
+                   <property name="wordWrap">
+                    <bool>true</bool>
+                   </property>
+                   <property name="sizePolicy">
+                    <sizepolicy hsizetype="Preferred" vsizetype="Minimum">
+                     <horstretch>0</horstretch>
+                     <verstretch>0</verstretch>
+                    </sizepolicy>
+                   </property>
+                  </widget>
+                 </item>
+                </layout>
+               </widget>
+              </item>
+              <item>
+               <widget class="QFrame" name="inspectionCard">
+                <property name="role" stdset="0">
+                 <string>sectionCard</string>
+                </property>
+                <property name="sizePolicy">
+                 <sizepolicy hsizetype="Preferred" vsizetype="Maximum">
+                  <horstretch>0</horstretch>
+                  <verstretch>0</verstretch>
+                 </sizepolicy>
+                </property>
+                <layout class="QVBoxLayout" name="inspectionCardLayout">
+                 <property name="leftMargin">
+                  <number>10</number>
+                 </property>
+                 <property name="topMargin">
+                  <number>10</number>
+                 </property>
+                 <property name="rightMargin">
+                  <number>10</number>
+                 </property>
+                 <property name="bottomMargin">
+                  <number>10</number>
+                 </property>
+                 <property name="spacing">
+                  <number>8</number>
+                 </property>
+                 <property name="sizeConstraint">
+                  <enum>QLayout::SetMinimumSize</enum>
+                 </property>
+                 <item>
+                  <widget class="QLabel" name="inspectionCardTitle">
+                   <property name="text">
+                    <string>Inspection</string>
+                   </property>
+                   <property name="role" stdset="0">
+                    <string>scriptsCardTitle</string>
+                   </property>
+                   <property name="wordWrap">
+                    <bool>true</bool>
+                   </property>
+                   <property name="sizePolicy">
+                    <sizepolicy hsizetype="Preferred" vsizetype="Minimum">
+                     <horstretch>0</horstretch>
+                     <verstretch>0</verstretch>
+                    </sizepolicy>
+                   </property>
+                  </widget>
+                 </item>
+                 <item>
+                  <widget class="QWidget" name="inspectionHeaderRow">
+                   <layout class="QHBoxLayout" name="inspectionHeaderRowLayout">
+                    <property name="bottomMargin">
+                     <number>2</number>
+                    </property>
+                    <property name="topMargin">
+                     <number>2</number>
+                    </property>
+                    <property name="leftMargin">
+                     <number>0</number>
+                    </property>
+                    <property name="rightMargin">
+                     <number>0</number>
+                    </property>
+                    <property name="spacing">
+                     <number>6</number>
+                    </property>
+                    <property name="sizeConstraint">
+                     <enum>QLayout::SetMinimumSize</enum>
+                    </property>
+                    <item>
+                     <widget class="QLabel" name="inspectionHeaderName">
+                      <property name="text">
+                       <string>Header</string>
+                      </property>
+                      <property name="role" stdset="0">
+                       <string>scriptsMuted</string>
+                      </property>
+                      <property name="wordWrap">
+                       <bool>true</bool>
+                      </property>
+                      <property name="sizePolicy">
+                       <sizepolicy hsizetype="Preferred" vsizetype="Minimum">
+                        <horstretch>0</horstretch>
+                        <verstretch>0</verstretch>
+                       </sizepolicy>
+                      </property>
+                      <property name="minimumSize">
+                       <size>
+                        <width>150</width>
+                        <height>0</height>
+                       </size>
+                      </property>
+                      <property name="maximumSize">
+                       <size>
+                        <width>150</width>
+                        <height>16777215</height>
+                       </size>
+                      </property>
+                     </widget>
+                    </item>
+                    <item>
+                     <widget class="QLabel" name="inspectionHeaderValue">
+                      <property name="text">
+                       <string />
+                      </property>
+                      <property name="role" stdset="0">
+                       <string>scriptsMuted</string>
+                      </property>
+                      <property name="wordWrap">
+                       <bool>true</bool>
+                      </property>
+                      <property name="sizePolicy">
+                       <sizepolicy hsizetype="Preferred" vsizetype="Minimum">
+                        <horstretch>0</horstretch>
+                        <verstretch>0</verstretch>
+                       </sizepolicy>
+                      </property>
+                     </widget>
+                    </item>
+                   </layout>
+                   <property name="role" stdset="0">
+                    <string>sectionContents</string>
+                   </property>
+                  </widget>
+                 </item>
+                 <item>
+                  <widget class="QWidget" name="inspectionTierRow">
+                   <layout class="QHBoxLayout" name="inspectionTierRowLayout">
+                    <property name="bottomMargin">
+                     <number>2</number>
+                    </property>
+                    <property name="topMargin">
+                     <number>2</number>
+                    </property>
+                    <property name="leftMargin">
+                     <number>0</number>
+                    </property>
+                    <property name="rightMargin">
+                     <number>0</number>
+                    </property>
+                    <property name="spacing">
+                     <number>6</number>
+                    </property>
+                    <property name="sizeConstraint">
+                     <enum>QLayout::SetMinimumSize</enum>
+                    </property>
+                    <item>
+                     <widget class="QLabel" name="inspectionTierName">
+                      <property name="text">
+                       <string>Tier</string>
+                      </property>
+                      <property name="role" stdset="0">
+                       <string>scriptsMuted</string>
+                      </property>
+                      <property name="wordWrap">
+                       <bool>true</bool>
+                      </property>
+                      <property name="sizePolicy">
+                       <sizepolicy hsizetype="Preferred" vsizetype="Minimum">
+                        <horstretch>0</horstretch>
+                        <verstretch>0</verstretch>
+                       </sizepolicy>
+                      </property>
+                      <property name="minimumSize">
+                       <size>
+                        <width>150</width>
+                        <height>0</height>
+                       </size>
+                      </property>
+                      <property name="maximumSize">
+                       <size>
+                        <width>150</width>
+                        <height>16777215</height>
+                       </size>
+                      </property>
+                     </widget>
+                    </item>
+                    <item>
+                     <widget class="QLabel" name="inspectionTierValue">
+                      <property name="text">
+                       <string />
+                      </property>
+                      <property name="role" stdset="0">
+                       <string>scriptsMuted</string>
+                      </property>
+                      <property name="wordWrap">
+                       <bool>true</bool>
+                      </property>
+                      <property name="sizePolicy">
+                       <sizepolicy hsizetype="Preferred" vsizetype="Minimum">
+                        <horstretch>0</horstretch>
+                        <verstretch>0</verstretch>
+                       </sizepolicy>
+                      </property>
+                     </widget>
+                    </item>
+                   </layout>
+                   <property name="role" stdset="0">
+                    <string>sectionContents</string>
+                   </property>
+                  </widget>
+                 </item>
+                 <item>
+                  <widget class="QWidget" name="inspectionDynamicRow">
+                   <layout class="QHBoxLayout" name="inspectionDynamicRowLayout">
+                    <property name="bottomMargin">
+                     <number>2</number>
+                    </property>
+                    <property name="topMargin">
+                     <number>2</number>
+                    </property>
+                    <property name="leftMargin">
+                     <number>0</number>
+                    </property>
+                    <property name="rightMargin">
+                     <number>0</number>
+                    </property>
+                    <property name="spacing">
+                     <number>6</number>
+                    </property>
+                    <property name="sizeConstraint">
+                     <enum>QLayout::SetMinimumSize</enum>
+                    </property>
+                    <item>
+                     <widget class="QLabel" name="inspectionDynamicName">
+                      <property name="text">
+                       <string>Dynamic paths</string>
+                      </property>
+                      <property name="role" stdset="0">
+                       <string>scriptsMuted</string>
+                      </property>
+                      <property name="wordWrap">
+                       <bool>true</bool>
+                      </property>
+                      <property name="sizePolicy">
+                       <sizepolicy hsizetype="Preferred" vsizetype="Minimum">
+                        <horstretch>0</horstretch>
+                        <verstretch>0</verstretch>
+                       </sizepolicy>
+                      </property>
+                      <property name="minimumSize">
+                       <size>
+                        <width>150</width>
+                        <height>0</height>
+                       </size>
+                      </property>
+                      <property name="maximumSize">
+                       <size>
+                        <width>150</width>
+                        <height>16777215</height>
+                       </size>
+                      </property>
+                     </widget>
+                    </item>
+                    <item>
+                     <widget class="QLabel" name="inspectionDynamicValue">
+                      <property name="text">
+                       <string />
+                      </property>
+                      <property name="role" stdset="0">
+                       <string>scriptsMuted</string>
+                      </property>
+                      <property name="wordWrap">
+                       <bool>true</bool>
+                      </property>
+                      <property name="sizePolicy">
+                       <sizepolicy hsizetype="Preferred" vsizetype="Minimum">
+                        <horstretch>0</horstretch>
+                        <verstretch>0</verstretch>
+                       </sizepolicy>
+                      </property>
+                     </widget>
+                    </item>
+                   </layout>
+                   <property name="role" stdset="0">
+                    <string>sectionContents</string>
+                   </property>
+                  </widget>
+                 </item>
+                 <item>
+                  <widget class="QWidget" name="inspectionModelsRow">
+                   <layout class="QHBoxLayout" name="inspectionModelsRowLayout">
+                    <property name="bottomMargin">
+                     <number>2</number>
+                    </property>
+                    <property name="topMargin">
+                     <number>2</number>
+                    </property>
+                    <property name="leftMargin">
+                     <number>0</number>
+                    </property>
+                    <property name="rightMargin">
+                     <number>0</number>
+                    </property>
+                    <property name="spacing">
+                     <number>6</number>
+                    </property>
+                    <property name="sizeConstraint">
+                     <enum>QLayout::SetMinimumSize</enum>
+                    </property>
+                    <item>
+                     <widget class="QLabel" name="inspectionModelsName">
+                      <property name="text">
+                       <string>Models</string>
+                      </property>
+                      <property name="role" stdset="0">
+                       <string>scriptsMuted</string>
+                      </property>
+                      <property name="wordWrap">
+                       <bool>true</bool>
+                      </property>
+                      <property name="sizePolicy">
+                       <sizepolicy hsizetype="Preferred" vsizetype="Minimum">
+                        <horstretch>0</horstretch>
+                        <verstretch>0</verstretch>
+                       </sizepolicy>
+                      </property>
+                      <property name="minimumSize">
+                       <size>
+                        <width>150</width>
+                        <height>0</height>
+                       </size>
+                      </property>
+                      <property name="maximumSize">
+                       <size>
+                        <width>150</width>
+                        <height>16777215</height>
+                       </size>
+                      </property>
+                     </widget>
+                    </item>
+                    <item>
+                     <widget class="QLabel" name="inspectionModelsValue">
+                      <property name="text">
+                       <string />
+                      </property>
+                      <property name="role" stdset="0">
+                       <string>scriptsMuted</string>
+                      </property>
+                      <property name="wordWrap">
+                       <bool>true</bool>
+                      </property>
+                      <property name="sizePolicy">
+                       <sizepolicy hsizetype="Preferred" vsizetype="Minimum">
+                        <horstretch>0</horstretch>
+                        <verstretch>0</verstretch>
+                       </sizepolicy>
+                      </property>
+                     </widget>
+                    </item>
+                   </layout>
+                   <property name="role" stdset="0">
+                    <string>sectionContents</string>
+                   </property>
+                  </widget>
+                 </item>
+                 <item>
+                  <widget class="QWidget" name="inspectionLorasRow">
+                   <layout class="QHBoxLayout" name="inspectionLorasRowLayout">
+                    <property name="bottomMargin">
+                     <number>2</number>
+                    </property>
+                    <property name="topMargin">
+                     <number>2</number>
+                    </property>
+                    <property name="leftMargin">
+                     <number>0</number>
+                    </property>
+                    <property name="rightMargin">
+                     <number>0</number>
+                    </property>
+                    <property name="spacing">
+                     <number>6</number>
+                    </property>
+                    <property name="sizeConstraint">
+                     <enum>QLayout::SetMinimumSize</enum>
+                    </property>
+                    <item>
+                     <widget class="QLabel" name="inspectionLorasName">
+                      <property name="text">
+                       <string>LoRAs</string>
+                      </property>
+                      <property name="role" stdset="0">
+                       <string>scriptsMuted</string>
+                      </property>
+                      <property name="wordWrap">
+                       <bool>true</bool>
+                      </property>
+                      <property name="sizePolicy">
+                       <sizepolicy hsizetype="Preferred" vsizetype="Minimum">
+                        <horstretch>0</horstretch>
+                        <verstretch>0</verstretch>
+                       </sizepolicy>
+                      </property>
+                      <property name="minimumSize">
+                       <size>
+                        <width>150</width>
+                        <height>0</height>
+                       </size>
+                      </property>
+                      <property name="maximumSize">
+                       <size>
+                        <width>150</width>
+                        <height>16777215</height>
+                       </size>
+                      </property>
+                     </widget>
+                    </item>
+                    <item>
+                     <widget class="QLabel" name="inspectionLorasValue">
+                      <property name="text">
+                       <string />
+                      </property>
+                      <property name="role" stdset="0">
+                       <string>scriptsMuted</string>
+                      </property>
+                      <property name="wordWrap">
+                       <bool>true</bool>
+                      </property>
+                      <property name="sizePolicy">
+                       <sizepolicy hsizetype="Preferred" vsizetype="Minimum">
+                        <horstretch>0</horstretch>
+                        <verstretch>0</verstretch>
+                       </sizepolicy>
+                      </property>
+                     </widget>
+                    </item>
+                   </layout>
+                   <property name="role" stdset="0">
+                    <string>sectionContents</string>
+                   </property>
+                  </widget>
+                 </item>
+                 <item>
+                  <widget class="QWidget" name="inspectionMethodRow">
+                   <layout class="QHBoxLayout" name="inspectionMethodRowLayout">
+                    <property name="bottomMargin">
+                     <number>2</number>
+                    </property>
+                    <property name="topMargin">
+                     <number>2</number>
+                    </property>
+                    <property name="leftMargin">
+                     <number>0</number>
+                    </property>
+                    <property name="rightMargin">
+                     <number>0</number>
+                    </property>
+                    <property name="spacing">
+                     <number>6</number>
+                    </property>
+                    <property name="sizeConstraint">
+                     <enum>QLayout::SetMinimumSize</enum>
+                    </property>
+                    <item>
+                     <widget class="QLabel" name="inspectionMethodName">
+                      <property name="text">
+                       <string>Inspected with</string>
+                      </property>
+                      <property name="role" stdset="0">
+                       <string>scriptsMuted</string>
+                      </property>
+                      <property name="wordWrap">
+                       <bool>true</bool>
+                      </property>
+                      <property name="sizePolicy">
+                       <sizepolicy hsizetype="Preferred" vsizetype="Minimum">
+                        <horstretch>0</horstretch>
+                        <verstretch>0</verstretch>
+                       </sizepolicy>
+                      </property>
+                      <property name="minimumSize">
+                       <size>
+                        <width>150</width>
+                        <height>0</height>
+                       </size>
+                      </property>
+                      <property name="maximumSize">
+                       <size>
+                        <width>150</width>
+                        <height>16777215</height>
+                       </size>
+                      </property>
+                     </widget>
+                    </item>
+                    <item>
+                     <widget class="QLabel" name="inspectionMethodValue">
+                      <property name="text">
+                       <string />
+                      </property>
+                      <property name="role" stdset="0">
+                       <string>scriptsMuted</string>
+                      </property>
+                      <property name="wordWrap">
+                       <bool>true</bool>
+                      </property>
+                      <property name="sizePolicy">
+                       <sizepolicy hsizetype="Preferred" vsizetype="Minimum">
+                        <horstretch>0</horstretch>
+                        <verstretch>0</verstretch>
+                       </sizepolicy>
+                      </property>
+                     </widget>
+                    </item>
+                   </layout>
+                   <property name="role" stdset="0">
+                    <string>sectionContents</string>
+                   </property>
+                  </widget>
+                 </item>
+                </layout>
+               </widget>
+              </item>
+              <item>
+               <widget class="QLabel" name="inspectSummary">
+                <property name="text">
+                 <string />
+                </property>
+                <property name="role" stdset="0">
+                 <string>scriptsMuted</string>
+                </property>
+                <property name="wordWrap">
+                 <bool>true</bool>
+                </property>
+                <property name="sizePolicy">
+                 <sizepolicy hsizetype="Preferred" vsizetype="Minimum">
+                  <horstretch>0</horstretch>
+                  <verstretch>0</verstretch>
+                 </sizepolicy>
+                </property>
+               </widget>
+              </item>
+              <item>
+               <widget class="QWidget" name="inspectActions">
+                <layout class="QHBoxLayout" name="inspectActionsLayout">
+                 <property name="leftMargin">
+                  <number>0</number>
+                 </property>
+                 <property name="topMargin">
+                  <number>0</number>
+                 </property>
+                 <property name="rightMargin">
+                  <number>0</number>
+                 </property>
+                 <property name="bottomMargin">
+                  <number>0</number>
+                 </property>
+                 <property name="spacing">
+                  <number>6</number>
+                 </property>
+                 <property name="sizeConstraint">
+                  <enum>QLayout::SetMinimumSize</enum>
+                 </property>
+                 <item>
+                  <widget class="QPushButton" name="configureFromInspect">
+                   <property name="role" stdset="0">
+                    <string>primary</string>
+                   </property>
+                   <property name="text">
+                    <string>Configure…</string>
+                   </property>
+                   <property name="enabled">
+                    <bool>true</bool>
+                   </property>
+                   <property name="accessibleName">
+                    <string>Configure…</string>
+                   </property>
+                   <property name="sizePolicy">
+                    <sizepolicy hsizetype="Maximum" vsizetype="Fixed">
+                     <horstretch>0</horstretch>
+                     <verstretch>0</verstretch>
+                    </sizepolicy>
+                   </property>
+                  </widget>
+                 </item>
+                 <item>
+                  <widget class="QPushButton" name="editFromInspect">
+                   <property name="text">
+                    <string>Edit code</string>
+                   </property>
+                   <property name="enabled">
+                    <bool>true</bool>
+                   </property>
+                   <property name="accessibleName">
+                    <string>Edit code</string>
+                   </property>
+                   <property name="sizePolicy">
+                    <sizepolicy hsizetype="Maximum" vsizetype="Fixed">
+                     <horstretch>0</horstretch>
+                     <verstretch>0</verstretch>
+                    </sizepolicy>
+                   </property>
+                  </widget>
+                 </item>
+                 <item>
+                  <spacer name="inspectActionsSpacer">
+                   <property name="orientation">
+                    <enum>Qt::Horizontal</enum>
+                   </property>
+                  </spacer>
+                 </item>
+                </layout>
+                <property name="role" stdset="0">
+                 <string>sectionContents</string>
+                </property>
+               </widget>
+              </item>
+              <item>
+               <spacer name="inspectSpacer">
+                <property name="orientation">
+                 <enum>Qt::Vertical</enum>
+                </property>
+                <property name="sizeHint">
+                 <size>
+                  <width>0</width>
+                  <height>0</height>
+                 </size>
+                </property>
+               </spacer>
+              </item>
+             </layout>
+             <property name="role" stdset="0">
+              <string>sectionContents</string>
+             </property>
+            </widget>
+           </widget>
+          </item>
+         </layout>
+         <property name="role" stdset="0">
+          <string>sectionContents</string>
+         </property>
+        </widget>
+        <widget class="QWidget" name="configurePage">
+         <layout class="QVBoxLayout" name="configurePageLayout">
+          <property name="leftMargin">
+           <number>0</number>
+          </property>
+          <property name="topMargin">
+           <number>0</number>
+          </property>
+          <property name="rightMargin">
+           <number>0</number>
+          </property>
+          <property name="bottomMargin">
+           <number>0</number>
+          </property>
+          <property name="spacing">
+           <number>8</number>
+          </property>
+          <property name="sizeConstraint">
+           <enum>QLayout::SetMinimumSize</enum>
+          </property>
+          <item>
+           <widget class="QScrollArea" name="configureScroll">
+            <property name="widgetResizable">
+             <bool>true</bool>
+            </property>
+            <property name="frameShape">
+             <enum>QFrame::NoFrame</enum>
+            </property>
+            <property name="horizontalScrollBarPolicy">
+             <enum>Qt::ScrollBarAlwaysOff</enum>
+            </property>
+            <widget class="QWidget" name="configureScrollContents">
+             <layout class="QVBoxLayout" name="configureScrollLayout">
+              <property name="leftMargin">
+               <number>4</number>
+              </property>
+              <property name="topMargin">
+               <number>4</number>
+              </property>
+              <property name="rightMargin">
+               <number>4</number>
+              </property>
+              <property name="bottomMargin">
+               <number>4</number>
+              </property>
+              <property name="spacing">
+               <number>8</number>
+              </property>
+              <property name="sizeConstraint">
+               <enum>QLayout::SetMinimumSize</enum>
+              </property>
+              <item>
+               <widget class="QFrame" name="scriptsUnresolvedNotice">
+                <property name="sizePolicy">
+                 <sizepolicy hsizetype="Preferred" vsizetype="Maximum">
+                  <horstretch>0</horstretch>
+                  <verstretch>0</verstretch>
+                 </sizepolicy>
+                </property>
+                <layout class="QHBoxLayout" name="unresolvedLayout" stretch="1,0">
+                 <property name="leftMargin">
+                  <number>10</number>
+                 </property>
+                 <property name="topMargin">
+                  <number>10</number>
+                 </property>
+                 <property name="rightMargin">
+                  <number>10</number>
+                 </property>
+                 <property name="bottomMargin">
+                  <number>10</number>
+                 </property>
+                 <property name="spacing">
+                  <number>8</number>
+                 </property>
+                 <property name="sizeConstraint">
+                  <enum>QLayout::SetMinimumSize</enum>
+                 </property>
+                 <item>
+                  <widget class="QWidget" name="unresolvedText">
+                   <property name="role" stdset="0">
+                    <string>sectionContents</string>
+                   </property>
+                   <layout class="QVBoxLayout" name="unresolvedTextLayout">
+                    <property name="leftMargin">
+                     <number>0</number>
+                    </property>
+                    <property name="topMargin">
+                     <number>0</number>
+                    </property>
+                    <property name="rightMargin">
+                     <number>0</number>
+                    </property>
+                    <property name="bottomMargin">
+                     <number>0</number>
+                    </property>
+                    <property name="spacing">
+                     <number>2</number>
+                    </property>
+                    <item>
+                     <widget class="QLabel" name="unresolvedTitle">
+                      <property name="text">
+                       <string>Previous run #5 is unresolved</string>
+                      </property>
+                      <property name="role" stdset="0">
+                       <string>scriptsWarningTitle</string>
+                      </property>
+                      <property name="wordWrap">
+                       <bool>true</bool>
+                      </property>
+                      <property name="sizePolicy">
+                       <sizepolicy hsizetype="Preferred" vsizetype="Minimum">
+                        <horstretch>0</horstretch>
+                        <verstretch>0</verstretch>
+                       </sizepolicy>
+                      </property>
+                     </widget>
+                    </item>
+                    <item>
+                     <widget class="QLabel" name="unresolvedDescription">
+                      <property name="text">
+                       <string>Generation 3 was submitted and no result was recorded; it may still be billed. A new run is separate work and may be charged again.</string>
+                      </property>
+                      <property name="role" stdset="0">
+                       <string>scriptsMuted</string>
+                      </property>
+                      <property name="wordWrap">
+                       <bool>true</bool>
+                      </property>
+                      <property name="sizePolicy">
+                       <sizepolicy hsizetype="Preferred" vsizetype="Minimum">
+                        <horstretch>0</horstretch>
+                        <verstretch>0</verstretch>
+                       </sizepolicy>
+                      </property>
+                     </widget>
+                    </item>
+                   </layout>
+                  </widget>
+                 </item>
+                 <item>
+                  <widget class="QPushButton" name="viewUnresolvedRun">
+                   <property name="text">
+                    <string>View run #5</string>
+                   </property>
+                   <property name="enabled">
+                    <bool>false</bool>
+                   </property>
+                   <property name="accessibleName">
+                    <string>View run #5</string>
+                   </property>
+                   <property name="sizePolicy">
+                    <sizepolicy hsizetype="Maximum" vsizetype="Fixed">
+                     <horstretch>0</horstretch>
+                     <verstretch>0</verstretch>
+                    </sizepolicy>
+                   </property>
+                  </widget>
+                 </item>
+                </layout>
+               </widget>
+              </item>
+              <item>
+               <widget class="QWidget" name="answersRow">
+                <layout class="QHBoxLayout" name="answersRowLayout" stretch="1,0">
+                 <property name="leftMargin">
+                  <number>0</number>
+                 </property>
+                 <property name="topMargin">
+                  <number>0</number>
+                 </property>
+                 <property name="rightMargin">
+                  <number>0</number>
+                 </property>
+                 <property name="bottomMargin">
+                  <number>0</number>
+                 </property>
+                 <property name="spacing">
+                  <number>6</number>
+                 </property>
+                 <property name="sizeConstraint">
+                  <enum>QLayout::SetMinimumSize</enum>
+                 </property>
+                 <item>
+                  <widget class="QLabel" name="answersNote">
+                   <property name="text">
+                    <string>Answers belong to this script version.</string>
+                   </property>
+                   <property name="role" stdset="0">
+                    <string>scriptsMuted</string>
+                   </property>
+                   <property name="wordWrap">
+                    <bool>true</bool>
+                   </property>
+                   <property name="sizePolicy">
+                    <sizepolicy hsizetype="Preferred" vsizetype="Minimum">
+                     <horstretch>0</horstretch>
+                     <verstretch>0</verstretch>
+                    </sizepolicy>
+                   </property>
+                  </widget>
+                 </item>
+                 <item>
+                  <widget class="QPushButton" name="resetFieldsButton">
+                   <property name="text">
+                    <string>Reset to defaults</string>
+                   </property>
+                   <property name="enabled">
+                    <bool>false</bool>
+                   </property>
+                   <property name="accessibleName">
+                    <string>Reset to defaults</string>
+                   </property>
+                   <property name="sizePolicy">
+                    <sizepolicy hsizetype="Maximum" vsizetype="Fixed">
+                     <horstretch>0</horstretch>
+                     <verstretch>0</verstretch>
+                    </sizepolicy>
+                   </property>
+                  </widget>
+                 </item>
+                </layout>
+                <property name="role" stdset="0">
+                 <string>sectionContents</string>
+                </property>
+               </widget>
+              </item>
+              <item>
+               <widget class="QLabel" name="sourceTitle">
+                <property name="role" stdset="0">
+                 <string>scriptsSectionTitle</string>
+                </property>
+                <property name="text">
+                 <string>Source</string>
+                </property>
+                <property name="wordWrap">
+                 <bool>true</bool>
+                </property>
+                <property name="sizePolicy">
+                 <sizepolicy hsizetype="Preferred" vsizetype="Minimum">
+                  <horstretch>0</horstretch>
+                  <verstretch>0</verstretch>
+                 </sizepolicy>
+                </property>
+               </widget>
+              </item>
+              <item>
+               <widget class="QWidget" name="sourceRow">
+                <layout class="QHBoxLayout" name="sourceRowLayout">
+                 <property name="leftMargin">
+                  <number>0</number>
+                 </property>
+                 <property name="topMargin">
+                  <number>0</number>
+                 </property>
+                 <property name="rightMargin">
+                  <number>0</number>
+                 </property>
+                 <property name="bottomMargin">
+                  <number>0</number>
+                 </property>
+                 <property name="spacing">
+                  <number>6</number>
+                 </property>
+                 <property name="sizeConstraint">
+                  <enum>QLayout::SetMinimumSize</enum>
+                 </property>
+                 <item>
+                  <widget class="QLabel" name="sourceLabel">
+                   <property name="text">
+                    <string>Source image</string>
+                   </property>
+                   <property name="role" stdset="0">
+                    <string>scriptsMuted</string>
+                   </property>
+                   <property name="wordWrap">
+                    <bool>true</bool>
+                   </property>
+                   <property name="sizePolicy">
+                    <sizepolicy hsizetype="Preferred" vsizetype="Minimum">
+                     <horstretch>0</horstretch>
+                     <verstretch>0</verstretch>
+                    </sizepolicy>
+                   </property>
+                   <property name="minimumSize">
+                    <size>
+                     <width>120</width>
+                     <height>0</height>
+                    </size>
+                   </property>
+                   <property name="maximumSize">
+                    <size>
+                     <width>120</width>
+                     <height>16777215</height>
+                    </size>
+                   </property>
+                  </widget>
+                 </item>
+                 <item>
+                  <widget class="QComboBox" name="scriptSource">
+                   <property name="accessibleName">
+                    <string>Source image</string>
+                   </property>
+                   <item>
+                    <property name="text">
+                     <string>No source</string>
+                    </property>
+                   </item>
+                   <item>
+                    <property name="text">
+                     <string>Images gallery…</string>
+                    </property>
+                   </item>
+                   <item>
+                    <property name="text">
+                     <string>Local file…</string>
+                    </property>
+                   </item>
+                   <item>
+                    <property name="text">
+                     <string>Inpaint canvas</string>
+                    </property>
+                   </item>
+                  </widget>
+                 </item>
+                </layout>
+                <property name="role" stdset="0">
+                 <string>sectionContents</string>
+                </property>
+               </widget>
+              </item>
+              <item>
+               <widget class="QLabel" name="scriptsSourceNote">
+                <property name="text">
+                 <string>Optional. An immutable copy is taken at Start; changing it needs a new run.</string>
+                </property>
+                <property name="role" stdset="0">
+                 <string>scriptsSourceNote</string>
+                </property>
+                <property name="wordWrap">
+                 <bool>true</bool>
+                </property>
+                <property name="sizePolicy">
+                 <sizepolicy hsizetype="Preferred" vsizetype="Minimum">
+                  <horstretch>0</horstretch>
+                  <verstretch>0</verstretch>
+                 </sizepolicy>
+                </property>
+               </widget>
+              </item>
+              <item>
+               <widget class="QWidget" name="handoffPanel">
+                <layout class="QHBoxLayout" name="handoffLayout">
+                 <property name="leftMargin">
+                  <number>0</number>
+                 </property>
+                 <property name="topMargin">
+                  <number>0</number>
+                 </property>
+                 <property name="rightMargin">
+                  <number>0</number>
+                 </property>
+                 <property name="bottomMargin">
+                  <number>0</number>
+                 </property>
+                 <property name="spacing">
+                  <number>8</number>
+                 </property>
+                 <property name="sizeConstraint">
+                  <enum>QLayout::SetMinimumSize</enum>
+                 </property>
+                 <item>
+                  <widget class="QLabel" name="sourceThumbnail">
+                   <property name="text">
+                    <string />
+                   </property>
+                   <property name="role" stdset="0">
+                    <string>scriptsImageTile</string>
+                   </property>
+                   <property name="wordWrap">
+                    <bool>true</bool>
+                   </property>
+                   <property name="sizePolicy">
+                    <sizepolicy hsizetype="Preferred" vsizetype="Minimum">
+                     <horstretch>0</horstretch>
+                     <verstretch>0</verstretch>
+                    </sizepolicy>
+                   </property>
+                   <property name="minimumSize">
+                    <size>
+                     <width>56</width>
+                     <height>56</height>
+                    </size>
+                   </property>
+                   <property name="maximumSize">
+                    <size>
+                     <width>56</width>
+                     <height>56</height>
+                    </size>
+                   </property>
+                   <property name="accessibleName">
+                    <string>Source image fixture</string>
+                   </property>
+                  </widget>
+                 </item>
+                 <item>
+                  <widget class="QLabel" name="maskThumbnail">
+                   <property name="text">
+                    <string />
+                   </property>
+                   <property name="role" stdset="0">
+                    <string>scriptsImageTile</string>
+                   </property>
+                   <property name="wordWrap">
+                    <bool>true</bool>
+                   </property>
+                   <property name="sizePolicy">
+                    <sizepolicy hsizetype="Preferred" vsizetype="Minimum">
+                     <horstretch>0</horstretch>
+                     <verstretch>0</verstretch>
+                    </sizepolicy>
+                   </property>
+                   <property name="minimumSize">
+                    <size>
+                     <width>56</width>
+                     <height>56</height>
+                    </size>
+                   </property>
+                   <property name="maximumSize">
+                    <size>
+                     <width>56</width>
+                     <height>56</height>
+                    </size>
+                   </property>
+                   <property name="accessibleName">
+                    <string>Mask fixture</string>
+                   </property>
+                  </widget>
+                 </item>
+                 <item>
+                  <widget class="QLabel" name="handoffDescription">
+                   <property name="text">
+                    <string>Offline image/mask fixtures · 512 × 512 · mask covers 38%</string>
+                   </property>
+                   <property name="role" stdset="0">
+                    <string>scriptsMuted</string>
+                   </property>
+                   <property name="wordWrap">
+                    <bool>true</bool>
+                   </property>
+                   <property name="sizePolicy">
+                    <sizepolicy hsizetype="Preferred" vsizetype="Minimum">
+                     <horstretch>0</horstretch>
+                     <verstretch>0</verstretch>
+                    </sizepolicy>
+                   </property>
+                  </widget>
+                 </item>
+                 <item>
+                  <widget class="QPushButton" name="detachSourceButton">
+                   <property name="text">
+                    <string>Detach</string>
+                   </property>
+                   <property name="enabled">
+                    <bool>true</bool>
+                   </property>
+                   <property name="accessibleName">
+                    <string>Detach</string>
+                   </property>
+                   <property name="sizePolicy">
+                    <sizepolicy hsizetype="Maximum" vsizetype="Fixed">
+                     <horstretch>0</horstretch>
+                     <verstretch>0</verstretch>
+                    </sizepolicy>
+                   </property>
+                  </widget>
+                 </item>
+                </layout>
+                <property name="role" stdset="0">
+                 <string>sectionContents</string>
+                </property>
+               </widget>
+              </item>
+              <item>
+               <widget class="QLabel" name="formNote">
+                <property name="text">
+                 <string>Nothing to configure here. This script asks for its settings when it runs.</string>
+                </property>
+                <property name="role" stdset="0">
+                 <string>scriptsMuted</string>
+                </property>
+                <property name="wordWrap">
+                 <bool>true</bool>
+                </property>
+                <property name="sizePolicy">
+                 <sizepolicy hsizetype="Preferred" vsizetype="Minimum">
+                  <horstretch>0</horstretch>
+                  <verstretch>0</verstretch>
+                 </sizepolicy>
+                </property>
+               </widget>
+              </item>
+              <item>
+               <widget class="QWidget" name="scriptFieldsHost">
+                <layout class="QVBoxLayout" name="scriptFieldsHostLayout">
+                 <property name="leftMargin">
+                  <number>0</number>
+                 </property>
+                 <property name="topMargin">
+                  <number>0</number>
+                 </property>
+                 <property name="rightMargin">
+                  <number>0</number>
+                 </property>
+                 <property name="bottomMargin">
+                  <number>0</number>
+                 </property>
+                 <property name="spacing">
+                  <number>8</number>
+                 </property>
+                 <property name="sizeConstraint">
+                  <enum>QLayout::SetMinAndMaxSize</enum>
+                 </property>
+                </layout>
+                <property name="role" stdset="0">
+                 <string>sectionContents</string>
+                </property>
+               </widget>
+              </item>
+              <item>
+               <spacer name="formSpacer">
+                <property name="orientation">
+                 <enum>Qt::Vertical</enum>
+                </property>
+                <property name="sizeHint">
+                 <size>
+                  <width>0</width>
+                  <height>0</height>
+                 </size>
+                </property>
+               </spacer>
+              </item>
+             </layout>
+             <property name="role" stdset="0">
+              <string>sectionContents</string>
+             </property>
+            </widget>
+           </widget>
+          </item>
+         </layout>
+         <property name="role" stdset="0">
+          <string>sectionContents</string>
+         </property>
+        </widget>
+        <widget class="QWidget" name="codePage">
+         <layout class="QVBoxLayout" name="codePageLayout">
+          <property name="leftMargin">
+           <number>0</number>
+          </property>
+          <property name="topMargin">
+           <number>0</number>
+          </property>
+          <property name="rightMargin">
+           <number>0</number>
+          </property>
+          <property name="bottomMargin">
+           <number>0</number>
+          </property>
+          <property name="spacing">
+           <number>8</number>
+          </property>
+          <property name="sizeConstraint">
+           <enum>QLayout::SetMinimumSize</enum>
+          </property>
+          <item>
+           <widget class="QWidget" name="scriptEditorHost">
+            <layout class="QVBoxLayout" name="scriptEditorHostLayout">
+             <property name="leftMargin">
+              <number>0</number>
+             </property>
+             <property name="topMargin">
+              <number>0</number>
+             </property>
+             <property name="rightMargin">
+              <number>0</number>
+             </property>
+             <property name="bottomMargin">
+              <number>0</number>
+             </property>
+             <property name="spacing">
+              <number>8</number>
+             </property>
+             <property name="sizeConstraint">
+              <enum>QLayout::SetMinimumSize</enum>
+             </property>
+            </layout>
+            <property name="role" stdset="0">
+             <string>sectionContents</string>
+            </property>
+           </widget>
+          </item>
+         </layout>
+         <property name="role" stdset="0">
+          <string>sectionContents</string>
+         </property>
+        </widget>
+        <widget class="QWidget" name="runPage">
+         <layout class="QVBoxLayout" name="runPageLayout">
+          <property name="leftMargin">
+           <number>0</number>
+          </property>
+          <property name="topMargin">
+           <number>0</number>
+          </property>
+          <property name="rightMargin">
+           <number>0</number>
+          </property>
+          <property name="bottomMargin">
+           <number>0</number>
+          </property>
+          <property name="spacing">
+           <number>8</number>
+          </property>
+          <property name="sizeConstraint">
+           <enum>QLayout::SetMinimumSize</enum>
+          </property>
+          <item>
+           <widget class="QScrollArea" name="runScroll">
+            <property name="widgetResizable">
+             <bool>true</bool>
+            </property>
+            <property name="frameShape">
+             <enum>QFrame::NoFrame</enum>
+            </property>
+            <property name="horizontalScrollBarPolicy">
+             <enum>Qt::ScrollBarAlwaysOff</enum>
+            </property>
+            <widget class="QWidget" name="runScrollContents">
+             <layout class="QVBoxLayout" name="runScrollLayout">
+              <property name="leftMargin">
+               <number>4</number>
+              </property>
+              <property name="topMargin">
+               <number>4</number>
+              </property>
+              <property name="rightMargin">
+               <number>4</number>
+              </property>
+              <property name="bottomMargin">
+               <number>4</number>
+              </property>
+              <property name="spacing">
+               <number>8</number>
+              </property>
+              <property name="sizeConstraint">
+               <enum>QLayout::SetMinimumSize</enum>
+              </property>
+              <item>
+               <widget class="QFrame" name="scriptsResultCanvas">
+                <layout class="QVBoxLayout" name="resultCanvasLayout" stretch="1,0">
+                 <property name="leftMargin">
+                  <number>8</number>
+                 </property>
+                 <property name="topMargin">
+                  <number>8</number>
+                 </property>
+                 <property name="rightMargin">
+                  <number>8</number>
+                 </property>
+                 <property name="bottomMargin">
+                  <number>8</number>
+                 </property>
+                 <property name="spacing">
+                  <number>8</number>
+                 </property>
+                 <property name="sizeConstraint">
+                  <enum>QLayout::SetMinimumSize</enum>
+                 </property>
+                 <item>
+                  <widget class="QLabel" name="scriptsResultTile">
+                   <property name="text">
+                    <string>No committed result</string>
+                   </property>
+                   <property name="role" stdset="0">
+                    <string>scriptsMuted</string>
+                   </property>
+                   <property name="wordWrap">
+                    <bool>true</bool>
+                   </property>
+                   <property name="sizePolicy">
+                    <sizepolicy hsizetype="Preferred" vsizetype="Minimum">
+                     <horstretch>0</horstretch>
+                     <verstretch>0</verstretch>
+                    </sizepolicy>
+                   </property>
+                   <property name="alignment">
+                    <set>Qt::AlignCenter</set>
+                   </property>
+                  </widget>
+                 </item>
+                 <item>
+                  <widget class="QLabel" name="resultCaption">
+                   <property name="text">
+                    <string>No committed output yet</string>
+                   </property>
+                   <property name="role" stdset="0">
+                    <string>scriptsResultCaption</string>
+                   </property>
+                   <property name="wordWrap">
+                    <bool>true</bool>
+                   </property>
+                   <property name="sizePolicy">
+                    <sizepolicy hsizetype="Preferred" vsizetype="Fixed">
+                     <horstretch>0</horstretch>
+                     <verstretch>0</verstretch>
+                    </sizepolicy>
+                   </property>
+                  </widget>
+                 </item>
+                </layout>
+               </widget>
+              </item>
+              <item>
+               <widget class="QLabel" name="runStatus">
+                <property name="role" stdset="0">
+                 <string>scriptsRunState</string>
+                </property>
+                <property name="text">
+                 <string>No run started</string>
+                </property>
+                <property name="wordWrap">
+                 <bool>true</bool>
+                </property>
+                <property name="sizePolicy">
+                 <sizepolicy hsizetype="Preferred" vsizetype="Minimum">
+                  <horstretch>0</horstretch>
+                  <verstretch>0</verstretch>
+                 </sizepolicy>
+                </property>
+               </widget>
+              </item>
+              <item>
+               <widget class="QLabel" name="runDetail">
+                <property name="text">
+                 <string />
+                </property>
+                <property name="role" stdset="0">
+                 <string>scriptsMuted</string>
+                </property>
+                <property name="wordWrap">
+                 <bool>true</bool>
+                </property>
+                <property name="sizePolicy">
+                 <sizepolicy hsizetype="Preferred" vsizetype="Minimum">
+                  <horstretch>0</horstretch>
+                  <verstretch>0</verstretch>
+                 </sizepolicy>
+                </property>
+               </widget>
+              </item>
+              <item>
+               <widget class="QFrame" name="waitingForm">
+                <property name="role" stdset="0">
+                 <string>sectionCard</string>
+                </property>
+                <property name="sizePolicy">
+                 <sizepolicy hsizetype="Preferred" vsizetype="Maximum">
+                  <horstretch>0</horstretch>
+                  <verstretch>0</verstretch>
+                 </sizepolicy>
+                </property>
+                <layout class="QVBoxLayout" name="waitingFormLayout">
+                 <property name="leftMargin">
+                  <number>10</number>
+                 </property>
+                 <property name="topMargin">
+                  <number>10</number>
+                 </property>
+                 <property name="rightMargin">
+                  <number>10</number>
+                 </property>
+                 <property name="bottomMargin">
+                  <number>10</number>
+                 </property>
+                 <property name="spacing">
+                  <number>8</number>
+                 </property>
+                 <property name="sizeConstraint">
+                  <enum>QLayout::SetMinimumSize</enum>
+                 </property>
+                 <item>
+                  <widget class="QLabel" name="waitingFormTitle">
+                   <property name="text">
+                    <string>Script asks: “Keep going?”</string>
+                   </property>
+                   <property name="role" stdset="0">
+                    <string>scriptsCardTitle</string>
+                   </property>
+                   <property name="wordWrap">
+                    <bool>true</bool>
+                   </property>
+                   <property name="sizePolicy">
+                    <sizepolicy hsizetype="Preferred" vsizetype="Minimum">
+                     <horstretch>0</horstretch>
+                     <verstretch>0</verstretch>
+                    </sizepolicy>
+                   </property>
+                  </widget>
+                 </item>
+                 <item>
+                  <widget class="QLabel" name="waitingInstructions">
+                   <property name="text">
+                    <string>Preview input for the next pass. An already submitted generation may still complete.</string>
+                   </property>
+                   <property name="role" stdset="0">
+                    <string>scriptsMuted</string>
+                   </property>
+                   <property name="wordWrap">
+                    <bool>true</bool>
+                   </property>
+                   <property name="sizePolicy">
+                    <sizepolicy hsizetype="Preferred" vsizetype="Minimum">
+                     <horstretch>0</horstretch>
+                     <verstretch>0</verstretch>
+                    </sizepolicy>
+                   </property>
+                  </widget>
+                 </item>
+                 <item>
+                  <widget class="QWidget" name="waitingFieldsHost">
+                   <layout class="QVBoxLayout" name="waitingFieldsLayout">
+                    <property name="spacing">
+                     <number>6</number>
+                    </property>
+                    <property name="bottomMargin">
+                     <number>0</number>
+                    </property>
+                    <property name="topMargin">
+                     <number>0</number>
+                    </property>
+                    <property name="rightMargin">
+                     <number>0</number>
+                    </property>
+                    <property name="leftMargin">
+                     <number>0</number>
+                    </property>
+                   </layout>
+                  </widget>
+                 </item>
+                 <item>
+                  <widget class="QWidget" name="waitingActions">
+                   <layout class="QHBoxLayout" name="waitingActionsLayout">
+                    <property name="leftMargin">
+                     <number>0</number>
+                    </property>
+                    <property name="topMargin">
+                     <number>0</number>
+                    </property>
+                    <property name="rightMargin">
+                     <number>0</number>
+                    </property>
+                    <property name="bottomMargin">
+                     <number>0</number>
+                    </property>
+                    <property name="spacing">
+                     <number>6</number>
+                    </property>
+                    <property name="sizeConstraint">
+                     <enum>QLayout::SetMinimumSize</enum>
+                    </property>
+                    <item>
+                     <widget class="QPushButton" name="cancelInputButton">
+                      <property name="enabled">
+                       <bool>true</bool>
+                      </property>
+                      <property name="text">
+                       <string>Cancel input</string>
+                      </property>
+                      <property name="accessibleName">
+                       <string>Cancel input</string>
+                      </property>
+                      <property name="sizePolicy">
+                       <sizepolicy hsizetype="Maximum" vsizetype="Fixed">
+                        <horstretch>0</horstretch>
+                        <verstretch>0</verstretch>
+                       </sizepolicy>
+                      </property>
+                     </widget>
+                    </item>
+                    <item>
+                     <widget class="QPushButton" name="continueInputButton">
+                      <property name="enabled">
+                       <bool>true</bool>
+                      </property>
+                      <property name="text">
+                       <string>Continue</string>
+                      </property>
+                      <property name="accessibleName">
+                       <string>Continue</string>
+                      </property>
+                      <property name="sizePolicy">
+                       <sizepolicy hsizetype="Maximum" vsizetype="Fixed">
+                        <horstretch>0</horstretch>
+                        <verstretch>0</verstretch>
+                       </sizepolicy>
+                      </property>
+                     </widget>
+                    </item>
+                   </layout>
+                   <property name="role" stdset="0">
+                    <string>sectionContents</string>
+                   </property>
+                  </widget>
+                 </item>
+                 <item>
+                  <widget class="QLabel" name="waitingHelp">
+                   <property name="role" stdset="0">
+                    <string>scriptsMuted</string>
+                   </property>
+                   <property name="wordWrap">
+                    <bool>true</bool>
+                   </property>
+                   <property name="text">
+                    <string>Cancel input answers with no value; it does not stop the script. Use Stop script in the activity bar.</string>
+                   </property>
+                  </widget>
+                 </item>
+                </layout>
+               </widget>
+              </item>
+              <item>
+               <widget class="QPlainTextEdit" name="scriptsRunConsole">
+                <property name="readOnly">
+                 <bool>true</bool>
+                </property>
+                <property name="accessibleName">
+                 <string>Script console</string>
+                </property>
+                <property name="minimumSize">
+                 <size>
+                  <width>0</width>
+                  <height>180</height>
+                 </size>
+                </property>
+               </widget>
+              </item>
+             </layout>
+             <property name="role" stdset="0">
+              <string>sectionContents</string>
+             </property>
+            </widget>
+           </widget>
+          </item>
+         </layout>
+         <property name="role" stdset="0">
+          <string>sectionContents</string>
+         </property>
+        </widget>
+        <widget class="QWidget" name="resultsPage">
+         <layout class="QVBoxLayout" name="resultsPageLayout">
+          <property name="leftMargin">
+           <number>0</number>
+          </property>
+          <property name="topMargin">
+           <number>0</number>
+          </property>
+          <property name="rightMargin">
+           <number>0</number>
+          </property>
+          <property name="bottomMargin">
+           <number>0</number>
+          </property>
+          <property name="spacing">
+           <number>8</number>
+          </property>
+          <property name="sizeConstraint">
+           <enum>QLayout::SetMinimumSize</enum>
+          </property>
+          <item>
+           <widget class="QLabel" name="resultsHeader">
+            <property name="text">
+             <string>Committed steps · offline fixtures</string>
+            </property>
+            <property name="role" stdset="0">
+             <string>scriptsPageTitle</string>
+            </property>
+            <property name="wordWrap">
+             <bool>true</bool>
+            </property>
+            <property name="sizePolicy">
+             <sizepolicy hsizetype="Preferred" vsizetype="Minimum">
+              <horstretch>0</horstretch>
+              <verstretch>0</verstretch>
+             </sizepolicy>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <widget class="QLabel" name="resultsDescription">
+            <property name="text">
+             <string>Ordered child attempts · results also appear in Images</string>
+            </property>
+            <property name="role" stdset="0">
+             <string>scriptsMuted</string>
+            </property>
+            <property name="wordWrap">
+             <bool>true</bool>
+            </property>
+            <property name="sizePolicy">
+             <sizepolicy hsizetype="Preferred" vsizetype="Minimum">
+              <horstretch>0</horstretch>
+              <verstretch>0</verstretch>
+             </sizepolicy>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <widget class="QScrollArea" name="resultsScroll">
+            <property name="widgetResizable">
+             <bool>true</bool>
+            </property>
+            <property name="frameShape">
+             <enum>QFrame::NoFrame</enum>
+            </property>
+            <property name="horizontalScrollBarPolicy">
+             <enum>Qt::ScrollBarAlwaysOff</enum>
+            </property>
+            <widget class="QWidget" name="resultsScrollContents">
+             <layout class="QVBoxLayout" name="resultsScrollLayout">
+              <property name="leftMargin">
+               <number>4</number>
+              </property>
+              <property name="topMargin">
+               <number>4</number>
+              </property>
+              <property name="rightMargin">
+               <number>4</number>
+              </property>
+              <property name="bottomMargin">
+               <number>4</number>
+              </property>
+              <property name="spacing">
+               <number>8</number>
+              </property>
+              <property name="sizeConstraint">
+               <enum>QLayout::SetMinimumSize</enum>
+              </property>
+              <item>
+               <widget class="QWidget" name="resultsContent">
+                <layout class="QVBoxLayout" name="resultsContentLayout">
+                 <property name="leftMargin">
+                  <number>0</number>
+                 </property>
+                 <property name="topMargin">
+                  <number>0</number>
+                 </property>
+                 <property name="rightMargin">
+                  <number>0</number>
+                 </property>
+                 <property name="bottomMargin">
+                  <number>0</number>
+                 </property>
+                 <property name="spacing">
+                  <number>8</number>
+                 </property>
+                 <property name="sizeConstraint">
+                  <enum>QLayout::SetMinimumSize</enum>
+                 </property>
+                </layout>
+                <property name="role" stdset="0">
+                 <string>sectionContents</string>
+                </property>
+               </widget>
+              </item>
+             </layout>
+             <property name="role" stdset="0">
+              <string>sectionContents</string>
+             </property>
+            </widget>
+           </widget>
+          </item>
+         </layout>
+         <property name="role" stdset="0">
+          <string>sectionContents</string>
+         </property>
+        </widget>
+        <widget class="QFrame" name="scriptsEmptyCanvas">
+         <layout class="QVBoxLayout" name="emptyPageLayout">
+          <property name="leftMargin">
+           <number>0</number>
+          </property>
+          <property name="topMargin">
+           <number>0</number>
+          </property>
+          <property name="rightMargin">
+           <number>0</number>
+          </property>
+          <property name="bottomMargin">
+           <number>0</number>
+          </property>
+          <property name="spacing">
+           <number>8</number>
+          </property>
+          <property name="sizeConstraint">
+           <enum>QLayout::SetMinimumSize</enum>
+          </property>
+          <item>
+           <spacer name="emptyTop">
+            <property name="orientation">
+             <enum>Qt::Vertical</enum>
+            </property>
+            <property name="sizeHint">
+             <size>
+              <width>0</width>
+              <height>0</height>
+             </size>
+            </property>
+           </spacer>
+          </item>
+          <item>
+           <widget class="QLabel" name="emptyMark">
+            <property name="text">
+             <string />
+            </property>
+            <property name="role" stdset="0">
+             <string>scriptsMuted</string>
+            </property>
+            <property name="wordWrap">
+             <bool>true</bool>
+            </property>
+            <property name="sizePolicy">
+             <sizepolicy hsizetype="Preferred" vsizetype="Minimum">
+              <horstretch>0</horstretch>
+              <verstretch>0</verstretch>
+             </sizepolicy>
+            </property>
+            <property name="alignment">
+             <set>Qt::AlignCenter</set>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <widget class="QLabel" name="emptyTitle">
+            <property name="text">
+             <string>No scripts yet</string>
+            </property>
+            <property name="role" stdset="0">
+             <string>scriptsEmptyTitle</string>
+            </property>
+            <property name="wordWrap">
+             <bool>true</bool>
+            </property>
+            <property name="sizePolicy">
+             <sizepolicy hsizetype="Preferred" vsizetype="Minimum">
+              <horstretch>0</horstretch>
+              <verstretch>0</verstretch>
+             </sizepolicy>
+            </property>
+            <property name="alignment">
+             <set>Qt::AlignCenter</set>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <widget class="QLabel" name="emptyDescription">
+            <property name="text">
+             <string>Create one or import a local .js file. Nothing is run on import.</string>
+            </property>
+            <property name="role" stdset="0">
+             <string>scriptsMuted</string>
+            </property>
+            <property name="wordWrap">
+             <bool>true</bool>
+            </property>
+            <property name="sizePolicy">
+             <sizepolicy hsizetype="Preferred" vsizetype="Minimum">
+              <horstretch>0</horstretch>
+              <verstretch>0</verstretch>
+             </sizepolicy>
+            </property>
+            <property name="alignment">
+             <set>Qt::AlignCenter</set>
+            </property>
+           </widget>
+          </item>
+          <item>
+           <spacer name="emptyBottom">
+            <property name="orientation">
+             <enum>Qt::Vertical</enum>
+            </property>
+            <property name="sizeHint">
+             <size>
+              <width>0</width>
+              <height>0</height>
+             </size>
+            </property>
+           </spacer>
+          </item>
+         </layout>
+         <property name="role" stdset="0">
+          <string>sectionContents</string>
+         </property>
+        </widget>
+       </widget>
+      </item>
+      <item>
+       <widget class="QFrame" name="scriptsStartPanel">
+        <layout class="QVBoxLayout" name="startPanelLayout">
+         <property name="leftMargin">
+          <number>10</number>
+         </property>
+         <property name="topMargin">
+          <number>10</number>
+         </property>
+         <property name="rightMargin">
+          <number>10</number>
+         </property>
+         <property name="bottomMargin">
+          <number>10</number>
+         </property>
+         <property name="spacing">
+          <number>8</number>
+         </property>
+         <property name="sizeConstraint">
+          <enum>QLayout::SetMinimumSize</enum>
+         </property>
+         <item>
+          <widget class="QWidget" name="capRow">
+           <layout class="QHBoxLayout" name="capRowLayout">
+            <property name="leftMargin">
+             <number>0</number>
+            </property>
+            <property name="topMargin">
+             <number>0</number>
+            </property>
+            <property name="rightMargin">
+             <number>0</number>
+            </property>
+            <property name="bottomMargin">
+             <number>0</number>
+            </property>
+            <property name="spacing">
+             <number>6</number>
+            </property>
+            <property name="sizeConstraint">
+             <enum>QLayout::SetMinimumSize</enum>
+            </property>
+            <item>
+             <widget class="QLabel" name="capLabel">
+              <property name="text">
+               <string>Generation cap</string>
+              </property>
+              <property name="role" stdset="0">
+               <string>scriptsMuted</string>
+              </property>
+              <property name="wordWrap">
+               <bool>true</bool>
+              </property>
+              <property name="sizePolicy">
+               <sizepolicy hsizetype="Preferred" vsizetype="Minimum">
+                <horstretch>0</horstretch>
+                <verstretch>0</verstretch>
+               </sizepolicy>
+              </property>
+             </widget>
+            </item>
+            <item>
+             <widget class="QSpinBox" name="generationCap">
+              <property name="minimum">
+               <number>1</number>
+              </property>
+              <property name="maximum">
+               <number>32</number>
+              </property>
+              <property name="value">
+               <number>8</number>
+              </property>
+              <property name="accessibleName">
+               <string>Generation cap</string>
+              </property>
+              <property name="maximumSize">
+               <size>
+                <width>80</width>
+                <height>16777215</height>
+               </size>
+              </property>
+             </widget>
+            </item>
+            <item>
+             <spacer name="capSpacer">
+              <property name="orientation">
+               <enum>Qt::Horizontal</enum>
+              </property>
+              <property name="sizeHint">
+               <size>
+                <width>0</width>
+                <height>0</height>
+               </size>
+              </property>
+             </spacer>
+            </item>
+            <item>
+             <widget class="QPushButton" name="scriptsStartButton">
+              <property name="text">
+               <string>Start script</string>
+              </property>
+              <property name="enabled">
+               <bool>false</bool>
+              </property>
+              <property name="accessibleName">
+               <string>Start script</string>
+              </property>
+              <property name="role" stdset="0">
+               <string>primary</string>
+              </property>
+              <property name="sizePolicy">
+               <sizepolicy hsizetype="Maximum" vsizetype="Fixed">
+                <horstretch>0</horstretch>
+                <verstretch>0</verstretch>
+               </sizepolicy>
+              </property>
+              <property name="minimumSize">
+               <size>
+                <width>120</width>
+                <height>0</height>
+               </size>
+              </property>
+             </widget>
+            </item>
+           </layout>
+           <property name="role" stdset="0">
+            <string>sectionContents</string>
+           </property>
+          </widget>
+         </item>
+         <item>
+          <widget class="QLabel" name="startDisclosure">
+           <property name="text">
+            <string>Starting settings estimate: unavailable; backend is unchecked. Scripts can override settings on every call. Cloud sources may be uploaded and generations may be charged. The whole run is one queue item with the usual admission; if the backend is busy it waits in the queue, and cancelling before admission is free. Offline preview: no work is submitted.</string>
+           </property>
+           <property name="role" stdset="0">
+            <string>scriptsMuted</string>
+           </property>
+           <property name="wordWrap">
+            <bool>true</bool>
+           </property>
+           <property name="sizePolicy">
+            <sizepolicy hsizetype="Preferred" vsizetype="Minimum">
+             <horstretch>0</horstretch>
+             <verstretch>0</verstretch>
+            </sizepolicy>
+           </property>
+          </widget>
+         </item>
+         <item>
+          <widget class="QCheckBox" name="preflightAcknowledgement">
+           <property name="text">
+            <string>I understand preflight is incomplete</string>
+           </property>
+          </widget>
+         </item>
+        </layout>
+       </widget>
+      </item>
+      <item>
+       <widget class="QLabel" name="runFooter">
+        <property name="text">
+         <string>Stop is in the shared activity bar. It ends local waiting; submitted work may still complete.</string>
+        </property>
+        <property name="role" stdset="0">
+         <string>scriptsMuted</string>
+        </property>
+        <property name="wordWrap">
+         <bool>true</bool>
+        </property>
+        <property name="sizePolicy">
+         <sizepolicy hsizetype="Preferred" vsizetype="Minimum">
+          <horstretch>0</horstretch>
+          <verstretch>0</verstretch>
+         </sizepolicy>
+        </property>
+       </widget>
+      </item>
+      <item>
+       <widget class="QWidget" name="scriptsRunActions">
+        <layout class="QHBoxLayout" name="scriptsRunActionsLayout">
+         <property name="spacing">
+          <number>6</number>
+         </property>
+         <property name="bottomMargin">
+          <number>0</number>
+         </property>
+         <property name="topMargin">
+          <number>0</number>
+         </property>
+         <property name="rightMargin">
+          <number>0</number>
+         </property>
+         <property name="leftMargin">
+          <number>0</number>
+         </property>
+         <item>
+          <widget class="QPushButton" name="backToFormButton">
+           <property name="text">
+            <string>Back to form</string>
+           </property>
+          </widget>
+         </item>
+         <item>
+          <widget class="QPushButton" name="checkQueuesButton">
+           <property name="text">
+            <string>Check Queues</string>
+           </property>
+          </widget>
+         </item>
+         <item>
+          <widget class="QPushButton" name="reviewRunButton">
+           <property name="text">
+            <string>Review and start again</string>
+           </property>
+          </widget>
+         </item>
+         <item>
+          <widget class="QPushButton" name="advancePreviewButton">
+           <property name="text">
+            <string>Advance preview</string>
+           </property>
+          </widget>
+         </item>
+        </layout>
+       </widget>
+      </item>
+      <item>
+       <widget class="QLabel" name="scriptsOfflineNotice">
+        <property name="role" stdset="0">
+         <string>scriptsMuted</string>
+        </property>
+        <property name="wordWrap">
+         <bool>true</bool>
+        </property>
+        <property name="text">
+         <string>Offline interaction preview · nothing executes, submits, uploads or saves to disk.</string>
+        </property>
+       </widget>
+      </item>
+     </layout>
+    </widget>
+   </item>
+   <item>
+    <widget class="QFrame" name="scriptsInspectorPanel">
+     <layout class="QVBoxLayout" name="scriptsInspectorLayout">
+      <property name="leftMargin">
+       <number>0</number>
+      </property>
+      <property name="topMargin">
+       <number>0</number>
+      </property>
+      <property name="rightMargin">
+       <number>0</number>
+      </property>
+      <property name="bottomMargin">
+       <number>0</number>
+      </property>
+      <property name="spacing">
+       <number>0</number>
+      </property>
+      <property name="sizeConstraint">
+       <enum>QLayout::SetMinimumSize</enum>
+      </property>
+     </layout>
+    </widget>
+   </item>
+  </layout>
+ </widget>
+ <resources />
+ <connections />
+</ui>

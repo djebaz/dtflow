@@ -1140,10 +1140,17 @@
             <property name="autoExclusive"><bool>true</bool></property>
            </widget></item>
            <item><widget class="QPushButton" name="inpaintModeButton">
-            <property name="segmentEdge" stdset="0"><string>last</string></property>
+            <property name="segmentEdge" stdset="0"><string>middle</string></property>
             <property name="text"><string>Inpaint</string></property>
             <property name="checkable"><bool>true</bool></property>
             <property name="autoExclusive"><bool>true</bool></property>
+           </widget></item>
+           <item><widget class="QPushButton" name="scriptsModeButton">
+            <property name="segmentEdge" stdset="0"><string>last</string></property>
+            <property name="text"><string>Scripts</string></property>
+            <property name="checkable"><bool>true</bool></property>
+            <property name="autoExclusive"><bool>true</bool></property>
+            <property name="accessibleName"><string>Show Scripts in Generate</string></property>
            </widget></item>
           </layout>
          </widget>

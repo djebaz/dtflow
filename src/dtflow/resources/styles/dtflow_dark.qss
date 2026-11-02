@@ -2030,3 +2030,272 @@ QPushButton[role="galleryInfo"] {
 QPushButton[role="galleryInfo"]:hover {
   border: 1px solid ${color.focus};
 }
+
+/* Generate > Scripts: native offline workspace and editor-scoped palette. */
+QPushButton#scriptsInspectorToggle:checked {
+  background: ${color.selection};
+  border-color: ${color.selectionBorder};
+}
+QPushButton#scriptsInspectorToggle:checked:hover {
+  background: ${color.selectionHover};
+}
+/* Side-rail cards use the existing QGroupBox sectionCard/header/contents
+   selectors, including their shared surfaces, borders and SVG icons. */
+/* The inspector is a shell rail: individual section cards draw borders.
+   Avoid a second outer border clipped by the scroll area's right edge. */
+QFrame#scriptsInspectorPanel {
+  background: transparent;
+  border: 0;
+}
+/* The center is a workspace, not a second nested section card. Its children
+   provide their own input/canvas borders; the shared splitter owns gutters. */
+QFrame#scriptsWorkPanel {
+  background: transparent;
+  border: 0;
+}
+QScrollArea#configureScroll {
+  border: 1px solid ${color.sectionBorder};
+  border-radius: ${size.inputRadius};
+}
+QLabel#scriptsNameLabel, QLabel#scriptsLibraryTitle, QLabel#scriptsInspectorTitle {
+  color: ${color.title};
+  font-weight: ${type.weightEmphasis};
+}
+QLabel#scriptsIdentityLabel, QLabel#scriptsLibraryNote, QLabel#scriptsSettingsSummary,
+QLabel#scriptsSourceSummary, QLabel#scriptsStartDisclosure {
+  color: ${color.secondary};
+}
+QLabel#scriptsStatusLabel { color: ${color.warning}; }
+QPlainTextEdit#scriptsCodeEditor {
+  font-family: ${type.monoFamily};
+  background: ${color.scriptEditorBackground};
+  color: ${color.scriptEditorText};
+  selection-background-color: ${color.scriptEditorSelection};
+  border: 1px solid ${color.borderStrong};
+  border-radius: ${size.inputRadius};
+}
+
+/* Native Generate > Scripts. No local palette outside the editor. */
+QLabel#scriptsPageTitle, QLabel[role="scriptsPageTitle"] {
+  color: ${color.title};
+  font-size: ${type.section};
+  font-weight: ${type.weightEmphasis};
+}
+QLabel#scriptsCardTitle, QLabel[role="scriptsCardTitle"], QLabel#scriptsFormSection, QLabel[role="scriptsFormSection"], QLabel[role="scriptsSectionTitle"] {
+  color: ${color.title};
+  font-size: ${type.section};
+  font-weight: ${type.weightEmphasis};
+  padding: 4px 0;
+  border-bottom: 1px solid ${color.sectionBorder};
+}
+QLabel#scriptsStepTitle, QLabel[role="scriptsStepTitle"], QLabel#runStatus {
+  font-weight: ${type.weightEmphasis};
+}
+QLabel#scriptsLibraryVerdict[feedbackState="ok"], QLabel#scriptsHistoryStatus[feedbackState="ok"], QLabel#hookStatus[feedbackState="ok"] { color: ${color.success}; }
+QLabel#scriptsLibraryVerdict[feedbackState="error"], QLabel#scriptsHistoryStatus[feedbackState="error"], QLabel#hookStatus[feedbackState="error"], QLabel#runStatus[feedbackState="error"] { color: ${color.error}; }
+QLabel#scriptsLibraryActive[feedbackState="warning"], QLabel#scriptsHistoryStatus[feedbackState="warning"], QLabel#hookStatus[feedbackState="warning"], QLabel#runStatus[feedbackState="warning"] { color: ${color.warning}; }
+QLabel#scriptsLiveRunNote, QLabel#scriptsEditorRunNote {
+  color: ${color.warning};
+  background: ${color.warningSurface};
+  border: 1px solid ${color.warning};
+  border-radius: ${size.inputRadius};
+  padding: 7px;
+}
+QFrame#editorFooter {
+  background: ${color.surface};
+  border: 1px solid ${color.sectionBorder};
+  border-radius: ${size.inputRadius};
+}
+QFrame#scriptsHistoryEntry { border-bottom: 1px solid ${color.sectionBorder}; }
+QLabel#scriptsMuted, QLabel[role="scriptsMuted"], QLabel#scriptsFormSupporting, QLabel[role="scriptsFormSupporting"],
+QLabel#scriptsFieldLabel, QLabel[role="scriptsFieldLabel"], QLabel#scriptsEditorDiagnostic, QLabel[role="scriptsEditorDiagnostic"] {
+  color: ${color.secondary};
+}
+QLabel#scriptsCompatibility[feedbackState="ok"], QLabel[role="scriptsCompatibility"][feedbackState="ok"] { color: ${color.success}; }
+QLabel#scriptsCompatibility[feedbackState="warning"], QLabel[role="scriptsCompatibility"][feedbackState="warning"] { color: ${color.warning}; }
+QLabel#scriptsCompatibility[feedbackState="error"], QLabel[role="scriptsCompatibility"][feedbackState="error"] { color: ${color.error}; }
+QLabel#scriptsEditorDiagnostic[feedbackState="error"], QLabel[role="scriptsEditorDiagnostic"][feedbackState="error"] {
+  color: ${color.error};
+  font-weight: ${type.weightEmphasis};
+}
+QLabel#scriptsFieldValue, QLabel[role="scriptsFieldValue"] {
+  color: ${color.text};
+  font-family: ${type.monoFamily};
+}
+QLabel#scriptsImageTile, QLabel[role="scriptsImageTile"] {
+  background: ${color.canvas};
+  border: 1px solid ${color.border};
+  border-radius: ${size.inputRadius};
+  color: ${color.secondary};
+}
+QLabel#scriptsCanvasPreview, QLabel[role="scriptsCanvasPreview"] {
+  background: ${color.canvas};
+  border: 1px solid ${color.border};
+  border-radius: ${size.panelRadius};
+  color: ${color.secondary};
+}
+QFrame#scriptsStartPanel, QFrame#scriptsDetailsDrawer {
+  background: ${color.surface};
+  border: 1px solid ${color.sectionBorder};
+  border-radius: ${size.panelRadius};
+}
+QLabel#scriptsEditorRunNote, QLabel[role="scriptsEditorRunNote"] {
+  color: ${color.warning};
+  background: ${color.warningSurface};
+  border: 1px solid ${color.warning};
+  border-radius: ${size.inputRadius};
+  padding: 7px;
+}
+QPlainTextEdit#scriptsRunConsole {
+  background: ${color.canvas};
+  color: ${color.secondary};
+  font-family: ${type.monoFamily};
+  border: 1px solid ${color.border};
+  border-radius: ${size.inputRadius};
+}
+QListWidget#scriptsLibraryList, QListWidget#scriptsHistoryList,
+QListWidget#scriptsResultsList {
+  background: ${color.canvas};
+  color: ${color.text};
+  border: 1px solid ${color.sectionBorder};
+  border-radius: ${size.inputRadius};
+}
+QListWidget#scriptsLibraryList {
+  background: ${color.background};
+}
+QListWidget#scriptsLibraryList::item {
+  min-height: 36px;
+  padding: 5px 8px;
+  border-bottom: 1px solid ${color.sectionBorder};
+}
+QListWidget#scriptsLibraryList::item:selected {
+  color: ${color.selectionText};
+  background: ${color.selection};
+}
+
+QFrame#scriptsInspectBanner {
+  background: ${color.connectionSurface};
+  border: 1px solid ${color.success};
+  border-radius: ${size.panelRadius};
+}
+QFrame#scriptsInspectBanner[feedbackState="warning"] {
+  background: ${color.warningSurface};
+  border: 1px solid ${color.warning};
+}
+QFrame#scriptsInspectBanner[feedbackState="error"] {
+  background: ${color.dangerSurface};
+  border: 1px solid ${color.error};
+}
+QLabel#scriptsBannerTitle, QLabel[role="scriptsBannerTitle"] {
+  font-size: ${type.section};
+  font-weight: ${type.weightEmphasis};
+}
+QLabel#scriptsBannerTitle[feedbackState="ok"], QLabel[role="scriptsBannerTitle"][feedbackState="ok"] {
+  color: ${color.success};
+}
+QLabel#scriptsBannerTitle[feedbackState="warning"], QLabel[role="scriptsBannerTitle"][feedbackState="warning"] {
+  color: ${color.warning};
+}
+QLabel#scriptsBannerTitle[feedbackState="error"], QLabel[role="scriptsBannerTitle"][feedbackState="error"] {
+  color: ${color.error};
+}
+
+/* Scripts: mockup-consistent empty canvas and structured compatibility rows. */
+QFrame#scriptsEmptyCanvas {
+  background: ${color.canvas};
+  border: 1px solid ${color.border};
+  border-radius: ${size.panelRadius};
+}
+QLabel#scriptsEmptyTitle, QLabel[role="scriptsEmptyTitle"] {
+  color: ${color.title};
+  font-weight: ${type.weightEmphasis};
+  font-size: ${type.section};
+}
+QFrame#scriptsHookItem {
+  border: 0;
+  border-bottom: 1px solid ${color.sectionBorder};
+  background: transparent;
+}
+QLabel#scriptsHookName, QLabel[role="scriptsHookName"] {
+  color: ${color.text};
+  font-family: ${type.monoFamily};
+}
+QLabel#scriptsHookVerdict, QLabel[role="scriptsHookVerdict"] {
+  font-size: ${type.small};
+  color: ${color.secondary};
+}
+QLabel#scriptsHookVerdict[feedbackState="supported"], QLabel[role="scriptsHookVerdict"][feedbackState="supported"] { color: ${color.success}; }
+QLabel#scriptsHookVerdict[feedbackState="deferred"], QLabel[role="scriptsHookVerdict"][feedbackState="deferred"] { color: ${color.warning}; }
+QLabel#scriptsHookVerdict[feedbackState="unsupported"], QLabel[role="scriptsHookVerdict"][feedbackState="unsupported"] { color: ${color.error}; }
+
+/* ScriptRun presentation: compact committed preview, scrollable console and results. */
+QFrame#scriptsResultCanvas {
+  background: ${color.canvas};
+  border: 1px solid ${color.borderStrong};
+  border-radius: ${size.panelRadius};
+  min-height: 265px;
+}
+QLabel#scriptsResultTile, QLabel[role="scriptsResultTile"] {
+  background: ${color.button};
+  color: ${color.secondary};
+  border: 1px dashed ${color.borderStrong};
+  border-radius: ${size.inputRadius};
+}
+QLabel#scriptsResultCaption, QLabel[role="scriptsResultCaption"] {
+  color: ${color.secondary};
+  font-size: ${type.small};
+}
+QLabel#scriptsRunStatus, QLabel[role="scriptsRunStatus"] { color: ${color.text}; }
+QFrame#scriptsStepCard {
+  background: ${color.surface};
+  border: 1px solid ${color.sectionBorder};
+  border-radius: ${size.inputRadius};
+}
+QLabel#scriptsStepThumbnail, QLabel[role="scriptsStepThumbnail"] {
+  background: ${color.button};
+  color: ${color.secondary};
+  border: 1px solid ${color.border};
+  border-radius: ${size.inputRadius};
+}
+
+/* Scripts: a previous unresolved attempt is a separate warning, not a compatibility error. */
+QFrame#scriptsUnresolvedNotice {
+  border: 1px solid ${color.warning};
+  border-radius: ${size.panelRadius};
+  background: ${color.warningSurface};
+}
+QLabel#scriptsWarningGlyph, QLabel[role="scriptsWarningGlyph"], QLabel#scriptsWarningTitle, QLabel[role="scriptsWarningTitle"] {
+  color: ${color.warning};
+}
+QLabel#scriptsWarningTitle, QLabel[role="scriptsWarningTitle"] {
+  font-weight: ${type.weightEmphasis};
+}
+
+/* Required source is a blocking preflight error, not secondary help copy. */
+QLabel#scriptsSourceNote, QLabel[role="scriptsSourceNote"] { color: ${color.secondary}; }
+QLabel#scriptsSourceNote[feedbackState="error"], QLabel[role="scriptsSourceNote"][feedbackState="error"] { color: ${color.error}; }
+
+/* Scripts editor controls follow the compact native Inpaint toolbar density.
+   Reuse ordinary neutral/selection/focus tokens from QPushButton and the
+   shared segmented-control corner rules; only dimensions are scoped here. */
+QFrame#scriptsEditorToolbar {
+  background: transparent;
+  border: 0;
+}
+QFrame#scriptsEditorToolbar QPushButton {
+  min-height: 30px;
+  min-width: 0;
+  padding: 0 8px;
+}
+QFrame#scriptsEditorToolbar QPushButton[toolbarKind="icon"],
+QFrame#scriptsEditorToolbar QPushButton#undoButton,
+QFrame#scriptsEditorToolbar QPushButton#redoButton,
+QFrame#scriptsEditorToolbar QPushButton#smallerFontButton,
+QFrame#scriptsEditorToolbar QPushButton#largerFontButton {
+  min-height: 30px;
+  min-width: 30px;
+  max-height: 32px;
+  max-width: 32px;
+  padding: 0;
+  font-size: ${type.section};
+}

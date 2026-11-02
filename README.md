@@ -109,6 +109,7 @@ See the [CLI reference](devdocs/guides/cli.md) for backends, options and example
 - [Current development status](devdocs/current_dev_status.md), the [implementation plan](devdocs/plans/initial.md),
   [plans](devdocs/plans/),
   [research](devdocs/research/) and [decisions](devdocs/decisions/)
+- [Scripts desktop preview corrections](devdocs/plans/2026-11-02-scripts-review-fixes.md): UI-only work; desktop script execution is not yet connected. See also [independent-review alignment](devdocs/plans/2026-11-02-scripts-independent-review.md) for offline interactions and Inpaint handoff.
 
 ## Repository layout
 

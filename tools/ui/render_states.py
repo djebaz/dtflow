@@ -132,6 +132,7 @@ RENDER_CATEGORIES = (
     "shell",
     "inpaint",
     "logs",
+    "scripts",
 )
 
 
@@ -140,6 +141,8 @@ def render_category(target):
     path = Path(target)
     if "image-navigation" in path.parts:
         return "image-navigation"
+    if path.stem.startswith("scripts_"):
+        return "scripts"
     return path.stem.split("-", 1)[0]
 
 
@@ -4087,6 +4090,22 @@ def main():
         patch.object(session, "create_backend", backend),
     ):
         state = Path(temporary)
+        if wants("scripts"):
+            from render_scripts_states import render_scripts_states
+
+            def script_window():
+                return MainWindow(
+                    saved=SavedCredentials(Vault()),
+                    environ={},
+                    state_dir=state / "scripts-fixtures",
+                    no_cache=True,
+                )
+
+            for screenshot in render_scripts_states(args.out, window_factory=script_window):
+                report(screenshot)
+            if args.category == "scripts":
+                summarize()
+                return
         if any(wants(category) for category in ("connection", "generate", "queues", "images")):
             render_workspace_states(app, state, args.out)
         if wants("shell"):
