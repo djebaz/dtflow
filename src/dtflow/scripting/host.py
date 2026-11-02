@@ -20,7 +20,6 @@ from __future__ import annotations
 import asyncio
 import base64
 import concurrent.futures
-import io
 import secrets
 import threading
 import uuid
@@ -368,13 +367,14 @@ class ScriptHost:
 
     def save_image_src(self, visible_region_only: bool = False) -> str:
         data = self._last_image()
-        if not data.startswith(b"\x89PNG\r\n\x1a\n"):
-            from PIL import Image
-
-            with Image.open(io.BytesIO(data)) as image, io.BytesIO() as buffer:
-                image.save(buffer, "PNG")
-                data = buffer.getvalue()
-        return PNG_PREFIX + base64.b64encode(data).decode("ascii")
+        # No image library here (contract): label the bytes by their signature; upstream accepts all three prefixes.
+        if data.startswith(b"\xff\xd8\xff"):
+            prefix = "data:image/jpeg;base64,"
+        elif data[:4] == b"RIFF" and data[8:12] == b"WEBP":
+            prefix = "data:image/webp;base64,"
+        else:
+            prefix = PNG_PREFIX
+        return prefix + base64.b64encode(data).decode("ascii")
 
 
 def _initial_answers(components: Sequence[Mapping[str, Any]]) -> list[Any]:
