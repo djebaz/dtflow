@@ -282,3 +282,37 @@ async def test_batch_unknown_outcome_stops_future_submissions(tmp_path, monkeypa
     assert submitted == [1]
     assert len(linked) == 1
     assert host._blocked is not None
+
+
+def test_parallel_child_ordinal_allocation_is_atomic(tmp_path):
+    """Concurrent workers must not reuse an ordinal or lose an attempt identity."""
+    from concurrent.futures import ThreadPoolExecutor
+
+    from dtflow.persistence.script_runs import ScriptRunStore
+
+    ledger = ScriptRunStore(tmp_path / "state")
+    run_id = ledger.create(
+        source_name="parallel-fixture.js",
+        source_sha256="0" * 64,
+        api_version="1.0",
+        vendored_js_sha256="0" * 64,
+    )
+    attempt_ids = [uuid4().hex for _ in range(16)]
+    barrier = threading.Barrier(4)
+
+    def link(index_and_id):
+        index, attempt_id = index_and_id
+        if index < 4:
+            barrier.wait(timeout=5)
+        return ledger.link_child(run_id, attempt_id)
+
+    try:
+        with ThreadPoolExecutor(max_workers=4) as pool:
+            ordinals = list(pool.map(link, enumerate(attempt_ids)))
+        assert sorted(ordinals) == list(range(1, len(attempt_ids) + 1))
+        snapshot = ledger.get(run_id)
+        assert snapshot is not None
+        assert len(snapshot.children) == len(attempt_ids)
+        assert set(snapshot.children) == set(attempt_ids)
+    finally:
+        ledger.finish(run_id, "completed")
