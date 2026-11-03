@@ -57,6 +57,7 @@ def _row(label: str, control: QWidget) -> QWidget:
     layout.setContentsMargins(0, 3, 0, 3)
     layout.setSpacing(10)
     heading = QLabel(label, row)
+    heading.setTextFormat(Qt.TextFormat.PlainText)
     heading.setObjectName("scriptFieldLabel")
     heading.setToolTip(label)
     heading.setWordWrap(True)
@@ -209,6 +210,23 @@ def _range_slider(spec: dict) -> QWidget:
     return box
 
 
+def _with_image_multiple(control: QWidget, multiple: int = 1) -> QWidget:
+    """Shared preview/live disclosure for a script-authored crop rule."""
+    if multiple == 1:
+        return control
+    box = QWidget()
+    layout = QVBoxLayout(box)
+    layout.setContentsMargins(0, 0, 0, 0)
+    layout.setSpacing(4)
+    layout.addWidget(control)
+    note = QLabel(f"Centre-crop the imported copy to multiples of {multiple} px; no resizing. Original file unchanged.")
+    note.setObjectName("scriptsFormSupporting")
+    note.setTextFormat(Qt.TextFormat.PlainText)
+    note.setWordWrap(True)
+    layout.addWidget(note)
+    return box
+
+
 def _path_control(spec: dict) -> QWidget:
     path = QLineEdit(str(spec.get("value") or ""))
     path.setObjectName("scriptsPathValue")
@@ -238,7 +256,7 @@ def _path_control(spec: dict) -> QWidget:
         clear.setAccessibleName("Clear " + spec["label"])
         clear.clicked.connect(path.clear)
         controls.append(clear)
-    return _group(*controls)
+    return _with_image_multiple(_group(*controls), spec.get("multiple", 1))
 
 
 def _control(spec: dict) -> QWidget:

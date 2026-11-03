@@ -13,7 +13,7 @@ from time import monotonic
 from typing import Callable
 
 from PySide6.QtCore import QPoint
-from PySide6.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication, QLineEdit
 
 
 STATES = (
@@ -54,6 +54,16 @@ STATES = (
     "scripts_editor_unverified",
     "scripts_preview_capped",
     "scripts_previous_run_inspection",
+    "scripts_setup_ready",
+    "scripts_setup_loading",
+    "scripts_setup_followup",
+    "scripts_setup_narrow",
+    "scripts_inspect_setup_preloaded",
+    "scripts_setup_reloaded",
+    "scripts_setup_file_selected",
+    "scripts_setup_file_error",
+    "scripts_editor_discard_confirm",
+    "scripts_setup_crop_multiple",
 )
 
 
@@ -106,7 +116,12 @@ def render_scripts_states(out: Path, *, window_factory: Callable, state_names=ST
         for index, state in enumerate(state_names):
             if state not in STATES:
                 raise ValueError(f"Unknown scripting render state: {state}")
-            narrow = state in ("scripts_narrow", "scripts_narrow_details", "scripts_editor_narrow")
+            narrow = state in (
+                "scripts_narrow",
+                "scripts_narrow_details",
+                "scripts_editor_narrow",
+                "scripts_setup_narrow",
+            )
             window.form.resize(800, 680) if narrow else window.form.resize(1600, 1000)
             window._show_scripts()
             window.scripts._drawer_requested = state == "scripts_narrow_details"
@@ -124,6 +139,16 @@ def render_scripts_states(out: Path, *, window_factory: Callable, state_names=ST
                 "scripts_editor_unverified": "scripts_editor_dirty",
                 "scripts_preview_capped": "scripts_form_default",
                 "scripts_previous_run_inspection": "scripts_form_after_unknown",
+                "scripts_setup_ready": "scripts_form_default",
+                "scripts_setup_loading": "scripts_form_default",
+                "scripts_setup_followup": "scripts_waiting_input",
+                "scripts_setup_narrow": "scripts_form_long_values",
+                "scripts_inspect_setup_preloaded": "scripts_form_default",
+                "scripts_setup_reloaded": "scripts_form_default",
+                "scripts_setup_file_selected": "scripts_form_default",
+                "scripts_setup_file_error": "scripts_form_default",
+                "scripts_editor_discard_confirm": "scripts_editor_dirty",
+                "scripts_setup_crop_multiple": "scripts_form_default",
             }.get(state, state)
             if state in (
                 "scripts_queued",
@@ -133,7 +158,42 @@ def render_scripts_states(out: Path, *, window_factory: Callable, state_names=ST
             ):
                 base = "scripts_form_default"
             window.scripts.preview(base)
-            if state in (
+            if state == "scripts_setup_loading":
+                window.scripts.show_view(1)
+                window.scripts.form.hide()
+                window.scripts.form_note.setText("Preloading Setup from Inspect. No queue item exists.")
+                window.scripts.form_note.show()
+                window.scripts.start.setText("Run Script")
+                window.scripts.start.setEnabled(False)
+            elif state in ("scripts_inspect_setup_preloaded", "scripts_setup_reloaded"):
+                window.scripts.form_note.setText("Setup is ready. No job is queued.")
+                window.scripts.form_note.show()
+                window.scripts.show_view(0 if state == "scripts_inspect_setup_preloaded" else 1)
+            elif state in ("scripts_setup_file_selected", "scripts_setup_file_error"):
+                fields = window.scripts.form.findChildren(QLineEdit, "scriptsPathValue")
+                if fields:
+                    fields[0].setText(
+                        "reference.png" if state == "scripts_setup_file_selected" else "Input could not be prepared"
+                    )
+                    fields[0].setToolTip(
+                        "reference.png"
+                        if state == "scripts_setup_file_selected"
+                        else "Selected input exceeds the supported image limit (offline fixture)."
+                    )
+            elif state == "scripts_setup_crop_multiple":
+                from dtflow.ui.scripts_form import REFERENCE_FORM
+
+                fields = [
+                    {**spec, "multiple": 64} if spec["type"] == "imageField" else dict(spec) for spec in REFERENCE_FORM
+                ]
+                window.scripts.form.set_fields(fields)
+            elif state == "scripts_editor_discard_confirm":
+                window.scripts.editor.discard.click()
+            elif state == "scripts_setup_followup":
+                window.scripts.show_view(1)
+                window.scripts.start.setText("Continue")
+                window.scripts.start.setEnabled(True)
+            elif state in (
                 "scripts_queued",
                 "scripts_running",
                 "scripts_waiting_input",

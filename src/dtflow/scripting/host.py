@@ -42,6 +42,8 @@ from dtflow.scripting.models import (
     round_dimensions,
 )
 from dtflow.scripting.runner import ScriptCancelled
+from dtflow.scripting.forms import initial_answers as _initial_answers
+from dtflow.scripting.forms import validate_answers, validate_components
 from dtflow.services.session import GenerationOutcome, run_generation
 
 #: Upstream ``SamplerType`` numbers (vendored JS) <-> DTFlow sampler ids.
@@ -73,7 +75,7 @@ SAMPLER_IDS = {sampler: number for number, sampler in SAMPLER_NUMBERS.items()}
 SUPPORTED_FIELDS = frozenset({"width", "height", "seed", "steps", "guidanceScale", "model", "sampler", "loras"})
 #: Fields that never count as a change (upstream ``id`` is a host-assigned handle).
 IGNORED_FIELDS = frozenset({"id"})
-DEFAULT_MAX_GENERATIONS = 4
+DEFAULT_MAX_GENERATIONS = 30
 MAX_SANDBOX_LISTING = 1000
 MAX_SANDBOX_FILE_BYTES = 64 * 1024 * 1024
 MAX_SANDBOX_FILES = 200
@@ -133,6 +135,8 @@ class ScriptHost:
         record_answers: Callable[[dict], int] | None = None,
         ask: Callable[[str, str, list], list | None] | None = None,
         run_id: str | None = None,
+        require_start: bool = False,
+        admission_gate: threading.Event | None = None,
     ) -> None:
         if base.operation != "txt2img" or base.image_inputs is not None:
             raise ValueError("Scripts start from text-to-image settings only.")
@@ -144,6 +148,10 @@ class ScriptHost:
         self._answers = list(answers) if answers is not None else None
         self._record_answers = record_answers
         self._ask = ask  # set only for a run whose forms are answered interactively (a queue item)
+        if require_start and (ask is None or answers is not None):
+            raise ValueError("Setup requires an interactive form bridge without supplied answers.")
+        self._start_permitted = not require_start
+        self._admission_gate = admission_gate
         self.run_id = run_id
         self._forms = 0
         self.baseline = normalize_configuration(decode_configuration(baseline_configuration(base)).values)
@@ -280,6 +288,24 @@ class ScriptHost:
         )
 
     def generate_image(self, args: Mapping[str, Any]) -> None:
+        if not self._start_permitted:
+            # A script need not call requestFromUser before pipeline.run(). Park it
+            # on the same persisted input bridge BEFORE resolving/linking/submitting work.
+            self.request_from_user(
+                "Ready to run script",
+                "Run Script",
+                [
+                    {
+                        "type": "plainText",
+                        "value": "This script requests generation before an input form. Review the captured settings and press Run Script to permit generation.",
+                    }
+                ],
+            )
+        while self._admission_gate is not None and not self._admission_gate.wait(POLL_SECONDS):
+            if self.cancel.is_set():
+                raise ScriptCancelled()
+        if self.cancel.is_set():
+            raise ScriptCancelled()
         if not isinstance(args, Mapping):
             raise ValueError("Missing configuration parameter")
         if self._blocked:
@@ -362,12 +388,9 @@ class ScriptHost:
     # -- forms ---------------------------------------------------------------------------------------------------
 
     def request_from_user(self, title: str, confirm: str, components: Sequence[Mapping[str, Any]]) -> list[Any]:
-        """Headless form. Ordered answers come from the supplied answer sets (one per call); without any answer file the
-        components' own initial values are used, except that forms with inputs that have no meaningful initial value
-        (image fields, directories, selectable images) fail. A supplied answer file that runs out, or an answer of the
-        wrong count or type, fails the call. Answer shapes for sections, images and image fields are an assumption (see
-        the PR); the complete form is #196."""
-        kinds = _answer_kinds(components)
+        """Park on the persisted interactive bridge or consume one headless ordered answer set."""
+        components = list(components)
+        validate_components(components)
         source = "file" if self._answers is not None else "initial"
         if self._answers is None and self._ask is not None:
             source = "user"
@@ -378,20 +401,35 @@ class ScriptHost:
                 raise ScriptCancelled()
             validate_answers(components, answers)
         elif self._answers is None:
-            if any(kind in ("imageField", "directory", "selectableImage") for kind in kinds):
-                raise ValueError("This form needs an answer for an image or directory field; supply --answers.")
+
+            def needs_selection(fields):
+                return any(
+                    spec["type"] in ("imageField", "directory")
+                    or (spec["type"] == "image" and spec.get("selectable"))
+                    or (spec["type"] == "section" and needs_selection(spec.get("views") or []))
+                    for spec in fields
+                )
+
+            if needs_selection(components):
+                raise ValueError("This form needs explicit image or directory input; supply --answers or use Scripts.")
             answers = _initial_answers(components)
         else:
             if not self._answers:
                 raise ValueError(
-                    "This script asked for input (requestFromUser) but no answers were supplied. The Scripts page "
-                    "cannot show forms yet; run it from the CLI with --answers. The script was not continued."
+                    "This script asked for another input form but its supplied answer sets ran out. "
+                    "The script was not continued."
                 )
             answers = list(self._answers.pop(0))
-            if len(answers) != len(kinds):
-                raise ValueError(f"Expected {len(kinds)} answers for this form, got {len(answers)}.")
-            for kind, answer in zip(kinds, answers, strict=True):
-                _check_answer(kind, answer)
+        validate_answers(components, answers)
+        if source != "user":
+            # Headless files may embed raster data but cannot forge picker capabilities.
+            def reject_token(path, kind, token):
+                raise ValueError("Owned picker inputs require an interactive form in this run.")
+
+            validate_answers(components, answers, origin=reject_token)
+            from dtflow.services.script_form_inputs import crop_inline_form_images
+
+            answers = crop_inline_form_images(components, answers)
         self._forms += 1
         if self._record_answers is not None:
             # Durable before the script continues; if it cannot be recorded the call fails and the script stops here.
@@ -403,6 +441,14 @@ class ScriptHost:
                     "answers": answers,
                 }
             )
+        if source == "user":
+            from dtflow.services.script_form_inputs import resolve_form_inputs
+
+            resolved = resolve_form_inputs(self.sandbox.parent.parent, self.run_id, self._forms, components, answers)
+            if self.cancel.is_set():
+                raise ScriptCancelled()
+            self._start_permitted = True
+            return resolved
         return answers
 
     def screen_size(self) -> dict[str, float]:
@@ -499,74 +545,8 @@ class ScriptHost:
         return prefix + base64.b64encode(data).decode("ascii")
 
 
-def _initial_answers(components: Sequence[Mapping[str, Any]]) -> list[Any]:
-    answers: list[Any] = []
-    for component in components:
-        kind = component.get("type")
-        if kind == "section":
-            answers.extend(_initial_answers(component.get("views") or ()))
-        elif kind in ("slider", "textField", "comboBox"):
-            answers.append(component.get("value"))
-        elif kind == "doubleSlider":
-            answers.append(list(component.get("value") or ()))
-        elif kind == "switch":
-            answers.append(bool(component.get("isOn")))
-        elif kind in ("segmented", "menu"):
-            answers.append(component.get("index"))
-        elif kind == "size":
-            answers.append([component.get("width"), component.get("height")])
-        elif kind == "imageField":
-            answers.append([])
-        elif kind == "directory":
-            answers.append("")
-    return answers
-
-
-def _answer_kinds(components: Sequence[Mapping[str, Any]]) -> list[str]:
-    kinds: list[str] = []
-    for component in components:
-        kind = component.get("type")
-        if kind == "section":
-            kinds.extend(_answer_kinds(component.get("views") or ()))
-        elif kind == "image":
-            if component.get("selectable"):
-                kinds.append("selectableImage")
-        elif kind in ("plainText", "markdown"):
-            continue
-        else:
-            kinds.append(str(kind))
-    return kinds
-
-
-def validate_answers(components: Sequence[Mapping[str, Any]], answers: Any) -> None:
-    """Raise ``ValueError`` unless ``answers`` is one correctly typed answer per input of the form."""
-    kinds = _answer_kinds(components)
-    if not isinstance(answers, list) or len(answers) != len(kinds):
-        raise ValueError(f"Expected {len(kinds)} answers for this form.")
-    for kind, answer in zip(kinds, answers, strict=True):
-        _check_answer(kind, answer)
-
-
 def _is_number(value: Any) -> bool:
     return isinstance(value, (int, float)) and not isinstance(value, bool)
-
-
-def _check_answer(kind: str, answer: Any) -> None:
-    ok = {
-        "switch": isinstance(answer, bool),
-        "slider": _is_number(answer),
-        "doubleSlider": isinstance(answer, list) and len(answer) == 2 and all(map(_is_number, answer)),
-        "textField": isinstance(answer, str),
-        "comboBox": isinstance(answer, str),
-        "segmented": isinstance(answer, int) and not isinstance(answer, bool),
-        "menu": isinstance(answer, int) and not isinstance(answer, bool),
-        "size": isinstance(answer, list) and len(answer) == 2 and all(map(_is_number, answer)),
-        "imageField": isinstance(answer, list) and all(isinstance(item, str) for item in answer),
-        "directory": isinstance(answer, str),
-        "selectableImage": isinstance(answer, (str, list)),
-    }.get(kind, False)
-    if not ok:
-        raise ValueError(f"Answer for a {kind} field has the wrong type.")
 
 
 def starting_context(
@@ -608,6 +588,7 @@ def script_hooks(
     answers: Sequence[Sequence[Any]] | None,
     hosts: list[ScriptHost],
     interactive: bool = False,
+    require_start: bool = False,
 ) -> Callable[[Any], dict[str, Callable[..., Any]]]:
     """The hook factory ``run_recorded`` takes, shared by the CLI and the queue item so both run the same host.
 
@@ -628,6 +609,7 @@ def script_hooks(
             record_answers=context.record_answers,
             ask=context.ask if interactive else None,
             run_id=context.run_id,
+            require_start=require_start,
         )
         hosts.append(host)
         return host.hooks()

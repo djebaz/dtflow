@@ -23,7 +23,7 @@ slice (the engine, the hook table and the ledger; issues #119 and #113) does and
 - The child is bound to the app's lifetime on a best-effort basis: Linux parent-death signal and a Windows kill-on-close
   Job Object (not independently verified on Windows). If assignment fails, or on another platform, an orphaned child can
   outlive the app until it notices the closed pipe and exits. The frozen entry point calls `multiprocessing.freeze_support()`.
-- `console.info`/`console.debug` and a cancellable `__dtSleep` are a small DTFlow overlay kept outside the vendored file.
+- `console.info`/`console.debug`, a cancellable `__dtSleep`, and the read-only `globalThis.__dtflowScriptHost` marker (`{name: 'DTFlow', apiVersion: 1}`) are DTFlow overlays kept outside the vendored file. Portable scripts can check this marker without requiring unsupported upstream APIs; it does not advertise or enable parallel generation.
 
 ## Analyzer (`dtflow script <file>`)
 
@@ -86,7 +86,7 @@ Current hook scope adds virtual `clearCanvas`, zoom/size/move and empty `clearMo
 
 ## Tier A headless generation (PR #199)
 
-The ScriptHost in `scripting/host.py` implements the subset of upstream hooks for read-only configuration/prompt lookup, generation, model/LoRA lookup, headless form answers, and confined file access. One `generateImage` maps to one existing `run_generation` / `GenerationService` attempt. A caller-named attempt identifier is linked to the ScriptRun before the provider submission can begin. Remote outcome uncertainty blocks subsequent generation in the run; Stop only stops local waiting, and the service drains submitted attempts before closing. `--max-generations` defaults to four per run.
+The ScriptHost in `scripting/host.py` implements the subset of upstream hooks for read-only configuration/prompt lookup, generation, model/LoRA lookup, headless form answers, and confined file access. One `generateImage` maps to one existing `run_generation` / `GenerationService` attempt. A caller-named attempt identifier is linked to the ScriptRun before the provider submission can begin. Remote outcome uncertainty blocks subsequent generation in the run; Stop only stops local waiting, and the service drains submitted attempts before closing. `--max-generations` defaults to 30 per run (maximum 32); this limits calls per run, not simultaneous generations.
 
 The start configuration is resolved with the normal CLI validator before JS evaluation and never mutates the live Generate form. Only width, height, seed, steps, guidance, model, sampler, and LoRAs (`mode: all`) are script-changeable in this slice. The pinned upstream field model decodes the full configuration, but changing another field is rejected before that generation, rather than silently discarded. An empty model is explicitly rejected. A `mask` is rejected until #116. For headless forms, `--answers` supplies ordered answer lists or usable initial values are applied; native mid-run interaction is outside this PR. File hooks operate within `<state>/script_files/<run-id>/`, not the user's Pictures directory. Canvas saves expose the latest committed result only; full virtual canvas behavior belongs to #116.
 
