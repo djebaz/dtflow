@@ -64,7 +64,7 @@ WAITING_FIELDS = (
     },
 )
 
-LIVE_STATES = ("queued", "running", "waiting_input")
+LIVE_STATES = ("queued", "paused", "running", "waiting_input")
 
 # Illustrative source code is copied from the owner-approved Scripts UI kit,
 # not inferred from a live user script. It never runs in the offline renderer.
@@ -104,6 +104,10 @@ RUN_STATUSES = {
     "queued": (
         "Queued behind 3 items",
         "Queue item waiting for admission. Nothing submitted · waiting 0:42 · Cancel is free.",
+    ),
+    "paused": (
+        "Saved paused · not dispatched",
+        "No generation was submitted. Open Queues to Start this saved item when dispatch is available.",
     ),
     "cancelled_before_start": ("Cancelled before start", "No provider submission and no charge."),
     "running": (
@@ -408,13 +412,7 @@ class ScriptsPage:
         self.acknowledge.toggled.connect(self._refresh_readiness)
         self.designer.backToFormButton.clicked.connect(self._review_run)
         self.designer.reviewRunButton.clicked.connect(self._review_run)
-        self.designer.checkQueuesButton.clicked.connect(
-            lambda: self.owner.inline.notice(
-                "Offline linked attempts",
-                "No real queue or durable attempt exists for this preview. The unresolved example remains in Scripts History.",
-                "info",
-            )
-        )
+        self.designer.checkQueuesButton.clicked.connect(self._check_queues_clicked)
         self.designer.advancePreviewButton.clicked.connect(self._advance_preview)
         self.designer.viewUnresolvedRun.setEnabled(True)
         self.designer.viewUnresolvedRun.clicked.connect(
@@ -1286,7 +1284,7 @@ class ScriptsPage:
             if self._run_state == "failed"
             else "warning"
             if self._run_state
-            in ("queued", "waiting_input", "stopped", "interrupted", "outcome_unknown", "cancelled_before_start")
+            in ("queued", "paused", "waiting_input", "stopped", "interrupted", "outcome_unknown", "cancelled_before_start")
             else ""
         )
 
@@ -1295,7 +1293,7 @@ class ScriptsPage:
         live = self._run_state in LIVE_STATES
         unresolved = self._run_state in ("interrupted", "outcome_unknown") or self._prior_unresolved
         ui.backToFormButton.setVisible(not live)
-        ui.checkQueuesButton.setVisible(unresolved)
+        ui.checkQueuesButton.setVisible(unresolved or (self._live_mode() and self._run_state == "paused"))
         ui.reviewRunButton.setVisible(not live)
         ui.reviewRunButton.setText("Review and start again" if unresolved else "Run again…")
         ui.advancePreviewButton.setVisible(self._reference_mode and self._run_state in ("queued", "running"))
@@ -1364,6 +1362,8 @@ class ScriptsPage:
             if key in ("running", "waiting_input")
             else "Waiting for admission. Cancel is free; nothing has been submitted."
             if key == "queued"
+            else "Saved paused. No generation was submitted; open Queues to Start the item when dispatch is free."
+            if key == "paused"
             else "Cancelled before admission. No submission or charge; the example remains in History."
             if key == "cancelled_before_start"
             else "Unresolved previous work may still complete or be billed. Review starts separate work; it never retries that attempt."
@@ -1413,6 +1413,18 @@ class ScriptsPage:
                 if cancel
                 else "0:12.0 Preview inputs accepted; script continues (offline)."
             )
+
+    def _check_queues_clicked(self) -> None:
+        """Open the actual queued script when live; retain fixture notice offline."""
+        if self._live_mode() and self._live_run is not None:
+            self.owner.form.queueNavigationButton.click()
+            self.owner.queue.select_queue(self._live_run["queue_id"])
+            return
+        self.owner.inline.notice(
+            "Offline linked attempts",
+            "No real queue or durable attempt exists for this preview. The unresolved example remains in Scripts History.",
+            "info",
+        )
 
     def _review_run(self):
         # Never auto-submit. Unknown work remains referenced while reviewing.
@@ -1992,7 +2004,7 @@ class ScriptsPage:
         state = item["state"]
         run_state = (item.get("script") or {}).get("run_state")
         if state == "pending":
-            return "queued"
+            return "paused" if view.get("status") == "paused" else "queued"
         if state == "running":
             return "waiting_input" if (item.get("script") or {}).get("waiting_for_input") else "running"
         if state == "succeeded":
@@ -2024,7 +2036,14 @@ class ScriptsPage:
             return
         view = result[0]
         key = self._live_key(view)
+        previous = self._run_state
         self._show_live(key, view)
+        if key == "paused" and previous != "paused":
+            self.owner.inline.notice(
+                "Script saved paused",
+                "Dispatch did not start in this window. Nothing was submitted; open Queues to Start the saved item.",
+                "warning",
+            )
         if key in self._TERMINAL:
             self._live_timer.stop()
             self._load_history()
@@ -2074,7 +2093,9 @@ class ScriptsPage:
         else:
             status, detail = RUN_STATUSES[key]
             if key == "queued":
-                detail = "Queue item waiting for admission. Nothing submitted yet · Cancel is free."
+                detail = "Queue item waiting for admission. Nothing submitted yet."
+            elif key == "paused":
+                detail = "Saved paused; no dispatch owner accepted the run. Open Queues to Start it manually."
             elif key == "running":
                 detail = f"Queue item running · {len(children)} child step(s) submitted · cap {run['cap']}."
             elif key in ("failed", "interrupted", "outcome_unknown", "stopped"):
