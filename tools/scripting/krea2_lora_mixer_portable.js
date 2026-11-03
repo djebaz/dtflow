@@ -642,8 +642,25 @@ if (HAS_DTFLOW_BATCH && batchJobs.length) {
     }
   });
   if (failures) {
-    throw new Error("Parallel batch completed " + completed + " of " + batchJobs.length +
-      " jobs; " + failures + " did not succeed. Inspect existing outputs and attempt records before restarting.");
+    const counts = {};
+    results.forEach(result => {
+      if (result.status !== "succeeded") {
+        counts[result.status] = (counts[result.status] || 0) + 1;
+      }
+    });
+    const breakdown = Object.keys(counts).sort().map(status =>
+      counts[status] + " " + status.replace(/_/g, " ")).join(", ");
+    // Prefer the first actual failure over an unstarted job when explaining the cause.
+    let issueIndex = results.findIndex(result =>
+      result.status !== "succeeded" && result.status !== "not_started");
+    if (issueIndex < 0) issueIndex = results.findIndex(result => result.status !== "succeeded");
+    const issue = results[issueIndex];
+    const code = typeof issue.error === "string" ?
+      issue.error.replace(/[^A-Za-z0-9_.-]/g, "_").slice(0, 80) : "";
+    throw new Error("Parallel batch: " + completed + "/" + batchJobs.length +
+      " saved; " + breakdown + ". First issue: job " + (issueIndex + 1) +
+      " (" + issue.status + (code ? ", code " + code : "") +
+      "). Inspect Console and existing attempt records before restarting.");
   }
 }
 console.log(preview ? "Preview complete; no images generated." :
