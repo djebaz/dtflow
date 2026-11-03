@@ -12,6 +12,8 @@ Changes through 5.4.0 are consolidated in [DTFlow 5.4.0](v5.4.0.md). This file t
 
 ## Added
 
+- Scripts library cards now have a compact top-right Remove button with two distinct clicks to confirm in place, without a confirmation overlay. Removal affects the selected saved version’s library membership only; queued source bytes, run history and outputs are retained.
+
 - PR #219: portable Krea2 mixer authoring with cached, paged LoRA discovery, explicit readiness/skipped reasons, single Setup form with direct Run Script, versioned source-scoped preferences and deterministic bounded manual chunks. Plan IDs/global indices stay with child request evidence. Missing files are not downloaded/uploaded, unsupported preset fields are not silently mapped, and original Draw Things behavior remains separate. Source only; owner acceptance remains tracked by #216.
 
 ## Changed

@@ -37,5 +37,10 @@
 
 ## Owner feedback follow-up
 
+- Remove button size reduced from 28 × 28 to 14 × 14 px per owner feedback, with a smaller glyph and 3 px corner radius. The armed state keeps the same target size.
+
+- [x] Add Designer-owned rounded-square Remove buttons to script library cards. Reuse the shared button-only double confirmation, Escape/navigation cancellation and danger tokens; remove exact-version index membership asynchronously, retain immutable source for queued work and history, protect active runs/dirty drafts, and extend offline normal/armed/narrow definitions without rendering.
+- [ ] Owner: click/arm/cancel/confirm, removing selected/unselected/last version, dirty draft and active-run safeguards, reimport and preserved history/output acceptance. No tests or checks run.
+
 - Removed preview entirely at the owner’s request. Shortened the static-inspection warning and footer; metadata-unknown LoRAs no longer require an opt-in. Grouped prompts, mixing, output, chunk and inventory in one form.
 - Parser resource exhaustion now reports Analysis incomplete without a fabricated source location; reserved parser native-stack headroom leaves runtime limits unchanged. No tests, checks, renders or app launch performed.

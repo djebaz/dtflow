@@ -290,6 +290,16 @@ QPushButton#queueGenerateButton {
 }
 QPushButton#removeKeyButton,
 QPushButton#cancelQueueButton,
+/* Fixed target: arming removal changes only the glyph and shared confirmation state. */
+QPushButton#scriptRemoveButton {
+  min-width: 14px;
+  max-width: 14px;
+  min-height: 14px;
+  max-height: 14px;
+  padding: 0px;
+  border-radius: 3px;
+  font-size: 11px;
+}
 QPushButton[role="danger"] {
   color: ${color.dangerText};
 }
@@ -1810,6 +1820,7 @@ QPushButton#clearDerivedCacheButton[confirmationPending="true"][confirmationDang
 QPushButton#clearAllCacheButton[confirmationPending="true"][confirmationDanger="true"]:enabled,
 QPushButton#clearCustomLorasButton[confirmationPending="true"][confirmationDanger="true"]:enabled,
 QPushButton#clearQueuesButton[confirmationPending="true"][confirmationDanger="true"]:enabled,
+QPushButton#scriptRemoveButton[confirmationPending="true"][confirmationDanger="true"]:enabled,
 QFrame#gallerySelectionBar QPushButton#galleryDeleteButton[confirmationPending="true"][confirmationDanger="true"]:enabled {
   background: ${color.dangerBorder};
   color: ${color.onAccent};

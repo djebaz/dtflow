@@ -68,6 +68,9 @@ STATES = (
     "scripts_setup_parallel_batch_narrow",
     "scripts_mixer_setup",
     "scripts_mixer_setup_narrow",
+    "scripts_library_remove",
+    "scripts_library_remove_armed",
+    "scripts_library_remove_narrow",
     "scripts_editor_parser_limit",
     "scripts_editor_parser_limit_narrow",
     "scripts_inspect_dtflow_helpers",
@@ -130,6 +133,7 @@ def render_scripts_states(out: Path, *, window_factory: Callable, state_names=ST
                 "scripts_setup_narrow",
                 "scripts_setup_parallel_batch_narrow",
                 "scripts_mixer_setup_narrow",
+                "scripts_library_remove_narrow",
                 "scripts_editor_parser_limit_narrow",
             )
             window.form.resize(800, 680) if narrow else window.form.resize(1600, 1000)
@@ -163,6 +167,9 @@ def render_scripts_states(out: Path, *, window_factory: Callable, state_names=ST
                 "scripts_setup_parallel_batch_narrow": "scripts_form_default",
                 "scripts_mixer_setup": "scripts_form_default",
                 "scripts_mixer_setup_narrow": "scripts_form_default",
+                "scripts_library_remove": "scripts_imported_supported",
+                "scripts_library_remove_armed": "scripts_imported_supported",
+                "scripts_library_remove_narrow": "scripts_imported_supported",
                 "scripts_editor_parser_limit": "scripts_editor_syntax_error",
                 "scripts_editor_parser_limit_narrow": "scripts_editor_syntax_error",
                 "scripts_inspect_dtflow_helpers": "scripts_imported_supported",
@@ -227,6 +234,13 @@ def render_scripts_states(out: Path, *, window_factory: Callable, state_names=ST
                 window.scripts.form_note.show()
                 window.scripts.show_view(1)
                 window.scripts.start.setText("Run Script")
+            elif state.startswith("scripts_library_remove"):
+                window.scripts.show_view(0)
+                if state == "scripts_library_remove_armed":
+                    row = window.scripts.library.itemWidget(window.scripts.library.item(0))
+                    window.scripts._confirm_library_removal(
+                        window.scripts._library_scripts[0][1], row.scriptRemoveButton
+                    )
             elif state.startswith("scripts_mixer_"):
                 fields = [
                     {"type": "section", "label": "LoRA inventory and readiness"},
