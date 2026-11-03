@@ -57,6 +57,7 @@ def _row(label: str, control: QWidget) -> QWidget:
     layout.setContentsMargins(0, 3, 0, 3)
     layout.setSpacing(10)
     heading = QLabel(label, row)
+    heading.setTextFormat(Qt.TextFormat.PlainText)
     heading.setObjectName("scriptFieldLabel")
     heading.setToolTip(label)
     heading.setWordWrap(True)

@@ -37,6 +37,7 @@ from dtflow.ui.brand import tinted_icon
 from dtflow.ui.rail_fit import fit_rail
 from dtflow.ui.scripts_editor import ScriptEditor
 from dtflow.ui.scripts_form import REFERENCE_FORM, ScriptForm
+from dtflow.ui.scripts_live_form import LiveScriptForm
 
 
 REFERENCE_SCRIPTS = (
@@ -482,8 +483,16 @@ class ScriptsPage:
         self.waiting_fields = ScriptForm()
         ui.waitingFieldsHost.layout().addWidget(self.waiting_fields)
         self.waiting_fields.set_fields(WAITING_FIELDS)
-        ui.continueInputButton.clicked.connect(lambda: self._continue_preview(cancel=False))
-        ui.cancelInputButton.clicked.connect(lambda: self._continue_preview(cancel=True))
+        self.live_fields = LiveScriptForm(self.owner.runner)
+        ui.waitingFieldsHost.layout().addWidget(self.live_fields)
+        self.live_fields.hide()
+        self._live_prompt_id = None
+        self._live_form_error = False
+        self.live_fields.busyChanged.connect(self._live_form_busy)
+        self.live_fields.problem.connect(self._live_form_problem)
+        self.owner.runner.shutdown_started.connect(self.live_fields.clear_request)
+        ui.continueInputButton.clicked.connect(lambda: self._answer_input(cancel=False))
+        ui.cancelInputButton.clicked.connect(lambda: self._answer_input(cancel=True))
         self.result_picture = _ResultImage(ui.scriptsResultTile.parentWidget())
         ui.scriptsResultTile.parentWidget().layout().replaceWidget(ui.scriptsResultTile, self.result_picture)
         ui.scriptsResultTile.parentWidget().layout().setAlignment(self.result_picture, Qt.AlignmentFlag(0))
@@ -572,6 +581,7 @@ class ScriptsPage:
         narrow = self.owner.form.width() < 1100
         self.form.set_narrow(narrow)
         self.waiting_fields.set_narrow(narrow)
+        self.live_fields.set_narrow(narrow)
         if hasattr(self, "inspector_source_values"):
             for values in (self.inspector_source_values, self.drawer_source_values):
                 for label in values.values():
@@ -1439,6 +1449,123 @@ class ScriptsPage:
                 else "0:12.0 Preview inputs accepted; script continues (offline)."
             )
 
+    def _live_form_busy(self, busy):
+        if self._live_mode() and self._run_state == "waiting_input":
+            self.designer.continueInputButton.setEnabled(not busy and self.live_fields.identity is not None)
+            self.designer.cancelInputButton.setEnabled(not self.live_fields.submitting)
+
+    def _live_form_problem(self, message):
+        self.designer.waitingInstructions.setText(message)
+        _feedback(self.designer.waitingInstructions, "error")
+
+    def _answer_input(self, *, cancel=False):
+        if not self._live_mode():
+            self._continue_preview(cancel=cancel)
+            return
+        identity = self._live_prompt_id
+        if identity is None or self.owner.runner.closed:
+            return
+        if self._live_form_error and not cancel:
+            self._live_prompt_id = None
+            self._poll_live()
+            return
+        if self.live_fields.submitting:
+            return
+        from dtflow.services.script_item import answer_script_prompt, cancel_script_prompt
+
+        try:
+            answers = None if cancel else self.live_fields.answers()
+        except ValueError as exc:
+            self._live_form_problem(str(exc))
+            return
+        self.live_fields.set_submitting(True)
+        self.designer.continueInputButton.setEnabled(False)
+        self.designer.cancelInputButton.setEnabled(False)
+        state = self._state_dir()
+        run_id, ordinal = identity
+
+        def done(result, failure):
+            if self._live_prompt_id != identity:
+                return
+            if failure is not None:
+                self.live_fields.set_submitting(False)
+                self._live_form_problem(str(failure))
+                self.designer.cancelInputButton.setEnabled(True)
+            else:
+                # Keep consent disabled until polling observes another ordinal or settlement.
+                self.designer.waitingInstructions.setText("Input cancelled; stopping local script waiting." if cancel
+                                                          else "Answers saved; waiting for the script to continue.")
+                self._poll_live()
+
+        coroutine = (asyncio.to_thread(cancel_script_prompt, state, run_id, ordinal) if cancel else
+                     asyncio.to_thread(answer_script_prompt, state, run_id, answers, ordinal))
+        self.owner.runner.submit(coroutine, done)
+
+    def _sync_live_prompt(self, key, script):
+        prompt = script.get("prompt") if key == "waiting_input" else None
+        if prompt is None:
+            if self._live_prompt_id is not None:
+                self._live_prompt_id = None
+                self.live_fields.clear_request()
+            self.live_fields.hide()
+            self.waiting_form.hide()
+            return
+        identity = (script["run_id"], prompt["ordinal"])
+        self.waiting_fields.hide()
+        self.waiting_form.show()
+        if identity == self._live_prompt_id:
+            return
+        self._live_prompt_id = identity
+        self._live_form_error = False
+        self.live_fields.clear_request()
+        self.live_fields.hide()
+        ui = self.designer
+        ui.waitingFormTitle.setTextFormat(Qt.TextFormat.PlainText)
+        ui.waitingFormTitle.setText(prompt.get("title") or "Script input")
+        ui.waitingInstructions.setTextFormat(Qt.TextFormat.PlainText)
+        ui.waitingInstructions.setText("Loading this script's form…")
+        ui.waitingHelp.setText("Cancel input stops local script waiting. Already submitted remote work may still complete.")
+        _feedback(ui.waitingInstructions, "")
+        ui.continueInputButton.setText("Continue")
+        ui.continueInputButton.setEnabled(False)
+        ui.cancelInputButton.setEnabled(True)
+        from dtflow.services.script_form_inputs import read_script_form
+
+        def loaded(result, failure):
+            if self._live_prompt_id != identity:
+                return
+            if result is None and failure is None:
+                self._live_prompt_id = None
+                self.waiting_form.hide()
+                return
+            try:
+                if failure is not None:
+                    raise failure
+                self.live_fields.set_request(self._state_dir(), result)
+            except Exception as exc:
+                self.live_fields.clear_request()
+                self._live_form_error = True
+                self._live_form_problem(f"Cannot show this form: {exc}. Cancel input or retry.")
+                ui.continueInputButton.setText("Retry form")
+                ui.continueInputButton.setEnabled(True)
+                return
+            self.live_fields.show()
+            confirm = result["prompt"].confirm or "Continue"
+            ui.continueInputButton.setText(ui.continueInputButton.fontMetrics().elidedText(
+                confirm, Qt.TextElideMode.ElideRight, 160
+            ))
+            ui.continueInputButton.setToolTip(confirm)
+            ui.continueInputButton.setAccessibleName(confirm)
+            ui.continueInputButton.setEnabled(True)
+            ui.waitingInstructions.setText(
+                ("Previous answers for this exact version and form were restored. " if result["answers"] is not None
+                 else "") + "Review and submit to continue. File inputs require a new selection. "
+                "Cancel input stops this script; it does not cancel submitted remote work."
+            )
+            self.sync_responsive()
+
+        self.owner.runner.submit(asyncio.to_thread(read_script_form, self._state_dir(), *identity), loaded)
+
     def _check_queues_clicked(self) -> None:
         """Open the actual queued script when live; retain fixture notice offline."""
         if self._live_mode() and self._live_run is not None:
@@ -2060,6 +2187,11 @@ class ScriptsPage:
             _feedback(self.run_status, "warning")
             return
         view = result[0]
+        items = view.get("items") or []
+        if items and (items[0].get("script") or {}).get("run_id") != self._live_run["run_id"]:
+            # A queued read from a formerly displayed run must not mount its form on the new run.
+            self._poll_live()
+            return
         key = self._live_key(view)
         self._show_live(key, view)
         # A just-created queue may briefly read as paused before the dispatch
@@ -2163,6 +2295,7 @@ class ScriptsPage:
             lines.append("Waiting for admission. Nothing submitted.")
         self.console.setPlainText("\n".join(lines))
         self.run_footer.setText(self._footer_for(key))
+        self._sync_live_prompt(key, script)
         self._sync_drawer_data()
         self._fit_rails()
 

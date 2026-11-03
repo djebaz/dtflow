@@ -154,8 +154,18 @@ def answer_script_prompt(state: Path, run_id: str, answers: list, ordinal: int |
         raise ValidationError("This script run is not waiting for input.")
     try:
         validate_answers(prompt.components, answers)
+        from dtflow.services.script_form_inputs import resolve_form_inputs
+
+        # Verify capabilities and the reply budget before accepting durable consent.
+        resolve_form_inputs(state, run_id, prompt.ordinal, prompt.components, answers)
     except ValueError as exc:
         raise ValidationError(str(exc)) from exc
     if not ScriptRunStore(state).answer_prompt(run_id, prompt.ordinal, answers):
         raise ValidationError("This form was already answered or closed.")
     return prompt.ordinal
+
+
+def cancel_script_prompt(state: Path, run_id: str, ordinal: int) -> None:
+    """Cancel this exact request, not a later request that won a polling race."""
+    if not ScriptRunStore(state).cancel_prompt(run_id, ordinal):
+        raise ValidationError("This form was already answered or closed.")
