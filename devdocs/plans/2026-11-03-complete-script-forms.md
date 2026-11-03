@@ -34,6 +34,11 @@
 - Embedded image sources reject URLs, local paths, SVG and arbitrary HTML; raster preparation/thumbnailing remains in the existing headless image-preparation service on a worker. Markdown uses a read-only native viewer with escaped HTML, disabled link navigation and denied resource loads.
 - Issue first-pass policy defers user-facing documentation, tests and canonical preview expansion until owner smoke; this implementation plan records progress without claiming acceptance.
 
+## Follow-up: script call ceiling and portable host identification
+- Raised the default generation-call ceiling from 4 to 30 in the scripting host, queue creation, CLI and Scripts UI. The existing schema upper bound remains 32; these calls are still sequential within an individual script.
+- Added a DTFlow-only `globalThis.__dtflowScriptHost` marker in the engine overlay, leaving the pinned upstream Draw Things facade untouched. This enables portable scripts to avoid unsupported configuration changes on DTFlow while preserving the native Draw Things path.
+- Prepared the standalone `krea2_lora_mixer_portable.js` test artifact outside the repository. Its Draw Things path retains the original preset/remember/canvas behavior; its DTFlow path retains the Generate checkpoint/steps and avoids PNG settings markers. JS syntax and mocked host calls were checked offline; no native app, cloud, or paid inference was run. Native compatibility remains owner smoke work.
+
 ## Validation and delivery
 - No automated tests added, modified or run. The owner subsequently requested a custom manual script; it is provided but not executed. No validation, rendering, build, desktop launch, inference or provider calls under the selected fast GUI workflow.
 - Owner smoke failure investigated read-only: `logs/dtflow-d4dfdd06ed00.jsonl` records a failed script item at 2026-11-03 01:49:04 UTC. Run `f67359ef3ae34f83ad20c57d91dad232` failed with supplied answer sets exhausted; its ledger records zero supplied answer sets, zero published prompts and zero child attempts. The desktop `QueuePage.start_script` still explicitly passed `answers=[]`, disabling the interactive bridge. Changed that call to `answers=None`; no failed run/queue was modified or replayed. The correction is source-only pending a fresh owner Start after restart.
