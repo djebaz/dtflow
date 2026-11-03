@@ -100,6 +100,11 @@ QUEUE_SCHEMA = (
         detail_json TEXT NOT NULL DEFAULT '{}'
     )""",
     "CREATE INDEX IF NOT EXISTS queue_events_by_queue_kind ON queue_events (queue_id, kind)",
+    """CREATE TABLE IF NOT EXISTS script_child_slots (
+        attempt_id TEXT PRIMARY KEY,
+        queue_id TEXT NOT NULL REFERENCES queues(queue_id)
+    )""",
+    "CREATE INDEX IF NOT EXISTS script_child_slots_by_queue ON script_child_slots (queue_id)",
 )
 
 # An attempt's final state decides its item's state; an item never invents an outcome the attempt does not have.
@@ -565,14 +570,66 @@ class QueueMixin:
 
     @staticmethod
     def _reserved(db: sqlite3.Connection, key: str) -> int:
-        """Reservations in flight across queues sharing a backend. An ``unknown`` outcome holds none: it is treated as
-        an aborted request that is never re-sent, and never blocks other work."""
-        row = db.execute(
-            """SELECT COALESCE(SUM(i.state='running'), 0) AS running
-            FROM queue_items i JOIN queues q USING (queue_id) WHERE q.backend_key=?""",
+        """Shared reservations: ordinary queue items plus each running script's active child slots.
+
+        A script parent already occupies one reservation. Its first child uses that reservation;
+        every additional active child consumes one more, transactionally visible to all queues."""
+        parents = db.execute(
+            """SELECT COUNT(*) FROM queue_items i JOIN queues q USING (queue_id)
+            WHERE q.backend_key=? AND i.state='running'""",
+            (key,),
+        ).fetchone()[0]
+        children = db.execute(
+            """SELECT COUNT(*) AS total, COUNT(DISTINCT s.queue_id) AS parents
+            FROM script_child_slots s JOIN queues q ON q.queue_id=s.queue_id WHERE q.backend_key=?""",
             (key,),
         ).fetchone()
-        return row["running"]
+        return parents + children["total"] - children["parents"]
+
+    async def reserve_script_child(
+        self, queue_id: str, attempt_id: str, max_concurrent: int, backend_limit: int
+    ) -> bool:
+        """Atomically claim a script child lane without bypassing normal queue reservations.
+
+        False means the lane is busy; the caller may poll, but must stop polling on Stop.
+        Child work is never submitted before the caller also links its attempt to the ScriptRun."""
+        return await self._run(self._reserve_script_child, queue_id, attempt_id, max_concurrent, backend_limit)
+
+    def _reserve_script_child(self, queue_id: str, attempt_id: str, max_concurrent: int, backend_limit: int) -> bool:
+        if not 1 <= max_concurrent <= 10 or not 1 <= backend_limit <= MAX_QUEUE_CONCURRENCY:
+            raise QueueError("Invalid script concurrency bound.")
+        with self._txn() as db:
+            queue = db.execute(
+                "SELECT queue_id, backend_key, kind, state FROM queues WHERE queue_id=?", (queue_id,)
+            ).fetchone()
+            if queue is None or queue["kind"] != KIND_SCRIPT or queue["state"] != "running":
+                raise QueueError("The script queue is not running; no child generation was submitted.")
+            if db.execute(
+                "SELECT 1 FROM queue_items WHERE queue_id=? AND state='running'", (queue_id,)
+            ).fetchone() is None:
+                raise QueueError("The script item no longer holds its reservation.")
+            active = db.execute(
+                "SELECT COUNT(*) FROM script_child_slots WHERE queue_id=?", (queue_id,)
+            ).fetchone()[0]
+            # The first child uses the parent reservation; further children need a free global lane.
+            if active >= min(max_concurrent, backend_limit) or (
+                active > 0 and self._reserved(db, queue["backend_key"]) >= backend_limit
+            ):
+                return False
+            db.execute(
+                "INSERT INTO script_child_slots (attempt_id, queue_id) VALUES (?,?)", (attempt_id, queue_id)
+            )
+            return True
+
+    async def release_script_child(self, queue_id: str, attempt_id: str) -> None:
+        """Release one child lane only after its generation has settled, including failed saves."""
+        await self._run(self._release_script_child, queue_id, attempt_id)
+
+    def _release_script_child(self, queue_id: str, attempt_id: str) -> None:
+        with self._txn() as db:
+            db.execute(
+                "DELETE FROM script_child_slots WHERE queue_id=? AND attempt_id=?", (queue_id, attempt_id)
+            )
 
     async def settle_item(self, item_id: str, failure: dict[str, Any] | None = None) -> str:
         """Record an item's end state from its attempt; without an attempt it was definitely never submitted."""
@@ -926,7 +983,8 @@ def _removable(connection: sqlite3.Connection, where: str, params: Sequence[Any]
             WHERE ({where})
                 AND (q.state IN ('paused','cancelled') OR NOT EXISTS (
                     SELECT 1 FROM queue_items i WHERE i.queue_id=q.queue_id AND i.state IN ('pending','running')))
-                AND NOT EXISTS (SELECT 1 FROM queue_items i WHERE i.queue_id=q.queue_id AND i.state='running')""",
+                AND NOT EXISTS (SELECT 1 FROM queue_items i WHERE i.queue_id=q.queue_id AND i.state='running')
+                AND NOT EXISTS (SELECT 1 FROM script_child_slots s WHERE s.queue_id=q.queue_id)""",
             tuple(params),
         )
         if row["queue_id"] not in keep
@@ -934,7 +992,7 @@ def _removable(connection: sqlite3.Connection, where: str, params: Sequence[Any]
 
 
 def _delete(connection: sqlite3.Connection, queue_ids: Sequence[str]) -> None:
-    for table in ("queue_controls", "queue_events", "queue_items", "queues"):
+    for table in ("script_child_slots", "queue_controls", "queue_events", "queue_items", "queues"):
         connection.executemany(f"DELETE FROM {table} WHERE queue_id=?", [(queue_id,) for queue_id in queue_ids])
 
 
