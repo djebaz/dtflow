@@ -2,7 +2,7 @@
 
 ## Scope
 - In: all pinned upstream requestFromUser components, nested ordered answers, repeated live forms, native pickers with owned input snapshots, bounded validation and version-specific answer recall.
-- Out: new generation/configuration support, canvas pixel hooks, remote image fetching, script HTML/JS rendering, automatic dispatch/replay, tests and test execution.
+- Out: new generation/configuration support, canvas pixel hooks, remote image fetching, script HTML/JS rendering, automatic dispatch/replay, automated tests and test execution. The subsequently requested standalone manual smoke script is included, unexecuted.
 
 ## GUI components affected
 - Scripts waiting-input region and data-driven native field controls; reuse the existing Designer host and shared runner.
