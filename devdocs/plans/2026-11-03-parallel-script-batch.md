@@ -55,3 +55,9 @@ The initial planning-only description is historical: the branch now includes the
 - This is automatic binding of existing prepared assets, not automatic downloading or uploading. As in Queues, genuinely missing files still require the existing explicit Prepare workflow; unknown/failed receipts are not substituted, reconciled, retried or uploaded by generation. No new asset protocol, source-folder scan or download URL inference is introduced.
 - [ ] Owner smoke: script chooses a prepared custom LoRA not selected on Generate; mixed built-in/custom LoRAs; stale/account-mismatched receipts fail before submission; requested concurrency 1/5/10 under the existing shared cap.
 - [ ] Earlier review findings remain open: close intake checks across pre-submission awaits, and drain all workers after a slot-release failure. This LoRA follow-up does not repair or validate those findings.
+
+## CI fixture correction
+
+- Owner supplied the CI failure at head `a5d3ac0` (manual run `41612477794`): 1 failed, 696 passed, 3 skipped. The existing recovery test fails at `QueueMixin.reconcile` because `_populate_running_queues` writes `{}` for every request, including a script item. Without `kind=script`, recovery correctly takes the ordinary-request branch, where the malformed fixture has no `request_id`.
+- [x] Correct that existing shared fixture to serialize a canonical `script_record` for the script item and a normal `ResolvedGenerationRequest` record for ordinary items. Preserve the restart operation and existing assertions; do not bypass recovery, relax its contract or modify production persistence.
+- No new tests, no test execution or other checks. The supplied result describes the prior head only; this correction is source-only pending CI rerun by the owner. No runtime state was changed or uncertain work replayed.

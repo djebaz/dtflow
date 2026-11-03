@@ -8,12 +8,14 @@ from __future__ import annotations
 import asyncio
 import json
 import threading
+from dataclasses import asdict
 from types import SimpleNamespace
 from uuid import uuid4
 
 import pytest
 
 from dtflow.core.models import ResolvedGenerationRequest
+from dtflow.persistence.script_items import script_record
 from dtflow.persistence.store import SQLiteAttempts
 from dtflow.scripting.host import ScriptHost, baseline_configuration
 
@@ -29,6 +31,17 @@ async def _populate_running_queues(store: SQLiteAttempts, *, ordinary: int = 0) 
         with store._txn() as db:
             for index, kind in enumerate(("script", *(("generation",) * ordinary))):
                 queue_id = "script-queue" if index == 0 else f"ordinary-queue-{index}"
+                request = asdict(ResolvedGenerationRequest(uuid4().hex, "fixture", "fake-fixture", 50))
+                if kind == "script":
+                    request = script_record(
+                        run_id=uuid4().hex,
+                        source_name="fixture.js",
+                        source_sha256="0" * 64,
+                        base=request,
+                        backend="fake",
+                        max_generations=4,
+                        answers=None,
+                    )
                 db.execute(
                     "INSERT INTO queues (queue_id, backend_key, backend_json, state, cap, "
                     "created_at_utc, updated_at_utc, kind) VALUES (?, ?, ?, 'running', 4, ?, ?, ?)",
@@ -36,8 +49,8 @@ async def _populate_running_queues(store: SQLiteAttempts, *, ordinary: int = 0) 
                 )
                 db.execute(
                     "INSERT INTO queue_items (item_id, queue_id, position, request_json, state, "
-                    "updated_at_utc) VALUES (?, ?, 1, '{}', 'running', ?)",
-                    (f"item-{index}", queue_id, now),
+                    "updated_at_utc) VALUES (?, ?, 1, ?, 'running', ?)",
+                    (f"item-{index}", queue_id, json.dumps(request), now),
                 )
 
     await store._run(insert)
