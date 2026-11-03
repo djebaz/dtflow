@@ -791,6 +791,7 @@ def event_lines(view: dict) -> str:
     positions = {item["item_id"]: item["position"] for item in view.get("items", ())}
     hidden = {"item_started", "backend_preparing", "backend_artifact_received", "backend_terminal", "composer_source"}
     lines = []
+    script_steps_shown = False
 
     def item_label(detail: dict) -> str:
         item_id = detail.get("item_id")
@@ -861,8 +862,11 @@ def event_lines(view: dict) -> str:
             if compact:
                 summary += " - " + ", ".join(compact)
         lines.append(f"{stamp}  {summary}")
-        if kind == "started" and script_of(view) is not None:
+        if kind == "started" and script_of(view) is not None and not script_steps_shown:
+            # A queue can have more than one started event. Its current child
+            # ledger is a snapshot and belongs in the presentation only once.
             lines.extend(_step_lines(script_of(view)))
+            script_steps_shown = True
 
     return "\n".join(lines)
 
