@@ -275,8 +275,13 @@ class ScriptRunStore:
         return len(entries)
 
     def link_child(self, run_id: str, attempt_id: str) -> int:
-        """Reserve the next ordinal for a child attempt; call before the attempt is submitted."""
+        """Atomically reserve a unique child ordinal before any provider submission.
+
+        Parallel batch workers use distinct SQLite connections. Lock the writer before
+        reading MAX(ordinal), otherwise workers can select the same next ordinal.
+        """
         with closing(self._connect()) as connection, connection:
+            connection.execute("BEGIN IMMEDIATE")
             state = connection.execute("SELECT state FROM script_runs WHERE run_id=?", (run_id,)).fetchone()
             if state is None or state[0] != "running":
                 raise ScriptRunStoreError("Child attempts can only be linked to a running script run.")
