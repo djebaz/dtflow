@@ -604,21 +604,18 @@ class QueueMixin:
             ).fetchone()
             if queue is None or queue["kind"] != KIND_SCRIPT or queue["state"] != "running":
                 raise QueueError("The script queue is not running; no child generation was submitted.")
-            if db.execute(
-                "SELECT 1 FROM queue_items WHERE queue_id=? AND state='running'", (queue_id,)
-            ).fetchone() is None:
+            if (
+                db.execute("SELECT 1 FROM queue_items WHERE queue_id=? AND state='running'", (queue_id,)).fetchone()
+                is None
+            ):
                 raise QueueError("The script item no longer holds its reservation.")
-            active = db.execute(
-                "SELECT COUNT(*) FROM script_child_slots WHERE queue_id=?", (queue_id,)
-            ).fetchone()[0]
+            active = db.execute("SELECT COUNT(*) FROM script_child_slots WHERE queue_id=?", (queue_id,)).fetchone()[0]
             # The first child uses the parent reservation; further children need a free global lane.
             if active >= min(max_concurrent, backend_limit) or (
                 active > 0 and self._reserved(db, queue["backend_key"]) >= backend_limit
             ):
                 return False
-            db.execute(
-                "INSERT INTO script_child_slots (attempt_id, queue_id) VALUES (?,?)", (attempt_id, queue_id)
-            )
+            db.execute("INSERT INTO script_child_slots (attempt_id, queue_id) VALUES (?,?)", (attempt_id, queue_id))
             return True
 
     async def release_script_child(self, queue_id: str, attempt_id: str) -> None:
@@ -627,9 +624,7 @@ class QueueMixin:
 
     def _release_script_child(self, queue_id: str, attempt_id: str) -> None:
         with self._txn() as db:
-            db.execute(
-                "DELETE FROM script_child_slots WHERE queue_id=? AND attempt_id=?", (queue_id, attempt_id)
-            )
+            db.execute("DELETE FROM script_child_slots WHERE queue_id=? AND attempt_id=?", (queue_id, attempt_id))
 
     async def settle_item(self, item_id: str, failure: dict[str, Any] | None = None) -> str:
         """Record an item's end state from its attempt; without an attempt it was definitely never submitted."""

@@ -46,7 +46,10 @@ HOOKS: dict[str, HookSpec] = dict(
             "generateImage", IMPLEMENTED, "#114", "ResolvedGenerationRequest -> GenerationService", "fields per #115"
         ),
         _hook(
-            "generateBatch", IMPLEMENTED, "#218", "bounded linked child attempts via GenerationService",
+            "generateBatch",
+            IMPLEMENTED,
+            "#218",
+            "bounded linked child attempts via GenerationService",
             "DTFlow-only opt-in; parent queue shares global backend capacity",
         ),
         _hook("createLoRA", IMPLEMENTED, "#114", "LoRA inventory lookup"),

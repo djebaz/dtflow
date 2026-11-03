@@ -80,10 +80,12 @@ class ScriptItemRunner:
                 available_assets = await script_asset_choices(self.state, request.backend)
                 loop = asyncio.get_running_loop()
                 backend_limit = self.service.backend.capabilities.max_concurrency
-                reserve_child = lambda attempt, concurrency: self.store.reserve_script_child(
-                    queue_id, attempt, concurrency, backend_limit
-                )
-                release_child = lambda attempt: self.store.release_script_child(queue_id, attempt)
+                def reserve_child(attempt, concurrency):
+                    return self.store.reserve_script_child(
+                                    queue_id, attempt, concurrency, backend_limit
+                                )
+                def release_child(attempt):
+                    return self.store.release_script_child(queue_id, attempt)
                 hooks = script_hooks(
                     lambda: self.service,
                     base=base,
@@ -102,8 +104,12 @@ class ScriptItemRunner:
                     from dtflow.services.script_setup import adopt_setup
 
                     setup = adopt_setup(
-                        self.state, request, self.service, loop,
-                        reserve_child=reserve_child, release_child=release_child,
+                        self.state,
+                        request,
+                        self.service,
+                        loop,
+                        reserve_child=reserve_child,
+                        release_child=release_child,
                         available_assets=available_assets,
                     )
                     hosts, cancel, task = setup.hosts, setup.cancel, setup.task

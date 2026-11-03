@@ -227,9 +227,7 @@ class ScriptHost:
     def existing_prompts(self) -> dict[str, str]:
         return {"prompt": self.base.prompt, "negativePrompt": self.base.negative_prompt}
 
-    def _request(
-        self, args: Mapping[str, Any], *, call_index: int | None = None
-    ) -> ResolvedGenerationRequest:
+    def _request(self, args: Mapping[str, Any], *, call_index: int | None = None) -> ResolvedGenerationRequest:
         if args.get("mask") is not None:
             raise ValueError("pipeline.run() mask is not supported yet (virtual canvas and masks arrive with #116).")
         for key in sorted(set(args) - PIPELINE_RUN_KEYS):
@@ -265,9 +263,10 @@ class ScriptHost:
             raise ValueError(f"configuration.sampler {number} is not a known sampler; no image was requested.")
         seed = values["seed"]
         evidence = list(self.base.resolution_evidence)
-        evidence += [("source", "script"), ("script_call", str(
-            self.generations + 1 if call_index is None else call_index
-        ))]
+        evidence += [
+            ("source", "script"),
+            ("script_call", str(self.generations + 1 if call_index is None else call_index)),
+        ]
         if self.run_id:
             evidence.append(("script_run", self.run_id))  # "created by script X, step N" resolves without scanning runs
         if seed < 0:
@@ -422,9 +421,7 @@ class ScriptHost:
     ) -> list[dict]:
         """Worker pool shares the normal queue reservation budget; Stop stops intake, not remote work."""
         limit = min(concurrency, self.service.backend.capabilities.max_concurrency)
-        results: list[dict] = [
-            {"status": "not_started", "attemptId": None, "outputPaths": []} for _ in requests
-        ]
+        results: list[dict] = [{"status": "not_started", "attemptId": None, "outputPaths": []} for _ in requests]
         next_job = 0
         intake_open = True
 
@@ -455,15 +452,15 @@ class ScriptHost:
                     if self.cancel.is_set():
                         return
                     try:
-                        outcome = await run_generation(
-                            self.service, request, prefix=self.prefix, attempt_id=attempt_id
-                        )
+                        outcome = await run_generation(self.service, request, prefix=self.prefix, attempt_id=attempt_id)
                     except BackendError as exc:
                         remote = exc.failure.remote_outcome
                         results[index] = {
                             "status": (
-                                "failed" if remote in SAFE_FAILURES
-                                else "save_failed" if remote == RemoteOutcome.SUCCEEDED
+                                "failed"
+                                if remote in SAFE_FAILURES
+                                else "save_failed"
+                                if remote == RemoteOutcome.SUCCEEDED
                                 else "unknown"
                             ),
                             "attemptId": attempt_id,

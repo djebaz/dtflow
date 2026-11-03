@@ -50,7 +50,8 @@ async def test_script_children_are_counted_with_ordinary_queue_slots(tmp_path):
     await store.open()
     try:
         await _populate_running_queues(store, ordinary=1)
-        used = lambda: store._run(lambda: store._reserved(store._db(), BACKEND_KEY))
+        def used():
+            return store._run(lambda: store._reserved(store._db(), BACKEND_KEY))
         assert await used() == 2  # one running script parent, one ordinary queue item
 
         assert await store.reserve_script_child("script-queue", "child-a", 4, 4)
@@ -84,14 +85,20 @@ async def test_child_slot_recovery_discards_stale_lanes_not_history(tmp_path):
     recovered = SQLiteAttempts(directory)
     await recovered.open()
     try:
-        assert await recovered._run(
-            lambda: recovered._db().execute("SELECT COUNT(*) FROM script_child_slots").fetchone()[0]
-        ) == 0
-        assert await recovered._run(
-            lambda: recovered._db().execute(
-                "SELECT COUNT(*) FROM queues WHERE queue_id='script-queue'"
-            ).fetchone()[0]
-        ) == 1
+        assert (
+            await recovered._run(
+                lambda: recovered._db().execute("SELECT COUNT(*) FROM script_child_slots").fetchone()[0]
+            )
+            == 0
+        )
+        assert (
+            await recovered._run(
+                lambda: (
+                    recovered._db().execute("SELECT COUNT(*) FROM queues WHERE queue_id='script-queue'").fetchone()[0]
+                )
+            )
+            == 1
+        )
     finally:
         await recovered.aclose()
 
@@ -154,18 +161,13 @@ async def test_batch_workers_overlap_and_return_in_input_order(tmp_path, monkeyp
         reserve_child=reserve_child,
         release_child=release_child,
     )
-    jobs = [
-        ResolvedGenerationRequest(uuid4().hex, "fixture", "fake-fixture", seed)
-        for seed in (1, 2, 3, 4)
-    ]
+    jobs = [ResolvedGenerationRequest(uuid4().hex, "fixture", "fake-fixture", seed) for seed in (1, 2, 3, 4)]
     results = await host._run_batch(jobs, [None] * len(jobs), 2)
     assert peak == 2
     assert started == [1, 2, 3, 4] or set(started) == {1, 2, 3, 4}
     assert completed[0] == 2
     assert [result["status"] for result in results] == ["succeeded"] * 4
-    assert [result["outputPaths"] for result in results] == [
-        [f"/fake/output-{seed}.png"] for seed in (1, 2, 3, 4)
-    ]
+    assert [result["outputPaths"] for result in results] == [[f"/fake/output-{seed}.png"] for seed in (1, 2, 3, 4)]
     assert len(set(linked)) == 4
     assert slots == set()
 
