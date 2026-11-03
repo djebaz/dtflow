@@ -585,7 +585,8 @@ function runDtflowMixer() {
     if (results.some(result => result.status !== "succeeded"))
       throw new Error("Chunk has failed, unknown, save-failed or unstarted jobs. Inspect recorded attempts; do not rerun the chunk blindly.");
     console.log(end < total ? "Chunk complete. Next global job is " + (end + 1) +
-      "; continuing is manual with the same plan ID after inspecting history." : "Plan completed in this explicit chunk.");
+      "; continuing is manual with the same plan ID after inspecting history." :
+      "Chunk reached the final plan job; this run does not verify any earlier chunks.");
     return;
   }
   throw new Error("Too many preview edits; reload Setup. Nothing was submitted.");
