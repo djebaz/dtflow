@@ -88,15 +88,17 @@ class QueueItemDelegate(QStyledItemDelegate):
         elif column == COL_PROMPT:
             self._prompt(painter, rect, row, option.font, text)
         elif column == COL_MODEL:
+            # Checkpoint IDs are indivisible identities. Display one elided
+            # line rather than wrapping a model name midway through an ID;
+            # the model's ToolTipRole retains the full identifier.
             bold = QFont(option.font)
             bold.setWeight(QFont.Weight.Bold)
-            self._lines(
-                painter,
-                rect,
-                wrapped_lines(display_name(row.model), bold, rect.width(), 2, soft_breaks=True),
-                bold,
-                text,
+            painter.setFont(bold)
+            painter.setPen(text)
+            label = QFontMetrics(bold).elidedText(
+                display_name(row.model), Qt.TextElideMode.ElideRight, max(0, rect.width())
             )
+            painter.drawText(rect, Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter, label)
         elif column == COL_LORAS:
             self._loras(painter, rect, row, option.font, text, secondary, getattr(index.model(), "gauge_scale", 1.0))
         elif column == COL_PARAMS:
@@ -159,6 +161,13 @@ class QueueItemDelegate(QStyledItemDelegate):
         painter.setPen(QColor(_TOKENS["color.sectionBorder"]))
         painter.setBrush(QColor(_TOKENS["color.canvas"]))
         painter.drawRoundedRect(QRectF(area).adjusted(0.5, 0.5, -0.5, -0.5), 4, 4)
+        if row.is_script_parent:
+            # The parent records the ScriptRun outcome; its images belong to
+            # the individual child attempts. Never show Step 1 as a second
+            # parent generation thumbnail.
+            painter.setPen(secondary)
+            painter.drawText(area, Qt.AlignmentFlag.AlignCenter, "Script")
+            return
         pixmap = (
             provider.pixmap(row.outputs[0], identity=row.gallery_identity)
             if provider is not None and row.outputs
@@ -245,11 +254,16 @@ class QueueItemDelegate(QStyledItemDelegate):
         painter.drawText(
             QRect(rect.left(), rect.top() + 19, rect.width(), 15), Qt.AlignmentFlag.AlignLeft, row.guidance_text
         )
-        # A long sampler name takes its own wrapped line(s) instead of being clipped.
-        for number, line in enumerate(wrapped_lines(row.sampler_text, small, rect.width(), 2)):
-            painter.drawText(
-                QRect(rect.left(), rect.top() + 34 + number * 14, rect.width(), 14), Qt.AlignmentFlag.AlignLeft, line
-            )
+        # Keep the sampler label on one line; full text remains available
+        # in the model tooltip, even when the Parameters column is narrow.
+        sampler = QFontMetrics(small).elidedText(
+            row.sampler_text, Qt.TextElideMode.ElideRight, max(0, rect.width())
+        )
+        painter.drawText(
+            QRect(rect.left(), rect.top() + 34, rect.width(), 14),
+            Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter,
+            sampler,
+        )
 
 
 class ItemTableHeader(QHeaderView):
