@@ -2749,7 +2749,7 @@ Create one or import a local .js file.</string>
                <number>32</number>
               </property>
               <property name="value">
-               <number>8</number>
+               <number>30</number>
               </property>
               <property name="accessibleName">
                <string>Generation cap</string>
