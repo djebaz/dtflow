@@ -1989,11 +1989,10 @@ class ScriptsPage:
         self._live_run = {"queue_id": queue_id, "run_id": run_id, "name": name, "sha": short, "cap": cap}
         self._run_cap, self._run_version = cap, short
         self._load_history()
-        self._show_live("queued", None, force_view=True)
-        if started != "started":
-            self.owner.inline.notice(
-                "Saved paused", "Another run started meanwhile. Open Queues and press Start when it ends.", "warning"
-            )
+        # The queue's pending/paused lifecycle is already visible in Scripts
+        # and Queues. Do not post a transient warning overlay for an ordinary
+        # admission state: dispatch can begin just after this callback.
+        self._show_live("queued" if started == "started" else "paused", None, force_view=True)
         self._live_timer.start()
         self._poll_live()
 
@@ -2038,14 +2037,11 @@ class ScriptsPage:
             return
         view = result[0]
         key = self._live_key(view)
-        previous = self._run_state
         self._show_live(key, view)
-        if key == "paused" and previous != "paused":
-            self.owner.inline.notice(
-                "Script saved paused",
-                "Dispatch did not start in this window. Nothing was submitted; open Queues to Start the saved item.",
-                "warning",
-            )
+        # A just-created queue may briefly read as paused before the dispatch
+        # worker publishes running. Its status is visible in Scripts and Queues;
+        # treating that transient observation as a warning created a stale
+        # overlay even while the shared activity bar showed active work.
         if key in self._TERMINAL:
             self._live_timer.stop()
             self._load_history()
