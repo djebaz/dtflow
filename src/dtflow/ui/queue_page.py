@@ -1071,16 +1071,20 @@ class QueuePage:
         page.itemOutcomeLabel.setText(row.outcome_line)
         outputs = [*row.outputs, *([row.metadata] if row.metadata else [])]
         # Full paths stay in the tooltip; the panel shows a summary and a button to the attempt's folder.
-        parts = [f"{len(row.outputs)} image(s)"] if row.outputs else []
+        parts = [f"{len(row.outputs)} step image(s)" if row.is_script_parent else f"{len(row.outputs)} image(s)"] if row.outputs else []
         detail = ", ".join([*parts, *(["metadata"] if row.metadata else [])]) or (row.failure_code or "—")
         page.itemOutputsLabel.setText(detail)
         page.itemOutputsLabel.setToolTip("\n".join(outputs))
-        self._output_folder = Path(outputs[0]).parent if outputs else None
+        # The script parent aggregates its children's files; it has no output
+        # attempt/folder of its own. Select an actual step for image actions.
+        self._output_folder = Path(outputs[0]).parent if outputs and not row.is_script_parent else None
         page.itemOpenFolderButton.setEnabled(self._output_folder is not None)
         verified = (
             not self._composing
             and page.queueItemsView.isVisible()
             and bool(row.outputs)
+            and not row.is_script_parent
+            and bool(row.gallery_identity)
             and self.model.thumbnails.available(row.outputs[0], row.gallery_identity)
         )
         page.itemOpenImagesButton.setEnabled(verified and self._images_hook is not None)
@@ -1101,7 +1105,7 @@ class QueuePage:
 
     def open_in_images(self) -> None:
         row = self.model.row_at(self.page.queueItemsView.currentIndex().row())
-        if self._images_hook is not None and row is not None and row.gallery_identity and row.outputs:
+        if self._images_hook is not None and row is not None and not row.is_script_parent and row.gallery_identity and row.outputs:
             if self.model.thumbnails.available(row.outputs[0], row.gallery_identity):
                 self._images_hook(row.gallery_identity)
 
