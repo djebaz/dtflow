@@ -204,6 +204,23 @@ async def bind_prepared(
     return replace(request, prepared_assets=prepared, resolution_evidence=evidence)
 
 
+async def script_asset_choices(state: Path, backend_name: str) -> tuple[PreparedAsset, ...]:
+    """The queue composer's confirmed receipt pool, independent of Generate's selected LoRAs.
+
+    Local reads only. Actual dispatch still validates each selected receipt against
+    the active backend/account; a confirmed historical record is not live consent.
+    """
+    if backend_name != "cloud":
+        return ()
+    records = await list_assets(state)
+    choices = {
+        record["identifier"]: record["asset_id"]
+        for record in records
+        if record["state"] == "confirmed" and record["kind"] == "lora"
+    }
+    return await load_prepared(state, backend_name, tuple(choices.values()))
+
+
 @asynccontextmanager
 async def open_session(
     selection: BackendSelection,

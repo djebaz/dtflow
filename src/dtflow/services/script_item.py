@@ -24,6 +24,7 @@ from dtflow.persistence.store import PersistenceError, SQLiteAttempts
 from dtflow.scripting.host import ScriptHost, script_hooks, starting_context, validate_answers
 from dtflow.scripting.runner import run_recorded
 from dtflow.services.generation import GenerationService
+from dtflow.services.session import script_asset_choices
 
 log = logging.getLogger(__name__)
 
@@ -76,6 +77,7 @@ class ScriptItemRunner:
             try:
                 source = load_source(self.state, request.source_sha256)
                 base = request_from_record(request.base)
+                available_assets = await script_asset_choices(self.state, request.backend)
                 loop = asyncio.get_running_loop()
                 backend_limit = self.service.backend.capabilities.max_concurrency
                 reserve_child = lambda attempt, concurrency: self.store.reserve_script_child(
@@ -94,6 +96,7 @@ class ScriptItemRunner:
                     require_start=request.require_start,
                     reserve_child=reserve_child,
                     release_child=release_child,
+                    available_assets=available_assets,
                 )
                 if request.prepared:
                     from dtflow.services.script_setup import adopt_setup
@@ -101,6 +104,7 @@ class ScriptItemRunner:
                     setup = adopt_setup(
                         self.state, request, self.service, loop,
                         reserve_child=reserve_child, release_child=release_child,
+                        available_assets=available_assets,
                     )
                     hosts, cancel, task = setup.hosts, setup.cancel, setup.task
                     try:

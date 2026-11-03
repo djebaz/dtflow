@@ -5,6 +5,8 @@ slice (the engine, the hook table and the ledger; issues #119 and #113) does and
 
 ## Upstream source
 
+Draft PR #218 adds queue-equivalent cloud LoRA receipt binding: Scripts reads confirmed local receipts during Setup and refreshes that pool before admission, without requiring those LoRAs to be selected on Generate. Only script-selected receipts enter each child request; explicit starting-request bindings win, and generation retains fresh backend/account/receipt validation. This does not download missing models, upload files, or treat stored receipts as current server availability. Missing files still use explicit Prepare. Source presence is not owner/backend acceptance.
+
 - Pinned commit `e2c7fa474ce3bddfe34ad20bdde75f425344800e` of the Draw Things community repository (GPL-3.0).
 - `src/dtflow/scripting/resources/shared_script.js` is the `SharedScript.swift` JavaScript string extracted verbatim.
   `tools/scripting/extract_shared_script.py --check` re-extracts it from the pinned Swift file and fails on drift.

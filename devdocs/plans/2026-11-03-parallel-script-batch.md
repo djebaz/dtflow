@@ -1,6 +1,6 @@
 # Plan: bounded parallel generations from scripts
 
-**Status:** Proposed engineering scope only; no parallel-generation code or runtime acceptance yet.
+**Status:** Runtime batch implementation and deterministic test sources are present in draft PR #218. This follow-up performs source inspection only; native/provider acceptance and the two concurrency-lifecycle review findings remain open.
 **Base:** `main` after squash merge of PR #217 (`2569104a338ad7995b2164b050cbb5847f464d59`).
 **Scope owner:** Separate feature PR. Do not fold these runtime changes back into merged PR #217.
 
@@ -44,4 +44,14 @@ Allow one DTFlow script to generate up to its authorized run limit (currently de
 
 ## Delivery state
 
-This initial commit creates the design/acceptance plan for the new draft PR only. **Not implemented:** `pipeline.runBatch`, shared child reservation accounting, form concurrency control, parallel outputs, tests or real generation. No training, inference or potentially billable provider action was performed in this planning change.
+The initial planning-only description is historical: the branch now includes the batch bridge/host, shared child reservations, portable mixer concurrency form and deterministic test sources. Their presence does not establish runtime acceptance. No tests, checks, renders, app launch, asset transfer or generation were executed during this follow-up.
+
+## Owner follow-up: concurrency and queue-equivalent LoRA readiness
+
+- Owner reports apparent concurrency ceiling 4 and requests automatic LoRA readiness “like in queues.” The mixer requests 4 by default but accepts 1..10; the batch pool takes the minimum of that request and backend capacity. The shared setting currently reads 10. Do not silently change the shared policy, infer a provider-side ceiling, or promise ten simultaneous remote requests from source inspection.
+- Read-only retained evidence: the latest five persisted concurrency answers are 3, 3, 3, 5 and 4 (newest first). This does not establish a fixed ceiling of four or backend acceptance. The retained log contains an unknown transport outcome; do not replay any job to investigate concurrency.
+- [x] Give cloud scripts the same confirmed local asset-receipt pool used for queue LoRA sets, independent of the LoRAs selected on Generate. Read it without a provider during Setup; reload it at actual admission, attaching it before releasing the preparation gate.
+- [x] Resolve script-selected LoRAs against that pool, preserving explicit starting-request bindings and weights, selecting only receipts actually used, and recording their IDs in request evidence. Existing dispatch-time backend/account/receipt checks remain authoritative. `createLoRA` can resolve an exact prepared identifier absent from raw Echo inventory.
+- This is automatic binding of existing prepared assets, not automatic downloading or uploading. As in Queues, genuinely missing files still require the existing explicit Prepare workflow; unknown/failed receipts are not substituted, reconciled, retried or uploaded by generation. No new asset protocol, source-folder scan or download URL inference is introduced.
+- [ ] Owner smoke: script chooses a prepared custom LoRA not selected on Generate; mixed built-in/custom LoRAs; stale/account-mismatched receipts fail before submission; requested concurrency 1/5/10 under the existing shared cap.
+- [ ] Earlier review findings remain open: close intake checks across pre-submission awaits, and drain all workers after a slot-release failure. This LoRA follow-up does not repair or validate those findings.

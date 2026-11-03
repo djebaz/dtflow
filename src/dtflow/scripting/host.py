@@ -31,6 +31,7 @@ from dtflow.core.models import (
     SEED_LIMIT,
     BackendError,
     LoRASelection,
+    PreparedAsset,
     RemoteOutcome,
     ResolvedGenerationRequest,
     Sampler,
@@ -141,6 +142,7 @@ class ScriptHost:
         admission_gate: threading.Event | None = None,
         reserve_child: Callable[[str, int], Awaitable[bool]] | None = None,
         release_child: Callable[[str], Awaitable[None]] | None = None,
+        available_assets: tuple[PreparedAsset, ...] = (),
     ) -> None:
         if base.operation != "txt2img" or base.image_inputs is not None:
             raise ValueError("Scripts start from text-to-image settings only.")
@@ -157,6 +159,7 @@ class ScriptHost:
         self._start_permitted = not require_start
         self._admission_gate = admission_gate
         self.reserve_child, self.release_child = reserve_child, release_child
+        self.available_assets = available_assets
         self.run_id = run_id
         self._forms = 0
         self.baseline = normalize_configuration(decode_configuration(baseline_configuration(base)).values)
@@ -273,13 +276,13 @@ class ScriptHost:
         prompt = args.get("prompt")
         negative = args.get("negativePrompt")
         selected = tuple(LoRASelection(item["file"], item["weight"]) for item in values["loras"])
-        chosen = {item.identifier for item in selected}
-        if self.base.prepared_assets and not chosen <= {item.identifier for item in self.base.loras}:
-            raise ValueError(
-                "This backend needs prepared assets for LoRAs; a script may not add a LoRA that has none. "
-                "No image was requested."
-            )
-        assets = tuple(item for item in self.base.prepared_assets if item.identifier in chosen)
+        # Like queue LoRA sets, a script can select ready assets not selected on
+        # Generate. Explicit base bindings take precedence over the shared pool.
+        pool = {item.identifier: item for item in (*self.available_assets, *self.base.prepared_assets)}
+        assets = tuple(pool[item.identifier] for item in selected if item.identifier in pool)
+        evidence = [(key, value) for key, value in evidence if key != "prepared_assets"]
+        if assets:
+            evidence.append(("prepared_assets", ",".join(item.receipt_id for item in assets)))
         return ResolvedGenerationRequest(
             uuid.uuid4().hex,
             self.base.prompt if prompt is None else prompt,
@@ -540,6 +543,10 @@ class ScriptHost:
         raise LookupError(f"{kind} '{name}' was not found in the backend inventory.")
 
     def create_lora(self, name: str) -> dict[str, Any]:
+        if isinstance(name, str):
+            for asset in (*self.base.prepared_assets, *self.available_assets):
+                if name.strip().lower() == asset.identifier.lower():
+                    return {"file": asset.identifier, "weight": 1.0, "mode": "all"}
         entry = self._find("lora", name)
         weight = entry.default_weight if entry.default_weight is not None else 1.0
         return {"file": entry.identifier, "weight": weight, "mode": "all"}
@@ -778,6 +785,7 @@ def script_hooks(
     require_start: bool = False,
     reserve_child: Callable[[str, int], Awaitable[bool]] | None = None,
     release_child: Callable[[str], Awaitable[None]] | None = None,
+    available_assets: tuple[PreparedAsset, ...] = (),
 ) -> Callable[[Any], dict[str, Callable[..., Any]]]:
     """The hook factory ``run_recorded`` takes, shared by the CLI and the queue item so both run the same host.
 
@@ -801,6 +809,7 @@ def script_hooks(
             require_start=require_start,
             reserve_child=reserve_child,
             release_child=release_child,
+            available_assets=available_assets,
         )
         hosts.append(host)
         return host.hooks()
