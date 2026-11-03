@@ -2019,7 +2019,7 @@ class QueuePage:
                 source_name,
                 base,
                 max_generations=max_generations,
-                answers=[],  # the Scripts page has no form renderer yet: requestFromUser fails clearly, never waits
+                answers=None,  # interactive Scripts runs park on the persisted requestFromUser bridge
                 expected_steps=expected_steps,
             )
 

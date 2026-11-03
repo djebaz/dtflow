@@ -35,6 +35,7 @@
 
 ## Validation and delivery
 - No automated tests added, modified or run. The owner subsequently requested a custom manual script; it is provided but not executed. No validation, rendering, build, desktop launch, inference or provider calls under the selected fast GUI workflow.
+- Owner smoke failure investigated read-only: `logs/dtflow-d4dfdd06ed00.jsonl` records a failed script item at 2026-11-03 01:49:04 UTC. Run `f67359ef3ae34f83ad20c57d91dad232` failed with supplied answer sets exhausted; its ledger records zero supplied answer sets, zero published prompts and zero child attempts. The desktop `QueuePage.start_script` still explicitly passed `answers=[]`, disabling the interactive bridge. Changed that call to `answers=None`; no failed run/queue was modified or replayed. The correction is source-only pending a fresh owner Start after restart.
 - [ ] Owner: smoke all component types, nested/multiple forms, changed switches, long text and 800x680 layout, native pickers, Stop/close, stale answer races and version recall.
 - [ ] Pre-merge follow-up: canonical Designer/renderer states, documentation and owner-approved coverage as required by #196.
 - Draft PR only; do not merge or close #196 on source implementation alone.
