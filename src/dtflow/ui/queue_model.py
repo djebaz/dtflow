@@ -52,6 +52,8 @@ DURATION_COLUMN = 6
 def _tooltip(row: ItemRow, column: int) -> str:
     """Read-only hover text; never an action and never a Copy affordance."""
     if column == 0:
+        if row.is_script_parent:
+            return "Script summary — generated images are shown in the step rows below."
         # The enlarged preview is a separate bounded overlay (queue_thumbnails.HoverPreview); a rich-text <img>
         # tooltip would decode the full original on the GUI thread.
         return "" if row.outputs else "No saved image"
