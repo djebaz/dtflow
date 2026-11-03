@@ -136,8 +136,10 @@ def snapshot_picked_inputs(state: Path, run_id: str, ordinal: int, field: tuple,
         _plain(source)
         if source.stat().st_size > IMAGE_BYTE_LIMIT:
             raise ValidationError("Selected image exceeds the input byte limit.")
-        # Existing preparation owns raster decoding, orientation, dimensions and metadata removal.
-        prepared = prepare_image_files(source, 64, 64)
+        # The preparation helper requires a valid generation-sized companion.
+        # Only prepared.source is returned to JS: its source grid is retained,
+        # with no multiple-of-64 restriction on the selected image dimensions.
+        prepared = prepare_image_files(source, 128, 128)
         total += len(prepared.source.encoded)
         if total > 32 * 1024 * 1024:
             raise ValidationError("Selected input set exceeds 32 MiB of normalized image data.")
