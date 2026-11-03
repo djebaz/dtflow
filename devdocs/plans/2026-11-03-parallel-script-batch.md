@@ -1,0 +1,80 @@
+# Plan: bounded parallel generations from scripts
+
+**Status:** Runtime implementation and both lifecycle review repairs are delivered in PR #218; CI at runtime head `0465f3d` reports 697 passed, 3 skipped, with format/lint passed. Subsequent merge-preparation changes are documentation and offline preview definitions only, not application-runtime/test changes. Native/provider acceptance remains separate.
+**Base:** `main` after squash merge of PR #217 (`2569104a338ad7995b2164b050cbb5847f464d59`).
+**Scope owner:** Separate feature PR. Do not fold these runtime changes back into merged PR #217.
+
+## Goal and compatibility contract
+
+Allow one DTFlow script to generate up to its authorized run limit (currently default 30, accepted range 1..32) with independently configured requests executing concurrently **only when the selected backend and global queue admission permit it**. This is different from changing the script's total-generation ceiling.
+
+- Propose an **opt-in**, DTFlow-only `pipeline.runBatch(jobs, maxConcurrent)` facade installed through the engine overlay and a dedicated host hook. Do **not** edit the pinned upstream `shared_script.js`.
+- Keep ordinary `pipeline.run()` and the Draw Things API unchanged. Scripts not explicitly using the new facade retain sequential behavior.
+- Adapt `tools/scripting/krea2_lora_mixer_portable.js` to expose **Max concurrent jobs** in the DTFlow `requestFromUser` form (initial proposed value 4; integer 1..10). In Draw Things, keep the original sequential execution and canvas-saving path.
+- The requested value is an upper bound, **not** a guarantee of simultaneous remote requests. Effective concurrency must respect backend capabilities, the shared cloud/local queue limit, and other already-reserved work. If safe shared admission cannot be implemented, fail closed or run sequentially rather than bypass the queue.
+- The first API should be a synchronous-from-JavaScript batch call with independently snapshotted job descriptions and a bounded, order-associated result list. The host may perform asynchronous work while the JavaScript child waits. Do not require top-level `await` support.
+- The script must not use shared `pipeline.configuration` mutation or a single canvas as the source for concurrent results; save each result through its own committed attempt/output identity.
+
+## Required implementation boundaries
+
+1. **Validate before submission.** Accept a bounded list of independent text-to-image requests with the existing `configuration`, `prompt`, and `negativePrompt` semantics. Reuse the current supported-field and model/LoRA validation; reject changed unsupported fields and masks before generation. Count jobs toward the run's `max_generations` ceiling, including any preceding sequential calls. Do not partially launch a batch that exceeds the ceiling.
+2. **Durable child attempts.** Give each admitted job a unique attempt ID, link it to the ScriptRun ledger **before** any possible provider submission, and retain the job's input order, resolved prompt, seed, model, sampler, LoRA identities/weights and output paths in the existing durable metadata. Preserve result-to-job mapping when completion order differs from submission order.
+3. **Global concurrency accounting.** Today a whole script occupies one `KIND_SCRIPT` queue item, while `QueueMixin._reserved()` counts running queue items. Introducing concurrent children without adjusting reservations could exceed the global cap. Choose and verify one authoritative mechanism shared with ordinary queue generation, overlapping queues, and other scripts; never rely on a host-local semaphore alone.
+4. **Lifecycle and failures.** After Stop or loss of admission, schedule no further jobs. Do not silently cancel or retry already-submitted remote work; drain/settle their durable evidence. Preserve successful outputs even if another child fails. An unknown remote outcome or output-save failure must be visible and must prevent unsafe subsequent submissions. No automatic replay on restart.
+5. **Per-job outputs and UI.** Expose explicit per-job statuses, attempt IDs and committed outputs without reading or clearing a shared canvas. Keep the script itself one run-level queue entry with inspectable children in Queues/Images. Add sanitized concurrency/attempt diagnostics without leaking prompts, credentials or binary data.
+6. **Setup consent.** Native `Inspect > Setup > Run Script` continues to perform zero provider work before the explicit Run Script action. Later forms still use the existing Continue bridge. Form edits, stored suggestions and backend changes must not silently grant new dispatch consent.
+7. **Runtime compatibility.** The optional facade is absent in real Draw Things, so the portable mixer detects `typeof pipeline.runBatch === "function"` and falls back to the existing per-image `pipeline.run()` plus canvas saving. Never claim that the proposed method is an upstream Draw Things API.
+
+## Acceptance gates
+
+- Deterministic fake-backend tests for batch size limits (0/1/30/31/32 where applicable), numeric concurrency bounds, backend cap, shared cap, and no over-reservation across concurrently active ordinary queues.
+- Demonstrate actual **overlapping submissions**, not only overlapping JavaScript or UI calls, with a controlled fake backend: compare active counts at 1, 2 and 4; verify that cap 1 remains sequential.
+- Verify stable association of completion and saved artifacts to the original ordered job descriptions under out-of-order completions.
+- Exercise validation failures before any attempt, mid-batch safe failure, unknown outcome, save failure, Stop before/after admission, process death, lost Setup, and restart/recovery without automatic replay.
+- Verify the same portable script's **Draw Things sequential fallback** with mocked Draw Things hooks and its DTFlow-specific form field/optional batch dispatch. Verify that the existing sequential mixer workflow is unchanged when the extension is absent.
+- Keep tests/provider runs distinct: all routine checks use fake backends and disposable state. Owner-controlled real local/cloud smoke, Windows UI, packaged executable and any cloud-credit consumption are separate, explicit acceptance steps.
+- Run repository-prescribed Python syntax/import/help validation and focused pytest checks once runtime code is added; record concrete commands/results instead of inferring success.
+
+## Initial investigation / known constraints
+
+- `scripting/host.py:ScriptHost.generate_image` currently blocks on one `run_generation()`, links one child attempt, and uses a latest-result virtual canvas.
+- `scripting/engine.py` provides the optional DTFlow host marker but no batch API. `scripting/hooks.py` and `runner.py` validate and dispatch the existing synchronous JSON bridge. The vendored upstream facade must remain untouched.
+- `services/queue_session.py:create_script_queue` creates a **single script queue item** with queue cap 1; global queue reservations currently count queue items, not script children.
+- The current Krea2 mixer already derives deterministic per-job LoRA and seed configuration. Those snapshots are a suitable batch input, but its canvas-based save calls cannot safely run concurrently.
+
+## Delivery state
+
+The initial planning-only description is historical: the branch now includes the batch bridge/host, shared child reservations, portable mixer concurrency form and deterministic test sources. Their presence does not establish runtime acceptance. No tests, checks, renders, app launch, asset transfer or generation were executed during this follow-up.
+
+## Owner follow-up: concurrency and queue-equivalent LoRA readiness
+
+- Owner reports apparent concurrency ceiling 4 and requests automatic LoRA readiness “like in queues.” The mixer requests 4 by default but accepts 1..10; the batch pool takes the minimum of that request and backend capacity. The shared setting currently reads 10. Do not silently change the shared policy, infer a provider-side ceiling, or promise ten simultaneous remote requests from source inspection.
+- Read-only retained evidence: the latest five persisted concurrency answers are 3, 3, 3, 5 and 4 (newest first). This does not establish a fixed ceiling of four or backend acceptance. The retained log contains an unknown transport outcome; do not replay any job to investigate concurrency.
+- [x] Give cloud scripts the same confirmed local asset-receipt pool used for queue LoRA sets, independent of the LoRAs selected on Generate. Read it without a provider during Setup; reload it at actual admission, attaching it before releasing the preparation gate.
+- [x] Resolve script-selected LoRAs against that pool, preserving explicit starting-request bindings and weights, selecting only receipts actually used, and recording their IDs in request evidence. Existing dispatch-time backend/account/receipt checks remain authoritative. `createLoRA` can resolve an exact prepared identifier absent from raw Echo inventory.
+- This is automatic binding of existing prepared assets, not automatic downloading or uploading. As in Queues, genuinely missing files still require the existing explicit Prepare workflow; unknown/failed receipts are not substituted, reconciled, retried or uploaded by generation. No new asset protocol, source-folder scan or download URL inference is introduced.
+- [ ] Owner smoke: script chooses a prepared custom LoRA not selected on Generate; mixed built-in/custom LoRAs; stale/account-mismatched receipts fail before submission; requested concurrency 1/5/10 under the existing shared cap.
+- At the LoRA follow-up, both lifecycle findings remained open; the subsequently authorized source repairs are recorded below. The LoRA changes themselves did not repair or validate them.
+
+## CI fixture correction
+
+- Owner supplied the CI failure at head `a5d3ac0` (manual run `41612477794`): 1 failed, 696 passed, 3 skipped. The existing recovery test fails at `QueueMixin.reconcile` because `_populate_running_queues` writes `{}` for every request, including a script item. Without `kind=script`, recovery correctly takes the ordinary-request branch, where the malformed fixture has no `request_id`.
+- [x] Correct that existing shared fixture to serialize a canonical `script_record` for the script item and a normal `ResolvedGenerationRequest` record for ordinary items. Preserve the restart operation and existing assertions; do not bypass recovery, relax its contract or modify production persistence.
+- No new tests, no test execution or other checks. The supplied result describes the prior head only; this correction is source-only pending CI rerun by the owner. No runtime state was changed or uncertain work replayed.
+
+## Concurrency-lifecycle review repairs
+
+- Owner reports all tests passed after the fixture correction and subsequently authorized repairing both review findings. That report predates these runtime repairs; it does not validate this new head. No tests or checks are run by the agent.
+- [x] Intake closure: check `intake_open` while polling reservations, after acquiring a lane and after asynchronous child linking, before entering generation. A job linked just as intake closes retains its attempt identity in its `not_started` result; its acquired lane is released without submission. Unknown outcomes/save failures therefore stop workers still awaiting admission instead of merely stopping the next outer-loop iteration.
+- [x] Worker ownership: retain explicit worker tasks, collect every completion with `gather(return_exceptions=True)`, and propagate a worker error only after all siblings settle. A release failure closes intake immediately. Use the existing cancellation-safe `settle` helper for release, shield the aggregate, and close intake/drain before propagating batch cancellation. Do not cancel or retry already admitted generation work.
+- Existing durable uncertainty, missing-attempt handling, child-slot recovery, parent queue settlement and provider lifecycle stay in their existing layers. A failed lane release is not retried or silently deleted; propagate it after draining.
+- Source diff inspection only. No tests added/modified/run, lint/format/syntax/import checks, renders, desktop launch, provider work or CI dispatch. Both findings are addressed in source, not yet verified by fresh execution.
+
+## Squash-merge preparation
+
+- [x] Inspect owner-triggered CI [41613970580](https://github.com/djebaz/dtflow/actions/runs/41613970580): the Resolve manual target and Checkout logs identify `0465f3d2b2804e8783fdad32fc2d283fecb88804`, not the workflow-definition/main SHA. Pytest reports **697 passed, 3 skipped in 36.38s**. Commit statuses explicitly report Format check passed and Lint passed; UI rendering is skipped, not visual acceptance.
+- [x] Both P1 findings are addressed at that tested runtime head. The suite passes after the fixes; this is not a claim that the suite exercises every fault/cancellation interleaving described in the original acceptance matrix.
+- [x] Synchronize README, repository contract, current status, scripting architecture, user guide and unreleased release-audit scope. Add explicit wide/narrow `scripts_setup_parallel_batch` offline fixture definitions using existing controls; do not evaluate the mixer or render the fixtures. No application-runtime/test/dependency/schema changes; no new tests/checks/renders/CI/provider work executed by the agent.
+- [x] Prepare PR summary and related epic/issue progress without closing broader milestones or attaching automatic closing keywords to #112/#114/#115/#116/#117/#198/#216. Closed #196 remains the completed forms slice, not a new batch claim.
+- [ ] Owner: squash merge after reviewing the final documentation/preview-definition head. Passing CI is attached to the exact runtime head above, not automatically transferred to a newer commit. No merge, tag, release or packaged publication performed by the agent.
+- Remaining owner/release gates: live backend concurrency/entitlement and checkpoint/LoRA support; prepared-only/mixed/stale-account LoRAs; original Draw Things fallback; exhaustive Stop/unknown/save/release fault cases; native Windows/DPI, packaged and older-CPU/process containment. Earlier owner smoke and logs do not establish this entire matrix.

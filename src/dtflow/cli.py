@@ -174,7 +174,12 @@ def parser() -> argparse.ArgumentParser:
     script.add_argument("--config", type=Path, help="With --run: generation config for the starting settings.")
     script.add_argument("--outputs", type=Path, help="With --run: final output root (default: state/outputs).")
     script.add_argument("--timeout", type=float, default=600.0, help="With --run: total deadline per generation.")
-    script.add_argument("--max-generations", type=int, default=30, help="With --run: generations a script may request (1-32; default 30).")
+    script.add_argument(
+        "--max-generations",
+        type=int,
+        default=30,
+        help="With --run: generations a script may request (1-32; default 30).",
+    )
     script.add_argument(
         "--queue",
         action="store_true",

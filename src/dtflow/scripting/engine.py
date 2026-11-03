@@ -42,6 +42,7 @@ for (const name of %s) {
 OVERLAY = (
     "globalThis.__dtflowScriptHost = Object.freeze({name: 'DTFlow', apiVersion: 1});\n"
     "globalThis.__dtSleep = function (seconds) { __dtHooks.sleep(seconds); };\n"
+    "Object.defineProperty(pipeline, 'runBatch', {value: function (jobs, maxConcurrent) { return __dtHooks.generateBatch(jobs, maxConcurrent); }, configurable: false});\n"
     "console.info = console.debug = console.log;\n"
 )
 

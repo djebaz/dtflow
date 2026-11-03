@@ -23,7 +23,15 @@ slice (the engine, the hook table and the ledger; issues #119 and #113) does and
 - The child is bound to the app's lifetime on a best-effort basis: Linux parent-death signal and a Windows kill-on-close
   Job Object (not independently verified on Windows). If assignment fails, or on another platform, an orphaned child can
   outlive the app until it notices the closed pipe and exits. The frozen entry point calls `multiprocessing.freeze_support()`.
-- `console.info`/`console.debug`, a cancellable `__dtSleep`, and the read-only `globalThis.__dtflowScriptHost` marker (`{name: 'DTFlow', apiVersion: 1}`) are DTFlow overlays kept outside the vendored file. Portable scripts can check this marker without requiring unsupported upstream APIs; it does not advertise or enable parallel generation.
+- `console.info`/`console.debug`, a cancellable `__dtSleep`, and the read-only `globalThis.__dtflowScriptHost` marker (`{name: 'DTFlow', apiVersion: 1}`) are DTFlow overlays kept outside the vendored file. The marker alone does not establish batch support: portable scripts check `typeof pipeline.runBatch === "function"` for the optional PR #218 extension, and keep their Draw Things sequential path when it is absent.
+
+## Bounded parallel batches (PR #218)
+
+The optional DTFlow-only `pipeline.runBatch(jobs, maxConcurrent)` hook validates bounded independent requests and returns ordered per-job outcomes. It counts jobs against the existing run ceiling, not a separate parallel-generation allowance. Queue child lanes use attempts schema 6: the parent holds one reservation, the first child reuses it and further children compete with ordinary queues for shared backend capacity. Backend/session types stay outside the JS facade. Per-job configuration/evidence and committed outputs use the existing generation service and attempt ledger; the ScriptRun ordinal allocation is transactional under concurrent linkage.
+
+Unknown/save outcomes close intake, which waiting workers recheck after reservation and child-link awaits. Explicit worker ownership, all-results gathering and cancellation-safe draining prevent parent settlement/backend closure before admitted siblings finish, including lane-release failures. No automatic retry or remote cancellation is introduced. Restart clears stale lane bookkeeping under the existing exclusive owner, preserving durable attempts and no-replay semantics. Older database writers refuse schema 6; migration retains the existing pre-upgrade backup policy.
+
+Scripts read the same confirmed cloud LoRA receipt pool used by queue LoRA sets during Setup and refresh it at admission, without requiring those LoRAs to be selected on Generate. Only script-selected receipts enter child requests; explicit starting-request bindings win, and fresh backend/account/receipt validation remains mandatory. This never downloads missing models, uploads files or treats stored receipts as current server availability. See the [Scripts guide](../guides/scripts.md) for API limits, result semantics and acceptance boundaries, and the [batch plan](../plans/2026-11-03-parallel-script-batch.md) for exact CI evidence.
 
 ## Analyzer (`dtflow script <file>`)
 

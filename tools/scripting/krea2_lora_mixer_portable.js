@@ -15,10 +15,11 @@ Model/LoRA compatibility is user-supplied metadata, not runtime-verified here.
 No activation words are added: all supplied prefixes are empty.
 
 Import/paste this complete file into Draw Things Scripts or DTFlow Scripts.
-Each real job clears the canvas and moodboard before calling pipeline.run.
+Draw Things jobs remain sequential and clear their canvas before pipeline.run.
+DTFlow uses runBatch when available and otherwise keeps its sequential fallback.
 The preset uses strength 1 and no controls. Save your existing canvas first.
-Images are saved incrementally to filesystem.pictures.path (DTFlow script sandbox). A generation or
-save error stops the batch; no automatic retry is made. The last canvas remains.
+Images are saved incrementally. DTFlow batch outputs are independently exported
+to the script sandbox; Draw Things uses its existing canvas export. No automatic retries.
 Logs record job seeds, selected LoRAs/weights, prompts and output filenames.
 In DTFlow, inherit the selected Generate model and steps instead of the fixed PRESET.
 Set LOG_FULL_CONFIGURATION to true only when full configuration logs are needed.
@@ -51,11 +52,12 @@ const LOG_FULL_CONFIGURATION = false;
 
 // DTFlow publishes this marker in its scripting engine overlay (PR #217).
 // Standard Draw Things has no such marker, so its original behavior remains active.
-// This is environment detection, not parallel-generation support.
+// The optional batch entry point is exposed only by DTFlow builds supporting parallel scripts.
 const IS_DTFLOW = typeof globalThis.__dtflowScriptHost === "object" &&
   globalThis.__dtflowScriptHost !== null &&
   globalThis.__dtflowScriptHost.name === "DTFlow" &&
   globalThis.__dtflowScriptHost.apiVersion === 1;
+const HAS_DTFLOW_BATCH = IS_DTFLOW && typeof pipeline.runBatch === "function";
 
 const PRESET = {
   aestheticScore: 6, batchCount: 1, batchSize: 1,
@@ -464,8 +466,13 @@ const popup = requestFromUser("Krea 2 Turbo LoRA Mixer", "Run", function () {
       this.menu(Number(rememberedField(16, 0, 0)), ["Random mixer", "Compare all LoRA combinations"])
     ]),
     this.section("Generation", IS_DTFLOW
-      ? "Uses the model and steps selected in DTFlow Generate. Changes only supported width, height, seed, sampler, guidance and LoRAs. Each call saves a separate image to the script sandbox. This path remains sequential; cloud work may use credits."
-      : "Selected width, ratio, sampler and text guidance; 8 steps. Each real job clears the canvas and moodboard, then saves its PNG to Draw Things Pictures. Save your current canvas first. No automatic model downloads.", [])
+      ? "Uses the model and steps selected in DTFlow Generate. Each result is saved independently. Batch concurrency is limited by backend availability; cloud work may use credits."
+      : "Selected width, ratio, sampler and text guidance; 8 steps. Each real job clears the canvas and moodboard, then saves its PNG to Draw Things Pictures. Save your current canvas first. No automatic model downloads.", []),
+    ...(HAS_DTFLOW_BATCH ? [
+      this.section("Max concurrent jobs", "DTFlow only. Choose 1–10 simultaneous requests; effective concurrency cannot exceed the backend and shared queue limits.", [
+        this.slider(4, this.slider.fractional(0), 1, 10, "Max concurrent jobs")
+      ])
+    ] : [])
   ];
 });
 if (!popup || popup.length === 0) { throw new Error("Input dialog cancelled; no generation started."); }
@@ -479,6 +486,11 @@ if (popup.length < 17 || popup.slice(0, 10).some((section, index) =>
       !Array.isArray(section) || section.length !== (IS_DTFLOW && index === 0 ? 0 : 1))) {
   throw new Error("Unexpected dialog response; no generation started.");
 }
+if (HAS_DTFLOW_BATCH && (popup.length !== 19 || !Array.isArray(popup[18]) || popup[18].length !== 1)) {
+  throw new Error("Unexpected concurrency response; no generation started.");
+}
+const maxConcurrent = HAS_DTFLOW_BATCH ?
+  numberInput(popup[18][0], "Max concurrent jobs", 1, 10, true) : 1;
 const rawPromptText = String(popup[0][0]);
 const rememberSettings = IS_DTFLOW ? false : switchInput(popup[11][0], "Remember mixer settings");
 const ratioGalleryIndex = numberInput(popup[13][0], "Ratio selection", 0, ratioOrder.length - 1, true);
@@ -533,6 +545,7 @@ console.log("Blend seed=" + blendSeed + "; image seed=" + imageSeed + "; total L
 console.log("LoRA pool: " + pool.map(lora => lora.name).join(", "));
 let completed = 0;
 let rememberAttempted = false;
+const batchJobs = [];
 for (let index = start - 1; index < total; index++) {
   const promptIndex = comparison ? comparisonPromptIndex : Math.floor(index / images);
   // Preview uses a detached snapshot; real runs update the actual app object.
@@ -567,6 +580,17 @@ for (let index = start - 1; index < total; index++) {
     console.log("PREVIEW: skipping pipeline.run for job " + (index + 1));
     continue;
   }
+  if (HAS_DTFLOW_BATCH) {
+    // Snapshot all fields now; the host links each child attempt before submission.
+    // Never clear or read the shared canvas for a concurrent job.
+    batchJobs.push({
+      configuration: clone(jobConfiguration),
+      prompt: prompts[promptIndex],
+      negativePrompt: negativePrompt,
+      outputFile: filename
+    });
+    continue;
+  }
   try {
     Object.assign(configuration, jobConfiguration);
     console.log("Configuration applied for job " + (index + 1));
@@ -597,6 +621,46 @@ for (let index = start - 1; index < total; index++) {
     console.error("Stopped at job " + (index + 1) + ": " + String(error));
     console.error(comparison ? "Comparison stopped; Start number selects the prompt and does not resume combinations. Saved this invocation: " + completed : "Inspect the last canvas before retrying. For manual resume, keep all inputs unchanged and select the first unsaved job. Saved this invocation: " + completed);
     throw error;
+  }
+}
+if (HAS_DTFLOW_BATCH && batchJobs.length) {
+  console.log("Submitting " + batchJobs.length + " independent jobs; requested concurrency=" + maxConcurrent);
+  const results = pipeline.runBatch(batchJobs, maxConcurrent);
+  if (!Array.isArray(results) || results.length !== batchJobs.length) {
+    throw new Error("DTFlow returned an unexpected batch result; inspect the ScriptRun attempts before retrying.");
+  }
+  let failures = 0;
+  results.forEach((result, index) => {
+    if (result.status === "succeeded") {
+      completed++;
+      console.log("Batch job " + (index + 1) + " saved: " +
+        (result.savedPath || result.outputPaths.join(", ")) + "; attempt " + result.attemptId);
+    } else {
+      failures++;
+      console.error("Batch job " + (index + 1) + " " + result.status +
+        (result.error ? ": " + result.error : "") + "; attempt " + (result.attemptId || "none"));
+    }
+  });
+  if (failures) {
+    const counts = {};
+    results.forEach(result => {
+      if (result.status !== "succeeded") {
+        counts[result.status] = (counts[result.status] || 0) + 1;
+      }
+    });
+    const breakdown = Object.keys(counts).sort().map(status =>
+      counts[status] + " " + status.replace(/_/g, " ")).join(", ");
+    // Prefer the first actual failure over an unstarted job when explaining the cause.
+    let issueIndex = results.findIndex(result =>
+      result.status !== "succeeded" && result.status !== "not_started");
+    if (issueIndex < 0) issueIndex = results.findIndex(result => result.status !== "succeeded");
+    const issue = results[issueIndex];
+    const code = typeof issue.error === "string" ?
+      issue.error.replace(/[^A-Za-z0-9_.-]/g, "_").slice(0, 80) : "";
+    throw new Error("Parallel batch: " + completed + "/" + batchJobs.length +
+      " saved; " + breakdown + ". First issue: job " + (issueIndex + 1) +
+      " (" + issue.status + (code ? ", code " + code : "") +
+      "). Inspect Console and existing attempt records before restarting.");
   }
 }
 console.log(preview ? "Preview complete; no images generated." :
