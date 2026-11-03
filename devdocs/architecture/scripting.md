@@ -23,7 +23,7 @@ slice (the engine, the hook table and the ledger; issues #119 and #113) does and
 - The child is bound to the app's lifetime on a best-effort basis: Linux parent-death signal and a Windows kill-on-close
   Job Object (not independently verified on Windows). If assignment fails, or on another platform, an orphaned child can
   outlive the app until it notices the closed pipe and exits. The frozen entry point calls `multiprocessing.freeze_support()`.
-- `console.info`/`console.debug` and a cancellable `__dtSleep` are a small DTFlow overlay kept outside the vendored file.
+- `console.info`/`console.debug`, a cancellable `__dtSleep`, and the read-only `globalThis.__dtflowScriptHost` marker (`{name: 'DTFlow', apiVersion: 1}`) are DTFlow overlays kept outside the vendored file. Portable scripts can check this marker without requiring unsupported upstream APIs; it does not advertise or enable parallel generation.
 
 ## Analyzer (`dtflow script <file>`)
 
