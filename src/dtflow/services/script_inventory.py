@@ -48,9 +48,7 @@ def script_lora_inventory(
             compatibility_source = "catalogue_modes"
         listed = observed is not None and observed.kind in ("lora", "unknown")
         ready = listed or identifier in prepared
-        reason = (
-            "metadata_mismatch" if compatibility == "mismatch" else "unconfirmed_availability" if not ready else ""
-        )
+        reason = "metadata_mismatch" if compatibility == "mismatch" else "unconfirmed_availability" if not ready else ""
         name = (definition.name if definition else None) or (observed.display_name if observed else None) or identifier
         if not _symbolic(name):
             name = identifier

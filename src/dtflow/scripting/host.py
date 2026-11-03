@@ -419,7 +419,9 @@ class ScriptHost:
                 request = replace(
                     request,
                     resolution_evidence=(
-                        *request.resolution_evidence, ("script_plan", plan_id), ("script_job", str(job_index)),
+                        *request.resolution_evidence,
+                        ("script_plan", plan_id),
+                        ("script_job", str(job_index)),
                     ),
                 )
             requests.append(request)
@@ -675,7 +677,10 @@ class ScriptHost:
         content = {name: (pool[name].sha256, pool[name].size) for name in selected if name in pool}
         text = json.dumps(
             {"source": self.source_sha256, "value": value, "preparedContent": content},
-            sort_keys=True, ensure_ascii=True, allow_nan=False, separators=(",", ":"),
+            sort_keys=True,
+            ensure_ascii=True,
+            allow_nan=False,
+            separators=(",", ":"),
         )
         if len(text) > 1024 * 1024:
             raise ValueError("Script plan identity exceeds 1 MiB.")

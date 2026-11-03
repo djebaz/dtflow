@@ -20,10 +20,15 @@ def is_parser_failure(message: str) -> bool:
     text = message.strip().lower()
     if text.startswith(("rangeerror:", "internalerror:")):
         return any(part in text for part in ("call stack size exceeded", "stack overflow", "out of memory"))
-    return text.startswith((
-        "maximum call stack size exceeded", "stack overflow", "script is nested too deeply to analyze",
-        "the script did not finish parsing in time", "the syntax check process ended unexpectedly",
-    ))
+    return text.startswith(
+        (
+            "maximum call stack size exceeded",
+            "stack overflow",
+            "script is nested too deeply to analyze",
+            "the script did not finish parsing in time",
+            "the syntax check process ended unexpectedly",
+        )
+    )
 
 
 def parser_failure(reason: str) -> str:

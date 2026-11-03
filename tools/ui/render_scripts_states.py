@@ -245,7 +245,10 @@ def render_scripts_states(out: Path, *, window_factory: Callable, state_names=ST
             elif state.startswith("scripts_mixer_"):
                 fields = [
                     {"type": "section", "label": "LoRA inventory and readiness"},
-                    {"type": "plainText", "text": "3 known; 2 candidates; 1 skipped. Cached metadata is not runtime compatibility."},
+                    {
+                        "type": "plainText",
+                        "text": "3 known; 2 candidates; 1 skipped. Cached metadata is not runtime compatibility.",
+                    },
                     {"type": "switch", "label": "fake-soft [listed; metadata match]", "value": True},
                     {"type": "switch", "label": "fake-unknown [listed; unknown]", "value": False},
                     {"type": "plainText", "text": "Skipped fake-mismatch: metadata_mismatch"},
@@ -255,7 +258,9 @@ def render_scripts_states(out: Path, *, window_factory: Callable, state_names=ST
                 fields.insert(0, {"type": "textField", "label": "Prompts", "value": "Offline fixture"})
                 fields.insert(1, {"type": "section", "label": "Mixing"})
                 fields.insert(2, {"type": "textField", "label": "LoRAs per image", "value": "1"})
-                fields.append({"type": "plainText", "text": "Unknown compatibility is allowed; backend checks still apply."})
+                fields.append(
+                    {"type": "plainText", "text": "Unknown compatibility is allowed; backend checks still apply."}
+                )
                 window.scripts.form.set_fields(fields)
                 window.scripts.show_view(1)
                 window.scripts.form_note.setText("Ready to run. Nothing queued.")

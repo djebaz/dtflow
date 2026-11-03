@@ -43,12 +43,16 @@ def preferences(state: Path, source_sha256: str, *, value=None, write=False):
                 existing = connection.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()
                 if existing:
                     raise ValidationError("Unversioned script preferences are not overwritten.")
-                connection.execute("CREATE TABLE preferences (source_sha256 TEXT PRIMARY KEY, value_json TEXT NOT NULL)")
+                connection.execute(
+                    "CREATE TABLE preferences (source_sha256 TEXT PRIMARY KEY, value_json TEXT NOT NULL)"
+                )
                 connection.execute("PRAGMA user_version=1")
             count = connection.execute("SELECT COUNT(*) FROM preferences").fetchone()[0]
             present = connection.execute("SELECT 1 FROM preferences WHERE source_sha256=?", (source_sha256,)).fetchone()
             if count >= 128 and present is None:
-                raise ValidationError("Script preferences already contain 128 versions; no existing settings were removed.")
+                raise ValidationError(
+                    "Script preferences already contain 128 versions; no existing settings were removed."
+                )
             connection.execute(
                 "INSERT INTO preferences VALUES (?,?) ON CONFLICT(source_sha256)"
                 " DO UPDATE SET value_json=excluded.value_json",
@@ -56,7 +60,9 @@ def preferences(state: Path, source_sha256: str, *, value=None, write=False):
             )
             connection.commit()
             return True
-        row = connection.execute("SELECT value_json FROM preferences WHERE source_sha256=?", (source_sha256,)).fetchone()
+        row = connection.execute(
+            "SELECT value_json FROM preferences WHERE source_sha256=?", (source_sha256,)
+        ).fetchone()
         if row is None:
             return None
         if len(row[0]) > MAX_BYTES:
