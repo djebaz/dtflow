@@ -28,7 +28,7 @@ from dtflow.scripting.forms import (
     validate_components,
 )
 from dtflow.services.image_inputs import restore_image_inputs, snapshot_image_inputs
-from dtflow.services.image_preparation import prepare_image_bytes, prepare_image_files
+from dtflow.services.image_preparation import prepare_image_bytes, prepare_script_image_bytes, prepare_script_image_file
 
 IMAGE_SUFFIXES = frozenset({".png", ".jpg", ".jpeg", ".webp"})
 
@@ -128,6 +128,7 @@ def snapshot_picked_inputs(state: Path, run_id: str, ordinal: int, field: tuple,
         sources = sorted(selected)
     store = ScriptRunStore(state)
     records = []
+    crops = []
     total = 0
     for source in sources:
         current = read_open_prompt(state, run_id)
@@ -136,15 +137,13 @@ def snapshot_picked_inputs(state: Path, run_id: str, ordinal: int, field: tuple,
         _plain(source)
         if source.stat().st_size > IMAGE_BYTE_LIMIT:
             raise ValidationError("Selected image exceeds the input byte limit.")
-        # The preparation helper requires a valid generation-sized companion.
-        # Only prepared.source is returned to JS: its source grid is retained,
-        # with no multiple-of-64 restriction on the selected image dimensions.
-        prepared = prepare_image_files(source, 128, 128)
+        prepared, crop = prepare_script_image_file(source, multiple=spec.get("multiple", 1))
         total += len(prepared.source.encoded)
         if total > 32 * 1024 * 1024:
             raise ValidationError("Selected input set exceeds 32 MiB of normalized image data.")
         snapshot = snapshot_image_inputs(state, uuid.uuid4().hex, prepared, preserve_outside=False)
         records.append((snapshot, prepared.source.encoded))
+        crops.append(crop)
     if kind == "directory":
         name = uuid.uuid4().hex
         target = _owned_directory(state, run_id, name, create=True)
@@ -153,11 +152,40 @@ def snapshot_picked_inputs(state: Path, run_id: str, ordinal: int, field: tuple,
                 stream.write(encoded)
                 stream.flush()
                 os.fsync(stream.fileno())
-        record = {"directory": name, "snapshots": [asdict(s) for s, _ in records]}
+        record = {"directory": name, "snapshots": [asdict(s) for s, _ in records], "crops": crops}
         return [store.register_prompt_input(run_id, ordinal, field, kind, record)]
     # Refuse an answer that would exceed the existing bridge before enabling Continue.
     bounded_json(["data:image/png;base64," + base64.b64encode(b).decode("ascii") for _, b in records], MAX_ANSWER_BYTES)
-    return [store.register_prompt_input(run_id, ordinal, field, kind, {"snapshot": asdict(s)}) for s, _ in records]
+    return [
+        store.register_prompt_input(run_id, ordinal, field, kind, {"snapshot": asdict(s), "crop": crop})
+        for (s, _), crop in zip(records, crops, strict=True)
+    ]
+
+
+def crop_inline_form_images(components: list, answers: list) -> list:
+    """Apply explicit grid policy to embedded answers, including headless answer files."""
+    result = []
+    for spec, value in zip((s for s in components if contributes(s)), answers, strict=True):
+        if spec["type"] == "section":
+            value = crop_inline_form_images(spec.get("views") or [], value)
+        elif spec["type"] == "imageField" and spec.get("multiple", 1) > 1:
+            cropped = []
+            for source in value:
+                if input_token(source):
+                    cropped.append(source)
+                else:
+                    prepared, _ = prepare_script_image_bytes(image_bytes(source), multiple=spec["multiple"])
+                    cropped.append("data:image/png;base64," + base64.b64encode(prepared.source.encoded).decode("ascii"))
+            value = cropped
+        result.append(value)
+    bounded_json(result, MAX_ANSWER_BYTES)
+    return result
+
+
+def _check_image_multiple(prepared, spec):
+    multiple = spec.get("multiple", 1)
+    if prepared.source.width % multiple or prepared.source.height % multiple:
+        raise ValidationError("Owned script image no longer matches this field's pixel multiple; select it again.")
 
 
 def resolve_form_inputs(state: Path, run_id: str, ordinal: int, components: list, answers: list) -> list:
@@ -168,6 +196,7 @@ def resolve_form_inputs(state: Path, run_id: str, ordinal: int, components: list
         store.prompt_input(run_id, ordinal, path, kind, token)
 
     validate_answers(components, answers, origin=origin)
+    answers = crop_inline_form_images(components, answers)
 
     def visit(fields, values, path=()):
         result = []
@@ -184,6 +213,7 @@ def resolve_form_inputs(state: Path, run_id: str, ordinal: int, components: list
                         continue
                     record = store.prompt_input(run_id, ordinal, here, kind, token)
                     prepared = restore_image_inputs(state, ImageInputSnapshot.from_record(record["snapshot"]))
+                    _check_image_multiple(prepared, spec)
                     resolved.append(
                         "data:image/png;base64," + base64.b64encode(prepared.source.encoded).decode("ascii")
                     )
@@ -193,6 +223,7 @@ def resolve_form_inputs(state: Path, run_id: str, ordinal: int, components: list
                 target = _owned_directory(state, run_id, record["directory"])
                 for index, snapshot in enumerate(record["snapshots"], 1):
                     prepared = restore_image_inputs(state, ImageInputSnapshot.from_record(snapshot))
+                    _check_image_multiple(prepared, spec)
                     copied = target / f"image-{index:03}.png"
                     _plain(copied)
                     with copied.open("rb") as stream:

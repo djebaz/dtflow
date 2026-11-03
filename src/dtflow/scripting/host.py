@@ -421,6 +421,9 @@ class ScriptHost:
                 raise ValueError("Owned picker inputs require an interactive form in this run.")
 
             validate_answers(components, answers, origin=reject_token)
+            from dtflow.services.script_form_inputs import crop_inline_form_images
+
+            answers = crop_inline_form_images(components, answers)
         self._forms += 1
         if self._record_answers is not None:
             # Durable before the script continues; if it cannot be recorded the call fails and the script stops here.

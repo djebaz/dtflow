@@ -44,7 +44,7 @@ from dtflow.scripting.forms import (
     validate_answers,
     validate_components,
 )
-from dtflow.ui.scripts_form import ScriptForm, _RangeControl, _group, _row
+from dtflow.ui.scripts_form import ScriptForm, _RangeControl, _group, _row, _with_image_multiple
 
 
 def _text(value: str, *, heading=False) -> QLabel:
@@ -393,7 +393,7 @@ class LiveScriptForm(ScriptForm):
             box.setToolTip(
                 "Imports a bounded, nonrecursive copy of this folder's images; JS cannot access the original folder."
             )
-        return box
+        return _with_image_multiple(box, spec.get("multiple", 1))
 
     def _choose(self, spec, path, label, text, choose, clear):
         if self.busy or self.identity is None or self.runner.closed:
@@ -454,6 +454,8 @@ class LiveScriptForm(ScriptForm):
                     self._put(path, result[0] if directory else result)
                     description = ("Owned folder copy: " + names[0] if directory else
                                    names[0] if len(names) == 1 else f"{len(names)} images: " + ", ".join(names))
+                    if spec.get("multiple", 1) > 1:
+                        description += f" · {spec['multiple']} px grid"
                     text.setText(description)
                     text.setToolTip(description)
                     text.setAccessibleDescription(description)

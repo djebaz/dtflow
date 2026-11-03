@@ -334,6 +334,23 @@ def _fit(source: tuple[int, int], target: tuple[int, int]) -> ImageFit:
     )
 
 
+def _source_rgb(encoded: bytes) -> Image.Image:
+    oriented = _decode(encoded, "Source image").convert("RGBA")
+    source = Image.new("RGBA", oriented.size, "white")
+    source.alpha_composite(oriented)
+    return source.convert("RGB")
+
+
+def _fit_image(source: Image.Image, width: int, height: int) -> tuple[ImageFit, Image.Image]:
+    fit = _fit(source.size, (width, height))
+    fitted = Image.new("RGB", (width, height), "white")
+    fitted.paste(
+        source.resize((fit.fitted_width, fit.fitted_height), Image.Resampling.LANCZOS),
+        (fit.left, fit.top),
+    )
+    return fit, fitted
+
+
 def prepare_image_bytes(
     source_bytes: bytes,
     width: int,
@@ -358,16 +375,8 @@ def prepare_image_bytes(
         raise ValidationError("Mask feather must be finite in 0..64 source pixels.")
     if mask_bytes is None and (grow or feather):
         raise ValidationError("Mask adjustments require a mask.")
-    oriented = _decode(source_bytes, "Source image").convert("RGBA")
-    source = Image.new("RGBA", oriented.size, "white")
-    source.alpha_composite(oriented)
-    source = source.convert("RGB")
-    fit = _fit(source.size, (width, height))
-    fitted = Image.new("RGB", (width, height), "white")
-    fitted.paste(
-        source.resize((fit.fitted_width, fit.fitted_height), Image.Resampling.LANCZOS),
-        (fit.left, fit.top),
-    )
+    source = _source_rgb(source_bytes)
+    fit, fitted = _fit_image(source, width, height)
     if mask_bytes is None:
         return PreparedImageInputs(_content(source), _content(fitted), fit)
     mask = _decode(mask_bytes, "Mask image")
@@ -417,6 +426,49 @@ def prepare_image_files(
         grow=grow,
         feather=feather,
     )
+
+
+def prepare_script_image_bytes(encoded: bytes, *, multiple: int = 1) -> tuple[PreparedImageInputs, dict]:
+    """Normalize one selected script image, optionally centre-cropping its owned copy.
+
+    ``multiple=1`` imposes no source-grid constraint. A larger script-authored
+    multiple trims both oriented dimensions downward; never resize/upscale or
+    modify the external file. Too-small images fail rather than producing zero
+    dimensions. The fitted 128x128 companion is internal; JS receives source.
+    """
+    if type(multiple) is not int or not 1 <= multiple <= 4096:
+        raise ValidationError("Script image multiple must be an integer within 1..4096.")
+    image = _source_rgb(encoded)
+    original_width, original_height = image.size
+    width = original_width - original_width % multiple
+    height = original_height - original_height % multiple
+    if not width or not height:
+        raise ValidationError(
+            f"Selected image is {original_width}x{original_height}; it is too small for a {multiple}-pixel grid. "
+            "Cropping cannot enlarge an image; choose a larger image or change the script's multiple."
+        )
+    left = (original_width - width) // 2
+    top = (original_height - height) // 2
+    if (width, height) != image.size:
+        image = image.crop((left, top, left + width, top + height))
+    fit, fitted = _fit_image(image, 128, 128)
+    prepared = PreparedImageInputs(_content(image), _content(fitted), fit)
+    crop = {
+        "multiple": multiple,
+        "mode": "center",
+        "source_width": original_width,
+        "source_height": original_height,
+        "left": left,
+        "top": top,
+        "width": width,
+        "height": height,
+    }
+    return prepared, crop
+
+
+def prepare_script_image_file(source: Path, *, multiple: int = 1) -> tuple[PreparedImageInputs, dict]:
+    """Read a selected external image once, then prepare its independent copy."""
+    return prepare_script_image_bytes(_read(source, "Script image"), multiple=multiple)
 
 
 def composite_image(prepared: PreparedImageInputs, generated_png: bytes) -> ImageContent:

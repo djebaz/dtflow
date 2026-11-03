@@ -63,6 +63,7 @@ STATES = (
     "scripts_setup_file_selected",
     "scripts_setup_file_error",
     "scripts_editor_discard_confirm",
+    "scripts_setup_crop_multiple",
 )
 
 
@@ -142,6 +143,7 @@ def render_scripts_states(out: Path, *, window_factory: Callable, state_names=ST
                 "scripts_setup_file_selected": "scripts_form_default",
                 "scripts_setup_file_error": "scripts_form_default",
                 "scripts_editor_discard_confirm": "scripts_editor_dirty",
+                "scripts_setup_crop_multiple": "scripts_form_default",
             }.get(state, state)
             if state in (
                 "scripts_queued",
@@ -169,6 +171,14 @@ def render_scripts_states(out: Path, *, window_factory: Callable, state_names=ST
                                       else "Input could not be prepared")
                     fields[0].setToolTip("reference.png" if state == "scripts_setup_file_selected"
                                         else "Selected input exceeds the supported image limit (offline fixture).")
+            elif state == "scripts_setup_crop_multiple":
+                from dtflow.ui.scripts_form import REFERENCE_FORM
+
+                fields = [
+                    {**spec, "multiple": 64} if spec["type"] == "imageField" else dict(spec)
+                    for spec in REFERENCE_FORM
+                ]
+                window.scripts.form.set_fields(fields)
             elif state == "scripts_editor_discard_confirm":
                 window.scripts.editor.discard.click()
             elif state == "scripts_setup_followup":

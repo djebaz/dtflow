@@ -27,9 +27,9 @@ const params = requestFromUser("Simple smoke · all parameters", "Run Script", f
       this.segmented(0, ["Square", "Portrait", "Landscape"]),
       this.menu(0, ["Sequential", "Shuffled", "Random"])
     ]),
-    this.section("Files", "Optional. Use small image files; a folder becomes an owned image copy.", [
-      this.imageField("One image", false),
-      this.imageField("Multiple images", true),
+    this.section("Files", "Optional. One image is unrestricted; multiple images opt into a 64 px centre-crop grid.", [
+      this.imageField("One image (any dimensions)", false),
+      { ...this.imageField("Multiple images (64 px grid)", true), multiple: 64 },
       this.directory()
     ]),
     this.section("Images", "Blue is display-only. Choose blue (0) or green (1) in the grid.", [

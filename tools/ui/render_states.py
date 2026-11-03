@@ -4143,7 +4143,7 @@ def main():
     ):
         state = Path(temporary)
         if wants("scripts"):
-            # Includes Setup, picker-result and button-only discard fixtures; no JS/queues are started.
+            # Includes Setup, picker crop/result and button-only discard fixtures; no JS/queues are started.
             from render_scripts_states import STATES as SCRIPT_STATES, render_scripts_states
 
             def script_window():
