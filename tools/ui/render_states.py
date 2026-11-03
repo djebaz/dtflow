@@ -2040,6 +2040,10 @@ def render_item_table_states(shell, out, state):
         assert model.rowCount() == 3
         assert model.row_at(0).is_script_parent and model.row_at(0).gallery_identity is None
         assert not any(row.is_script_parent for row in (model.row_at(1), model.row_at(2)))
+        # The script's display-only thumbnail comes from its last committed
+        # child, without borrowing that child's actionable gallery identity.
+        assert model.row_at(0).script_preview_path == model.row_at(2).outputs[0]
+        assert model.row_at(0).script_preview_identity == model.row_at(2).gallery_identity
         select(0)
         assert not page.itemOpenImagesButton.isEnabled()
         snap("queues-72-script-parent-summary")
