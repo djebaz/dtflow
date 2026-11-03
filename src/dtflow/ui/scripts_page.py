@@ -272,7 +272,6 @@ class ScriptsPage:
         self._live_reading = False
         self._live_history: list = []
         self._inspecting: set[str] = set()
-        self._history_ids: list[str] = []
         self._live_timer = QTimer(designer)
         self._live_timer.setInterval(1000)
         self._live_timer.timeout.connect(self._poll_live)
@@ -2066,9 +2065,9 @@ class ScriptsPage:
         children = script.get("children") or []
         queue_id = run["queue_id"]
         self._run_state = key
-        self._run_number = (
-            self._history_ids.index(queue_id) + 1 if queue_id in self._history_ids else len(self._history_ids) + 1
-        )
+        # Display the stable queue identity; positional ordinals change after
+        # Clear history and must never be presented as durable run numbers.
+        self._run_number = queue_id[:8]
         if key in ("interrupted", "outcome_unknown"):
             self._prior_unresolved = True
         on_run_view = self.views.currentIndex() in (3, 4)
@@ -2210,9 +2209,8 @@ class ScriptsPage:
         if failure is not None:
             return
         scripts = [view for view in views if view.get("kind") == "script"]
-        self._history_ids = [view["queue_id"] for view in scripts]
         entries = []
-        for number, view in enumerate(scripts, 1):
+        for view in scripts:
             summary = view["summary"]
             if summary.get("succeeded"):
                 title, color = "Succeeded", "ok"
@@ -2234,7 +2232,7 @@ class ScriptsPage:
             elapsed = view.get("script_elapsed")
             entries.append(
                 (
-                    f"#{number} · {title}",
+                    f"#{view['queue_id'][:8]} · {title}",
                     f"{elapsed:.0f} s" if type(elapsed) in (int, float) else "",
                     f"Queue item {view['queue_id'][:8]} · {name} · {created}".strip(" ·"),
                     color,
