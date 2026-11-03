@@ -80,7 +80,7 @@ async def create_script_queue(
     source_name: str,
     base: ResolvedGenerationRequest,
     *,
-    max_generations: int = 4,
+    max_generations: int = 30,
     answers: list | None = None,
     up_next: bool = False,
     expected_steps: int | None = None,
