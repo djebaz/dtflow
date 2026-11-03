@@ -2049,12 +2049,16 @@ class ScriptsPage:
         if key in self._TERMINAL:
             self._live_timer.stop()
             self._load_history()
-            title, _ = RUN_STATUSES.get(key, ("Completed", ""))
-            self.owner.inline.notice(
-                "Script " + ("completed" if key == "results" else title.lower()),
-                f"Run #{self._run_number} · {self._live_run['name']}. Details are in Scripts and Queues.",
-                "success" if key == "results" else "warning",
-            )
+            # Successful scripts are normal queue completions. QueuePage already
+            # publishes the single success result in the shared bottom activity
+            # bar; do not add a second success notice over the workspace.
+            if key != "results":
+                title, _ = RUN_STATUSES.get(key, ("Completed", ""))
+                self.owner.inline.notice(
+                    "Script " + title.lower(),
+                    f"Run #{self._run_number} · {self._live_run['name']}. Details are in Scripts and Queues.",
+                    "warning",
+                )
 
     @staticmethod
     def _images(paths) -> list[str]:
