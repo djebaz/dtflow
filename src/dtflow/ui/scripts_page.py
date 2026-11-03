@@ -1,19 +1,23 @@
 """Generate > Scripts: native UI regions mounted in DTFlow's shared Qt shell.
 
-This module owns presentation and local draft interaction only. Script execution,
-provider dispatch, service admission, history writes and immutable-version storage
-are intentionally not attached in this UI implementation slice.
+This module owns presentation and local draft interaction. The managed script library
+(import, immutable versions) and the static analyzer (syntax check, hook verdicts) are bound
+to the real services; script execution, provider dispatch, service admission and history
+writes are intentionally not attached yet, so Start stays disabled outside the offline preview.
 """
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
+from datetime import datetime
 from pathlib import Path
 
-from PySide6.QtCore import Qt, QSize
+from PySide6.QtCore import QSize, Qt, QTimer
 from PySide6.QtGui import QFont, QImage, QPixmap
 from PySide6.QtWidgets import (
     QButtonGroup,
+    QComboBox,
     QFileDialog,
     QFrame,
     QHBoxLayout,
@@ -22,11 +26,15 @@ from PySide6.QtWidgets import (
     QPushButton,
     QScrollArea,
     QSizePolicy,
+    QSpinBox,
     QVBoxLayout,
     QWidget,
 )
 
+from dtflow.persistence.script_library import MAX_VERSIONS, ScriptLibraryError, ScriptVersion
+from dtflow.services.script_inspection import Inspection, inspect_source
 from dtflow.ui.brand import tinted_icon
+from dtflow.ui.rail_fit import fit_rail
 from dtflow.ui.scripts_editor import ScriptEditor
 from dtflow.ui.scripts_form import REFERENCE_FORM, ScriptForm
 
@@ -56,7 +64,7 @@ WAITING_FIELDS = (
     },
 )
 
-LIVE_STATES = ("queued", "running", "waiting_input")
+LIVE_STATES = ("queued", "paused", "running", "waiting_input")
 
 # Illustrative source code is copied from the owner-approved Scripts UI kit,
 # not inferred from a live user script. It never runs in the offline renderer.
@@ -96,6 +104,10 @@ RUN_STATUSES = {
     "queued": (
         "Queued behind 3 items",
         "Queue item waiting for admission. Nothing submitted · waiting 0:42 · Cancel is free.",
+    ),
+    "paused": (
+        "Saved paused · not dispatched",
+        "No generation was submitted. Open Queues to Start this saved item when dispatch is available.",
     ),
     "cancelled_before_start": ("Cancelled before start", "No provider submission and no charge."),
     "running": (
@@ -223,9 +235,16 @@ class _ResultImage(QLabel):
 class ScriptsPage:
     """UI controller for library, central content, inspector and narrow drawer."""
 
-    def __init__(self, designer: QWidget, *, owner):
+    def __init__(self, designer: QWidget, *, owner, library_factory=None):
         self.designer = designer
         self.owner = owner
+        self._library_factory = library_factory
+        self._library = None
+        self._library_ready = False
+        self._live = library_factory is not None
+        self._versions: list[ScriptVersion] = []
+        self._inspections: dict[str, Inspection] = {}
+        self._selected_sha = ""
         self.left = designer.scriptsLibraryPanel
         self.center = designer.scriptsWorkPanel
         self.right = designer.scriptsInspectorPanel
@@ -244,6 +263,18 @@ class ScriptsPage:
         self._run_snapshot = None
         self._preview_versions = {}
         self._library_scripts = []
+        # Real runs: ``run_start(source, name, cap, done)`` is wired by the owner to the Queues controller. A run is one
+        # script queue item; this page only starts it, polls its durable state and presents it.
+        self.run_start = None
+        self.open_images = None
+        self._starting = False
+        self._live_run: dict | None = None
+        self._live_reading = False
+        self._live_history: list = []
+        self._inspecting: set[str] = set()
+        self._live_timer = QTimer(designer)
+        self._live_timer.setInterval(1000)
+        self._live_timer.timeout.connect(self._poll_live)
         self._build_library()
         self._build_center()
         self._build_inspector()
@@ -271,6 +302,10 @@ class ScriptsPage:
         ):
             stack.setCurrentWidget(panel)
         self.scripts_mode.setChecked(True)
+        self.refresh_library()
+        if self._live_mode():
+            self._load_history()
+        self._refresh_readiness()
 
     def _build_library(self):
         ui = self.designer
@@ -312,14 +347,16 @@ class ScriptsPage:
         self._build_inspect()
         self._build_form()
         self.editor = ScriptEditor(consent=self._confirm_discard, saved=self._saved_preview_version)
-        self.editor.enable_preview(
-            {
-                EDITOR_STARTER: None,
-                EDITOR_BASE: None,
-                EDITOR_BASE + "\n// Draft change": None,
-                EDITOR_BASE + "\nconst value = ;": (15, 15, "Unexpected token ';' · fixture diagnostic"),
-            }
-        )
+        self._fixture_checks = {
+            EDITOR_STARTER: None,
+            EDITOR_BASE: None,
+            EDITOR_BASE + "\n// Draft change": None,
+            EDITOR_BASE + "\nconst value = ;": (15, 15, "Unexpected token ';' · fixture diagnostic"),
+        }
+        if self._live:
+            self.editor.enable_live(self._check_syntax_live)
+        else:
+            self.editor.enable_preview(self._fixture_checks)
         ui.scriptEditorHost.layout().addWidget(self.editor)
         self._build_run()
         self._build_results()
@@ -330,17 +367,51 @@ class ScriptsPage:
         self.run_footer = ui.runFooter
         self.acknowledge.hide()
         self.run_footer.hide()
-        self.start.clicked.connect(self._start_preview)
+        self.start.clicked.connect(self._start_clicked)
+        # What Start will use is shown right here: the Generate tab's backend, model and size (or why it cannot run).
+        self.settings_source = None  # () -> (summary, problem); wired by the owner
+        self.go_generate_hook = None
+        self.run_settings = _label("", role="scriptsMuted", wrap=True)
+        self.go_generate = QPushButton("Open Generate settings")
+        self.go_generate.hide()
+        self.go_generate.clicked.connect(lambda: self.go_generate_hook and self.go_generate_hook())
+        panel_layout = self.start_panel.layout()
+        panel_layout.insertWidget(1, self.run_settings)
+        panel_layout.insertWidget(2, self.go_generate)
+        self.run_settings.hide()
+        # Minimal pickers: the same values Start uses, written through to the Generate form (one source of truth).
+        self.generate_form = None  # the Generate page widgets (modelCombo, widthSpinBox, heightSpinBox, stepsSpinBox)
+        self.picker_row = QWidget()
+        row = QHBoxLayout(self.picker_row)
+        row.setContentsMargins(0, 0, 0, 0)
+        row.setSpacing(6)
+        self.pick_model = QComboBox()
+        self.pick_model.setEditable(True)
+        self.pick_model.setInsertPolicy(QComboBox.InsertPolicy.NoInsert)
+        self.pick_model.setAccessibleName("Model for this run")
+        self.pick_model.setToolTip("Same model as on Generate. Pick one from the list or type its identifier.")
+        row.addWidget(self.pick_model, 1)
+        self.pick_spins = {}
+        for key, label, low, high, step in (
+            ("widthSpinBox", "W", 64, 4096, 64),
+            ("heightSpinBox", "H", 64, 4096, 64),
+            ("stepsSpinBox", "Steps", 1, 200, 1),
+        ):
+            row.addWidget(_label(label, role="scriptsMuted"))
+            spin = QSpinBox()
+            spin.setRange(low, high)
+            spin.setSingleStep(step)
+            spin.setAccessibleName(f"{label} for this run")
+            spin.valueChanged.connect(lambda value, name=key: self._push_picker(name, value))
+            row.addWidget(spin)
+            self.pick_spins[key] = spin
+        self.pick_model.currentTextChanged.connect(lambda text: self._push_picker("modelCombo", text))
+        panel_layout.insertWidget(1, self.picker_row)
+        self.picker_row.hide()
         self.acknowledge.toggled.connect(self._refresh_readiness)
         self.designer.backToFormButton.clicked.connect(self._review_run)
         self.designer.reviewRunButton.clicked.connect(self._review_run)
-        self.designer.checkQueuesButton.clicked.connect(
-            lambda: self.owner.inline.notice(
-                "Offline linked attempts",
-                "No real queue or durable attempt exists for this preview. The unresolved example remains in Scripts History.",
-                "info",
-            )
-        )
+        self.designer.checkQueuesButton.clicked.connect(self._check_queues_clicked)
         self.designer.advancePreviewButton.clicked.connect(self._advance_preview)
         self.designer.viewUnresolvedRun.setEnabled(True)
         self.designer.viewUnresolvedRun.clicked.connect(
@@ -550,6 +621,9 @@ class ScriptsPage:
             rail.setVisible(self._wide_details_requested)
 
     def _selected(self, row: int):
+        if self._live and not self._reference_mode:
+            self._select_live(row)
+            return
         if not self._reference_mode or row < 0 or row >= len(self._library_scripts):
             return
         if self.editor.is_dirty():
@@ -780,6 +854,9 @@ class ScriptsPage:
         self._import_preview()
 
     def _import_preview(self):
+        if self._live and not self._reference_mode:
+            self._import_live()
+            return
         filename, _ = QFileDialog.getOpenFileName(
             self.owner.form, "Open JavaScript preview", "", "JavaScript (*.js);;All files (*)"
         )
@@ -848,6 +925,9 @@ class ScriptsPage:
         """Populate an explicitly offline screenshot state; never executes a script."""
         self.active_state = state
         self._reference_mode = True
+        self.editor.disable_live()
+        self.editor.enable_preview(self._fixture_checks)
+        self._live = False
         self._run_state = ""
         self._prior_unresolved = state == "scripts_form_after_unknown"
         self._run_version = "9f3a1c2"
@@ -1019,21 +1099,35 @@ class ScriptsPage:
         }
 
     def _sync_drawer_data(self):
-        layout = self.drawer_inspector.hooksHost.layout()
-        while layout.count():
-            widget = layout.takeAt(0).widget()
-            if widget is not None:
-                widget.hide()
-                widget.deleteLater()
-        for hook, state, detail in self._current_hooks:
-            layout.addWidget(_hook_item(hook, state, detail))
-        entries = [
-            ("#4 · Succeeded", "0:41", "Queue item q-0004 · 4 child steps · version 9f3a1c2", "ok"),
-            ("#3 · Stopped locally", "0:19", "Queue item q-0003 · 2 child steps · version 9f3a1c2", "warning"),
-            ("#2 · Failed", "0:13", "Queue item q-0002 · 21 Oct 22:13 · version b81e07d", "error"),
-            ("#1 · Outcome unknown", "", "Queue item q-0001 · 21 Oct 21:58 · version b81e07d", "warning"),
-        ]
-        if self._run_state and self._run_state != "results":
+        """Rebuild dynamic inspector regions only when their contents change.
+
+        A ScriptRun poll can arrive several times with identical evidence.
+        Recreating all History widgets on each poll caused visible blinking.
+        """
+        hooks = tuple(self._current_hooks)
+        if getattr(self, "_rendered_drawer_hooks", None) != hooks:
+            layout = self.drawer_inspector.hooksHost.layout()
+            while layout.count():
+                widget = layout.takeAt(0).widget()
+                if widget is not None:
+                    widget.hide()
+                    widget.setParent(None)
+                    widget.deleteLater()
+            for hook, state, detail in hooks:
+                layout.addWidget(_hook_item(hook, state, detail))
+            self._rendered_drawer_hooks = hooks
+        live = self._live and not self._reference_mode
+        entries = (
+            list(self._live_history)
+            if live
+            else [
+                ("#4 · Succeeded", "0:41", "Queue item q-0004 · 4 child steps · version 9f3a1c2", "ok"),
+                ("#3 · Stopped locally", "0:19", "Queue item q-0003 · 2 child steps · version 9f3a1c2", "warning"),
+                ("#2 · Failed", "0:13", "Queue item q-0002 · 21 Oct 22:13 · version b81e07d", "error"),
+                ("#1 · Outcome unknown", "", "Queue item q-0001 · 21 Oct 21:58 · version b81e07d", "warning"),
+            ]
+        )
+        if not live and self._run_state and self._run_state != "results":
             entries.insert(
                 0,
                 (
@@ -1043,14 +1137,16 @@ class ScriptsPage:
                     self._run_color(),
                 ),
             )
-        if self._prior_unresolved and (
-            self._run_number != 5 or self._run_state not in ("interrupted", "outcome_unknown")
+        if (
+            not live
+            and self._prior_unresolved
+            and (self._run_number != 5 or self._run_state not in ("interrupted", "outcome_unknown"))
         ):
             entries.insert(
                 0,
                 ("#5 · Outcome unknown", "", "Queue item q-0005 · child step 3 unresolved · may be billed", "warning"),
             )
-        if self._run_state == "results" and self._run_number != 4:
+        if not live and self._run_state == "results" and self._run_number != 4:
             entries.insert(
                 0,
                 (
@@ -1060,33 +1156,37 @@ class ScriptsPage:
                     "ok",
                 ),
             )
-        for history in (self.history, self.drawer_inspector.scriptsHistoryList):
-            rows = history.layout()
-            while rows.count():
-                widget = rows.takeAt(0).widget()
-                if widget is not None:
-                    widget.hide()
-                    widget.deleteLater()
-            for title, duration, detail, state in entries:
-                card = QFrame()
-                card.setObjectName("scriptsHistoryEntry")
-                body = QVBoxLayout(card)
-                body.setContentsMargins(0, 5, 0, 5)
-                body.setSpacing(3)
-                line = QHBoxLayout()
-                status = _label(title, role="scriptsHistoryStatus", wrap=True)
-                _feedback(status, state)
-                line.addWidget(status, 1)
-                line.addWidget(_label(duration, role="scriptsMuted"))
-                body.addLayout(line)
-                body.addWidget(_label(detail, role="scriptsMuted", wrap=True))
-                rows.addWidget(card)
+        history_key = tuple(entries)
+        if getattr(self, "_rendered_history_entries", None) != history_key:
+            for history in (self.history, self.drawer_inspector.scriptsHistoryList):
+                rows = history.layout()
+                while rows.count():
+                    widget = rows.takeAt(0).widget()
+                    if widget is not None:
+                        widget.hide()
+                        widget.setParent(None)
+                        widget.deleteLater()
+                for title, duration, detail, state in entries:
+                    card = QFrame()
+                    card.setObjectName("scriptsHistoryEntry")
+                    body = QVBoxLayout(card)
+                    body.setContentsMargins(0, 5, 0, 5)
+                    body.setSpacing(3)
+                    line = QHBoxLayout()
+                    status = _label(title, role="scriptsHistoryStatus", wrap=True)
+                    _feedback(status, state)
+                    line.addWidget(status, 1)
+                    line.addWidget(_label(duration, role="scriptsMuted"))
+                    body.addLayout(line)
+                    body.addWidget(_label(detail, role="scriptsMuted", wrap=True))
+                    rows.addWidget(card)
+            self._rendered_history_entries = history_key
         self._refresh_library_cues()
 
-    def _add_library_item(self, script):
+    def _add_library_item(self, script, extra: str = ""):
         filename, sha, tier, support = script
         item = QListWidgetItem()
-        item.setSizeHint(QSize(0, 66))
+        item.setSizeHint(QSize(0, 84 if extra else 66))
         self.library.addItem(item)
         row = QWidget()
         row.setProperty("role", "sectionContents")
@@ -1102,16 +1202,23 @@ class ScriptsPage:
         digest.setFont(QFont("Consolas", 9))
         identity.addWidget(digest)
         verdict = _label(f"{tier} · {support}", role="scriptsLibraryVerdict")
-        _feedback(verdict, "ok" if support == "supported" else "error")
+        _feedback(
+            verdict, "ok" if support == "supported" else "warning" if support in ("deferred", "unknown") else "error"
+        )
         identity.addWidget(verdict)
         identity.addStretch(1)
         col.addLayout(identity)
+        if extra:
+            col.addWidget(_label(extra, role="scriptsMuted"))
         active = _label("Run active", role="scriptsLibraryActive")
         _feedback(active, "warning")
         active.hide()
         col.addWidget(active)
         self.library.setItemWidget(item, row)
-        item.setToolTip(f"{filename}\nVersion {sha} · {tier} · {support} · offline example")
+        item.setToolTip(
+            f"{filename}\nVersion {sha} · {tier} · {support}"
+            + ("" if self._live and not self._reference_mode else " · offline example")
+        )
 
     def _refresh_library_cues(self):
         for index, script in enumerate(self._library_scripts):
@@ -1123,30 +1230,66 @@ class ScriptsPage:
                 continue
             active = row.findChild(QLabel, "scriptsLibraryActive")
             live = self._run_state in LIVE_STATES and script[1] == getattr(self, "_run_version", "")
-            active.setVisible(live)
-            item.setSizeHint(QSize(0, 84 if live else 66))
+            # isHidden() tracks explicit visibility even if an ancestor rail is
+            # hidden; isVisible() could repeatedly force layout on background polls.
+            if active.isHidden() == live:
+                active.setVisible(live)
+            wanted = QSize(0, 84 if live else 66)
+            if item.sizeHint() != wanted:
+                item.setSizeHint(wanted)
 
     def _refresh_readiness(self, *_args):
         if not hasattr(self, "start"):
             return
+        self.designer.scriptsOfflineNotice.setVisible(not self._live_mode())  # a real run is not an offline preview
         script = self._current_script
         partial = script is not None and script[0].startswith("Hires")
         missing_source = partial and self.source.currentIndex() == 0
         _feedback(self.source_note, "error" if missing_source else "")
         supported = script is not None and script[3] == "supported"
         self.disclosure.setText(
-            "Cannot start: console.repl is unsupported. No script is executed in this preview."
+            self._live_disclosure()
+            if self._live and not self._reference_mode
+            else "Cannot start: console.repl is unsupported. No script is executed in this preview."
             if script is not None and not supported
             else self._base_disclosure
         )
         ready = self._reference_mode and supported and not missing_source and self._run_state not in LIVE_STATES
+        problem = None
+        if self._live_mode():
+            self._sync_pickers()
+            partial = False
+            self.source.setCurrentIndex(0)
+            self.source.setEnabled(False)
+            self.source_note.setText(
+                "Not used by real runs yet: Start runs text-to-image from Generate's settings. "
+                "Source images and the Inpaint handoff are ignored."
+            )
+            summary, problem, details = self.settings_source() if self.settings_source else ("", None, {})
+            self._show_starting_settings(details, problem)
+            self.run_settings.setText(summary)
+            self.run_settings.setVisible(bool(summary))
+            ready = supported and not self._starting and self._run_state not in LIVE_STATES and problem is None
+        else:
+            self.run_settings.hide()
+            self.source.setEnabled(True)
+        self.go_generate.setVisible(problem is not None)
         if partial:
             self.acknowledge.show()
             ready = ready and self.acknowledge.isChecked()
         self.start.setEnabled(bool(ready))
-        self.start.setText("Start new run" if self._prior_unresolved else "Start script")
+        if problem is not None and supported:
+            self.disclosure.setText(f"Cannot start yet: {problem}")
+        if not self._starting:
+            self.start.setText("Start new run" if self._prior_unresolved else "Start script")
         self.start.setToolTip(
-            "Offline preview only: no script executes or submits work."
+            "Starts this saved version as one queue item with Generate's current text-to-image settings."
+            if self._live_mode() and ready
+            else "Select a supported, saved script. Starting needs a free queue."
+            if self._live_mode()
+            else "Starting scripts is not connected yet. Library and inspection are real; nothing executes or submits work."
+            if self._live and not self._reference_mode
+            else "Offline preview only: no script executes or submits work."
             if ready
             else "Select a supported example, provide any required source and acknowledge incomplete inspection. No real execution is connected."
         )
@@ -1158,7 +1301,15 @@ class ScriptsPage:
             if self._run_state == "failed"
             else "warning"
             if self._run_state
-            in ("queued", "waiting_input", "stopped", "interrupted", "outcome_unknown", "cancelled_before_start")
+            in (
+                "queued",
+                "paused",
+                "waiting_input",
+                "stopped",
+                "interrupted",
+                "outcome_unknown",
+                "cancelled_before_start",
+            )
             else ""
         )
 
@@ -1167,7 +1318,7 @@ class ScriptsPage:
         live = self._run_state in LIVE_STATES
         unresolved = self._run_state in ("interrupted", "outcome_unknown") or self._prior_unresolved
         ui.backToFormButton.setVisible(not live)
-        ui.checkQueuesButton.setVisible(unresolved)
+        ui.checkQueuesButton.setVisible(unresolved or (self._live_mode() and self._run_state in ("queued", "paused")))
         ui.reviewRunButton.setVisible(not live)
         ui.reviewRunButton.setText("Review and start again" if unresolved else "Run again…")
         ui.advancePreviewButton.setVisible(self._reference_mode and self._run_state in ("queued", "running"))
@@ -1225,19 +1376,25 @@ class ScriptsPage:
                 self.console.setPlainText(
                     f"0:00.0 Script started as one queue item · version {self._run_version}\n0:02.1 Child step 1 · red · committed\nOffline fixture only · cap 1; no provider was called."
                 )
-        self.run_footer.setText(
+        self.run_footer.setText(self._footer_for(key))
+        self._sync_drawer_data()
+        self._present_activity()
+
+    @staticmethod
+    def _footer_for(key):
+        return (
             "Stop script in the activity bar ends local waiting; remote work may still complete. Text-only console · last 500 lines kept."
             if key in ("running", "waiting_input")
-            else "Waiting for admission. Cancel is free; nothing has been submitted."
+            else "Waiting for admission. Open Queues to cancel safely before submission."
             if key == "queued"
+            else "Saved paused. No generation was submitted; open Queues to Start the item when dispatch is free."
+            if key == "paused"
             else "Cancelled before admission. No submission or charge; the example remains in History."
             if key == "cancelled_before_start"
             else "Unresolved previous work may still complete or be billed. Review starts separate work; it never retries that attempt."
             if key in ("interrupted", "outcome_unknown")
             else "Review settings before starting a separate run. Existing results and history are retained."
         )
-        self._sync_drawer_data()
-        self._present_activity()
 
     @staticmethod
     def _fixture_result():
@@ -1282,6 +1439,18 @@ class ScriptsPage:
                 else "0:12.0 Preview inputs accepted; script continues (offline)."
             )
 
+    def _check_queues_clicked(self) -> None:
+        """Open the actual queued script when live; retain fixture notice offline."""
+        if self._live_mode() and self._live_run is not None:
+            self.owner.form.queueNavigationButton.click()
+            self.owner.queue.select_queue(self._live_run["queue_id"])
+            return
+        self.owner.inline.notice(
+            "Offline linked attempts",
+            "No real queue or durable attempt exists for this preview. The unresolved example remains in Scripts History.",
+            "info",
+        )
+
     def _review_run(self):
         # Never auto-submit. Unknown work remains referenced while reviewing.
         self._prior_unresolved |= self._run_state in ("interrupted", "outcome_unknown")
@@ -1289,6 +1458,9 @@ class ScriptsPage:
         self._sync_drawer_data()
 
     def _saved_preview_version(self, source, sha):
+        if self._live and not self._reference_mode:
+            self._save_live_version(source)
+            return
         self._preview_versions[sha[:7]] = source
         filename = self._current_script[0] if self._current_script else "Untitled.js"
         script = (filename, sha[:7], "Tier 1", "supported")
@@ -1372,7 +1544,14 @@ class ScriptsPage:
         self._refresh_readiness()
 
     def accept_inpaint_snapshot(self, source, mask: bytes, thumbnail: QPixmap):
-        """Retain immutable encoded content and detached mask bytes, never the editable canvas."""
+        """Retain a detached image only for fixtures; never misrepresent live text-only Start."""
+        if self._live_mode():
+            self.owner.inline.notice(
+                "Inpaint handoff not supported",
+                "Live Scripts Start only supports text-to-image. Nothing was queued or submitted.",
+                "warning",
+            )
+            return False
         if self.editor.is_dirty():
             self.owner.inline.notice(
                 "Unsaved draft retained", "Discard or save the draft before opening the Inpaint handoff.", "warning"
@@ -1398,3 +1577,702 @@ class ScriptsPage:
 
     def _detach_source(self):
         self.source.setCurrentIndex(0)
+
+    # ------------------------------------------------------------------
+    # Managed library and static analyzer (real services; no execution)
+    # ------------------------------------------------------------------
+
+    def _live_disclosure(self) -> str:
+        script = self._current_script
+        if script is None:
+            return self._base_disclosure
+        inspection = self._inspections.get(self._selected_sha)
+        if inspection is not None and inspection.support != "supported":
+            return f"Cannot start: {inspection.summary}"
+        if self.run_start is None:
+            return "Start is not connected in this window."
+        return (
+            "Start creates one queue item that runs this saved version with Generate's current model and "
+            f"settings, up to {self.cap.value()} generations. It sends real generation requests to the selected "
+            "backend and cloud generations may use credits. Stop ends local waiting only."
+        )
+
+    def _library_store(self):
+        if self._library is None:
+            try:
+                self._library = self._library_factory()
+            except Exception as exc:  # noqa: BLE001 - surfaced to the user, the page stays usable offline
+                self.owner.inline.notice("Script library unavailable", str(exc), "error")
+                return None
+        return self._library
+
+    def _check_syntax_live(self, source: str, done) -> None:
+        def parse(text: str):
+            from dtflow.scripting.analysis import parse_syntax_error, syntax_error
+
+            error = syntax_error(text)
+            return parse_syntax_error(error) if error else None
+
+        self.owner.runner.submit(
+            asyncio.to_thread(parse, source),
+            lambda result, exception: done(
+                (1, 1, f"Syntax check failed: {exception}") if exception is not None else result
+            ),
+        )
+
+    def refresh_library(self) -> None:
+        """Re-read the index from disk (also what returning to the Scripts page does)."""
+        if not self._live or self._reference_mode:
+            return
+        library = self._library_store()
+        if library is None:
+            return
+        if self.editor.is_dirty():
+            return  # never rebuild the list under an unsaved draft
+        self._load_library(self._selected_sha)
+
+    def _load_library(self, select: str = "") -> None:
+        library = self._library
+        try:
+            versions = library.list_versions()
+        except Exception as exc:  # noqa: BLE001
+            self.owner.inline.notice("Script library unavailable", str(exc), "error")
+            return
+        same = [v.sha256 for v in versions] == [v.sha256 for v in self._versions]
+        self._versions = versions
+        self.designer.libraryEmptyHint.setVisible(not versions)
+        self.library_note.setText(
+            f"Local files only. Each version is copied and kept by SHA-256 ({len(versions)} of {MAX_VERSIONS} stored)."
+        )
+        if not versions:
+            self.clear()
+            self.library_note.setText(f"Local files only · 0 of {MAX_VERSIONS} versions stored.")
+            self._selected_sha = ""
+            return
+        if not same:
+            self.library.blockSignals(True)
+            self.library.clear()
+            self._library_scripts = []
+            groups: dict[str, list[str]] = {}
+            for version in sorted(versions, key=lambda v: v.created_at):
+                groups.setdefault(version.name, []).append(version.sha256)
+            for version in versions:
+                inspection = self._inspections.get(version.sha256)
+                script = (
+                    version.name,
+                    version.short,
+                    inspection.tier if inspection else "Not inspected",
+                    inspection.support if inspection else "unknown",
+                )
+                self._library_scripts.append(script)
+                same_name = groups[version.name]
+                try:
+                    when = datetime.fromisoformat(version.created_at).astimezone().strftime("%d %b %H:%M")
+                except ValueError:
+                    when = version.created_at
+                position = same_name.index(version.sha256) + 1
+                tag = f"version {position} of {len(same_name)}" + (" · latest" if position == len(same_name) else "")
+                self._add_library_item(script, f"{tag} · {when}" if len(same_name) > 1 else when)
+            self.library.blockSignals(False)
+        for version in versions:  # every version gets its verdict, not only the selected one
+            if version.sha256 not in self._inspections and version.sha256 not in self._inspecting:
+                self._inspect_in_background(version)
+        row = next((i for i, v in enumerate(versions) if v.sha256 == select), -1)
+        if row >= 0:
+            self.library.blockSignals(True)
+            self.library.setCurrentRow(row)
+            self.library.blockSignals(False)
+            if select != self._selected_sha or self._current_script is None:
+                self._select_live(row)
+
+    def _select_live(self, row: int) -> None:
+        if row < 0 or row >= len(self._versions):
+            return
+        version = self._versions[row]
+        if self.editor.is_dirty() and version.sha256 != self._selected_sha:
+            previous = next((i for i, v in enumerate(self._versions) if v.sha256 == self._selected_sha), -1)
+            self.library.blockSignals(True)
+            self.library.setCurrentRow(previous)
+            self.library.blockSignals(False)
+            self.owner.inline.notice(
+                "Unsaved script draft", "Discard the draft explicitly before selecting another script.", "warning"
+            )
+            return
+        try:
+            source = self._library.read_source(version.sha256)
+        except ScriptLibraryError as exc:
+            self.owner.inline.notice("Cannot read stored script", str(exc), "error")
+            return
+        self._selected_sha = version.sha256
+        self._current_script = (version.name, version.short, "Not inspected", "unknown")
+        self.editor.set_draft(source, status=f"Version {version.short}", based_on=version.short)
+        self.script_title.setText(version.name)
+        self.script_title.setToolTip(version.name)
+        self.sha.setText(f"version {version.short}")
+        self.sha.setFont(QFont("Consolas", 9))
+        self.sha.setToolTip(f"SHA-256: {version.sha256}")
+        self.status.setText("Inspecting… (static parse only)")
+        _feedback(self.status, "")
+        self.form.set_fields([])
+        self.form_note.setText("Nothing to configure here. This script asks for its settings when it runs.")
+        self.form_note.show()
+        self.reset_fields.setEnabled(False)
+        for panel in self.inspector_panels:
+            panel.show()
+        self.inspect_banner.show()
+        self.inspect_card.show()
+        self.show_view(0)
+        cached = self._inspections.get(version.sha256)
+        if cached is not None:
+            self._apply_inspection(version, cached)
+            return
+        data = source.encode("utf-8")
+        self.owner.runner.submit(
+            asyncio.to_thread(inspect_source, data, version.name),
+            lambda result, exception, sha=version.sha256: self._inspected(sha, result, exception),
+        )
+
+    def _inspect_in_background(self, version: ScriptVersion) -> None:
+        if version.sha256 == self._selected_sha or self._library is None:
+            return  # the selected version is inspected by its own selection
+        try:
+            data = self._library.read_source(version.sha256).encode("utf-8")
+        except ScriptLibraryError:
+            return
+        self._inspecting.add(version.sha256)
+        self.owner.runner.submit(
+            asyncio.to_thread(inspect_source, data, version.name),
+            lambda result, exception, sha=version.sha256: self._background_inspected(sha, result, exception),
+        )
+
+    def _background_inspected(self, sha: str, result, exception) -> None:
+        self._inspecting.discard(sha)
+        if exception is not None:
+            return
+        self._inspections[sha] = result
+        self._versions = []  # rebuild the rows so the verdict chip shows
+        self._load_library(self._selected_sha)
+
+    def _inspected(self, sha: str, result, exception) -> None:
+        if exception is not None:
+            if sha == self._selected_sha:
+                self.status.setText(f"Inspection failed · {type(exception).__name__}: {exception}")
+                _feedback(self.status, "error")
+            return
+        self._inspections[sha] = result
+        version = next((v for v in self._versions if v.sha256 == sha), None)
+        if version is None:
+            return
+        self._versions = []  # rebuild the list rows so the verdict chip shows the new inspection
+        self._load_library(self._selected_sha)
+        if sha == self._selected_sha:
+            self._apply_inspection(version, result)
+
+    def _apply_inspection(self, version: ScriptVersion, inspection: Inspection) -> None:
+        self._current_script = (version.name, version.short, inspection.tier, inspection.support)
+        self._current_hooks = tuple((row.api, row.state, row.detail) for row in inspection.hooks)
+        syntax_ok = inspection.syntax_error is None
+        label = (
+            f"● {'Syntax valid' if syntax_ok else 'Syntax error'}   ● {len(inspection.hooks)} API calls observed   ● "
+            + inspection.title
+        )
+        self.status.setText(label)
+        self._saved_inspection = label
+        _feedback(self.status, inspection.verdict)
+        self.hook_status.setText(inspection.title)
+        for widget in (self.hook_status, self.drawer_summary):
+            _feedback(widget, inspection.verdict)
+        self.drawer_summary.setText(inspection.title)
+        self.inspect_summary.setText(inspection.summary)
+        dynamic = inspection.report["dynamic_constructs"]
+        facts = {
+            "Header": f"{version.name} · API {inspection.api_version or 'header missing'}",
+            "Tier": inspection.tier,
+            "Dynamic": ", ".join(dynamic) if dynamic else "none found",
+            "Models": "Known only at run time",
+            "Loras": "Known only at run time",
+            "Method": "Static parse · no generation, network or sign-in",
+        }
+        for name, widget in self.inspection_values.items():
+            widget.setText(facts[name])
+        supported = sum(row.state == "supported" for row in inspection.hooks)
+        deferred = sum(row.state == "deferred" for row in inspection.hooks)
+        blocked = sum(row.state == "unsupported" for row in inspection.hooks)
+        self._set_inspect_banner(
+            inspection.title,
+            f"{supported} hooks supported, {deferred} deferred, {blocked} unsupported. Static analysis only; nothing was executed.",
+            inspection.verdict,
+        )
+        try:
+            created = datetime.fromisoformat(version.created_at).astimezone().strftime("%d %b %Y %H:%M")
+        except ValueError:
+            created = version.created_at
+        metadata = {
+            "File": version.name,
+            "Version SHA-256": version.sha256,
+            "Size": f"{version.size} bytes",
+            "Imported": created,
+        }
+        for values in (self.inspector_source_values, self.drawer_source_values):
+            for key, widget in values.items():
+                widget.setText(metadata[key])
+                widget.setToolTip(metadata[key])
+        for form in (self.inspector, self.drawer_inspector):
+            for name in ("settingsCard", "sourceCard", "historyCard"):
+                getattr(form, name).show()
+        while self.hook_list.count():
+            widget = self.hook_list.takeAt(0).widget()
+            if widget is not None:
+                widget.hide()
+                widget.setParent(None)
+                widget.deleteLater()
+        for hook, state, detail in self._current_hooks:
+            self.hook_list.addWidget(_hook_item(hook, state, detail))
+        if not self._current_hooks:
+            self.hook_list.addWidget(
+                _label("No facade calls were found in the source.", role="scriptsMuted", wrap=True)
+            )
+        self._sync_drawer_data()
+        self._fit_rails()
+        if inspection.syntax_error is not None and not self.editor.is_dirty():
+            self.editor.set_error(*inspection.syntax_error)
+        self._refresh_readiness()
+
+    def _import_live(self) -> None:
+        library = self._library_store()
+        if library is None:
+            return
+        filename, _ = QFileDialog.getOpenFileName(
+            self.owner.form, "Import JavaScript", "", "JavaScript (*.js);;All files (*)"
+        )
+        if not filename:
+            return
+        try:
+            version, existing = library.import_file(Path(filename))
+        except ScriptLibraryError as exc:
+            self.owner.inline.notice("Import failed", str(exc), "error")
+            return
+        if existing:
+            self.owner.inline.notice(
+                "Already in the library",
+                f"This exact file is stored as version {version.short} ({version.name}).",
+                "info",
+            )
+        self._selected_sha = ""
+        self._current_script = None
+        self._versions = []  # force the list to be rebuilt
+        self._load_library(version.sha256)
+
+    def _save_live_version(self, source: str) -> None:
+        library = self._library_store()
+        if library is None:
+            return
+        name = self._current_script[0] if self._current_script else "Untitled.js"
+        based_on = self._selected_sha
+        try:
+            version, _ = library.add_source(name, source, based_on=based_on)
+        except ScriptLibraryError as exc:
+            self.owner.inline.notice("Save failed", str(exc), "error")
+            return
+        self._selected_sha = ""
+        self._current_script = None
+        self._versions = []
+        self._load_library(version.sha256)
+        self.show_view(2)
+
+    # ------------------------------------------------------------------
+    # Real runs: one script queue item (Start, live status, results, history)
+    # ------------------------------------------------------------------
+
+    _TERMINAL = ("results", "stopped", "cancelled_before_start", "failed", "interrupted", "outcome_unknown")
+    _STEP_STATES = {
+        "succeeded": "committed",
+        "failed": "failed",
+        "cancelled": "stopped",
+        "save_failed": "saved failed · may be billed",
+        "unknown": "outcome unknown",
+        "interrupted_before_submission": "not submitted",
+        None: "recorded, no state yet",
+    }
+
+    def _sync_pickers(self) -> None:
+        """Pull the Generate form's model, size and steps into the pickers (without writing back)."""
+        form = self.generate_form
+        show = form is not None and self._live_mode()
+        self.picker_row.setVisible(show)
+        if not show:
+            return
+        widgets = [self.pick_model, *self.pick_spins.values()]
+        for widget in widgets:
+            widget.blockSignals(True)
+        try:
+            combo = form.modelCombo
+            names = [combo.itemText(i) for i in range(combo.count())]
+            if [self.pick_model.itemText(i) for i in range(self.pick_model.count())] != names:
+                self.pick_model.clear()
+                self.pick_model.addItems(names)
+            self.pick_model.setCurrentText(combo.currentText())
+            for key, spin in self.pick_spins.items():
+                spin.setValue(getattr(form, key).value())
+        finally:
+            for widget in widgets:
+                widget.blockSignals(False)
+
+    def _show_starting_settings(self, details: dict, problem: str | None) -> None:
+        """The inspector's Starting settings card shows what Start will use, never fixture values."""
+        names = {
+            "Checkpoint": "settingsCheckpointValue",
+            "Size": "settingsSizeValue",
+            "Steps": "settingsStepsValue",
+            "Sampler": "settingsSamplerValue",
+            "Seed": "settingsSeedValue",
+        }
+        for form in (self.inspector, self.drawer_inspector):
+            for label, widget_name in names.items():
+                widget = getattr(form, widget_name)
+                widget.setText(details.get(label, "Not set on Generate" if label == "Checkpoint" else "—"))
+            form.settingsNote.setText(
+                "Read from the Generate tab; change them there or with the pickers next to Start. "
+                "The script may override values per generation."
+                if problem is None
+                else f"Start is blocked: {problem}."
+            )
+
+    def _push_picker(self, name: str, value) -> None:
+        form = self.generate_form
+        if form is None:
+            return
+        widget = getattr(form, name)
+        if name == "modelCombo":
+            widget.setCurrentText(value)
+        else:
+            widget.setValue(value)
+        self._refresh_readiness()
+
+    def _fit_rails(self) -> None:
+        for panel in (self.right, self.drawer_inspector):
+            fit_rail(panel)
+
+    def _live_mode(self) -> bool:
+        return self._live and not self._reference_mode and self.run_start is not None
+
+    def _state_dir(self) -> Path:
+        return Path(self.owner.state_dir)
+
+    def _start_clicked(self) -> None:
+        if self._live_mode():
+            self._start_live()
+        else:
+            self._start_preview()
+
+    def _start_live(self) -> None:
+        if not self.start.isEnabled() or self._starting or self._current_script is None or not self._selected_sha:
+            return
+        if self.editor.is_dirty():
+            self.owner.inline.notice(
+                "Unsaved script draft", "Save the draft as a version before starting it.", "warning"
+            )
+            return
+        library = self._library_store()
+        if library is None:
+            return
+        try:
+            source = library.read_source(self._selected_sha)
+        except ScriptLibraryError as exc:
+            self.owner.inline.notice("Cannot read stored script", str(exc), "error")
+            return
+        name, short, cap = self._current_script[0], self._current_script[1], self.cap.value()
+        self._starting = True
+        self.start.setEnabled(False)
+        self.start.setText("Starting…")
+        inspection = self._inspections.get(self._selected_sha)
+        expected = inspection.report.get("static_run_count") if inspection is not None else None
+        self.run_start(
+            source,
+            name,
+            cap,
+            lambda result, failure: self._live_started(result, failure, name, short, cap),
+            expected_steps=expected,
+        )
+
+    def _live_started(self, result, failure, name: str, short: str, cap: int) -> None:
+        self._starting = False
+        if failure is not None:
+            from dtflow.core.models import ValidationError
+            from dtflow.services.connection import present_generation_failure
+
+            if isinstance(failure, ValidationError):
+                headline, detail = "Script not started", str(failure)
+            else:
+                presentation = present_generation_failure(failure)
+                headline, detail = presentation.headline, presentation.detail
+            self.owner.inline.notice(headline, detail, "error")
+            self._refresh_readiness()
+            return
+        queue_id, run_id, started = result
+        self._live_run = {"queue_id": queue_id, "run_id": run_id, "name": name, "sha": short, "cap": cap}
+        self._run_cap, self._run_version = cap, short
+        self._load_history()
+        # The queue's pending/paused lifecycle is already visible in Scripts
+        # and Queues. Do not post a transient warning overlay for an ordinary
+        # admission state: dispatch can begin just after this callback.
+        self._show_live("queued" if started == "started" else "paused", None, force_view=True)
+        self._live_timer.start()
+        self._poll_live()
+
+    @staticmethod
+    def _live_key(view: dict) -> str:
+        items = view.get("items") or []
+        if not items:
+            return "queued"
+        item = items[0]
+        state = item["state"]
+        run_state = (item.get("script") or {}).get("run_state")
+        if state == "pending":
+            return "paused" if view.get("status") == "paused" else "queued"
+        if state == "running":
+            return "waiting_input" if (item.get("script") or {}).get("waiting_for_input") else "running"
+        if state == "succeeded":
+            return "results"
+        if state == "cancelled":
+            return "stopped" if run_state else "cancelled_before_start"
+        if run_state == "interrupted":
+            return "interrupted"
+        if state == "unknown":
+            return "outcome_unknown"
+        return "failed"
+
+    def _poll_live(self) -> None:
+        run = self._live_run
+        if run is None or self._live_reading or self.owner.runner.closed:
+            return
+        from dtflow.services.queue_session import read_queue_views
+
+        self._live_reading = True
+        self.owner.runner.submit(read_queue_views(self._state_dir(), run["queue_id"]), self._live_read)
+
+    def _live_read(self, result, failure) -> None:
+        self._live_reading = False
+        if self._live_run is None:
+            return
+        if failure is not None or not result:
+            self.run_status.setText("Status unavailable · reading again")
+            _feedback(self.run_status, "warning")
+            return
+        view = result[0]
+        key = self._live_key(view)
+        self._show_live(key, view)
+        # A just-created queue may briefly read as paused before the dispatch
+        # worker publishes running. Its status is visible in Scripts and Queues;
+        # treating that transient observation as a warning created a stale
+        # overlay even while the shared activity bar showed active work.
+        if key in self._TERMINAL:
+            self._live_timer.stop()
+            self._load_history()
+            # Successful scripts are normal queue completions. QueuePage already
+            # publishes the single success result in the shared bottom activity
+            # bar; do not add a second success notice over the workspace.
+            if key != "results":
+                title, _ = RUN_STATUSES.get(key, ("Completed", ""))
+                self.owner.inline.notice(
+                    "Script " + title.lower(),
+                    f"Run #{self._run_number} · {self._live_run['name']}. Details are in Scripts and Queues.",
+                    "warning",
+                )
+
+    @staticmethod
+    def _images(paths) -> list[str]:
+        return [p for p in paths if isinstance(p, str) and p.lower().endswith((".png", ".jpg", ".jpeg", ".webp"))]
+
+    def _show_live(self, key: str, view: dict | None, *, force_view: bool = False) -> None:
+        """Present the polled durable state of the run's one queue item. Reads only; never starts or retries anything."""
+        run = self._live_run
+        item = (view.get("items") or [None])[0] if view else None
+        script = (item or {}).get("script") or {}
+        children = script.get("children") or []
+        queue_id = run["queue_id"]
+        self._run_state = key
+        # Display the stable queue identity; positional ordinals change after
+        # Clear history and must never be presented as durable run numbers.
+        self._run_number = queue_id[:8]
+        if key in ("interrupted", "outcome_unknown"):
+            self._prior_unresolved = True
+        on_run_view = self.views.currentIndex() in (3, 4)
+        target = 4 if key == "results" else 3
+        if force_view or (on_run_view and self.views.currentIndex() != target):
+            self.show_view(target)
+        else:
+            # The selected view is already correct; avoid rebuilding header and
+            # tab geometry on each live-status poll.
+            self._refresh_run_actions()
+            self._refresh_readiness()
+        label = {
+            "queued": "queued",
+            "paused": "saved paused",
+            "cancelled_before_start": "cancelled before start",
+        }.get(key, "started")
+        self.run_identity.setText(
+            f"Run #{self._run_number} · queue item {queue_id[:8]} · version {run['sha']} · {label}"
+        )
+        artifacts = [path for child in children for path in self._images(child["artifacts"])]
+        if key == "results":
+            committed = sum(child["state"] == "succeeded" for child in children)
+            self.results_header.setText(
+                f"Committed steps · {committed} of {len(children)} recorded · cap {run['cap']}"
+                + self._seconds(script.get("elapsed")).replace(" · ", " · total ")
+            )
+            self._populate_live_results(children, run)
+        else:
+            status, detail = RUN_STATUSES[key]
+            if key == "queued":
+                detail = "Waiting for admission; nothing submitted yet. Open Queues to cancel or inspect this item."
+            elif key == "paused":
+                detail = "Saved paused; no dispatch owner accepted the run. Open Queues to Start it manually."
+            elif key == "running":
+                detail = f"Queue item running · {len(children)} child step(s) submitted · cap {run['cap']}."
+            elif key in ("failed", "interrupted", "outcome_unknown", "stopped"):
+                reason = script.get("error") or ((item or {}).get("failure") or {}).get("message")
+                detail = f"{detail} {reason}" if reason else detail
+            self.run_status.setText(f"{status} · {detail}")
+            _feedback(self.run_status, self._run_color())
+            self.run_detail.hide()
+            self.waiting_form.hide()
+            if artifacts:
+                pixmap = QPixmap(artifacts[-1])
+                self.result_picture.set_image(pixmap)
+                self.result_caption.setText(
+                    f"Latest committed result · step {len(artifacts)} · {Path(artifacts[-1]).name}"
+                )
+            else:
+                self.result_picture.set_image(QPixmap())
+                self.result_picture.clear()
+                self.result_picture.setText("No committed result")
+                self.result_caption.setText("Nothing committed yet")
+        lines = [f"Script {run['name']} · version {run['sha']} · one queue item {queue_id[:8]}"]
+        for child in children:
+            lines.append(
+                f"Child step {child['ordinal']} · attempt {child['attempt_id'][:8]} · "
+                + self._STEP_STATES.get(child["state"], str(child["state"]))
+                + self._seconds((child.get("fields") or {}).get("duration"))
+            )
+        if script.get("elapsed") is not None:
+            lines.append(f"Total {script['elapsed']:.1f} s")
+        if script.get("steps_failed"):
+            lines.append(f"{script['steps_failed']} step(s) did not complete; the script itself ran on.")
+        if key == "queued":
+            lines.append("Waiting for admission. Nothing submitted.")
+        self.console.setPlainText("\n".join(lines))
+        self.run_footer.setText(self._footer_for(key))
+        self._sync_drawer_data()
+        self._fit_rails()
+
+    @staticmethod
+    def _seconds(value) -> str:
+        return f" · {value:.1f} s" if type(value) in (int, float) else ""
+
+    def _clear_results(self) -> None:
+        while self.results_layout.count():
+            widget = self.results_layout.takeAt(0).widget()
+            if widget is not None:
+                widget.hide()
+                widget.setParent(None)
+                widget.deleteLater()
+
+    def _populate_live_results(self, children: list, run: dict) -> None:
+        self._clear_results()
+        for child in children:
+            number = child["ordinal"]
+            images = self._images(child["artifacts"])
+            card = QFrame()
+            card.setObjectName("scriptsStepCard")
+            row = QHBoxLayout(card)
+            thumbnail = _label("", role="scriptsStepThumbnail")
+            thumbnail.setFixedSize(48, 48)
+            thumbnail.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            if images:
+                pixmap = QPixmap(images[0])
+                if not pixmap.isNull():
+                    thumbnail.setPixmap(
+                        pixmap.scaled(
+                            48, 48, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation
+                        )
+                    )
+            row.addWidget(thumbnail)
+            details = QVBoxLayout()
+            state = self._STEP_STATES.get(child["state"], str(child["state"]))
+            details.addWidget(
+                _label(
+                    f"Step {number} · {state}" + self._seconds((child.get("fields") or {}).get("duration")),
+                    role="scriptsStepTitle",
+                )
+            )
+            details.addWidget(
+                _label(
+                    f"Created by {run['name']} · run #{self._run_number} · step {number}",
+                    role="scriptsMuted",
+                    wrap=True,
+                )
+            )
+            row.addLayout(details, 1)
+            open_button = QPushButton("Open in Images")
+            open_button.setAccessibleName(f"Open run {self._run_number} step {number} in Images")
+            index = next((i for i, p in enumerate(child["artifacts"]) if isinstance(p, str) and p in images[:1]), None)
+            identity = f"{child['attempt_id']}:{index}" if index is not None else None
+            open_button.setEnabled(identity is not None and self.open_images is not None)
+            if identity is not None and self.open_images is not None:
+                open_button.clicked.connect(lambda _=False, key=identity: self.open_images(key))
+            row.addWidget(open_button)
+            self.results_layout.addWidget(card)
+        if not children:
+            self.results_layout.addWidget(
+                _label("The script completed without generating an image.", role="scriptsMuted")
+            )
+        self.results_layout.addStretch(1)
+
+    # -- history ---------------------------------------------------------------------------------------------------
+
+    def _load_history(self) -> None:
+        if self.owner.runner.closed:
+            return
+        from dtflow.services.queue_session import read_queue_list
+
+        self.owner.runner.submit(read_queue_list(self._state_dir()), self._history_loaded)
+
+    def _history_loaded(self, views, failure) -> None:
+        if failure is not None:
+            return
+        scripts = [view for view in views if view.get("kind") == "script"]
+        entries = []
+        for view in scripts:
+            summary = view["summary"]
+            if summary.get("succeeded"):
+                title, color = "Succeeded", "ok"
+            elif summary.get("unknown"):
+                title, color = "Outcome unknown", "warning"
+            elif summary.get("failed") or summary.get("save_failed"):
+                title, color = "Failed", "error"
+            elif summary.get("cancelled"):
+                title, color = "Stopped", "warning"
+            elif view["status"] == "running":
+                title, color = "Running", ""
+            else:
+                title, color = "Queued", "warning"
+            try:
+                created = datetime.fromisoformat(view["created_at_utc"]).astimezone().strftime("%d %b %H:%M")
+            except (KeyError, TypeError, ValueError):
+                created = ""
+            name = str(view.get("first", {}).get("prompt", "")).removeprefix("Script: ")
+            elapsed = view.get("script_elapsed")
+            entries.append(
+                (
+                    f"#{view['queue_id'][:8]} · {title}",
+                    f"{elapsed:.0f} s" if type(elapsed) in (int, float) else "",
+                    f"Queue item {view['queue_id'][:8]} · {name} · {created}".strip(" ·"),
+                    color,
+                )
+            )
+            if any(summary.get(key) for key in ("unknown",)):
+                self._prior_unresolved = True
+        self._live_history = list(reversed(entries))
+        self._sync_drawer_data()
+        self._fit_rails()

@@ -253,6 +253,9 @@ class ItemRow:
     height: int | float | None = None
     gallery_identity: str | None = None  # "attempt:ordinal" of the first saved image, as the Images gallery names it
     prompt_runs: tuple[tuple[int, int], ...] = ()  # (start, length) of the prompt parts a prompt variation produced
+    is_script_parent: bool = False  # aggregate queue item, not an additional image-generating attempt
+    script_preview_path: str | None = None  # last committed child image, display-only on the parent
+    script_preview_identity: str | None = None  # true child gallery identity; never a parent attempt
 
     @property
     def dimensions_text(self) -> str:
@@ -334,12 +337,84 @@ class Controls:
     reorder: bool = False
 
 
+_STEP_ITEM_STATES = {
+    "succeeded": "succeeded",
+    "failed": "failed",
+    "cancelled": "cancelled",
+    "unknown": "unknown",
+    "interrupted_before_submission": "failed",
+}
+
+
+def _step_rows(item: dict, steps: list) -> list[ItemRow]:
+    rows = []
+    for step in steps:
+        paths = [path for path in step["artifacts"] if isinstance(path, str)]
+        metadata = next((path for path in paths if Path(path).name == "metadata.json"), None)
+        identity = next(
+            (
+                f"{step['attempt_id']}:{index}"
+                for index, path in enumerate(step["artifacts"])
+                if isinstance(path, str) and path != metadata
+            ),
+            None,
+        )
+        fields = step.get("fields") or {}
+        state = _STEP_ITEM_STATES.get(step["state"], "save_failed" if step["state"] == "save_failed" else "running")
+        rows.append(
+            ItemRow(
+                f"{step['ordinal']}:{item['item_id']}",
+                step["ordinal"],
+                state,
+                step["attempt_id"],
+                fields.get("seed") if type(fields.get("seed")) is int else (item.get("seed") or 0),
+                tuple(path for path in paths if path != metadata),
+                metadata,
+                None,
+                "txt2img",
+                None,
+                f"Step {step['ordinal']} · " + str(fields.get("prompt") or item.get("prompt") or ""),
+                fields.get("negative_prompt") or "",
+                fields.get("model") or item.get("model") or "",
+                tuple((str(name), weight) for name, weight in fields.get("loras") or ()),
+                fields.get("steps", item.get("steps")),
+                fields.get("guidance", item.get("guidance")),
+                fields.get("sampler") or item.get("sampler") or "",
+                fields.get("duration"),
+                fields.get("width", item.get("width")),
+                fields.get("height", item.get("height")),
+                identity,
+                (),
+            )
+        )
+    return rows
+
+
 def item_rows(view: dict) -> tuple[ItemRow, ...]:
     rows = []
     for item in view["items"]:
+        steps = (item.get("script") or {}).get("children") or []
+        # Keep the parent script row (and its outcome/failure) ahead of child
+        # attempts. Without it a failed script with successful children is
+        # indistinguishable from a successful run in the Queues inspector.
         artifacts = [path for path in item["artifacts"] if isinstance(path, str)]
         metadata = next((path for path in artifacts if Path(path).name == "metadata.json"), None)
         failure = item.get("failure") or {}
+        script_preview = None
+        if item.get("script"):
+            # A parent ScriptRun summarizes its children. Preview only the
+            # highest-ordinal successfully committed step with a saved image,
+            # using that child's real gallery identity for cache validation.
+            # A failed/unresolved last step must not masquerade as a result.
+            for child in sorted(steps, key=lambda step: step["ordinal"], reverse=True):
+                if child.get("state") != "succeeded" or not child.get("attempt_id"):
+                    continue
+                for position, path in enumerate(child.get("artifacts") or ()):
+                    if isinstance(path, str) and Path(path).suffix.lower() in (".png", ".jpg", ".jpeg", ".webp"):
+                        script_preview = (path, f"{child['attempt_id']}:{position}")
+                        break
+                if script_preview is not None:
+                    break
         # The gallery numbers an attempt's outputs by their index in the recorded artifact list (metadata included).
         identity = next(
             (
@@ -354,11 +429,11 @@ def item_rows(view: dict) -> tuple[ItemRow, ...]:
                 item["item_id"],
                 item["position"],
                 item["state"],
-                item["attempt_id"],
+                None if item.get("script") else item["attempt_id"],
                 item["seed"],
                 tuple(path for path in artifacts if path != metadata),
                 metadata,
-                failure.get("code"),
+                (failure.get("message") or failure.get("code")) if item.get("script") else failure.get("code"),
                 item.get("operation") or "txt2img",
                 item.get("strength"),
                 item.get("prompt") or "",
@@ -371,10 +446,15 @@ def item_rows(view: dict) -> tuple[ItemRow, ...]:
                 item.get("duration"),
                 item.get("width"),
                 item.get("height"),
-                identity,
+                None if item.get("script") else identity,
                 decode_runs(item.get("prompt") or "", item.get("prompt_runs")),
+                is_script_parent=bool(item.get("script")),
+                script_preview_path=script_preview[0] if script_preview else None,
+                script_preview_identity=script_preview[1] if script_preview else None,
             )
         )
+        if steps:
+            rows.extend(_step_rows(item, steps))
     return tuple(rows)
 
 
@@ -401,7 +481,38 @@ def summarize(view: dict) -> QueueSummary:
     )
 
 
-def progress_text(summary: QueueSummary) -> str:
+def script_of(view: dict) -> dict | None:
+    """The script run of a script queue's single item, or None for an ordinary queue."""
+    if view.get("kind") != "script":
+        return None
+    return next((item["script"] for item in view.get("items", ()) if item.get("script")), None)
+
+
+def script_steps(script: dict) -> tuple[int, int, int | None]:
+    """(started, committed, expected) steps of a script run; expected is None when it cannot be known statically."""
+    children = script.get("children") or ()
+    committed = sum(1 for child in children if child.get("state") == "succeeded")
+    return len(children), committed, script.get("expected_steps") or None
+
+
+def script_progress(view: dict) -> tuple[int, int] | None:
+    """(committed, total) for the progress bar of a script queue with a known step total."""
+    script = script_of(view)
+    if script is None:
+        return None
+    _, committed, expected = script_steps(script)
+    return (committed, expected) if expected else None
+
+
+def progress_text(summary: QueueSummary, view: dict | None = None) -> str:
+    script = script_of(view) if view else None
+    if script is not None:
+        started, committed, expected = script_steps(script)
+        failed = script.get("steps_failed") or 0
+        tail = f" · {failed} failed" if failed else ""
+        if expected:
+            return f"Progress: {committed}/{expected} steps · {committed} committed{tail}"
+        return f"Progress: {started} step{'s' if started != 1 else ''} so far · {committed} committed{tail}"
     return f"Progress: {summary.settled}/{summary.total} · {summary.succeeded} succeeded"
 
 
@@ -473,6 +584,10 @@ def queue_title_runs(view: dict) -> tuple[tuple[int, int], ...]:
 
 def plan_text(view: dict) -> str:
     """Item count plus what the items differ in, e.g. ``4 items · 2 prompts, 2 step counts``."""
+    script = script_of(view)
+    if script is not None:
+        _, _, expected = script_steps(script)
+        return f"Script · {expected} step{'s' if expected != 1 else ''}" if expected else "Script · steps as it runs"
     total = sum(view["summary"].values())
     text = f"{total} item{'s' if total != 1 else ''}"
     varied = view.get("varied") or {}
@@ -618,7 +733,8 @@ def primary_action(view: dict | None, available: "Controls", *, started: bool, o
     if available.pause:
         if view["status"] == "queued":
             return PrimaryAction("dequeue", "Pause", "Leaves the up-next order; the queue stays paused until Start.")
-        return PrimaryAction("pause", "Pause", "Stops starting new items; running items finish.")
+        if view.get("kind") != "script":  # a script is one item: the runner has no pause point inside it
+            return PrimaryAction("pause", "Pause", "Stops starting new items; running items finish.")
     if available.enqueue:
         return PrimaryAction("enqueue", "Start next", "Waits up next and starts by itself when the running queue ends.")
     if available.resume and owned:
@@ -696,6 +812,7 @@ def event_lines(view: dict) -> str:
     positions = {item["item_id"]: item["position"] for item in view.get("items", ())}
     hidden = {"item_started", "backend_preparing", "backend_artifact_received", "backend_terminal", "composer_source"}
     lines = []
+    script_steps_shown = False
 
     def item_label(detail: dict) -> str:
         item_id = detail.get("item_id")
@@ -709,7 +826,9 @@ def event_lines(view: dict) -> str:
             continue
         stamp = local_time(event["at_utc"])
 
-        if kind == "created":
+        if kind == "created" and script_of(view) is not None:
+            summary = "Queued"
+        elif kind == "created":
             count, cap = detail.get("items"), detail.get("cap")
             summary = ""
             if count is not None:
@@ -719,7 +838,7 @@ def event_lines(view: dict) -> str:
             if cap is not None:
                 summary += f" // {cap}"
         elif kind == "started":
-            summary = "Queue started"
+            summary = "Started" if script_of(view) is not None else "Queue started"
         elif kind == "backend_submission_possible":
             summary = f"{item_label(detail)} submitted"
         elif kind == "timing_snapshot":
@@ -731,6 +850,21 @@ def event_lines(view: dict) -> str:
                 summary = f"{_clock(elapsed)} + {_clock(eta)} = {_clock(elapsed + eta)}"
             else:
                 continue
+        elif kind == "item_settled" and script_of(view) is not None:
+            script = script_of(view)
+            started, committed, _ = script_steps(script)
+            state = str(detail.get("state", "settled"))
+            state_label = {
+                "succeeded": "Done",
+                "failed": "Failed",
+                "save_failed": "Save failed",
+                "unknown": "Unknown",
+                "cancelled": "Stopped",
+            }.get(state, state.replace("_", " ").capitalize())
+            summary = f"{state_label} · {committed}/{started}"
+            elapsed = script.get("elapsed")
+            if type(elapsed) in (int, float):
+                summary += f" · {elapsed:.2f}s"
         elif kind == "item_settled":
             state = str(detail.get("state", "settled"))
             state = "no result" if state == "unknown" else state.replace("_", " ")
@@ -754,8 +888,36 @@ def event_lines(view: dict) -> str:
             if compact:
                 summary += " - " + ", ".join(compact)
         lines.append(f"{stamp}  {summary}")
+        if kind == "started" and script_of(view) is not None and not script_steps_shown:
+            # A queue can have more than one started event. Its current child
+            # ledger is a snapshot and belongs in the presentation only once.
+            lines.extend(_step_lines(script_of(view)))
+            script_steps_shown = True
 
     return "\n".join(lines)
+
+
+def _step_lines(script: dict) -> list[str]:
+    """Show step progress in narrow logs; never invent a total for dynamic scripts."""
+    children = script.get("children") or ()
+    expected = script.get("expected_steps")
+    total = str(expected) if type(expected) is int and expected >= len(children) and expected > 0 else "?"
+    lines = []
+    blank = " " * 8
+    for child in children:
+        progress = f"{child['ordinal']}/{total}"
+        lines.append(f"{blank}  {progress} start")
+        state = child.get("state")
+        if state == "succeeded":
+            duration = (child.get("fields") or {}).get("duration")
+            tail = f" · {duration:.2f}s" if type(duration) in (int, float) else ""
+            lines.append(f"{blank}  {progress} saved{tail}")
+        elif state in ("failed", "save_failed", "unknown", "cancelled"):
+            short_state = {"failed": "fail", "save_failed": "save fail", "unknown": "unknown", "cancelled": "stopped"}[
+                state
+            ]
+            lines.append(f"{blank}  {progress} {short_state}")
+    return lines
 
 
 def outcome_text(view: dict) -> tuple[str, str, str]:

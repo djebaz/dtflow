@@ -83,6 +83,19 @@ def _state(hooks: tuple[str, ...]) -> tuple[str, str]:
     return worst, owner
 
 
+_BRANCHING = re.compile(
+    r"\bfor\s+await\b|\bfunction\b|=>|\b(?:for|while|if|switch)\s*\(|\bdo\s*\{|\.(?:forEach|map|reduce|filter)\s*\(|\?\s*[^:\n]+:"
+)
+
+
+def static_run_count(code: str, counts: dict[str, int]) -> int | None:
+    """The number of ``pipeline.run`` calls a run will make, only when the source has no loops, branches or callbacks.
+
+    With any of those the count is unknowable statically (``None``); it is never a guess."""
+    runs = counts.get("pipeline.run", 0)
+    return runs if runs and not _BRANCHING.search(code) else None
+
+
 def syntax_error(source: str) -> str | None:
     """Parse the script with the vendored Acorn; the text is data and is never compiled or evaluated.
 
@@ -94,8 +107,24 @@ def syntax_error(source: str) -> str | None:
     return check_syntax(source)
 
 
+_ERROR_LOCATION = re.compile(r"^(?:SyntaxError: )?(?P<message>.*?)\s*\((?P<line>\d+):(?P<column>\d+)\)$", re.DOTALL)
+
+
+def parse_syntax_error(text: str) -> tuple[int, int, str]:
+    """``(line, column, message)`` from Acorn's ``SyntaxError: message (line:column)``; line/column are 1-based.
+    Text without a location (timeouts, nesting limits) maps to line 1, column 1."""
+    match = _ERROR_LOCATION.match(text.strip())
+    if match is None:
+        return 1, 1, text
+    return int(match["line"]), int(match["column"]) + 1, match["message"]
+
+
 def analyze_script(path: Path) -> dict:
     data = Path(path).read_bytes()
+    return analyze_bytes(data, Path(path).name)
+
+
+def analyze_bytes(data: bytes, name: str) -> dict:
     if len(data) > MAX_SOURCE_BYTES:
         raise ValueError("Script source is too large.")
     source = data.decode("utf-8")
@@ -104,10 +133,10 @@ def analyze_script(path: Path) -> dict:
     counts: dict[str, int] = {}
     for owner, member in _FACADE_CALL.findall(code):
         counts[f"{owner}.{member}"] = counts.get(f"{owner}.{member}", 0) + 1
-    for name in _GLOBALS:
-        found = len(re.findall(r"\b" + re.escape(name) + r"\b", code))
+    for global_name in _GLOBALS:
+        found = len(re.findall(r"\b" + re.escape(global_name) + r"\b", code))
         if found:
-            counts[name] = found
+            counts[global_name] = found
     calls, unknown = [], []
     for api, count in sorted(counts.items()):
         if api in ("console.log", "console.warn", "console.error"):
@@ -140,7 +169,7 @@ def analyze_script(path: Path) -> dict:
     if dynamic:
         warnings.append("Dynamic constructs prevent a complete static call list: " + ", ".join(dynamic) + ".")
     return {
-        "file": Path(path).name,
+        "file": name,
         "sha256": hashlib.sha256(data).hexdigest(),
         "bytes": len(data),
         "api_version": version,
@@ -152,6 +181,7 @@ def analyze_script(path: Path) -> dict:
         "unsupported_calls": blocked,
         "awaiting_issues": planned,
         "dynamic_constructs": dynamic,
+        "static_run_count": static_run_count(code, counts),
         "warnings": warnings,
         "preflight": "incomplete" if (dynamic or unknown or version is None) else "static-calls-listed",
         "note": (

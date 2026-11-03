@@ -78,6 +78,12 @@ that store stay `running`, listed in `ScriptRunStore.unverified` and logged, ins
 Per project convention the first slice adds no tests; CI runs the existing suite. Tests and edits follow after the
 smoke test has been validated.
 
+## Scripts Qt queue integration (PR #215)
+
+The native Scripts page imports immutable content-addressed `.js` versions into the managed library, runs a source-only Acorn/hook inspection, and explicitly creates a one-item script queue through the existing Queues controller. The queue item's `run_id` links one ScriptRun to child attempt records before submissions. The UI polls durable state and shows child results and history; success uses the shared activity bar, and pause is a queue state rather than a separate warning overlay. The Queues parent entry is a run-level summary whose thumbnail previews the last successfully committed child, while image opening stays attached to child attempts. Render fixtures are offline and do not establish Windows acceptance.
+
+Current hook scope adds virtual `clearCanvas`, zoom/size/move and empty `clearMoodboard` geometry bookkeeping only; no pixel canvas, masks, source image handoff or non-empty guidance. No real-time native `requestFromUser` form binding is delivered here. Image and broader configuration/LoRA compatibility remain deliberately fail-closed until their owning issues land. The original #199 owner fake-backend smoke does not verify #215's UI or local/cloud implementation.
+
 ## Tier A headless generation (PR #199)
 
 The ScriptHost in `scripting/host.py` implements the subset of upstream hooks for read-only configuration/prompt lookup, generation, model/LoRA lookup, headless form answers, and confined file access. One `generateImage` maps to one existing `run_generation` / `GenerationService` attempt. A caller-named attempt identifier is linked to the ScriptRun before the provider submission can begin. Remote outcome uncertainty blocks subsequent generation in the run; Stop only stops local waiting, and the service drains submitted attempts before closing. `--max-generations` defaults to four per run.

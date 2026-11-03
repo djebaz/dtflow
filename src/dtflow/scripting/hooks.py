@@ -63,13 +63,13 @@ HOOKS: dict[str, HookSpec] = dict(
         _hook("listFilesUnderPicturesWithinDirectory", IMPLEMENTED, "#114", "per-run sandbox directory"),
         _hook("listFilesWithinDirectory", IMPLEMENTED, "#114", "per-run sandbox directory"),
         # Canvas geometry (Tier B).
-        _hook("updateCanvasSize", PLANNED, "#116", "headless virtual canvas"),
-        _hook("moveCanvas", PLANNED, "#116", "headless virtual canvas"),
-        _hook("setCanvasZoom", PLANNED, "#116", "headless virtual canvas"),
-        _hook("canvasZoom", PLANNED, "#116", "headless virtual canvas"),
+        _hook("updateCanvasSize", IMPLEMENTED, "#207", "virtual canvas geometry (no pixels)"),
+        _hook("moveCanvas", IMPLEMENTED, "#207", "virtual canvas geometry (no pixels)"),
+        _hook("setCanvasZoom", IMPLEMENTED, "#207", "virtual canvas geometry (no pixels)"),
+        _hook("canvasZoom", IMPLEMENTED, "#207", "virtual canvas geometry (no pixels)"),
         _hook("boundingBox", PLANNED, "#116", "headless virtual canvas"),
         _hook("topLeftCorner", PLANNED, "#116", "headless virtual canvas"),
-        _hook("clearCanvas", PLANNED, "#116", "headless virtual canvas"),
+        _hook("clearCanvas", IMPLEMENTED, "#207", "virtual canvas geometry (no pixels)"),
         # Canvas pixels and layers.
         _hook("loadImageFileToCanvas", PLANNED, "#116", "services/image_preparation + sandbox"),
         _hook("loadImageSrcToCanvas", PLANNED, "#116", "services/image_preparation"),
@@ -102,7 +102,13 @@ HOOKS: dict[str, HookSpec] = dict(
         ),
         # Guidance.
         _hook("extractDepthMap", PLANNED, "#117", "depth guidance, backend evidence required"),
-        _hook("clearMoodboard", PLANNED, "#117", "moodboard guidance"),
+        _hook(
+            "clearMoodboard",
+            IMPLEMENTED,
+            "#207",
+            "empty moodboard no-op",
+            "removeFromMoodboardAt and image weights stay #117",
+        ),
         _hook("removeFromMoodboardAt", PLANNED, "#117", "moodboard guidance"),
         _hook("setMoodboardImageWeight", PLANNED, "#117", "moodboard guidance"),
         # Unsupported by owner decision.

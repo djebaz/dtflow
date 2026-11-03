@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 import sqlite3
 from contextlib import closing
 from dataclasses import dataclass
@@ -47,6 +48,7 @@ def script_record(
     backend: str,
     max_generations: int,
     answers: list | None,
+    expected_steps: int | None = None,
 ) -> dict[str, Any]:
     return {
         "kind": KIND_SCRIPT,
@@ -54,6 +56,7 @@ def script_record(
         "source_name": source_name,
         "source_sha256": source_sha256,
         "answers": answers,
+        "expected_steps": expected_steps,
         "start": {"backend": backend, "max_generations": max_generations, "base": base},
     }
 
@@ -68,10 +71,10 @@ def script_request_from_record(record: Any) -> ScriptRequest:
     if not (
         isinstance(start, dict)
         and isinstance(run_id, str)
-        and run_id
+        and re.fullmatch(r"[0-9a-f]{32}", run_id) is not None
         and isinstance(name, str)
         and isinstance(sha, str)
-        and len(sha) == 64
+        and re.fullmatch(r"[0-9a-f]{64}", sha) is not None
         and (answers is None or isinstance(answers, list))
         and isinstance(start.get("base"), dict)
         and isinstance(start.get("backend"), str)
@@ -116,6 +119,8 @@ class RunSnapshot:
     state: str
     error: str | None
     children: tuple[str, ...]  # attempt ids in call order
+    created_at: str | None = None
+    finished_at: str | None = None
 
 
 def read_run_snapshot(directory: Path, run_id: str) -> RunSnapshot | None:
@@ -126,7 +131,9 @@ def read_run_snapshot(directory: Path, run_id: str) -> RunSnapshot | None:
     with closing(sqlite3.connect(path.resolve().as_uri() + "?mode=ro", uri=True, timeout=2.0)) as connection:
         connection.execute("PRAGMA query_only=ON")
         try:
-            row = connection.execute("SELECT state, error FROM script_runs WHERE run_id=?", (run_id,)).fetchone()
+            row = connection.execute(
+                "SELECT state, error, created_at, finished_at FROM script_runs WHERE run_id=?", (run_id,)
+            ).fetchone()
             if row is None:
                 return None
             children = tuple(
@@ -139,7 +146,7 @@ def read_run_snapshot(directory: Path, run_id: str) -> RunSnapshot | None:
             if "no such table" in str(exc):
                 return None
             raise
-    return RunSnapshot(row[0], row[1], children)
+    return RunSnapshot(row[0], row[1], children, row[2], row[3])
 
 
 def child_states(db: sqlite3.Connection, children: tuple[str, ...]) -> list[str | None]:
@@ -154,12 +161,15 @@ def child_states(db: sqlite3.Connection, children: tuple[str, ...]) -> list[str 
 def item_outcome(run: RunSnapshot, states: list[str | None]) -> tuple[str, str | None]:
     """The item state (and failure JSON, if any) a run's state plus its children decide. Never invents success."""
     if run.state == "completed":
+        if any(s not in TERMINAL_ATTEMPTS for s in states):  # missing attempts are unresolved too
+            message = "The script completed but a step has no confirmed outcome; check the backend before retrying."
+            return "unknown", json.dumps({"code": "script_step_unknown", "message": message})
         return "succeeded", None
     if run.state == "stopped":
         return "cancelled", None
     if run.state == "failed":
         return "failed", json.dumps({"code": "script_failed", "message": run.error or "Script run failed."})
-    unresolved = run.state == "running" or any(s is not None and s not in TERMINAL_ATTEMPTS for s in states)
+    unresolved = run.state == "running" or any(s not in TERMINAL_ATTEMPTS for s in states)
     if unresolved:
         return "unknown", json.dumps({"code": "script_interrupted", "message": run.error or "Run interrupted."})
     return "failed", json.dumps({"code": "script_interrupted", "message": run.error or "Run interrupted."})
