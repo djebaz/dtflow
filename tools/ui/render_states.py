@@ -2251,6 +2251,11 @@ def render_gallery_composition_states(shell, state, out):
         form.imagesNavigationButton.click()
         assert shell.grid_index_label.isVisible()
         snap("images-65-pager-grid-normal")
+        # The real grid control retains its 28 px housing at (9, 9), while
+        # its invisible 56 px target selects rather than opening Detail.
+        grid_check = next(iter(gallery._check_boxes.values()))
+        grid_check.setFocus()
+        snap("images-65c-grid-checkbox-padded-focus")
         gallery._widget("galleryFocusButton", QPushButton).click()
         try:
             assert gallery._widget("galleryPagerBar").isVisible()

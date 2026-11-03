@@ -19,6 +19,8 @@ Changes through 5.4.0 are consolidated in [DTFlow 5.4.0](v5.4.0.md). This file t
 
 ## Changed
 
+- Images grid selection checkboxes retain their appearance with a 56 × 56 px click target, twice their 28 px housing size. List and Detail controls are unchanged.
+
 ## Fixed
 
 - PR #219 follow-up: remove the mixer preview wizard; keep one Setup form and Run Script. Unknown LoRA metadata is advisory, inspection warnings and footer text are shorter. Parser resource failures are distinguished from source syntax errors; parsing runs on a reserved native stack without changing the pinned parser or execution limits. Source-only changes, not runtime acceptance.
