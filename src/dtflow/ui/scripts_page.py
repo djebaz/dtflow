@@ -2080,7 +2080,11 @@ class ScriptsPage:
         else:
             self._refresh_run_actions()
             self._refresh_readiness()
-        label = {"queued": "queued", "cancelled_before_start": "cancelled before start"}.get(key, "started")
+        label = {
+            "queued": "queued",
+            "paused": "saved paused",
+            "cancelled_before_start": "cancelled before start",
+        }.get(key, "started")
         self.run_identity.setText(
             f"Run #{self._run_number} · queue item {queue_id[:8]} · version {run['sha']} · {label}"
         )
