@@ -33,6 +33,14 @@ Unknown/save outcomes close intake, which waiting workers recheck after reservat
 
 Scripts read the same confirmed cloud LoRA receipt pool used by queue LoRA sets during Setup and refresh it at admission, without requiring those LoRAs to be selected on Generate. Only script-selected receipts enter child requests; explicit starting-request bindings win, and fresh backend/account/receipt validation remains mandatory. This never downloads missing models, uploads files or treats stored receipts as current server availability. See the [Scripts guide](../guides/scripts.md) for API limits, result semantics and acceptance boundaries, and the [batch plan](../plans/2026-11-03-parallel-script-batch.md) for exact CI evidence.
 
+## Krea2 authoring extensions (PR #219)
+
+The frozen DTFlow host overlay additionally exposes paged `listLoRAs`, `runLimits`, `setupForm`, source-version preference read/write and `planId`. `services/script_inventory.py` composes the existing catalogue, immutable cached backend snapshot and confirmed local receipt pool into one bounded projection; metadata compatibility and readiness stay distinct. No new provider, filesystem discovery or arbitrary receipt data crosses this boundary. `RunContext` supplies the immutable source SHA for preferences; the independent schema-1 store is not execution authority.
+
+`setupForm` marks only its next actual request as preparation-only. The same durable form bridge validates/submits its answers while generation permission stays false and the independent queue admission event stays unset. The UI follows these marked ordinals with Preview/Continue actions; service admission rejects preparation-only/in-between/completed preview states. An ordinary subsequent form (or the existing synthetic generation-first ready prompt) still requires Run Script. A completed preview leaves no queue and cannot be queued as if it were a completed generation run. Existing source/backend/stale-callback and owner shutdown checks remain in place.
+
+The portable adapter constructs deterministic global chunks under the captured run cap and previews them in native forms before dispatch. Optional validated batch `planId`/`jobIndex` fields become `script_plan`/`script_job` resolution evidence, preserving per-job mapping without adding another dispatcher or execution store. Source/settings identity is not proof of execution and does not authorize replay. The pinned upstream facade, original Draw Things fallback and unsupported-field gate are unchanged. See the [adapter guide](../guides/krea2-mixer.md) and [plan](../plans/2026-11-03-krea2-mixer-adaptation.md); source implementation is not fake/backend/native/packaged acceptance.
+
 ## Analyzer (`dtflow script <file>`)
 
 The analyzer never runs the script. The source is **parsed** with the vendored Acorn 8.14.0 inside a memory-capped,

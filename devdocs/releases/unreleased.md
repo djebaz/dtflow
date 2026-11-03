@@ -12,6 +12,8 @@ Changes through 5.4.0 are consolidated in [DTFlow 5.4.0](v5.4.0.md). This file t
 
 ## Added
 
+- PR #219: portable Krea2 mixer authoring with cached, paged LoRA discovery, explicit readiness/skipped reasons, non-submitting Setup preview, versioned source-scoped preferences and deterministic bounded manual chunks. Plan IDs/global indices stay with child request evidence. Missing files are not downloaded/uploaded, unsupported preset fields are not silently mapped, and original Draw Things behavior remains separate. Source only; owner acceptance remains tracked by #216.
+
 ## Changed
 
 ## Fixed
@@ -33,5 +35,5 @@ Changes through 5.4.0 are consolidated in [DTFlow 5.4.0](v5.4.0.md). This file t
 
 ## Release audit
 
-- PRs: #193, #199, #201, #215, #217, #218.
-- Scope: Version bump 5.4.0 and release-note consolidation; Scripts preview corrections, canonical Designer migration, headless/native queue runtime and full form/Setup integration; optional bounded parallel scripts with attempts schema 6, ready LoRA binding and lifecycle repairs. Exact Windows artifact, provider compatibility and release publication remain separate gates.
+- PRs: #193, #199, #201, #215, #217, #218, #219.
+- Scope: Version bump 5.4.0 and release-note consolidation; Scripts preview corrections, canonical Designer migration, headless/native queue runtime and full form/Setup integration; bounded parallel scripts with attempts schema 6, ready LoRA binding and lifecycle repairs; portable mixer inventory/preparation preview, independent schema-1 authoring preferences and explicit chunks. Exact Windows artifact, provider compatibility and release publication remain separate gates.

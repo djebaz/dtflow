@@ -147,6 +147,9 @@ def analyze_bytes(data: bytes, name: str) -> dict:
             hooks = ("requestFromUser",)
         elif api == "__dtSleep":
             hooks = ("sleep",)
+        elif api == "pipeline.runBatch":
+            # DTFlow overlay, deliberately absent from the pinned upstream map.
+            hooks = ("generateBatch",)
         elif api in mapping:
             hooks = mapping[api]
         elif api.startswith("pipeline.configuration"):

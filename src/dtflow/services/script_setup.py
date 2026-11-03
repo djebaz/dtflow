@@ -122,6 +122,7 @@ async def prepare_script(
             require_start=True,
             admission_gate=setup.admitted,
             available_assets=available_assets,
+            source_sha256=hashlib.sha256(source.encode("utf-8")).hexdigest(),
         )
         setup.hosts.append(host)
         return host.hooks()
@@ -165,6 +166,7 @@ def read_setup(state: Path, run_id: str) -> dict:
     if prompt is not None:
         return {
             "ready": True,
+            "preparation_only": any(prompt.ordinal in host.preparation_ordinals for host in setup.hosts),
             "prompt": {
                 "ordinal": prompt.ordinal,
                 "title": prompt.title,
@@ -173,8 +175,26 @@ def read_setup(state: Path, run_id: str) -> dict:
             },
         }
     if run is not None and run.state == "completed":
-        return {"ready": True, "prompt": None}
+        return {"ready": True, "prompt": None, "preview_completed": any(host.preparation_ordinals for host in setup.hosts)}
     return {"ready": False, "prompt": None}
+
+
+def answer_preparation(state: Path, run_id: str, ordinal: int, answers: list) -> None:
+    """Advance an explicitly marked Setup form without queueing or opening a provider."""
+    from dtflow.services.script_form_inputs import resolve_form_inputs
+
+    setup = find_setup(state, run_id)
+    with _lock:
+        if setup.queued or setup.admitted.is_set() or setup.cancel.is_set():
+            raise ValidationError("This Setup was already admitted or closed.")
+        if not any(ordinal in host.preparation_ordinals for host in setup.hosts):
+            raise ValidationError("This form requires Run Script; it cannot advance during preparation.")
+    prompt = read_open_prompt(state, run_id)
+    if prompt is None or prompt.ordinal != ordinal:
+        raise ValidationError("This preview form has changed or closed.")
+    resolve_form_inputs(state, run_id, ordinal, prompt.components, answers)
+    if not ScriptRunStore(state).answer_prompt(run_id, ordinal, answers):
+        raise ValidationError("This preview form was already answered or closed.")
 
 
 def cancel_setup(state: Path, run_id: str) -> None:
@@ -189,10 +209,17 @@ def cancel_setup(state: Path, run_id: str) -> None:
 
 
 def reserve_setup(state: Path, run_id: str) -> ScriptSetup:
+    prompt = read_open_prompt(state, run_id)
     with _lock:
         setup = _setups.get(_key(state, run_id))
         if setup is None or setup.cancel.is_set() or setup.queued:
             raise ValidationError("This Setup was already submitted or closed.")
+        if any(host.preparation_ordinals for host in setup.hosts) and (
+            prompt is None or any(prompt.ordinal in host.preparation_ordinals for host in setup.hosts)
+        ):
+            raise ValidationError("Finish preview and reach the separate Run Script form before queue admission.")
+        if setup.finished.is_set() and any(host.preparation_ordinals for host in setup.hosts):
+            raise ValidationError("This preview finished without a queue. Reload Setup to prepare another plan.")
         setup.queued = True
     return setup
 

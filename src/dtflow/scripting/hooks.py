@@ -41,6 +41,12 @@ HOOKS: dict[str, HookSpec] = dict(
         _hook("repl", UNSUPPORTED, "#112", "-", "interactive REPL is not offered"),
         # Generation and configuration (Tier A).
         _hook("existingConfiguration", IMPLEMENTED, "#114", "validated Generate settings snapshot"),
+        _hook("listScriptLoRAs", IMPLEMENTED, "#216", "read-only cached inventory/catalogue projection"),
+        _hook("scriptRunLimits", IMPLEMENTED, "#216", "captured run generation ceiling"),
+        _hook("loadScriptPreferences", IMPLEMENTED, "#216", "source-version authoring preferences, no execution state"),
+        _hook("saveScriptPreferences", IMPLEMENTED, "#216", "explicit form-reviewed bounded preference write"),
+        _hook("prepareScriptForm", IMPLEMENTED, "#216", "advance preparation only; generation still admission-gated"),
+        _hook("fingerprintScriptPlan", IMPLEMENTED, "#216", "bounded source-version plan identity, no dispatch"),
         _hook("existingPrompts", IMPLEMENTED, "#114", "Generate prompt and negative prompt"),
         _hook(
             "generateImage", IMPLEMENTED, "#114", "ResolvedGenerationRequest -> GenerationService", "fields per #115"

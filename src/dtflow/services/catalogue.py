@@ -273,6 +273,27 @@ class Catalogue:
             return set()
         return {entry.identifier for entry in self._inventory.entries}
 
+    def lora_definitions(self) -> tuple[CatalogueEntry, ...]:
+        """Known classification, including unlisted LoRAs; never availability evidence."""
+        return self._merged_loras(self.user_loras())
+
+    def _merged_loras(self, user_entries: tuple[CatalogueEntry, ...]) -> tuple[CatalogueEntry, ...]:
+        entries = {entry.identifier: entry for entry in self._bundled_loras}
+        for entry in user_entries:
+            bundled = entries.get(entry.identifier)
+            if bundled is not None:
+                entry = CatalogueEntry(
+                    entry.identifier,
+                    "lora",
+                    entry.base_model or bundled.base_model,
+                    entry.modes or bundled.modes,
+                    source="user",
+                    name=entry.name or bundled.name,
+                    prefix=entry.prefix if entry.prefix is not None else bundled.prefix,
+                )
+            entries[entry.identifier] = entry
+        return tuple(entries.values())
+
     def view(self) -> CatalogueView:
         user_loras = self.user_loras()
         if self._cached_view is not None:
@@ -284,27 +305,7 @@ class Catalogue:
             if entry.identifier in available:
                 checkpoints_by_id[entry.identifier] = entry
         checkpoints = tuple(checkpoints_by_id.values())
-        loras_by_id = {entry.identifier: entry for entry in self._bundled_loras if entry.identifier in available}
-        for user_entry in user_loras:
-            if user_entry.identifier not in available:
-                continue
-            bundled = loras_by_id.get(user_entry.identifier)
-            if bundled is None:
-                loras_by_id[user_entry.identifier] = user_entry
-                continue
-            # User metadata refines a known LoRA. Missing compatibility fields inherit the bundled evidence instead of
-            # erasing it; explicitly supplied user fields remain authoritative.
-            loras_by_id[user_entry.identifier] = CatalogueEntry(
-                identifier=user_entry.identifier,
-                kind="lora",
-                base_model=user_entry.base_model or bundled.base_model,
-                modes=user_entry.modes or bundled.modes,
-                tier=bundled.tier,
-                source="user",
-                name=user_entry.name or bundled.name,
-                prefix=user_entry.prefix if user_entry.prefix is not None else bundled.prefix,
-            )
-        loras = tuple(loras_by_id.values())
+        loras = tuple(entry for entry in self._merged_loras(user_loras) if entry.identifier in available)
         known_entries = (*self._prime, *self._niche)
         known = {entry.identifier for entry in known_entries}
         known_nonmodels = {entry.identifier for entry in (*self._bundled_loras, *user_loras, *self._controls)}

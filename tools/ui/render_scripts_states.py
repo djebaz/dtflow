@@ -66,6 +66,11 @@ STATES = (
     "scripts_setup_crop_multiple",
     "scripts_setup_parallel_batch",
     "scripts_setup_parallel_batch_narrow",
+    "scripts_mixer_setup_preview",
+    "scripts_mixer_exact_plan",
+    "scripts_mixer_exact_plan_narrow",
+    "scripts_mixer_run_review",
+    "scripts_mixer_preview_complete",
 )
 
 
@@ -124,6 +129,7 @@ def render_scripts_states(out: Path, *, window_factory: Callable, state_names=ST
                 "scripts_editor_narrow",
                 "scripts_setup_narrow",
                 "scripts_setup_parallel_batch_narrow",
+                "scripts_mixer_exact_plan_narrow",
             )
             window.form.resize(800, 680) if narrow else window.form.resize(1600, 1000)
             window._show_scripts()
@@ -154,6 +160,11 @@ def render_scripts_states(out: Path, *, window_factory: Callable, state_names=ST
                 "scripts_setup_crop_multiple": "scripts_form_default",
                 "scripts_setup_parallel_batch": "scripts_form_default",
                 "scripts_setup_parallel_batch_narrow": "scripts_form_default",
+                "scripts_mixer_setup_preview": "scripts_form_default",
+                "scripts_mixer_exact_plan": "scripts_form_default",
+                "scripts_mixer_exact_plan_narrow": "scripts_form_default",
+                "scripts_mixer_run_review": "scripts_form_default",
+                "scripts_mixer_preview_complete": "scripts_form_default",
             }.get(state, state)
             if state in (
                 "scripts_queued",
@@ -215,6 +226,37 @@ def render_scripts_states(out: Path, *, window_factory: Callable, state_names=ST
                 window.scripts.form_note.show()
                 window.scripts.show_view(1)
                 window.scripts.start.setText("Run Script")
+            elif state.startswith("scripts_mixer_"):
+                fields = [
+                    {"type": "section", "label": "LoRA inventory and readiness"},
+                    {"type": "plainText", "text": "3 known; 2 candidates; 1 skipped. Cached metadata is not runtime compatibility."},
+                    {"type": "switch", "label": "fake-soft [listed; metadata match]", "value": True},
+                    {"type": "switch", "label": "fake-unknown [listed; unknown]", "value": False},
+                    {"type": "plainText", "text": "Skipped fake-mismatch: metadata_mismatch"},
+                    {"type": "textField", "label": "First global job", "value": "1"},
+                    {"type": "textField", "label": "Jobs in this chunk", "value": "2"},
+                ]
+                if state != "scripts_mixer_setup_preview":
+                    fields = [
+                        {"type": "section", "label": "Exact chunk preview"},
+                        {"type": "plainText", "text": "Plan " + "0123456789abcdef" * 4 + "\n20 total jobs; this chunk 1–2. No queue or provider work."},
+                        {"type": "plainText", "text": "Model fake-fixture; 512×512; 8 steps; prompt 1: offline fixture."},
+                        {"type": "plainText", "text": 'Job 1: seed 422; fake-soft @ 0.99. Job 2: seed 423; fake-soft @ 0.99.'},
+                        {"type": "menu", "label": "Next action", "options": ["Finish preview", "Edit settings", "Proceed to Run Script"], "value": "Finish preview"},
+                    ]
+                window.scripts.form.set_fields(fields)
+                window.scripts.show_view(1)
+                window.scripts.form_note.setText("Offline fixture. Preview is not queue admission.")
+                window.scripts.form_note.show()
+                window.scripts.start.setText("Preview plan" if state == "scripts_mixer_setup_preview" else "Continue preview")
+                if state == "scripts_mixer_run_review":
+                    window.scripts.form_note.setText("Run Script alone creates a queue; cloud generation may use credits.")
+                    window.scripts.start.setText("Run Script")
+                elif state == "scripts_mixer_preview_complete":
+                    window.scripts.form.hide()
+                    window.scripts.form_note.setText("Preview complete. No queue or provider work. Reload Setup to edit another plan.")
+                    window.scripts.start.setText("Preview complete")
+                    window.scripts.start.setEnabled(False)
             elif state == "scripts_editor_discard_confirm":
                 window.scripts.editor.discard.click()
             elif state == "scripts_setup_followup":

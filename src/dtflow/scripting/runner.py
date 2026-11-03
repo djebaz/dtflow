@@ -232,6 +232,7 @@ class RunContext:
     cancel: threading.Event
     record_answers: Callable[[dict], int]
     ask: Callable[[str, str, list], list | None]  # publish a form and wait for its answers (None: cancelled or Stopped)
+    source_sha256: str = ""
 
 
 def run_recorded(
@@ -274,6 +275,7 @@ def run_recorded(
                         dispatcher.cancel,
                         lambda entry: store.append_answers(run_id, entry),
                         lambda title, confirm, components: _ask(store, run_id, title, confirm, components, cancel),
+                        source_sha256=hashlib.sha256(source.encode("utf-8")).hexdigest(),
                     )
                 )
             )
