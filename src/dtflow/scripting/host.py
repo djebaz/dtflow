@@ -36,6 +36,7 @@ from dtflow.core.models import (
     ResolvedGenerationRequest,
     Sampler,
 )
+from dtflow.core.tasks import settle
 from dtflow.scripting.models import (
     CONFIGURATION_FIELDS,
     decode_configuration,
@@ -436,20 +437,23 @@ class ScriptHost:
                 linked = False
                 try:
                     if self.reserve_child is not None:
-                        while not self.cancel.is_set():
+                        while intake_open and not self.cancel.is_set():
                             acquired = await self.reserve_child(attempt_id, concurrency)
                             if acquired:
                                 break
                             await asyncio.sleep(POLL_SECONDS)
                         if not acquired:
                             return
-                    if self.cancel.is_set():
+                    if not intake_open or self.cancel.is_set():
                         return
                     # The ScriptRun ledger is independent of the attempts SQLite owner.
                     await asyncio.to_thread(self._link_child, attempt_id)
                     linked = True
                     self.attempts.append(attempt_id)
-                    if self.cancel.is_set():
+                    # Keep the identity even if another worker closed intake
+                    # while the independent ledger writer was linking this job.
+                    results[index]["attemptId"] = attempt_id
+                    if not intake_open or self.cancel.is_set():
                         return
                     try:
                         outcome = await run_generation(self.service, request, prefix=self.prefix, attempt_id=attempt_id)
@@ -508,6 +512,10 @@ class ScriptHost:
                                 "outputPaths": paths,
                                 "savedPath": saved_path,
                             }
+                except asyncio.CancelledError:
+                    intake_open = False
+                    self._blocked = "A batch worker was interrupted; no more jobs."
+                    raise
                 except Exception as exc:
                     intake_open = False
                     self._blocked = "A batch reservation or ledger operation failed; no more jobs."
@@ -519,10 +527,28 @@ class ScriptHost:
                     }
                 finally:
                     if acquired and self.release_child is not None:
-                        # A failure to free a slot is unsafe; the owning queue still drains all children.
-                        await asyncio.shield(self.release_child(attempt_id))
+                        try:
+                            await settle(self.release_child(attempt_id))
+                        except BaseException:
+                            intake_open = False
+                            self._blocked = "A batch slot could not be released; no more jobs."
+                            raise
 
-        await asyncio.gather(*(worker() for _ in range(min(limit, len(requests)))))
+        # Own every worker until it settles, even when a sibling's release fails.
+        # Shield the aggregate so cancelling this batch stops intake, not remote
+        # work. The tracked host future must not complete before this drain does.
+        workers = [asyncio.create_task(worker()) for _ in range(min(limit, len(requests)))]
+        drain = asyncio.gather(*workers, return_exceptions=True)
+        try:
+            outcomes = await asyncio.shield(drain)
+        except asyncio.CancelledError:
+            intake_open = False
+            self._blocked = "Stopped; already admitted batch generations are being drained."
+            await settle(drain)
+            raise
+        for outcome in outcomes:
+            if isinstance(outcome, BaseException):
+                raise outcome
         return results
 
     # -- catalogue lookups ----------------------------------------------------------------------------------------

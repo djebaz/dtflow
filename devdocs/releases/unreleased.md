@@ -12,6 +12,8 @@ Changes through 5.4.0 are consolidated in [DTFlow 5.4.0](v5.4.0.md). This file t
 
 ## Fixed
 
+- PR #218 lifecycle follow-up: batch workers recheck closed intake after reservation/linking awaits, and retain/drain all workers before propagating release failures or batch cancellation. Already admitted work is not retried or cancelled remotely. Source changes pending fresh CI/owner acceptance.
+
 - Draft PR #218: cloud scripts automatically bind existing confirmed LoRA receipts independently of Generate's selection, like queue LoRA sets. Setup reads local records only; actual dispatch still checks the active backend/account. Missing files still need explicit Prepare; no implicit downloads or uploads. Source-only follow-up, pending owner smoke.
 
 - PR #201 independent-review follow-up: offline terminal/review actions, guarded Start/queue/input previews, fixture syntax checks and in-memory version Save, live/unresolved history cues, detached Inpaint source/mask entry and local form/editor/results polish. Native Photos/Files pickers are supported in the target design, with runtime hook integration deferred. No real script execution, parser, persistence or provider calls are connected.

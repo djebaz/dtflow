@@ -1,6 +1,6 @@
 # Plan: bounded parallel generations from scripts
 
-**Status:** Runtime batch implementation and deterministic test sources are present in draft PR #218. This follow-up performs source inspection only; native/provider acceptance and the two concurrency-lifecycle review findings remain open.
+**Status:** Runtime batch implementation and deterministic test sources are present in PR #218. The two concurrency-lifecycle findings are addressed in source, pending fresh CI/owner acceptance. Native/provider acceptance is separate.
 **Base:** `main` after squash merge of PR #217 (`2569104a338ad7995b2164b050cbb5847f464d59`).
 **Scope owner:** Separate feature PR. Do not fold these runtime changes back into merged PR #217.
 
@@ -54,10 +54,18 @@ The initial planning-only description is historical: the branch now includes the
 - [x] Resolve script-selected LoRAs against that pool, preserving explicit starting-request bindings and weights, selecting only receipts actually used, and recording their IDs in request evidence. Existing dispatch-time backend/account/receipt checks remain authoritative. `createLoRA` can resolve an exact prepared identifier absent from raw Echo inventory.
 - This is automatic binding of existing prepared assets, not automatic downloading or uploading. As in Queues, genuinely missing files still require the existing explicit Prepare workflow; unknown/failed receipts are not substituted, reconciled, retried or uploaded by generation. No new asset protocol, source-folder scan or download URL inference is introduced.
 - [ ] Owner smoke: script chooses a prepared custom LoRA not selected on Generate; mixed built-in/custom LoRAs; stale/account-mismatched receipts fail before submission; requested concurrency 1/5/10 under the existing shared cap.
-- [ ] Earlier review findings remain open: close intake checks across pre-submission awaits, and drain all workers after a slot-release failure. This LoRA follow-up does not repair or validate those findings.
+- At the LoRA follow-up, both lifecycle findings remained open; the subsequently authorized source repairs are recorded below. The LoRA changes themselves did not repair or validate them.
 
 ## CI fixture correction
 
 - Owner supplied the CI failure at head `a5d3ac0` (manual run `41612477794`): 1 failed, 696 passed, 3 skipped. The existing recovery test fails at `QueueMixin.reconcile` because `_populate_running_queues` writes `{}` for every request, including a script item. Without `kind=script`, recovery correctly takes the ordinary-request branch, where the malformed fixture has no `request_id`.
 - [x] Correct that existing shared fixture to serialize a canonical `script_record` for the script item and a normal `ResolvedGenerationRequest` record for ordinary items. Preserve the restart operation and existing assertions; do not bypass recovery, relax its contract or modify production persistence.
 - No new tests, no test execution or other checks. The supplied result describes the prior head only; this correction is source-only pending CI rerun by the owner. No runtime state was changed or uncertain work replayed.
+
+## Concurrency-lifecycle review repairs
+
+- Owner reports all tests passed after the fixture correction and subsequently authorized repairing both review findings. That report predates these runtime repairs; it does not validate this new head. No tests or checks are run by the agent.
+- [x] Intake closure: check `intake_open` while polling reservations, after acquiring a lane and after asynchronous child linking, before entering generation. A job linked just as intake closes retains its attempt identity in its `not_started` result; its acquired lane is released without submission. Unknown outcomes/save failures therefore stop workers still awaiting admission instead of merely stopping the next outer-loop iteration.
+- [x] Worker ownership: retain explicit worker tasks, collect every completion with `gather(return_exceptions=True)`, and propagate a worker error only after all siblings settle. A release failure closes intake immediately. Use the existing cancellation-safe `settle` helper for release, shield the aggregate, and close intake/drain before propagating batch cancellation. Do not cancel or retry already admitted generation work.
+- Existing durable uncertainty, missing-attempt handling, child-slot recovery, parent queue settlement and provider lifecycle stay in their existing layers. A failed lane release is not retried or silently deleted; propagate it after draining.
+- Source diff inspection only. No tests added/modified/run, lint/format/syntax/import checks, renders, desktop launch, provider work or CI dispatch. Both findings are addressed in source, not yet verified by fresh execution.
