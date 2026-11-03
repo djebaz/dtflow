@@ -1997,6 +1997,58 @@ def render_item_table_states(shell, out, state):
         snap("queues-63-item-table-narrow")
         form.resize(1600, 1000)
         shell._responsive_workspace()
+        # Render the actual script-parent + child-step presentation from a
+        # synthetic read view: no persisted queue, provider or generation.
+        # Parent output artifacts are intentionally aggregates of the two
+        # steps, but they must not become an extra Step 1 thumbnail or link.
+        script_children = [
+            {
+                "ordinal": position,
+                "state": "succeeded",
+                "attempt_id": child["attempt_id"],
+                "artifacts": child["artifacts"],
+                "fields": {
+                    "prompt": child["prompt"],
+                    "model": "z_image_turbo_1.0_q6p.ckpt",
+                    "seed": child["seed"],
+                },
+            }
+            for position, child in enumerate(items[:2], 1)
+        ]
+        script_parent = dict(
+            items[0],
+            item_id="offline-script-parent",
+            prompt="Script: smoke_two.js",
+            model="z_image_turbo_1.0_q6p.ckpt",
+            artifacts=[*items[0]["artifacts"], *items[1]["artifacts"]],
+            script={"children": script_children, "expected_steps": 2, "steps_failed": 0, "elapsed": 36.2},
+        )
+        script_view = dict(
+            view,
+            kind="script",
+            queue_id="offline-script-queue",
+            status="finished",
+            first=dict(view["first"], prompt="Script: smoke_two.js", model="z_image_turbo_1.0_q6p.ckpt"),
+            items=[script_parent],
+            summary={name: int(name == "succeeded") for name in counts},
+            cap=1,
+        )
+        queue._dispatching = None
+        queue._selected = script_view["queue_id"]
+        queue._read_done(([script_view], script_view, 2), None)
+        queue._timer.stop()
+        assert model.rowCount() == 3
+        assert model.row_at(0).is_script_parent and model.row_at(0).gallery_identity is None
+        assert not any(row.is_script_parent for row in (model.row_at(1), model.row_at(2)))
+        # The script's display-only thumbnail comes from its last committed
+        # child, without borrowing that child's actionable gallery identity.
+        assert model.row_at(0).script_preview_path == model.row_at(2).outputs[0]
+        assert model.row_at(0).script_preview_identity == model.row_at(2).gallery_identity
+        select(0)
+        assert not page.itemOpenImagesButton.isEnabled()
+        snap("queues-72-script-parent-summary")
+        select(1)
+        snap("queues-73-script-step-details")
         queue._selected = None
         queue._activity.set(dispatching=False)
         queue._read_done(([], None, 2), None)

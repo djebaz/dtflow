@@ -83,6 +83,7 @@ async def create_script_queue(
     max_generations: int = 4,
     answers: list | None = None,
     up_next: bool = False,
+    expected_steps: int | None = None,
 ) -> tuple[str, str]:
     """Persist a paused script queue: exactly one item (a whole script run), cap 1. Returns ``(queue id, run id)``.
 
@@ -105,6 +106,7 @@ async def create_script_queue(
         backend=backend["name"],
         max_generations=max_generations,
         answers=answers,
+        expected_steps=expected_steps if type(expected_steps) is int and expected_steps > 0 else None,
     )
     store = SQLiteAttempts(state)
     try:

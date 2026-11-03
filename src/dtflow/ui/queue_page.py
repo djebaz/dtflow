@@ -37,6 +37,7 @@ from dtflow.services.queue_session import (
     clear_queues,
     create_edit_queue,
     create_queue,
+    create_script_queue,
     dispatch_queue,
     expand_items,
     post_queue_control,
@@ -71,6 +72,7 @@ from dtflow.ui.planning_presenter import (
     SEED_POLICY_TEXT,
     summary_text,
 )
+from dtflow.ui.rail_fit import fit_rail
 from dtflow.ui.queue_composer import SIZE_PRESETS, ActionsFit, ComposerGridFit, SummaryLabelHeightFit
 from dtflow.ui.queue_item_delegate import ROW_HEIGHT, ItemTableHeader, ItemTableLayout, QueueItemDelegate
 from dtflow.ui.queue_model import ITEM_ID_ROLE, QueueItemModel
@@ -98,6 +100,7 @@ from dtflow.ui.queue_presenter import (
     outcome_text,
     primary_action,
     progress_text,
+    script_progress,
     queue_entries,
     lora_text,
     queue_facts,
@@ -263,6 +266,8 @@ class QueuePage:
         self._reading = False
         self._syncing = False
         self._detail: dict | None = None
+        self._run_detail: dict | None = None  # the dispatched script queue's items, when it is not the selected one
+        self._reading_run = False
         self._varied: dict[str, dict] = {}  # items never change after creation, so their variation is read once
         self._shared_cap: int | None = None
         self._shared_epoch = 0  # bumped by each save, so a read that started before it cannot undo it
@@ -488,6 +493,28 @@ class QueuePage:
         self._reading = True
         epoch = self._shared_epoch
         self._runner.submit(self._read(self._selected, tuple(self._varied)), lambda r, f: self._read_done(r, f, epoch))
+        self._refresh_script_run()
+
+    def _refresh_script_run(self) -> None:
+        """The running script's steps are read for the global bar whichever queue is selected."""
+        run = self._dispatching
+        if run is None or self._reading_run or (self._views.get(run) or {}).get("kind") != "script":
+            self._run_detail = None
+            return
+        if run == self._selected:
+            return  # the selected queue's own detail already carries the steps
+        self._reading_run = True
+
+        async def work():
+            views = await read_queue_views(self._state, run)
+            return views[0] if views else None
+
+        def done(result, failure) -> None:
+            self._reading_run = False
+            self._run_detail = result if failure is None else None
+            self._publish_run_state()
+
+        self._runner.submit(work(), done)
 
     async def _read(self, selected: str | None, described: tuple[str, ...] = ()):
         views = await read_queue_list(self._state, described)
@@ -661,8 +688,12 @@ class QueuePage:
             owner = ""
         self._show(page.queueStateLabel, level, chip)
         page.queueStateLabel.setToolTip(" ".join(part for part in (STATUS_TEXT.get(view["status"], ""), owner) if part))
-        page.queueProgressBar.set_counts(segments(view["summary"]), summary.settled, summary.total)
-        page.queueProgressLabel.setText(progress_text(summary))
+        steps = script_progress(view)
+        if steps is not None:
+            page.queueProgressBar.set_counts((("ok", steps[0]),) if steps[0] else (), steps[0], steps[1])
+        else:
+            page.queueProgressBar.set_counts(segments(view["summary"]), summary.settled, summary.total)
+        page.queueProgressLabel.setText(progress_text(summary, view))
         counts = filter_counts(view["summary"])
         for key, symbol, _, _ in FILTERS:
             button = getattr(page, FILTER_BUTTONS[key])
@@ -673,9 +704,21 @@ class QueuePage:
         """The checked count chips narrow the items table to their states; none checked shows every item."""
         shown = filter_states(key for key, name in FILTER_BUTTONS.items() if getattr(self.page, name).isChecked())
         table = self.page.queueItemsView
+        view = self._view()
+        # A script is one queue item even when its table expands into child
+        # attempts. Status chips count queue items, not their individual steps.
+        script_states = (
+            {item["state"] for item in (self._detail_for(view) or {}).get("items", ())}
+            if view is not None and view.get("kind") == "script"
+            else None
+        )
+        show_script = not shown or bool(shown.intersection(script_states or ()))
         for index in range(self.model.rowCount()):
             row = self.model.row_at(index)
-            table.setRowHidden(index, bool(shown) and row.state not in shown)
+            table.setRowHidden(
+                index,
+                not show_script if script_states is not None else bool(shown) and row.state not in shown,
+            )
 
     @staticmethod
     def _editable(view: dict | None) -> bool:
@@ -765,7 +808,10 @@ class QueuePage:
         summary = summarize(view)
         completed = total = None
         running = view["summary"]["running"]
-        items = (self._detail_for(view) or {}).get("items", ())
+        shown = self._detail_for(view)
+        if shown is None and self._run_detail is not None and self._run_detail["queue_id"] == queue_id:
+            shown = self._run_detail
+        items = (shown or {}).get("items", ())
         running_items = [item for item in items if item["state"] == "running"]
         detail = f"Queue {queue_id[:8]} · {summary.headline}"
         waiting = len(up_next_ids(self._views.values())) if dispatching_here else 0
@@ -810,7 +856,33 @@ class QueuePage:
                     stage += f" · step {step}/{steps}"
             if running:
                 wide = f"Queue {queue_id[:8]} · {stage} · {summary.settled}/{summary.total}"
-            if running == 1 and len(progress) == 1:
+            if view.get("kind") == "script":
+                # A script is one item whose step count is known only as it runs: show steps, never "0/1 items".
+                script = next((item.get("script") for item in items if item.get("script")), None)
+                children = (script or {}).get("children") or []
+                committed = sum(1 for child in children if child["state"] == "succeeded")
+                expected = (script or {}).get("expected_steps")  # a static count, known only for plain scripts
+                of = f"{expected}" if expected else "?"
+                settled_states = (
+                    "succeeded",
+                    "failed",
+                    "cancelled",
+                    "save_failed",
+                    "unknown",
+                    "interrupted_before_submission",
+                )
+                in_flight = any(child["state"] not in settled_states for child in children)
+                stage = (
+                    f"step {len(children)}/{of} running · {committed} committed"
+                    if in_flight
+                    else f"{committed}/{of} steps committed"
+                    if children
+                    else "Script running"
+                )
+                wide = f"Script {queue_id[:8]} · {stage}"
+                detail = f"Script {queue_id[:8]} · {stage}."
+                completed, total = (committed, expected) if expected else (None, None)
+            elif running == 1 and len(progress) == 1:
                 step, steps = progress[0]
                 # The item number is known only for the selected queue, whose items are read.
                 position = f"Item #{running_items[0]['position']}" if len(running_items) == 1 else "Item"
@@ -905,8 +977,12 @@ class QueuePage:
             feedback(page).dismiss()  # the queue started or went away: the pending consent no longer applies
         page.removeQueueButton.setEnabled(removable)
         has_items = view is not None and bool(sum(view["summary"].values()))
-        page.relaunchQueueButton.setEnabled(has_items)
-        page.editAsNewQueueButton.setEnabled(has_items)
+        copyable = has_items and view.get("kind") != "script"  # a script run is started again from Scripts
+        scripted = " (a script queue: press Start on the script)" if has_items and not copyable else ""
+        page.relaunchQueueButton.setEnabled(copyable)
+        page.editAsNewQueueButton.setEnabled(copyable)
+        page.relaunchQueueButton.setToolTip("Run this queue's requests again." + scripted)
+        page.editAsNewQueueButton.setToolTip("Open this queue's settings as a new draft." + scripted)
         # Saving only persists a paused queue (over a short shared connection while a run owns the state).
         page.createQueueButton.setEnabled(True)
         running = self._live_run()
@@ -965,7 +1041,8 @@ class QueuePage:
         page.uncertaintyBox.setVisible(note is not None)
         if note is not None:
             self._show(page.uncertaintyLabel, *note)
-        page.itemRetryButton.setEnabled(row is not None and row.state in RELAUNCH_STATES)
+        scripted = view is not None and view.get("kind") == "script"
+        page.itemRetryButton.setEnabled(row is not None and row.state in RELAUNCH_STATES and not scripted)
         if row is None:
             for name in (
                 "itemIdLabel",
@@ -994,19 +1071,28 @@ class QueuePage:
         page.itemOutcomeLabel.setText(row.outcome_line)
         outputs = [*row.outputs, *([row.metadata] if row.metadata else [])]
         # Full paths stay in the tooltip; the panel shows a summary and a button to the attempt's folder.
-        parts = [f"{len(row.outputs)} image(s)"] if row.outputs else []
+        parts = (
+            [f"{len(row.outputs)} step image(s)" if row.is_script_parent else f"{len(row.outputs)} image(s)"]
+            if row.outputs
+            else []
+        )
         detail = ", ".join([*parts, *(["metadata"] if row.metadata else [])]) or (row.failure_code or "—")
         page.itemOutputsLabel.setText(detail)
         page.itemOutputsLabel.setToolTip("\n".join(outputs))
-        self._output_folder = Path(outputs[0]).parent if outputs else None
+        # The script parent aggregates its children's files; it has no output
+        # attempt/folder of its own. Select an actual step for image actions.
+        self._output_folder = Path(outputs[0]).parent if outputs and not row.is_script_parent else None
         page.itemOpenFolderButton.setEnabled(self._output_folder is not None)
         verified = (
             not self._composing
             and page.queueItemsView.isVisible()
             and bool(row.outputs)
+            and not row.is_script_parent
+            and bool(row.gallery_identity)
             and self.model.thumbnails.available(row.outputs[0], row.gallery_identity)
         )
         page.itemOpenImagesButton.setEnabled(verified and self._images_hook is not None)
+        fit_rail(page.queueInspector)
 
     def _thumbnail_changed(self, path: str) -> None:
         if self._runner.closed or not self.page.queueItemsView.isVisible():
@@ -1023,7 +1109,13 @@ class QueuePage:
 
     def open_in_images(self) -> None:
         row = self.model.row_at(self.page.queueItemsView.currentIndex().row())
-        if self._images_hook is not None and row is not None and row.gallery_identity and row.outputs:
+        if (
+            self._images_hook is not None
+            and row is not None
+            and not row.is_script_parent
+            and row.gallery_identity
+            and row.outputs
+        ):
             if self.model.thumbnails.available(row.outputs[0], row.gallery_identity):
                 self._images_hook(row.gallery_identity)
 
@@ -1070,6 +1162,9 @@ class QueuePage:
         self._relaunch_actions(relaunch, queue_id)
         edit = menu.addAction("Edit as new queue…")
         edit.triggered.connect(lambda _=False: self.edit_as_new(queue_id))
+        if (self._views.get(queue_id) or {}).get("kind") == "script":
+            relaunch.setEnabled(False)
+            edit.setEnabled(False)
         remove = menu.addAction("Remove queue…")
         remove.setEnabled(self._removable(self._views.get(queue_id)))
         if menu.exec(self.page.queueList.viewport().mapToGlobal(position)) is remove:
@@ -1198,7 +1293,7 @@ class QueuePage:
 
     def _last_queue(self) -> str | None:
         """The most recently created queue with items, for the empty state's Relaunch last."""
-        views = [v for v in self._views.values() if sum(v["summary"].values())]
+        views = [v for v in self._views.values() if sum(v["summary"].values()) and v.get("kind") != "script"]
         return max(views, key=lambda v: (v["created_at_utc"], v["queue_id"]))["queue_id"] if views else None
 
     def relaunch_last(self) -> None:
@@ -1897,6 +1992,51 @@ class QueuePage:
 
     def quick_create(self, action: str, *, count: int | None) -> None:
         self.create(action, count=count, quick=True)
+
+    def start_script(
+        self, source: str, source_name: str, max_generations: int, done, expected_steps: int | None = None
+    ) -> None:
+        """Scripts Start: save a one-item script queue from Generate's current text-to-image settings and dispatch it.
+
+        ``done(result, failure)`` gets ``(queue id, run id, "started" | "paused")``. Nothing is created while this window
+        generates or dispatches; the script run is an ordinary queue the user can also see in Queues."""
+        if self.dispatching_here or self._activity.generating or self._runner.closed:
+            done(None, ValidationError("A generation or queue is running in this window. Press Start when it ends."))
+            return
+        try:
+            request, name, endpoint, asset_ids = self._request_source()
+        except (ValidationError, FormError) as exc:
+            done(None, ValidationError(f"On Generate: {exc}"))
+            return
+        backend = {"name": name, "endpoint": endpoint, "scenario": "success", **self._simulation()}
+
+        async def work():
+            base = await bind_prepared(self._state, backend["name"], request, asset_ids)
+            return await create_script_queue(
+                self._state,
+                backend,
+                source,
+                source_name,
+                base,
+                max_generations=max_generations,
+                answers=[],  # the Scripts page has no form renderer yet: requestFromUser fails clearly, never waits
+                expected_steps=expected_steps,
+            )
+
+        def created(result, failure) -> None:
+            if failure is not None:
+                done(None, failure)
+                return
+            queue_id, run_id = result
+            self._created_hook()
+            if self.dispatching_here or self._activity.generating:
+                done((queue_id, run_id, "paused"), None)
+            else:
+                self._dispatch(queue_id, resume_fallback=None)
+                done((queue_id, run_id, "started"), None)
+            self.refresh()
+
+        self._runner.submit(work(), created)
 
     def _after_generation_ended(self) -> None:
         if self._after_generation and not self._activity.generating and not self._activity.dispatching:

@@ -88,15 +88,17 @@ class QueueItemDelegate(QStyledItemDelegate):
         elif column == COL_PROMPT:
             self._prompt(painter, rect, row, option.font, text)
         elif column == COL_MODEL:
+            # Checkpoint IDs are indivisible identities. Display one elided
+            # line rather than wrapping a model name midway through an ID;
+            # the model's ToolTipRole retains the full identifier.
             bold = QFont(option.font)
             bold.setWeight(QFont.Weight.Bold)
-            self._lines(
-                painter,
-                rect,
-                wrapped_lines(display_name(row.model), bold, rect.width(), 2, soft_breaks=True),
-                bold,
-                text,
+            painter.setFont(bold)
+            painter.setPen(text)
+            label = QFontMetrics(bold).elidedText(
+                display_name(row.model), Qt.TextElideMode.ElideRight, max(0, rect.width())
             )
+            painter.drawText(rect, Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter, label)
         elif column == COL_LORAS:
             self._loras(painter, rect, row, option.font, text, secondary, getattr(index.model(), "gauge_scale", 1.0))
         elif column == COL_PARAMS:
@@ -159,24 +161,24 @@ class QueueItemDelegate(QStyledItemDelegate):
         painter.setPen(QColor(_TOKENS["color.sectionBorder"]))
         painter.setBrush(QColor(_TOKENS["color.canvas"]))
         painter.drawRoundedRect(QRectF(area).adjusted(0.5, 0.5, -0.5, -0.5), 4, 4)
-        pixmap = (
-            provider.pixmap(row.outputs[0], identity=row.gallery_identity)
-            if provider is not None and row.outputs
-            else None
-        )
-        if (
-            pixmap is None
-            and row.outputs
-            and provider is not None
-            and not provider.is_failed(row.outputs[0], identity=row.gallery_identity)
-        ):
+        # The script parent's tile previews the last successfully committed
+        # child. Its gallery identity is display-only here: opening Images
+        # still requires selecting the actual child step.
+        path = row.script_preview_path if row.is_script_parent else (row.outputs[0] if row.outputs else None)
+        identity = row.script_preview_identity if row.is_script_parent else row.gallery_identity
+        if row.is_script_parent and not path:
+            painter.setPen(secondary)
+            painter.drawText(area, Qt.AlignmentFlag.AlignCenter, "Script")
+            return
+        pixmap = provider.pixmap(path, identity=identity) if provider is not None and path else None
+        if pixmap is None and path and provider is not None and not provider.is_failed(path, identity=identity):
             return  # decoding in the background: a neutral tile, never misleading text
         if pixmap is None:
             small = QFont(painter.font())
             small.setPointSizeF(max(7.5, small.pointSizeF() - 1))
             painter.setFont(small)
             painter.setPen(QColor(_TOKENS["color.disabled"]))
-            painter.drawText(area, Qt.AlignmentFlag.AlignCenter, "no image" if not row.outputs else "unavailable")
+            painter.drawText(area, Qt.AlignmentFlag.AlignCenter, "no image" if not path else "unavailable")
             return
         # The pixmap is already a centred square crop of the gallery's 600 px thumbnail: fill the tile edge to edge.
         outline = QRectF(area).adjusted(0.5, 0.5, -0.5, -0.5)
@@ -245,11 +247,14 @@ class QueueItemDelegate(QStyledItemDelegate):
         painter.drawText(
             QRect(rect.left(), rect.top() + 19, rect.width(), 15), Qt.AlignmentFlag.AlignLeft, row.guidance_text
         )
-        # A long sampler name takes its own wrapped line(s) instead of being clipped.
-        for number, line in enumerate(wrapped_lines(row.sampler_text, small, rect.width(), 2)):
-            painter.drawText(
-                QRect(rect.left(), rect.top() + 34 + number * 14, rect.width(), 14), Qt.AlignmentFlag.AlignLeft, line
-            )
+        # Keep the sampler label on one line; full text remains available
+        # in the model tooltip, even when the Parameters column is narrow.
+        sampler = QFontMetrics(small).elidedText(row.sampler_text, Qt.TextElideMode.ElideRight, max(0, rect.width()))
+        painter.drawText(
+            QRect(rect.left(), rect.top() + 34, rect.width(), 14),
+            Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter,
+            sampler,
+        )
 
 
 class ItemTableHeader(QHeaderView):

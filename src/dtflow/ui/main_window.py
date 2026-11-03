@@ -67,6 +67,7 @@ from dtflow.ui.queue_popover import QueuePopover
 from dtflow.ui.queue_composer import ValueChips
 from dtflow.ui.queue_widgets import SegmentedBar
 from dtflow.ui.run_control import RunControl
+from dtflow.persistence.script_library import ScriptLibrary
 from dtflow.ui.scripts_page import ScriptsPage
 from dtflow.ui.runner import AsyncRunner
 from dtflow.ui.search_select import SearchableComboBox
@@ -261,7 +262,9 @@ class MainWindow:
         # Scripts reuses the existing shell rails. Add its panels only after all
         # other page stacks have been mounted, preserving their index contracts.
         self.scripts_designer = load_ui(SCRIPTS_UI_FILE)
-        self.scripts = ScriptsPage(self.scripts_designer, owner=self)
+        self.scripts = ScriptsPage(
+            self.scripts_designer, owner=self, library_factory=lambda: ScriptLibrary(self.state_dir)
+        )
         self.scripts.mount(self.shell)
         self._scripts_active = False
         form.workspaceStack.hide()
@@ -358,6 +361,10 @@ class MainWindow:
             reuse_hook=self._reuse_queue_request,
             activity=self.activity,
         )
+        self.scripts.run_start = self.queue.start_script
+        self.scripts.settings_source = self._script_settings
+        self.scripts.generate_form = self.generation_page
+        self.scripts.go_generate_hook = lambda: self._leave_scripts(inpaint=False)
         startup.mark("queue and image operation controllers")
         self.generation_page.inpaintModeButton.toggled.connect(lambda _on: self.queue.sync_edit_fields())
         self.generation_page.scriptsModeButton.clicked.connect(self._show_scripts)
@@ -380,6 +387,7 @@ class MainWindow:
         self.shell.quickQueueButton.clicked.connect(lambda: self.queue_popover.open_at(self.shell.quickQueueButton))
         self.queue.plan_hook = self.queue_popover.sync_label
         self.queue.set_images_hook(self._open_output_in_images)
+        self.scripts.open_images = self._open_output_in_images
         for button in (self.queue_popover.start_button, self.queue_popover.add_button):
             button.clicked.connect(self.remember)  # a run start, like Generate image
         self.generation_page.queueGenerateButton.clicked.connect(
@@ -624,6 +632,32 @@ class MainWindow:
         self.scripts.activate()
         self._set_scripts_left_rail(True)
         self._responsive_workspace()
+
+    def _script_settings(self) -> tuple[str, str | None, dict[str, str]]:
+        """(summary, problem, details): what Scripts Start would run with, from the very request Start validates."""
+        from dtflow.ui.generation_presenter import FormError
+
+        try:
+            request, name, endpoint, _ = self.generation.request_for_queue(preview=True)
+        except (ValidationError, FormError) as exc:
+            text = str(exc).rstrip(".")
+            if "model" in text.lower():
+                text = "pick a model on the Generate tab (" + text + ")"
+            return "", text, {}
+        where = f"{name} @ {endpoint}" if endpoint else name
+        details = {
+            "Checkpoint": request.model_id,
+            "Size": f"{request.width_px} × {request.height_px}",
+            "Steps": str(request.steps),
+            "Sampler": str(request.sampler_id),
+            "Seed": str(request.seed),
+        }
+        return (
+            f"Runs with Generate's settings: {where} · {request.model_id} · {request.width_px}×{request.height_px} · "
+            f"{request.steps} steps. The script may override size, steps, seed, model and LoRAs.",
+            None,
+            details,
+        )
 
     def _scripts_from_inpaint(self, source, mask, thumbnail) -> None:
         """Offline, detached source/mask handoff only; no runtime script entry point."""

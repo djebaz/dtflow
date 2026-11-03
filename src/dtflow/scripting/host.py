@@ -153,6 +153,11 @@ class ScriptHost:
         self.pending: list[concurrent.futures.Future] = []  # in-flight work to drain before the service closes
         self.attempts: list[str] = []
         self._blocked: str | None = None
+        # Virtual canvas for text-to-image scripts: geometry bookkeeping only, no pixels (layers and masks are #116).
+        self._zoom = 1.0
+        self._origin = (0, 0)
+        self._canvas_size = (base.width_px, base.height_px)
+        self._cleared = False
 
     def hooks(self) -> dict[str, Callable[..., Any]]:
         return {
@@ -171,6 +176,12 @@ class ScriptHost:
             "listFilesWithinDirectory": self.list_files_within,
             "saveImageFileFromCanvas": self.save_image_file,
             "saveImageSrcFromCanvas": self.save_image_src,
+            "clearCanvas": self.clear_canvas,
+            "setCanvasZoom": self.set_canvas_zoom,
+            "canvasZoom": self.canvas_zoom,
+            "updateCanvasSize": self.update_canvas_size,
+            "moveCanvas": self.move_canvas,
+            "clearMoodboard": self.clear_moodboard,
         }
 
     # -- waiting on the service loop ------------------------------------------------------------------------------
@@ -298,6 +309,7 @@ class ScriptHost:
             self._blocked = "A previous generation did not finish cleanly; not generating again."
             raise RuntimeError(f"{type(exc).__name__}: {exc}") from exc
         self.last = outcome
+        self._cleared = False  # a new generation fills the canvas again
         self.attempt_outputs[attempt_id] = [str(path) for path in outcome.output_paths]
 
     # -- catalogue lookups ----------------------------------------------------------------------------------------
@@ -371,7 +383,10 @@ class ScriptHost:
             answers = _initial_answers(components)
         else:
             if not self._answers:
-                raise ValueError("The supplied answers ran out before this form; the script was not continued.")
+                raise ValueError(
+                    "This script asked for input (requestFromUser) but no answers were supplied. The Scripts page "
+                    "cannot show forms yet; run it from the CLI with --answers. The script was not continued."
+                )
             answers = list(self._answers.pop(0))
             if len(answers) != len(kinds):
                 raise ValueError(f"Expected {len(kinds)} answers for this form, got {len(answers)}.")
@@ -392,6 +407,39 @@ class ScriptHost:
 
     def screen_size(self) -> dict[str, float]:
         return dict(SCREEN_SIZE)
+
+    # -- virtual canvas (geometry only; ports ScriptExecutor.swift behavior for text-to-image scripts) --------------
+
+    def clear_canvas(self) -> None:
+        """Upstream ``clearCanvas``: the canvas contents go away. Here that means a later save finds nothing."""
+        self._cleared = True
+
+    def set_canvas_zoom(self, zoom_scale: float) -> None:
+        if not _is_number(zoom_scale):
+            raise ValueError("canvas.canvasZoom must be a number.")
+        if round(zoom_scale * 60) != zoom_scale * 60:
+            self._console("Warning: setCanvasZoom parameter should be divisible by 60", 0)
+        self._zoom = float(zoom_scale)
+
+    def canvas_zoom(self) -> float:
+        return self._zoom
+
+    def update_canvas_size(self, configuration: Mapping[str, Any]) -> None:
+        decoded = decode_configuration(configuration)  # raises "Missing configuration parameter" like upstream
+        values, warnings = round_dimensions(decoded.values)
+        for warning in warnings:
+            self._console(warning, 0)
+        self._canvas_size = (values["width"], values["height"])
+
+    def move_canvas(self, x: float, y: float) -> None:
+        if not (_is_number(x) and _is_number(y)):
+            raise ValueError("canvas.moveCanvas needs two numbers.")
+        if x != round(x) or y != round(y):
+            self._console("Warning: x and y coordinates to moveCanvas should be integers", 0)
+        self._origin = (int(x), int(y))
+
+    def clear_moodboard(self) -> None:
+        """DTFlow scripts never hold moodboard images yet (guidance is #117), so the moodboard is always empty."""
 
     # -- sandbox files -------------------------------------------------------------------------------------------
 
@@ -425,7 +473,7 @@ class ScriptHost:
         return self._listing(self._confine(directory))
 
     def _last_image(self) -> bytes:
-        if self.last is None or self.last.final_image is None:
+        if self._cleared or self.last is None or self.last.final_image is None:
             raise RuntimeError("The canvas is empty: no image has been generated in this run.")
         return self.last.final_image
 

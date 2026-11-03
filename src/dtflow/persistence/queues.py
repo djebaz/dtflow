@@ -1152,6 +1152,7 @@ def read_queue_summaries(directory: Path, *, described: Sequence[str] = ()) -> t
                 request = {}
             request = request if isinstance(request, dict) else {}
             script_name = request.get("source_name") if is_script_record(request) else None
+            queue["script_elapsed"] = _script_queue_elapsed(directory, request) if script_name is not None else None
             queue["first"] = {
                 "prompt": f"Script: {script_name}"
                 if isinstance(script_name, str)
@@ -1277,6 +1278,82 @@ def _item_request_fields(request: dict) -> dict[str, Any]:
     }
 
 
+def _script_item_fields(request: dict, script: dict[str, Any]) -> dict[str, Any]:
+    """Row fields of a script item: the run, the settings it started with, and its steps' files in call order.
+
+    The first step's attempt stands for the row (preview, Open in Images); later steps contribute their images only, so
+    the item counts one metadata file and one image per step.
+    """
+    start = (request.get("start") or {}).get("base")
+    base = start if isinstance(start, dict) else {}
+    children = script["children"]
+    artifacts: list[Any] = []
+    for index, child in enumerate(children):
+        artifacts += [
+            path
+            for path in child["artifacts"]
+            if index == 0 or not str(path).replace("\\", "/").endswith("/metadata.json")
+        ]
+    return {
+        **_item_request_fields(base),
+        "script": script,
+        "prompt": f"Script: {request.get('source_name', '')}",
+        "attempt_id": children[0]["attempt_id"] if children else None,
+        "seed": base.get("seed"),
+        "artifacts": artifacts,
+    }
+
+
+_FINISHED_ELAPSED: dict[str, float | None] = {}  # run id -> wall seconds of a finished run (it never changes)
+
+
+def _script_queue_elapsed(directory: Path, request: dict) -> float | None:
+    """Wall seconds of a script queue's run for the list; finished runs are read once."""
+    run_id = str(request.get("run_id"))
+    if run_id in _FINISHED_ELAPSED:
+        return _FINISHED_ELAPSED[run_id]
+    try:
+        run = read_run_snapshot(Path(directory), run_id)
+    except Exception:
+        return None
+    if run is None:
+        return None
+    seconds = _elapsed(run.created_at, run.finished_at)
+    if run.finished_at is not None:
+        _FINISHED_ELAPSED[run_id] = seconds
+    return seconds
+
+
+def _elapsed(start: str | None, end: str | None) -> float | None:
+    """Wall seconds between two ISO timestamps; None while unfinished or unreadable (never zero by default)."""
+    try:
+        seconds = (datetime.fromisoformat(end) - datetime.fromisoformat(start)).total_seconds()
+    except (TypeError, ValueError):
+        return None
+    return seconds if seconds >= 0 else None
+
+
+def _step_fields(artifacts: list) -> dict[str, Any]:
+    """What one step actually asked for, from its attempt's saved metadata (empty when absent or unreadable)."""
+    path = next((p for p in artifacts if isinstance(p, str) and Path(p).name == "metadata.json"), None)
+    if path is None:
+        return {}
+    try:
+        record = json.loads(Path(path).read_text(encoding="utf-8"))
+        request = record.get("request") if isinstance(record, dict) else None
+        if not isinstance(request, dict):
+            return {}
+        timing = record.get("timing")
+        seconds = timing.get("backend_elapsed_seconds") if isinstance(timing, dict) else None
+        return (
+            _item_request_fields(request)
+            | {"seed": request.get("seed")}
+            | ({"duration": float(seconds)} if type(seconds) in (int, float) else {})
+        )
+    except (OSError, ValueError):
+        return {}
+
+
 def _script_view(connection: sqlite3.Connection, request: dict) -> dict[str, Any]:
     """A script item's run (name, SHA, run id, run state) and its ordered child steps, read through to their attempts.
 
@@ -1285,12 +1362,14 @@ def _script_view(connection: sqlite3.Connection, request: dict) -> dict[str, Any
     path = connection.execute("PRAGMA database_list").fetchone()["file"]
     view: dict[str, Any] = {
         "name": request.get("source_name"),
+        "expected_steps": request.get("expected_steps") if type(request.get("expected_steps")) is int else None,
         "source_sha256": request.get("source_sha256"),
         "run_id": request.get("run_id"),
         "run_state": None,
         "error": None,
         "children": [],
         "steps_failed": 0,
+        "elapsed": None,
         "waiting_for_input": False,
         "prompt": None,
     }
@@ -1301,6 +1380,7 @@ def _script_view(connection: sqlite3.Connection, request: dict) -> dict[str, Any
     if run is None:
         return view
     view["run_state"], view["error"] = run.state, run.error
+    view["elapsed"] = _elapsed(run.created_at, run.finished_at)
     if run.state == "running":  # an open form keeps the item running; the view only flags it (no new item state)
         try:
             prompt = read_open_prompt(Path(path).parent, str(request.get("run_id")))
@@ -1319,12 +1399,14 @@ def _script_view(connection: sqlite3.Connection, request: dict) -> dict[str, Any
             "SELECT state, artifacts_json FROM attempts WHERE attempt_id=?", (attempt_id,)
         ).fetchone()
         state = row["state"] if row else None
+        artifacts = json.loads(row["artifacts_json"]) if row and row["artifacts_json"] else []
         view["children"].append(
             {
                 "ordinal": ordinal,
                 "attempt_id": attempt_id,
                 "state": state,
-                "artifacts": json.loads(row["artifacts_json"]) if row and row["artifacts_json"] else [],
+                "artifacts": artifacts,
+                "fields": _step_fields(artifacts),
             }
         )
         if state in TERMINAL_ATTEMPTS and state != "succeeded":
@@ -1389,21 +1471,14 @@ def _read(connection: sqlite3.Connection, queue_id: str | None) -> tuple[dict[st
                     **_item_request_fields(request),
                     "failure": json.loads(item["failure_json"]) if item["failure_json"] else None,
                     "artifacts": json.loads(item["artifacts_json"]) if item["artifacts_json"] else [],
-                    **(
-                        {
-                            "script": script,
-                            "prompt": f"Script: {request.get('source_name', '')}",
-                            # every step's saved files in call order, so the item row shows what the run produced
-                            "artifacts": [path for child in script["children"] for path in child["artifacts"]],
-                        }
-                        if script
-                        else {}
-                    ),
+                    **(_script_item_fields(request, script) if script else {}),
                 }
             )
         durations = _item_durations(connection, row["queue_id"])
         for item in items:
             item["duration"] = durations.get(item["item_id"])
+            if item["duration"] is None and item.get("script"):
+                item["duration"] = item["script"].get("elapsed")  # a script's wall time, start to finish
         queue["summary"] = _summary(items)
         queue["status"] = _status(row["state"], queue["summary"])
         queue["items"] = items
