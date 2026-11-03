@@ -1,6 +1,6 @@
 # Plan: bounded parallel generations from scripts
 
-**Status:** Runtime batch implementation and deterministic test sources are present in PR #218. The two concurrency-lifecycle findings are addressed in source, pending fresh CI/owner acceptance. Native/provider acceptance is separate.
+**Status:** Runtime implementation and both lifecycle review repairs are delivered in PR #218; CI at runtime head `0465f3d` reports 697 passed, 3 skipped, with format/lint passed. Subsequent merge-preparation changes are documentation and offline preview definitions only, not application-runtime/test changes. Native/provider acceptance remains separate.
 **Base:** `main` after squash merge of PR #217 (`2569104a338ad7995b2164b050cbb5847f464d59`).
 **Scope owner:** Separate feature PR. Do not fold these runtime changes back into merged PR #217.
 
@@ -69,3 +69,12 @@ The initial planning-only description is historical: the branch now includes the
 - [x] Worker ownership: retain explicit worker tasks, collect every completion with `gather(return_exceptions=True)`, and propagate a worker error only after all siblings settle. A release failure closes intake immediately. Use the existing cancellation-safe `settle` helper for release, shield the aggregate, and close intake/drain before propagating batch cancellation. Do not cancel or retry already admitted generation work.
 - Existing durable uncertainty, missing-attempt handling, child-slot recovery, parent queue settlement and provider lifecycle stay in their existing layers. A failed lane release is not retried or silently deleted; propagate it after draining.
 - Source diff inspection only. No tests added/modified/run, lint/format/syntax/import checks, renders, desktop launch, provider work or CI dispatch. Both findings are addressed in source, not yet verified by fresh execution.
+
+## Squash-merge preparation
+
+- [x] Inspect owner-triggered CI [41613970580](https://github.com/djebaz/dtflow/actions/runs/41613970580): the Resolve manual target and Checkout logs identify `0465f3d2b2804e8783fdad32fc2d283fecb88804`, not the workflow-definition/main SHA. Pytest reports **697 passed, 3 skipped in 36.38s**. Commit statuses explicitly report Format check passed and Lint passed; UI rendering is skipped, not visual acceptance.
+- [x] Both P1 findings are addressed at that tested runtime head. The suite passes after the fixes; this is not a claim that the suite exercises every fault/cancellation interleaving described in the original acceptance matrix.
+- [x] Synchronize README, repository contract, current status, scripting architecture, user guide and unreleased release-audit scope. Add explicit wide/narrow `scripts_setup_parallel_batch` offline fixture definitions using existing controls; do not evaluate the mixer or render the fixtures. No application-runtime/test/dependency/schema changes; no new tests/checks/renders/CI/provider work executed by the agent.
+- [x] Prepare PR summary and related epic/issue progress without closing broader milestones or attaching automatic closing keywords to #112/#114/#115/#116/#117/#198/#216. Closed #196 remains the completed forms slice, not a new batch claim.
+- [ ] Owner: squash merge after reviewing the final documentation/preview-definition head. Passing CI is attached to the exact runtime head above, not automatically transferred to a newer commit. No merge, tag, release or packaged publication performed by the agent.
+- Remaining owner/release gates: live backend concurrency/entitlement and checkpoint/LoRA support; prepared-only/mixed/stale-account LoRAs; original Draw Things fallback; exhaustive Stop/unknown/save/release fault cases; native Windows/DPI, packaged and older-CPU/process containment. Earlier owner smoke and logs do not establish this entire matrix.

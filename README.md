@@ -90,6 +90,7 @@ See the [CLI reference](devdocs/guides/cli.md) for backends, options and example
 
 - [Desktop guide](devdocs/guides/desktop.md): connections, generation, images, logs and settings
 - [Queues and batch plans](devdocs/guides/queues.md): queue controls, concurrency and comparisons
+- [Scripts](devdocs/guides/scripts.md): Inspect > Setup > Run Script, optional bounded parallel batches and LoRA readiness
 - [CLI reference](devdocs/guides/cli.md): automation and development interface
 - [Release notes](devdocs/releases/) and the [release roadmap](devdocs/plans/releases.md)
 
@@ -109,7 +110,7 @@ See the [CLI reference](devdocs/guides/cli.md) for backends, options and example
 - [Current development status](devdocs/current_dev_status.md), the [implementation plan](devdocs/plans/initial.md),
   [plans](devdocs/plans/),
   [research](devdocs/research/) and [decisions](devdocs/decisions/)
-- [Scripts desktop preview corrections](devdocs/plans/2026-11-02-scripts-review-fixes.md): UI-only work; desktop script execution is not yet connected. See also [independent-review alignment](devdocs/plans/2026-11-02-scripts-independent-review.md) for offline interactions and Inpaint handoff.
+- [Scripts implementation](devdocs/architecture/scripting.md) and [parallel-batch plan](devdocs/plans/2026-11-03-parallel-script-batch.md). Earlier [desktop preview corrections](devdocs/plans/2026-11-02-scripts-review-fixes.md) and [independent-review alignment](devdocs/plans/2026-11-02-scripts-independent-review.md) record historical UI-only slices, not the current runtime boundary.
 
 ## Repository layout
 

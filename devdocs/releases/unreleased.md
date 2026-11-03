@@ -4,6 +4,10 @@ Changes through 5.4.0 are consolidated in [DTFlow 5.4.0](v5.4.0.md). This file t
 
 ## Highlights
 
+- **Parallel Scripts (PR #218):** Optional DTFlow-only `pipeline.runBatch` runs bounded independent text-to-image jobs with shared queue capacity, durable child attempts and ordered per-job outputs. The portable Krea2 mixer exposes 1..10 requested jobs at once (default 4), with its Draw Things sequential fallback retained. Effective concurrency and model/LoRA support remain backend-dependent; this is not unchanged iOS-script parity or provider entitlement.
+
+- **Scripts forms (PR #217, merged):** Native nested/repeated forms and Inspect > Setup > Run Script preloading without a pre-run queue/provider session, version-specific answer suggestions and owned native picker inputs. `image` retains supplied-image selection semantics; `imageField`/`directory` use pickers, with optional script-authored cropping of owned copies. This does not add canvas pixel/mask generation support.
+
 - **Scripts (PR #215):** The managed version library and parser are connected to the native Scripts page. Explicit Start creates one ordinary queue item with durable child attempts, live status/history and per-step results; Queues shows a script summary and child steps, with the last committed step as its summary thumbnail. Short activity labels and reduced History repainting are included. Geometry-only canvas hooks are available for text-to-image scripts; image pixels, masks, source handoff, complete interactive forms and broad configuration/LoRA-mixer compatibility remain later work. Manual Windows/UI smoke for this PR and exact backend/checkpoint acceptance are not established by the skipped UI-render Action.
 
 ## Added
@@ -12,16 +16,16 @@ Changes through 5.4.0 are consolidated in [DTFlow 5.4.0](v5.4.0.md). This file t
 
 ## Fixed
 
-- PR #218 lifecycle follow-up: batch workers recheck closed intake after reservation/linking awaits, and retain/drain all workers before propagating release failures or batch cancellation. Already admitted work is not retried or cancelled remotely. Source changes pending fresh CI/owner acceptance.
+- PR #218 lifecycle follow-up: batch workers recheck closed intake after reservation/linking awaits, and retain/drain all workers before propagating release failures or batch cancellation. Already admitted work is not retried or cancelled remotely. CI at runtime head `0465f3d` reports 697 passed, 3 skipped with format/lint passed ([run](https://github.com/djebaz/dtflow/actions/runs/41613970580)); UI rendering was skipped, and owner/backend/package acceptance remains separate.
 
-- Draft PR #218: cloud scripts automatically bind existing confirmed LoRA receipts independently of Generate's selection, like queue LoRA sets. Setup reads local records only; actual dispatch still checks the active backend/account. Missing files still need explicit Prepare; no implicit downloads or uploads. Source-only follow-up, pending owner smoke.
+- PR #218: cloud scripts automatically bind existing confirmed LoRA receipts independently of Generate's selection, like queue LoRA sets. Setup reads local records only; actual dispatch still checks the active backend/account. Missing files still need explicit Prepare; no implicit downloads or uploads. Owner smoke of the full asset/account matrix remains separate from CI.
 
 - PR #201 independent-review follow-up: offline terminal/review actions, guarded Start/queue/input previews, fixture syntax checks and in-memory version Save, live/unresolved history cues, detached Inpaint source/mask entry and local form/editor/results polish. Native Photos/Files pickers are supported in the target design, with runtime hook integration deferred. No real script execution, parser, persistence or provider calls are connected.
 
 - PR #201 Scripts desktop preview: Designer-owned static views, visible library actions, wrapped form rows, distinct queued/cancelled evidence and Cancel/waiting presentation, selected-script inspection facts, saved-versus-draft status, Find/Replace and inline dirty-draft protection. The labelled Inspector toggle sits at the right edge of the Scripts toolbar with a right-sidebar SVG, not beside the product logo. Inspector drawer and offline source/mask fixtures remain presentation-only; runtime Start/save/history integration is not included.
 
 
-## Scripting (PR #199, pending merge)
+## Scripting (PR #199, merged foundation)
 
 - Added opt-in headless execution for locally supplied Draw Things JavaScript scripts with an explicit fake/local/cloud backend, bounded run generations, durable ScriptRun/child attempt links, headless form answers and per-run sandbox files.
 - Unsupported changed configuration fields and masks fail before generation; empty model identifiers are rejected. Missing/unreadable script paths report their concrete file error.
@@ -29,5 +33,5 @@ Changes through 5.4.0 are consolidated in [DTFlow 5.4.0](v5.4.0.md). This file t
 
 ## Release audit
 
-- PRs: #193, #201.
-- Scope: Version bump 5.4.0 and release-note consolidation; Scripts Qt preview review corrections and canonical Designer layout migration, without runtime execution integration; exact Windows artifact acceptance and publication remain separate.
+- PRs: #193, #199, #201, #215, #217, #218.
+- Scope: Version bump 5.4.0 and release-note consolidation; Scripts preview corrections, canonical Designer migration, headless/native queue runtime and full form/Setup integration; optional bounded parallel scripts with attempts schema 6, ready LoRA binding and lifecycle repairs. Exact Windows artifact, provider compatibility and release publication remain separate gates.
