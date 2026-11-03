@@ -254,6 +254,8 @@ class ItemRow:
     gallery_identity: str | None = None  # "attempt:ordinal" of the first saved image, as the Images gallery names it
     prompt_runs: tuple[tuple[int, int], ...] = ()  # (start, length) of the prompt parts a prompt variation produced
     is_script_parent: bool = False  # aggregate queue item, not an additional image-generating attempt
+    script_preview_path: str | None = None  # last committed child image, display-only on the parent
+    script_preview_identity: str | None = None  # true child gallery identity; never a parent attempt
 
     @property
     def dimensions_text(self) -> str:
@@ -398,6 +400,21 @@ def item_rows(view: dict) -> tuple[ItemRow, ...]:
         artifacts = [path for path in item["artifacts"] if isinstance(path, str)]
         metadata = next((path for path in artifacts if Path(path).name == "metadata.json"), None)
         failure = item.get("failure") or {}
+        script_preview = None
+        if item.get("script"):
+            # A parent ScriptRun summarizes its children. Preview only the
+            # highest-ordinal successfully committed step with a saved image,
+            # using that child's real gallery identity for cache validation.
+            # A failed/unresolved last step must not masquerade as a result.
+            for child in sorted(steps, key=lambda step: step["ordinal"], reverse=True):
+                if child.get("state") != "succeeded" or not child.get("attempt_id"):
+                    continue
+                for position, path in enumerate(child.get("artifacts") or ()):
+                    if isinstance(path, str) and Path(path).suffix.lower() in (".png", ".jpg", ".jpeg", ".webp"):
+                        script_preview = (path, f"{child['attempt_id']}:{position}")
+                        break
+                if script_preview is not None:
+                    break
         # The gallery numbers an attempt's outputs by their index in the recorded artifact list (metadata included).
         identity = next(
             (
@@ -432,6 +449,8 @@ def item_rows(view: dict) -> tuple[ItemRow, ...]:
                 None if item.get("script") else identity,
                 decode_runs(item.get("prompt") or "", item.get("prompt_runs")),
                 is_script_parent=bool(item.get("script")),
+                script_preview_path=script_preview[0] if script_preview else None,
+                script_preview_identity=script_preview[1] if script_preview else None,
             )
         )
         if steps:
@@ -808,7 +827,7 @@ def event_lines(view: dict) -> str:
         stamp = local_time(event["at_utc"])
 
         if kind == "created" and script_of(view) is not None:
-            summary = "Script queued"
+            summary = "Queued"
         elif kind == "created":
             count, cap = detail.get("items"), detail.get("cap")
             summary = ""
@@ -819,7 +838,7 @@ def event_lines(view: dict) -> str:
             if cap is not None:
                 summary += f" // {cap}"
         elif kind == "started":
-            summary = "Queue started"
+            summary = "Started" if script_of(view) is not None else "Queue started"
         elif kind == "backend_submission_possible":
             summary = f"{item_label(detail)} submitted"
         elif kind == "timing_snapshot":
@@ -835,12 +854,17 @@ def event_lines(view: dict) -> str:
             script = script_of(view)
             started, committed, _ = script_steps(script)
             state = str(detail.get("state", "settled"))
-            summary = f"Run finished · {started} step{'s' if started != 1 else ''}, {committed} committed"
-            if state != "succeeded":
-                summary += f" · {state.replace('_', ' ')}"
+            state_label = {
+                "succeeded": "Done",
+                "failed": "Failed",
+                "save_failed": "Save failed",
+                "unknown": "Unknown",
+                "cancelled": "Stopped",
+            }.get(state, state.replace("_", " ").capitalize())
+            summary = f"{state_label} · {committed}/{started}"
             elapsed = script.get("elapsed")
             if type(elapsed) in (int, float):
-                summary += f" · total {elapsed:.2f} s"
+                summary += f" · {elapsed:.2f}s"
         elif kind == "item_settled":
             state = str(detail.get("state", "settled"))
             state = "no result" if state == "unknown" else state.replace("_", " ")
@@ -874,19 +898,21 @@ def event_lines(view: dict) -> str:
 
 
 def _step_lines(script: dict) -> list[str]:
-    """One or two log lines per step (started, then committed with its duration); steps carry no event clock."""
+    """Compact step labels for narrow activity panels; raw event timestamps stay intact."""
     lines = []
     blank = " " * 8
     for child in script.get("children") or ():
         n = child["ordinal"]
-        lines.append(f"{blank}  Step {n} started")
+        lines.append(f"{blank}  S{n} start")
         state = child.get("state")
         if state == "succeeded":
             duration = (child.get("fields") or {}).get("duration")
-            tail = f" - {duration:.2f} s" if type(duration) in (int, float) else ""
-            lines.append(f"{blank}  Step {n} committed{tail}")
+            tail = f" · {duration:.2f}s" if type(duration) in (int, float) else ""
+            lines.append(f"{blank}  S{n} saved{tail}")
         elif state in ("failed", "save_failed", "unknown", "cancelled"):
-            lines.append(f"{blank}  Step {n} {state.replace('_', ' ')}")
+            short_state = {"failed": "fail", "save_failed": "save fail",
+                           "unknown": "unknown", "cancelled": "stopped"}[state]
+            lines.append(f"{blank}  S{n} {short_state}")
     return lines
 
 
