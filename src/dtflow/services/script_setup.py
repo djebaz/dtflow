@@ -122,6 +122,7 @@ async def prepare_script(
             require_start=True,
             admission_gate=setup.admitted,
             available_assets=available_assets,
+            source_sha256=hashlib.sha256(source.encode("utf-8")).hexdigest(),
         )
         setup.hosts.append(host)
         return host.hooks()

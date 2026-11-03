@@ -112,7 +112,8 @@ _ERROR_LOCATION = re.compile(r"^(?:SyntaxError: )?(?P<message>.*?)\s*\((?P<line>
 
 def parse_syntax_error(text: str) -> tuple[int, int, str]:
     """``(line, column, message)`` from Acorn's ``SyntaxError: message (line:column)``; line/column are 1-based.
-    Text without a location (timeouts, nesting limits) maps to line 1, column 1."""
+    Text without a location retains fallback (1, 1) for API compatibility; parser
+    resource failures are presented without a source annotation by the caller."""
     match = _ERROR_LOCATION.match(text.strip())
     if match is None:
         return 1, 1, text
@@ -147,6 +148,9 @@ def analyze_bytes(data: bytes, name: str) -> dict:
             hooks = ("requestFromUser",)
         elif api == "__dtSleep":
             hooks = ("sleep",)
+        elif api == "pipeline.runBatch":
+            # DTFlow overlay, deliberately absent from the pinned upstream map.
+            hooks = ("generateBatch",)
         elif api in mapping:
             hooks = mapping[api]
         elif api.startswith("pipeline.configuration"):
@@ -168,6 +172,11 @@ def analyze_bytes(data: bytes, name: str) -> dict:
         warnings.append(f"Unrecognized API version {version}; only 1.0 is known.")
     if dynamic:
         warnings.append("Dynamic constructs prevent a complete static call list: " + ", ".join(dynamic) + ".")
+    if re.search(r"\b__dtflowScriptHost\b", code):
+        warnings.append(
+            "DTFlow host helpers/feature detection are present and contribute to the global-access warning. "
+            "That warning alone does not indicate an unsupported call; dynamic paths and backend compatibility remain unverified."
+        )
     return {
         "file": name,
         "sha256": hashlib.sha256(data).hexdigest(),

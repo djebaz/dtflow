@@ -99,6 +99,7 @@ from dtflow.ui.gallery_detail_preview import (
 )
 from dtflow.ui.gallery_loading import GalleryCanvasLoading
 from dtflow.ui.gallery_pager import GalleryPager
+from dtflow.ui.gallery_selection_check import GallerySelectionCheck
 from dtflow.ui.gallery_preparation import GalleryPreparation, GalleryRetirement
 from dtflow.ui.inline_feedback import feedback
 from dtflow.ui.live_control_fx import LiveFollowFx, live_dot_icon
@@ -2954,11 +2955,9 @@ class GalleryPage(QObject):
         button = QPushButton(card)
         button.setProperty("role", "galleryCardImage")
         button.clicked.connect(lambda checked=False, identity=item.identity: self._open_from_grid(identity))
-        check = QCheckBox(button)
-        check.setObjectName("galleryCardCheck")
+        check = GallerySelectionCheck(button)
         check.setToolTip("Check image for bulk actions")
         check.setAccessibleName(f"Check {_filename(item.path)}")
-        check.setGeometry(9, 9, 28, 28)
         check.setChecked(item.identity in self.selection.checked)
         check.toggled.connect(lambda value, identity=item.identity: self._set_checked(identity, value))
         check.raise_()

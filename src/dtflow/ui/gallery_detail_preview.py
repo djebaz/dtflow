@@ -6,6 +6,8 @@ metadata here are explicitly illustrative fixtures.
 
 from pathlib import Path
 
+from dtflow.ui.gallery_selection_check import GallerySelectionCheck
+
 from PySide6.QtCore import QEvent, QObject, QRectF, QSize, Qt, QTimer
 from PySide6.QtGui import QColor, QFont, QIcon, QKeySequence, QPainter, QPainterPath, QPixmap, QShortcut
 from PySide6.QtWidgets import (
@@ -508,9 +510,7 @@ class DetailFixture(QObject):
             button.setAccessibleName(f"Open {path.name} in Detail; illustrative sample")
             button.setToolTip("Illustrative artwork; no saved-output generation evidence")
             painter = CoverPainter(button, path, (record["dimensions"], "Sample"))
-            check = QCheckBox(button)
-            check.setObjectName("galleryCardCheck")
-            check.setGeometry(9, 9, 28, 28)
+            check = GallerySelectionCheck(button)
             check.setAccessibleName(f"Check illustrative sample {index}")
             check.setToolTip("Illustrative selection only; no real saved output is changed.")
             check.toggled.connect(lambda checked, item=index: self.toggle_sample(item, checked))

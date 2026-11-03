@@ -1,6 +1,7 @@
 """Render real Qt widgets against offline fixtures. Never admits provider network traffic.
 
 Run with the locked dev environment: uv run python tools/ui/render_states.py --out tmp/ui-renders
+Scripts fixtures include normal, armed and narrow 14 px library-removal controls with padded 22 px hit targets.
 The calibration grid is a fixture, not a generated photograph. Cloud receipts use the
 same in-memory API/transport as the asset tests; no real file upload occurs.
 """
@@ -2250,6 +2251,11 @@ def render_gallery_composition_states(shell, state, out):
         form.imagesNavigationButton.click()
         assert shell.grid_index_label.isVisible()
         snap("images-65-pager-grid-normal")
+        # The real grid control retains its 28 px housing at (9, 9), while
+        # its invisible 56 px target selects rather than opening Detail.
+        grid_check = next(iter(gallery._check_boxes.values()))
+        grid_check.setFocus()
+        snap("images-65c-grid-checkbox-padded-focus")
         gallery._widget("galleryFocusButton", QPushButton).click()
         try:
             assert gallery._widget("galleryPagerBar").isVisible()
@@ -4143,7 +4149,7 @@ def main():
     ):
         state = Path(temporary)
         if wants("scripts"):
-            # Includes Setup, batch-concurrency, picker and discard fixtures; no JS/queues are started.
+            # Includes parser-limit, inspection, mixer and Setup fixtures; no JS/queues are started.
             from render_scripts_states import STATES as SCRIPT_STATES, render_scripts_states
 
             def script_window():

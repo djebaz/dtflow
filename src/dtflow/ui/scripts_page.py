@@ -254,6 +254,8 @@ class ScriptsPage:
         self.owner = owner
         self._library_factory = library_factory
         self._library = None
+        self._remove_button = None
+        self._removing_sha = None
         self._library_ready = False
         self._live = library_factory is not None
         self._versions: list[ScriptVersion] = []
@@ -662,6 +664,7 @@ class ScriptsPage:
             rail.setVisible(self._wide_details_requested)
 
     def _selected(self, row: int):
+        self._cancel_library_removal()
         if self._live and not self._reference_mode:
             self._select_live(row)
             return
@@ -823,6 +826,7 @@ class ScriptsPage:
         self._sync_drawer_data()
 
     def clear(self):
+        self._cancel_library_removal()
         self._reference_mode = False
         self._current_script = None
         self._run_state = ""
@@ -943,6 +947,8 @@ class ScriptsPage:
             self._load_reference_form()
 
     def show_view(self, index: int):
+        if self.views.currentIndex() != index:
+            self._cancel_library_removal()
         if (
             self.views.currentIndex() != index
             and hasattr(self, "editor")
@@ -1242,42 +1248,116 @@ class ScriptsPage:
             self._rendered_history_entries = history_key
         self._refresh_library_cues()
 
-    def _add_library_item(self, script, extra: str = ""):
+    def _add_library_item(self, script, extra: str = "", *, version_sha: str = ""):
+        from dtflow.ui.main_window import FORMS_DIR, load_ui
+
         filename, sha, tier, support = script
         item = QListWidgetItem()
         item.setSizeHint(QSize(0, 84 if extra else 66))
         self.library.addItem(item)
-        row = QWidget()
-        row.setProperty("role", "sectionContents")
-        col = QVBoxLayout(row)
-        col.setContentsMargins(10, 5, 10, 5)
-        col.setSpacing(2)
-        name = _label(filename, wrap=True)
-        col.addWidget(name)
-        identity = QHBoxLayout()
-        identity.setContentsMargins(0, 0, 0, 0)
-        identity.setSpacing(8)
-        digest = _label(sha, role="scriptsVersion")
+        row = load_ui(FORMS_DIR / "scripts_library_card.ui", self.library)
+        row.scriptName.setText(filename)
+        row.scriptName.setMinimumWidth(0)
+        row.scriptName.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
+        digest = row.scriptsVersion
+        digest.setText(sha)
         digest.setFont(QFont("Consolas", 9))
-        identity.addWidget(digest)
-        verdict = _label(f"{tier} · {support}", role="scriptsLibraryVerdict")
+        verdict = row.scriptsLibraryVerdict
+        verdict.setText(f"{tier} · {support}")
         _feedback(
             verdict, "ok" if support == "supported" else "warning" if support in ("deferred", "unknown") else "error"
         )
-        identity.addWidget(verdict)
-        identity.addStretch(1)
-        col.addLayout(identity)
-        if extra:
-            col.addWidget(_label(extra, role="scriptsMuted"))
-        active = _label("Run active", role="scriptsLibraryActive")
+        row.scriptsLibraryExtra.setProperty("role", "scriptsMuted")
+        row.scriptsLibraryExtra.setText(extra)
+        row.scriptsLibraryExtra.setVisible(bool(extra))
+        active = row.scriptsLibraryActive
         _feedback(active, "warning")
         active.hide()
-        col.addWidget(active)
+        button = row.scriptRemoveButton
+        button.setAccessibleName(f"Remove {filename}, version {sha}")
+        identity = version_sha or sha
+        button.clicked.connect(
+            lambda checked=False, key=identity, target=button: self._confirm_library_removal(key, target)
+        )
         self.library.setItemWidget(item, row)
         item.setToolTip(
             f"{filename}\nVersion {sha} · {tier} · {support}"
             + ("" if self._live and not self._reference_mode else " · offline example")
         )
+
+    def _cancel_library_removal(self):
+        button, self._remove_button = self._remove_button, None
+        if button is not None and button.property("confirmationPending"):
+            self.owner.inline.dismiss()
+
+    def _confirm_library_removal(self, sha: str, button: QPushButton):
+        if self._removing_sha is not None:
+            return
+        if self.owner.inline.commit(button):
+            self._remove_button = None
+            return
+        if self.editor.is_dirty():
+            button.setToolTip("Save or discard your draft before removing a script version.")
+            return
+        if self._live_mode() and self._run_state in LIVE_STATES and sha == self._selected_sha:
+            return
+        self._cancel_library_removal()
+        self._remove_button = button
+        self.owner.inline.arm(
+            button,
+            "Remove this script version from the library?",
+            "History, outputs and source bytes used by queued runs are retained.",
+            lambda: self._remove_library_version(sha),
+            danger=True,
+            confirm_text="✓",
+            overlay=False,
+        )
+
+    def _remove_library_version(self, sha: str):
+        self._remove_button = None
+        # Revalidate at the second click; arming a button grants no saved consent.
+        if self.editor.is_dirty() or self._removing_sha is not None:
+            return
+        if not self._live_mode():
+            index = next((i for i, script in enumerate(self._library_scripts) if script[1] == sha), -1)
+            if index >= 0:
+                self._library_scripts.pop(index)
+                self.library.takeItem(index)
+                if self._library_scripts:
+                    self.library.setCurrentRow(0)
+                    self._selected(0)
+                else:
+                    self.clear()
+            return
+        if self._run_state in LIVE_STATES and sha == self._selected_sha:
+            return
+        library = self._library_store()
+        if library is None or not any(v.sha256 == sha for v in self._versions):
+            return
+        self._removing_sha = sha
+        self._refresh_library_cues()
+        self._refresh_readiness()
+
+        def removed(result, failure):
+            self._removing_sha = None
+            if failure is not None:
+                self._refresh_library_cues()
+                self._refresh_readiness()
+                self.owner.inline.notice("Cannot remove script version", str(failure), "error")
+                return
+            if self._selected_sha == sha:
+                self._discard_setup()
+                self._selected_sha = ""
+                self._current_script = None
+                if not self.editor.is_dirty():
+                    self.editor.set_draft("", status="No script selected")
+            self._inspections.pop(sha, None)
+            remaining = next((v.sha256 for v in self._versions if v.sha256 != sha), "")
+            select = self._selected_sha or ("" if self.editor.is_dirty() else remaining)
+            self._load_library(select)
+            self._refresh_readiness()
+
+        self.owner.runner.submit(asyncio.to_thread(library.remove_version, sha), removed)
 
     def _refresh_library_cues(self):
         for index, script in enumerate(self._library_scripts):
@@ -1289,11 +1369,14 @@ class ScriptsPage:
                 continue
             active = row.findChild(QLabel, "scriptsLibraryActive")
             live = self._run_state in LIVE_STATES and script[1] == getattr(self, "_run_version", "")
+            button = row.findChild(QPushButton, "scriptRemoveButton")
+            if button is not None:
+                button.setEnabled(not live and self._removing_sha is None)
             # isHidden() tracks explicit visibility even if an ancestor rail is
             # hidden; isVisible() could repeatedly force layout on background polls.
             if active.isHidden() == live:
                 active.setVisible(live)
-            wanted = QSize(0, 84 if live else 66)
+            wanted = QSize(0, max(row.sizeHint().height(), 84 if live else 66))
             if item.sizeHint() != wanted:
                 item.setSizeHint(wanted)
 
@@ -1374,7 +1457,7 @@ class ScriptsPage:
             caption = "Continue" if self._run_state == "waiting_input" else "Run Script"
         self.start.setText(caption)
         self.start.setAccessibleName(caption)
-        self.start.setEnabled(bool(ready))
+        self.start.setEnabled(bool(ready) and self._removing_sha is None)
         self.start.setToolTip(
             "Prepare the actual script form in Setup. Generation stays blocked until Run Script."
             if view == 0
@@ -1694,7 +1777,7 @@ class ScriptsPage:
                     else ""
                 )
                 + (
-                    "Setup is ready; no job is queued. Run Script will queue this execution with your answers."
+                    "Ready to run. Nothing queued."
                     if preparing
                     else "Review and submit to continue the running script. File inputs require a new selection. "
                     "Cancel input stops this script; it does not cancel submitted remote work."
@@ -1865,9 +1948,8 @@ class ScriptsPage:
         if self.run_start is None:
             return "Start is not connected in this window."
         return (
-            "Setup preloads bounded JavaScript and cached inventory without a queue item or backend connection. "
-            "Run Script creates the queue item and permits generation using the settings captured at Setup, "
-            f"up to {self.cap.value()} generations. Cloud generations may use credits. Stop ends local waiting only."
+            f"Run Script queues up to {self.cap.value()} generations. Cloud credits may apply. "
+            "Stop ends local waiting only."
         )
 
     def _library_store(self):
@@ -1923,6 +2005,7 @@ class ScriptsPage:
             self._selected_sha = ""
             return
         if not same:
+            self._cancel_library_removal()
             self.library.blockSignals(True)
             self.library.clear()
             self._library_scripts = []
@@ -1945,7 +2028,9 @@ class ScriptsPage:
                     when = version.created_at
                 position = same_name.index(version.sha256) + 1
                 tag = f"version {position} of {len(same_name)}" + (" · latest" if position == len(same_name) else "")
-                self._add_library_item(script, f"{tag} · {when}" if len(same_name) > 1 else when)
+                self._add_library_item(
+                    script, f"{tag} · {when}" if len(same_name) > 1 else when, version_sha=version.sha256
+                )
             self.library.blockSignals(False)
         for version in versions:  # every version gets its verdict, not only the selected one
             if version.sha256 not in self._inspections and version.sha256 not in self._inspecting:
@@ -2061,7 +2146,7 @@ class ScriptsPage:
         self._current_hooks = tuple((row.api, row.state, row.detail) for row in inspection.hooks)
         syntax_ok = inspection.syntax_error is None
         label = (
-            f"● {'Syntax valid' if syntax_ok else 'Syntax error'}   ● {len(inspection.hooks)} API calls observed   ● "
+            f"● {'Syntax valid' if syntax_ok else inspection.title}   ● {len(inspection.hooks)} API calls observed   ● "
             + inspection.title
         )
         self.status.setText(label)
@@ -2072,6 +2157,7 @@ class ScriptsPage:
             _feedback(widget, inspection.verdict)
         self.drawer_summary.setText(inspection.title)
         self.inspect_summary.setText(inspection.summary)
+        self.inspect_summary.setToolTip("\n".join(inspection.warnings))
         dynamic = inspection.report["dynamic_constructs"]
         facts = {
             "Header": f"{version.name} · API {inspection.api_version or 'header missing'}",
@@ -2083,12 +2169,9 @@ class ScriptsPage:
         }
         for name, widget in self.inspection_values.items():
             widget.setText(facts[name])
-        supported = sum(row.state == "supported" for row in inspection.hooks)
-        deferred = sum(row.state == "deferred" for row in inspection.hooks)
-        blocked = sum(row.state == "unsupported" for row in inspection.hooks)
         self._set_inspect_banner(
             inspection.title,
-            f"{supported} hooks supported, {deferred} deferred, {blocked} unsupported. Setup preloads separately without a queue or generation.",
+            inspection.summary,
             inspection.verdict,
         )
         try:
@@ -2271,6 +2354,8 @@ class ScriptsPage:
             self.show_view(1)
 
     def _start_live(self, *, auto=False) -> None:
+        if self._removing_sha is not None:
+            return
         if (
             self._starting
             or self._run_state in LIVE_STATES
@@ -2389,6 +2474,8 @@ class ScriptsPage:
         self.owner.runner.submit(asyncio.to_thread(read_setup, self._state_dir(), identity), loaded)
 
     def _submit_setup(self):
+        if self._removing_sha is not None:
+            return
         if not self._setup_ready or self.run_prepared is None or self.live_fields.busy:
             return
         ordinal = self._live_prompt_id[1] if self._live_prompt_id is not None else None
