@@ -1099,14 +1099,23 @@ class ScriptsPage:
         }
 
     def _sync_drawer_data(self):
-        layout = self.drawer_inspector.hooksHost.layout()
-        while layout.count():
-            widget = layout.takeAt(0).widget()
-            if widget is not None:
-                widget.hide()
-                widget.deleteLater()
-        for hook, state, detail in self._current_hooks:
-            layout.addWidget(_hook_item(hook, state, detail))
+        """Rebuild dynamic inspector regions only when their contents change.
+
+        A ScriptRun poll can arrive several times with identical evidence.
+        Recreating all History widgets on each poll caused visible blinking.
+        """
+        hooks = tuple(self._current_hooks)
+        if getattr(self, "_rendered_drawer_hooks", None) != hooks:
+            layout = self.drawer_inspector.hooksHost.layout()
+            while layout.count():
+                widget = layout.takeAt(0).widget()
+                if widget is not None:
+                    widget.hide()
+                    widget.setParent(None)
+                    widget.deleteLater()
+            for hook, state, detail in hooks:
+                layout.addWidget(_hook_item(hook, state, detail))
+            self._rendered_drawer_hooks = hooks
         live = self._live and not self._reference_mode
         entries = (
             list(self._live_history)
@@ -1147,27 +1156,31 @@ class ScriptsPage:
                     "ok",
                 ),
             )
-        for history in (self.history, self.drawer_inspector.scriptsHistoryList):
-            rows = history.layout()
-            while rows.count():
-                widget = rows.takeAt(0).widget()
-                if widget is not None:
-                    widget.hide()
-                    widget.deleteLater()
-            for title, duration, detail, state in entries:
-                card = QFrame()
-                card.setObjectName("scriptsHistoryEntry")
-                body = QVBoxLayout(card)
-                body.setContentsMargins(0, 5, 0, 5)
-                body.setSpacing(3)
-                line = QHBoxLayout()
-                status = _label(title, role="scriptsHistoryStatus", wrap=True)
-                _feedback(status, state)
-                line.addWidget(status, 1)
-                line.addWidget(_label(duration, role="scriptsMuted"))
-                body.addLayout(line)
-                body.addWidget(_label(detail, role="scriptsMuted", wrap=True))
-                rows.addWidget(card)
+        history_key = tuple(entries)
+        if getattr(self, "_rendered_history_entries", None) != history_key:
+            for history in (self.history, self.drawer_inspector.scriptsHistoryList):
+                rows = history.layout()
+                while rows.count():
+                    widget = rows.takeAt(0).widget()
+                    if widget is not None:
+                        widget.hide()
+                        widget.setParent(None)
+                        widget.deleteLater()
+                for title, duration, detail, state in entries:
+                    card = QFrame()
+                    card.setObjectName("scriptsHistoryEntry")
+                    body = QVBoxLayout(card)
+                    body.setContentsMargins(0, 5, 0, 5)
+                    body.setSpacing(3)
+                    line = QHBoxLayout()
+                    status = _label(title, role="scriptsHistoryStatus", wrap=True)
+                    _feedback(status, state)
+                    line.addWidget(status, 1)
+                    line.addWidget(_label(duration, role="scriptsMuted"))
+                    body.addLayout(line)
+                    body.addWidget(_label(detail, role="scriptsMuted", wrap=True))
+                    rows.addWidget(card)
+            self._rendered_history_entries = history_key
         self._refresh_library_cues()
 
     def _add_library_item(self, script, extra: str = ""):
@@ -1217,8 +1230,11 @@ class ScriptsPage:
                 continue
             active = row.findChild(QLabel, "scriptsLibraryActive")
             live = self._run_state in LIVE_STATES and script[1] == getattr(self, "_run_version", "")
-            active.setVisible(live)
-            item.setSizeHint(QSize(0, 84 if live else 66))
+            if active.isVisible() != live:
+                active.setVisible(live)
+            wanted = QSize(0, 84 if live else 66)
+            if item.sizeHint() != wanted:
+                item.setSizeHint(wanted)
 
     def _refresh_readiness(self, *_args):
         if not hasattr(self, "start"):
