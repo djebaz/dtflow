@@ -75,7 +75,7 @@ SAMPLER_IDS = {sampler: number for number, sampler in SAMPLER_NUMBERS.items()}
 SUPPORTED_FIELDS = frozenset({"width", "height", "seed", "steps", "guidanceScale", "model", "sampler", "loras"})
 #: Fields that never count as a change (upstream ``id`` is a host-assigned handle).
 IGNORED_FIELDS = frozenset({"id"})
-DEFAULT_MAX_GENERATIONS = 4
+DEFAULT_MAX_GENERATIONS = 30
 MAX_SANDBOX_LISTING = 1000
 MAX_SANDBOX_FILE_BYTES = 64 * 1024 * 1024
 MAX_SANDBOX_FILES = 200
