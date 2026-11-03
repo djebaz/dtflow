@@ -1,0 +1,47 @@
+<ui version="4.0">
+ <class>scriptsLibraryCard</class>
+ <widget class="QWidget" name="scriptsLibraryCard">
+  <property name="role" stdset="0"><string>sectionContents</string></property>
+  <layout class="QVBoxLayout" name="cardLayout">
+   <property name="leftMargin"><number>10</number></property>
+   <property name="topMargin"><number>5</number></property>
+   <property name="rightMargin"><number>6</number></property>
+   <property name="bottomMargin"><number>5</number></property>
+   <property name="spacing"><number>2</number></property>
+   <item>
+    <layout class="QHBoxLayout" name="headingLayout">
+     <property name="spacing"><number>4</number></property>
+     <item><widget class="QLabel" name="scriptName"><property name="wordWrap"><bool>true</bool></property></widget></item>
+     <item alignment="Qt::AlignTop">
+      <widget class="ScriptRemoveButton" name="scriptRemoveButton">
+       <property name="minimumSize"><size><width>22</width><height>22</height></size></property>
+       <property name="maximumSize"><size><width>22</width><height>22</height></size></property>
+       <property name="text"><string>×</string></property>
+       <property name="toolTip"><string>Remove this saved version from the library. Click twice to confirm. History and outputs are kept.</string></property>
+       <property name="accessibleName"><string>Remove script version</string></property>
+      </widget>
+     </item>
+    </layout>
+   </item>
+   <item>
+    <layout class="QHBoxLayout" name="identityLayout">
+     <property name="spacing"><number>8</number></property>
+     <item><widget class="QLabel" name="scriptsVersion"/></item>
+     <item><widget class="QLabel" name="scriptsLibraryVerdict"/></item>
+     <item><spacer name="identitySpacer"><property name="orientation"><enum>Qt::Horizontal</enum></property><property name="sizeHint" stdset="0"><size><width>0</width><height>0</height></size></property></spacer></item>
+    </layout>
+   </item>
+   <item><widget class="QLabel" name="scriptsLibraryExtra"/></item>
+   <item><widget class="QLabel" name="scriptsLibraryActive"><property name="text"><string>Run active</string></property></widget></item>
+  </layout>
+ </widget>
+ <customwidgets>
+  <customwidget>
+   <class>ScriptRemoveButton</class>
+   <extends>QPushButton</extends>
+   <header>dtflow.ui.scripts_library_card</header>
+  </customwidget>
+ </customwidgets>
+ <resources/>
+ <connections/>
+</ui>

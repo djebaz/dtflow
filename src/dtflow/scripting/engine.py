@@ -40,7 +40,13 @@ for (const name of %s) {
 # DTFlow overlay (kept out of the vendored file): upstream __dtSleep busy-spins; this waits cancellably in the host.
 # JavaScriptCore also provides console.info/debug; the vendored script only assigns log/warn/error.
 OVERLAY = (
-    "globalThis.__dtflowScriptHost = Object.freeze({name: 'DTFlow', apiVersion: 1});\n"
+    "globalThis.__dtflowScriptHost = Object.freeze({name: 'DTFlow', apiVersion: 1, "
+    "listLoRAs: (offset = 0) => __dtHooks.listScriptLoRAs(offset), "
+    "runLimits: () => __dtHooks.scriptRunLimits(), "
+    "loadPreferences: () => __dtHooks.loadScriptPreferences(), "
+    "savePreferences: value => __dtHooks.saveScriptPreferences(value), "
+    "planId: value => __dtHooks.fingerprintScriptPlan(value)"
+    "});\n"
     "globalThis.__dtSleep = function (seconds) { __dtHooks.sleep(seconds); };\n"
     "Object.defineProperty(pipeline, 'runBatch', {value: function (jobs, maxConcurrent) { return __dtHooks.generateBatch(jobs, maxConcurrent); }, configurable: false});\n"
     "console.info = console.debug = console.log;\n"

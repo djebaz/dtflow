@@ -20,10 +20,14 @@ from __future__ import annotations
 import asyncio
 import base64
 import concurrent.futures
+import hashlib
+import json
+import re
 import secrets
 import threading
 import uuid
 from collections.abc import Awaitable, Callable, Mapping, Sequence
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
@@ -82,7 +86,7 @@ MAX_SANDBOX_LISTING = 1000
 MAX_SANDBOX_FILE_BYTES = 64 * 1024 * 1024
 MAX_SANDBOX_FILES = 200
 PIPELINE_RUN_KEYS = frozenset({"configuration", "prompt", "negativePrompt", "mask"})
-BATCH_JOB_KEYS = PIPELINE_RUN_KEYS | {"outputFile"}
+BATCH_JOB_KEYS = PIPELINE_RUN_KEYS | {"outputFile", "planId", "jobIndex"}
 MAX_BATCH_CONCURRENT = 10
 SAFE_FAILURES = (RemoteOutcome.NOT_STARTED, RemoteOutcome.FAILED, RemoteOutcome.CANCELLED_CONFIRMED)
 POLL_SECONDS = 0.1
@@ -144,6 +148,7 @@ class ScriptHost:
         reserve_child: Callable[[str, int], Awaitable[bool]] | None = None,
         release_child: Callable[[str], Awaitable[None]] | None = None,
         available_assets: tuple[PreparedAsset, ...] = (),
+        source_sha256: str = "",
     ) -> None:
         if base.operation != "txt2img" or base.image_inputs is not None:
             raise ValueError("Scripts start from text-to-image settings only.")
@@ -161,6 +166,9 @@ class ScriptHost:
         self._admission_gate = admission_gate
         self.reserve_child, self.release_child = reserve_child, release_child
         self.available_assets = available_assets
+        self.source_sha256 = source_sha256
+        self._script_inventory = None
+        self._preferences_allowed = False
         self.run_id = run_id
         self._forms = 0
         self.baseline = normalize_configuration(decode_configuration(baseline_configuration(base)).values)
@@ -179,6 +187,11 @@ class ScriptHost:
     def hooks(self) -> dict[str, Callable[..., Any]]:
         return {
             "existingConfiguration": self.existing_configuration,
+            "listScriptLoRAs": self.list_script_loras,
+            "scriptRunLimits": lambda: {"maxGenerations": self.max_generations},
+            "loadScriptPreferences": self.load_preferences,
+            "saveScriptPreferences": self.save_preferences,
+            "fingerprintScriptPlan": self.plan_fingerprint,
             "existingPrompts": self.existing_prompts,
             "generateImage": self.generate_image,
             "generateBatch": self.generate_batch,
@@ -389,7 +402,29 @@ class ScriptHost:
                 raise ValueError("runBatch outputFile must end with .png; nothing was submitted.")
             if target is not None and target.exists():
                 raise ValueError("runBatch outputFile already exists; nothing was submitted.")
-            requests.append(self._request(item, call_index=self.generations + index + 1))
+            plan_id, job_index = item.get("planId"), item.get("jobIndex")
+            if plan_id is not None or job_index is not None:
+                if (
+                    not isinstance(plan_id, str)
+                    or re.fullmatch(r"[0-9a-f]{64}", plan_id) is None
+                    or type(job_index) is not int
+                    or not 1 <= job_index <= 10000
+                ):
+                    raise ValueError("Batch planId/jobIndex require a SHA-256 and global index 1..10000.")
+            request = self._request(
+                {key: value for key, value in item.items() if key in PIPELINE_RUN_KEYS},
+                call_index=self.generations + index + 1,
+            )
+            if plan_id is not None:
+                request = replace(
+                    request,
+                    resolution_evidence=(
+                        *request.resolution_evidence,
+                        ("script_plan", plan_id),
+                        ("script_job", str(job_index)),
+                    ),
+                )
+            requests.append(request)
             destinations.append(target)
         named = [path for path in destinations if path is not None]
         if len(set(named)) != len(named):
@@ -602,10 +637,60 @@ class ScriptHost:
         if missing:
             raise RuntimeError("DTFlow never downloads models; not available: " + ", ".join(missing))
 
+    def list_script_loras(self, offset: int = 0) -> dict:
+        from dtflow.services.script_inventory import script_lora_inventory
+
+        if type(offset) is not int or offset < 0:
+            raise ValueError("LoRA inventory offset must be a nonnegative integer.")
+        if self._script_inventory is None:
+            self._script_inventory = script_lora_inventory(
+                self.sandbox.parent.parent, self._inventory(), self.available_assets, self.base.model_id
+            )
+        # Bound the ASCII-JSON reply even for maximally escaped names/identifiers.
+        page = self._script_inventory["items"][offset : offset + 100]
+        following = offset + len(page)
+        return {
+            **self._script_inventory,
+            "items": page,
+            "nextOffset": following if following < self._script_inventory["total"] else None,
+        }
+
+    def load_preferences(self):
+        from dtflow.persistence.script_preferences import preferences
+
+        return preferences(self.sandbox.parent.parent, self.source_sha256)
+
+    def save_preferences(self, value):
+        from dtflow.persistence.script_preferences import preferences
+
+        if not self._preferences_allowed or self.cancel.is_set():
+            raise ValueError("Answer a form explicitly before saving script preferences.")
+        return preferences(self.sandbox.parent.parent, self.source_sha256, value=value, write=True)
+
+    def plan_fingerprint(self, value) -> str:
+        if not isinstance(value, dict):
+            raise ValueError("Script plan identity must be a JSON object.")
+        selected = value.get("selected", [])
+        if not isinstance(selected, list) or len(selected) > 400 or any(not isinstance(item, str) for item in selected):
+            raise ValueError("Script plan selections must be at most 400 identifiers.")
+        pool = {item.identifier: item for item in (*self.available_assets, *self.base.prepared_assets)}
+        content = {name: (pool[name].sha256, pool[name].size) for name in selected if name in pool}
+        text = json.dumps(
+            {"source": self.source_sha256, "value": value, "preparedContent": content},
+            sort_keys=True,
+            ensure_ascii=True,
+            allow_nan=False,
+            separators=(",", ":"),
+        )
+        if len(text) > 1024 * 1024:
+            raise ValueError("Script plan identity exceeds 1 MiB.")
+        return hashlib.sha256(text.encode("ascii")).hexdigest()
+
     # -- forms ---------------------------------------------------------------------------------------------------
 
     def request_from_user(self, title: str, confirm: str, components: Sequence[Mapping[str, Any]]) -> list[Any]:
         """Park on the persisted interactive bridge or consume one headless ordered answer set."""
+        self._preferences_allowed = False
         components = list(components)
         validate_components(components)
         source = "file" if self._answers is not None else "initial"
@@ -665,7 +750,9 @@ class ScriptHost:
             if self.cancel.is_set():
                 raise ScriptCancelled()
             self._start_permitted = True
+            self._preferences_allowed = True
             return resolved
+        self._preferences_allowed = source == "file"
         return answers
 
     def screen_size(self) -> dict[str, float]:
@@ -833,6 +920,7 @@ def script_hooks(
             reserve_child=reserve_child,
             release_child=release_child,
             available_assets=available_assets,
+            source_sha256=getattr(context, "source_sha256", ""),
         )
         hosts.append(host)
         return host.hooks()

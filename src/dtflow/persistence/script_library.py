@@ -2,7 +2,8 @@
 
 Every version is a UTF-8 ``.js`` file named by the SHA-256 of its bytes (``versions/<sha256>.js``) plus an index row in
 ``library.sqlite3`` (``PRAGMA user_version`` schema, a newer schema is rejected, never rewritten). A version is never
-modified or removed by this module: editing a script creates a new version. The file bytes are re-hashed on every read, so a
+modified by this module: editing a script creates a new version. Removal drops library membership only, retaining source
+bytes for queued executions and history. The file bytes are re-hashed on every read, so a
 file changed or deleted on disk behind the library is reported instead of being run or shown as the recorded version.
 """
 
@@ -100,6 +101,16 @@ class ScriptLibrary:
                 "SELECT sha256, name, size, created_at, based_on FROM versions WHERE sha256=?", (sha256,)
             ).fetchone()
         return ScriptVersion(*row) if row else None
+
+    def remove_version(self, sha256: str) -> bool:
+        """Remove index membership, retaining source bytes for queues and history."""
+        self._source_path(sha256)  # validate identity; never accept an arbitrary path
+        try:
+            with closing(self._connect()) as connection, connection:
+                cursor = connection.execute("DELETE FROM versions WHERE sha256=?", (sha256,))
+                return cursor.rowcount == 1
+        except sqlite3.Error as exc:
+            raise ScriptLibraryError(f"Cannot remove the script version: {exc}") from exc
 
     def read_source(self, sha256: str) -> str:
         """Verified source text. A missing or altered file raises; nothing is repaired or replaced."""

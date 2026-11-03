@@ -12,9 +12,18 @@ Changes through 5.4.0 are consolidated in [DTFlow 5.4.0](v5.4.0.md). This file t
 
 ## Added
 
+- Scripts library cards now have a compact top-right Remove button with two distinct clicks to confirm in place, without a confirmation overlay. Removal affects the selected saved version’s library membership only; queued source bytes, run history and outputs are retained.
+- The 14 px script Remove control has a padded 22 px click target, including while confirming.
+
+- PR #219: portable Krea2 mixer authoring with cached, paged LoRA discovery, explicit readiness/skipped reasons, single Setup form with direct Run Script, versioned source-scoped preferences and deterministic bounded manual chunks. Plan IDs/global indices stay with child request evidence. Missing files are not downloaded/uploaded, unsupported preset fields are not silently mapped, and original Draw Things behavior remains separate. Source only; owner acceptance remains tracked by #216.
+
 ## Changed
 
+- Images grid selection checkboxes retain their appearance with a 56 × 56 px click target, twice their 28 px housing size. List and Detail controls are unchanged.
+
 ## Fixed
+
+- PR #219 follow-up: remove the mixer preview wizard; keep one Setup form and Run Script. Unknown LoRA metadata is advisory, inspection warnings and footer text are shorter. Parser resource failures are distinguished from source syntax errors; parsing runs on a reserved native stack without changing the pinned parser or execution limits. Source-only changes, not runtime acceptance.
 
 - PR #218 lifecycle follow-up: batch workers recheck closed intake after reservation/linking awaits, and retain/drain all workers before propagating release failures or batch cancellation. Already admitted work is not retried or cancelled remotely. CI at runtime head `0465f3d` reports 697 passed, 3 skipped with format/lint passed ([run](https://github.com/djebaz/dtflow/actions/runs/41613970580)); UI rendering was skipped, and owner/backend/package acceptance remains separate.
 
@@ -33,5 +42,5 @@ Changes through 5.4.0 are consolidated in [DTFlow 5.4.0](v5.4.0.md). This file t
 
 ## Release audit
 
-- PRs: #193, #199, #201, #215, #217, #218.
-- Scope: Version bump 5.4.0 and release-note consolidation; Scripts preview corrections, canonical Designer migration, headless/native queue runtime and full form/Setup integration; optional bounded parallel scripts with attempts schema 6, ready LoRA binding and lifecycle repairs. Exact Windows artifact, provider compatibility and release publication remain separate gates.
+- PRs: #193, #199, #201, #215, #217, #218, #219.
+- Scope: Version bump 5.4.0 and release-note consolidation; Scripts preview corrections, canonical Designer migration, headless/native queue runtime and full form/Setup integration; bounded parallel scripts with attempts schema 6, ready LoRA binding and lifecycle repairs; portable mixer inventory/preparation preview, independent schema-1 authoring preferences and explicit chunks. Exact Windows artifact, provider compatibility and release publication remain separate gates.

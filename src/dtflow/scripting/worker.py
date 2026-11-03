@@ -47,31 +47,13 @@ def syntax_main(connection) -> None:
 
     The script reaches the parser only as a string value, so no part of it is compiled or run by the engine. The options
     mirror upstream's wrapper: scripts are function bodies, so top-level ``return`` is accepted and a leading ``#!``
-    line is not (the runtime wrapper rejects it too). The child exists only to
-    bound memory and time on pathological input."""
+    line is not (the runtime wrapper rejects it too). Parse-only resource policy
+    lives in ``scripting.syntax``; the parent still bounds total process time."""
     die_with_parent()
     try:
-        import quickjs
+        from dtflow.scripting.syntax import parse_in_reserved_thread
 
-        from dtflow.scripting.engine import acorn_source
-
-        source = connection.recv()
-        context = quickjs.Context()
-        context.set_memory_limit(64 * 1024 * 1024)
-        context.set_max_stack_size(512 * 1024)
-        try:
-            context.eval(acorn_source())
-            context.set("__source", source)
-            context.eval(
-                'acorn.parse(__source, {ecmaVersion: "latest", sourceType: "script", '
-                "allowReturnOutsideFunction: true, allowHashBang: false}); true"
-            )
-            connection.send({"error": None})
-        except quickjs.JSException as exc:
-            lines = str(exc).splitlines()
-            connection.send({"error": lines[0] if lines else "Syntax error"})
-        except quickjs.StackOverflow:
-            connection.send({"error": "Script is nested too deeply to analyze."})
+        connection.send({"error": parse_in_reserved_thread(connection.recv())})
     except (EOFError, BrokenPipeError, OSError):
         return
     finally:

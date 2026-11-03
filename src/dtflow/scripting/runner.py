@@ -232,6 +232,7 @@ class RunContext:
     cancel: threading.Event
     record_answers: Callable[[dict], int]
     ask: Callable[[str, str, list], list | None]  # publish a form and wait for its answers (None: cancelled or Stopped)
+    source_sha256: str = ""
 
 
 def run_recorded(
@@ -274,6 +275,7 @@ def run_recorded(
                         dispatcher.cancel,
                         lambda entry: store.append_answers(run_id, entry),
                         lambda title, confirm, components: _ask(store, run_id, title, confirm, components, cancel),
+                        source_sha256=hashlib.sha256(source.encode("utf-8")).hexdigest(),
                     )
                 )
             )
@@ -315,7 +317,13 @@ def _linux_contained() -> bool:
 
 def check_syntax(source: str, *, timeout_seconds: float = 5.0) -> str | None:
     """Syntax error text, or ``None`` when the script parses. Parse-only: the script is data for the vendored Acorn and is
-    never evaluated. Runs in a disposable hook-less child (see ``worker.syntax_main``) that only bounds memory and time."""
+    never evaluated. A disposable hook-less child reserves parser stack headroom;
+    this parent retains the deadline and termination authority."""
+    from dtflow.scripting.syntax import parser_failure
+    from dtflow.scripting.engine import MAX_SOURCE_BYTES
+
+    if len(source.encode("utf-8")) > MAX_SOURCE_BYTES:
+        return parser_failure("the source exceeds the existing 1 MiB script bound.")
     context = multiprocessing.get_context("spawn")
     parent, child = context.Pipe()
     process = context.Process(target=syntax_main, args=(child,), name="dtflow-syntax", daemon=True)
@@ -325,10 +333,10 @@ def check_syntax(source: str, *, timeout_seconds: float = 5.0) -> str | None:
     try:
         parent.send(source)
         if not parent.poll(timeout_seconds):
-            return "The script did not finish parsing in time and was terminated."
+            return parser_failure("the parsing deadline was reached.")
         return parent.recv()["error"]
     except (EOFError, OSError):
-        return "The syntax check process ended unexpectedly."
+        return parser_failure("the syntax child ended unexpectedly.")
     finally:
         parent.close()
         process.join(timeout=0.5)

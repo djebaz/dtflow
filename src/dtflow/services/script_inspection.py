@@ -10,6 +10,7 @@ from dataclasses import dataclass
 
 from dtflow.scripting.analysis import analyze_bytes, parse_syntax_error
 from dtflow.scripting.hooks import HOOKS, IMPLEMENTED, PLANNED, UNSUPPORTED
+from dtflow.scripting.syntax import is_parser_failure
 
 # UI vocabulary for a hook row: supported / deferred (planned) / unsupported.
 _UI_STATE = {IMPLEMENTED: "supported", PLANNED: "deferred", UNSUPPORTED: "unsupported"}
@@ -63,8 +64,12 @@ def inspect_source(data: bytes, name: str) -> Inspection:
     warnings = tuple(report["warnings"])
     if syntax is not None:
         support, verdict, tier = "invalid", "error", "Not parsed"
-        title = "Syntax error"
-        summary = f"Line {syntax[0]}, column {syntax[1]}: {syntax[2]}. Nothing was executed."
+        if is_parser_failure(syntax[2]):
+            title, tier = "Analysis incomplete", "Not analyzed"
+            summary = syntax[2] + " Run is blocked until parsing completes."
+        else:
+            title = "Syntax error"
+            summary = f"Line {syntax[0]}, column {syntax[1]}: {syntax[2]}. Nothing was executed."
     elif report["unsupported_calls"]:
         support, verdict, tier = "unsupported", "error", "Unsupported"
         title = "Not runnable · unsupported hooks"
@@ -75,10 +80,8 @@ def inspect_source(data: bytes, name: str) -> Inspection:
         summary = "Calls are recognised but their hooks are not implemented yet: " + ", ".join(awaiting) + "."
     elif report["preflight"] == "incomplete":
         support, verdict, tier = "supported", "warning", "Tier A"
-        title = "Preflight incomplete"
-        summary = "Static inspection is incomplete: " + " ".join(
-            warnings or ("some paths are known only at run time.",)
-        )
+        title = "Static inspection limited"
+        summary = "Dynamic calls are checked at run time."
     else:
         support, verdict, tier = "supported", "ok", "Tier A"
         title = "No blocking issues found"

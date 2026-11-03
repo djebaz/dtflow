@@ -10,7 +10,15 @@ Choose Setup to edit the form, then Run Script to create the ordinary one-item q
 
 Forms preserve nested section answer arrays. `image` displays supplied raster images and optionally returns a selected index; `imageField` and `directory` use native pickers. Image inputs are normalized owned snapshots, and folders become bounded, nonrecursive owned image copies, not arbitrary external filesystem access. The DTFlow-only descriptor extension `{ ...this.imageField("Reference", false), multiple: 64 }` optionally centre-crops the imported copy to the chosen pixel grid; omit `multiple` for unrestricted dimensions. Original files are unchanged.
 
+## Remove a saved script version
+
+Each library card has a rounded-square × button at its top right. Click once to arm the red ✓ button, then click again to remove that version; no confirmation overlay opens. Escape or changing selection/view cancels. Save or discard a dirty draft first; active runs cannot be removed from their card. Removal frees a library slot but preserves immutable source bytes for queued runs, history, preferences and generated outputs. Reimporting the source adds it back.
+
+The visible control stays 14 × 14 px, with an invisible 4 px margin on every side for a 22 × 22 px click target in both states.
+
 ## Optional parallel batches
+
+The [portable Krea2 adaptation guide](krea2-mixer.md) documents PR #219's cached LoRA enumeration, single-form Setup, source-version preferences and explicit bounded chunks. Its DTFlow-only helpers are feature-detected; the original Draw Things fallback and owner acceptance boundaries remain separate.
 
 `pipeline.runBatch(jobs, maxConcurrent)` is a DTFlow extension, not an upstream Draw Things API. Ordinary `pipeline.run()` remains sequential. Each job accepts the existing `configuration`, `prompt` and `negativePrompt` values, plus an optional sandbox-relative PNG `outputFile`. Masks are unsupported. Jobs are snapshotted and validated before any batch child is linked or submitted; backend/inventory/preflight failures can still occur later.
 
@@ -36,6 +44,8 @@ This example submits real work only when run in an admitted script; cloud genera
 The concurrency argument is an integer 1..10 (default 1). The portable mixer form defaults to 4 and allows 1..10. Actual concurrency is bounded by backend capacity, the shared cloud concurrency policy and other queue reservations; it is not verified cloud entitlement or guaranteed simultaneous provider work. Local Draw Things remains single-lane. Parallel batches require a queued script with shared child-slot accounting; headless runs without that accounting reject requested concurrency above 1. Batch size also respects the remaining per-run generation cap, including earlier sequential calls; parallelism does not increase that cap.
 
 Results stay in input order, even when completion order differs. Each reports `status`, `attemptId` and `outputPaths`; success can include `savedPath`, and failures can include `error`. Statuses are `succeeded`, `failed`, `unknown`, `save_failed` and `not_started`. An already linked but unsubmitted job may have an attempt ID with `not_started`. Durably committed outputs remain authoritative; batch output does not require selecting a shared canvas. Sandbox exports must be unique `.png` destinations and never overwrite existing files.
+
+Adapted chunk jobs may also supply the pair `planId` (64 lowercase hexadecimal SHA-256 characters) and `jobIndex` (integer 1..10000). They become `script_plan`/`script_job` request evidence, not replay/deduplication authority or additional dispatch consent. The mixer guide explains fingerprinting and explicit manual continuation.
 
 Stop closes intake and stops waiting; it does not cancel remote work or permit replay. Unknown outcomes and save failures close intake; waiting workers recheck before generation. Already admitted workers drain before parent settlement/backend closure, including when a lane release fails. Failed releases propagate after draining rather than being retried or silently deleted. Inspect existing attempts before considering another run.
 

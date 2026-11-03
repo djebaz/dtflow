@@ -66,6 +66,14 @@ STATES = (
     "scripts_setup_crop_multiple",
     "scripts_setup_parallel_batch",
     "scripts_setup_parallel_batch_narrow",
+    "scripts_mixer_setup",
+    "scripts_mixer_setup_narrow",
+    "scripts_library_remove",
+    "scripts_library_remove_armed",
+    "scripts_library_remove_narrow",
+    "scripts_editor_parser_limit",
+    "scripts_editor_parser_limit_narrow",
+    "scripts_inspect_dtflow_helpers",
 )
 
 
@@ -124,6 +132,9 @@ def render_scripts_states(out: Path, *, window_factory: Callable, state_names=ST
                 "scripts_editor_narrow",
                 "scripts_setup_narrow",
                 "scripts_setup_parallel_batch_narrow",
+                "scripts_mixer_setup_narrow",
+                "scripts_library_remove_narrow",
+                "scripts_editor_parser_limit_narrow",
             )
             window.form.resize(800, 680) if narrow else window.form.resize(1600, 1000)
             window._show_scripts()
@@ -154,6 +165,14 @@ def render_scripts_states(out: Path, *, window_factory: Callable, state_names=ST
                 "scripts_setup_crop_multiple": "scripts_form_default",
                 "scripts_setup_parallel_batch": "scripts_form_default",
                 "scripts_setup_parallel_batch_narrow": "scripts_form_default",
+                "scripts_mixer_setup": "scripts_form_default",
+                "scripts_mixer_setup_narrow": "scripts_form_default",
+                "scripts_library_remove": "scripts_imported_supported",
+                "scripts_library_remove_armed": "scripts_imported_supported",
+                "scripts_library_remove_narrow": "scripts_imported_supported",
+                "scripts_editor_parser_limit": "scripts_editor_syntax_error",
+                "scripts_editor_parser_limit_narrow": "scripts_editor_syntax_error",
+                "scripts_inspect_dtflow_helpers": "scripts_imported_supported",
             }.get(state, state)
             if state in (
                 "scripts_queued",
@@ -215,6 +234,55 @@ def render_scripts_states(out: Path, *, window_factory: Callable, state_names=ST
                 window.scripts.form_note.show()
                 window.scripts.show_view(1)
                 window.scripts.start.setText("Run Script")
+            elif state.startswith("scripts_library_remove"):
+                # Canonical promoted button: 14 px visual, 22 px native hit target.
+                window.scripts.show_view(0)
+                if state == "scripts_library_remove_armed":
+                    row = window.scripts.library.itemWidget(window.scripts.library.item(0))
+                    window.scripts._confirm_library_removal(
+                        window.scripts._library_scripts[0][1], row.scriptRemoveButton
+                    )
+            elif state.startswith("scripts_mixer_"):
+                fields = [
+                    {"type": "section", "label": "LoRA inventory and readiness"},
+                    {
+                        "type": "plainText",
+                        "text": "3 known; 2 candidates; 1 skipped. Cached metadata is not runtime compatibility.",
+                    },
+                    {"type": "switch", "label": "fake-soft [listed; metadata match]", "value": True},
+                    {"type": "switch", "label": "fake-unknown [listed; unknown]", "value": False},
+                    {"type": "plainText", "text": "Skipped fake-mismatch: metadata_mismatch"},
+                    {"type": "textField", "label": "First global job", "value": "1"},
+                    {"type": "textField", "label": "Jobs in this chunk", "value": "2"},
+                ]
+                fields.insert(0, {"type": "textField", "label": "Prompts", "value": "Offline fixture"})
+                fields.insert(1, {"type": "section", "label": "Mixing"})
+                fields.insert(2, {"type": "textField", "label": "LoRAs per image", "value": "1"})
+                fields.append(
+                    {"type": "plainText", "text": "Unknown compatibility is allowed; backend checks still apply."}
+                )
+                window.scripts.form.set_fields(fields)
+                window.scripts.show_view(1)
+                window.scripts.form_note.setText("Ready to run. Nothing queued.")
+                window.scripts.form_note.show()
+                window.scripts.start.setText("Run Script")
+            elif state in ("scripts_editor_parser_limit", "scripts_editor_parser_limit_narrow"):
+                from dtflow.scripting.syntax import parser_failure
+
+                message = parser_failure("the bounded parser stack limit was reached.")
+                window.scripts.editor.set_error(1, 1, message)
+                window.scripts.status.setText("Analysis incomplete · no source location was established")
+                window.scripts.hook_status.setText("Analysis incomplete")
+                window.scripts.drawer_summary.setText("Analysis incomplete")
+                window.scripts.inspect_summary.setText(message)
+            elif state == "scripts_inspect_dtflow_helpers":
+                window.scripts.show_view(0)
+                window.scripts.status.setText("Syntax valid · static inspection limited")
+                window.scripts._set_inspect_banner(
+                    "Static inspection limited",
+                    "Dynamic calls are checked at run time.",
+                    "warning",
+                )
             elif state == "scripts_editor_discard_confirm":
                 window.scripts.editor.discard.click()
             elif state == "scripts_setup_followup":
