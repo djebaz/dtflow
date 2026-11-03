@@ -1518,7 +1518,14 @@ class ScriptsPage:
         self._refresh_readiness()
 
     def accept_inpaint_snapshot(self, source, mask: bytes, thumbnail: QPixmap):
-        """Retain immutable encoded content and detached mask bytes, never the editable canvas."""
+        """Retain a detached image only for fixtures; never misrepresent live text-only Start."""
+        if self._live_mode():
+            self.owner.inline.notice(
+                "Inpaint handoff not supported",
+                "Live Scripts Start only supports text-to-image. Nothing was queued or submitted.",
+                "warning",
+            )
+            return False
         if self.editor.is_dirty():
             self.owner.inline.notice(
                 "Unsaved draft retained", "Discard or save the draft before opening the Inpaint handoff.", "warning"
@@ -1526,12 +1533,6 @@ class ScriptsPage:
             return False
         self.preview("scripts_from_inpaint")
         self._inpaint_snapshot = (source, bytes(mask))
-        if self._live_mode():
-            self.owner.inline.notice(
-                "Inpaint handoff not used",
-                "Real runs start from text-to-image only; the canvas is not passed to Start.",
-                "warning",
-            )
         self.designer.sourceThumbnail.setPixmap(
             thumbnail.scaled(56, 56, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
         )
