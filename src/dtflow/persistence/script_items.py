@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 import sqlite3
 from contextlib import closing
 from dataclasses import dataclass
@@ -70,10 +71,10 @@ def script_request_from_record(record: Any) -> ScriptRequest:
     if not (
         isinstance(start, dict)
         and isinstance(run_id, str)
-        and run_id
+        and re.fullmatch(r"[0-9a-f]{32}", run_id) is not None
         and isinstance(name, str)
         and isinstance(sha, str)
-        and len(sha) == 64
+        and re.fullmatch(r"[0-9a-f]{64}", sha) is not None
         and (answers is None or isinstance(answers, list))
         and isinstance(start.get("base"), dict)
         and isinstance(start.get("backend"), str)
@@ -160,7 +161,7 @@ def child_states(db: sqlite3.Connection, children: tuple[str, ...]) -> list[str 
 def item_outcome(run: RunSnapshot, states: list[str | None]) -> tuple[str, str | None]:
     """The item state (and failure JSON, if any) a run's state plus its children decide. Never invents success."""
     if run.state == "completed":
-        if any(s is not None and s not in TERMINAL_ATTEMPTS for s in states):  # a step's outcome is still unknown
+        if any(s not in TERMINAL_ATTEMPTS for s in states):  # missing attempts are unresolved too
             message = "The script completed but a step has no confirmed outcome; check the backend before retrying."
             return "unknown", json.dumps({"code": "script_step_unknown", "message": message})
         return "succeeded", None
@@ -168,7 +169,7 @@ def item_outcome(run: RunSnapshot, states: list[str | None]) -> tuple[str, str |
         return "cancelled", None
     if run.state == "failed":
         return "failed", json.dumps({"code": "script_failed", "message": run.error or "Script run failed."})
-    unresolved = run.state == "running" or any(s is not None and s not in TERMINAL_ATTEMPTS for s in states)
+    unresolved = run.state == "running" or any(s not in TERMINAL_ATTEMPTS for s in states)
     if unresolved:
         return "unknown", json.dumps({"code": "script_interrupted", "message": run.error or "Run interrupted."})
     return "failed", json.dumps({"code": "script_interrupted", "message": run.error or "Run interrupted."})
