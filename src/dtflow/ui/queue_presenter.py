@@ -391,9 +391,9 @@ def item_rows(view: dict) -> tuple[ItemRow, ...]:
     rows = []
     for item in view["items"]:
         steps = (item.get("script") or {}).get("children") or []
-        if steps:  # a script item shows one row per step, each with its own preview and settings
-            rows.extend(_step_rows(item, steps))
-            continue
+        # Keep the parent script row (and its outcome/failure) ahead of child
+        # attempts. Without it a failed script with successful children is
+        # indistinguishable from a successful run in the Queues inspector.
         artifacts = [path for path in item["artifacts"] if isinstance(path, str)]
         metadata = next((path for path in artifacts if Path(path).name == "metadata.json"), None)
         failure = item.get("failure") or {}
@@ -415,7 +415,7 @@ def item_rows(view: dict) -> tuple[ItemRow, ...]:
                 item["seed"],
                 tuple(path for path in artifacts if path != metadata),
                 metadata,
-                failure.get("code"),
+                (failure.get("message") or failure.get("code")) if item.get("script") else failure.get("code"),
                 item.get("operation") or "txt2img",
                 item.get("strength"),
                 item.get("prompt") or "",
@@ -432,6 +432,8 @@ def item_rows(view: dict) -> tuple[ItemRow, ...]:
                 decode_runs(item.get("prompt") or "", item.get("prompt_runs")),
             )
         )
+        if steps:
+            rows.extend(_step_rows(item, steps))
     return tuple(rows)
 
 
