@@ -246,8 +246,14 @@ class InlineFeedback(QObject):
         button.setFixedWidth(button.width())
         button.setText(confirm_text)
         button.setAccessibleName("Confirm " + title)
-        button.setToolTip(title + (" — see the inline details before confirming" if overlay
-                                   else " — click again to confirm; Escape cancels"))
+        button.setToolTip(
+            title
+            + (
+                " — see the inline details before confirming"
+                if overlay
+                else " — click again to confirm; Escape cancels"
+            )
+        )
         button.setProperty("confirmationDanger", danger)
         button.setProperty("confirmationPending", True)
         button.style().unpolish(button)

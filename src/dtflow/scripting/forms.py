@@ -113,11 +113,7 @@ def validate_components(components) -> None:
             kind = spec["type"]
             if "multiple" in spec:
                 multiple = spec["multiple"]
-                if (
-                    kind not in ("imageField", "directory")
-                    or type(multiple) is not int
-                    or not 1 <= multiple <= 4096
-                ):
+                if kind not in ("imageField", "directory") or type(multiple) is not int or not 1 <= multiple <= 4096:
                     raise ValueError("Only imageField/directory accept a pixel multiple, an integer within 1..4096.")
             for key in ("title", "detail", "placeholder"):
                 value = spec.get(key)

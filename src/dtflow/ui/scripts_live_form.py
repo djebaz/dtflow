@@ -383,10 +383,14 @@ class LiveScriptForm(ScriptForm):
         choose, clear = QPushButton("Choose…"), QPushButton("Clear")
         choose.setAccessibleName("Choose " + label)
         clear.setAccessibleName("Clear " + label)
-        clear.clicked.connect(lambda: (
-            self._put(path, "" if spec["type"] == "directory" else []),
-            text.clear(), text.setToolTip(""), text.setAccessibleDescription(""),
-        ))
+        clear.clicked.connect(
+            lambda: (
+                self._put(path, "" if spec["type"] == "directory" else []),
+                text.clear(),
+                text.setToolTip(""),
+                text.setAccessibleDescription(""),
+            )
+        )
         choose.clicked.connect(lambda: self._choose(spec, path, label, text, choose, clear))
         box = _group(text, choose, clear)
         if spec["type"] == "directory":
@@ -452,8 +456,13 @@ class LiveScriptForm(ScriptForm):
                     self.problem.emit(str(failure))
                 else:
                     self._put(path, result[0] if directory else result)
-                    description = ("Owned folder copy: " + names[0] if directory else
-                                   names[0] if len(names) == 1 else f"{len(names)} images: " + ", ".join(names))
+                    description = (
+                        "Owned folder copy: " + names[0]
+                        if directory
+                        else names[0]
+                        if len(names) == 1
+                        else f"{len(names)} images: " + ", ".join(names)
+                    )
                     if spec.get("multiple", 1) > 1:
                         description += f" · {spec['multiple']} px grid"
                     text.setText(description)

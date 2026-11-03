@@ -96,8 +96,11 @@ class ScriptItemRunner:
                     try:
                         if request.setup_ordinal is not None:
                             await asyncio.to_thread(
-                                answer_script_prompt, self.state, request.run_id,
-                                request.setup_answers, request.setup_ordinal,
+                                answer_script_prompt,
+                                self.state,
+                                request.run_id,
+                                request.setup_answers,
+                                request.setup_ordinal,
                             )
                     except BaseException:
                         cancel.set()

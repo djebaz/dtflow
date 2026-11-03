@@ -116,7 +116,12 @@ def render_scripts_states(out: Path, *, window_factory: Callable, state_names=ST
         for index, state in enumerate(state_names):
             if state not in STATES:
                 raise ValueError(f"Unknown scripting render state: {state}")
-            narrow = state in ("scripts_narrow", "scripts_narrow_details", "scripts_editor_narrow", "scripts_setup_narrow")
+            narrow = state in (
+                "scripts_narrow",
+                "scripts_narrow_details",
+                "scripts_editor_narrow",
+                "scripts_setup_narrow",
+            )
             window.form.resize(800, 680) if narrow else window.form.resize(1600, 1000)
             window._show_scripts()
             window.scripts._drawer_requested = state == "scripts_narrow_details"
@@ -167,16 +172,19 @@ def render_scripts_states(out: Path, *, window_factory: Callable, state_names=ST
             elif state in ("scripts_setup_file_selected", "scripts_setup_file_error"):
                 fields = window.scripts.form.findChildren(QLineEdit, "scriptsPathValue")
                 if fields:
-                    fields[0].setText("reference.png" if state == "scripts_setup_file_selected"
-                                      else "Input could not be prepared")
-                    fields[0].setToolTip("reference.png" if state == "scripts_setup_file_selected"
-                                        else "Selected input exceeds the supported image limit (offline fixture).")
+                    fields[0].setText(
+                        "reference.png" if state == "scripts_setup_file_selected" else "Input could not be prepared"
+                    )
+                    fields[0].setToolTip(
+                        "reference.png"
+                        if state == "scripts_setup_file_selected"
+                        else "Selected input exceeds the supported image limit (offline fixture)."
+                    )
             elif state == "scripts_setup_crop_multiple":
                 from dtflow.ui.scripts_form import REFERENCE_FORM
 
                 fields = [
-                    {**spec, "multiple": 64} if spec["type"] == "imageField" else dict(spec)
-                    for spec in REFERENCE_FORM
+                    {**spec, "multiple": 64} if spec["type"] == "imageField" else dict(spec) for spec in REFERENCE_FORM
                 ]
                 window.scripts.form.set_fields(fields)
             elif state == "scripts_editor_discard_confirm":

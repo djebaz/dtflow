@@ -2006,8 +2006,17 @@ class QueuePage:
 
         async def work():
             base = await bind_prepared(self._state, name, request, asset_ids)
-            return await prepare_script(self._state, source, source_name, base, backend, cap,
-                                        inventory=inventory, expected_steps=expected_steps, owner=owner)
+            return await prepare_script(
+                self._state,
+                source,
+                source_name,
+                base,
+                backend,
+                cap,
+                inventory=inventory,
+                expected_steps=expected_steps,
+                owner=owner,
+            )
 
         self._runner.submit(work(), done)
 
@@ -2036,11 +2045,21 @@ class QueuePage:
                     prompt = await asyncio.to_thread(read_open_prompt, self._state, run_id)
                     if prompt is None or prompt.ordinal != ordinal:
                         raise ValidationError("This prepared form has closed. Reload Setup.")
-                    await asyncio.to_thread(resolve_form_inputs, self._state, run_id, ordinal, prompt.components, answers)
+                    await asyncio.to_thread(
+                        resolve_form_inputs, self._state, run_id, ordinal, prompt.components, answers
+                    )
                 return await create_script_queue(
-                    self._state, setup.backend, setup.source, setup.source_name, setup.base,
-                    max_generations=setup.cap, expected_steps=setup.expected_steps, require_start=True,
-                    prepared_run_id=run_id, setup_ordinal=ordinal, setup_answers=answers,
+                    self._state,
+                    setup.backend,
+                    setup.source,
+                    setup.source_name,
+                    setup.base,
+                    max_generations=setup.cap,
+                    expected_steps=setup.expected_steps,
+                    require_start=True,
+                    prepared_run_id=run_id,
+                    setup_ordinal=ordinal,
+                    setup_answers=answers,
                 )
             except BaseException:
                 release_setup(setup)

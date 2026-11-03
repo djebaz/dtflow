@@ -291,10 +291,16 @@ class ScriptHost:
         if not self._start_permitted:
             # A script need not call requestFromUser before pipeline.run(). Park it
             # on the same persisted input bridge BEFORE resolving/linking/submitting work.
-            self.request_from_user("Ready to run script", "Run Script", [{
-                "type": "plainText",
-                "value": "This script requests generation before an input form. Review the captured settings and press Run Script to permit generation.",
-            }])
+            self.request_from_user(
+                "Ready to run script",
+                "Run Script",
+                [
+                    {
+                        "type": "plainText",
+                        "value": "This script requests generation before an input form. Review the captured settings and press Run Script to permit generation.",
+                    }
+                ],
+            )
         while self._admission_gate is not None and not self._admission_gate.wait(POLL_SECONDS):
             if self.cancel.is_set():
                 raise ScriptCancelled()

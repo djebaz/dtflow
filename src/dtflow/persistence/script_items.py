@@ -95,17 +95,29 @@ def script_request_from_record(record: Any) -> ScriptRequest:
         and (not require_start or answers is None)
         and type(prepared) is bool
         and (not prepared or require_start)
-        and ((ordinal is None and setup_answers is None) or (
-            prepared and type(ordinal) is int and ordinal > 0 and isinstance(setup_answers, list)
-        ))
+        and (
+            (ordinal is None and setup_answers is None)
+            or (prepared and type(ordinal) is int and ordinal > 0 and isinstance(setup_answers, list))
+        )
         and isinstance(start.get("base"), dict)
         and isinstance(start.get("backend"), str)
         and type(start.get("max_generations")) is int
         and 1 <= start["max_generations"] <= 32
     ):
         raise ValidationError("Stored script request is malformed.")
-    return ScriptRequest(run_id, name, sha, start["max_generations"], answers, start["backend"], start["base"],
-                         require_start, prepared, ordinal, setup_answers)
+    return ScriptRequest(
+        run_id,
+        name,
+        sha,
+        start["max_generations"],
+        answers,
+        start["backend"],
+        start["base"],
+        require_start,
+        prepared,
+        ordinal,
+        setup_answers,
+    )
 
 
 def source_path(state: Path, sha256: str) -> Path:

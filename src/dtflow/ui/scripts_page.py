@@ -372,9 +372,9 @@ class ScriptsPage:
         self.run_identity, self.views = ui.runIdentity, ui.scriptsContentStack
         self.tab_buttons = [ui.inspectTab, ui.configureTab, ui.codeTab]
         for index, button in enumerate(self.tab_buttons):
-            button.clicked.connect(lambda checked=False, target=index: (
-                self._setup_clicked() if target == 1 else self.show_view(target)
-            ))
+            button.clicked.connect(
+                lambda checked=False, target=index: self._setup_clicked() if target == 1 else self.show_view(target)
+            )
         self._build_inspect()
         self._build_form()
         self.editor = ScriptEditor(consent=self._confirm_discard, saved=self._saved_preview_version)
@@ -943,8 +943,11 @@ class ScriptsPage:
             self._load_reference_form()
 
     def show_view(self, index: int):
-        if (self.views.currentIndex() != index and hasattr(self, "editor")
-                and self.editor.discard.property("confirmationPending")):
+        if (
+            self.views.currentIndex() != index
+            and hasattr(self, "editor")
+            and self.editor.discard.property("confirmationPending")
+        ):
             self.owner.inline.dismiss()
         self.views.setCurrentIndex(index)
         empty = index == 5
@@ -963,8 +966,9 @@ class ScriptsPage:
             button.setChecked(index == position)
             button.setVisible(not empty and configuring)
         self.start.setVisible(configuring)
-        self.cap.setEnabled(configuring and not self._starting and self._setup_id is None
-                            and self._run_state not in LIVE_STATES)
+        self.cap.setEnabled(
+            configuring and not self._starting and self._setup_id is None and self._run_state not in LIVE_STATES
+        )
         live = self._run_state in LIVE_STATES
         self.designer.scriptsLiveRunNote.setVisible(live and index in (0, 1))
         self.designer.scriptsLiveRunNote.setText(
@@ -1329,9 +1333,12 @@ class ScriptsPage:
                 self.run_settings.setVisible(bool(summary))
             self.picker_row.setEnabled(not active)
             self.cap.setEnabled(self.views.currentIndex() in (0, 1) and not active)
-            self.reset_fields.setText("Cancel Setup" if self._setup_id is not None and not self._setup_ready else "Reload Setup")
-            self.reset_fields.setEnabled(not self._starting and self._run_state not in LIVE_STATES
-                                         and not self.live_fields.busy)
+            self.reset_fields.setText(
+                "Cancel Setup" if self._setup_id is not None and not self._setup_ready else "Reload Setup"
+            )
+            self.reset_fields.setEnabled(
+                not self._starting and self._run_state not in LIVE_STATES and not self.live_fields.busy
+            )
             ready = supported and not self._starting and self._run_state not in LIVE_STATES and problem is None
         else:
             self.run_settings.hide()
@@ -1348,7 +1355,8 @@ class ScriptsPage:
             caption = "Setup"
         elif self._live_mode() and (self._setup_id is not None or self._starting or self._setup_problem):
             ready = bool(self._setup_problem or self._live_form_error) or (
-                self._setup_ready and not self.live_fields.busy
+                self._setup_ready
+                and not self.live_fields.busy
                 and (self._live_prompt_id is None or self.live_fields.identity == self._live_prompt_id)
             )
             caption = "Retry Setup" if self._setup_problem or self._live_form_error else "Run Script"
@@ -1643,7 +1651,8 @@ class ScriptsPage:
         ui.cancelInputButton.setText("Cancel Setup" if preparing else "Cancel input")
         ui.waitingHelp.setText(
             "Cancel Setup discards this preparation. No job has been queued."
-            if preparing else "Cancel input stops local script waiting. Already submitted remote work may still complete."
+            if preparing
+            else "Cancel input stops local script waiting. Already submitted remote work may still complete."
         )
         _feedback(ui.waitingInstructions, "")
         ui.continueInputButton.setText("Continue")
@@ -1684,9 +1693,12 @@ class ScriptsPage:
                     if result["answers"] is not None
                     else ""
                 )
-                + ("Setup is ready; no job is queued. Run Script will queue this execution with your answers."
-                   if preparing else "Review and submit to continue the running script. File inputs require a new selection. "
-                   "Cancel input stops this script; it does not cancel submitted remote work.")
+                + (
+                    "Setup is ready; no job is queued. Run Script will queue this execution with your answers."
+                    if preparing
+                    else "Review and submit to continue the running script. File inputs require a new selection. "
+                    "Cancel input stops this script; it does not cancel submitted remote work."
+                )
             )
             self.sync_responsive()
             self._refresh_readiness()
@@ -1956,7 +1968,9 @@ class ScriptsPage:
             self.library.setCurrentRow(previous)
             self.library.blockSignals(False)
             self.owner.inline.notice(
-                "Script already prepared or running", "Finish or Stop it before setting up a different version.", "warning"
+                "Script already prepared or running",
+                "Finish or Stop it before setting up a different version.",
+                "warning",
             )
             return
         if version.sha256 != self._selected_sha:
@@ -1986,7 +2000,9 @@ class ScriptsPage:
         self.status.setText("Inspecting… (static parse only)")
         _feedback(self.status, "")
         self.form.set_fields([])
-        self.form_note.setText("Use Setup on Inspect to prepare this script's actual form. No generation starts at Setup.")
+        self.form_note.setText(
+            "Use Setup on Inspect to prepare this script's actual form. No generation starts at Setup."
+        )
         self.form_note.show()
         self.reset_fields.setEnabled(False)
         for panel in self.inspector_panels:
@@ -2255,9 +2271,15 @@ class ScriptsPage:
             self.show_view(1)
 
     def _start_live(self, *, auto=False) -> None:
-        if (self._starting or self._run_state in LIVE_STATES or self._current_script is None
-                or self._setup_id is not None or self.setup_prepare is None
-                or not self._selected_sha or self._current_script[3] != "supported"):
+        if (
+            self._starting
+            or self._run_state in LIVE_STATES
+            or self._current_script is None
+            or self._setup_id is not None
+            or self.setup_prepare is None
+            or not self._selected_sha
+            or self._current_script[3] != "supported"
+        ):
             return
         if self.editor.is_dirty():
             self.owner.inline.notice(
@@ -2356,7 +2378,9 @@ class ScriptsPage:
                 if result["prompt"] is not None:
                     self._sync_live_prompt("waiting_input", {"run_id": identity, "prompt": result["prompt"]})
                 elif self._setup_ready:
-                    self.form_note.setText("This script has no input parameters. Run Script will create its queue item.")
+                    self.form_note.setText(
+                        "This script has no input parameters. Run Script will create its queue item."
+                    )
                     self.form_note.show()
                 if self._setup_ready:
                     self._setup_timer.stop()
@@ -2411,7 +2435,11 @@ class ScriptsPage:
             return
         queue_id, run_id, started = result
         self._live_run = {
-            "queue_id": queue_id, "run_id": run_id, "name": name, "sha": short, "cap": cap,
+            "queue_id": queue_id,
+            "run_id": run_id,
+            "name": name,
+            "sha": short,
+            "cap": cap,
             "setup_pending": False,
         }
         self._run_cap, self._run_version = cap, short
@@ -2523,7 +2551,8 @@ class ScriptsPage:
         new_prompt = prompt is not None and (script.get("run_id"), prompt["ordinal"]) != self._live_prompt_id
         setup_finished = (
             (run.get("setup_pending") or self._live_prompt_id is not None)
-            and key in self._TERMINAL and self.views.currentIndex() == 1
+            and key in self._TERMINAL
+            and self.views.currentIndex() == 1
         )
         if force_view or new_prompt or setup_finished or (on_run_view and self.views.currentIndex() != target):
             self.show_view(target)

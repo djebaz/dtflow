@@ -29,7 +29,9 @@ class _InventoryOnly:
 
     async def get_inventory(self):
         if self.snapshot is None:
-            raise ValidationError("Refresh inventory on Generate, then reload Setup; preparation never contacts a backend.")
+            raise ValidationError(
+                "Refresh inventory on Generate, then reload Setup; preparation never contacts a backend."
+            )
         return self.snapshot
 
 
@@ -71,12 +73,32 @@ def find_setup(state: Path, run_id: str) -> ScriptSetup:
     return setup
 
 
-async def prepare_script(state: Path, source: str, source_name: str, base, backend: dict, cap: int,
-                         *, inventory=None, expected_steps=None, owner=None) -> str:
+async def prepare_script(
+    state: Path,
+    source: str,
+    source_name: str,
+    base,
+    backend: dict,
+    cap: int,
+    *,
+    inventory=None,
+    expected_steps=None,
+    owner=None,
+) -> str:
     """Start bounded preparation on the existing runner loop; never create a queue or open a provider."""
     owner = owner if owner is not None else object()
-    setup = ScriptSetup(Path(state), uuid.uuid4().hex, source, source_name, base, dict(backend), cap,
-                        expected_steps, asyncio.get_running_loop(), owner)
+    setup = ScriptSetup(
+        Path(state),
+        uuid.uuid4().hex,
+        source,
+        source_name,
+        base,
+        dict(backend),
+        cap,
+        expected_steps,
+        asyncio.get_running_loop(),
+        owner,
+    )
     with _lock:
         if owner in _closed_owners:
             raise ValidationError("The Setup window has closed.")
@@ -84,11 +106,18 @@ async def prepare_script(state: Path, source: str, source_name: str, base, backe
 
     def hooks(context):
         host = ScriptHost(
-            service=_InventoryOnly(inventory), base=base, loop=setup.loop,
-            link_child=context.link_child, console=context.console, cancel=setup.cancel,
+            service=_InventoryOnly(inventory),
+            base=base,
+            loop=setup.loop,
+            link_child=context.link_child,
+            console=context.console,
+            cancel=setup.cancel,
             sandbox=Path(state) / "script_files" / context.run_id,
-            max_generations=cap, record_answers=context.record_answers,
-            ask=context.ask, run_id=context.run_id, require_start=True,
+            max_generations=cap,
+            record_answers=context.record_answers,
+            ask=context.ask,
+            run_id=context.run_id,
+            require_start=True,
             admission_gate=setup.admitted,
         )
         setup.hosts.append(host)
@@ -96,10 +125,13 @@ async def prepare_script(state: Path, source: str, source_name: str, base, backe
 
     def run():
         return run_recorded(
-            ScriptRunStore(state), source, hooks, source_name=source_name, cancel=setup.cancel,
-            run_id=setup.run_id, context_json=json.dumps(starting_context(
-                base, backend=backend["name"], max_generations=cap, answers=None
-            )),
+            ScriptRunStore(state),
+            source,
+            hooks,
+            source_name=source_name,
+            cancel=setup.cancel,
+            run_id=setup.run_id,
+            context_json=json.dumps(starting_context(base, backend=backend["name"], max_generations=cap, answers=None)),
         )
 
     async def supervise():
@@ -128,10 +160,15 @@ def read_setup(state: Path, run_id: str) -> dict:
         raise ValidationError(run.error or "Setup was stopped.")
     prompt = read_open_prompt(state, run_id)
     if prompt is not None:
-        return {"ready": True, "prompt": {
-            "ordinal": prompt.ordinal, "title": prompt.title,
-            "confirm": prompt.confirm, "components": prompt.components,
-        }}
+        return {
+            "ready": True,
+            "prompt": {
+                "ordinal": prompt.ordinal,
+                "title": prompt.title,
+                "confirm": prompt.confirm,
+                "components": prompt.components,
+            },
+        }
     if run is not None and run.state == "completed":
         return {"ready": True, "prompt": None}
     return {"ready": False, "prompt": None}
@@ -185,11 +222,14 @@ def close_setups(state: Path, owner: object) -> None:
 def adopt_setup(state: Path, request, service, loop) -> ScriptSetup:
     """Called only after the ordinary dispatcher claims the queue item."""
     setup = find_setup(state, request.run_id)
-    if (not setup.queued or setup.loop is not loop
-            or hashlib.sha256(setup.source.encode("utf-8")).hexdigest() != request.source_sha256
-            or json.dumps(asdict(setup.base), sort_keys=True) != json.dumps(request.base, sort_keys=True)
-            or setup.backend["name"] != request.backend
-            or setup.cap != request.max_generations):
+    if (
+        not setup.queued
+        or setup.loop is not loop
+        or hashlib.sha256(setup.source.encode("utf-8")).hexdigest() != request.source_sha256
+        or json.dumps(asdict(setup.base), sort_keys=True) != json.dumps(request.base, sort_keys=True)
+        or setup.backend["name"] != request.backend
+        or setup.cap != request.max_generations
+    ):
         raise ValidationError("The queued script does not match its owned preparation; it was not replayed.")
     for host in setup.hosts:
         host.service = service  # No generation hook can have returned from its initial prompt before this adoption.
