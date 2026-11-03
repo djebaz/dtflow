@@ -88,25 +88,41 @@ class ScriptItemRunner:
                     interactive=request.answers is None,  # no answer file: forms wait for the person
                     require_start=request.require_start,
                 )
-                task = asyncio.ensure_future(
-                    asyncio.to_thread(
-                        run_recorded,
-                        ScriptRunStore(self.state),
-                        source,
-                        hooks,
-                        source_name=request.source_name,
-                        cancel=cancel,
-                        context_json=json.dumps(
-                            starting_context(
-                                base,
-                                backend=request.backend,
-                                max_generations=request.max_generations,
-                                answers=request.answers,
+                if request.prepared:
+                    from dtflow.services.script_setup import adopt_setup
+
+                    setup = adopt_setup(self.state, request, self.service, loop)
+                    hosts, cancel, task = setup.hosts, setup.cancel, setup.task
+                    try:
+                        if request.setup_ordinal is not None:
+                            await asyncio.to_thread(
+                                answer_script_prompt, self.state, request.run_id,
+                                request.setup_answers, request.setup_ordinal,
                             )
-                        ),
-                        run_id=request.run_id,
+                    except BaseException:
+                        cancel.set()
+                        await settle(task)
+                        raise
+                else:
+                    task = asyncio.ensure_future(
+                        asyncio.to_thread(
+                            run_recorded,
+                            ScriptRunStore(self.state),
+                            source,
+                            hooks,
+                            source_name=request.source_name,
+                            cancel=cancel,
+                            context_json=json.dumps(
+                                starting_context(
+                                    base,
+                                    backend=request.backend,
+                                    max_generations=request.max_generations,
+                                    answers=request.answers,
+                                )
+                            ),
+                            run_id=request.run_id,
+                        )
                     )
-                )
             except (ValidationError, ValueError) as exc:
                 failure = {"code": "script_invalid", "message": str(exc)}
                 task = None

@@ -362,6 +362,9 @@ class MainWindow:
             activity=self.activity,
         )
         self.scripts.run_start = self.queue.start_script
+        self.scripts.setup_prepare = self.queue.prepare_script
+        self.scripts.run_prepared = self.queue.start_prepared_script
+        self.scripts.inventory_source = lambda: self.generation._inventory_snapshot
         self.scripts.settings_source = self._script_settings
         self.scripts.generate_form = self.generation_page
         self.scripts.go_generate_hook = lambda: self._leave_scripts(inpaint=False)

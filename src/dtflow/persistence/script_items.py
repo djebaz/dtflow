@@ -34,6 +34,9 @@ class ScriptRequest:
     backend: str
     base: dict[str, Any]  # asdict of the starting ResolvedGenerationRequest (text-to-image)
     require_start: bool = False  # desktop Setup must park before any generation
+    prepared: bool = False
+    setup_ordinal: int | None = None
+    setup_answers: list | None = None
 
 
 def is_script_record(record: Any) -> bool:
@@ -51,6 +54,9 @@ def script_record(
     answers: list | None,
     expected_steps: int | None = None,
     require_start: bool = False,
+    prepared: bool = False,
+    setup_ordinal: int | None = None,
+    setup_answers: list | None = None,
 ) -> dict[str, Any]:
     return {
         "kind": KIND_SCRIPT,
@@ -60,6 +66,9 @@ def script_record(
         "answers": answers,
         "expected_steps": expected_steps,
         "require_start": require_start,
+        "prepared": prepared,
+        "setup_ordinal": setup_ordinal,
+        "setup_answers": setup_answers,
         "start": {"backend": backend, "max_generations": max_generations, "base": base},
     }
 
@@ -72,6 +81,8 @@ def script_request_from_record(record: Any) -> ScriptRequest:
     run_id, name, sha = record.get("run_id"), record.get("source_name"), record.get("source_sha256")
     answers = record.get("answers")
     require_start = record.get("require_start", False)
+    prepared = record.get("prepared", False)
+    ordinal, setup_answers = record.get("setup_ordinal"), record.get("setup_answers")
     if not (
         isinstance(start, dict)
         and isinstance(run_id, str)
@@ -82,13 +93,19 @@ def script_request_from_record(record: Any) -> ScriptRequest:
         and (answers is None or isinstance(answers, list))
         and type(require_start) is bool
         and (not require_start or answers is None)
+        and type(prepared) is bool
+        and (not prepared or require_start)
+        and ((ordinal is None and setup_answers is None) or (
+            prepared and type(ordinal) is int and ordinal > 0 and isinstance(setup_answers, list)
+        ))
         and isinstance(start.get("base"), dict)
         and isinstance(start.get("backend"), str)
         and type(start.get("max_generations")) is int
         and 1 <= start["max_generations"] <= 32
     ):
         raise ValidationError("Stored script request is malformed.")
-    return ScriptRequest(run_id, name, sha, start["max_generations"], answers, start["backend"], start["base"], require_start)
+    return ScriptRequest(run_id, name, sha, start["max_generations"], answers, start["backend"], start["base"],
+                         require_start, prepared, ordinal, setup_answers)
 
 
 def source_path(state: Path, sha256: str) -> Path:

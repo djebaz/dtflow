@@ -13,7 +13,7 @@ import hashlib
 from datetime import datetime
 from pathlib import Path
 
-from PySide6.QtCore import QSize, Qt, QTimer
+from PySide6.QtCore import QObject, QSize, Qt, QTimer, Slot
 from PySide6.QtGui import QFont, QImage, QPixmap
 from PySide6.QtWidgets import (
     QButtonGroup,
@@ -233,6 +233,19 @@ class _ResultImage(QLabel):
             )
 
 
+class _SetupLifetime(QObject):
+    def __init__(self, state, parent):
+        super().__init__(parent)
+        self.state = state
+        self.token = object()
+
+    @Slot()
+    def stop(self):
+        from dtflow.services.script_setup import close_setups
+
+        close_setups(self.state, self.token)
+
+
 class ScriptsPage:
     """UI controller for library, central content, inspector and narrow drawer."""
 
@@ -268,6 +281,20 @@ class ScriptsPage:
         # Real runs: ``run_start(source, name, cap, done)`` is wired by the owner to the Queues controller. A run is one
         # script queue item; this page only starts it, polls its durable state and presents it.
         self.run_start = None
+        self.setup_prepare = None
+        self.run_prepared = None
+        self.inventory_source = None
+        self._setup_id = None
+        self._setup_generation = 0
+        self._setup_reading = False
+        self._setup_ready = False
+        self._setup_problem = None
+        self._setup_timer = QTimer(designer)
+        self._setup_timer.setInterval(500)
+        self._setup_timer.timeout.connect(self._poll_setup)
+        self.owner.runner.shutdown_started.connect(self._setup_timer.stop)
+        self._setup_lifetime = _SetupLifetime(Path(owner.state_dir), designer)
+        self.owner.runner.shutdown_started.connect(self._setup_lifetime.stop)
         self.open_images = None
         self._starting = False
         self._live_run: dict | None = None
@@ -903,7 +930,16 @@ class ScriptsPage:
         self.reset_fields.setEnabled(True)
 
     def _reset_fields(self):
-        if self._reference_mode:
+        if self._live_mode() and self._run_state not in LIVE_STATES:
+            cancel_loading = self._setup_id is not None and not self._setup_ready
+            self._discard_setup()
+            if cancel_loading:
+                self.form_note.setText("Setup cancelled. No queue item was created; choose Setup to prepare it again.")
+                self.form_note.show()
+                self._refresh_readiness()
+            else:
+                self._start_live(auto=True)
+        elif self._reference_mode:
             self._load_reference_form()
 
     def show_view(self, index: int):
@@ -924,7 +960,8 @@ class ScriptsPage:
             button.setChecked(index == position)
             button.setVisible(not empty and configuring)
         self.start.setVisible(configuring)
-        self.cap.setEnabled(configuring and not self._starting and self._run_state not in LIVE_STATES)
+        self.cap.setEnabled(configuring and not self._starting and self._setup_id is None
+                            and self._run_state not in LIVE_STATES)
         live = self._run_state in LIVE_STATES
         self.designer.scriptsLiveRunNote.setVisible(live and index in (0, 1))
         self.designer.scriptsLiveRunNote.setText(
@@ -1272,7 +1309,7 @@ class ScriptsPage:
         ready = self._reference_mode and supported and not missing_source and self._run_state not in LIVE_STATES
         problem = None
         if self._live_mode():
-            active = self._starting or self._run_state in LIVE_STATES
+            active = self._starting or self._setup_id is not None or self._run_state in LIVE_STATES
             if not active:
                 self._sync_pickers()
             partial = False
@@ -1288,6 +1325,10 @@ class ScriptsPage:
                 self.run_settings.setText(summary)
                 self.run_settings.setVisible(bool(summary))
             self.picker_row.setEnabled(not active)
+            self.cap.setEnabled(self.views.currentIndex() in (0, 1) and not active)
+            self.reset_fields.setText("Cancel Setup" if self._setup_id is not None and not self._setup_ready else "Reload Setup")
+            self.reset_fields.setEnabled(not self._starting and self._run_state not in LIVE_STATES
+                                         and not self.live_fields.busy)
             ready = supported and not self._starting and self._run_state not in LIVE_STATES and problem is None
         else:
             self.run_settings.hide()
@@ -1300,8 +1341,14 @@ class ScriptsPage:
             self.disclosure.setText(f"Cannot start yet: {problem}")
         view = self.views.currentIndex()
         if view == 0:
-            ready = ready or (self._run_state in LIVE_STATES and not self._starting)
-            caption = "Preparing…" if self._starting else "Setup"
+            ready = supported
+            caption = "Setup"
+        elif self._live_mode() and (self._setup_id is not None or self._starting or self._setup_problem):
+            ready = bool(self._setup_problem or self._live_form_error) or (
+                self._setup_ready and not self.live_fields.busy
+                and (self._live_prompt_id is None or self.live_fields.identity == self._live_prompt_id)
+            )
+            caption = "Retry Setup" if self._setup_problem or self._live_form_error else "Run Script"
         elif self._live_mode():
             ready = self._run_state == "waiting_input" and (
                 self._live_form_error or (self.live_fields.identity is not None and not self.live_fields.busy)
@@ -1330,7 +1377,11 @@ class ScriptsPage:
             if ready
             else "Select a supported example, provide any required source and acknowledge incomplete inspection. No real execution is connected."
         )
-        self.unresolved_notice.setVisible(self._prior_unresolved and self.views.currentIndex() == 1)
+        # This Designer banner describes the explicit offline run-#5 fixture,
+        # not a real queue. Actual uncertainty stays in each run's retained status/history.
+        self.unresolved_notice.setVisible(
+            self._reference_mode and self._prior_unresolved and self.views.currentIndex() == 1
+        )
 
     def _run_color(self):
         return (
@@ -1482,7 +1533,7 @@ class ScriptsPage:
             )
 
     def _live_form_busy(self, busy):
-        if self._live_mode() and self._run_state == "waiting_input":
+        if self._live_mode() and (self._run_state == "waiting_input" or self._setup_id is not None):
             self.designer.continueInputButton.setEnabled(not busy and self.live_fields.identity is not None)
             self.designer.cancelInputButton.setEnabled(not self.live_fields.submitting)
             self._refresh_readiness()
@@ -1494,6 +1545,18 @@ class ScriptsPage:
     def _answer_input(self, *, cancel=False):
         if not self._live_mode():
             self._continue_preview(cancel=cancel)
+            return
+        if self._setup_id is not None or (self._setup_problem and self._run_state not in LIVE_STATES):
+            if cancel:
+                self._discard_setup()
+                self.form_note.setText("Setup cancelled. No queue item was created.")
+                self.form_note.show()
+                self._refresh_readiness()
+            elif self._setup_problem or self._live_form_error:
+                self._discard_setup()
+                self._start_live(auto=True)
+            else:
+                self._submit_setup()
             return
         identity = self._live_prompt_id
         if identity is None or self.owner.runner.closed:
@@ -1573,8 +1636,11 @@ class ScriptsPage:
         ui.waitingFormTitle.setText(prompt.get("title") or "Script input")
         ui.waitingInstructions.setTextFormat(Qt.TextFormat.PlainText)
         ui.waitingInstructions.setText("Loading this script's form…")
+        preparing = self._setup_id == script["run_id"] and self._run_state not in LIVE_STATES
+        ui.cancelInputButton.setText("Cancel Setup" if preparing else "Cancel input")
         ui.waitingHelp.setText(
-            "Cancel input stops local script waiting. Already submitted remote work may still complete."
+            "Cancel Setup discards this preparation. No job has been queued."
+            if preparing else "Cancel input stops local script waiting. Already submitted remote work may still complete."
         )
         _feedback(ui.waitingInstructions, "")
         ui.continueInputButton.setText("Continue")
@@ -1615,8 +1681,9 @@ class ScriptsPage:
                     if result["answers"] is not None
                     else ""
                 )
-                + "Review and submit to continue. File inputs require a new selection. "
-                "Cancel input stops this script; it does not cancel submitted remote work."
+                + ("Setup is ready; no job is queued. Run Script will queue this execution with your answers."
+                   if preparing else "Review and submit to continue the running script. File inputs require a new selection. "
+                   "Cancel input stops this script; it does not cancel submitted remote work.")
             )
             self.sync_responsive()
             self._refresh_readiness()
@@ -1637,7 +1704,13 @@ class ScriptsPage:
 
     def _review_run(self):
         # Never auto-submit. Unknown work remains referenced while reviewing.
+        if self.live_fields.submitting:
+            return
         self._prior_unresolved |= self._run_state in ("interrupted", "outcome_unknown")
+        if self._live_mode() and self._run_state not in LIVE_STATES:
+            self._discard_setup()
+            self._run_state = ""
+            self._start_live(auto=True)
         self.show_view(1)
         self._sync_drawer_data()
 
@@ -1776,8 +1849,8 @@ class ScriptsPage:
         if self.run_start is None:
             return "Start is not connected in this window."
         return (
-            "Setup executes bounded JavaScript to prepare its actual form as one queue item, with generation blocked. "
-            "Run Script submits your answers and permits generation using the settings captured at Setup, "
+            "Setup preloads bounded JavaScript and cached inventory without a queue item or backend connection. "
+            "Run Script creates the queue item and permits generation using the settings captured at Setup, "
             f"up to {self.cap.value()} generations. Cloud generations may use credits. Stop ends local waiting only."
         )
 
@@ -1873,7 +1946,7 @@ class ScriptsPage:
         if row < 0 or row >= len(self._versions):
             return
         version = self._versions[row]
-        if (self._starting or self._run_state in LIVE_STATES) and version.sha256 != self._selected_sha:
+        if (self._run_state in LIVE_STATES or self.live_fields.submitting) and version.sha256 != self._selected_sha:
             previous = next((i for i, v in enumerate(self._versions) if v.sha256 == self._selected_sha), -1)
             self.library.blockSignals(True)
             self.library.setCurrentRow(previous)
@@ -1882,6 +1955,8 @@ class ScriptsPage:
                 "Script already prepared or running", "Finish or Stop it before setting up a different version.", "warning"
             )
             return
+        if version.sha256 != self._selected_sha:
+            self._discard_setup()
         if self.editor.is_dirty() and version.sha256 != self._selected_sha:
             previous = next((i for i, v in enumerate(self._versions) if v.sha256 == self._selected_sha), -1)
             self.library.blockSignals(True)
@@ -1984,7 +2059,7 @@ class ScriptsPage:
             "Dynamic": ", ".join(dynamic) if dynamic else "none found",
             "Models": "Known only at run time",
             "Loras": "Known only at run time",
-            "Method": "Static parse · no generation, network or sign-in",
+            "Method": "Static parse; Setup preloads separately with no queue, generation or network",
         }
         for name, widget in self.inspection_values.items():
             widget.setText(facts[name])
@@ -1993,7 +2068,7 @@ class ScriptsPage:
         blocked = sum(row.state == "unsupported" for row in inspection.hooks)
         self._set_inspect_banner(
             inspection.title,
-            f"{supported} hooks supported, {deferred} deferred, {blocked} unsupported. Static analysis only; nothing was executed.",
+            f"{supported} hooks supported, {deferred} deferred, {blocked} unsupported. Setup preloads separately without a queue or generation.",
             inspection.verdict,
         )
         try:
@@ -2030,6 +2105,8 @@ class ScriptsPage:
         if inspection.syntax_error is not None and not self.editor.is_dirty():
             self.editor.set_error(*inspection.syntax_error)
         self._refresh_readiness()
+        if inspection.support == "supported" and self._live_mode():
+            self._start_live(auto=True)
 
     def _import_live(self) -> None:
         library = self._library_store()
@@ -2168,13 +2245,14 @@ class ScriptsPage:
             self.show_view(1)
             return
         if self._live_mode():
-            self._start_live()
+            self._start_live(auto=True)
             self.show_view(1)
         else:
             self.show_view(1)
 
-    def _start_live(self) -> None:
+    def _start_live(self, *, auto=False) -> None:
         if (self._starting or self._run_state in LIVE_STATES or self._current_script is None
+                or self._setup_id is not None or self.setup_prepare is None
                 or not self._selected_sha or self._current_script[3] != "supported"):
             return
         if self.editor.is_dirty():
@@ -2191,23 +2269,125 @@ class ScriptsPage:
             self.owner.inline.notice("Cannot read stored script", str(exc), "error")
             return
         name, short, cap = self._current_script[0], self._current_script[1], self.cap.value()
+        self._refresh_readiness()  # Show the captured settings before freezing this preparation.
         self._starting = True
+        self._setup_problem = None
+        self._setup_ready = False
         self._live_form_error = False
         self.start.setEnabled(False)
         self.start.setText("Preparing…")
         self.form.hide()
         self.form_note.setText("Preparing the script's input form. Generation is blocked until Run Script.")
         self.form_note.show()
-        self.show_view(1)
+        if not auto:
+            self.show_view(1)
         inspection = self._inspections.get(self._selected_sha)
         expected = inspection.report.get("static_run_count") if inspection is not None else None
-        self.run_start(
+        token = self._setup_generation
+        self._setup_name, self._setup_short, self._setup_cap = name, short, cap
+        self.setup_prepare(
             source,
             name,
             cap,
-            lambda result, failure: self._live_started(result, failure, name, short, cap),
+            lambda result, failure: self._setup_prepared(result, failure, token),
+            inventory=self.inventory_source() if self.inventory_source else None,
             expected_steps=expected,
+            owner=self._setup_lifetime.token,
         )
+
+    def _discard_setup(self):
+        from dtflow.services.script_setup import cancel_setup
+
+        self._setup_generation += 1
+        self._setup_timer.stop()
+        if self._setup_id is not None:
+            cancel_setup(self._state_dir(), self._setup_id)
+        self._setup_id = None
+        self._setup_ready = False
+        self._setup_problem = None
+        self._setup_reading = False
+        self._starting = False
+        self._live_prompt_id = None
+        self.live_fields.clear_request()
+        self.waiting_form.hide()
+
+    def _setup_prepared(self, result, failure, token):
+        if token != self._setup_generation:
+            if result is not None:
+                from dtflow.services.script_setup import cancel_setup
+
+                cancel_setup(self._state_dir(), result)
+            return
+        self._starting = False
+        if failure is not None:
+            self._setup_problem = str(failure)
+            self.form_note.setText("Setup could not preload: " + str(failure))
+            self.form_note.show()
+        else:
+            self._setup_id = result
+            self._setup_timer.start()
+            self._poll_setup()
+        self._refresh_readiness()
+
+    def _poll_setup(self):
+        if self._setup_id is None or self._setup_reading or self.owner.runner.closed:
+            return
+        from dtflow.services.script_setup import read_setup
+
+        identity = self._setup_id
+        token = self._setup_generation
+        self._setup_reading = True
+
+        def loaded(result, failure):
+            if token != self._setup_generation or self._setup_id != identity:
+                return
+            self._setup_reading = False
+            if failure is not None:
+                self._setup_timer.stop()
+                self._setup_problem = str(failure)
+                self.form_note.setText("Setup could not preload: " + str(failure))
+                self.form_note.show()
+            else:
+                self._setup_ready = result["ready"]
+                if result["prompt"] is not None:
+                    self._sync_live_prompt("waiting_input", {"run_id": identity, "prompt": result["prompt"]})
+                elif self._setup_ready:
+                    self.form_note.setText("This script has no input parameters. Run Script will create its queue item.")
+                    self.form_note.show()
+                if self._setup_ready:
+                    self._setup_timer.stop()
+            self._refresh_readiness()
+
+        self.owner.runner.submit(asyncio.to_thread(read_setup, self._state_dir(), identity), loaded)
+
+    def _submit_setup(self):
+        if not self._setup_ready or self.run_prepared is None or self.live_fields.busy:
+            return
+        ordinal = self._live_prompt_id[1] if self._live_prompt_id is not None else None
+        try:
+            answers = self.live_fields.answers() if ordinal is not None else None
+        except ValueError as exc:
+            self._live_form_problem(str(exc))
+            return
+        self.live_fields.set_submitting(True)
+        token = self._setup_generation
+
+        def started(result, failure):
+            if token != self._setup_generation:
+                return
+            if failure is not None:
+                self.live_fields.set_submitting(False)
+                self._live_form_problem(str(failure))
+                self._refresh_readiness()
+                return
+            self._setup_timer.stop()
+            self._setup_id = None
+            self._setup_ready = False
+            self.live_fields.set_submitting(False)
+            self._live_started(result, None, self._setup_name, self._setup_short, self._setup_cap)
+            self._live_run["submitted_prompt"] = ordinal
+
+        self.run_prepared(self._setup_id, ordinal, answers, started)
 
     def _live_started(self, result, failure, name: str, short: str, cap: int) -> None:
         self._starting = False
@@ -2228,7 +2408,7 @@ class ScriptsPage:
         queue_id, run_id, started = result
         self._live_run = {
             "queue_id": queue_id, "run_id": run_id, "name": name, "sha": short, "cap": cap,
-            "setup_pending": True,
+            "setup_pending": False,
         }
         self._run_cap, self._run_version = cap, short
         self._load_history()
@@ -2284,6 +2464,12 @@ class ScriptsPage:
             # A queued read from a formerly displayed run must not mount its form on the new run.
             self._poll_live()
             return
+        if items:
+            script = items[0].get("script") or {}
+            prompt = script.get("prompt")
+            if prompt is not None and prompt["ordinal"] == self._live_run.get("submitted_prompt"):
+                script["prompt"] = None  # Admission delivers the already submitted first answer.
+                script["waiting_for_input"] = False
         key = self._live_key(view)
         self._show_live(key, view)
         # A just-created queue may briefly read as paused before the dispatch
@@ -2291,6 +2477,9 @@ class ScriptsPage:
         # treating that transient observation as a warning created a stale
         # overlay even while the shared activity bar showed active work.
         if key in self._TERMINAL:
+            from dtflow.services.script_setup import abandon_setup
+
+            abandon_setup(self._state_dir(), self._live_run["run_id"])
             self._live_timer.stop()
             self._load_history()
             # Successful scripts are normal queue completions. QueuePage already

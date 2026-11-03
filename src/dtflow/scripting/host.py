@@ -136,6 +136,7 @@ class ScriptHost:
         ask: Callable[[str, str, list], list | None] | None = None,
         run_id: str | None = None,
         require_start: bool = False,
+        admission_gate: threading.Event | None = None,
     ) -> None:
         if base.operation != "txt2img" or base.image_inputs is not None:
             raise ValueError("Scripts start from text-to-image settings only.")
@@ -150,6 +151,7 @@ class ScriptHost:
         if require_start and (ask is None or answers is not None):
             raise ValueError("Setup requires an interactive form bridge without supplied answers.")
         self._start_permitted = not require_start
+        self._admission_gate = admission_gate
         self.run_id = run_id
         self._forms = 0
         self.baseline = normalize_configuration(decode_configuration(baseline_configuration(base)).values)
@@ -293,6 +295,9 @@ class ScriptHost:
                 "type": "plainText",
                 "value": "This script requests generation before an input form. Review the captured settings and press Run Script to permit generation.",
             }])
+        while self._admission_gate is not None and not self._admission_gate.wait(POLL_SECONDS):
+            if self.cancel.is_set():
+                raise ScriptCancelled()
         if self.cancel.is_set():
             raise ScriptCancelled()
         if not isinstance(args, Mapping):

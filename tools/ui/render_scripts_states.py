@@ -58,6 +58,8 @@ STATES = (
     "scripts_setup_loading",
     "scripts_setup_followup",
     "scripts_setup_narrow",
+    "scripts_inspect_setup_preloaded",
+    "scripts_setup_reloaded",
 )
 
 
@@ -132,6 +134,8 @@ def render_scripts_states(out: Path, *, window_factory: Callable, state_names=ST
                 "scripts_setup_loading": "scripts_form_default",
                 "scripts_setup_followup": "scripts_waiting_input",
                 "scripts_setup_narrow": "scripts_form_long_values",
+                "scripts_inspect_setup_preloaded": "scripts_form_default",
+                "scripts_setup_reloaded": "scripts_form_default",
             }.get(state, state)
             if state in (
                 "scripts_queued",
@@ -144,10 +148,14 @@ def render_scripts_states(out: Path, *, window_factory: Callable, state_names=ST
             if state == "scripts_setup_loading":
                 window.scripts.show_view(1)
                 window.scripts.form.hide()
-                window.scripts.form_note.setText("Preparing the script's input form. Generation is blocked until Run Script.")
+                window.scripts.form_note.setText("Preloading Setup from Inspect. No queue item exists.")
                 window.scripts.form_note.show()
-                window.scripts.start.setText("Preparing…")
+                window.scripts.start.setText("Run Script")
                 window.scripts.start.setEnabled(False)
+            elif state in ("scripts_inspect_setup_preloaded", "scripts_setup_reloaded"):
+                window.scripts.form_note.setText("Setup is ready. No job is queued.")
+                window.scripts.form_note.show()
+                window.scripts.show_view(0 if state == "scripts_inspect_setup_preloaded" else 1)
             elif state == "scripts_setup_followup":
                 window.scripts.show_view(1)
                 window.scripts.start.setText("Continue")
