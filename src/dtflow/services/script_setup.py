@@ -21,6 +21,7 @@ from dtflow.persistence.script_items import read_run_snapshot
 from dtflow.persistence.script_runs import ScriptRunStore, read_open_prompt
 from dtflow.scripting.host import ScriptHost, starting_context
 from dtflow.scripting.runner import run_recorded
+from dtflow.services.session import script_asset_choices
 
 
 class _InventoryOnly:
@@ -87,6 +88,7 @@ async def prepare_script(
 ) -> str:
     """Start bounded preparation on the existing runner loop; never create a queue or open a provider."""
     owner = owner if owner is not None else object()
+    available_assets = await script_asset_choices(Path(state), backend["name"])
     setup = ScriptSetup(
         Path(state),
         uuid.uuid4().hex,
@@ -119,6 +121,7 @@ async def prepare_script(
             run_id=context.run_id,
             require_start=True,
             admission_gate=setup.admitted,
+            available_assets=available_assets,
         )
         setup.hosts.append(host)
         return host.hooks()
@@ -219,7 +222,9 @@ def close_setups(state: Path, owner: object) -> None:
         setup.cancel.set()
 
 
-def adopt_setup(state: Path, request, service, loop) -> ScriptSetup:
+def adopt_setup(
+    state: Path, request, service, loop, *, reserve_child=None, release_child=None, available_assets=()
+) -> ScriptSetup:
     """Called only after the ordinary dispatcher claims the queue item."""
     setup = find_setup(state, request.run_id)
     if (
@@ -232,6 +237,9 @@ def adopt_setup(state: Path, request, service, loop) -> ScriptSetup:
     ):
         raise ValidationError("The queued script does not match its owned preparation; it was not replayed.")
     for host in setup.hosts:
+        # Attach capacity accounting before releasing Run Script's admission gate.
+        host.reserve_child, host.release_child = reserve_child, release_child
+        host.available_assets = available_assets
         host.service = service  # No generation hook can have returned from its initial prompt before this adoption.
     setup.admitted.set()
     with _lock:

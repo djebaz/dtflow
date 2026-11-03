@@ -64,6 +64,8 @@ STATES = (
     "scripts_setup_file_error",
     "scripts_editor_discard_confirm",
     "scripts_setup_crop_multiple",
+    "scripts_setup_parallel_batch",
+    "scripts_setup_parallel_batch_narrow",
 )
 
 
@@ -121,6 +123,7 @@ def render_scripts_states(out: Path, *, window_factory: Callable, state_names=ST
                 "scripts_narrow_details",
                 "scripts_editor_narrow",
                 "scripts_setup_narrow",
+                "scripts_setup_parallel_batch_narrow",
             )
             window.form.resize(800, 680) if narrow else window.form.resize(1600, 1000)
             window._show_scripts()
@@ -149,6 +152,8 @@ def render_scripts_states(out: Path, *, window_factory: Callable, state_names=ST
                 "scripts_setup_file_error": "scripts_form_default",
                 "scripts_editor_discard_confirm": "scripts_editor_dirty",
                 "scripts_setup_crop_multiple": "scripts_form_default",
+                "scripts_setup_parallel_batch": "scripts_form_default",
+                "scripts_setup_parallel_batch_narrow": "scripts_form_default",
             }.get(state, state)
             if state in (
                 "scripts_queued",
@@ -187,6 +192,29 @@ def render_scripts_states(out: Path, *, window_factory: Callable, state_names=ST
                     {**spec, "multiple": 64} if spec["type"] == "imageField" else dict(spec) for spec in REFERENCE_FORM
                 ]
                 window.scripts.form.set_fields(fields)
+            elif state in ("scripts_setup_parallel_batch", "scripts_setup_parallel_batch_narrow"):
+                window.scripts.form.set_fields(
+                    [
+                        {"type": "section", "label": "Max concurrent jobs"},
+                        {
+                            "type": "plainText",
+                            "text": "DTFlow only. Requested concurrency is capped by backend and shared queue capacity.",
+                        },
+                        {
+                            "type": "slider",
+                            "label": "Max concurrent jobs",
+                            "sub": "fractional",
+                            "min": 1,
+                            "max": 10,
+                            "step": 1,
+                            "value": 4,
+                        },
+                    ]
+                )
+                window.scripts.form_note.setText("Offline batch form fixture. No queue or provider work.")
+                window.scripts.form_note.show()
+                window.scripts.show_view(1)
+                window.scripts.start.setText("Run Script")
             elif state == "scripts_editor_discard_confirm":
                 window.scripts.editor.discard.click()
             elif state == "scripts_setup_followup":
