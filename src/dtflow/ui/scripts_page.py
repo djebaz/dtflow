@@ -1292,7 +1292,9 @@ class ScriptsPage:
         live = self._run_state in LIVE_STATES
         unresolved = self._run_state in ("interrupted", "outcome_unknown") or self._prior_unresolved
         ui.backToFormButton.setVisible(not live)
-        ui.checkQueuesButton.setVisible(unresolved or (self._live_mode() and self._run_state == "paused"))
+        ui.checkQueuesButton.setVisible(
+            unresolved or (self._live_mode() and self._run_state in ("queued", "paused"))
+        )
         ui.reviewRunButton.setVisible(not live)
         ui.reviewRunButton.setText("Review and start again" if unresolved else "Run again…")
         ui.advancePreviewButton.setVisible(self._reference_mode and self._run_state in ("queued", "running"))
@@ -1359,7 +1361,7 @@ class ScriptsPage:
         return (
             "Stop script in the activity bar ends local waiting; remote work may still complete. Text-only console · last 500 lines kept."
             if key in ("running", "waiting_input")
-            else "Waiting for admission. Cancel is free; nothing has been submitted."
+            else "Waiting for admission. Open Queues to cancel safely before submission."
             if key == "queued"
             else "Saved paused. No generation was submitted; open Queues to Start the item when dispatch is free."
             if key == "paused"
@@ -2093,7 +2095,7 @@ class ScriptsPage:
         else:
             status, detail = RUN_STATUSES[key]
             if key == "queued":
-                detail = "Queue item waiting for admission. Nothing submitted yet."
+                detail = "Waiting for admission; nothing submitted yet. Open Queues to cancel or inspect this item."
             elif key == "paused":
                 detail = "Saved paused; no dispatch owner accepted the run. Open Queues to Start it manually."
             elif key == "running":
