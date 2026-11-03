@@ -456,14 +456,21 @@ class ScriptHost:
                             self.service, request, prefix=self.prefix, attempt_id=attempt_id
                         )
                     except BackendError as exc:
+                        remote = exc.failure.remote_outcome
                         results[index] = {
-                            "status": "failed",
+                            "status": (
+                                "failed" if remote in SAFE_FAILURES
+                                else "save_failed" if remote == RemoteOutcome.SUCCEEDED
+                                else "unknown"
+                            ),
                             "attemptId": attempt_id,
                             "outputPaths": [],
                             "error": exc.failure.code,
                         }
-                        intake_open = False
-                        if exc.failure.remote_outcome not in SAFE_FAILURES:
+                        # A definitive provider failure is safe to continue past. Uncertain
+                        # submissions and committed results with failed saving stop intake.
+                        if remote not in SAFE_FAILURES:
+                            intake_open = False
                             self._blocked = "A batch generation has an unresolved remote outcome; no more jobs."
                     except Exception as exc:
                         results[index] = {
