@@ -253,6 +253,7 @@ class ItemRow:
     height: int | float | None = None
     gallery_identity: str | None = None  # "attempt:ordinal" of the first saved image, as the Images gallery names it
     prompt_runs: tuple[tuple[int, int], ...] = ()  # (start, length) of the prompt parts a prompt variation produced
+    is_script_parent: bool = False  # aggregate queue item, not an additional image-generating attempt
 
     @property
     def dimensions_text(self) -> str:
@@ -411,7 +412,7 @@ def item_rows(view: dict) -> tuple[ItemRow, ...]:
                 item["item_id"],
                 item["position"],
                 item["state"],
-                item["attempt_id"],
+                None if item.get("script") else item["attempt_id"],
                 item["seed"],
                 tuple(path for path in artifacts if path != metadata),
                 metadata,
@@ -428,8 +429,9 @@ def item_rows(view: dict) -> tuple[ItemRow, ...]:
                 item.get("duration"),
                 item.get("width"),
                 item.get("height"),
-                identity,
+                None if item.get("script") else identity,
                 decode_runs(item.get("prompt") or "", item.get("prompt_runs")),
+                is_script_parent=bool(item.get("script")),
             )
         )
         if steps:
