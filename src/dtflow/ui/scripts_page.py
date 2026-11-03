@@ -1230,7 +1230,9 @@ class ScriptsPage:
                 continue
             active = row.findChild(QLabel, "scriptsLibraryActive")
             live = self._run_state in LIVE_STATES and script[1] == getattr(self, "_run_version", "")
-            if active.isVisible() != live:
+            # isHidden() tracks explicit visibility even if an ancestor rail is
+            # hidden; isVisible() could repeatedly force layout on background polls.
+            if active.isHidden() == live:
                 active.setVisible(live)
             wanted = QSize(0, 84 if live else 66)
             if item.sizeHint() != wanted:
@@ -2091,9 +2093,11 @@ class ScriptsPage:
             self._prior_unresolved = True
         on_run_view = self.views.currentIndex() in (3, 4)
         target = 4 if key == "results" else 3
-        if force_view or on_run_view:
+        if force_view or (on_run_view and self.views.currentIndex() != target):
             self.show_view(target)
         else:
+            # The selected view is already correct; avoid rebuilding header and
+            # tab geometry on each live-status poll.
             self._refresh_run_actions()
             self._refresh_readiness()
         label = {
