@@ -80,12 +80,13 @@ class ScriptItemRunner:
                 available_assets = await script_asset_choices(self.state, request.backend)
                 loop = asyncio.get_running_loop()
                 backend_limit = self.service.backend.capabilities.max_concurrency
+
                 def reserve_child(attempt, concurrency):
-                    return self.store.reserve_script_child(
-                                    queue_id, attempt, concurrency, backend_limit
-                                )
+                    return self.store.reserve_script_child(queue_id, attempt, concurrency, backend_limit)
+
                 def release_child(attempt):
                     return self.store.release_script_child(queue_id, attempt)
+
                 hooks = script_hooks(
                     lambda: self.service,
                     base=base,

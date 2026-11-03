@@ -63,8 +63,10 @@ async def test_script_children_are_counted_with_ordinary_queue_slots(tmp_path):
     await store.open()
     try:
         await _populate_running_queues(store, ordinary=1)
+
         def used():
             return store._run(lambda: store._reserved(store._db(), BACKEND_KEY))
+
         assert await used() == 2  # one running script parent, one ordinary queue item
 
         assert await store.reserve_script_child("script-queue", "child-a", 4, 4)
