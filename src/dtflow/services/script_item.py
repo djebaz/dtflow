@@ -77,6 +77,11 @@ class ScriptItemRunner:
                 source = load_source(self.state, request.source_sha256)
                 base = request_from_record(request.base)
                 loop = asyncio.get_running_loop()
+                backend_limit = self.service.backend.capabilities.max_concurrency
+                reserve_child = lambda attempt, concurrency: self.store.reserve_script_child(
+                    queue_id, attempt, concurrency, backend_limit
+                )
+                release_child = lambda attempt: self.store.release_script_child(queue_id, attempt)
                 hooks = script_hooks(
                     lambda: self.service,
                     base=base,
@@ -87,11 +92,16 @@ class ScriptItemRunner:
                     hosts=hosts,
                     interactive=request.answers is None,  # no answer file: forms wait for the person
                     require_start=request.require_start,
+                    reserve_child=reserve_child,
+                    release_child=release_child,
                 )
                 if request.prepared:
                     from dtflow.services.script_setup import adopt_setup
 
-                    setup = adopt_setup(self.state, request, self.service, loop)
+                    setup = adopt_setup(
+                        self.state, request, self.service, loop,
+                        reserve_child=reserve_child, release_child=release_child,
+                    )
                     hosts, cancel, task = setup.hosts, setup.cancel, setup.task
                     try:
                         if request.setup_ordinal is not None:
