@@ -15,12 +15,33 @@ from decimal import Decimal
 from PySide6.QtCore import QSize, Qt, Signal, Slot
 from PySide6.QtGui import QIcon, QPixmap
 from PySide6.QtWidgets import (
-    QButtonGroup, QCheckBox, QComboBox, QDoubleSpinBox, QFileDialog, QFrame, QGridLayout,
-    QLabel, QLineEdit, QPlainTextEdit, QPushButton, QSlider, QSpinBox, QTextBrowser, QVBoxLayout, QWidget,
+    QButtonGroup,
+    QCheckBox,
+    QComboBox,
+    QDoubleSpinBox,
+    QFileDialog,
+    QFrame,
+    QGridLayout,
+    QLabel,
+    QLineEdit,
+    QPlainTextEdit,
+    QPushButton,
+    QSlider,
+    QSpinBox,
+    QTextBrowser,
+    QVBoxLayout,
+    QWidget,
 )
 
 from dtflow.scripting.forms import (
-    MAX_TEXT, contributes, decimals, image_sources, initial_answers, limits, validate_answers, validate_components,
+    MAX_TEXT,
+    contributes,
+    decimals,
+    image_sources,
+    initial_answers,
+    limits,
+    validate_answers,
+    validate_components,
 )
 from dtflow.ui.scripts_form import ScriptForm, _RangeControl, _group, _row
 
@@ -158,12 +179,20 @@ class LiveScriptForm(ScriptForm):
                 self._build(spec.get("views") or [], content, here)
                 layout.addWidget(group)
             elif kind in ("plainText", "markdown"):
-                layout.addWidget(_SafeMarkdown(spec.get("value", "")) if kind == "markdown"
-                                 else _text(spec.get("value", "")))
+                layout.addWidget(
+                    _SafeMarkdown(spec.get("value", "")) if kind == "markdown" else _text(spec.get("value", ""))
+                )
             else:
-                label = spec.get("title") or spec.get("placeholder") or {
-                    "directory": "Input folder", "imageField": "Image", "size": "Size", "image": "Image",
-                }.get(kind, f"Field {answer_index}")
+                label = (
+                    spec.get("title")
+                    or spec.get("placeholder")
+                    or {
+                        "directory": "Input folder",
+                        "imageField": "Image",
+                        "size": "Size",
+                        "image": "Image",
+                    }.get(kind, f"Field {answer_index}")
+                )
                 control = self._control(spec, here, label)
                 control.setMinimumWidth(0)
                 layout.addWidget(_row(label, control))
@@ -209,8 +238,9 @@ class LiveScriptForm(ScriptForm):
     def _double_slider(self, spec, path, label):
         low, high = limits(spec)
         values = self._get(path)
-        lower, upper = [self._numeric(spec, x, label + suffix)
-                        for x, suffix in zip(values, (" minimum", " maximum"), strict=True)]
+        lower, upper = [
+            self._numeric(spec, x, label + suffix) for x, suffix in zip(values, (" minimum", " maximum"), strict=True)
+        ]
         track = _RangeControl(0, 10000, (0, 10000))
         track.setAccessibleName(label + "; Space selects minimum or maximum")
 
@@ -271,8 +301,10 @@ class LiveScriptForm(ScriptForm):
                     button.setChecked(index == value)
                     button.setToolTip(option)
                     button.setAccessibleName(label + " " + option)
-                    button.setProperty("segmentEdge", "first" if index == 0 else
-                                       "last" if index == len(spec["options"]) - 1 else "middle")
+                    button.setProperty(
+                        "segmentEdge",
+                        "first" if index == 0 else "last" if index == len(spec["options"]) - 1 else "middle",
+                    )
                     button.setMinimumWidth(0)
                     buttons.addButton(button, index)
                     grid.addWidget(button, index // 3, index % 3)
@@ -328,8 +360,11 @@ class LiveScriptForm(ScriptForm):
                     group.addButton(tile, index)
                 else:
                     tile = QLabel()
-                    tile.setPixmap(pixmap.scaledToHeight(min(240, round(spec.get("height") or 96)),
-                                                        Qt.TransformationMode.SmoothTransformation))
+                    tile.setPixmap(
+                        pixmap.scaledToHeight(
+                            min(240, round(spec.get("height") or 96)), Qt.TransformationMode.SmoothTransformation
+                        )
+                    )
                 tile.setAccessibleName(label + f" image {index + 1}")
                 grid.addWidget(tile, index // 3, index % 3)
             group.idClicked.connect(lambda index: self._put(path, index))
@@ -351,7 +386,9 @@ class LiveScriptForm(ScriptForm):
         choose.clicked.connect(lambda: self._choose(spec, path, label, text, choose, clear))
         box = _group(text, choose, clear)
         if spec["type"] == "directory":
-            box.setToolTip("Imports a bounded, nonrecursive copy of this folder's images; JS cannot access the original folder.")
+            box.setToolTip(
+                "Imports a bounded, nonrecursive copy of this folder's images; JS cannot access the original folder."
+            )
         return box
 
     def _choose(self, spec, path, label, text, choose, clear):
@@ -360,9 +397,13 @@ class LiveScriptForm(ScriptForm):
         identity, generation = self.identity, self._generation
         picker = QFileDialog(self.window(), "Choose " + label)
         directory = spec["type"] == "directory"
-        picker.setFileMode(QFileDialog.FileMode.Directory if directory else
-                           QFileDialog.FileMode.ExistingFiles if spec.get("multiSelect") else
-                           QFileDialog.FileMode.ExistingFile)
+        picker.setFileMode(
+            QFileDialog.FileMode.Directory
+            if directory
+            else QFileDialog.FileMode.ExistingFiles
+            if spec.get("multiSelect")
+            else QFileDialog.FileMode.ExistingFile
+        )
         if directory:
             picker.setOption(QFileDialog.Option.ShowDirsOnly, True)
         else:
@@ -402,7 +443,9 @@ class LiveScriptForm(ScriptForm):
                     text.setText("Owned folder copy" if directory else f"{len(result)} image(s) selected")
                 self._notify_busy()
 
-            self.runner.submit(asyncio.to_thread(snapshot_picked_inputs, self.state, *identity, path, list(paths)), done)
+            self.runner.submit(
+                asyncio.to_thread(snapshot_picked_inputs, self.state, *identity, path, list(paths)), done
+            )
 
         picker.filesSelected.connect(selected)
         picker.finished.connect(finished)

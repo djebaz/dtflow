@@ -16,7 +16,8 @@
 - [x] Persist/reload answers for the exact source version and matching form; require explicit submission every time.
 - [x] Bind repeated live prompts with stable run/ordinal identity and stale-result protection.
 - [x] Review the source diff without executing project code or checks.
-- [ ] Commit/push and open a new draft PR.
+- [x] Commit/push and open draft [PR #217](https://github.com/djebaz/dtflow/pull/217).
+- [x] Add the subsequently owner-requested, unexecuted manual component smoke script at `tools/scripting/manual_form_smoke.js`; no automated test suite additions.
 
 ## Decisions and risks
 - Base: origin/main e0a738b. Existing script run remains one ordinary queue item; child attempts, dispatch ownership, Stop and close semantics stay in the existing runner.
@@ -33,7 +34,7 @@
 - Issue first-pass policy defers user-facing documentation, tests and canonical preview expansion until owner smoke; this implementation plan records progress without claiming acceptance.
 
 ## Validation and delivery
-- No tests added, modified or run. No validation, rendering, build, desktop launch, inference or provider calls under the selected fast GUI workflow.
+- No automated tests added, modified or run. The owner subsequently requested a custom manual script; it is provided but not executed. No validation, rendering, build, desktop launch, inference or provider calls under the selected fast GUI workflow.
 - [ ] Owner: smoke all component types, nested/multiple forms, changed switches, long text and 800x680 layout, native pickers, Stop/close, stale answer races and version recall.
 - [ ] Pre-merge follow-up: canonical Designer/renderer states, documentation and owner-approved coverage as required by #196.
 - Draft PR only; do not merge or close #196 on source implementation alone.

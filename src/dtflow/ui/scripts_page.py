@@ -1493,12 +1493,18 @@ class ScriptsPage:
                 self.designer.cancelInputButton.setEnabled(True)
             else:
                 # Keep consent disabled until polling observes another ordinal or settlement.
-                self.designer.waitingInstructions.setText("Input cancelled; stopping local script waiting." if cancel
-                                                          else "Answers saved; waiting for the script to continue.")
+                self.designer.waitingInstructions.setText(
+                    "Input cancelled; stopping local script waiting."
+                    if cancel
+                    else "Answers saved; waiting for the script to continue."
+                )
                 self._poll_live()
 
-        coroutine = (asyncio.to_thread(cancel_script_prompt, state, run_id, ordinal) if cancel else
-                     asyncio.to_thread(answer_script_prompt, state, run_id, answers, ordinal))
+        coroutine = (
+            asyncio.to_thread(cancel_script_prompt, state, run_id, ordinal)
+            if cancel
+            else asyncio.to_thread(answer_script_prompt, state, run_id, answers, ordinal)
+        )
         self.owner.runner.submit(coroutine, done)
 
     def _sync_live_prompt(self, key, script):
@@ -1524,7 +1530,9 @@ class ScriptsPage:
         ui.waitingFormTitle.setText(prompt.get("title") or "Script input")
         ui.waitingInstructions.setTextFormat(Qt.TextFormat.PlainText)
         ui.waitingInstructions.setText("Loading this script's form…")
-        ui.waitingHelp.setText("Cancel input stops local script waiting. Already submitted remote work may still complete.")
+        ui.waitingHelp.setText(
+            "Cancel input stops local script waiting. Already submitted remote work may still complete."
+        )
         _feedback(ui.waitingInstructions, "")
         ui.continueInputButton.setText("Continue")
         ui.continueInputButton.setEnabled(False)
@@ -1551,15 +1559,19 @@ class ScriptsPage:
                 return
             self.live_fields.show()
             confirm = result["prompt"].confirm or "Continue"
-            ui.continueInputButton.setText(ui.continueInputButton.fontMetrics().elidedText(
-                confirm, Qt.TextElideMode.ElideRight, 160
-            ))
+            ui.continueInputButton.setText(
+                ui.continueInputButton.fontMetrics().elidedText(confirm, Qt.TextElideMode.ElideRight, 160)
+            )
             ui.continueInputButton.setToolTip(confirm)
             ui.continueInputButton.setAccessibleName(confirm)
             ui.continueInputButton.setEnabled(True)
             ui.waitingInstructions.setText(
-                ("Previous answers for this exact version and form were restored. " if result["answers"] is not None
-                 else "") + "Review and submit to continue. File inputs require a new selection. "
+                (
+                    "Previous answers for this exact version and form were restored. "
+                    if result["answers"] is not None
+                    else ""
+                )
+                + "Review and submit to continue. File inputs require a new selection. "
                 "Cancel input stops this script; it does not cancel submitted remote work."
             )
             self.sync_responsive()

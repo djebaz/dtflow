@@ -377,6 +377,7 @@ class ScriptHost:
                 raise ScriptCancelled()
             validate_answers(components, answers)
         elif self._answers is None:
+
             def needs_selection(fields):
                 return any(
                     spec["type"] in ("imageField", "directory")

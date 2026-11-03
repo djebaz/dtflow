@@ -17,7 +17,14 @@ from dtflow.core.image_inputs import IMAGE_BYTE_LIMIT, ImageInputSnapshot
 from dtflow.core.models import ValidationError
 from dtflow.persistence.script_runs import ScriptRunStore, read_open_prompt, read_recalled_answers
 from dtflow.scripting.forms import (
-    MAX_ANSWER_BYTES, MAX_IMAGES, bounded_json, contributes, image_bytes, image_sources, input_token, validate_answers,
+    MAX_ANSWER_BYTES,
+    MAX_IMAGES,
+    bounded_json,
+    contributes,
+    image_bytes,
+    image_sources,
+    input_token,
+    validate_answers,
     validate_components,
 )
 from dtflow.services.image_inputs import restore_image_inputs, snapshot_image_inputs
@@ -45,8 +52,11 @@ def read_script_form(state: Path, run_id: str, ordinal: int) -> dict | None:
                         thumbnails[source] = prepared.image.encoded
 
     visit(prompt.components)
-    return {"prompt": prompt, "answers": read_recalled_answers(state, run_id, prompt.components),
-            "thumbnails": thumbnails}
+    return {
+        "prompt": prompt,
+        "answers": read_recalled_answers(state, run_id, prompt.components),
+        "thumbnails": thumbnails,
+    }
 
 
 def _field(components: list, path: tuple) -> dict:
@@ -67,8 +77,11 @@ def _field(components: list, path: tuple) -> dict:
 
 def _plain(path: Path, directory=False) -> None:
     info = path.lstat()
-    if (stat.S_ISLNK(info.st_mode) or getattr(info, "st_file_attributes", 0) & 0x400
-            or not (stat.S_ISDIR(info.st_mode) if directory else stat.S_ISREG(info.st_mode))):
+    if (
+        stat.S_ISLNK(info.st_mode)
+        or getattr(info, "st_file_attributes", 0) & 0x400
+        or not (stat.S_ISDIR(info.st_mode) if directory else stat.S_ISREG(info.st_mode))
+    ):
         raise ValidationError("Selected input must not be redirected or an unexpected file type.")
 
 
@@ -169,7 +182,9 @@ def resolve_form_inputs(state: Path, run_id: str, ordinal: int, components: list
                         continue
                     record = store.prompt_input(run_id, ordinal, here, kind, token)
                     prepared = restore_image_inputs(state, ImageInputSnapshot.from_record(record["snapshot"]))
-                    resolved.append("data:image/png;base64," + base64.b64encode(prepared.source.encoded).decode("ascii"))
+                    resolved.append(
+                        "data:image/png;base64," + base64.b64encode(prepared.source.encoded).decode("ascii")
+                    )
                 value = resolved
             elif kind == "directory" and value:
                 record = store.prompt_input(run_id, ordinal, here, kind, value)

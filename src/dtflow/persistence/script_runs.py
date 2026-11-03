@@ -363,7 +363,13 @@ class ScriptRunStore:
 
     def answer_prompt(self, run_id: str, ordinal: int, answers: list) -> bool:
         """Record the answers of an open prompt; False (nothing changed) if it is no longer open."""
-        from dtflow.scripting.forms import MAX_ANSWER_BYTES, bounded_json, form_key, recallable_answers, validate_answers
+        from dtflow.scripting.forms import (
+            MAX_ANSWER_BYTES,
+            bounded_json,
+            form_key,
+            recallable_answers,
+            validate_answers,
+        )
 
         text = bounded_json(answers, MAX_ANSWER_BYTES)
         with closing(self._connect()) as connection, connection:
@@ -387,19 +393,25 @@ class ScriptRunStore:
                     raise ScriptRunStoreError("Selected input does not belong to this run, form and field.")
 
             validate_answers(json.loads(row[0]), answers, origin=origin)
-            changed = connection.execute(
-                "UPDATE script_run_prompts SET state='answered', answer_json=?, answered_at=?"
-                " WHERE run_id=? AND ordinal=? AND state='open'",
-                (text, _now(), run_id, ordinal),
-            ).rowcount == 1
+            changed = (
+                connection.execute(
+                    "UPDATE script_run_prompts SET state='answered', answer_json=?, answered_at=?"
+                    " WHERE run_id=? AND ordinal=? AND state='open'",
+                    (text, _now(), run_id, ordinal),
+                ).rowcount
+                == 1
+            )
             if changed:
                 connection.execute(
                     "INSERT INTO script_form_answers VALUES (?, ?, ?, ?)"
                     " ON CONFLICT(source_sha256, form_sha256) DO UPDATE SET"
                     " answers_json=excluded.answers_json, updated_at=excluded.updated_at",
-                    (row[1], form_key(json.loads(row[0])), bounded_json(
-                        recallable_answers(json.loads(row[0]), answers), MAX_ANSWER_BYTES
-                    ), _now()),
+                    (
+                        row[1],
+                        form_key(json.loads(row[0])),
+                        bounded_json(recallable_answers(json.loads(row[0]), answers), MAX_ANSWER_BYTES),
+                        _now(),
+                    ),
                 )
                 connection.execute(
                     "DELETE FROM script_form_answers WHERE rowid NOT IN"
@@ -451,11 +463,14 @@ class ScriptRunStore:
 
     def cancel_prompt(self, run_id: str, ordinal: int) -> bool:
         with closing(self._connect()) as connection, connection:
-            return connection.execute(
-                "UPDATE script_run_prompts SET state='cancelled', answered_at=?"
-                " WHERE run_id=? AND ordinal=? AND state='open'",
-                (_now(), run_id, ordinal),
-            ).rowcount == 1
+            return (
+                connection.execute(
+                    "UPDATE script_run_prompts SET state='cancelled', answered_at=?"
+                    " WHERE run_id=? AND ordinal=? AND state='open'",
+                    (_now(), run_id, ordinal),
+                ).rowcount
+                == 1
+            )
 
     def prompt(self, run_id: str, ordinal: int) -> ScriptPrompt | None:
         with closing(self._connect()) as connection:

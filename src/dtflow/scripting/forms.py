@@ -20,10 +20,24 @@ MAX_DEPTH = 12
 MAX_TEXT = 64_000
 MAX_OPTIONS = 256
 MAX_IMAGES = 16
-KINDS = frozenset({
-    "switch", "slider", "doubleSlider", "textField", "comboBox", "segmented", "menu", "size",
-    "imageField", "directory", "image", "section", "plainText", "markdown",
-})
+KINDS = frozenset(
+    {
+        "switch",
+        "slider",
+        "doubleSlider",
+        "textField",
+        "comboBox",
+        "segmented",
+        "menu",
+        "size",
+        "imageField",
+        "directory",
+        "image",
+        "section",
+        "plainText",
+        "markdown",
+    }
+)
 
 
 def bounded_json(value, limit: int) -> str:
@@ -89,8 +103,12 @@ def validate_components(components) -> None:
             raise ValueError("Script form sections must be bounded arrays.")
         for spec in fields:
             count += 1
-            if (count > MAX_FIELDS or not isinstance(spec, dict) or not isinstance(spec.get("type"), str)
-                    or spec["type"] not in KINDS):
+            if (
+                count > MAX_FIELDS
+                or not isinstance(spec, dict)
+                or not isinstance(spec.get("type"), str)
+                or spec["type"] not in KINDS
+            ):
                 raise ValueError("Script form has too many fields or an unsupported component.")
             kind = spec["type"]
             for key in ("title", "detail", "placeholder"):
@@ -110,8 +128,11 @@ def validate_components(components) -> None:
                     raise ValueError("Script form text exceeds its limit.")
             elif kind in ("comboBox", "menu", "segmented"):
                 options = spec.get("options")
-                if (not isinstance(options, list) or not 1 <= len(options) <= MAX_OPTIONS
-                        or any(not isinstance(x, str) or len(x) > 4096 for x in options)):
+                if (
+                    not isinstance(options, list)
+                    or not 1 <= len(options) <= MAX_OPTIONS
+                    or any(not isinstance(x, str) or len(x) > 4096 for x in options)
+                ):
                     raise ValueError("Script form options must be a nonempty bounded text array.")
             elif kind in ("slider", "doubleSlider"):
                 low, high = limits(spec)
@@ -145,9 +166,7 @@ def validate_components(components) -> None:
 
 
 def contributes(spec: dict) -> bool:
-    return spec["type"] not in ("plainText", "markdown") and (
-        spec["type"] != "image" or bool(spec.get("selectable"))
-    )
+    return spec["type"] not in ("plainText", "markdown") and (spec["type"] != "image" or bool(spec.get("selectable")))
 
 
 def initial_answers(components: list[dict]) -> list:
@@ -196,8 +215,9 @@ def validate_answers(components, answers, *, origin: Callable | None = None, che
             elif kind in ("slider", "doubleSlider"):
                 low, high = limits(spec)
                 numbers = value if kind == "doubleSlider" and isinstance(value, list) else [value]
-                ok = (len(numbers) == (2 if kind == "doubleSlider" else 1)
-                      and all(number(x) and low <= x <= high for x in numbers))
+                ok = len(numbers) == (2 if kind == "doubleSlider" else 1) and all(
+                    number(x) and low <= x <= high for x in numbers
+                )
                 if ok and kind == "doubleSlider":
                     ok = numbers[0] <= numbers[1]
             elif kind == "textField":
@@ -209,8 +229,11 @@ def validate_answers(components, answers, *, origin: Callable | None = None, che
                 ok = type(value) is int and 0 <= value < len(options)
             elif kind == "size":
                 low, high = spec.get("minValue", 64), spec.get("maxValue", 8192)
-                ok = (isinstance(value, list) and len(value) == 2
-                      and all(type(x) is int and low <= x <= high for x in value))
+                ok = (
+                    isinstance(value, list)
+                    and len(value) == 2
+                    and all(type(x) is int and low <= x <= high for x in value)
+                )
             elif kind == "imageField":
                 ok = isinstance(value, list) and len(value) <= (MAX_IMAGES if spec.get("multiSelect") else 1)
                 if ok:
