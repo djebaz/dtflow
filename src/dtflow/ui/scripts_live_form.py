@@ -11,6 +11,7 @@ import asyncio
 import copy
 import html
 from decimal import Decimal
+from pathlib import Path
 
 from PySide6.QtCore import QSize, Qt, Signal, Slot
 from PySide6.QtGui import QIcon, QPixmap
@@ -382,7 +383,10 @@ class LiveScriptForm(ScriptForm):
         choose, clear = QPushButton("Choose…"), QPushButton("Clear")
         choose.setAccessibleName("Choose " + label)
         clear.setAccessibleName("Clear " + label)
-        clear.clicked.connect(lambda: (self._put(path, "" if spec["type"] == "directory" else []), text.clear()))
+        clear.clicked.connect(lambda: (
+            self._put(path, "" if spec["type"] == "directory" else []),
+            text.clear(), text.setToolTip(""), text.setAccessibleDescription(""),
+        ))
         choose.clicked.connect(lambda: self._choose(spec, path, label, text, choose, clear))
         box = _group(text, choose, clear)
         if spec["type"] == "directory":
@@ -420,12 +424,18 @@ class LiveScriptForm(ScriptForm):
         def selected(paths):
             if self.identity != identity or self._generation != generation or self.runner.closed:
                 return
+            if not paths:
+                self.problem.emit("The picker returned no selected files or folder; please choose again.")
+                return
             from dtflow.services.script_form_inputs import snapshot_picked_inputs
 
+            names = [Path(p).name for p in paths]
             self._pending += 1
             choose.setEnabled(False)
             clear.setEnabled(False)
             text.setText("Preparing owned copy…")
+            text.setToolTip("Preparing the selected input as an owned copy.")
+            text.setAccessibleDescription("Preparing the selected input as an owned copy.")
             self._notify_busy()
 
             def done(result, failure):
@@ -436,17 +446,25 @@ class LiveScriptForm(ScriptForm):
                 clear.setEnabled(True)
                 if failure is not None:
                     self._put(path, "" if directory else [])
-                    text.clear()
+                    text.setText("Input could not be prepared")
+                    text.setToolTip(str(failure))
+                    text.setAccessibleDescription(str(failure))
                     self.problem.emit(str(failure))
                 else:
                     self._put(path, result[0] if directory else result)
-                    text.setText("Owned folder copy" if directory else f"{len(result)} image(s) selected")
+                    description = ("Owned folder copy: " + names[0] if directory else
+                                   names[0] if len(names) == 1 else f"{len(names)} images: " + ", ".join(names))
+                    text.setText(description)
+                    text.setToolTip(description)
+                    text.setAccessibleDescription(description)
                 self._notify_busy()
 
             self.runner.submit(
                 asyncio.to_thread(snapshot_picked_inputs, self.state, *identity, path, list(paths)), done
             )
 
-        picker.filesSelected.connect(selected)
+        # Read final selection after acceptance for every native picker mode.
+        # No selection/typing signal is treated as consent or a prepared input.
+        picker.accepted.connect(lambda: selected(picker.selectedFiles()))
         picker.finished.connect(finished)
         picker.open()

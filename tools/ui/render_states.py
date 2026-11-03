@@ -4143,7 +4143,7 @@ def main():
     ):
         state = Path(temporary)
         if wants("scripts"):
-            # Includes Inspect-preloaded and freshly reloaded Setup fixtures; no JS/queues are started.
+            # Includes preloaded/reloaded Setup and file-picker result fixtures; no JS/queues are started.
             from render_scripts_states import STATES as SCRIPT_STATES, render_scripts_states
 
             def script_window():

@@ -13,7 +13,7 @@ from time import monotonic
 from typing import Callable
 
 from PySide6.QtCore import QPoint
-from PySide6.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication, QLineEdit
 
 
 STATES = (
@@ -60,6 +60,8 @@ STATES = (
     "scripts_setup_narrow",
     "scripts_inspect_setup_preloaded",
     "scripts_setup_reloaded",
+    "scripts_setup_file_selected",
+    "scripts_setup_file_error",
 )
 
 
@@ -136,6 +138,8 @@ def render_scripts_states(out: Path, *, window_factory: Callable, state_names=ST
                 "scripts_setup_narrow": "scripts_form_long_values",
                 "scripts_inspect_setup_preloaded": "scripts_form_default",
                 "scripts_setup_reloaded": "scripts_form_default",
+                "scripts_setup_file_selected": "scripts_form_default",
+                "scripts_setup_file_error": "scripts_form_default",
             }.get(state, state)
             if state in (
                 "scripts_queued",
@@ -156,6 +160,13 @@ def render_scripts_states(out: Path, *, window_factory: Callable, state_names=ST
                 window.scripts.form_note.setText("Setup is ready. No job is queued.")
                 window.scripts.form_note.show()
                 window.scripts.show_view(0 if state == "scripts_inspect_setup_preloaded" else 1)
+            elif state in ("scripts_setup_file_selected", "scripts_setup_file_error"):
+                fields = window.scripts.form.findChildren(QLineEdit, "scriptsPathValue")
+                if fields:
+                    fields[0].setText("reference.png" if state == "scripts_setup_file_selected"
+                                      else "Input could not be prepared")
+                    fields[0].setToolTip("reference.png" if state == "scripts_setup_file_selected"
+                                        else "Selected input exceeds the supported image limit (offline fixture).")
             elif state == "scripts_setup_followup":
                 window.scripts.show_view(1)
                 window.scripts.start.setText("Continue")
