@@ -4,6 +4,8 @@ Changes through 5.4.0 are consolidated in [DTFlow 5.4.0](v5.4.0.md). This file t
 
 ## Highlights
 
+- **Scripts (PR #215):** The managed version library and parser are connected to the native Scripts page. Explicit Start creates one ordinary queue item with durable child attempts, live status/history and per-step results; Queues shows a script summary and child steps, with the last committed step as its summary thumbnail. Short activity labels and reduced History repainting are included. Geometry-only canvas hooks are available for text-to-image scripts; image pixels, masks, source handoff, complete interactive forms and broad configuration/LoRA-mixer compatibility remain later work. Manual Windows/UI smoke for this PR and exact backend/checkpoint acceptance are not established by the skipped UI-render Action.
+
 ## Added
 
 ## Changed
