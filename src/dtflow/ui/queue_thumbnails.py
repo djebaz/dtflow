@@ -293,8 +293,8 @@ class HoverPreview(QObject):
 
     def show_row(self, row: int, global_pos: QPoint) -> None:
         item = self.view.model().row_at(row)
-        if item is None or not item.outputs:
-            return  # a missing result gets no preview, never a fabricated one
+        if item is None or item.is_script_parent or not item.outputs:
+            return  # parent scripts are summaries, not an extra image attempt
         self._path = item.outputs[0]
         self._identity = item.gallery_identity
         screen = QGuiApplication.screenAt(global_pos) or QGuiApplication.primaryScreen()
