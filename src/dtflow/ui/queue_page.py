@@ -704,9 +704,21 @@ class QueuePage:
         """The checked count chips narrow the items table to their states; none checked shows every item."""
         shown = filter_states(key for key, name in FILTER_BUTTONS.items() if getattr(self.page, name).isChecked())
         table = self.page.queueItemsView
+        view = self._view()
+        # A script is one queue item even when its table expands into child
+        # attempts. Status chips count queue items, not their individual steps.
+        script_states = (
+            {item["state"] for item in (self._detail_for(view) or {}).get("items", ())}
+            if view is not None and view.get("kind") == "script"
+            else None
+        )
+        show_script = not shown or bool(shown.intersection(script_states or ()))
         for index in range(self.model.rowCount()):
             row = self.model.row_at(index)
-            table.setRowHidden(index, bool(shown) and row.state not in shown)
+            table.setRowHidden(
+                index,
+                not show_script if script_states is not None else bool(shown) and row.state not in shown,
+            )
 
     @staticmethod
     def _editable(view: dict | None) -> bool:
