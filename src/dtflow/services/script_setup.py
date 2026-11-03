@@ -219,7 +219,7 @@ def close_setups(state: Path, owner: object) -> None:
         setup.cancel.set()
 
 
-def adopt_setup(state: Path, request, service, loop) -> ScriptSetup:
+def adopt_setup(state: Path, request, service, loop, *, reserve_child=None, release_child=None) -> ScriptSetup:
     """Called only after the ordinary dispatcher claims the queue item."""
     setup = find_setup(state, request.run_id)
     if (
@@ -232,6 +232,8 @@ def adopt_setup(state: Path, request, service, loop) -> ScriptSetup:
     ):
         raise ValidationError("The queued script does not match its owned preparation; it was not replayed.")
     for host in setup.hosts:
+        # Attach capacity accounting before releasing Run Script's admission gate.
+        host.reserve_child, host.release_child = reserve_child, release_child
         host.service = service  # No generation hook can have returned from its initial prompt before this adoption.
     setup.admitted.set()
     with _lock:
