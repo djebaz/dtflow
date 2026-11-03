@@ -189,3 +189,96 @@ async def test_batch_ceiling_rejects_before_any_child_is_linked(tmp_path):
         host.generate_batch([valid] * 31, 1)
     assert not linked
     assert host.generations == 0
+
+
+@pytest.mark.asyncio
+async def test_batch_continues_after_confirmed_backend_failure(tmp_path, monkeypatch):
+    """One definitive failure must not turn the remaining jobs into unsubmitted work."""
+    from dtflow.core.models import BackendError, BackendFailure, ErrorCategory, RemoteOutcome
+    from dtflow.scripting import host as host_module
+    from dtflow.services.session import GenerationOutcome
+
+    base = ResolvedGenerationRequest(uuid4().hex, "fixture", "fake-fixture", 12)
+    linked = []
+    submitted = []
+
+    async def fake_generation(service, request, *, prefix=False, attempt_id):
+        assert attempt_id in linked
+        submitted.append(request.seed)
+        if request.seed == 1:
+            raise BackendError(
+                BackendFailure(
+                    category=ErrorCategory.REMOTE_REJECTION,
+                    code="fixture_rejected",
+                    message="Confirmed fixture rejection.",
+                    remote_outcome=RemoteOutcome.FAILED,
+                )
+            )
+        return GenerationOutcome(
+            attempt_id=attempt_id,
+            backend_id="fake",
+            output_paths=(f"/fake/{request.seed}.png",),
+            metadata_path=f"/fake/{request.seed}.json",
+            warnings=(),
+            diagnostics=(),
+            request=request,
+        )
+
+    monkeypatch.setattr(host_module, "run_generation", fake_generation)
+    host = ScriptHost(
+        service=SimpleNamespace(backend=SimpleNamespace(capabilities=SimpleNamespace(max_concurrency=2))),
+        base=base,
+        loop=asyncio.get_running_loop(),
+        link_child=linked.append,
+        console=lambda text, kind: None,
+        cancel=threading.Event(),
+        sandbox=tmp_path / "script",
+    )
+    jobs = [ResolvedGenerationRequest(uuid4().hex, "fixture", "fake-fixture", seed) for seed in (1, 2, 3)]
+    results = await host._run_batch(jobs, [None] * len(jobs), 2)
+    assert [r["status"] for r in results] == ["failed", "succeeded", "succeeded"]
+    assert results[0]["error"] == "fixture_rejected"
+    assert set(submitted) == {1, 2, 3}
+    assert len(linked) == 3
+    assert host._blocked is None
+
+
+@pytest.mark.asyncio
+async def test_batch_unknown_outcome_stops_future_submissions(tmp_path, monkeypatch):
+    """Unknown remote results stop intake and leave later jobs explicitly not started."""
+    from dtflow.core.models import BackendError, BackendFailure, ErrorCategory, RemoteOutcome
+    from dtflow.scripting import host as host_module
+
+    base = ResolvedGenerationRequest(uuid4().hex, "fixture", "fake-fixture", 12)
+    linked = []
+    submitted = []
+
+    async def fake_generation(service, request, *, prefix=False, attempt_id):
+        assert attempt_id in linked
+        submitted.append(request.seed)
+        raise BackendError(
+            BackendFailure(
+                category=ErrorCategory.TIMEOUT,
+                code="fixture_uncertain",
+                message="Fixture submission outcome is unknown.",
+                remote_outcome=RemoteOutcome.UNKNOWN,
+            )
+        )
+
+    monkeypatch.setattr(host_module, "run_generation", fake_generation)
+    host = ScriptHost(
+        service=SimpleNamespace(backend=SimpleNamespace(capabilities=SimpleNamespace(max_concurrency=4))),
+        base=base,
+        loop=asyncio.get_running_loop(),
+        link_child=linked.append,
+        console=lambda text, kind: None,
+        cancel=threading.Event(),
+        sandbox=tmp_path / "script",
+    )
+    jobs = [ResolvedGenerationRequest(uuid4().hex, "fixture", "fake-fixture", seed) for seed in (1, 2, 3)]
+    results = await host._run_batch(jobs, [None] * len(jobs), 1)
+    assert [r["status"] for r in results] == ["unknown", "not_started", "not_started"]
+    assert results[0]["error"] == "fixture_uncertain"
+    assert submitted == [1]
+    assert len(linked) == 1
+    assert host._blocked is not None
