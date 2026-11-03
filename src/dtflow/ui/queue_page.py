@@ -851,9 +851,18 @@ class QueuePage:
                 committed = sum(1 for child in children if child["state"] == "succeeded")
                 expected = (script or {}).get("expected_steps")  # a static count, known only for plain scripts
                 of = f"{expected}" if expected else "?"
+                settled_states = (
+                    "succeeded",
+                    "failed",
+                    "cancelled",
+                    "save_failed",
+                    "unknown",
+                    "interrupted_before_submission",
+                )
+                in_flight = any(child["state"] not in settled_states for child in children)
                 stage = (
                     f"step {len(children)}/{of} running · {committed} committed"
-                    if len(children) > committed
+                    if in_flight
                     else f"{committed}/{of} steps committed"
                     if children
                     else "Script running"
@@ -1984,6 +1993,7 @@ class QueuePage:
                 source_name,
                 base,
                 max_generations=max_generations,
+                answers=[],  # the Scripts page has no form renderer yet: requestFromUser fails clearly, never waits
                 expected_steps=expected_steps,
             )
 

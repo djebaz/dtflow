@@ -1244,6 +1244,12 @@ class ScriptsPage:
         if self._live_mode():
             self._sync_pickers()
             partial = False
+            self.source.setCurrentIndex(0)
+            self.source.setEnabled(False)
+            self.source_note.setText(
+                "Not used by real runs yet: Start runs text-to-image from Generate's settings. "
+                "Source images and the Inpaint handoff are ignored."
+            )
             summary, problem, details = self.settings_source() if self.settings_source else ("", None, {})
             self._show_starting_settings(details, problem)
             self.run_settings.setText(summary)
@@ -1251,6 +1257,7 @@ class ScriptsPage:
             ready = supported and not self._starting and self._run_state not in LIVE_STATES and problem is None
         else:
             self.run_settings.hide()
+            self.source.setEnabled(True)
         self.go_generate.setVisible(problem is not None)
         if partial:
             self.acknowledge.show()
@@ -1508,6 +1515,12 @@ class ScriptsPage:
             return False
         self.preview("scripts_from_inpaint")
         self._inpaint_snapshot = (source, bytes(mask))
+        if self._live_mode():
+            self.owner.inline.notice(
+                "Inpaint handoff not used",
+                "Real runs start from text-to-image only; the canvas is not passed to Start.",
+                "warning",
+            )
         self.designer.sourceThumbnail.setPixmap(
             thumbnail.scaled(56, 56, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
         )

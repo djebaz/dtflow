@@ -160,6 +160,9 @@ def child_states(db: sqlite3.Connection, children: tuple[str, ...]) -> list[str 
 def item_outcome(run: RunSnapshot, states: list[str | None]) -> tuple[str, str | None]:
     """The item state (and failure JSON, if any) a run's state plus its children decide. Never invents success."""
     if run.state == "completed":
+        if any(s is not None and s not in TERMINAL_ATTEMPTS for s in states):  # a step's outcome is still unknown
+            message = "The script completed but a step has no confirmed outcome; check the backend before retrying."
+            return "unknown", json.dumps({"code": "script_step_unknown", "message": message})
         return "succeeded", None
     if run.state == "stopped":
         return "cancelled", None

@@ -83,7 +83,9 @@ def _state(hooks: tuple[str, ...]) -> tuple[str, str]:
     return worst, owner
 
 
-_BRANCHING = re.compile(r"\b(?:for|while|if|switch)\s*\(|\bdo\s*\{|\.(?:forEach|map|reduce|filter)\s*\(|\?\s*[^:\n]+:")
+_BRANCHING = re.compile(
+    r"\bfor\s+await\b|\bfunction\b|=>|\b(?:for|while|if|switch)\s*\(|\bdo\s*\{|\.(?:forEach|map|reduce|filter)\s*\(|\?\s*[^:\n]+:"
+)
 
 
 def static_run_count(code: str, counts: dict[str, int]) -> int | None:
@@ -131,10 +133,10 @@ def analyze_bytes(data: bytes, name: str) -> dict:
     counts: dict[str, int] = {}
     for owner, member in _FACADE_CALL.findall(code):
         counts[f"{owner}.{member}"] = counts.get(f"{owner}.{member}", 0) + 1
-    for name in _GLOBALS:
-        found = len(re.findall(r"\b" + re.escape(name) + r"\b", code))
+    for global_name in _GLOBALS:
+        found = len(re.findall(r"\b" + re.escape(global_name) + r"\b", code))
         if found:
-            counts[name] = found
+            counts[global_name] = found
     calls, unknown = [], []
     for api, count in sorted(counts.items()):
         if api in ("console.log", "console.warn", "console.error"):

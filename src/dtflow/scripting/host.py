@@ -383,7 +383,10 @@ class ScriptHost:
             answers = _initial_answers(components)
         else:
             if not self._answers:
-                raise ValueError("The supplied answers ran out before this form; the script was not continued.")
+                raise ValueError(
+                    "This script asked for input (requestFromUser) but no answers were supplied. The Scripts page "
+                    "cannot show forms yet; run it from the CLI with --answers. The script was not continued."
+                )
             answers = list(self._answers.pop(0))
             if len(answers) != len(kinds):
                 raise ValueError(f"Expected {len(kinds)} answers for this form, got {len(answers)}.")

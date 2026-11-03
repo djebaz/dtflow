@@ -334,7 +334,13 @@ class Controls:
     reorder: bool = False
 
 
-_STEP_ITEM_STATES = {"succeeded": "succeeded", "failed": "failed", "cancelled": "cancelled", "unknown": "unknown"}
+_STEP_ITEM_STATES = {
+    "succeeded": "succeeded",
+    "failed": "failed",
+    "cancelled": "cancelled",
+    "unknown": "unknown",
+    "interrupted_before_submission": "failed",
+}
 
 
 def _step_rows(item: dict, steps: list) -> list[ItemRow]:
@@ -704,7 +710,8 @@ def primary_action(view: dict | None, available: "Controls", *, started: bool, o
     if available.pause:
         if view["status"] == "queued":
             return PrimaryAction("dequeue", "Pause", "Leaves the up-next order; the queue stays paused until Start.")
-        return PrimaryAction("pause", "Pause", "Stops starting new items; running items finish.")
+        if view.get("kind") != "script":  # a script is one item: the runner has no pause point inside it
+            return PrimaryAction("pause", "Pause", "Stops starting new items; running items finish.")
     if available.enqueue:
         return PrimaryAction("enqueue", "Start next", "Waits up next and starts by itself when the running queue ends.")
     if available.resume and owned:
