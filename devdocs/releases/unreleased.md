@@ -12,11 +12,13 @@ Changes through 5.4.0 are consolidated in [DTFlow 5.4.0](v5.4.0.md). This file t
 
 ## Added
 
-- PR #219: portable Krea2 mixer authoring with cached, paged LoRA discovery, explicit readiness/skipped reasons, non-submitting Setup preview, versioned source-scoped preferences and deterministic bounded manual chunks. Plan IDs/global indices stay with child request evidence. Missing files are not downloaded/uploaded, unsupported preset fields are not silently mapped, and original Draw Things behavior remains separate. Source only; owner acceptance remains tracked by #216.
+- PR #219: portable Krea2 mixer authoring with cached, paged LoRA discovery, explicit readiness/skipped reasons, single Setup form with direct Run Script, versioned source-scoped preferences and deterministic bounded manual chunks. Plan IDs/global indices stay with child request evidence. Missing files are not downloaded/uploaded, unsupported preset fields are not silently mapped, and original Draw Things behavior remains separate. Source only; owner acceptance remains tracked by #216.
 
 ## Changed
 
 ## Fixed
+
+- PR #219 follow-up: remove the mixer preview wizard; keep one Setup form and Run Script. Unknown LoRA metadata is advisory, inspection warnings and footer text are shorter. Parser resource failures are distinguished from source syntax errors; parsing runs on a reserved native stack without changing the pinned parser or execution limits. Source-only changes, not runtime acceptance.
 
 - PR #218 lifecycle follow-up: batch workers recheck closed intake after reservation/linking awaits, and retain/drain all workers before propagating release failures or batch cancellation. Already admitted work is not retried or cancelled remotely. CI at runtime head `0465f3d` reports 697 passed, 3 skipped with format/lint passed ([run](https://github.com/djebaz/dtflow/actions/runs/41613970580)); UI rendering was skipped, and owner/backend/package acceptance remains separate.
 

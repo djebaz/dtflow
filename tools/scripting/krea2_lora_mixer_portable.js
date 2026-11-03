@@ -1,4 +1,4 @@
-// VERSION$00015$ | Portable Draw Things / DTFlow inventory and preview adapter
+// VERSION$00017$ | Portable Draw Things / DTFlow inventory adapter
 //@api-1.0
 /*
 Krea 2 Turbo prompt / random LoRA mixer for Draw Things iOS and DTFlow.
@@ -24,7 +24,7 @@ to the script sandbox; Draw Things uses its existing canvas export. No automatic
 Logs record job seeds, selected LoRAs/weights, prompts and output filenames.
 In DTFlow, inherit the selected Generate model and steps instead of the fixed PRESET.
 Set LOG_FULL_CONFIGURATION to true only when full configuration logs are needed.
-DTFlow provides preparation-only settings and exact chunk previews, source-version
+DTFlow provides one Setup form, source-version
 authoring preferences and explicit bounded chunks. Compare the full plan ID and
 inspect existing attempts before manual continuation; no automatic resume or retry.
 The Draw Things/older-DTFlow path below retains its original manual-resume behavior.
@@ -33,8 +33,8 @@ start number, a fixed image seed and equal shares of total LoRA strength. With
 eight selected LoRAs: 8 singles or 28 pairs. Comparison always starts from the
 first combination; its start number selects a prompt, not a combination to resume.
 Random-mode image count, blend seed and seed increment do not affect comparison.
-New DTFlow: Preview plan and Continue preview create no queue/provider session.
-Proceed to Run Script is separate consent; Finish preview submits zero jobs.
+New DTFlow: Inspect preloads one Setup form; Run Script queues the chosen chunk.
+No preview wizard or intermediate confirmation is required.
 Draw Things Remember mixer settings prefills all fields on the next launch: exact prompts,
 negative prompt, image count, LoRA count, strength, both seeds, increment toggle,
 start job, preview toggle, LoRA selections, remember toggle, width, ratio, sampler, text guidance and generation mode. Prompt pipes,
@@ -406,7 +406,7 @@ function saveRememberedInputs(state, configuration) {
 }
 
 // The DTFlow adaptation is intentionally separate from Draw Things' marker-file
-// persistence and fixed iOS preset. Its preview never calls pipeline.run/Batch.
+// persistence and fixed iOS preset. Setup remains parked until Run Script.
 function runDtflowMixer() {
   const host = globalThis.__dtflowScriptHost;
   const base = clone(pipeline.configuration);
@@ -431,169 +431,130 @@ function runDtflowMixer() {
   saved = saved || {schemaVersion: 1};
   const prompts = pipeline.prompts || {};
   const get = (key, fallback) => saved[key] === undefined ? fallback : saved[key];
-  const note = rows.length + " known; " + inventory.omitted + " unsafe path-like identifiers omitted; " + candidates.length + " candidates; " + skipped.length +
-    " skipped. Cached observation: " + inventory.observedAt + ". Listed, prepared and metadata-compatible are separate observations, not runtime acceptance.";
+  const note = candidates.length + " available; " + skipped.length + " skipped; " + inventory.omitted + " unsafe identifiers omitted. Cached inventory.";
   const skipText = skipped.slice(0, 120).map(row => row.file + ": " + row.reason).join("\n") +
     (skipped.length > 120 ? "\nAdditional skipped entries are available through listLoRAs pagination." : "");
-  if (!candidates.length) {
-    host.setupForm("Krea2 — read-only inventory scan", function () {
-      return [this.section("No ready candidates", note, [this.plainText(skipText),
-        this.plainText("Refresh Generate inventory or explicitly Prepare missing files, then reload Setup. Nothing will be submitted.")])];
-    }, "Finish preview");
-    console.log("Inventory scan finished with zero candidate jobs; nothing submitted.");
-    return;
-  }
+  if (!candidates.length) throw new Error("No ready LoRAs. Refresh inventory or Prepare files, then reload Setup.");
 
-  for (let edit = 0; edit < 24; edit++) {
-    const ratio = numberInput(get("ratio", 0), "Saved ratio", 0, OUTPUT_RATIOS.length - 1, true);
-    const ratioOrder = [ratio].concat(OUTPUT_RATIOS.map((_, index) => index).filter(index => index !== ratio));
-    const selectedIds = Array.isArray(saved.selected) ? saved.selected : candidates.slice(0, 8).map(row => row.file);
-    const input = host.setupForm("Krea2 mixer — settings and inventory", function () {
-      return [
-        this.section("Prompts", "Separate prompts with |. All settings stay editable before Run Script.", [
-          this.textField(get("prompts", String(prompts.prompt || "")), "Prompts", true, 160)
-        ]),
-        this.section("Negative prompt", "Used exactly as entered for every job.", [
-          this.textField(get("negative", String(prompts.negativePrompt || "")), "Negative prompt", true, 72)
-        ]),
-        this.section("Mixing", "Comparison enumerates each single/pair for every prompt. The global job number supports explicit chunks.", [
-          this.textField(String(get("images", 1)), "Images per prompt (random mode, 1–100)", false),
-          this.textField(String(get("count", 2)), "LoRAs per image (1–8; comparison 1–2)", false),
-          this.textField(String(get("strength", 0.99)), "Total strength (0.01–2)", false),
-          this.textField(String(get("blendSeed", 42)), "Blend seed", false),
-          this.textField(String(get("imageSeed", 422)), "Image seed", false),
-          this.switch(get("increment", false), "Increment image seed (random mode)"),
-          { ...this.menu(get("mode", 0), ["Random mixer", "Compare singles/pairs"]), title: "Generation mode" }
-        ]),
-        this.section("Output", "Reduced-fidelity DTFlow preset: inherit Generate model/steps; unsupported preset fields stay unchanged.", [
-          this.slider(get("width", 768), this.slider.fractional(0), 256, 2048, "Width"),
-          { ...this.image(ratioOrder.map(index => RATIO_ICONS[index]), 72, true), title: "Aspect ratio" },
-          { ...this.menu(get("sampler", 0), OUTPUT_SAMPLERS.map(item => item.name)), title: "Sampler" },
-          this.slider(get("guidance", 1), this.slider.fractional(1), 0, 10, "Guidance")
-        ]),
-        this.section("Chunk", "At most " + cap + " jobs in this run. Start is global, never advanced automatically. Inspect existing attempts before any continuation.", [
-          this.textField(String(get("start", 1)), "First global job (1–10000)", false),
-          this.textField(String(get("chunk", cap)), "Jobs in this chunk (1–" + cap + ")", false),
-          this.slider(get("concurrency", 4), this.slider.fractional(0), 1, 10, "Requested concurrency")
-        ]),
-        this.section("LoRA candidates", note,
-          candidates.map(row => this.switch(selectedIds.includes(row.file), row.name + " — " + row.file +
-            " [" + (row.listed ? "listed" : "") + (row.prepared ? " prepared" : "") + "; " + row.compatibility + "]"))),
-        this.section("Preferences", "Source-version authoring settings, not execution state or automatic consent. No PNG markers.", [
-          this.switch(get("remember", true), "Save settings after Preview plan")
-        ]),
-        this.section("Readiness", note + "\n" + skipText, [
-          this.switch(get("allowUnknown", false), "Allow selected LoRAs whose compatibility metadata is unknown")
-        ])
-      ];
-    });
-    if (!input || input.length !== 8 || input[5].length !== candidates.length) throw new Error("Unexpected mixer answers; nothing was submitted.");
-    const s = {
-      schemaVersion: 1,
-      prompts: String(input[0][0]), negative: String(input[1][0]),
-      images: numberInput(input[2][0], "Images per prompt", 1, 100, true),
-      count: numberInput(input[2][1], "LoRAs per image", 1, 8, true),
-      strength: numberInput(input[2][2], "Total strength", 0.01, 2, false),
-      blendSeed: numberInput(input[2][3], "Blend seed", 0, 4294967295, true),
-      imageSeed: numberInput(input[2][4], "Image seed", 0, 4294967295, true),
-      increment: switchInput(input[2][5], "Increment seed"),
-      mode: numberInput(input[2][6], "Generation mode", 0, 1, true),
-      width: Number(input[3][0]), ratio: ratioOrder[numberInput(input[3][1], "Ratio", 0, ratioOrder.length - 1, true)],
-      sampler: numberInput(input[3][2], "Sampler", 0, OUTPUT_SAMPLERS.length - 1, true),
-      guidance: numberInput(input[3][3], "Guidance", 0, 10, false),
-      start: numberInput(input[4][0], "First job", 1, 10000, true),
-      chunk: numberInput(input[4][1], "Chunk size", 1, cap, true),
-      concurrency: numberInput(input[4][2], "Concurrency", 1, 10, true),
-      selected: candidates.filter((row, index) => switchInput(input[5][index], row.file)).map(row => row.file),
-      remember: switchInput(input[6][0], "Remember settings"),
-      allowUnknown: switchInput(input[7][0], "Unknown compatibility")
-    };
-    const parts = s.prompts.split("|").map(value => value.trim()).filter(Boolean);
-    if (!parts.length) throw new Error("Enter at least one prompt; nothing was submitted.");
-    const pool = candidates.filter(row => s.selected.includes(row.file));
-    if (pool.length < s.count) throw new Error("Select at least LoRAs-per-image candidates; nothing was submitted.");
-    if (!s.allowUnknown && pool.some(row => row.compatibility === "unknown"))
-      throw new Error("Selected LoRAs have unknown compatibility. Review the explicit readiness option; nothing was submitted.");
-    if (s.mode && s.count > 2) throw new Error("Comparison supports singles or pairs only.");
-    const perPrompt = s.mode ? (s.count === 1 ? pool.length : pool.length * (pool.length - 1) / 2) : s.images;
-    const total = parts.length * perPrompt;
-    if (total > 10000 || s.start > total) throw new Error("Plan must contain 1–10000 jobs and include the chosen start number.");
-    if (!s.mode && s.increment && s.imageSeed + total - 1 > 4294967295) throw new Error("Image seed would overflow.");
-    const combinations = s.mode ? comparisonBlends(pool, s.count, s.strength) : null;
-    const dimensions = outputSize(s.width, s.ratio);
-    const common = clone(base);
-    Object.assign(common, {width: dimensions.width, height: dimensions.height,
-      sampler: OUTPUT_SAMPLERS[s.sampler].id, guidanceScale: s.guidance, seed: 0, loras: []});
-    const identity = {schemaVersion: 1, common: common, prompts: parts, negative: s.negative,
-      mode: s.mode, images: s.mode ? null : s.images, count: s.count, strength: s.strength,
-      blendSeed: s.mode ? null : s.blendSeed, imageSeed: s.imageSeed,
-      increment: s.mode ? false : s.increment, selected: s.selected};
-    const planId = host.planId(identity);
-    const end = Math.min(total, s.start + s.chunk - 1);
-    const jobs = [];
-    for (let index = s.start - 1; index < end; index++) {
-      const config = clone(common);
-      config.seed = s.imageSeed + (!s.mode && s.increment ? index : 0);
-      config.loras = s.mode ? clone(combinations[index % perPrompt]) : makeBlend(pool, s.count, s.strength, randomForJob(s.blendSeed, index));
-      jobs.push({configuration: config, prompt: parts[Math.floor(index / perPrompt)], negativePrompt: s.negative,
-        planId: planId, jobIndex: index + 1,
-        outputFile: "krea2_" + planId.slice(0, 12) + "_job" + String(index + 1).padStart(5, "0") + ".png"});
-    }
-    const changedPlan = saved.lastPlanId && saved.lastPlanId !== planId;
-    const continuationNote = s.start > 1 ? (changedPlan
-      ? "WARNING: plan identity changed since the saved preview. This is not continuation of the old plan."
-      : "Manual chunk: matching plan identity does not prove earlier jobs succeeded. Inspect existing attempts.") : "";
-    s.lastPlanId = planId;
-    saved = s;
-    let preferenceNote = "Settings not saved (Remember off).";
-    if (s.remember) {
-      try { host.savePreferences(s); preferenceNote = "Authoring settings saved for this exact source version."; }
-      catch (_) { preferenceNote = "Settings could not be saved; active inputs are not truncated. No automatic continuation."; }
-    }
-    const summary = "Plan " + planId + "\n" + total + " total jobs; this chunk " + s.start + "–" + end +
-      " (" + jobs.length + "/" + cap + " run allowance); requested concurrency " + s.concurrency +
-      ".\nModel " + common.model + "; steps " + common.steps + "; " + common.width + "×" + common.height +
-      "; sampler " + common.sampler + "; guidance " + common.guidanceScale + ".\n" + preferenceNote + "\n" + continuationNote +
-      "\nPREVIEW: no queue, provider session, generation or upload. Unknown metadata is not verified compatibility.";
-    const review = host.setupForm("Krea2 — exact chunk preview", function () {
-      return [
-        this.section("Plan", summary, []),
-        this.section("Prompts (pipe-separated, trim/empty rules applied)", "Each job references its 1-based prompt number.", [this.plainText(s.prompts)]),
-        this.section("Negative prompt", "Used for every job.", [this.plainText(s.negative)]),
-        this.section("Exact jobs in this chunk", "Global indices are stable across chunks with the same full plan ID.",
-          jobs.map(job => this.plainText(JSON.stringify({job: job.jobIndex,
-            prompt: Math.floor((job.jobIndex - 1) / perPrompt) + 1, seed: job.configuration.seed,
-            loras: job.configuration.loras, output: job.outputFile})))),
-        this.section("Next action", "Preview never queues. Generation needs the separate Run Script action.", [
-          { ...this.menu(0, ["Finish preview — no queue", "Edit settings", "Proceed to Run Script"]), title: "Next action" }
-        ])
-      ];
-    }, "Continue preview");
-    const action = numberInput(review[4][0], "Preview action", 0, 2, true);
-    if (action === 0) { console.log("Mixer preview complete; zero jobs submitted."); return; }
-    if (action === 1) continue;
-    requestFromUser("Krea2 — run reviewed chunk", "Run Script", function () {
-      return [this.plainText(summary), this.plainText("Run Script creates a queue and may consume cloud credits. " +
-        "Only jobs " + s.start + "–" + end + " will be admitted. Inspect prior attempts first: no automatic deduplication or replay protection is inferred from matching inputs.")];
-    });
-    if (host.planId(identity) !== planId)
-      throw new Error("Prepared LoRA content changed after preview. Nothing submitted; reload Setup and review the new plan.");
-    const results = pipeline.runBatch(jobs, s.concurrency);
-    if (!Array.isArray(results) || results.length !== jobs.length) throw new Error("Unexpected batch reply. Inspect existing attempts before restarting.");
-    results.forEach((result, index) => console.log("Global job " + jobs[index].jobIndex + ": " + result.status +
-      "; attempt " + (result.attemptId || "none")));
-    if (results.some(result => result.status !== "succeeded"))
-      throw new Error("Chunk has failed, unknown, save-failed or unstarted jobs. Inspect recorded attempts; do not rerun the chunk blindly.");
-    console.log(end < total ? "Chunk complete. Next global job is " + (end + 1) +
-      "; continuing is manual with the same plan ID after inspecting history." :
-      "Chunk reached the final plan job; this run does not verify any earlier chunks.");
-    return;
+  const ratio = numberInput(get("ratio", 0), "Saved ratio", 0, OUTPUT_RATIOS.length - 1, true);
+  const ratioOrder = [ratio].concat(OUTPUT_RATIOS.map((_, index) => index).filter(index => index !== ratio));
+  const selectedIds = Array.isArray(saved.selected) ? saved.selected : candidates.slice(0, 8).map(row => row.file);
+  const input = requestFromUser("Krea2 mixer", "Run Script", function () {
+    return [
+      this.section("Prompts", "Separate prompts with |.", [
+        this.textField(get("prompts", String(prompts.prompt || "")), "Prompts", true, 160)
+      ]),
+      this.section("Negative prompt", "Used exactly as entered for every job.", [
+        this.textField(get("negative", String(prompts.negativePrompt || "")), "Negative prompt", true, 72)
+      ]),
+      this.section("Mixing", "Comparison enumerates each single/pair for every prompt. The global job number supports explicit chunks.", [
+        this.textField(String(get("images", 1)), "Images per prompt (random mode, 1–100)", false),
+        this.textField(String(get("count", 2)), "LoRAs per image (1–8; comparison 1–2)", false),
+        this.textField(String(get("strength", 0.99)), "Total strength (0.01–2)", false),
+        this.textField(String(get("blendSeed", 42)), "Blend seed", false),
+        this.textField(String(get("imageSeed", 422)), "Image seed", false),
+        this.switch(get("increment", false), "Increment image seed (random mode)"),
+        { ...this.menu(get("mode", 0), ["Random mixer", "Compare singles/pairs"]), title: "Generation mode" }
+      ]),
+      this.section("Output", "Uses Generate’s model and steps.", [
+        this.slider(get("width", 768), this.slider.fractional(0), 256, 2048, "Width"),
+        { ...this.image(ratioOrder.map(index => RATIO_ICONS[index]), 72, true), title: "Aspect ratio" },
+        { ...this.menu(get("sampler", 0), OUTPUT_SAMPLERS.map(item => item.name)), title: "Sampler" },
+        this.slider(get("guidance", 1), this.slider.fractional(1), 0, 10, "Guidance")
+      ]),
+      this.section("Chunk", "At most " + cap + " jobs in this run. Start is global, never advanced automatically. Inspect existing attempts before any continuation.", [
+        this.textField(String(get("start", 1)), "First global job (1–10000)", false),
+        this.textField(String(get("chunk", cap)), "Jobs in this chunk (1–" + cap + ")", false),
+        this.slider(get("concurrency", 4), this.slider.fractional(0), 1, 10, "Requested concurrency")
+      ]),
+      this.section("LoRA candidates", note,
+        candidates.map(row => this.switch(selectedIds.includes(row.file), row.name + " — " + row.file +
+          " [" + (row.listed ? "listed" : "") + (row.prepared ? " prepared" : "") + "; " + row.compatibility + "]"))),
+      this.section("Preferences", "Saved for this script version.", [
+        this.switch(get("remember", true), "Remember settings")
+      ]),
+      this.section("Inventory notes", skipText, [
+        this.plainText("Unknown compatibility is allowed; backend checks still apply.")
+      ])
+    ];
+  });
+  if (!input || input.length !== 8 || input[5].length !== candidates.length) throw new Error("Unexpected mixer answers; nothing was submitted.");
+  const s = {
+    schemaVersion: 1,
+    prompts: String(input[0][0]), negative: String(input[1][0]),
+    images: numberInput(input[2][0], "Images per prompt", 1, 100, true),
+    count: numberInput(input[2][1], "LoRAs per image", 1, 8, true),
+    strength: numberInput(input[2][2], "Total strength", 0.01, 2, false),
+    blendSeed: numberInput(input[2][3], "Blend seed", 0, 4294967295, true),
+    imageSeed: numberInput(input[2][4], "Image seed", 0, 4294967295, true),
+    increment: switchInput(input[2][5], "Increment seed"),
+    mode: numberInput(input[2][6], "Generation mode", 0, 1, true),
+    width: Number(input[3][0]), ratio: ratioOrder[numberInput(input[3][1], "Ratio", 0, ratioOrder.length - 1, true)],
+    sampler: numberInput(input[3][2], "Sampler", 0, OUTPUT_SAMPLERS.length - 1, true),
+    guidance: numberInput(input[3][3], "Guidance", 0, 10, false),
+    start: numberInput(input[4][0], "First job", 1, 10000, true),
+    chunk: numberInput(input[4][1], "Chunk size", 1, cap, true),
+    concurrency: numberInput(input[4][2], "Concurrency", 1, 10, true),
+    selected: candidates.filter((row, index) => switchInput(input[5][index], row.file)).map(row => row.file),
+    remember: switchInput(input[6][0], "Remember settings")
+  };
+  const parts = s.prompts.split("|").map(value => value.trim()).filter(Boolean);
+  if (!parts.length) throw new Error("Enter at least one prompt; nothing was submitted.");
+  const pool = candidates.filter(row => s.selected.includes(row.file));
+  if (pool.length < s.count) throw new Error("Select at least LoRAs-per-image candidates; nothing was submitted.");
+  const unknownCount = pool.filter(row => row.compatibility === "unknown").length;
+  if (s.mode && s.count > 2) throw new Error("Comparison supports singles or pairs only.");
+  const perPrompt = s.mode ? (s.count === 1 ? pool.length : pool.length * (pool.length - 1) / 2) : s.images;
+  const total = parts.length * perPrompt;
+  if (total > 10000 || s.start > total) throw new Error("Plan must contain 1–10000 jobs and include the chosen start number.");
+  if (!s.mode && s.increment && s.imageSeed + total - 1 > 4294967295) throw new Error("Image seed would overflow.");
+  const combinations = s.mode ? comparisonBlends(pool, s.count, s.strength) : null;
+  const dimensions = outputSize(s.width, s.ratio);
+  const common = clone(base);
+  Object.assign(common, {width: dimensions.width, height: dimensions.height,
+    sampler: OUTPUT_SAMPLERS[s.sampler].id, guidanceScale: s.guidance, seed: 0, loras: []});
+  const identity = {schemaVersion: 1, common: common, prompts: parts, negative: s.negative,
+    mode: s.mode, images: s.mode ? null : s.images, count: s.count, strength: s.strength,
+    blendSeed: s.mode ? null : s.blendSeed, imageSeed: s.imageSeed,
+    increment: s.mode ? false : s.increment, selected: s.selected};
+  const planId = host.planId(identity);
+  const end = Math.min(total, s.start + s.chunk - 1);
+  const jobs = [];
+  for (let index = s.start - 1; index < end; index++) {
+    const config = clone(common);
+    config.seed = s.imageSeed + (!s.mode && s.increment ? index : 0);
+    config.loras = s.mode ? clone(combinations[index % perPrompt]) : makeBlend(pool, s.count, s.strength, randomForJob(s.blendSeed, index));
+    jobs.push({configuration: config, prompt: parts[Math.floor(index / perPrompt)], negativePrompt: s.negative,
+      planId: planId, jobIndex: index + 1,
+      outputFile: "krea2_" + planId.slice(0, 12) + "_job" + String(index + 1).padStart(5, "0") + ".png"});
   }
-  throw new Error("Too many preview edits; reload Setup. Nothing was submitted.");
+  const changedPlan = saved.lastPlanId && saved.lastPlanId !== planId;
+  const continuationNote = s.start > 1 ? (changedPlan
+    ? "Plan changed; this is not continuation of the previous plan."
+    : "Manual chunk: matching plan identity does not prove earlier jobs succeeded. Inspect existing attempts.") : "";
+  s.lastPlanId = planId;
+  saved = s;
+  let preferenceNote = "Settings not saved (Remember off).";
+  if (s.remember) {
+    try { host.savePreferences(s); preferenceNote = "Authoring settings saved for this exact source version."; }
+    catch (_) { preferenceNote = "Settings could not be saved; active inputs are not truncated. No automatic continuation."; }
+  }
+  console.log("Plan " + planId + "; jobs " + s.start + "–" + end + "/" + total + ". " + preferenceNote + " " + continuationNote);
+  if (unknownCount) console.warn("Compatibility unknown for " + unknownCount + " selected LoRAs.");
+  const results = pipeline.runBatch(jobs, s.concurrency);
+  if (!Array.isArray(results) || results.length !== jobs.length) throw new Error("Unexpected batch reply. Inspect existing attempts before restarting.");
+  results.forEach((result, index) => console.log("Global job " + jobs[index].jobIndex + ": " + result.status +
+    "; attempt " + (result.attemptId || "none")));
+  if (results.some(result => result.status !== "succeeded"))
+    throw new Error("Chunk has failed, unknown, save-failed or unstarted jobs. Inspect recorded attempts; do not rerun the chunk blindly.");
+  console.log(end < total ? "Chunk complete. Next global job is " + (end + 1) +
+    "; continuing is manual with the same plan ID after inspecting history." :
+    "Chunk reached the final plan job; this run does not verify any earlier chunks.");
+  return;
 }
 
 if (HAS_DTFLOW_BATCH && typeof globalThis.__dtflowScriptHost.listLoRAs === "function" &&
-    typeof globalThis.__dtflowScriptHost.setupForm === "function") {
+    typeof globalThis.__dtflowScriptHost.planId === "function") {
   runDtflowMixer();
   return;
 }

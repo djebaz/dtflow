@@ -66,11 +66,11 @@ STATES = (
     "scripts_setup_crop_multiple",
     "scripts_setup_parallel_batch",
     "scripts_setup_parallel_batch_narrow",
-    "scripts_mixer_setup_preview",
-    "scripts_mixer_exact_plan",
-    "scripts_mixer_exact_plan_narrow",
-    "scripts_mixer_run_review",
-    "scripts_mixer_preview_complete",
+    "scripts_mixer_setup",
+    "scripts_mixer_setup_narrow",
+    "scripts_editor_parser_limit",
+    "scripts_editor_parser_limit_narrow",
+    "scripts_inspect_dtflow_helpers",
 )
 
 
@@ -129,7 +129,8 @@ def render_scripts_states(out: Path, *, window_factory: Callable, state_names=ST
                 "scripts_editor_narrow",
                 "scripts_setup_narrow",
                 "scripts_setup_parallel_batch_narrow",
-                "scripts_mixer_exact_plan_narrow",
+                "scripts_mixer_setup_narrow",
+                "scripts_editor_parser_limit_narrow",
             )
             window.form.resize(800, 680) if narrow else window.form.resize(1600, 1000)
             window._show_scripts()
@@ -160,11 +161,11 @@ def render_scripts_states(out: Path, *, window_factory: Callable, state_names=ST
                 "scripts_setup_crop_multiple": "scripts_form_default",
                 "scripts_setup_parallel_batch": "scripts_form_default",
                 "scripts_setup_parallel_batch_narrow": "scripts_form_default",
-                "scripts_mixer_setup_preview": "scripts_form_default",
-                "scripts_mixer_exact_plan": "scripts_form_default",
-                "scripts_mixer_exact_plan_narrow": "scripts_form_default",
-                "scripts_mixer_run_review": "scripts_form_default",
-                "scripts_mixer_preview_complete": "scripts_form_default",
+                "scripts_mixer_setup": "scripts_form_default",
+                "scripts_mixer_setup_narrow": "scripts_form_default",
+                "scripts_editor_parser_limit": "scripts_editor_syntax_error",
+                "scripts_editor_parser_limit_narrow": "scripts_editor_syntax_error",
+                "scripts_inspect_dtflow_helpers": "scripts_imported_supported",
             }.get(state, state)
             if state in (
                 "scripts_queued",
@@ -236,27 +237,32 @@ def render_scripts_states(out: Path, *, window_factory: Callable, state_names=ST
                     {"type": "textField", "label": "First global job", "value": "1"},
                     {"type": "textField", "label": "Jobs in this chunk", "value": "2"},
                 ]
-                if state != "scripts_mixer_setup_preview":
-                    fields = [
-                        {"type": "section", "label": "Exact chunk preview"},
-                        {"type": "plainText", "text": "Plan " + "0123456789abcdef" * 4 + "\n20 total jobs; this chunk 1–2. No queue or provider work."},
-                        {"type": "plainText", "text": "Model fake-fixture; 512×512; 8 steps; prompt 1: offline fixture."},
-                        {"type": "plainText", "text": 'Job 1: seed 422; fake-soft @ 0.99. Job 2: seed 423; fake-soft @ 0.99.'},
-                        {"type": "menu", "label": "Next action", "options": ["Finish preview", "Edit settings", "Proceed to Run Script"], "value": "Finish preview"},
-                    ]
+                fields.insert(0, {"type": "textField", "label": "Prompts", "value": "Offline fixture"})
+                fields.insert(1, {"type": "section", "label": "Mixing"})
+                fields.insert(2, {"type": "textField", "label": "LoRAs per image", "value": "1"})
+                fields.append({"type": "plainText", "text": "Unknown compatibility is allowed; backend checks still apply."})
                 window.scripts.form.set_fields(fields)
                 window.scripts.show_view(1)
-                window.scripts.form_note.setText("Offline fixture. Preview is not queue admission.")
+                window.scripts.form_note.setText("Ready to run. Nothing queued.")
                 window.scripts.form_note.show()
-                window.scripts.start.setText("Preview plan" if state == "scripts_mixer_setup_preview" else "Continue preview")
-                if state == "scripts_mixer_run_review":
-                    window.scripts.form_note.setText("Run Script alone creates a queue; cloud generation may use credits.")
-                    window.scripts.start.setText("Run Script")
-                elif state == "scripts_mixer_preview_complete":
-                    window.scripts.form.hide()
-                    window.scripts.form_note.setText("Preview complete. No queue or provider work. Reload Setup to edit another plan.")
-                    window.scripts.start.setText("Preview complete")
-                    window.scripts.start.setEnabled(False)
+                window.scripts.start.setText("Run Script")
+            elif state in ("scripts_editor_parser_limit", "scripts_editor_parser_limit_narrow"):
+                from dtflow.scripting.syntax import parser_failure
+
+                message = parser_failure("the bounded parser stack limit was reached.")
+                window.scripts.editor.set_error(1, 1, message)
+                window.scripts.status.setText("Analysis incomplete · no source location was established")
+                window.scripts.hook_status.setText("Analysis incomplete")
+                window.scripts.drawer_summary.setText("Analysis incomplete")
+                window.scripts.inspect_summary.setText(message)
+            elif state == "scripts_inspect_dtflow_helpers":
+                window.scripts.show_view(0)
+                window.scripts.status.setText("Syntax valid · static inspection limited")
+                window.scripts._set_inspect_banner(
+                    "Static inspection limited",
+                    "Dynamic calls are checked at run time.",
+                    "warning",
+                )
             elif state == "scripts_editor_discard_confirm":
                 window.scripts.editor.discard.click()
             elif state == "scripts_setup_followup":

@@ -416,23 +416,33 @@ class ScriptEditor(QWidget):
 
     def set_error(self, line: int, column: int, message: str):
         """Show a visual diagnostic; the caller supplies actual parser evidence."""
-        block = self.editor.document().findBlockByNumber(max(0, line - 1))
-        if block.isValid():
-            selection = QTextEdit.ExtraSelection()
-            selection.cursor = QTextCursor(block)
-            selection.cursor.select(QTextCursor.SelectionType.LineUnderCursor)
-            selection.format.setBackground(QColor(load_tokens()["color.dangerSurface"]))
-            selection.format.setProperty(QTextFormat.Property.FullWidthSelection, True)
-            selection.format.setUnderlineStyle(QTextCharFormat.UnderlineStyle.WaveUnderline)
-            selection.format.setUnderlineColor(QColor(load_tokens()["color.error"]))
-            self.editor.setExtraSelections([selection])
-        self.editor.error_line = line
+        from dtflow.scripting.syntax import is_parser_failure
+
+        self._checked_source = None
+        self._error_location = None
+        self.editor.error_line = None
+        self.editor.setExtraSelections([])
+        self.go_to_error.hide()
+        if is_parser_failure(message):
+            self.diagnostic.setText(f"● Analysis incomplete · {message}")
+        else:
+            block = self.editor.document().findBlockByNumber(max(0, line - 1))
+            if block.isValid():
+                selection = QTextEdit.ExtraSelection()
+                selection.cursor = QTextCursor(block)
+                selection.cursor.select(QTextCursor.SelectionType.LineUnderCursor)
+                selection.format.setBackground(QColor(load_tokens()["color.dangerSurface"]))
+                selection.format.setProperty(QTextFormat.Property.FullWidthSelection, True)
+                selection.format.setUnderlineStyle(QTextCharFormat.UnderlineStyle.WaveUnderline)
+                selection.format.setUnderlineColor(QColor(load_tokens()["color.error"]))
+                self.editor.setExtraSelections([selection])
+            self.editor.error_line = line
+            self._error_location = (line, column)
+            self.diagnostic.setText(f"● Syntax error · line {line}, column {column} · {message}")
+            self.go_to_error.setText(f"Go to line {line}")
+            self.go_to_error.show()
         self.editor.gutter.update()
-        self.diagnostic.setText(f"● Syntax error · line {line}, column {column} · {message}")
         self.diagnostic.setProperty("feedbackState", "error")
         self.diagnostic.style().unpolish(self.diagnostic)
         self.diagnostic.style().polish(self.diagnostic)
-        self._error_location = (line, column)
-        self.go_to_error.setText(f"Go to line {line}")
-        self.go_to_error.show()
         self.save_new.setEnabled(False)

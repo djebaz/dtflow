@@ -288,9 +288,6 @@ class ScriptsPage:
         self._setup_generation = 0
         self._setup_reading = False
         self._setup_ready = False
-        self._setup_preview = False
-        self._setup_preview_done = False
-        self._setup_preview_label = "Preview plan"
         self._setup_problem = None
         self._setup_timer = QTimer(designer)
         self._setup_timer.setInterval(500)
@@ -1359,19 +1356,10 @@ class ScriptsPage:
         elif self._live_mode() and (self._setup_id is not None or self._starting or self._setup_problem):
             ready = bool(self._setup_problem or self._live_form_error) or (
                 self._setup_ready
-                and not self._setup_preview_done
                 and not self.live_fields.busy
                 and (self._live_prompt_id is None or self.live_fields.identity == self._live_prompt_id)
             )
-            caption = (
-                "Retry Setup"
-                if self._setup_problem or self._live_form_error
-                else "Preview complete"
-                if self._setup_preview_done
-                else self._setup_preview_label
-                if self._setup_preview
-                else "Run Script"
-            )
+            caption = "Retry Setup" if self._setup_problem or self._live_form_error else "Run Script"
         elif self._live_mode():
             ready = self._run_state == "waiting_input" and (
                 self._live_form_error or (self.live_fields.identity is not None and not self.live_fields.busy)
@@ -1384,17 +1372,12 @@ class ScriptsPage:
         else:
             ready = ready or (self._reference_mode and self._run_state == "waiting_input")
             caption = "Continue" if self._run_state == "waiting_input" else "Run Script"
-        self.start.setText(
-            self.start.fontMetrics().elidedText(caption, Qt.TextElideMode.ElideRight, 160)
-            if self._setup_preview else caption
-        )
+        self.start.setText(caption)
         self.start.setAccessibleName(caption)
         self.start.setEnabled(bool(ready))
         self.start.setToolTip(
             "Prepare the actual script form in Setup. Generation stays blocked until Run Script."
             if view == 0
-            else "Advance this preview locally, without queueing or provider calls."
-            if self._setup_preview and self._setup_id is not None
             else "Submit this form to continue the same prepared script execution; generation may use credits."
             if self._live_mode() and ready
             else "Select a supported, saved script. Starting needs a free queue."
@@ -1711,9 +1694,7 @@ class ScriptsPage:
                     else ""
                 )
                 + (
-                    "Preview advances locally; no queue or provider work. Generation still needs a separate Run Script."
-                    if preparing and self._setup_preview else
-                    "Setup is ready; no job is queued. Run Script will queue this execution with your answers."
+                    "Ready to run. Nothing queued."
                     if preparing
                     else "Review and submit to continue the running script. File inputs require a new selection. "
                     "Cancel input stops this script; it does not cancel submitted remote work."
@@ -1884,9 +1865,8 @@ class ScriptsPage:
         if self.run_start is None:
             return "Start is not connected in this window."
         return (
-            "Setup preloads bounded JavaScript and cached inventory without a queue item or backend connection. "
-            "Run Script creates the queue item and permits generation using the settings captured at Setup, "
-            f"up to {self.cap.value()} generations. Cloud generations may use credits. Stop ends local waiting only."
+            f"Run Script queues up to {self.cap.value()} generations. Cloud credits may apply. "
+            "Stop ends local waiting only."
         )
 
     def _library_store(self):
@@ -2080,7 +2060,7 @@ class ScriptsPage:
         self._current_hooks = tuple((row.api, row.state, row.detail) for row in inspection.hooks)
         syntax_ok = inspection.syntax_error is None
         label = (
-            f"● {'Syntax valid' if syntax_ok else 'Syntax error'}   ● {len(inspection.hooks)} API calls observed   ● "
+            f"● {'Syntax valid' if syntax_ok else inspection.title}   ● {len(inspection.hooks)} API calls observed   ● "
             + inspection.title
         )
         self.status.setText(label)
@@ -2091,6 +2071,7 @@ class ScriptsPage:
             _feedback(widget, inspection.verdict)
         self.drawer_summary.setText(inspection.title)
         self.inspect_summary.setText(inspection.summary)
+        self.inspect_summary.setToolTip("\n".join(inspection.warnings))
         dynamic = inspection.report["dynamic_constructs"]
         facts = {
             "Header": f"{version.name} · API {inspection.api_version or 'header missing'}",
@@ -2102,12 +2083,9 @@ class ScriptsPage:
         }
         for name, widget in self.inspection_values.items():
             widget.setText(facts[name])
-        supported = sum(row.state == "supported" for row in inspection.hooks)
-        deferred = sum(row.state == "deferred" for row in inspection.hooks)
-        blocked = sum(row.state == "unsupported" for row in inspection.hooks)
         self._set_inspect_banner(
             inspection.title,
-            f"{supported} hooks supported, {deferred} deferred, {blocked} unsupported. Setup preloads separately without a queue or generation.",
+            inspection.summary,
             inspection.verdict,
         )
         try:
@@ -2349,8 +2327,6 @@ class ScriptsPage:
             cancel_setup(self._state_dir(), self._setup_id)
         self._setup_id = None
         self._setup_ready = False
-        self._setup_preview = False
-        self._setup_preview_done = False
         self._setup_problem = None
         self._setup_reading = False
         self._starting = False
@@ -2396,16 +2372,10 @@ class ScriptsPage:
                 self.form_note.show()
             else:
                 self._setup_ready = result["ready"]
-                self._setup_preview = result.get("preparation_only", False)
-                self._setup_preview_done = result.get("preview_completed", False)
-                if self._setup_preview:
-                    self._setup_preview_label = result["prompt"]["confirm"] or "Preview plan"
                 if result["prompt"] is not None:
                     self._sync_live_prompt("waiting_input", {"run_id": identity, "prompt": result["prompt"]})
                 elif self._setup_ready:
                     self.form_note.setText(
-                        "Preview complete. No queue or provider work. Reload Setup to edit another plan."
-                        if self._setup_preview_done else
                         "This script has no input parameters. Run Script will create its queue item."
                     )
                     self.form_note.show()
@@ -2426,32 +2396,6 @@ class ScriptsPage:
             return
         self.live_fields.set_submitting(True)
         token = self._setup_generation
-
-        if self._setup_preview:
-            from dtflow.services.script_setup import answer_preparation
-
-            def previewed(result, failure):
-                if token != self._setup_generation:
-                    return
-                self.live_fields.set_submitting(False)
-                if failure is not None:
-                    self._live_form_problem(str(failure))
-                else:
-                    self._setup_ready = False
-                    self._setup_preview = False
-                    self._live_prompt_id = None
-                    self.live_fields.clear_request()
-                    self.waiting_form.hide()
-                    self.form_note.setText("Preparing the exact plan locally. No queue or provider work.")
-                    self.form_note.show()
-                    self._setup_timer.start()
-                    self._poll_setup()
-                self._refresh_readiness()
-
-            self.owner.runner.submit(
-                asyncio.to_thread(answer_preparation, self._state_dir(), self._setup_id, ordinal, answers), previewed
-            )
-            return
 
         def started(result, failure):
             if token != self._setup_generation:

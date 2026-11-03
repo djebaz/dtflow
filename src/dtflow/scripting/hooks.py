@@ -45,7 +45,6 @@ HOOKS: dict[str, HookSpec] = dict(
         _hook("scriptRunLimits", IMPLEMENTED, "#216", "captured run generation ceiling"),
         _hook("loadScriptPreferences", IMPLEMENTED, "#216", "source-version authoring preferences, no execution state"),
         _hook("saveScriptPreferences", IMPLEMENTED, "#216", "explicit form-reviewed bounded preference write"),
-        _hook("prepareScriptForm", IMPLEMENTED, "#216", "advance preparation only; generation still admission-gated"),
         _hook("fingerprintScriptPlan", IMPLEMENTED, "#216", "bounded source-version plan identity, no dispatch"),
         _hook("existingPrompts", IMPLEMENTED, "#114", "Generate prompt and negative prompt"),
         _hook(

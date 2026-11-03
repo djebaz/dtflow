@@ -12,7 +12,7 @@ Forms preserve nested section answer arrays. `image` displays supplied raster im
 
 ## Optional parallel batches
 
-The [portable Krea2 adaptation guide](krea2-mixer.md) documents PR #219's cached LoRA enumeration, zero-queue preparation preview, source-version preferences and explicit bounded chunks. Its DTFlow-only helpers are feature-detected; the original Draw Things fallback and owner acceptance boundaries remain separate.
+The [portable Krea2 adaptation guide](krea2-mixer.md) documents PR #219's cached LoRA enumeration, single-form Setup, source-version preferences and explicit bounded chunks. Its DTFlow-only helpers are feature-detected; the original Draw Things fallback and owner acceptance boundaries remain separate.
 
 `pipeline.runBatch(jobs, maxConcurrent)` is a DTFlow extension, not an upstream Draw Things API. Ordinary `pipeline.run()` remains sequential. Each job accepts the existing `configuration`, `prompt` and `negativePrompt` values, plus an optional sandbox-relative PNG `outputFile`. Masks are unsupported. Jobs are snapshotted and validated before any batch child is linked or submitted; backend/inventory/preflight failures can still occur later.
 

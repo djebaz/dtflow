@@ -167,8 +167,6 @@ class ScriptHost:
         self.reserve_child, self.release_child = reserve_child, release_child
         self.available_assets = available_assets
         self.source_sha256 = source_sha256
-        self.preparation_ordinals: set[int] = set()
-        self._preparation_next = False
         self._script_inventory = None
         self._preferences_allowed = False
         self.run_id = run_id
@@ -193,7 +191,6 @@ class ScriptHost:
             "scriptRunLimits": lambda: {"maxGenerations": self.max_generations},
             "loadScriptPreferences": self.load_preferences,
             "saveScriptPreferences": self.save_preferences,
-            "prepareScriptForm": self.prepare_form,
             "fingerprintScriptPlan": self.plan_fingerprint,
             "existingPrompts": self.existing_prompts,
             "generateImage": self.generate_image,
@@ -319,23 +316,16 @@ class ScriptHost:
     def _admit_generation(self) -> None:
         """Wait for explicit Run Script consent and any window-owned preparation handoff."""
         if not self._start_permitted:
-            # A builder can call generation before publishing its intended
-            # preparation form. Synthetic admission consent is never preview.
-            preparation_next = self._preparation_next
-            self._preparation_next = False
-            try:
-                self.request_from_user(
-                    "Ready to run script",
-                    "Run Script",
-                    [
-                        {
-                            "type": "plainText",
-                            "value": "This script requests generation before an input form. Review the captured settings and press Run Script to permit generation.",
-                        }
-                    ],
-                )
-            finally:
-                self._preparation_next = preparation_next
+            self.request_from_user(
+                "Ready to run script",
+                "Run Script",
+                [
+                    {
+                        "type": "plainText",
+                        "value": "This script requests generation before an input form. Review the captured settings and press Run Script to permit generation.",
+                    }
+                ],
+            )
         while self._admission_gate is not None and not self._admission_gate.wait(POLL_SECONDS):
             if self.cancel.is_set():
                 raise ScriptCancelled()
@@ -675,12 +665,6 @@ class ScriptHost:
             raise ValueError("Answer a form explicitly before saving script preferences.")
         return preferences(self.sandbox.parent.parent, self.source_sha256, value=value, write=True)
 
-    def prepare_form(self, enabled: bool = True) -> None:
-        """Mark only the next actual form as locally answerable before queue admission."""
-        if type(enabled) is not bool:
-            raise ValueError("Preparation-form flag must be boolean.")
-        self._preparation_next = enabled
-
     def plan_fingerprint(self, value) -> str:
         if not isinstance(value, dict):
             raise ValueError("Script plan identity must be a JSON object.")
@@ -704,11 +688,6 @@ class ScriptHost:
         self._preferences_allowed = False
         components = list(components)
         validate_components(components)
-        if self._preparation_next:
-            if not isinstance(confirm, str) or len(confirm) > 64:
-                raise ValueError("Preview action captions must be text within 64 characters.")
-            self.preparation_ordinals.add(self._forms + 1)
-            self._preparation_next = False
         source = "file" if self._answers is not None else "initial"
         if self._answers is None and self._ask is not None:
             source = "user"
@@ -765,7 +744,7 @@ class ScriptHost:
             resolved = resolve_form_inputs(self.sandbox.parent.parent, self.run_id, self._forms, components, answers)
             if self.cancel.is_set():
                 raise ScriptCancelled()
-            self._start_permitted = self._forms not in self.preparation_ordinals
+            self._start_permitted = True
             self._preferences_allowed = True
             return resolved
         self._preferences_allowed = source == "file"

@@ -91,7 +91,7 @@ See the [CLI reference](devdocs/guides/cli.md) for backends, options and example
 - [Desktop guide](devdocs/guides/desktop.md): connections, generation, images, logs and settings
 - [Queues and batch plans](devdocs/guides/queues.md): queue controls, concurrency and comparisons
 - [Scripts](devdocs/guides/scripts.md): Inspect > Setup > Run Script, optional bounded parallel batches and LoRA readiness
-- [Portable Krea2 mixer](devdocs/guides/krea2-mixer.md): cached LoRA discovery, non-submitting preview, saved settings and explicit chunks
+- [Portable Krea2 mixer](devdocs/guides/krea2-mixer.md): cached LoRA discovery, single-form Setup, saved settings and explicit chunks
 - [CLI reference](devdocs/guides/cli.md): automation and development interface
 - [Release notes](devdocs/releases/) and the [release roadmap](devdocs/plans/releases.md)
 

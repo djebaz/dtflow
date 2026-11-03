@@ -4143,7 +4143,7 @@ def main():
     ):
         state = Path(temporary)
         if wants("scripts"):
-            # Includes mixer preview/review, Setup, picker and discard fixtures; no JS/queues are started.
+            # Includes parser-limit, inspection, mixer and Setup fixtures; no JS/queues are started.
             from render_scripts_states import STATES as SCRIPT_STATES, render_scripts_states
 
             def script_window():
