@@ -4143,7 +4143,8 @@ def main():
     ):
         state = Path(temporary)
         if wants("scripts"):
-            from render_scripts_states import render_scripts_states
+            # Includes Setup, picker crop/result and button-only discard fixtures; no JS/queues are started.
+            from render_scripts_states import STATES as SCRIPT_STATES, render_scripts_states
 
             def script_window():
                 return MainWindow(
@@ -4153,7 +4154,7 @@ def main():
                     no_cache=True,
                 )
 
-            for screenshot in render_scripts_states(args.out, window_factory=script_window):
+            for screenshot in render_scripts_states(args.out, window_factory=script_window, state_names=SCRIPT_STATES):
                 report(screenshot)
             if args.category == "scripts":
                 summarize()

@@ -1993,10 +1993,97 @@ class QueuePage:
     def quick_create(self, action: str, *, count: int | None) -> None:
         self.create(action, count=count, quick=True)
 
+    def prepare_script(self, source, source_name, cap, done, *, inventory=None, expected_steps=None, owner=None):
+        """Prepare the form without creating/admitting a queue or opening any provider."""
+        from dtflow.services.script_setup import prepare_script
+
+        try:
+            request, name, endpoint, asset_ids = self._request_source()
+        except (ValidationError, FormError) as exc:
+            done(None, ValidationError(f"On Generate: {exc}"))
+            return
+        backend = {"name": name, "endpoint": endpoint, "scenario": "success", **self._simulation()}
+
+        async def work():
+            base = await bind_prepared(self._state, name, request, asset_ids)
+            return await prepare_script(
+                self._state,
+                source,
+                source_name,
+                base,
+                backend,
+                cap,
+                inventory=inventory,
+                expected_steps=expected_steps,
+                owner=owner,
+            )
+
+        self._runner.submit(work(), done)
+
+    def start_prepared_script(self, run_id, ordinal, answers, done):
+        """Run Script is the sole point that creates a queue for a preloaded form."""
+        from dtflow.services.script_setup import reserve_setup, release_setup
+        from dtflow.services.script_form_inputs import resolve_form_inputs
+        from dtflow.persistence.script_runs import read_open_prompt
+
+        if self.dispatching_here or self._activity.generating or self._runner.closed:
+            done(None, ValidationError("Finish the active generation or queue before Run Script."))
+            return
+        try:
+            _, current_name, current_endpoint, _ = self._request_source()
+        except (ValidationError, FormError) as exc:
+            done(None, ValidationError(f"On Generate: {exc}"))
+            return
+
+        async def work():
+            setup = reserve_setup(self._state, run_id)
+            try:
+                # A changed backend must not inherit a previous provider's authoring context.
+                if (current_name, current_endpoint) != (setup.backend["name"], setup.backend.get("endpoint")):
+                    raise ValidationError("The selected backend changed. Reload Setup before Run Script.")
+                if ordinal is not None:
+                    prompt = await asyncio.to_thread(read_open_prompt, self._state, run_id)
+                    if prompt is None or prompt.ordinal != ordinal:
+                        raise ValidationError("This prepared form has closed. Reload Setup.")
+                    await asyncio.to_thread(
+                        resolve_form_inputs, self._state, run_id, ordinal, prompt.components, answers
+                    )
+                return await create_script_queue(
+                    self._state,
+                    setup.backend,
+                    setup.source,
+                    setup.source_name,
+                    setup.base,
+                    max_generations=setup.cap,
+                    expected_steps=setup.expected_steps,
+                    require_start=True,
+                    prepared_run_id=run_id,
+                    setup_ordinal=ordinal,
+                    setup_answers=answers,
+                )
+            except BaseException:
+                release_setup(setup)
+                raise
+
+        def created(result, failure):
+            if failure is not None:
+                done(None, failure)
+                return
+            queue_id, actual_run = result
+            self._created_hook()
+            if self.dispatching_here or self._activity.generating:
+                done((queue_id, actual_run, "paused"), None)
+            else:
+                self._dispatch(queue_id, resume_fallback=None)
+                done((queue_id, actual_run, "started"), None)
+            self.refresh()
+
+        self._runner.submit(work(), created)
+
     def start_script(
         self, source: str, source_name: str, max_generations: int, done, expected_steps: int | None = None
     ) -> None:
-        """Scripts Start: save a one-item script queue from Generate's current text-to-image settings and dispatch it.
+        """Scripts Setup: prepare one script queue from Generate's captured settings, with generation gated by input.
 
         ``done(result, failure)`` gets ``(queue id, run id, "started" | "paused")``. Nothing is created while this window
         generates or dispatches; the script run is an ordinary queue the user can also see in Queues."""
@@ -2019,7 +2106,8 @@ class QueuePage:
                 source_name,
                 base,
                 max_generations=max_generations,
-                answers=[],  # the Scripts page has no form renderer yet: requestFromUser fails clearly, never waits
+                answers=None,  # interactive Scripts runs park on the persisted requestFromUser bridge
+                require_start=True,  # Setup may build forms, but generation needs explicit Run Script consent
                 expected_steps=expected_steps,
             )
 

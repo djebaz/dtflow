@@ -22,10 +22,10 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 log = logging.getLogger("dtflow.script")
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 PROMPT_POLL_SECONDS = 0.25
 MAX_PROMPT_JSON_CHARS = 1_000_000
-MAX_ANSWERS_JSON_CHARS = 1_000_000
+MAX_ANSWERS_JSON_CHARS = 6_000_000
 STATES = ("running", "completed", "failed", "stopped", "interrupted")
 TERMINAL = ("completed", "failed", "stopped", "interrupted")
 
@@ -160,6 +160,24 @@ class ScriptRunStore:
                 )
             if version < 2:  # schema 2 adds the mid-run input prompts; a v1 file keeps all of its rows
                 connection.executescript(_PROMPTS_SQL)
+            if version < 3:
+                connection.executescript("""
+                    CREATE TABLE IF NOT EXISTS script_prompt_inputs (
+                        token TEXT PRIMARY KEY,
+                        run_id TEXT NOT NULL REFERENCES script_runs(run_id),
+                        ordinal INTEGER NOT NULL,
+                        field_json TEXT NOT NULL,
+                        kind TEXT NOT NULL,
+                        record_json TEXT NOT NULL
+                    );
+                    CREATE TABLE IF NOT EXISTS script_form_answers (
+                        source_sha256 TEXT NOT NULL,
+                        form_sha256 TEXT NOT NULL,
+                        answers_json TEXT NOT NULL,
+                        updated_at TEXT NOT NULL,
+                        PRIMARY KEY (source_sha256, form_sha256)
+                    );
+                """)
                 connection.execute(f"PRAGMA user_version={SCHEMA_VERSION}")
             # A run is live while its owner holds the run's OS lock. Only runs whose lock is free were interrupted by a
             # crash; a second app instance sharing this state directory must not invalidate a live run.
@@ -314,6 +332,11 @@ class ScriptRunStore:
 
     def open_prompt(self, run_id: str, title: str, confirm: str, components: list) -> int:
         """Durably publish a form for the run and return its ordinal. Any earlier open prompt of the run is superseded."""
+        from dtflow.scripting.forms import validate_components
+
+        validate_components(components)
+        if any(not isinstance(x, str) or len(x) > 64_000 for x in (title, confirm)):
+            raise ScriptRunStoreError("Form title or confirmation exceeds its limit.")
         text = json.dumps(components, separators=(",", ":"))
         if len(text) > MAX_PROMPT_JSON_CHARS:
             raise ScriptRunStoreError("The form is too large.")
@@ -329,6 +352,8 @@ class ScriptRunStore:
             ordinal = connection.execute(
                 "SELECT COALESCE(MAX(ordinal), 0) + 1 FROM script_run_prompts WHERE run_id=?", (run_id,)
             ).fetchone()[0]
+            if ordinal > 128:
+                raise ScriptRunStoreError("This script run exceeded its 128-form limit.")
             connection.execute(
                 "INSERT INTO script_run_prompts (run_id, ordinal, title, confirm, components_json, state, created_at)"
                 " VALUES (?, ?, ?, ?, ?, 'open', ?)",
@@ -338,11 +363,37 @@ class ScriptRunStore:
 
     def answer_prompt(self, run_id: str, ordinal: int, answers: list) -> bool:
         """Record the answers of an open prompt; False (nothing changed) if it is no longer open."""
-        text = json.dumps(answers, separators=(",", ":"))
-        if len(text) > MAX_PROMPT_JSON_CHARS:
-            raise ScriptRunStoreError("The answers are too large.")
+        from dtflow.scripting.forms import (
+            MAX_ANSWER_BYTES,
+            bounded_json,
+            form_key,
+            recallable_answers,
+            validate_answers,
+        )
+
+        text = bounded_json(answers, MAX_ANSWER_BYTES)
         with closing(self._connect()) as connection, connection:
-            return (
+            connection.execute("BEGIN IMMEDIATE")
+            row = connection.execute(
+                "SELECT p.components_json, r.source_sha256 FROM script_run_prompts p"
+                " JOIN script_runs r USING (run_id)"
+                " WHERE p.run_id=? AND p.ordinal=? AND p.state='open' AND r.state='running'",
+                (run_id, ordinal),
+            ).fetchone()
+            if row is None:
+                return False
+
+            def origin(field, kind, token):
+                found = connection.execute(
+                    "SELECT 1 FROM script_prompt_inputs WHERE token=? AND run_id=? AND ordinal=?"
+                    " AND field_json=? AND kind=?",
+                    (token, run_id, ordinal, json.dumps(field), kind),
+                ).fetchone()
+                if found is None:
+                    raise ScriptRunStoreError("Selected input does not belong to this run, form and field.")
+
+            validate_answers(json.loads(row[0]), answers, origin=origin)
+            changed = (
                 connection.execute(
                     "UPDATE script_run_prompts SET state='answered', answer_json=?, answered_at=?"
                     " WHERE run_id=? AND ordinal=? AND state='open'",
@@ -350,6 +401,57 @@ class ScriptRunStore:
                 ).rowcount
                 == 1
             )
+            if changed:
+                connection.execute(
+                    "INSERT INTO script_form_answers VALUES (?, ?, ?, ?)"
+                    " ON CONFLICT(source_sha256, form_sha256) DO UPDATE SET"
+                    " answers_json=excluded.answers_json, updated_at=excluded.updated_at",
+                    (
+                        row[1],
+                        form_key(json.loads(row[0])),
+                        bounded_json(recallable_answers(json.loads(row[0]), answers), MAX_ANSWER_BYTES),
+                        _now(),
+                    ),
+                )
+                connection.execute(
+                    "DELETE FROM script_form_answers WHERE rowid NOT IN"
+                    " (SELECT rowid FROM script_form_answers ORDER BY updated_at DESC, rowid DESC LIMIT 128)"
+                )
+            return changed
+
+    def register_prompt_input(self, run_id: str, ordinal: int, field: tuple, kind: str, record: dict) -> str:
+        """Register a worker-created owned snapshot, only while its exact form is still open."""
+        token = "dtflow-input:" + uuid.uuid4().hex
+        with closing(self._connect()) as connection, connection:
+            connection.execute("BEGIN IMMEDIATE")
+            live = connection.execute(
+                "SELECT 1 FROM script_run_prompts p JOIN script_runs r USING(run_id)"
+                " WHERE p.run_id=? AND p.ordinal=? AND p.state='open' AND r.state='running'",
+                (run_id, ordinal),
+            ).fetchone()
+            if live is None:
+                raise ScriptRunStoreError("The input form has closed; selected files were not submitted.")
+            count = connection.execute(
+                "SELECT COUNT(*) FROM script_prompt_inputs WHERE run_id=?", (run_id,)
+            ).fetchone()[0]
+            if count >= 1024:
+                raise ScriptRunStoreError("This script run exceeded its 1024 owned-input selection limit.")
+            connection.execute(
+                "INSERT INTO script_prompt_inputs VALUES (?, ?, ?, ?, ?, ?)",
+                (token, run_id, ordinal, json.dumps(field), kind, json.dumps(record)),
+            )
+        return token
+
+    def prompt_input(self, run_id: str, ordinal: int, field: tuple, kind: str, token: str) -> dict:
+        with closing(self._connect()) as connection:
+            row = connection.execute(
+                "SELECT record_json FROM script_prompt_inputs"
+                " WHERE token=? AND run_id=? AND ordinal=? AND field_json=? AND kind=?",
+                (token, run_id, ordinal, json.dumps(field), kind),
+            ).fetchone()
+        if row is None:
+            raise ScriptRunStoreError("Selected input does not belong to this run, form and field.")
+        return json.loads(row[0])
 
     def cancel_prompts(self, run_id: str) -> None:
         """Resolve every open prompt of the run as cancelled (Stop, or the script ended)."""
@@ -357,6 +459,17 @@ class ScriptRunStore:
             connection.execute(
                 "UPDATE script_run_prompts SET state='cancelled', answered_at=? WHERE run_id=? AND state='open'",
                 (_now(), run_id),
+            )
+
+    def cancel_prompt(self, run_id: str, ordinal: int) -> bool:
+        with closing(self._connect()) as connection, connection:
+            return (
+                connection.execute(
+                    "UPDATE script_run_prompts SET state='cancelled', answered_at=?"
+                    " WHERE run_id=? AND ordinal=? AND state='open'",
+                    (_now(), run_id, ordinal),
+                ).rowcount
+                == 1
             )
 
     def prompt(self, run_id: str, ordinal: int) -> ScriptPrompt | None:
@@ -407,3 +520,26 @@ def read_open_prompt(directory: Path, run_id: str) -> ScriptPrompt | None:
                 return None
             raise
     return _prompt(row)
+
+
+def read_recalled_answers(directory: Path, run_id: str, components: list) -> list | None:
+    """Read-only suggestions for the exact source hash and complete descriptor fingerprint."""
+    from dtflow.scripting.forms import form_key, validate_answers
+
+    path = Path(directory) / "script_runs.sqlite3"
+    if not path.is_file():
+        return None
+    with closing(sqlite3.connect(path.resolve().as_uri() + "?mode=ro", uri=True, timeout=2.0)) as connection:
+        connection.execute("PRAGMA query_only=ON")
+        if connection.execute("PRAGMA user_version").fetchone()[0] != SCHEMA_VERSION:
+            return None
+        row = connection.execute(
+            "SELECT a.answers_json FROM script_form_answers a JOIN script_runs r"
+            " ON r.source_sha256=a.source_sha256 WHERE r.run_id=? AND a.form_sha256=?",
+            (run_id, form_key(components)),
+        ).fetchone()
+    if row is None:
+        return None
+    answers = json.loads(row[0])
+    validate_answers(components, answers)
+    return answers
