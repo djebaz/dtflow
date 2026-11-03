@@ -255,6 +255,7 @@ class ScriptsPage:
         self._drawer_requested = False
         self._wide_details_requested = True
         self._current_script: tuple[str, str, str, str] | None = None
+        self._current_hooks: tuple = ()  # History can arrive before a version has been selected/inspected.
         self._run_state = ""
         self._run_number = 5
         self._run_cap = 8
@@ -344,7 +345,9 @@ class ScriptsPage:
         self.run_identity, self.views = ui.runIdentity, ui.scriptsContentStack
         self.tab_buttons = [ui.inspectTab, ui.configureTab, ui.codeTab]
         for index, button in enumerate(self.tab_buttons):
-            button.clicked.connect(lambda checked=False, target=index: self.show_view(target))
+            button.clicked.connect(lambda checked=False, target=index: (
+                self._setup_clicked() if target == 1 else self.show_view(target)
+            ))
         self._build_inspect()
         self._build_form()
         self.editor = ScriptEditor(consent=self._confirm_discard, saved=self._saved_preview_version)
@@ -443,7 +446,8 @@ class ScriptsPage:
             for key in ("Header", "Tier", "Dynamic", "Models", "Loras", "Method")
         }
         self.configure_from_inspect = ui.configureFromInspect
-        self.configure_from_inspect.clicked.connect(lambda: self.show_view(1))
+        self.configure_from_inspect.clicked.connect(self._setup_clicked)
+        self.configure_from_inspect.hide()  # Setup is the one main action below Inspect.
         ui.editFromInspect.clicked.connect(lambda: self.show_view(2))
 
     def _build_form(self):
@@ -893,6 +897,7 @@ class ScriptsPage:
 
     def _load_reference_form(self):
         """Load explicitly illustrative fields for the offline screenshot harness."""
+        self.form.show()
         self.form.set_fields(REFERENCE_FORM)
         self.form_note.hide()
         self.reset_fields.setEnabled(True)
@@ -919,7 +924,7 @@ class ScriptsPage:
             button.setChecked(index == position)
             button.setVisible(not empty and configuring)
         self.start.setVisible(configuring)
-        self.cap.setEnabled(configuring and self._run_state not in LIVE_STATES)
+        self.cap.setEnabled(configuring and not self._starting and self._run_state not in LIVE_STATES)
         live = self._run_state in LIVE_STATES
         self.designer.scriptsLiveRunNote.setVisible(live and index in (0, 1))
         self.designer.scriptsLiveRunNote.setText(
@@ -1267,18 +1272,22 @@ class ScriptsPage:
         ready = self._reference_mode and supported and not missing_source and self._run_state not in LIVE_STATES
         problem = None
         if self._live_mode():
-            self._sync_pickers()
+            active = self._starting or self._run_state in LIVE_STATES
+            if not active:
+                self._sync_pickers()
             partial = False
             self.source.setCurrentIndex(0)
             self.source.setEnabled(False)
             self.source_note.setText(
-                "Not used by real runs yet: Start runs text-to-image from Generate's settings. "
+                "Not used by real runs yet: Setup captures Generate's text-to-image settings. "
                 "Source images and the Inpaint handoff are ignored."
             )
-            summary, problem, details = self.settings_source() if self.settings_source else ("", None, {})
-            self._show_starting_settings(details, problem)
-            self.run_settings.setText(summary)
-            self.run_settings.setVisible(bool(summary))
+            if not active:
+                summary, problem, details = self.settings_source() if self.settings_source else ("", None, {})
+                self._show_starting_settings(details, problem)
+                self.run_settings.setText(summary)
+                self.run_settings.setVisible(bool(summary))
+            self.picker_row.setEnabled(not active)
             ready = supported and not self._starting and self._run_state not in LIVE_STATES and problem is None
         else:
             self.run_settings.hide()
@@ -1287,13 +1296,31 @@ class ScriptsPage:
         if partial:
             self.acknowledge.show()
             ready = ready and self.acknowledge.isChecked()
-        self.start.setEnabled(bool(ready))
         if problem is not None and supported:
             self.disclosure.setText(f"Cannot start yet: {problem}")
-        if not self._starting:
-            self.start.setText("Start new run" if self._prior_unresolved else "Start script")
+        view = self.views.currentIndex()
+        if view == 0:
+            ready = ready or (self._run_state in LIVE_STATES and not self._starting)
+            caption = "Preparing…" if self._starting else "Setup"
+        elif self._live_mode():
+            ready = self._run_state == "waiting_input" and (
+                self._live_form_error or (self.live_fields.identity is not None and not self.live_fields.busy)
+            )
+            pending = (self._live_run or {}).get("setup_pending", True)
+            caption = "Retry Setup" if self._live_form_error else "Run Script" if pending else "Continue"
+            if self._starting:
+                caption = "Preparing…"
+                ready = False
+        else:
+            ready = ready or (self._reference_mode and self._run_state == "waiting_input")
+            caption = "Continue" if self._run_state == "waiting_input" else "Run Script"
+        self.start.setText(caption)
+        self.start.setAccessibleName(caption)
+        self.start.setEnabled(bool(ready))
         self.start.setToolTip(
-            "Starts this saved version as one queue item with Generate's current text-to-image settings."
+            "Prepare the actual script form in Setup. Generation stays blocked until Run Script."
+            if view == 0
+            else "Submit this form to continue the same prepared script execution; generation may use credits."
             if self._live_mode() and ready
             else "Select a supported, saved script. Starting needs a free queue."
             if self._live_mode()
@@ -1353,7 +1380,12 @@ class ScriptsPage:
             self.results_header.setText("Committed steps · offline fixtures")
             self._populate_results()
         else:
-            self.show_view(3)
+            self.show_view(1 if key == "waiting_input" else 3)
+            if key == "waiting_input":
+                self.form.hide()
+                self.form_note.hide()
+                self.live_fields.hide()
+                self.waiting_fields.show()
             queued = key in ("queued", "cancelled_before_start")
             self.run_identity.setText(
                 f"Run #{self._run_number} · queue item q-{self._run_number:04d} · version {self._run_version} · {'queued' if queued else 'started'} 22 Oct 21:12 · offline fixture"
@@ -1453,6 +1485,7 @@ class ScriptsPage:
         if self._live_mode() and self._run_state == "waiting_input":
             self.designer.continueInputButton.setEnabled(not busy and self.live_fields.identity is not None)
             self.designer.cancelInputButton.setEnabled(not self.live_fields.submitting)
+            self._refresh_readiness()
 
     def _live_form_problem(self, message):
         self.designer.waitingInstructions.setText(message)
@@ -1485,6 +1518,8 @@ class ScriptsPage:
         run_id, ordinal = identity
 
         def done(result, failure):
+            if failure is None and not cancel and self._live_run and self._live_run["run_id"] == run_id:
+                self._live_run["setup_pending"] = False
             if self._live_prompt_id != identity:
                 return
             if failure is not None:
@@ -1498,6 +1533,8 @@ class ScriptsPage:
                     if cancel
                     else "Answers saved; waiting for the script to continue."
                 )
+                if not cancel:
+                    self.show_view(3)
                 self._poll_live()
 
         coroutine = (
@@ -1515,10 +1552,16 @@ class ScriptsPage:
                 self.live_fields.clear_request()
             self.live_fields.hide()
             self.waiting_form.hide()
+            if key == "running":
+                self.form_note.setText("No input form is waiting. The script is running; Stop is in the activity bar.")
+                self.form_note.show()
             return
         identity = (script["run_id"], prompt["ordinal"])
         self.waiting_fields.hide()
+        self.form.hide()
+        self.form_note.hide()
         self.waiting_form.show()
+        self.designer.continueInputButton.hide()  # One main Run Script/Continue action in Setup's footer.
         if identity == self._live_prompt_id:
             return
         self._live_prompt_id = identity
@@ -1556,6 +1599,7 @@ class ScriptsPage:
                 self._live_form_problem(f"Cannot show this form: {exc}. Cancel input or retry.")
                 ui.continueInputButton.setText("Retry form")
                 ui.continueInputButton.setEnabled(True)
+                self._refresh_readiness()
                 return
             self.live_fields.show()
             confirm = result["prompt"].confirm or "Continue"
@@ -1575,6 +1619,7 @@ class ScriptsPage:
                 "Cancel input stops this script; it does not cancel submitted remote work."
             )
             self.sync_responsive()
+            self._refresh_readiness()
 
         self.owner.runner.submit(asyncio.to_thread(read_script_form, self._state_dir(), *identity), loaded)
 
@@ -1731,9 +1776,9 @@ class ScriptsPage:
         if self.run_start is None:
             return "Start is not connected in this window."
         return (
-            "Start creates one queue item that runs this saved version with Generate's current model and "
-            f"settings, up to {self.cap.value()} generations. It sends real generation requests to the selected "
-            "backend and cloud generations may use credits. Stop ends local waiting only."
+            "Setup executes bounded JavaScript to prepare its actual form as one queue item, with generation blocked. "
+            "Run Script submits your answers and permits generation using the settings captured at Setup, "
+            f"up to {self.cap.value()} generations. Cloud generations may use credits. Stop ends local waiting only."
         )
 
     def _library_store(self):
@@ -1828,6 +1873,15 @@ class ScriptsPage:
         if row < 0 or row >= len(self._versions):
             return
         version = self._versions[row]
+        if (self._starting or self._run_state in LIVE_STATES) and version.sha256 != self._selected_sha:
+            previous = next((i for i, v in enumerate(self._versions) if v.sha256 == self._selected_sha), -1)
+            self.library.blockSignals(True)
+            self.library.setCurrentRow(previous)
+            self.library.blockSignals(False)
+            self.owner.inline.notice(
+                "Script already prepared or running", "Finish or Stop it before setting up a different version.", "warning"
+            )
+            return
         if self.editor.is_dirty() and version.sha256 != self._selected_sha:
             previous = next((i for i, v in enumerate(self._versions) if v.sha256 == self._selected_sha), -1)
             self.library.blockSignals(True)
@@ -1853,7 +1907,7 @@ class ScriptsPage:
         self.status.setText("Inspecting… (static parse only)")
         _feedback(self.status, "")
         self.form.set_fields([])
-        self.form_note.setText("Nothing to configure here. This script asks for its settings when it runs.")
+        self.form_note.setText("Use Setup on Inspect to prepare this script's actual form. No generation starts at Setup.")
         self.form_note.show()
         self.reset_fields.setEnabled(False)
         for panel in self.inspector_panels:
@@ -2099,13 +2153,29 @@ class ScriptsPage:
         return Path(self.owner.state_dir)
 
     def _start_clicked(self) -> None:
-        if self._live_mode():
-            self._start_live()
+        if self.views.currentIndex() == 0:
+            self._setup_clicked()
+        elif self._live_mode():
+            self._answer_input()
+        elif self._run_state == "waiting_input":
+            self._continue_preview()
         else:
             self._start_preview()
 
+    def _setup_clicked(self) -> None:
+        """Explicitly discover the real form; never grant generation permission here."""
+        if self._starting or self._run_state in LIVE_STATES:
+            self.show_view(1)
+            return
+        if self._live_mode():
+            self._start_live()
+            self.show_view(1)
+        else:
+            self.show_view(1)
+
     def _start_live(self) -> None:
-        if not self.start.isEnabled() or self._starting or self._current_script is None or not self._selected_sha:
+        if (self._starting or self._run_state in LIVE_STATES or self._current_script is None
+                or not self._selected_sha or self._current_script[3] != "supported"):
             return
         if self.editor.is_dirty():
             self.owner.inline.notice(
@@ -2122,8 +2192,13 @@ class ScriptsPage:
             return
         name, short, cap = self._current_script[0], self._current_script[1], self.cap.value()
         self._starting = True
+        self._live_form_error = False
         self.start.setEnabled(False)
-        self.start.setText("Starting…")
+        self.start.setText("Preparing…")
+        self.form.hide()
+        self.form_note.setText("Preparing the script's input form. Generation is blocked until Run Script.")
+        self.form_note.show()
+        self.show_view(1)
         inspection = self._inspections.get(self._selected_sha)
         expected = inspection.report.get("static_run_count") if inspection is not None else None
         self.run_start(
@@ -2146,10 +2221,15 @@ class ScriptsPage:
                 presentation = present_generation_failure(failure)
                 headline, detail = presentation.headline, presentation.detail
             self.owner.inline.notice(headline, detail, "error")
+            self.form_note.setText("Setup could not be prepared. Review the reported error, then choose Setup again.")
+            self.form_note.show()
             self._refresh_readiness()
             return
         queue_id, run_id, started = result
-        self._live_run = {"queue_id": queue_id, "run_id": run_id, "name": name, "sha": short, "cap": cap}
+        self._live_run = {
+            "queue_id": queue_id, "run_id": run_id, "name": name, "sha": short, "cap": cap,
+            "setup_pending": True,
+        }
         self._run_cap, self._run_version = cap, short
         self._load_history()
         # The queue's pending/paused lifecycle is already visible in Scripts
@@ -2236,14 +2316,23 @@ class ScriptsPage:
         children = script.get("children") or []
         queue_id = run["queue_id"]
         self._run_state = key
+        if children or (script.get("prompt") or {}).get("ordinal", 0) > 1:
+            run["setup_pending"] = False
         # Display the stable queue identity; positional ordinals change after
         # Clear history and must never be presented as durable run numbers.
         self._run_number = queue_id[:8]
         if key in ("interrupted", "outcome_unknown"):
             self._prior_unresolved = True
         on_run_view = self.views.currentIndex() in (3, 4)
-        target = 4 if key == "results" else 3
-        if force_view or (on_run_view and self.views.currentIndex() != target):
+        setting_up = run.get("setup_pending") and key in ("queued", "paused", "running")
+        target = 4 if key == "results" else 1 if key == "waiting_input" or setting_up else 3
+        prompt = script.get("prompt")
+        new_prompt = prompt is not None and (script.get("run_id"), prompt["ordinal"]) != self._live_prompt_id
+        setup_finished = (
+            (run.get("setup_pending") or self._live_prompt_id is not None)
+            and key in self._TERMINAL and self.views.currentIndex() == 1
+        )
+        if force_view or new_prompt or setup_finished or (on_run_view and self.views.currentIndex() != target):
             self.show_view(target)
         else:
             # The selected view is already correct; avoid rebuilding header and
@@ -2262,7 +2351,9 @@ class ScriptsPage:
         if key == "results":
             committed = sum(child["state"] == "succeeded" for child in children)
             self.results_header.setText(
-                f"Committed steps · {committed} of {len(children)} recorded · cap {run['cap']}"
+                "Completed during Setup · no input forms or generation requested"
+                if run.get("setup_pending") and not children
+                else f"Committed steps · {committed} of {len(children)} recorded · cap {run['cap']}"
                 + self._seconds(script.get("elapsed")).replace(" · ", " · total ")
             )
             self._populate_live_results(children, run)
@@ -2308,6 +2399,13 @@ class ScriptsPage:
         self.console.setPlainText("\n".join(lines))
         self.run_footer.setText(self._footer_for(key))
         self._sync_live_prompt(key, script)
+        if setting_up and not prompt:
+            self.form_note.setText(
+                "Setup is queued or preparing the real form. Generation remains blocked until Run Script. "
+                "Stop is available in the activity bar; use Queues if this item is saved paused."
+            )
+            self.form_note.show()
+        self._refresh_readiness()
         self._sync_drawer_data()
         self._fit_rails()
 

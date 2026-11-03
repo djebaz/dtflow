@@ -1996,7 +1996,7 @@ class QueuePage:
     def start_script(
         self, source: str, source_name: str, max_generations: int, done, expected_steps: int | None = None
     ) -> None:
-        """Scripts Start: save a one-item script queue from Generate's current text-to-image settings and dispatch it.
+        """Scripts Setup: prepare one script queue from Generate's captured settings, with generation gated by input.
 
         ``done(result, failure)`` gets ``(queue id, run id, "started" | "paused")``. Nothing is created while this window
         generates or dispatches; the script run is an ordinary queue the user can also see in Queues."""
@@ -2020,6 +2020,7 @@ class QueuePage:
                 base,
                 max_generations=max_generations,
                 answers=None,  # interactive Scripts runs park on the persisted requestFromUser bridge
+                require_start=True,  # Setup may build forms, but generation needs explicit Run Script consent
                 expected_steps=expected_steps,
             )
 

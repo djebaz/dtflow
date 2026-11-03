@@ -651,13 +651,13 @@ Create one or import a local .js file.</string>
          <item>
           <widget class="QPushButton" name="configureTab">
            <property name="text">
-            <string>Configure</string>
+            <string>Setup</string>
            </property>
            <property name="enabled">
             <bool>true</bool>
            </property>
            <property name="accessibleName">
-            <string>Configure</string>
+            <string>Setup</string>
            </property>
            <property name="checkable">
             <bool>true</bool>
@@ -1401,13 +1401,13 @@ Create one or import a local .js file.</string>
                     <string>primary</string>
                    </property>
                    <property name="text">
-                    <string>Configure…</string>
+                    <string>Setup</string>
                    </property>
                    <property name="enabled">
                     <bool>true</bool>
                    </property>
                    <property name="accessibleName">
-                    <string>Configure…</string>
+                    <string>Setup</string>
                    </property>
                    <property name="sizePolicy">
                     <sizepolicy hsizetype="Maximum" vsizetype="Fixed">
@@ -1997,6 +1997,176 @@ Create one or import a local .js file.</string>
                  <property name="sizeConstraint">
                   <enum>QLayout::SetMinAndMaxSize</enum>
                  </property>
+                 <item>
+                  <widget class="QFrame" name="waitingForm">
+                   <property name="role" stdset="0">
+                    <string>sectionCard</string>
+                   </property>
+                   <property name="sizePolicy">
+                    <sizepolicy hsizetype="Preferred" vsizetype="Maximum">
+                     <horstretch>0</horstretch>
+                     <verstretch>0</verstretch>
+                    </sizepolicy>
+                   </property>
+                   <layout class="QVBoxLayout" name="waitingFormLayout">
+                    <property name="leftMargin">
+                     <number>10</number>
+                    </property>
+                    <property name="topMargin">
+                     <number>10</number>
+                    </property>
+                    <property name="rightMargin">
+                     <number>10</number>
+                    </property>
+                    <property name="bottomMargin">
+                     <number>10</number>
+                    </property>
+                    <property name="spacing">
+                     <number>8</number>
+                    </property>
+                    <property name="sizeConstraint">
+                     <enum>QLayout::SetMinimumSize</enum>
+                    </property>
+                    <item>
+                     <widget class="QLabel" name="waitingFormTitle">
+                      <property name="text">
+                       <string>Script asks: “Keep going?”</string>
+                      </property>
+                      <property name="role" stdset="0">
+                       <string>scriptsCardTitle</string>
+                      </property>
+                      <property name="wordWrap">
+                       <bool>true</bool>
+                      </property>
+                      <property name="sizePolicy">
+                       <sizepolicy hsizetype="Preferred" vsizetype="Minimum">
+                        <horstretch>0</horstretch>
+                        <verstretch>0</verstretch>
+                       </sizepolicy>
+                      </property>
+                     </widget>
+                    </item>
+                    <item>
+                     <widget class="QLabel" name="waitingInstructions">
+                      <property name="text">
+                       <string>Preview input for the next pass. An already submitted generation may still complete.</string>
+                      </property>
+                      <property name="role" stdset="0">
+                       <string>scriptsMuted</string>
+                      </property>
+                      <property name="wordWrap">
+                       <bool>true</bool>
+                      </property>
+                      <property name="sizePolicy">
+                       <sizepolicy hsizetype="Preferred" vsizetype="Minimum">
+                        <horstretch>0</horstretch>
+                        <verstretch>0</verstretch>
+                       </sizepolicy>
+                      </property>
+                     </widget>
+                    </item>
+                    <item>
+                     <widget class="QWidget" name="waitingFieldsHost">
+                      <layout class="QVBoxLayout" name="waitingFieldsLayout">
+                       <property name="spacing">
+                        <number>6</number>
+                       </property>
+                       <property name="bottomMargin">
+                        <number>0</number>
+                       </property>
+                       <property name="topMargin">
+                        <number>0</number>
+                       </property>
+                       <property name="rightMargin">
+                        <number>0</number>
+                       </property>
+                       <property name="leftMargin">
+                        <number>0</number>
+                       </property>
+                      </layout>
+                     </widget>
+                    </item>
+                    <item>
+                     <widget class="QWidget" name="waitingActions">
+                      <layout class="QHBoxLayout" name="waitingActionsLayout">
+                       <property name="leftMargin">
+                        <number>0</number>
+                       </property>
+                       <property name="topMargin">
+                        <number>0</number>
+                       </property>
+                       <property name="rightMargin">
+                        <number>0</number>
+                       </property>
+                       <property name="bottomMargin">
+                        <number>0</number>
+                       </property>
+                       <property name="spacing">
+                        <number>6</number>
+                       </property>
+                       <property name="sizeConstraint">
+                        <enum>QLayout::SetMinimumSize</enum>
+                       </property>
+                       <item>
+                        <widget class="QPushButton" name="cancelInputButton">
+                         <property name="enabled">
+                          <bool>true</bool>
+                         </property>
+                         <property name="text">
+                          <string>Cancel input</string>
+                         </property>
+                         <property name="accessibleName">
+                          <string>Cancel input</string>
+                         </property>
+                         <property name="sizePolicy">
+                          <sizepolicy hsizetype="Maximum" vsizetype="Fixed">
+                           <horstretch>0</horstretch>
+                           <verstretch>0</verstretch>
+                          </sizepolicy>
+                         </property>
+                        </widget>
+                       </item>
+                       <item>
+                        <widget class="QPushButton" name="continueInputButton">
+                         <property name="enabled">
+                          <bool>true</bool>
+                         </property>
+                         <property name="text">
+                          <string>Continue</string>
+                         </property>
+                         <property name="accessibleName">
+                          <string>Continue</string>
+                         </property>
+                         <property name="sizePolicy">
+                          <sizepolicy hsizetype="Maximum" vsizetype="Fixed">
+                           <horstretch>0</horstretch>
+                           <verstretch>0</verstretch>
+                          </sizepolicy>
+                         </property>
+                        </widget>
+                       </item>
+                      </layout>
+                      <property name="role" stdset="0">
+                       <string>sectionContents</string>
+                      </property>
+                     </widget>
+                    </item>
+                    <item>
+                     <widget class="QLabel" name="waitingHelp">
+                      <property name="role" stdset="0">
+                       <string>scriptsMuted</string>
+                      </property>
+                      <property name="wordWrap">
+                       <bool>true</bool>
+                      </property>
+                      <property name="text">
+                       <string>Cancel input answers with no value; it does not stop the script. Use Stop script in the activity bar.</string>
+                      </property>
+                     </widget>
+                    </item>
+                   </layout>
+                  </widget>
+                 </item>
                 </layout>
                 <property name="role" stdset="0">
                  <string>sectionContents</string>
@@ -2232,176 +2402,6 @@ Create one or import a local .js file.</string>
                   <verstretch>0</verstretch>
                  </sizepolicy>
                 </property>
-               </widget>
-              </item>
-              <item>
-               <widget class="QFrame" name="waitingForm">
-                <property name="role" stdset="0">
-                 <string>sectionCard</string>
-                </property>
-                <property name="sizePolicy">
-                 <sizepolicy hsizetype="Preferred" vsizetype="Maximum">
-                  <horstretch>0</horstretch>
-                  <verstretch>0</verstretch>
-                 </sizepolicy>
-                </property>
-                <layout class="QVBoxLayout" name="waitingFormLayout">
-                 <property name="leftMargin">
-                  <number>10</number>
-                 </property>
-                 <property name="topMargin">
-                  <number>10</number>
-                 </property>
-                 <property name="rightMargin">
-                  <number>10</number>
-                 </property>
-                 <property name="bottomMargin">
-                  <number>10</number>
-                 </property>
-                 <property name="spacing">
-                  <number>8</number>
-                 </property>
-                 <property name="sizeConstraint">
-                  <enum>QLayout::SetMinimumSize</enum>
-                 </property>
-                 <item>
-                  <widget class="QLabel" name="waitingFormTitle">
-                   <property name="text">
-                    <string>Script asks: “Keep going?”</string>
-                   </property>
-                   <property name="role" stdset="0">
-                    <string>scriptsCardTitle</string>
-                   </property>
-                   <property name="wordWrap">
-                    <bool>true</bool>
-                   </property>
-                   <property name="sizePolicy">
-                    <sizepolicy hsizetype="Preferred" vsizetype="Minimum">
-                     <horstretch>0</horstretch>
-                     <verstretch>0</verstretch>
-                    </sizepolicy>
-                   </property>
-                  </widget>
-                 </item>
-                 <item>
-                  <widget class="QLabel" name="waitingInstructions">
-                   <property name="text">
-                    <string>Preview input for the next pass. An already submitted generation may still complete.</string>
-                   </property>
-                   <property name="role" stdset="0">
-                    <string>scriptsMuted</string>
-                   </property>
-                   <property name="wordWrap">
-                    <bool>true</bool>
-                   </property>
-                   <property name="sizePolicy">
-                    <sizepolicy hsizetype="Preferred" vsizetype="Minimum">
-                     <horstretch>0</horstretch>
-                     <verstretch>0</verstretch>
-                    </sizepolicy>
-                   </property>
-                  </widget>
-                 </item>
-                 <item>
-                  <widget class="QWidget" name="waitingFieldsHost">
-                   <layout class="QVBoxLayout" name="waitingFieldsLayout">
-                    <property name="spacing">
-                     <number>6</number>
-                    </property>
-                    <property name="bottomMargin">
-                     <number>0</number>
-                    </property>
-                    <property name="topMargin">
-                     <number>0</number>
-                    </property>
-                    <property name="rightMargin">
-                     <number>0</number>
-                    </property>
-                    <property name="leftMargin">
-                     <number>0</number>
-                    </property>
-                   </layout>
-                  </widget>
-                 </item>
-                 <item>
-                  <widget class="QWidget" name="waitingActions">
-                   <layout class="QHBoxLayout" name="waitingActionsLayout">
-                    <property name="leftMargin">
-                     <number>0</number>
-                    </property>
-                    <property name="topMargin">
-                     <number>0</number>
-                    </property>
-                    <property name="rightMargin">
-                     <number>0</number>
-                    </property>
-                    <property name="bottomMargin">
-                     <number>0</number>
-                    </property>
-                    <property name="spacing">
-                     <number>6</number>
-                    </property>
-                    <property name="sizeConstraint">
-                     <enum>QLayout::SetMinimumSize</enum>
-                    </property>
-                    <item>
-                     <widget class="QPushButton" name="cancelInputButton">
-                      <property name="enabled">
-                       <bool>true</bool>
-                      </property>
-                      <property name="text">
-                       <string>Cancel input</string>
-                      </property>
-                      <property name="accessibleName">
-                       <string>Cancel input</string>
-                      </property>
-                      <property name="sizePolicy">
-                       <sizepolicy hsizetype="Maximum" vsizetype="Fixed">
-                        <horstretch>0</horstretch>
-                        <verstretch>0</verstretch>
-                       </sizepolicy>
-                      </property>
-                     </widget>
-                    </item>
-                    <item>
-                     <widget class="QPushButton" name="continueInputButton">
-                      <property name="enabled">
-                       <bool>true</bool>
-                      </property>
-                      <property name="text">
-                       <string>Continue</string>
-                      </property>
-                      <property name="accessibleName">
-                       <string>Continue</string>
-                      </property>
-                      <property name="sizePolicy">
-                       <sizepolicy hsizetype="Maximum" vsizetype="Fixed">
-                        <horstretch>0</horstretch>
-                        <verstretch>0</verstretch>
-                       </sizepolicy>
-                      </property>
-                     </widget>
-                    </item>
-                   </layout>
-                   <property name="role" stdset="0">
-                    <string>sectionContents</string>
-                   </property>
-                  </widget>
-                 </item>
-                 <item>
-                  <widget class="QLabel" name="waitingHelp">
-                   <property name="role" stdset="0">
-                    <string>scriptsMuted</string>
-                   </property>
-                   <property name="wordWrap">
-                    <bool>true</bool>
-                   </property>
-                   <property name="text">
-                    <string>Cancel input answers with no value; it does not stop the script. Use Stop script in the activity bar.</string>
-                   </property>
-                  </widget>
-                 </item>
-                </layout>
                </widget>
               </item>
               <item>
@@ -2778,13 +2778,13 @@ Create one or import a local .js file.</string>
             <item>
              <widget class="QPushButton" name="scriptsStartButton">
               <property name="text">
-               <string>Start script</string>
+               <string>Run Script</string>
               </property>
               <property name="enabled">
                <bool>false</bool>
               </property>
               <property name="accessibleName">
-               <string>Start script</string>
+               <string>Run Script</string>
               </property>
               <property name="role" stdset="0">
                <string>primary</string>

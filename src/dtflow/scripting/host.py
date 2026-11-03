@@ -135,6 +135,7 @@ class ScriptHost:
         record_answers: Callable[[dict], int] | None = None,
         ask: Callable[[str, str, list], list | None] | None = None,
         run_id: str | None = None,
+        require_start: bool = False,
     ) -> None:
         if base.operation != "txt2img" or base.image_inputs is not None:
             raise ValueError("Scripts start from text-to-image settings only.")
@@ -146,6 +147,9 @@ class ScriptHost:
         self._answers = list(answers) if answers is not None else None
         self._record_answers = record_answers
         self._ask = ask  # set only for a run whose forms are answered interactively (a queue item)
+        if require_start and (ask is None or answers is not None):
+            raise ValueError("Setup requires an interactive form bridge without supplied answers.")
+        self._start_permitted = not require_start
         self.run_id = run_id
         self._forms = 0
         self.baseline = normalize_configuration(decode_configuration(baseline_configuration(base)).values)
@@ -282,6 +286,15 @@ class ScriptHost:
         )
 
     def generate_image(self, args: Mapping[str, Any]) -> None:
+        if not self._start_permitted:
+            # A script need not call requestFromUser before pipeline.run(). Park it
+            # on the same persisted input bridge BEFORE resolving/linking/submitting work.
+            self.request_from_user("Ready to run script", "Run Script", [{
+                "type": "plainText",
+                "value": "This script requests generation before an input form. Review the captured settings and press Run Script to permit generation.",
+            }])
+        if self.cancel.is_set():
+            raise ScriptCancelled()
         if not isinstance(args, Mapping):
             raise ValueError("Missing configuration parameter")
         if self._blocked:
@@ -417,7 +430,11 @@ class ScriptHost:
         if source == "user":
             from dtflow.services.script_form_inputs import resolve_form_inputs
 
-            return resolve_form_inputs(self.sandbox.parent.parent, self.run_id, self._forms, components, answers)
+            resolved = resolve_form_inputs(self.sandbox.parent.parent, self.run_id, self._forms, components, answers)
+            if self.cancel.is_set():
+                raise ScriptCancelled()
+            self._start_permitted = True
+            return resolved
         return answers
 
     def screen_size(self) -> dict[str, float]:
@@ -557,6 +574,7 @@ def script_hooks(
     answers: Sequence[Sequence[Any]] | None,
     hosts: list[ScriptHost],
     interactive: bool = False,
+    require_start: bool = False,
 ) -> Callable[[Any], dict[str, Callable[..., Any]]]:
     """The hook factory ``run_recorded`` takes, shared by the CLI and the queue item so both run the same host.
 
@@ -577,6 +595,7 @@ def script_hooks(
             record_answers=context.record_answers,
             ask=context.ask if interactive else None,
             run_id=context.run_id,
+            require_start=require_start,
         )
         hosts.append(host)
         return host.hooks()

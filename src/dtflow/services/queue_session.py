@@ -84,6 +84,7 @@ async def create_script_queue(
     answers: list | None = None,
     up_next: bool = False,
     expected_steps: int | None = None,
+    require_start: bool = False,
 ) -> tuple[str, str]:
     """Persist a paused script queue: exactly one item (a whole script run), cap 1. Returns ``(queue id, run id)``.
 
@@ -94,6 +95,8 @@ async def create_script_queue(
         raise ValidationError("The local backend requires --endpoint HOST:PORT.")
     if not 1 <= max_generations <= 32:
         raise ValidationError("max_generations must be between 1 and 32.")
+    if type(require_start) is not bool or (require_start and answers is not None):
+        raise ValidationError("Script Setup requires an interactive run without supplied answer sets.")
     if base.operation != "txt2img" or base.image_inputs is not None:
         raise ValidationError("Scripts start from text-to-image settings only.")
     sha = await asyncio.to_thread(store_source, state, source)
@@ -107,6 +110,7 @@ async def create_script_queue(
         max_generations=max_generations,
         answers=answers,
         expected_steps=expected_steps if type(expected_steps) is int and expected_steps > 0 else None,
+        require_start=require_start,
     )
     store = SQLiteAttempts(state)
     try:

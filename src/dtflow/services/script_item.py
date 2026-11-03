@@ -86,6 +86,7 @@ class ScriptItemRunner:
                     answers=request.answers,
                     hosts=hosts,
                     interactive=request.answers is None,  # no answer file: forms wait for the person
+                    require_start=request.require_start,
                 )
                 task = asyncio.ensure_future(
                     asyncio.to_thread(

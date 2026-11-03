@@ -18,6 +18,7 @@
 - [x] Review the source diff without executing project code or checks.
 - [x] Commit/push and open draft [PR #217](https://github.com/djebaz/dtflow/pull/217).
 - [x] Add the subsequently owner-requested, unexecuted manual component smoke script at `tools/scripting/manual_form_smoke.js`; no automated test suite additions.
+- [x] Add the owner's simpler alternative at `tools/scripting/manual_form_single.js`: one request containing all 14 component types and slider variants, with no follow-up forms or generation calls. Not executed.
 
 ## Decisions and risks
 - Base: origin/main e0a738b. Existing script run remains one ordinary queue item; child attempts, dispatch ownership, Stop and close semantics stay in the existing runner.
@@ -39,3 +40,16 @@
 - [ ] Owner: smoke all component types, nested/multiple forms, changed switches, long text and 800x680 layout, native pickers, Stop/close, stale answer races and version recall.
 - [ ] Pre-merge follow-up: canonical Designer/renderer states, documentation and owner-approved coverage as required by #196.
 - Draft PR only; do not merge or close #196 on source implementation alone.
+
+## Owner smoke follow-up: Inspect > Setup > Run Script
+- Owner reported the smoke was mostly OK, but requested the mockup's single form workspace before launch. This supersedes the earlier no-pre-run-Setup presentation decision: Inspect's main action is Setup; the former Configure tab is Setup; the full actual request form and Run Script action live there.
+- [x] Rename the canonical tab/action labels and mount actual forms in Setup, not the running screen.
+- [x] Make explicit Setup prepare the same queued script execution. Block generation until the first form is explicitly submitted with Run Script, including scripts that call generation before requesting a form.
+- [x] Preserve later dynamic requests in the same Setup workspace, with Continue rather than an additional execution or a guessed aggregate form.
+- [x] Keep settings captured for that prepared run, reject conflicting script selection, and preserve existing Stop/close/cancellation ownership.
+- [x] Extend offline preview definitions only; do not render, execute scripts, add tests or run checks.
+- [x] Commit and push this follow-up to draft PR #217; owner smoke of this new flow remains pending.
+- Setup executes bounded JavaScript to discover its real first form; it is explicit consent to preparation, not to generation. A pure script that has no forms or generation may complete during preparation. Arbitrary later forms cannot be discovered together before their earlier answers without changing upstream script semantics.
+- Owner-provided startup traceback: the asynchronous history callback reached `_sync_drawer_data` before any inspection initialized `_current_hooks`. Initialize the empty hook tuple in `ScriptsPage.__init__`, before callbacks can run; do not treat an unselected version as an inspected one. No agent reproduction or test run.
+- The immutable desktop script request carries `require_start=True`; legacy/CLI requests default to their prior behavior. The host parks generation-first scripts on a display-only persisted prompt before request resolution, child-attempt linking or submission. Answering the first user prompt grants permission only after bounded validation/owned-input resolution; Stop is rechecked before generation admission. No second JS run, new dispatcher or automatic answer replay is introduced.
+- Added offline state definitions `scripts_setup_ready`, `scripts_setup_loading`, `scripts_setup_followup` and `scripts_setup_narrow`; no captures produced. The canonical `waitingForm` Designer subtree now lives in Setup's scrollable field host. Existing object names remain stable.

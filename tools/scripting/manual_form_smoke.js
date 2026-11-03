@@ -1,6 +1,8 @@
 //@api-1.0
 // DTFlow #196: MANUAL form smoke only. Never calls pipeline.run(), uploads, or writes files.
-// Import this file into Generate > Scripts, select fake, and press Start.
+// Import into Generate > Scripts, select fake, open Inspect and choose Setup.
+// The full first form appears in Setup; edit it, then press Run Script below it.
+// Later forms reuse Setup with Continue. Setup itself must not generate images.
 // Forms: all components -> dynamic follow-up -> differently shaped request -> summary.
 // Use small image inputs; directory selection imports a bounded owned image copy.
 // Repeat with the advanced switch off, restart for answer recall, and try Stop/close

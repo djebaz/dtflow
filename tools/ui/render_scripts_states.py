@@ -54,6 +54,10 @@ STATES = (
     "scripts_editor_unverified",
     "scripts_preview_capped",
     "scripts_previous_run_inspection",
+    "scripts_setup_ready",
+    "scripts_setup_loading",
+    "scripts_setup_followup",
+    "scripts_setup_narrow",
 )
 
 
@@ -106,7 +110,7 @@ def render_scripts_states(out: Path, *, window_factory: Callable, state_names=ST
         for index, state in enumerate(state_names):
             if state not in STATES:
                 raise ValueError(f"Unknown scripting render state: {state}")
-            narrow = state in ("scripts_narrow", "scripts_narrow_details", "scripts_editor_narrow")
+            narrow = state in ("scripts_narrow", "scripts_narrow_details", "scripts_editor_narrow", "scripts_setup_narrow")
             window.form.resize(800, 680) if narrow else window.form.resize(1600, 1000)
             window._show_scripts()
             window.scripts._drawer_requested = state == "scripts_narrow_details"
@@ -124,6 +128,10 @@ def render_scripts_states(out: Path, *, window_factory: Callable, state_names=ST
                 "scripts_editor_unverified": "scripts_editor_dirty",
                 "scripts_preview_capped": "scripts_form_default",
                 "scripts_previous_run_inspection": "scripts_form_after_unknown",
+                "scripts_setup_ready": "scripts_form_default",
+                "scripts_setup_loading": "scripts_form_default",
+                "scripts_setup_followup": "scripts_waiting_input",
+                "scripts_setup_narrow": "scripts_form_long_values",
             }.get(state, state)
             if state in (
                 "scripts_queued",
@@ -133,7 +141,18 @@ def render_scripts_states(out: Path, *, window_factory: Callable, state_names=ST
             ):
                 base = "scripts_form_default"
             window.scripts.preview(base)
-            if state in (
+            if state == "scripts_setup_loading":
+                window.scripts.show_view(1)
+                window.scripts.form.hide()
+                window.scripts.form_note.setText("Preparing the script's input form. Generation is blocked until Run Script.")
+                window.scripts.form_note.show()
+                window.scripts.start.setText("Preparing…")
+                window.scripts.start.setEnabled(False)
+            elif state == "scripts_setup_followup":
+                window.scripts.show_view(1)
+                window.scripts.start.setText("Continue")
+                window.scripts.start.setEnabled(True)
+            elif state in (
                 "scripts_queued",
                 "scripts_running",
                 "scripts_waiting_input",
