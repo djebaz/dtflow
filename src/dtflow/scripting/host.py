@@ -23,7 +23,7 @@ import concurrent.futures
 import secrets
 import threading
 import uuid
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Awaitable, Callable, Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
@@ -80,6 +80,8 @@ MAX_SANDBOX_LISTING = 1000
 MAX_SANDBOX_FILE_BYTES = 64 * 1024 * 1024
 MAX_SANDBOX_FILES = 200
 PIPELINE_RUN_KEYS = frozenset({"configuration", "prompt", "negativePrompt", "mask"})
+BATCH_JOB_KEYS = PIPELINE_RUN_KEYS | {"outputFile"}
+MAX_BATCH_CONCURRENT = 10
 SAFE_FAILURES = (RemoteOutcome.NOT_STARTED, RemoteOutcome.FAILED, RemoteOutcome.CANCELLED_CONFIRMED)
 POLL_SECONDS = 0.1
 PNG_PREFIX = "data:image/png;base64,"
@@ -137,6 +139,8 @@ class ScriptHost:
         run_id: str | None = None,
         require_start: bool = False,
         admission_gate: threading.Event | None = None,
+        reserve_child: Callable[[str, int], Awaitable[bool]] | None = None,
+        release_child: Callable[[str], Awaitable[None]] | None = None,
     ) -> None:
         if base.operation != "txt2img" or base.image_inputs is not None:
             raise ValueError("Scripts start from text-to-image settings only.")
@@ -152,6 +156,7 @@ class ScriptHost:
             raise ValueError("Setup requires an interactive form bridge without supplied answers.")
         self._start_permitted = not require_start
         self._admission_gate = admission_gate
+        self.reserve_child, self.release_child = reserve_child, release_child
         self.run_id = run_id
         self._forms = 0
         self.baseline = normalize_configuration(decode_configuration(baseline_configuration(base)).values)
@@ -172,6 +177,7 @@ class ScriptHost:
             "existingConfiguration": self.existing_configuration,
             "existingPrompts": self.existing_prompts,
             "generateImage": self.generate_image,
+            "generateBatch": self.generate_batch,
             "createLoRA": self.create_lora,
             "createControl": self.create_control,
             "areModelsDownloaded": self.are_models_downloaded,
@@ -218,7 +224,9 @@ class ScriptHost:
     def existing_prompts(self) -> dict[str, str]:
         return {"prompt": self.base.prompt, "negativePrompt": self.base.negative_prompt}
 
-    def _request(self, args: Mapping[str, Any]) -> ResolvedGenerationRequest:
+    def _request(
+        self, args: Mapping[str, Any], *, call_index: int | None = None
+    ) -> ResolvedGenerationRequest:
         if args.get("mask") is not None:
             raise ValueError("pipeline.run() mask is not supported yet (virtual canvas and masks arrive with #116).")
         for key in sorted(set(args) - PIPELINE_RUN_KEYS):
@@ -254,7 +262,9 @@ class ScriptHost:
             raise ValueError(f"configuration.sampler {number} is not a known sampler; no image was requested.")
         seed = values["seed"]
         evidence = list(self.base.resolution_evidence)
-        evidence += [("source", "script"), ("script_call", str(self.generations + 1))]
+        evidence += [("source", "script"), ("script_call", str(
+            self.generations + 1 if call_index is None else call_index
+        ))]
         if self.run_id:
             evidence.append(("script_run", self.run_id))  # "created by script X, step N" resolves without scanning runs
         if seed < 0:
@@ -287,10 +297,9 @@ class ScriptHost:
             allow_unlisted_model=self.base.allow_unlisted_model,
         )
 
-    def generate_image(self, args: Mapping[str, Any]) -> None:
+    def _admit_generation(self) -> None:
+        """Wait for explicit Run Script consent and any window-owned preparation handoff."""
         if not self._start_permitted:
-            # A script need not call requestFromUser before pipeline.run(). Park it
-            # on the same persisted input bridge BEFORE resolving/linking/submitting work.
             self.request_from_user(
                 "Ready to run script",
                 "Run Script",
@@ -306,6 +315,9 @@ class ScriptHost:
                 raise ScriptCancelled()
         if self.cancel.is_set():
             raise ScriptCancelled()
+
+    def generate_image(self, args: Mapping[str, Any]) -> None:
+        self._admit_generation()
         if not isinstance(args, Mapping):
             raise ValueError("Missing configuration parameter")
         if self._blocked:
@@ -337,6 +349,172 @@ class ScriptHost:
         self.last = outcome
         self._cleared = False  # a new generation fills the canvas again
         self.attempt_outputs[attempt_id] = [str(path) for path in outcome.output_paths]
+
+    def generate_batch(self, jobs: Sequence[Mapping[str, Any]], max_concurrent: int = 1) -> list[dict]:
+        """DTFlow-only bounded batch; one immutable request and linked durable attempt per submitted child.
+
+        Never writes to the virtual canvas: completion order is not a display/save order.
+        Each result is returned at the original input index. Failed jobs are not retried.
+        """
+        self._admit_generation()
+        if self._blocked:
+            raise RuntimeError(self._blocked)
+        if not isinstance(jobs, list) or not jobs or len(jobs) > self.max_generations:
+            raise ValueError("runBatch requires 1..max_generations job objects.")
+        if type(max_concurrent) is not int or not 1 <= max_concurrent <= MAX_BATCH_CONCURRENT:
+            raise ValueError(f"maxConcurrent must be an integer from 1 to {MAX_BATCH_CONCURRENT}.")
+        if self.generations + len(jobs) > self.max_generations:
+            raise RuntimeError(
+                f"Script reached its generation limit ({self.max_generations}); no batch jobs were submitted."
+            )
+        if max_concurrent > 1 and (self.reserve_child is None or self.release_child is None):
+            raise ValueError("Concurrent batch jobs require a queued DTFlow script with shared slot accounting.")
+
+        # Preflight every script-visible value before linking or submitting any work.
+        requests: list[ResolvedGenerationRequest] = []
+        destinations: list[Path | None] = []
+        for index, item in enumerate(jobs):
+            if not isinstance(item, Mapping):
+                raise ValueError(f"runBatch job {index + 1} must be an object; nothing was submitted.")
+            keys = set(item)
+            extra = keys - BATCH_JOB_KEYS
+            if extra:
+                raise ValueError(f"runBatch job {index + 1} has unsupported keys; nothing was submitted.")
+            output_file = item.get("outputFile")
+            target = None if output_file is None else self._confine(output_file)
+            if target is not None and target.suffix.lower() != ".png":
+                raise ValueError("runBatch outputFile must end with .png; nothing was submitted.")
+            requests.append(self._request(item, call_index=self.generations + index + 1))
+            destinations.append(target)
+        named = [path for path in destinations if path is not None]
+        if len(set(named)) != len(named):
+            raise ValueError("runBatch outputFile paths must be unique; nothing was submitted.")
+        if len(named) + sum(1 for file in self.sandbox.rglob("*") if file.is_file()) > MAX_SANDBOX_FILES:
+            raise ValueError("The script's file area would exceed its file limit; nothing was submitted.")
+        if self.cancel.is_set():
+            raise ScriptCancelled()
+        self.generations += len(jobs)
+        # This future is tracked and drained even if the JS process is killed on Stop.
+        return self._await(self._run_batch(requests, destinations, max_concurrent), track=True)
+
+    def _save_batch_png(self, target: Path, data: bytes | None) -> str:
+        """Export one committed result into the confined script sandbox without replacing existing files."""
+        if data is None or not data.startswith(b"\\x89PNG\\r\\n\\x1a\\n"):
+            raise ValueError("The committed result has no PNG bytes for the requested sandbox export.")
+        if len(data) > MAX_SANDBOX_FILE_BYTES:
+            raise ValueError("The committed PNG exceeds the script file limit.")
+        if sum(1 for item in self.sandbox.rglob("*") if item.is_file()) >= MAX_SANDBOX_FILES:
+            raise ValueError("The script's file area is full.")
+        # Paths were confined before execution. Recheck after asynchronous work to reject redirected parents.
+        target = self._confine(str(target))
+        target.parent.mkdir(parents=True, exist_ok=True)
+        with target.open("xb") as output:
+            output.write(data)
+        return str(target)
+
+    async def _run_batch(
+        self, requests: list[ResolvedGenerationRequest], destinations: list[Path | None], concurrency: int
+    ) -> list[dict]:
+        """Worker pool shares the normal queue reservation budget; Stop stops intake, not remote work."""
+        limit = min(concurrency, self.service.backend.capabilities.max_concurrency)
+        results: list[dict] = [
+            {"status": "not_started", "attemptId": None, "outputPaths": []} for _ in requests
+        ]
+        next_job = 0
+        intake_open = True
+
+        async def worker():
+            nonlocal next_job, intake_open
+            while intake_open and not self.cancel.is_set() and next_job < len(requests):
+                index = next_job
+                next_job += 1
+                request = requests[index]
+                attempt_id = uuid.uuid4().hex
+                acquired = False
+                linked = False
+                try:
+                    if self.reserve_child is not None:
+                        while not self.cancel.is_set():
+                            acquired = await self.reserve_child(attempt_id, concurrency)
+                            if acquired:
+                                break
+                            await asyncio.sleep(POLL_SECONDS)
+                        if not acquired:
+                            return
+                    if self.cancel.is_set():
+                        return
+                    # The ScriptRun ledger is independent of the attempts SQLite owner.
+                    await asyncio.to_thread(self._link_child, attempt_id)
+                    linked = True
+                    self.attempts.append(attempt_id)
+                    if self.cancel.is_set():
+                        return
+                    try:
+                        outcome = await run_generation(
+                            self.service, request, prefix=self.prefix, attempt_id=attempt_id
+                        )
+                    except BackendError as exc:
+                        results[index] = {
+                            "status": "failed",
+                            "attemptId": attempt_id,
+                            "outputPaths": [],
+                            "error": f"{exc.failure.code}: {exc.failure.message}",
+                        }
+                        intake_open = False
+                        if exc.failure.remote_outcome not in SAFE_FAILURES:
+                            self._blocked = "A batch generation has an unresolved remote outcome; no more jobs."
+                    except Exception as exc:
+                        results[index] = {
+                            "status": "failed",
+                            "attemptId": attempt_id,
+                            "outputPaths": [],
+                            "error": f"{type(exc).__name__}: {exc}",
+                        }
+                        intake_open = False
+                        self._blocked = "A batch generation did not finish cleanly; no more jobs."
+                    else:
+                        self.last = outcome
+                        self._cleared = False
+                        paths = [str(path) for path in outcome.output_paths]
+                        self.attempt_outputs[attempt_id] = paths
+                        saved_path = None
+                        if destinations[index] is not None:
+                            try:
+                                saved_path = await asyncio.to_thread(
+                                    self._save_batch_png, destinations[index], outcome.final_image
+                                )
+                            except Exception as exc:
+                                intake_open = False
+                                self._blocked = "A batch PNG export failed after generation; no more jobs."
+                                results[index] = {
+                                    "status": "save_failed",
+                                    "attemptId": attempt_id,
+                                    "outputPaths": paths,
+                                    "error": f"Sandbox export: {type(exc).__name__}: {exc}",
+                                }
+                        if results[index]["status"] != "save_failed":
+                            results[index] = {
+                                "status": "succeeded",
+                                "attemptId": attempt_id,
+                                "outputPaths": paths,
+                                "savedPath": saved_path,
+                            }
+                except Exception as exc:
+                    intake_open = False
+                    self._blocked = "A batch reservation or ledger operation failed; no more jobs."
+                    results[index] = {
+                        "status": "failed",
+                        "attemptId": attempt_id if linked else None,
+                        "outputPaths": [],
+                        "error": f"{type(exc).__name__}: {exc}",
+                    }
+                finally:
+                    if acquired and self.release_child is not None:
+                        # A failure to free a slot is unsafe; the owning queue still drains all children.
+                        await asyncio.shield(self.release_child(attempt_id))
+
+        await asyncio.gather(*(worker() for _ in range(min(limit, len(requests)))))
+        return results
 
     # -- catalogue lookups ----------------------------------------------------------------------------------------
 
