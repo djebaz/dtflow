@@ -161,23 +161,21 @@ class QueueItemDelegate(QStyledItemDelegate):
         painter.setPen(QColor(_TOKENS["color.sectionBorder"]))
         painter.setBrush(QColor(_TOKENS["color.canvas"]))
         painter.drawRoundedRect(QRectF(area).adjusted(0.5, 0.5, -0.5, -0.5), 4, 4)
-        if row.is_script_parent:
-            # The parent records the ScriptRun outcome; its images belong to
-            # the individual child attempts. Never show Step 1 as a second
-            # parent generation thumbnail.
+        # The script parent's tile previews the last successfully committed
+        # child. Its gallery identity is display-only here: opening Images
+        # still requires selecting the actual child step.
+        path = row.script_preview_path if row.is_script_parent else (row.outputs[0] if row.outputs else None)
+        identity = row.script_preview_identity if row.is_script_parent else row.gallery_identity
+        if row.is_script_parent and not path:
             painter.setPen(secondary)
             painter.drawText(area, Qt.AlignmentFlag.AlignCenter, "Script")
             return
-        pixmap = (
-            provider.pixmap(row.outputs[0], identity=row.gallery_identity)
-            if provider is not None and row.outputs
-            else None
-        )
+        pixmap = provider.pixmap(path, identity=identity) if provider is not None and path else None
         if (
             pixmap is None
-            and row.outputs
+            and path
             and provider is not None
-            and not provider.is_failed(row.outputs[0], identity=row.gallery_identity)
+            and not provider.is_failed(path, identity=identity)
         ):
             return  # decoding in the background: a neutral tile, never misleading text
         if pixmap is None:
@@ -185,7 +183,7 @@ class QueueItemDelegate(QStyledItemDelegate):
             small.setPointSizeF(max(7.5, small.pointSizeF() - 1))
             painter.setFont(small)
             painter.setPen(QColor(_TOKENS["color.disabled"]))
-            painter.drawText(area, Qt.AlignmentFlag.AlignCenter, "no image" if not row.outputs else "unavailable")
+            painter.drawText(area, Qt.AlignmentFlag.AlignCenter, "no image" if not path else "unavailable")
             return
         # The pixmap is already a centred square crop of the gallery's 600 px thumbnail: fill the tile edge to edge.
         outline = QRectF(area).adjusted(0.5, 0.5, -0.5, -0.5)
