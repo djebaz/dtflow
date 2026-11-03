@@ -767,6 +767,8 @@ def script_hooks(
     hosts: list[ScriptHost],
     interactive: bool = False,
     require_start: bool = False,
+    reserve_child: Callable[[str, int], Awaitable[bool]] | None = None,
+    release_child: Callable[[str], Awaitable[None]] | None = None,
 ) -> Callable[[Any], dict[str, Callable[..., Any]]]:
     """The hook factory ``run_recorded`` takes, shared by the CLI and the queue item so both run the same host.
 
@@ -788,6 +790,8 @@ def script_hooks(
             ask=context.ask if interactive else None,
             run_id=context.run_id,
             require_start=require_start,
+            reserve_child=reserve_child,
+            release_child=release_child,
         )
         hosts.append(host)
         return host.hooks()
