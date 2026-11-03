@@ -1301,7 +1301,15 @@ class ScriptsPage:
             if self._run_state == "failed"
             else "warning"
             if self._run_state
-            in ("queued", "paused", "waiting_input", "stopped", "interrupted", "outcome_unknown", "cancelled_before_start")
+            in (
+                "queued",
+                "paused",
+                "waiting_input",
+                "stopped",
+                "interrupted",
+                "outcome_unknown",
+                "cancelled_before_start",
+            )
             else ""
         )
 
@@ -1310,9 +1318,7 @@ class ScriptsPage:
         live = self._run_state in LIVE_STATES
         unresolved = self._run_state in ("interrupted", "outcome_unknown") or self._prior_unresolved
         ui.backToFormButton.setVisible(not live)
-        ui.checkQueuesButton.setVisible(
-            unresolved or (self._live_mode() and self._run_state in ("queued", "paused"))
-        )
+        ui.checkQueuesButton.setVisible(unresolved or (self._live_mode() and self._run_state in ("queued", "paused")))
         ui.reviewRunButton.setVisible(not live)
         ui.reviewRunButton.setText("Review and start again" if unresolved else "Run again…")
         ui.advancePreviewButton.setVisible(self._reference_mode and self._run_state in ("queued", "running"))

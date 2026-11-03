@@ -171,12 +171,7 @@ class QueueItemDelegate(QStyledItemDelegate):
             painter.drawText(area, Qt.AlignmentFlag.AlignCenter, "Script")
             return
         pixmap = provider.pixmap(path, identity=identity) if provider is not None and path else None
-        if (
-            pixmap is None
-            and path
-            and provider is not None
-            and not provider.is_failed(path, identity=identity)
-        ):
+        if pixmap is None and path and provider is not None and not provider.is_failed(path, identity=identity):
             return  # decoding in the background: a neutral tile, never misleading text
         if pixmap is None:
             small = QFont(painter.font())
@@ -254,9 +249,7 @@ class QueueItemDelegate(QStyledItemDelegate):
         )
         # Keep the sampler label on one line; full text remains available
         # in the model tooltip, even when the Parameters column is narrow.
-        sampler = QFontMetrics(small).elidedText(
-            row.sampler_text, Qt.TextElideMode.ElideRight, max(0, rect.width())
-        )
+        sampler = QFontMetrics(small).elidedText(row.sampler_text, Qt.TextElideMode.ElideRight, max(0, rect.width()))
         painter.drawText(
             QRect(rect.left(), rect.top() + 34, rect.width(), 14),
             Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter,

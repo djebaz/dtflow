@@ -54,8 +54,7 @@ def _tooltip(row: ItemRow, column: int) -> str:
     if column == 0:
         if row.is_script_parent:
             return (
-                "Script summary · thumbnail shows the last saved step. "
-                "Select a step row to open its image."
+                "Script summary · thumbnail shows the last saved step. Select a step row to open its image."
                 if row.script_preview_path
                 else "Script summary · no committed step image yet."
             )

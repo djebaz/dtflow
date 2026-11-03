@@ -913,8 +913,9 @@ def _step_lines(script: dict) -> list[str]:
             tail = f" · {duration:.2f}s" if type(duration) in (int, float) else ""
             lines.append(f"{blank}  {progress} saved{tail}")
         elif state in ("failed", "save_failed", "unknown", "cancelled"):
-            short_state = {"failed": "fail", "save_failed": "save fail",
-                           "unknown": "unknown", "cancelled": "stopped"}[state]
+            short_state = {"failed": "fail", "save_failed": "save fail", "unknown": "unknown", "cancelled": "stopped"}[
+                state
+            ]
             lines.append(f"{blank}  {progress} {short_state}")
     return lines
 
