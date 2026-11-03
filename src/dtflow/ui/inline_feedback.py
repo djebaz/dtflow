@@ -51,6 +51,10 @@ class InlineFeedback(QObject):
         # Logs registers its own Escape; Qt then delivers ambiguous presses to one shortcut in rotation.
         self.escape.activatedAmbiguously.connect(self.dismiss)
         self.escape.setEnabled(False)
+        self.button_escape = QShortcut(QKeySequence("Escape"), window)
+        self.button_escape.activated.connect(self.dismiss)
+        self.button_escape.activatedAmbiguously.connect(self.dismiss)
+        self.button_escape.setEnabled(False)
         QApplication.instance().focusChanged.connect(self._keep_editor_focus)
 
     def _keep_editor_focus(self, previous, current):
@@ -90,6 +94,7 @@ class InlineFeedback(QObject):
     def reset(self):
         self._watch_outside(False)
         self.escape.setEnabled(False)
+        self.button_escape.setEnabled(False)
         self.strip.set_editor_dimming(False)
         self._editor_focus = None
         armed, self._armed = self._armed, None
@@ -216,10 +221,14 @@ class InlineFeedback(QObject):
         button.clicked.connect(callback)
         self.strip._position()
 
-    def arm(self, button, title, text, callback, canceled=None, *, danger=False, confirm_text="Confirm"):
-        self.show(title, text, "confirm")
+    def arm(self, button, title, text, callback, canceled=None, *, danger=False, confirm_text="Confirm", overlay=True):
+        if overlay:
+            self.show(title, text, "confirm")
+        else:
+            self.dismiss()
+            self.button_escape.setEnabled(True)
         self._set_dismiss_label(cross=False)
-        self.escape.setEnabled(True)
+        self.escape.setEnabled(overlay)
         # Only the label/color changes in the original slot; Cancel belongs to
         # the details surface, so the action row and pointer target do not move.
         if not getattr(button, "_inline_click_guard", None):
@@ -237,7 +246,8 @@ class InlineFeedback(QObject):
         button.setFixedWidth(button.width())
         button.setText(confirm_text)
         button.setAccessibleName("Confirm " + title)
-        button.setToolTip(title + " — see the inline details before confirming")
+        button.setToolTip(title + (" — see the inline details before confirming" if overlay
+                                   else " — click again to confirm; Escape cancels"))
         button.setProperty("confirmationDanger", danger)
         button.setProperty("confirmationPending", True)
         button.style().unpolish(button)

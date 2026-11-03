@@ -62,6 +62,7 @@ STATES = (
     "scripts_setup_reloaded",
     "scripts_setup_file_selected",
     "scripts_setup_file_error",
+    "scripts_editor_discard_confirm",
 )
 
 
@@ -140,6 +141,7 @@ def render_scripts_states(out: Path, *, window_factory: Callable, state_names=ST
                 "scripts_setup_reloaded": "scripts_form_default",
                 "scripts_setup_file_selected": "scripts_form_default",
                 "scripts_setup_file_error": "scripts_form_default",
+                "scripts_editor_discard_confirm": "scripts_editor_dirty",
             }.get(state, state)
             if state in (
                 "scripts_queued",
@@ -167,6 +169,8 @@ def render_scripts_states(out: Path, *, window_factory: Callable, state_names=ST
                                       else "Input could not be prepared")
                     fields[0].setToolTip("reference.png" if state == "scripts_setup_file_selected"
                                         else "Selected input exceeds the supported image limit (offline fixture).")
+            elif state == "scripts_editor_discard_confirm":
+                window.scripts.editor.discard.click()
             elif state == "scripts_setup_followup":
                 window.scripts.show_view(1)
                 window.scripts.start.setText("Continue")

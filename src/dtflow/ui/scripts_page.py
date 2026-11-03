@@ -943,6 +943,9 @@ class ScriptsPage:
             self._load_reference_form()
 
     def show_view(self, index: int):
+        if (self.views.currentIndex() != index and hasattr(self, "editor")
+                and self.editor.discard.property("confirmationPending")):
+            self.owner.inline.dismiss()
         self.views.setCurrentIndex(index)
         empty = index == 5
         configuring = index <= 2
@@ -1788,6 +1791,7 @@ class ScriptsPage:
             callback,
             danger=True,
             confirm_text="Discard",
+            overlay=button is not self.editor.discard,
         )
 
     def _source_changed(self, index):
