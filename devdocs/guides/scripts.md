@@ -14,6 +14,8 @@ Forms preserve nested section answer arrays. `image` displays supplied raster im
 
 Each library card has a rounded-square × button at its top right. Click once to arm the red ✓ button, then click again to remove that version; no confirmation overlay opens. Escape or changing selection/view cancels. Save or discard a dirty draft first; active runs cannot be removed from their card. Removal frees a library slot but preserves immutable source bytes for queued runs, history, preferences and generated outputs. Reimporting the source adds it back.
 
+The visible control stays 14 × 14 px, with an invisible 4 px margin on every side for a 22 × 22 px click target in both states.
+
 ## Optional parallel batches
 
 The [portable Krea2 adaptation guide](krea2-mixer.md) documents PR #219's cached LoRA enumeration, single-form Setup, source-version preferences and explicit bounded chunks. Its DTFlow-only helpers are feature-detected; the original Draw Things fallback and owner acceptance boundaries remain separate.

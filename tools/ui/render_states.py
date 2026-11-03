@@ -1,7 +1,7 @@
 """Render real Qt widgets against offline fixtures. Never admits provider network traffic.
 
 Run with the locked dev environment: uv run python tools/ui/render_states.py --out tmp/ui-renders
-Scripts fixtures include normal, armed and narrow 14 px library-removal controls.
+Scripts fixtures include normal, armed and narrow 14 px library-removal controls with padded 22 px hit targets.
 The calibration grid is a fixture, not a generated photograph. Cloud receipts use the
 same in-memory API/transport as the asset tests; no real file upload occurs.
 """

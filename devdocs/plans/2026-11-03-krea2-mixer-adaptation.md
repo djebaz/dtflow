@@ -37,6 +37,8 @@
 
 ## Owner feedback follow-up
 
+- [x] Widen the Remove hit target to 22 × 22 px while retaining its inset 14 × 14 px visual and shared confirmation behavior. Register the presentation-only promoted Designer button; update normal/armed/narrow offline fixture annotations. No tests, renders or runtime validation performed.
+
 - Remove button size reduced from 28 × 28 to 14 × 14 px per owner feedback, with a smaller glyph and 3 px corner radius. The armed state keeps the same target size.
 
 - [x] Add Designer-owned rounded-square Remove buttons to script library cards. Reuse the shared button-only double confirmation, Escape/navigation cancellation and danger tokens; remove exact-version index membership asynchronously, retain immutable source for queued work and history, protect active runs/dirty drafts, and extend offline normal/armed/narrow definitions without rendering.

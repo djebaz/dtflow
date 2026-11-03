@@ -235,6 +235,7 @@ def render_scripts_states(out: Path, *, window_factory: Callable, state_names=ST
                 window.scripts.show_view(1)
                 window.scripts.start.setText("Run Script")
             elif state.startswith("scripts_library_remove"):
+                # Canonical promoted button: 14 px visual, 22 px native hit target.
                 window.scripts.show_view(0)
                 if state == "scripts_library_remove_armed":
                     row = window.scripts.library.itemWidget(window.scripts.library.item(0))

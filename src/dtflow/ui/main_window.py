@@ -69,6 +69,7 @@ from dtflow.ui.queue_widgets import SegmentedBar
 from dtflow.ui.run_control import RunControl
 from dtflow.persistence.script_library import ScriptLibrary
 from dtflow.ui.scripts_page import ScriptsPage
+from dtflow.ui.scripts_library_card import ScriptRemoveButton
 from dtflow.ui.runner import AsyncRunner
 from dtflow.ui.search_select import SearchableComboBox
 from dtflow.ui.system_trash import TRASH_NAME, trash_supported
@@ -101,7 +102,7 @@ def _form_loader() -> QUiLoader:
     loader = getattr(application, "_dtflow_form_loader", None)
     if loader is None:
         loader = QUiLoader(application)
-        for widget_type in (ImagePreview, SearchableComboBox, RunControl, SegmentedBar, ValueChips):
+        for widget_type in (ImagePreview, SearchableComboBox, RunControl, SegmentedBar, ValueChips, ScriptRemoveButton):
             loader.registerCustomWidget(widget_type)
         application._dtflow_form_loader = loader
     return loader

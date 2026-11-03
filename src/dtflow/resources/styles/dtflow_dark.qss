@@ -290,18 +290,18 @@ QPushButton#queueGenerateButton {
 }
 QPushButton#removeKeyButton,
 QPushButton#cancelQueueButton,
-/* Fixed target: arming removal changes only the glyph and shared confirmation state. */
+QPushButton[role="danger"] {
+  color: ${color.dangerText};
+}
+/* 22 px native hit target; the card widget paints the same inset 14 px control. */
 QPushButton#scriptRemoveButton {
-  min-width: 14px;
-  max-width: 14px;
-  min-height: 14px;
-  max-height: 14px;
+  min-width: 22px;
+  max-width: 22px;
+  min-height: 22px;
+  max-height: 22px;
   padding: 0px;
   border-radius: 3px;
   font-size: 11px;
-}
-QPushButton[role="danger"] {
-  color: ${color.dangerText};
 }
 QPushButton#removeKeyButton:hover,
 QPushButton#cancelQueueButton:hover,
