@@ -2065,8 +2065,9 @@ class ScriptsPage:
         )
         artifacts = [path for child in children for path in self._images(child["artifacts"])]
         if key == "results":
+            committed = sum(child["state"] == "succeeded" for child in children)
             self.results_header.setText(
-                f"Committed steps · {len(children)} of up to {run['cap']}"
+                f"Committed steps · {committed} of {len(children)} recorded · cap {run['cap']}"
                 + self._seconds(script.get("elapsed")).replace(" · ", " · total ")
             )
             self._populate_live_results(children, run)
