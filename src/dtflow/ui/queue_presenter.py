@@ -898,21 +898,24 @@ def event_lines(view: dict) -> str:
 
 
 def _step_lines(script: dict) -> list[str]:
-    """Compact step labels for narrow activity panels; raw event timestamps stay intact."""
+    """Show step progress in narrow logs; never invent a total for dynamic scripts."""
+    children = script.get("children") or ()
+    expected = script.get("expected_steps")
+    total = str(expected) if type(expected) is int and expected >= len(children) and expected > 0 else "?"
     lines = []
     blank = " " * 8
-    for child in script.get("children") or ():
-        n = child["ordinal"]
-        lines.append(f"{blank}  S{n} start")
+    for child in children:
+        progress = f"{child['ordinal']}/{total}"
+        lines.append(f"{blank}  {progress} start")
         state = child.get("state")
         if state == "succeeded":
             duration = (child.get("fields") or {}).get("duration")
             tail = f" · {duration:.2f}s" if type(duration) in (int, float) else ""
-            lines.append(f"{blank}  S{n} saved{tail}")
+            lines.append(f"{blank}  {progress} saved{tail}")
         elif state in ("failed", "save_failed", "unknown", "cancelled"):
             short_state = {"failed": "fail", "save_failed": "save fail",
                            "unknown": "unknown", "cancelled": "stopped"}[state]
-            lines.append(f"{blank}  S{n} {short_state}")
+            lines.append(f"{blank}  {progress} {short_state}")
     return lines
 
 
