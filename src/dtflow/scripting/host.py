@@ -384,6 +384,8 @@ class ScriptHost:
             target = None if output_file is None else self._confine(output_file)
             if target is not None and target.suffix.lower() != ".png":
                 raise ValueError("runBatch outputFile must end with .png; nothing was submitted.")
+            if target is not None and target.exists():
+                raise ValueError("runBatch outputFile already exists; nothing was submitted.")
             requests.append(self._request(item, call_index=self.generations + index + 1))
             destinations.append(target)
         named = [path for path in destinations if path is not None]
@@ -399,7 +401,7 @@ class ScriptHost:
 
     def _save_batch_png(self, target: Path, data: bytes | None) -> str:
         """Export one committed result into the confined script sandbox without replacing existing files."""
-        if data is None or not data.startswith(b"\\x89PNG\\r\\n\\x1a\\n"):
+        if data is None or not data.startswith(bytes((137, 80, 78, 71, 13, 10, 26, 10))):
             raise ValueError("The committed result has no PNG bytes for the requested sandbox export.")
         if len(data) > MAX_SANDBOX_FILE_BYTES:
             raise ValueError("The committed PNG exceeds the script file limit.")
@@ -458,7 +460,7 @@ class ScriptHost:
                             "status": "failed",
                             "attemptId": attempt_id,
                             "outputPaths": [],
-                            "error": f"{exc.failure.code}: {exc.failure.message}",
+                            "error": exc.failure.code,
                         }
                         intake_open = False
                         if exc.failure.remote_outcome not in SAFE_FAILURES:
@@ -468,7 +470,7 @@ class ScriptHost:
                             "status": "failed",
                             "attemptId": attempt_id,
                             "outputPaths": [],
-                            "error": f"{type(exc).__name__}: {exc}",
+                            "error": type(exc).__name__,
                         }
                         intake_open = False
                         self._blocked = "A batch generation did not finish cleanly; no more jobs."
@@ -490,7 +492,7 @@ class ScriptHost:
                                     "status": "save_failed",
                                     "attemptId": attempt_id,
                                     "outputPaths": paths,
-                                    "error": f"Sandbox export: {type(exc).__name__}: {exc}",
+                                    "error": f"Sandbox export: {type(exc).__name__}",
                                 }
                         if results[index]["status"] != "save_failed":
                             results[index] = {
