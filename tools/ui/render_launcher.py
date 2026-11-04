@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import subprocess
 import sys
 import threading
@@ -16,6 +17,13 @@ import time
 from concurrent.futures import ThreadPoolExecutor
 
 LEVEL_FLAGS = {"f": "-f", "m": "-m", "s": "-s"}
+# A worker's progress line: "[connection/cache] 19/60  connection-19-cache-measuring  0.31s".
+PROGRESS = re.compile(r"^\[(?P<group>[^\]]+)\] \d+/\d+  (?P<id>\S+)  (?P<seconds>[\d.]+)s$")
+
+
+def clock(seconds):
+    seconds = int(round(seconds))
+    return f"{seconds // 60}:{seconds % 60:02d}"
 
 
 def _worker_command(args, root, worker):
@@ -51,8 +59,39 @@ def run_workers(args, root):
     width = max(len(name) for name in args.workers)
     level = {"f": "fast", "m": "medium", "s": "slow (all)"}[args.level]
 
-    def emit(text):
+    def emit(text, *, show=True):
         with lock:
+            log.write(text + "\n")
+            log.flush()
+            if show or args.verbose:
+                print(text, flush=True)
+
+    total = len(args.selection.states)
+    by_id = args.selection.by_id
+    category_total = {}
+    for state in args.selection.states:
+        category_total[state.category] = category_total.get(state.category, 0) + 1
+    category_done = dict.fromkeys(category_total, 0)
+    done = 0
+    id_width = max((len(state.id) for state in args.selection.states), default=0)
+
+    def progress(worker, match):
+        """One console line for a saved state: overall done/total, elapsed, ETA and the category's own count."""
+        nonlocal done
+        state = by_id.get(match["id"])
+        with lock:
+            done += 1
+            elapsed = time.monotonic() - started
+            eta = elapsed / done * (total - done)
+            if state is not None:
+                category_done[state.category] += 1
+                where = f"{match['group']:<22} {category_done[state.category]:>3}/{category_total[state.category]:<3}"
+            else:
+                where = match["group"]
+            text = (
+                f"[{done:>{len(str(total))}}/{total} {done * 100 // total:>3}%  {clock(elapsed)}  ETA {clock(eta)}] "
+                f"{where} {match['id']:<{id_width}} {match['seconds']:>5}s  {tags[worker]}"
+            )
             log.write(text + "\n")
             log.flush()
             print(text, flush=True)
@@ -61,6 +100,9 @@ def run_workers(args, root):
         f"Level {level}: selected {len(args.selection.states)} states in {len(args.selection.fixtures)} fixture groups."
     )
     emit(f"Workers ({min(args.jobs, len(args.workers))} at a time): {', '.join(args.workers)}")
+    tags = {worker: f"p{index}" for index, worker in enumerate(args.workers, 1)}
+    for worker, tag in tags.items():
+        emit(f"  {tag} = {worker}")
 
     def run_one(worker):
         begun = time.monotonic()
@@ -73,12 +115,23 @@ def run_workers(args, root):
             errors="replace",
             env={**os.environ, "PYTHONUNBUFFERED": "1", "PYTHONIOENCODING": "utf-8"},
         )
+        failing = False
         for line in process.stdout:
             line = line.rstrip()
-            if line:
-                emit(f"{worker:<{width}} | {line}")
+            if not line:
+                continue
+            match = PROGRESS.match(line)
+            if match:
+                progress(worker, match)
+                continue
+            failing = failing or line.startswith("Traceback")
+            # Window headers, summaries and expected Qt notices stay in the log; problems reach the console.
+            loud = failing or line.startswith("WARNING")
+            emit(f"{worker:<{width}} | {line}", show=loud)
         code = process.wait()
-        return worker, code, time.monotonic() - begun
+        seconds = time.monotonic() - begun
+        emit(f"Worker {worker} finished in {clock(seconds)} (exit {code}).")
+        return worker, code, seconds
 
     with ThreadPoolExecutor(max_workers=min(args.jobs, len(args.workers))) as pool:
         results = list(pool.map(run_one, args.workers))
