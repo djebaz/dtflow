@@ -12,7 +12,7 @@ from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime
 from pathlib import Path
 
-from PySide6.QtCore import QObject, QTimer
+from PySide6.QtCore import QObject, QSignalBlocker, QTimer
 from PySide6.QtWidgets import QFrame, QHBoxLayout, QLabel, QWidget
 
 from dtflow.persistence.cloud_usage import load_timezone, read_usage_records, save_timezone
@@ -64,8 +64,7 @@ class CloudUsagePanel(QObject):
         combo.custom_prompt = "Timezone"
         combo.setAccessibleName("Daily reset timezone")
         chosen = load_timezone(self.state_dir)
-        choices = timezone_choices()
-        for label, zone in choices:
+        for label, zone in timezone_choices(self._clock()):
             combo.addItem(label, zone)
         index = combo.findData(chosen)
         if index < 0:  # a valid zone that is not offered (for example EST or Etc/UTC): use the default, not item 0
@@ -130,8 +129,18 @@ class CloudUsagePanel(QObject):
         if not self.runner.closed:
             self.runner.submit(remember(), saved)
 
+    def _refresh_clock_labels(self) -> None:
+        """Keep each entry's current local time fresh without changing the selection or emitting a change."""
+        combo = self.form.usageTimezoneCombo
+        with QSignalBlocker(combo):
+            for label, zone in timezone_choices(self._clock()):
+                index = combo.findData(zone)
+                if index >= 0 and combo.itemText(index) != label:
+                    combo.setItemText(index, label)
+
     def render(self) -> None:
         form = self.form
+        self._refresh_clock_labels()
         zone = zone_or_default(self.zone_name)
         counts = self.counts = count_day(self._records, self._clock(), zone, active_credential=self._active)
         start = counts.start.astimezone(zone)

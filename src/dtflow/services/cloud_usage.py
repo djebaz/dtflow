@@ -38,19 +38,27 @@ def key_identity(secret: str) -> tuple[str, str | None]:
     return digest, hint
 
 
-_REGIONS = {"Africa", "America", "Antarctica", "Arctic", "Asia", "Atlantic", "Australia", "Europe", "Indian", "Pacific"}
+def timezone_choices(now: datetime | None = None) -> tuple[tuple[str, str], ...]:
+    """One (label, IANA id) per whole-hour offset from GMT-12 to GMT+14, each with its current local time.
 
-
-def timezone_choices() -> tuple[tuple[str, str], ...]:
-    """(label, IANA id) pairs: the named zones plus fixed UTC±N offsets (Etc/GMT signs are inverted by convention)."""
-    names = sorted(name for name in available_timezones() if name.split("/", 1)[0] in _REGIONS and "/" in name)
-    fixed = [("UTC", "UTC")]
-    for hours in range(1, 15):
-        fixed.append((f"UTC+{hours} (Etc/GMT-{hours})", f"Etc/GMT-{hours}"))
-    for hours in range(1, 13):
-        fixed.append((f"UTC−{hours} (Etc/GMT+{hours})", f"Etc/GMT+{hours}"))
-    available = set(available_timezones())
-    return tuple((label, zone) for label, zone in (*((n, n) for n in names), *fixed) if zone in available)
+    Fixed offsets use ``Etc/GMT`` zones (their sign is inverted by convention). The default Europe/Paris takes the
+    entry matching its current offset so its daylight-saving boundaries stay correct; other entries are fixed.
+    """
+    now = (now or datetime.now(UTC)).astimezone(UTC)
+    available = available_timezones()
+    paris = ZoneInfo(DEFAULT_TIMEZONE) if DEFAULT_TIMEZONE in available else None
+    paris_hours = int(now.astimezone(paris).utcoffset().total_seconds() // 3600) if paris else None
+    choices = []
+    for hours in range(-12, 15):
+        zone = "UTC" if hours == 0 else f"Etc/GMT{-hours:+d}"
+        suffix = ""
+        if hours == paris_hours:
+            zone, suffix = DEFAULT_TIMEZONE, " \u00b7 Paris"
+        if zone not in available:
+            continue
+        local = now.astimezone(ZoneInfo(zone))
+        choices.append((f"GMT{hours:+03d} \u00b7 {local:%H:%M}{suffix}", zone))
+    return tuple(choices)
 
 
 def zone_or_default(name: str | None) -> ZoneInfo:
