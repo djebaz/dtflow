@@ -420,7 +420,7 @@ class MainWindow:
         about_button.setAccessibleName("About DTFlow")
         status_actions = QWidget(form.statusBar())
         status_actions_layout = QHBoxLayout(status_actions)
-        status_actions_layout.setContentsMargins(0, 0, 12, 0)
+        status_actions_layout.setContentsMargins(0, 0, 8, 0)
         status_actions_layout.setSpacing(6)
         about_button.setFixedSize(20, 20)
         logs_button = QToolButton(status_actions)
@@ -456,12 +456,13 @@ class MainWindow:
         pill.setProperty("state", "neutral")
         pill.setAccessibleName("Local DT+ completed images today, active key / all keys")
         self.usage_pill = pill
-        spacer = QWidget(form.statusBar())
-        spacer.setFixedWidth(10)
-        form.statusBar().addPermanentWidget(pill)
-        form.statusBar().addPermanentWidget(spacer)
         form.statusBar().addPermanentWidget(grid_status_group)
         form.statusBar().addPermanentWidget(status_actions)
+        # The usage pill is the extreme-right item, after the Help and Logs buttons, with a quiet right margin.
+        pill_margin = QWidget(form.statusBar())
+        pill_margin.setFixedWidth(12)
+        form.statusBar().addPermanentWidget(pill)
+        form.statusBar().addPermanentWidget(pill_margin)
         self.grid_index_group = grid_status_group
         # The slot stays on every tab (only its text hides) so the activity bar has the same room everywhere.
         grid_status_group.setFixedSize(70, 20)
