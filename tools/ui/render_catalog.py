@@ -7,7 +7,6 @@ from __future__ import annotations
 
 import argparse
 import hashlib
-import itertools
 import json
 import os
 from dataclasses import dataclass
@@ -67,16 +66,41 @@ def plan_processes(selection, jobs):
     cost = {name: WORKER_COST[name][0] + WORKER_COST[name][1] * count for name, count in counts.items()}
     names = sorted(cost, key=lambda n: -cost[n])
     count = max(1, min(jobs, sum(cost[n] >= 2.0 for n in names)))
-    best, best_peak = None, None
-    # At most six groups: try every assignment and keep the one with the lowest slowest process.
-    for choice in itertools.product(range(count), repeat=len(names)):
-        loads = [0.0] * count
-        for name, index in zip(names, choice, strict=True):
-            loads[index] += cost[name]
-        peak = max(loads)
-        if best_peak is None or peak < best_peak - 1e-9:
-            best, best_peak = choice, peak
-    bins = [[n for n, i in zip(names, best, strict=True) if i == index] for index in range(count)]
+    # Longest-first greedy packing, then move/swap groups between processes while that lowers the slowest one.
+    # Polynomial in the number of groups, so a high --jobs value stays cheap.
+    bins = [[] for _ in range(count)]
+    for name in names:
+        min(bins, key=lambda group: sum(cost[n] for n in group)).append(name)
+
+    def load(group):
+        return sum(cost[n] for n in group)
+
+    improved = True
+    while improved:
+        improved = False
+        slow = max(bins, key=load)
+        for name in list(slow):
+            for other in bins:
+                if other is slow:
+                    continue
+                if max(load(slow) - cost[name], load(other) + cost[name]) < load(slow) - 1e-9:
+                    slow.remove(name)
+                    other.append(name)
+                    improved = True
+                    break
+                for partner in list(other):
+                    delta = cost[name] - cost[partner]
+                    if delta > 1e-9 and max(load(slow) - delta, load(other) + delta) < load(slow) - 1e-9:
+                        slow.remove(name)
+                        other.remove(partner)
+                        slow.append(partner)
+                        other.append(name)
+                        improved = True
+                        break
+                if improved:
+                    break
+            if improved:
+                break
     return ["+".join(sorted(group, key=WORKER_ORDER.index)) for group in bins if group]
 
 
@@ -245,8 +269,6 @@ def parse_inputs(root, argv=None):
     # The parent plans workers from the whole selection; a worker's own selection is already narrowed to its group.
     args.jobs = args.jobs if args.jobs > 0 else max(2, min(4, os.cpu_count() or 2))
     args.workers = plan_processes(args.selection, args.jobs) if args.worker is None and not args.list else []
-    if args.jobs == 1 or len(args.workers) < 2:
-        args.workers = []
     if args.worker:
         args.report_key += f"-{args.worker}"
     if args.list:

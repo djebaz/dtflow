@@ -131,7 +131,7 @@ def run_workers(args, root):
 
         def watchdog():
             # Stack dumps and Qt notices are output too, so only a saved state counts as progress.
-            while not done_reading.wait(5):
+            while not done_reading.wait(min(5, max(args.stall_timeout / 4, 0.5))):
                 if time.monotonic() - progressed[0] > args.stall_timeout:
                     stalled.append(True)
                     emit(f"WARNING: worker {worker} saved no state for {args.stall_timeout}s; stopping it.")

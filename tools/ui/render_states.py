@@ -820,6 +820,9 @@ def render_connection_usage_states(shell, out):
     active_key(None, None, 0, 3)
     snap("connection-60-bottom-bar-no-key")
     environ.clear()
+    # Later fixtures share this window when packed into one process; do not leave synthetic usage behind.
+    panel._records = ()
+    panel.render()
 
 
 @fixture("generate-configuration")
