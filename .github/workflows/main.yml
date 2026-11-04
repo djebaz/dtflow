@@ -10,6 +10,8 @@ run-name: >-
   || inputs.pr != '' && format('PR #{0}', inputs.pr) || format('branch {0}', github.ref_name) }}
 
 on:
+  # Label-only requests enter through render-request.yml, without a separate runner job.
+  workflow_call:
   workflow_dispatch:
     inputs:
       pr:
@@ -47,7 +49,23 @@ on:
           - zip
           - images
   pull_request:
-    types: [opened, synchronize, reopened, labeled]
+    types: [opened, synchronize, reopened]
+    paths:
+      - 'src/dtflow/**'
+      - 'tools/ui/**'
+      - 'tests/fixtures/**'
+      - 'tests/helpers/**'
+      - 'tests/conftest.py'
+      - 'pyproject.toml'
+      - 'uv.lock'
+      - '.python-version'
+      - '.github/actions/**'
+      - '.github/workflows/main.yml'
+      - '.github/workflows/render-request.yml'
+      - 'tools/ci/action_changes.py'
+      - 'tools/ci/action_dependencies.json'
+      - '!**/*.md'
+      - '!**/*.rst'
 
 permissions:
   contents: read
@@ -63,42 +81,15 @@ env:
   PYTHONFAULTHANDLER: "1"
 
 jobs:
-  changes:
-    name: Detect relevant render changes
+  render:
+    name: Render UI states
     runs-on: ubuntu-24.04
     # Either render label opts in; adding render-all works without a render label.
     if: >-
       github.event_name != 'pull_request'
       || (github.event.action == 'labeled' && (github.event.label.name == 'render' || github.event.label.name == 'render-all'))
       || (github.event.action != 'labeled' && (contains(github.event.pull_request.labels.*.name, 'render') || contains(github.event.pull_request.labels.*.name, 'render-all')))
-    timeout-minutes: 3
-    outputs:
-      run: ${{ steps.changes.outputs.run }}
-    steps:
-      - uses: actions/checkout@v7
-        with:
-          ref: ${{ github.event.pull_request.head.sha || github.sha }}
-          fetch-depth: 0
-          persist-credentials: false
-      - name: Classify this update without project dependencies
-        id: changes
-        run: |
-          if [ -f tools/ci/action_changes.py ] && [ -f tools/ci/action_dependencies.json ]; then
-            python3 tools/ci/action_changes.py --kind render
-          else
-            echo "run=true" >> "$GITHUB_OUTPUT"
-            echo "Change gate unavailable at target; run conservatively." >> "$GITHUB_STEP_SUMMARY"
-          fi
-
-  render:
-    name: Render UI states
-    needs: changes
-    if: needs.changes.outputs.run == 'true'
-    runs-on: ubuntu-24.04
-    # Only a meaningful render request supersedes another; docs-only updates do not cancel it.
-    concurrency:
-      group: ui-renders-${{ github.event.pull_request.number || inputs.pr || github.ref }}
-      cancel-in-progress: true
+    # No shared pre-gate concurrency: irrelevant pushes must not cancel running/pending renders.
     timeout-minutes: 15
     steps:
       - name: Resolve target commit
@@ -131,24 +122,38 @@ jobs:
           # The change-based selection diffs against the merge base with the target branch.
           fetch-depth: 0
 
+      - name: Check this update before expensive setup
+        id: changes
+        run: |
+          if [ -f tools/ci/action_changes.py ] && [ -f tools/ci/action_dependencies.json ]; then
+            python3 tools/ci/action_changes.py --kind render
+          else
+            echo "run=true" >> "$GITHUB_OUTPUT"
+            echo "Change gate unavailable at target; run conservatively." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
       # PySide6 needs libEGL at import time; the other Qt libraries and fonts are already on the runner image.
       - name: Install Qt runtime library
+        if: steps.changes.outputs.run == 'true'
         run: |
           sudo apt-get install -y --no-install-recommends libegl1 \
             || { sudo apt-get update && sudo apt-get install -y --no-install-recommends libegl1; }
 
       - uses: astral-sh/setup-uv@v10.3.3
+        if: steps.changes.outputs.run == 'true'
         with:
           enable-cache: true
           cache-dependency-glob: uv.lock
 
       # The render script imports the offline test fixtures, so the dev group is included.
       - name: Sync environment
+        if: steps.changes.outputs.run == 'true'
         run: uv sync --locked
 
       # A normal run takes well under a minute. If a state hangs, the watchdog aborts Python
       # directly (not through uv) so the faulthandler stack shows exactly where it stalled.
       - name: Render states
+        if: steps.changes.outputs.run == 'true'
         id: render
         # Longer than the 300s render deadline below, so the watchdog's stack traces appear before the step is cut.
         timeout-minutes: 6
@@ -206,7 +211,7 @@ jobs:
 
       - name: Upload renders to Google Drive
         id: drive
-        if: always()
+        if: always() && steps.changes.outputs.run == 'true'
         env:
           REFRESH_TOKEN: ${{ secrets.GOOGLE_DRIVE_REFRESH_TOKEN }}
           CLIENT_ID: ${{ secrets.GOOGLE_OAUTH_CLIENT_ID }}
@@ -247,7 +252,7 @@ jobs:
       # Built only from what this run produced (the merged render manifest, log and PNG files), so it
       # needs no upkeep when states are added or removed.
       - name: Summarize renders
-        if: always()
+        if: always() && steps.changes.outputs.run == 'true'
         env:
           RENDER_STATUS: ${{ steps.render.outputs.status }}
           TARGET: ${{ steps.target.outputs.label }}
@@ -435,7 +440,7 @@ jobs:
           print(f"{verdict}: {len(pngs)} states rendered.")
 
       - name: Update pull request render comment
-        if: always() && (github.event.pull_request.number || inputs.pr)
+        if: always() && steps.changes.outputs.run == 'true' && (github.event.pull_request.number || inputs.pr)
         env:
           GH_TOKEN: ${{ github.token }}
           PR_NUMBER: ${{ github.event.pull_request.number || inputs.pr }}

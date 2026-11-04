@@ -86,7 +86,7 @@ def main():
         output.write(f"run={str(result['run']).lower()}\n")
     summary = os.environ.get("GITHUB_STEP_SUMMARY")
     if summary:
-        verdict = "Run" if result["run"] else "Skip expensive job"
+        verdict = "Continue expensive steps" if result["run"] else "Skip expensive steps"
         with Path(summary).open("a", encoding="utf-8", newline="\n") as output:
             output.write(f"## {args.kind.upper()} change gate: {verdict}\n\n{result['reason']}.\n\n")
             output.write("Skipped work is not a new validation pass. Manual dispatch bypasses this gate.\n")
