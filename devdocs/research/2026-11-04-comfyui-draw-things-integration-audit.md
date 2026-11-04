@@ -216,7 +216,7 @@ The pinned revision URLs themselves have not been downloaded yet. The SHA-256 ch
 **Workflow file format (official schema page, read 2026-11-04).** The published [v1.0 JSON Schema](https://github.com/Comfy-Org/docs/blob/main/specs/workflow_json.mdx) requires top-level `version` (const `1`), `state` (`lastNodeId`, `lastLinkId`, `lastRerouteId`, `lastGroupid`) and `nodes`; `links`, `groups`, `reroutes`, `config`, `extra` and `models` are optional. A node requires `id`, `type`, `pos`, `size`, `flags`, `order`, `mode` and `properties`; `inputs`/`outputs` items require `name` and `type`; `widgets_values` may be an **array or an object**. In v1.0, links are **objects** (`id`, `origin_id`, `origin_slot`, `target_id`, `target_slot`, `type`, optional `parentId`), not the positional arrays of the older 0.4 format (the 0.4 page was not read here). `additionalProperties: true` is allowed almost everywhere, and `extra` is the extension slot. The page says nothing about how the ComfyUI editor treats unknown node types, so the ComfyUI behaviour on DTFlow node types stays unverified (10.6 item 2). Consequences for the DTFlow contract:
 
 - The schema is **permissive**, so "valid against the official schema" is not enough for DTFlow's strict import. DTFlow needs its own stricter check on top: known `type` values only, known `widgets_values` keys only, no unknown keys in DTFlow-owned objects, and link `type` equal on both ends.
-- Pick **one** `widgets_values` form. An object keyed by parameter name (`{"checkpoint": ..., "loras": [...]}`) is allowed by v1.0 and avoids positional mapping errors; stock ComfyUI nodes usually write arrays. This is decision D1.
+- **`widgets_values` form: owner decision D1 (2026-11-04): array**, the form stock ComfyUI nodes write, for the best fit with the Comfy standard. Each DTFlow node type documents a fixed parameter order in the contract; any change to that order bumps the `extra.dtflow` version; the importer rejects a node whose array has the wrong length or a wrong value type. What the ComfyUI editor does with an unknown node's `widgets_values` when re-saving remains part of the round-trip check (10.6 item 2).
 - `extra.dtflow` carries the DTFlow contract version (for example `{"schema": "dtflow-workflow", "version": 1}`). An import with a missing or newer DTFlow version is rejected whole, matching the existing "newer schema is rejected" rule in [`person_models.py`](../../src/dtflow/persistence/person_models.py).
 - Groups, reroutes, subgraphs and `models` are not needed for the reference workflow. V1 can reject files that use them instead of half-supporting them (consistent with the strict import rule).
 
@@ -253,11 +253,11 @@ The pinned revision URLs themselves have not been downloaded yet. The SHA-256 ch
 
 This plan orders the work in #223 into reviewable PRs. Every PR follows the V1 test policy (no new or changed tests, ruff before commit, existing suite at the end) and no live generation or download without owner approval.
 
-**Owner decisions needed before the affected step** (recommendation first; D2 to D8 are decided; D1 is open):
+**Owner decisions needed before the affected step** (recommendation first; all decisions D1 to D8 are decided by the owner):
 
 | # | Question | Recommendation | Blocks |
 | --- | --- | --- | --- |
-| D1 | `widgets_values` as an object keyed by parameter name, or an array like stock ComfyUI? | Object: allowed by v1.0, no positional mapping, clearer strict-import errors. | Step 1 |
+| D1 | `widgets_values` as an object or an array? | **Decided (owner, 2026-11-04):** array, like stock ComfyUI nodes. Each DTFlow node type documents a fixed parameter order; changing it bumps the `extra.dtflow` version; import rejects wrong length or types. | — |
 | D2 | How are image operations authorised in a workflow? | **Decided (owner, 2026-11-04):** no extra confirmation; each node uses an automatic owner probe, and an unsupported checkpoint just fails that node. | — |
 | D3 | A node with several output images feeding an image operation? | **Decided (owner, 2026-11-04):** fan out; the rest of the chain runs once per image, paired by branch. | — |
 | D4 | Is the faces model required for `DTFDetectFaceMask`, and what triggers "No face detected"? | **Decided (owner, 2026-11-04):** required (provided by the planned auto-download), so `face_skin` excludes neck/chest. Pause when no person is found, when the faces model finds zero boxes, or when the chosen region mask is empty. | — |
