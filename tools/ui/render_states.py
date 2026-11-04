@@ -3687,7 +3687,14 @@ def _render_selection(app, args):
         patch.object(session, "create_backend", backend),
     ):
         state = Path(temporary)
-        if wants("scripts"):
+        scripts_done = False
+
+        def render_scripts():
+            """Scripts use their own window, so they run when no other window is open (after all the others)."""
+            nonlocal scripts_done
+            if scripts_done or not wants("scripts"):
+                return
+            scripts_done = True
             # Includes parser-limit, inspection, mixer and Setup fixtures; no JS/queues are started.
             from render_scripts_states import render_scripts_states
 
@@ -3707,6 +3714,10 @@ def _render_selection(app, args):
                 on_begin=REPORTER.begin,
                 diagnostic=REPORTER.diagnostic,
             )
+
+        # The splash is the first window the user sees.
+        if wants("shell"):
+            render_startup_splash(args.out)
         workspace_groups = (
             "connection-setup",
             "connection-outcomes",
@@ -3720,8 +3731,6 @@ def _render_selection(app, args):
         )
         if any(needs_fixture(group) for group in workspace_groups):
             render_workspace_states(app, state, args.out)
-        if wants("shell"):
-            render_startup_splash(args.out)
         if wants("images"):
             render_mapped_gallery_states(app, state, args.out)
         if needs_fixture("trash-unavailable"):
@@ -3755,6 +3764,7 @@ def _render_selection(app, args):
         if wants("images"):
             render_initial_refresh_recovery(app, state, args.out)
         if not any(needs_fixture(group) for group in ("generation-flow", "queue", "shell", "inpaint", "logs")):
+            render_scripts()
             return
         shell = MainWindow(saved=SavedCredentials(Vault()), environ={}, state_dir=state)
         shell.form.resize(1600, 1000)
@@ -4014,6 +4024,7 @@ def _render_selection(app, args):
             shell.runner.shutdown()
             shell.form.close()
             app.processEvents()
+        render_scripts()
 
 
 def main():
