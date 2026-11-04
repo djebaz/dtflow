@@ -16,6 +16,9 @@ STAGE_ORDER = ("empty", "setup", "ready", "running", "results", "failure", "reco
 CATALOG_PATH = Path(__file__).with_suffix(".json")
 
 
+LEVEL_ORDER = ("f", "m", "s")  # fast ⊂ medium ⊂ slow (every state)
+
+
 @dataclass(frozen=True)
 class State:
     id: str
@@ -24,6 +27,7 @@ class State:
     fixture: str
     stage: str
     path: str
+    level: str = "s"
 
     @property
     def group(self):
@@ -37,6 +41,8 @@ def load_catalog(path=CATALOG_PATH):
     for state in states:
         if state.id in ids or state.path in paths:
             raise ValueError(f"Duplicate render catalogue identity/path: {state.id}")
+        if state.level not in LEVEL_ORDER:
+            raise ValueError(f"Unknown render level: {state.id}")
         if state.category not in CATEGORY_ORDER or state.stage not in STAGE_ORDER:
             raise ValueError(f"Unknown render category/stage: {state.id}")
         relative = Path(state.path)
@@ -48,7 +54,7 @@ def load_catalog(path=CATALOG_PATH):
 
 
 class Selection:
-    def __init__(self, catalog, *, category="all", groups=(), states=(), prefixes=()):
+    def __init__(self, catalog, *, category="all", groups=(), states=(), prefixes=(), level="s"):
         self.catalog_by_id = {state.id: state for state in catalog}
         ids = {state.id for state in catalog}
         available_groups = {state.group for state in catalog}
@@ -62,6 +68,8 @@ class Selection:
             if not any(state.id.startswith(prefix) for state in catalog):
                 raise ValueError(f"Render prefix matches no states: {prefix}")
         explicit = self.explicit = bool(groups or states or prefixes)
+        self.level = level
+        reach = LEVEL_ORDER[: LEVEL_ORDER.index(level) + 1]
         self.states = tuple(
             state
             for state in catalog
@@ -72,6 +80,7 @@ class Selection:
                 and state.subcategory == "navigation"
                 and state.category == "images"
             )
+            and state.level in reach
             and (
                 not explicit
                 or state.id in states
@@ -103,9 +112,13 @@ def parse_inputs(root, argv=None):
     parser.add_argument("-o", "--out", type=Path, default=root / "tmp/ui-renders", help="Screenshot/report directory")
     parser.add_argument("-c", "--category", choices=("all", *CATEGORY_ORDER, "image-navigation"), default="all")
     parser.add_argument("-g", "--group", action="append", default=[], help="Select category/subcategory; repeatable")
-    parser.add_argument(
-        "-s", "--state", action="append", default=[], help="Select an exact stable state ID; repeatable"
+    parser.add_argument("--state", action="append", default=[], help="Select an exact stable state ID; repeatable")
+    levels = parser.add_mutually_exclusive_group()
+    levels.add_argument("-f", "--fast", dest="level", action="store_const", const="f", help="Key states only (default)")
+    levels.add_argument(
+        "-m", "--medium", dest="level", action="store_const", const="m", help="Fast plus common variants"
     )
+    levels.add_argument("-s", "--slow", dest="level", action="store_const", const="s", help="Every state")
     parser.add_argument(
         "-p", "--prefix", action="append", default=[], help="Select state IDs by literal prefix; repeatable"
     )
@@ -114,10 +127,18 @@ def parse_inputs(root, argv=None):
     )
     parser.add_argument("-v", "--verbose", action="store_true", help="Also print detailed fixture/platform diagnostics")
     args = parser.parse_args(argv)
+    # Explicit group/state/prefix selectors name what to render, so they reach every level unless one is given.
+    explicit = bool(args.group or args.state or args.prefix)
+    args.level = args.level or ("s" if explicit else "f")
     try:
         catalog = load_catalog()
         args.selection = Selection(
-            catalog, category=args.category, groups=args.group, states=args.state, prefixes=args.prefix
+            catalog,
+            category=args.category,
+            groups=args.group,
+            states=args.state,
+            prefixes=args.prefix,
+            level=args.level,
         )
     except (ValueError, OSError) as exc:
         parser.error(str(exc))
@@ -127,9 +148,11 @@ def parse_inputs(root, argv=None):
     # Concurrent runs with different selectors must not share a log or manifest.
     digest = hashlib.sha1("\n".join(selectors).encode()).hexdigest()[:8] if selectors else ""
     args.report_key = f"{args.category}-{digest}" if digest else args.category
+    if args.level != "s":
+        args.report_key += f"-{args.level}"
     if args.list:
         for index, state in enumerate(args.selection.states, 1):
-            print(f"{index:3}  {state.group:30} {state.stage:8} {state.id}  [fixture: {state.fixture}]")
+            print(f"{index:3}  {state.level} {state.group:30} {state.stage:8} {state.id}  [fixture: {state.fixture}]")
         print(f"Selected {len(args.selection.states)} states in {len(args.selection.fixtures)} fixture groups.")
         parser.exit()
     return args

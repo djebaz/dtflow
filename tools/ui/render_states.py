@@ -220,7 +220,7 @@ def category_selected(target):
     manifest) unless the run was narrowed by --group/--state/--prefix."""
     name = Path(target).stem
     if name not in SELECTION.catalog_by_id:
-        return not SELECTION.explicit and unregistered_category(name) in SELECTION.categories
+        return not SELECTION.explicit and SELECTION.level == "s" and unregistered_category(name) in SELECTION.categories
     return name in SELECTION.by_id
 
 
@@ -4116,7 +4116,10 @@ def main():
     error = None
     try:
         with REPORTER.console():
-            print(f"Selected {len(SELECTION.states)} states in {len(SELECTION.fixtures)} fixture groups.")
+            level = {"f": "fast", "m": "medium", "s": "slow (all)"}[SELECTION.level]
+            print(
+                f"Level {level}: selected {len(SELECTION.states)} states in {len(SELECTION.fixtures)} fixture groups."
+            )
             print("Phases: " + " → ".join(planned_phases()))
             print("Summary and manifest follow the product journey: " + " → ".join(SELECTION.categories))
             try:

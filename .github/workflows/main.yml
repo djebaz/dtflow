@@ -124,11 +124,14 @@ jobs:
           status=0
           category="${{ inputs.category || 'all' }}"
           help_file=tmp/render-help.txt
+          level_flag=""
           if ! .venv/bin/python tools/ui/render_states.py --help >"$help_file" 2>&1; then
             cat "$help_file"
             echo "::error::Renderer could not start; refusing to treat a broken renderer as a legacy renderer."
             status=1
           elif grep -q -- '--category' "$help_file"; then
+            # Run levels default to fast; Actions renders every state when the target supports levels.
+            if grep -q -- '--slow' "$help_file"; then level_flag="-s"; fi
             if [ "$category" = "all" ]; then
               # Separate Qt processes keep category state isolated. Limit concurrency so a
               # hosted runner is not overloaded while still cutting wall-clock render time.
@@ -136,22 +139,23 @@ jobs:
                 local category="$1"
                 set -o pipefail
                 timeout --signal=ABRT --kill-after=10s 300s \
-                  .venv/bin/python tools/ui/render_states.py --out tmp/ui-renders --category "$category" \
+                  .venv/bin/python tools/ui/render_states.py $level_flag --out tmp/ui-renders --category "$category" \
                   2>&1 | sed -u "s/^/[$category] /"
               }
               export -f render_one
+              export level_flag
               printf '%s\n' connection generate images queues shell inpaint logs scripts \
                 | xargs -n1 -P3 bash -c 'render_one "$0"' \
                 2>&1 | tee tmp/render.log || status=$?
             else
               timeout --signal=ABRT --kill-after=10s 300s \
-                .venv/bin/python tools/ui/render_states.py --out tmp/ui-renders --category "$category" \
+                .venv/bin/python tools/ui/render_states.py $level_flag --out tmp/ui-renders --category "$category" \
                 2>&1 | tee tmp/render.log || status=$?
             fi
           else
             echo "::notice::Target commit predates category-aware rendering; rendering all states once."
             timeout --signal=ABRT --kill-after=10s 300s \
-              .venv/bin/python tools/ui/render_states.py --out tmp/ui-renders \
+              .venv/bin/python tools/ui/render_states.py $level_flag --out tmp/ui-renders \
               2>&1 | tee tmp/render.log || status=$?
           fi
           echo "status=$status" >> "$GITHUB_OUTPUT"
