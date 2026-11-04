@@ -73,23 +73,27 @@ def run_workers(args, root):
         category_total[state.category] = category_total.get(state.category, 0) + 1
     category_done = dict.fromkeys(category_total, 0)
     done = 0
+    first = 0.0
     id_width = max((len(state.id) for state in args.selection.states), default=0)
 
     def progress(worker, match):
         """One console line for a saved state: overall done/total, elapsed, ETA and the category's own count."""
-        nonlocal done
+        nonlocal done, first
         state = by_id.get(match["id"])
         with lock:
             done += 1
             elapsed = time.monotonic() - started
-            eta = elapsed / done * (total - done)
+            first = first or time.monotonic()
+            # Worker startup (imports, Qt) is not render speed: the rate starts at the first saved state.
+            rate = (time.monotonic() - first) / (done - 1) if done > 1 else None
+            eta = rate * (total - done) if rate is not None else None
             if state is not None:
                 category_done[state.category] += 1
                 where = f"{match['group']:<22} {category_done[state.category]:>3}/{category_total[state.category]:<3}"
             else:
                 where = match["group"]
             text = (
-                f"[{done:>{len(str(total))}}/{total} {done * 100 // total:>3}%  {clock(elapsed)}  ETA {clock(eta)}] "
+                f"[{done:>{len(str(total))}}/{total} {done * 100 // total:>3}%  {clock(elapsed)}  ETA {clock(eta) if eta is not None else '--:--'}] "
                 f"{where} {match['id']:<{id_width}} {match['seconds']:>5}s  {tags[worker]}"
             )
             log.write(text + "\n")
