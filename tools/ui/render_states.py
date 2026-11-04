@@ -166,7 +166,7 @@ def report(target):
     RENDERED[name] = {"seconds": seconds, "blank": len(colors) <= 1}
     print(f"[{len(RENDERED):3}] +{seconds:5.1f}s {target}")
     # Dump Python stacks before CI's step timeout if the next state stops making progress.
-    faulthandler.dump_traceback_later(30, repeat=True)
+    faulthandler.dump_traceback_later(120, repeat=True)
 
 
 def summarize():
@@ -2751,9 +2751,6 @@ def render_initial_refresh_recovery(app, state, out):
             wait_for(lambda: shell.gallery._refresh_failing and not shell.gallery._loading)
             shell.gallery.auto_timer.stop()
             shell.gallery.filter_timer.stop()
-            failed_label = shell.gallery._grid_empty
-            disposed = []
-            failed_label.destroyed.connect(lambda: disposed.append(True))
             target = out / "images-18-refresh-failed.png"
             if not shell.form.grab().save(str(target)):
                 raise RuntimeError(f"Could not save {target.name}")
@@ -2882,6 +2879,7 @@ def render_mapped_gallery_states(app, state, out):
                 if not shell.form.grab().save(str(target)):
                     raise RuntimeError(f"Could not save {target.name}")
                 report(target)
+            shell.gallery.show_view("Detail", persist=False)
             shell.gallery.select(item.identity)
             wait_for(lambda: not shell.gallery.surface_painter.pixmap.isNull())
             QTest.qWait(150)
@@ -3983,7 +3981,7 @@ def main():
 
 
 if __name__ == "__main__":
-    faulthandler.dump_traceback_later(30, repeat=True)
+    faulthandler.dump_traceback_later(120, repeat=True)
     try:
         main()
     finally:
