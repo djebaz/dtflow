@@ -167,7 +167,7 @@ Owner decision: use **the SHA-256 of the exact selected public download artifact
 | SegFormer B2 clothes | `https://huggingface.co/alexgenovese/segformer-onnx/resolve/main/segformer_b2_clothes.onnx` | 104.94 (≈110.0 MB) | `16fdd1137d4fc35bafc67efeab21549011c4b9958ea7a0c2d33e05839ba1ea09` | **No.** Different repository from `mattmdjaga/segformer_b2_clothes` (`a93a8dac…d54f`), and unpinned `main`. |
 | NudeNet faces (320n) | `https://huggingface.co/zhangsongbo365/nudenet_onnx/resolve/main/320n.onnx` | 11.59 | `776773dd37d99aa2ffe63bec9f92a835d82f3e40d627ffb47d9c3455aec600aa` | **No.** Different repository from the DeepGHS pinned file (`c15d8273…1f0f`), and unpinned `main`. |
 
-All three URLs were reachable without authentication from the owner's machine. The owner also reports the faces file passes DTFlow's faces contract; that check applies to the file the owner uses, presumably the `zhangsongbo365` download. Before shipping a catalogue, decide which source each entry uses (decision D8), pin each Hugging Face URL to an immutable commit revision instead of `main`, record the hash of exactly that revision, and keep the licence review (D7). Do not add a new unit-test suite for this; keep the owner's final V1 reference-workflow smoke test policy.
+All three URLs were reachable without authentication from the owner's machine. The owner also reports the faces file passes DTFlow's faces contract; that check applies to the file the owner uses, presumably the `zhangsongbo365` download. Owner decision D8: ship the owner-tested sources. Before shipping the catalogue, pin each Hugging Face URL to an immutable commit revision instead of `main`, record the hash of exactly that revision, and keep the licence review (D7). Do not add a new unit-test suite for this; keep the owner's final V1 reference-workflow smoke test policy.
 
 ### 10.4 Runtime behavior and exceptional human decision
 
@@ -243,7 +243,7 @@ All three URLs were reachable without authentication from the owner's machine. T
 
 This plan orders the work in #223 into reviewable PRs. Every PR follows the V1 test policy (no new or changed tests, ruff before commit, existing suite at the end) and no live generation or download without owner approval.
 
-**Owner decisions needed before the affected step** (recommendation first; D2, D3 and D4 are decided, the rest are open):
+**Owner decisions needed before the affected step** (recommendation first; D2, D3, D4 and D8 are decided, the rest are open):
 
 | # | Question | Recommendation | Blocks |
 | --- | --- | --- | --- |
@@ -254,7 +254,7 @@ This plan orders the work in #223 into reviewable PRs. Every PR follows the V1 t
 | D5 | With several people, which person's mask? | `person` parameter with `strongest` (default, deterministic) and `all` (union); add `largest_face` only if needed. | Step 3 |
 | D6 | Run a workflow as one queue item of a new `workflow` kind (store 7 → 8, one-way), like Scripts? | Yes; reuses admission, reservations, Stop and the crash rule of #205. | Step 4 |
 | D7 | Licence review of YOLO26 (AGPL-3.0/commercial) and SegFormer/NudeNet weights before advertising one-click downloads. | Owner review; until then the catalogue can ship only verified and licence-cleared entries, and manual "Models…" stays. | Step 5 |
-| D8 | Which download source for SegFormer and NudeNet: the owner-tested repositories (`alexgenovese/segformer-onnx`, `zhangsongbo365/nudenet_onnx`) or the documented candidates (`mattmdjaga/segformer_b2_clothes`, DeepGHS pinned)? | The owner-tested files, since they are known to pass DTFlow's contracts, pinned to a commit revision with that revision's SHA-256. | Step 5 |
+| D8 | Which download source for SegFormer and NudeNet? | **Decided (owner, 2026-11-04):** the owner-tested files (`alexgenovese/segformer-onnx`, `zhangsongbo365/nudenet_onnx`), each pinned to a commit revision with that revision's SHA-256. The revision ids are still to be looked up (this environment cannot reach `huggingface.co`). | — |
 
 **Steps**
 
