@@ -1,0 +1,9 @@
+{
+  "schema_version": 1,
+  "comment": "Cheap workflow gating, separate from screenshot selection. fnmatch patterns are repository-relative; * may cross directories. Documentation text never requires expensive jobs. Unknown non-documentation paths conservatively run CI; renders use the explicit inputs below.",
+  "documentation": ["*.md", "*.rst", "LICENSE*", "NOTICE*", ".github/ISSUE_TEMPLATE/**"],
+  "shared": ["pyproject.toml", "uv.lock", ".python-version", ".github/actions/**", "tools/ci/action_changes.py", "tools/ci/action_dependencies.json"],
+  "ci": ["*.py", "*.qss", "*.ui", "src/dtflow/**", "tests/**", ".github/workflows/ci.yml"],
+  "render": ["src/dtflow/**", "tools/ui/**", "tests/fixtures/**", "tests/conftest.py", "tests/helpers/**", ".github/workflows/main.yml"],
+  "ci_ignore": ["docs/**", "devdocs/**", ".github/pull_request_template.*", ".github/workflows/main.yml", ".github/workflows/artifacts_swapper.yml", ".github/workflows/build-and-release.yml"]
+}

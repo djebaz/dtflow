@@ -38,19 +38,6 @@ on:
       # - '.github/workflows/ci.yml'
   pull_request:
      types: [opened, synchronize, reopened, ready_for_review]
-     paths:
-     - '**/*.py'
-     - 'pyproject.toml'
-     - 'uv.lock'
-     - '.python-version'
-     - 'src/dtflow/**'
-     - 'tests/**'
-     - '.github/workflows/ci.yml'
-
-
-concurrency:
-  group: ci-${{ github.event_name == 'pull_request' && github.ref || github.run_id }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
   contents: read
@@ -62,9 +49,37 @@ env:
   QT_QPA_PLATFORM: offscreen
 
 jobs:
+  changes:
+    name: Detect relevant CI changes
+    if: github.event_name != 'pull_request' || !github.event.pull_request.draft
+    runs-on: ubuntu-24.04
+    timeout-minutes: 3
+    outputs:
+      run: ${{ steps.changes.outputs.run }}
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Classify this update without project dependencies
+        id: changes
+        run: |
+          if [ -f tools/ci/action_changes.py ] && [ -f tools/ci/action_dependencies.json ]; then
+            python3 tools/ci/action_changes.py --kind ci
+          else
+            echo "run=true" >> "$GITHUB_OUTPUT"
+            echo "Change gate unavailable at target; run conservatively." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
   checks:
     name: Lock, lint, test (single-runner)
-    if: github.event_name != 'pull_request' || !github.event.pull_request.draft
+    needs: changes
+    if: needs.changes.outputs.run == 'true'
+    # Gate-only docs updates must not cancel an earlier meaningful run.
+    concurrency:
+      group: ci-${{ github.event_name == 'pull_request' && github.ref || github.run_id }}
+      cancel-in-progress: ${{ github.event_name == 'pull_request' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     env:

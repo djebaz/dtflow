@@ -15,6 +15,7 @@ Changes through 5.4.0 are consolidated in [DTFlow 5.4.0](v5.4.0.md). This file t
 ## Added
 
 - Developer UI render selection now uses 30 file-level component rules, small populated page packs and an eight-state shared fallback, with prominent incomplete-coverage warnings instead of automatic exhaustive fallback. The `render-all` label independently triggers exhaustive rendering; summaries separate planned screenshots from fixture setup and list selected packs/states. Automatic sub-file diff analysis is intentionally excluded; owner visual review remains separate. No application generation behavior changes.
+- CI and render Actions now gate expensive work before dependency setup: documentation-only follow-up pushes skip it even on code PRs, using the previous-to-current head diff. Resources, forms, fixtures, mapping/dependency/configuration changes remain eligible as applicable. Manual runs and explicit render-label requests bypass the gate; skipped updates do not cancel meaningful in-flight work. The small classifier job still runs and reports skips separately from validation success.
 
 - Scripts library cards now have a compact top-right Remove button with two distinct clicks to confirm in place, without a confirmation overlay. Removal affects the selected saved version’s library membership only; queued source bytes, run history and outputs are retained.
 - The 14 px script Remove control has a padded 22 px click target, including while confirming.

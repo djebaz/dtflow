@@ -49,11 +49,6 @@ on:
   pull_request:
     types: [opened, synchronize, reopened, labeled]
 
-# A newer push or dispatch for the same pull request cancels the render in progress.
-concurrency:
-  group: ui-renders-${{ github.event.pull_request.number || inputs.pr || github.ref }}
-  cancel-in-progress: true
-
 permissions:
   contents: read
   pull-requests: write
@@ -68,14 +63,42 @@ env:
   PYTHONFAULTHANDLER: "1"
 
 jobs:
-  render:
-    name: Render UI states
+  changes:
+    name: Detect relevant render changes
     runs-on: ubuntu-24.04
     # Either render label opts in; adding render-all works without a render label.
     if: >-
       github.event_name != 'pull_request'
       || (github.event.action == 'labeled' && (github.event.label.name == 'render' || github.event.label.name == 'render-all'))
       || (github.event.action != 'labeled' && (contains(github.event.pull_request.labels.*.name, 'render') || contains(github.event.pull_request.labels.*.name, 'render-all')))
+    timeout-minutes: 3
+    outputs:
+      run: ${{ steps.changes.outputs.run }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Classify this update without project dependencies
+        id: changes
+        run: |
+          if [ -f tools/ci/action_changes.py ] && [ -f tools/ci/action_dependencies.json ]; then
+            python3 tools/ci/action_changes.py --kind render
+          else
+            echo "run=true" >> "$GITHUB_OUTPUT"
+            echo "Change gate unavailable at target; run conservatively." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+  render:
+    name: Render UI states
+    needs: changes
+    if: needs.changes.outputs.run == 'true'
+    runs-on: ubuntu-24.04
+    # Only a meaningful render request supersedes another; docs-only updates do not cancel it.
+    concurrency:
+      group: ui-renders-${{ github.event.pull_request.number || inputs.pr || github.ref }}
+      cancel-in-progress: true
     timeout-minutes: 15
     steps:
       - name: Resolve target commit
