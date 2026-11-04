@@ -38,11 +38,12 @@ def key_identity(secret: str) -> tuple[str, str | None]:
     return digest, hint
 
 
+_REGIONS = {"Africa", "America", "Antarctica", "Arctic", "Asia", "Atlantic", "Australia", "Europe", "Indian", "Pacific"}
+
+
 def timezone_choices() -> tuple[tuple[str, str], ...]:
     """(label, IANA id) pairs: the named zones plus fixed UTC±N offsets (Etc/GMT signs are inverted by convention)."""
-    names = sorted(
-        name for name in available_timezones() if "/" in name and not name.startswith(("Etc/", "posix", "right"))
-    )
+    names = sorted(name for name in available_timezones() if name.split("/", 1)[0] in _REGIONS and "/" in name)
     fixed = [("UTC", "UTC")]
     for hours in range(1, 15):
         fixed.append((f"UTC+{hours} (Etc/GMT-{hours})", f"Etc/GMT-{hours}"))

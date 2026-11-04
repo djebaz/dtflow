@@ -18,6 +18,7 @@ from PySide6.QtWidgets import QFrame, QHBoxLayout, QLabel, QWidget
 from dtflow.persistence.cloud_usage import load_timezone, read_usage_records, save_timezone
 from dtflow.services.cloud_usage import (
     AMBER_FROM,
+    DEFAULT_TIMEZONE,
     RED_FROM,
     DayCounts,
     KeyCount,
@@ -67,6 +68,8 @@ class CloudUsagePanel(QObject):
         for label, zone in choices:
             combo.addItem(label, zone)
         index = combo.findData(chosen)
+        if index < 0:  # a valid zone that is not offered (for example EST or Etc/UTC): use the default, not item 0
+            index = combo.findData(DEFAULT_TIMEZONE)
         combo.setCurrentIndex(max(index, 0))
         combo.currentIndexChanged.connect(self._zone_changed)
         self._debounce = QTimer(self)
@@ -120,8 +123,12 @@ class CloudUsagePanel(QObject):
         async def remember():
             await asyncio.to_thread(save_timezone, self.state_dir, zone)
 
+        def saved(_result, failure) -> None:
+            if failure is not None:
+                log.warning("The usage timezone could not be remembered: %s", type(failure).__name__)
+
         if not self.runner.closed:
-            self.runner.submit(remember(), lambda _r, failure: None)
+            self.runner.submit(remember(), saved)
 
     def render(self) -> None:
         form = self.form

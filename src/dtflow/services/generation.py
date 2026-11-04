@@ -118,8 +118,8 @@ class GenerationService:
             return
         try:
             await record(attempt_id, usage[0], usage[1])
-        except Exception:
-            log.warning("Cloud key attribution could not be recorded.", exc_info=False)
+        except Exception as exc:
+            log.warning("Cloud key attribution could not be recorded: %s", type(exc).__name__)
 
     async def check_connection(self):
         return await self._bounded(
