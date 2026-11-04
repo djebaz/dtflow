@@ -16,6 +16,7 @@ from PySide6.QtWidgets import (
     QComboBox,
     QFileDialog,
     QHBoxLayout,
+    QLabel,
     QLineEdit,
     QMainWindow,
     QPlainTextEdit,
@@ -450,6 +451,12 @@ class MainWindow:
         grid_index.setAccessibleName("0/0")
         grid_index.setToolTip("First visible image position in the Grid workspace")
         grid_status_layout.addWidget(grid_index)
+        active_key = QLabel("No DT+ key", form.statusBar())
+        active_key.setObjectName("activeKeyLabel")
+        active_key.setContentsMargins(0, 0, 10, 0)
+        active_key.setAccessibleName("Active DT+ API key: No DT+ key")
+        self.active_key_label = active_key
+        form.statusBar().addPermanentWidget(active_key)
         form.statusBar().addPermanentWidget(grid_status_group)
         form.statusBar().addPermanentWidget(status_actions)
         self.grid_index_group = grid_status_group
@@ -530,8 +537,13 @@ class MainWindow:
         startup.mark("backend and restored catalogue applied")
         self.refresh_credentials(background=True)
         self.cloud_usage = CloudUsagePanel(
-            form, self.runner, self.state_dir, active_credential=self._active_credential_id
+            form,
+            self.runner,
+            self.state_dir,
+            active_credential=self._active_credential_id,
+            on_active=self._show_active_key,
         )
+        self.cloud_usage.refresh()  # the bottom bar names the active key on every view from startup
         self.activity.listen(self._usage_activity_changed)
         self.refresh_custom_loras(background=True)
         self.refresh_presets(background=True)
@@ -1077,13 +1089,24 @@ class MainWindow:
         button.style().unpolish(button)
         button.style().polish(button)
 
-    async def _active_credential_id(self) -> str | None:
-        """Opaque identity of the key cloud work would use now; a local read, no provider call."""
+    async def _active_credential_id(self) -> tuple[str, str | None] | None:
+        """Opaque identity and hint of the key cloud work would use now; a local read, no provider call."""
         try:
             credential = await resolve_credentials(EnvironmentCredentials(self._environ), self._optional_saved)
         except BackendError:
             return None
-        return key_identity(credential.secret)[0]
+        return key_identity(credential.secret)
+
+    def _show_active_key(self, label: str | None) -> None:
+        text = label or "No DT+ key"
+        self.active_key_label.setText(text)
+        self.active_key_label.setAccessibleName(f"Active DT+ API key: {text}")
+        self.active_key_label.setToolTip(
+            "The DT+ API key cloud work would use now (environment first, then the saved key). "
+            "Only four characters are shown."
+            if label
+            else "No DT+ API key is available. Set DRAWTHINGS_API_KEY or save one on Connection."
+        )
 
     def _usage_activity_changed(self) -> None:
         if self.form.workspaceStack.currentWidget() is self.form.connectionPage:

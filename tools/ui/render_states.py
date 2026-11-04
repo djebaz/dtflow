@@ -783,6 +783,31 @@ def render_connection_usage_states(shell, out):
     form.resize(old)
     QTest.qWait(50)
 
+    # The bottom bar names the active key on every view; the environment is synthetic and never a real credential.
+    environ = shell._environ
+
+    def active_key(text, expected):
+        environ.clear()
+        if text:
+            environ[KEY] = text
+        panel.active_label = "?"  # wait for this refresh, not a stale result
+        panel.refresh()
+        wait_for(lambda: panel.active_label == expected)
+        assert shell.active_key_label.text() == (expected or "No DT+ key"), shell.active_key_label.text()
+
+    active_key("dtp_4F8KabcdEFGH1234", "Key 4F8K\u2022\u2022\u2022\u2022")
+    snap("connection-54-active-key-bottom-bar")
+    form.workspaceStack.setCurrentWidget(shell.generation_page)
+    QTest.qWait(100)
+    save(form, out, "connection-55-active-key-bottom-bar-generate")
+    form.workspaceStack.setCurrentWidget(form.connectionPage)
+    active_key("offline-key-with-unknown-format", "Key (unidentified)")
+    snap("connection-56-active-key-unidentified")
+    shell._saved.remove()  # the injected in-memory vault only
+    active_key(None, None)
+    snap("connection-57-active-key-none")
+    environ.clear()
+
 
 def render_generate_configuration_states(shell, out):
     """Local editors/inventory/configuration plus asset progress; no provider or upload worker runs."""

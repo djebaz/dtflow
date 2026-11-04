@@ -47,14 +47,16 @@ class CloudUsagePanel(QObject):
         runner: AsyncRunner,
         state_dir: Path,
         *,
-        active_credential: Callable[[], Awaitable[str | None]] | None = None,
+        active_credential: Callable[[], Awaitable[tuple[str, str | None] | None]] | None = None,
+        on_active: Callable[[str | None], None] | None = None,
         clock: Callable[[], datetime] = lambda: datetime.now(UTC),
     ):
         super().__init__(form)
         self.form, self.runner, self.state_dir = form, runner, Path(state_dir)
-        self._active_credential, self._clock = active_credential, clock
+        self._active_credential, self._on_active, self._clock = active_credential, on_active, clock
         self._records: tuple[UsageRecord, ...] = ()
         self._active: str | None = None
+        self.active_label: str | None = None
         self._error = False
         self._loaded = False
         self._token: object | None = None
@@ -111,7 +113,17 @@ class CloudUsagePanel(QObject):
             log.warning("Local DT+ usage could not be read: %s", type(failure).__name__)
             self._error = True
         else:
-            self._records, self._active = result
+            self._records, identity = result
+            self._active = identity[0] if identity else None
+            self.active_label = (
+                None
+                if identity is None
+                else f"Key {identity[1]}\u2022\u2022\u2022\u2022"
+                if identity[1]
+                else "Key (unidentified)"
+            )
+            if self._on_active is not None:
+                self._on_active(self.active_label)
             self._error, self._loaded = False, True
         self.render()
 
