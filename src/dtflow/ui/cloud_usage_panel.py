@@ -156,7 +156,8 @@ class CloudUsagePanel(QObject):
         start = counts.start.astimezone(zone)
         if self._on_active is not None:
             mine = next((key for key in counts.keys if key.active), None)
-            self._on_active(self.active_label, mine.count if mine else 0, mine.level if mine else "ok", zone.key)
+            total = sum(key.count for key in counts.keys)
+            self._on_active(self.active_label, mine.count if mine else 0, total, mine.level if mine else "ok", zone.key)
         form.usageDayLabel.setText(f"{start:%a %d %b %Y}, local midnight to midnight ({zone.key}, UTC{start:%z})")
         layout = form.usageRowsLayout
         while layout.count():

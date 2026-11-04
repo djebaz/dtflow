@@ -451,13 +451,15 @@ class MainWindow:
         grid_index.setAccessibleName("0/0")
         grid_index.setToolTip("First visible image position in the Grid workspace")
         grid_status_layout.addWidget(grid_index)
-        active_key = QLabel("No DT+ key", form.statusBar())
-        active_key.setObjectName("activeKeyLabel")
-        active_key.setProperty("state", "neutral")
-        active_key.setContentsMargins(0, 0, 10, 0)
-        active_key.setAccessibleName("Active DT+ API key: No DT+ key")
-        self.active_key_label = active_key
-        form.statusBar().addPermanentWidget(active_key)
+        pill = QLabel("\u2013/0", form.statusBar())
+        pill.setObjectName("usagePill")
+        pill.setProperty("state", "neutral")
+        pill.setAccessibleName("Local DT+ completed images today, active key / all keys")
+        self.usage_pill = pill
+        spacer = QWidget(form.statusBar())
+        spacer.setFixedWidth(10)
+        form.statusBar().addPermanentWidget(pill)
+        form.statusBar().addPermanentWidget(spacer)
         form.statusBar().addPermanentWidget(grid_status_group)
         form.statusBar().addPermanentWidget(status_actions)
         self.grid_index_group = grid_status_group
@@ -1098,24 +1100,27 @@ class MainWindow:
             return None
         return key_identity(credential.secret)
 
-    def _show_active_key(self, label: str | None, count: int, level: str, zone: str) -> None:
-        """Bottom bar: today's local completed-image count for the active key, in the selected reset timezone."""
-        bar = self.active_key_label
+    def _show_active_key(self, label: str | None, count: int, total: int, level: str, zone: str) -> None:
+        """Bottom-bar pill ``active/all``: today's local completed images for the active key and for all keys."""
+        pill = self.usage_pill
         if label is None:
-            text, state = "No DT+ key", "neutral"
-            tip = "No DT+ API key is available. Set DRAWTHINGS_API_KEY or save one on Connection."
-        else:
-            text, state = f"DT+ {count} today", {"ok": "ok", "warn": "warning", "over": "error"}[level]
+            text, state = f"\u2013/{total}", "neutral"
             tip = (
-                f"{label}: {count} completed images saved today (day resets at midnight in {zone}). "
-                "A local estimate from saved outputs, not a DT+ balance."
+                f"No DT+ API key is available; {total} completed images were saved today across all keys. "
+                "Set DRAWTHINGS_API_KEY or save a key on Connection."
             )
-        bar.setText(text)
-        bar.setAccessibleName(f"Local DT+ completed images today for the active key: {text}")
-        bar.setToolTip(tip)
-        bar.setProperty("state", state)
-        bar.style().unpolish(bar)
-        bar.style().polish(bar)
+        else:
+            text, state = f"{count}/{total}", {"ok": "ok", "warn": "warning", "over": "error"}[level]
+            tip = (
+                f"{label}: {count} of {total} completed images saved today across all keys "
+                f"(day resets at midnight in {zone}). A local estimate from saved outputs, not a DT+ balance."
+            )
+        pill.setText(text)
+        pill.setAccessibleName(f"Local DT+ completed images today, active key / all keys: {text}")
+        pill.setToolTip(tip)
+        pill.setProperty("state", state)
+        pill.style().unpolish(pill)
+        pill.style().polish(pill)
 
     def _usage_activity_changed(self) -> None:
         if self.form.workspaceStack.currentWidget() is self.form.connectionPage:
