@@ -1,0 +1,139 @@
+{
+  "schema_version": 1,
+  "comment": "First slice: exact-path component samples and named fallback packs. Page packs snapshot existing fast states, not exhaustive page coverage. Function/UI-object/QSS scope mapping remains pending.",
+  "packs": {
+    "shared": [
+      "generate-21-checkpoint-editor",
+      "queues-60-item-table",
+      "scripts_form_default",
+      "images-105-pager-default-20-first-batch",
+      "inpaint-03-mask-painted",
+      "logs-02-mixed-severity",
+      "shell-08-overlay-several-rows",
+      "images-08-permanent-confirmation"
+    ],
+    "page.shell": [
+      "shell-01-about"
+    ],
+    "page.connection": [
+      "connection-01-local-idle",
+      "connection-28-export-idle",
+      "connection-45-usage-empty",
+      "connection-07-connected"
+    ],
+    "page.generate": [
+      "generate-21-checkpoint-editor",
+      "generate-47-compute-units-meter"
+    ],
+    "page.inpaint": [
+      "inpaint-01-empty"
+    ],
+    "page.queues": [
+      "queues-01-empty",
+      "queues-33-elapsed-eta"
+    ],
+    "page.scripts": [
+      "scripts_empty",
+      "scripts_live_configure",
+      "scripts_narrow"
+    ],
+    "page.images": [
+      "images-53-export-panel-empty-scope",
+      "images-72-pager-empty",
+      "images-66-pager-grid-fullscreen"
+    ],
+    "page.logs": [
+      "logs-01-empty"
+    ],
+    "search": [
+      "generate-21-checkpoint-editor",
+      "generate-22-checkpoint-no-matches",
+      "generate-23-custom-checkpoint-editor"
+    ],
+    "lora-editor": [
+      "generate-24-lora-selection-editor"
+    ],
+    "export-hosts": [
+      "connection-28-export-idle",
+      "images-53-export-panel-empty-scope",
+      "images-54-export-panel-checked"
+    ],
+    "usage": [
+      "connection-46-usage-per-key-thresholds",
+      "connection-54-bottom-bar-count-amber"
+    ],
+    "feedback": [
+      "shell-08-overlay-several-rows",
+      "images-08-permanent-confirmation"
+    ],
+    "activity": [
+      "shell-22-activity-queued-width-239",
+      "shell-22-activity-queued-width-240",
+      "shell-23-activity-unknown-stripes"
+    ]
+  },
+  "components": [
+    {
+      "pack": "search",
+      "paths": [
+        "src/dtflow/ui/search_select.py"
+      ],
+      "why": "shared selector variants; identical callers deduplicated",
+      "gap": "open Connection timezone selector has no fixture"
+    },
+    {
+      "pack": "lora-editor",
+      "paths": [
+        "src/dtflow/ui/lora_selection_editor.py",
+        "src/dtflow/ui/forms/lora_selection_editor.ui"
+      ],
+      "why": "shared weighted LoRA editor"
+    },
+    {
+      "pack": "export-hosts",
+      "paths": [
+        "src/dtflow/ui/image_export_panel.py"
+      ],
+      "why": "one export card with distinct Connection and Images mounts",
+      "gap": "file-level sampling; individual result scopes are not mapped yet"
+    },
+    {
+      "pack": "usage",
+      "paths": [
+        "src/dtflow/ui/cloud_usage_panel.py",
+        "src/dtflow/services/cloud_usage.py"
+      ],
+      "why": "usage table and shared bottom counter",
+      "gap": "file-level sampling; timezone and identity branches are not fully mapped"
+    },
+    {
+      "pack": "feedback",
+      "paths": [
+        "src/dtflow/ui/inline_feedback.py",
+        "src/dtflow/ui/forms/inline_feedback.ui"
+      ],
+      "why": "shared overlay and destructive intent",
+      "gap": "file-level sampling; editor and lifetime branches are not fully mapped"
+    },
+    {
+      "pack": "activity",
+      "paths": [
+        "src/dtflow/ui/activity*.py",
+        "src/dtflow/ui/forms/activity_*.ui"
+      ],
+      "why": "activity dock/fallback and unknown phase",
+      "gap": "file-level sampling; other phase and lifetime branches remain unmapped"
+    },
+    {
+      "pack": "shared",
+      "paths": [
+        "src/dtflow/resources/styles/**",
+        "src/dtflow/ui/tokens.py",
+        "src/dtflow/ui/main_window.py",
+        "src/dtflow/ui/forms/main_window.ui"
+      ],
+      "why": "broad shared presentation uses cross-shape representatives",
+      "gap": "component scope not yet identifiable from this broad file"
+    }
+  ]
+}

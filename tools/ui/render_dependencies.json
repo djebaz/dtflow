@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "comment": "Maps changed paths to the render categories they can affect. First matching rule wins per path, rules are checked in order. A path that matches no rule makes the whole run render everything. 'ui' globs: * stays inside one directory, ** crosses directories.",
+  "comment": "Fallback page ownership after exact component rules in render_coverage.json. First matching rule wins. Categories choose named page representative packs with a coverage-incomplete warning, not whole categories. Unknown paths use the shared pack. Globs: * stays inside one directory, ** crosses directories.",
   "rules": [
     {"why": "documentation only", "effect": "docs", "paths": ["**/*.md", "devdocs/**", "docs/**", "LICENSE*", "NOTICE*", ".github/*.md", ".github/ISSUE_TEMPLATE/**", ".github/pull_request_template.md"]},
     {"why": "CI, packaging and non-render workflows do not change screenshots", "effect": "none", "paths": [".github/workflows/ci.yml", ".github/workflows/build-and-release.yml", ".github/workflows/artifacts_swapper.yml", "tools/packaging/**", "tools/ci/**", "tools/drawthings/**", "tools/images/**", "tools/scripting/**"]},

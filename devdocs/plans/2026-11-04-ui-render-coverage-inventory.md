@@ -1,10 +1,10 @@
 # UI render coverage inventory: components and representatives
 
-**Status:** First inventory slice; proposed representatives, not an executable selection policy or a claim of visual equivalence. **Source pin:** PR #226 head `a684257cae6f4d0dba125024f42019632827a8fb` (2026-11-04). **Parent:** [render orchestration plan](2026-11-04-ui-render-orchestration.md).
+**Status:** First inventory and path-level selection slice; shared pack approved, page packs pending owner review, visual equivalence not established. **Inventory source pin:** PR #226 head `a684257cae6f4d0dba125024f42019632827a8fb` (2026-11-04); implementation continues in #227. **Parent:** [render orchestration plan](2026-11-04-ui-render-orchestration.md).
 
 ## Owner direction and the distinction this inventory makes
 
-Select specific affected presentations, not every screenshot on every page using a shared component. Reuse one representative when rendering really is identical; retain additional screenshots only for a different visual variant, mounting/layout contract or interaction. Category-only selection keeps the fast default unless a level is specified. `render-all` is the explicit exhaustive override and should trigger immediately. This inventory does not change those controls or the current implementation.
+Select specific affected presentations, not every screenshot on every page using a shared component. Reuse one representative when rendering really is identical; retain additional screenshots only for a different visual variant, mounting/layout contract or interaction. Category-only selection keeps the fast default unless a level is specified. `render-all` is the explicit exhaustive override and triggers independently. The first implementation slice below preserves these controls.
 
 Two coverage questions must stay separate:
 
@@ -78,7 +78,7 @@ The following are candidate coverage families. A row lists distinct possible req
 5. **Fixture dependency groups are not coverage families.** One selected state can require setup/transitions in a larger fixture. That setup may execute without saving all intermediate states; selection counts and cost must describe saved representatives separately from prerequisite work.
 6. **Capture completion is not equivalence.** The reported Generate differences, including `generate-20-local-controls` and `generate-21-checkpoint-editor`, still need owner visual review. Do not declare equivalence merely because both images were saved or a full run completed.
 
-## Approved shared fallback pack, not yet selected automatically
+## Approved shared fallback pack
 
 The owner-approved shared fallback pack contains: `generate-21-checkpoint-editor` (inputs/list/editor), `queues-60-item-table` (table/rows), `scripts_form_default` (dynamic form), `images-105-pager-default-20-first-batch` (cards/pager), `inpaint-03-mask-painted` (canvas overlay), `logs-02-mixed-severity` (dense diagnostic text), `shell-08-overlay-several-rows` (shared rows) and `images-08-permanent-confirmation` (destructive intent). Add a narrow or dark/light/state-color variant only where the changed selector or token affects a distinct branch. This is broad appearance sampling, not a claim that it covers every QSS rule or every host.
 
@@ -96,17 +96,17 @@ For broad files such as `main_window.py`, `main_window.ui` and the QSS, a single
 - **Shared styles/tokens:** select affected components first when reliably identifiable; use the small shared pack for broad or uncertain impact. Retain distinct mount/layout/interaction variants, not every identical consumer.
 - **Labels:** `render` requests mapped selection. Adding `render-all` immediately requests every state, independently of whether `render` is present. Do not enable rendering on unlabelled PRs by default.
 
-These decisions supersede the earlier full-render fallback design. They are approved requirements, not implemented behavior or proof of representative completeness.
+These decisions supersede the earlier full-render fallback design. The first path-level implementation follows them; complete scoped mapping and representative completeness are not established.
 
 ## Follow-up implementation checklist
 
-PR #226 is squash-merged as `00d49dd`; its working renderer is the baseline for this separate follow-up. This document starts the finer-selection work; no selector behavior changes are implemented yet.
+PR #226 is squash-merged as `00d49dd`; its working renderer is the baseline for this separate follow-up. PR #227 now implements the first path-level selection slice: 15 named packs, seven component rules, catalogue-ordered exact-state deduplication, page/shared sampling with coverage warnings, and independent `render-all` triggering. Page packs start from existing fast states and remain review candidates. Function/UI-object/QSS scope mapping and complete component inventory remain pending; this is not full fine-grained coverage.
 
 - [ ] Complete the component/variant inventory and review representative boundaries.
-- [ ] Encode coverage families, source scopes and representative IDs in tracked selection data, separately from fixture prerequisites.
+- [ ] Finish encoding coverage families and source scopes; the first seven path-level component rules and named representative packs are tracked separately from fixture prerequisites in `render_coverage.json`.
 - [ ] Resolve changed scopes to deduplicated state selections; retain distinct mounting/layout branches and explain selection reasons.
 - [ ] Use a small representative pack for broad shared appearance changes rather than every consumer page.
-- [ ] Preserve category fast defaults, explicit levels/manual selectors and the exhaustive `render-all` override; ensure adding `render-all` triggers rendering immediately.
+- [x] Preserve category fast defaults, explicit levels/manual selectors and the exhaustive `render-all` override; ensure adding `render-all` triggers rendering immediately (source implemented; Actions acceptance pending).
 - [x] Resolve the unknown-change fallback with the owner: affected-page representatives, or the small shared pack when the page is unknown, with a prominent coverage-incomplete warning.
 - [ ] Update Action summaries and selection documentation; review static selection output without adding or running unit tests. Run renders only when explicitly requested.
 
@@ -117,4 +117,4 @@ PR #226 is squash-merged as `00d49dd`; its working renderer is the baseline for 
 - Record exact QSS selectors/token consumers and broad-form object subtrees before implementing scoped diff rules.
 - Translate the agreed inventory into tracked component/variant requirements and exact-state selection, replacing the current category-only rules. Keep `render-all` separate.
 
-**Delivery boundary:** this document adds no runtime metadata, alters no render selection, creates/runs no unit tests and produces no screenshots. It inventories existing capabilities and proposed sampling; it does not close the review findings or acceptance gates.
+**Delivery boundary:** the first selection slice changes developer renderer selection metadata/planning and the Action trigger, not application runtime behavior. No unit tests added/run and no screenshots produced. Static checks do not establish Action execution, screenshot equivalence or native acceptance.
