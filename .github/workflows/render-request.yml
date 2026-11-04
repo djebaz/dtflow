@@ -1,0 +1,20 @@
+name: Explicit UI render request
+
+# Native path filters also filter label events. Route explicit requests to the
+# reusable render workflow instead, without allocating a dispatcher runner.
+on:
+  pull_request:
+    types: [labeled]
+
+permissions:
+  contents: read
+  pull-requests: write
+  issues: write
+
+jobs:
+  render:
+    if: >-
+      !github.event.pull_request.draft
+      && (github.event.label.name == 'render' || github.event.label.name == 'render-all')
+    uses: ./.github/workflows/main.yml
+    secrets: inherit
