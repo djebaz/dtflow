@@ -169,6 +169,16 @@ Owner decision: use **the SHA-256 of the exact selected public download artifact
 
 All URLs were reachable without authentication from the owner's machine. **Contract check (owner run, `classify_models` on each file, 2026-11-04):** `320n.onnx` (zhangsongbo365) → faces, both SegFormer files → clothes, official and local `yolo26n-seg.onnx` → segmentation; all OK. The DeepGHS NudeNet file was not tested. Owner decision D8: ship the owner-tested sources. Before shipping the catalogue, pin each Hugging Face URL to an immutable commit revision instead of `main`, record the hash of exactly that revision, and keep the licence review (D7). Do not add a new unit-test suite for this; keep the owner's final V1 reference-workflow smoke test policy.
 
+**Pinned V1 catalogue entries (D8, owner-run 2026-11-04).** Hugging Face revisions come from the owner's `huggingface.co/api/models/<repo>` query. Each repository's last change predates the download, so the hashes above are the files at these revisions:
+
+| Role | Pinned URL | SHA-256 | Size (MiB) |
+| --- | --- | --- | --- |
+| segmentation | `https://github.com/ultralytics/assets/releases/download/v8.4.0/yolo26n-seg.onnx` | `711e0ef837c677ae4006f65fe503a62a6b0529979f4828ed50b674a7482b7d2e` | 10.70 |
+| clothes | `https://huggingface.co/mattmdjaga/segformer_b2_clothes/resolve/584abc1e1d260e23c0fc627c5217a09b2b461046/onnx/model.onnx` | `a93a8dac171b5c1fcc53632a8bfc180bfd9759ea69a3e207451bb07f76add54f` | 104.94 |
+| faces | `https://huggingface.co/zhangsongbo365/nudenet_onnx/resolve/0ae0d1dc2a9f6ab9573b0de7e07676a3a6e53719/320n.onnx` | `776773dd37d99aa2ffe63bec9f92a835d82f3e40d627ffb47d9c3455aec600aa` | 11.59 |
+
+The pinned revision URLs themselves have not been downloaded yet. The SHA-256 check at install time catches any difference. The GitHub release asset is tied to a tag, not a commit, so the hash check is its only immutability guarantee. Licence review (D7) is still open.
+
 ### 10.4 Runtime behavior and exceptional human decision
 
 - **Agreed:** V1 is automatic under normal conditions. No ordinary mid-run manual mask painting, upload or other interactive authoring node.
@@ -254,7 +264,7 @@ This plan orders the work in #223 into reviewable PRs. Every PR follows the V1 t
 | D5 | With several people, which person's mask? | `person` parameter with `strongest` (default, deterministic) and `all` (union); add `largest_face` only if needed. | Step 3 |
 | D6 | Run a workflow as one queue item of a new `workflow` kind (store 7 → 8, one-way), like Scripts? | Yes; reuses admission, reservations, Stop and the crash rule of #205. | Step 4 |
 | D7 | Licence review of YOLO26 (AGPL-3.0/commercial) and SegFormer/NudeNet weights before advertising one-click downloads. | Owner review; until then the catalogue can ship only verified and licence-cleared entries, and manual "Models…" stays. | Step 5 |
-| D8 | Which download source for SegFormer and NudeNet? | **Decided (owner, 2026-11-04):** owner-tested files: SegFormer from the original publisher `mattmdjaga/segformer_b2_clothes` (`onnx/model.onnx`, passes, matches the listed hash), NudeNet from `zhangsongbo365/nudenet_onnx`; each pinned to a commit revision with that revision's SHA-256. The revision ids are still to be looked up (this environment cannot reach `huggingface.co`). | — |
+| D8 | Which download source for SegFormer and NudeNet? | **Decided (owner, 2026-11-04):** owner-tested files: SegFormer from the original publisher `mattmdjaga/segformer_b2_clothes` (`onnx/model.onnx`, passes, matches the listed hash), NudeNet from `zhangsongbo365/nudenet_onnx`; each pinned to a commit revision (table in 10.3.1). | — |
 
 **Steps**
 
@@ -262,13 +272,13 @@ This plan orders the work in #223 into reviewable PRs. Every PR follows the V1 t
 2. **Loader, validator and exporter (headless).** Parse and validate files strictly (whole-file reject with one clear reason), build the DAG, reject cycles, check port types, per-node settings, and compute the fan-out total per D3 (shown before the run) against existing request validation. Export writes the same shape back. No UI yet; check with the fixture from the CLI or a scratch script.
 3. **Headless face-mask helper.** One function over `analyze_people` + `apply_selection` that returns a source-sized mask or a "no target" result per D4/D5, with stage callbacks (10.7 progress). Shared by the workflow node and, later, #117 hooks. No change to the Inpaint editor's behaviour.
 4. **Executor as a queue item.** Workflow run record and kind per D6, topological execution with per-image branches (D3) through `generate_once`/`generate_image_once` and `prepare_image_bytes`, saved-final handoff and lineage per 10.7, the no-detection pause (Continue/Stop/stay paused, no further submissions while paused), errors named by node, and Retry/unknown-outcome wording as #220 settles it. Image nodes use an automatic owner probe per D2; the only preflight confirmation is for missing models.
-5. **Shared model provisioning (Generate and Workflows).** Read-only catalogue, verified download into the managed folder, SHA-256 check, `classify_models` contract check, recorded as ordinary `ModelRef`s (no schema bump). The Generate editor gets a "Download" action next to "Models…"; workflow preflight uses the same service. Choose sources per D8 and pin every Hugging Face URL to a revision first (10.3.1).
+5. **Shared model provisioning (Generate and Workflows).** Read-only catalogue, verified download into the managed folder, SHA-256 check, `classify_models` contract check, recorded as ordinary `ModelRef`s (no schema bump). The Generate editor gets a "Download" action next to "Models…"; workflow preflight uses the same service. Use the pinned entries of 10.3.1.
 6. **Native editor.** Qt node canvas: add/connect/configure nodes with the existing model and LoRA selectors, save/open/import/export, show validator and preflight diagnostics inline. It is the largest step and can start once step 2's contract is stable.
 7. **Docs and owner smoke.** Update the operational docs, run the existing suite once, then the owner-authorized reference smoke from #223 (both `mask_region` values, no-detection pause, missing-model path where practical), distinguishing source-run vs packaged Windows and local vs DT+.
 
 **Main risks**
 
-- All chosen detector files download anonymously and pass DTFlow's contracts (owner run, 10.3.1); the NudeNet source differs from the earlier DeepGHS candidate. Remaining: pin each Hugging Face URL to a revision (D8).
+- All chosen detector files download anonymously and pass DTFlow's contracts (owner run, 10.3.1); the NudeNet source differs from the earlier DeepGHS candidate. Revisions are pinned in 10.3.1.
 - With automatic probes (D2), an unsupported checkpoint is only discovered when its node runs, after earlier nodes may have used credits. Accepted by the owner.
 - Store bump 7 → 8 (D6) is one-way, like 5 → 6 → 7 for Scripts; older builds will refuse the store.
 - Fan-out (D3) multiplies cloud generations quickly when batches chain; the total shown before the run is the only guard. Accepted by the owner.
