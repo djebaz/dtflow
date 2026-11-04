@@ -262,6 +262,12 @@ def wait_for(predicate, timeout=8):
     QTest.qWait(30)
 
 
+def settle(name, milliseconds=100):
+    """Let the event loop settle before a capture, but only when that capture is wanted."""
+    if category_selected(Path(name + ".png")):
+        QTest.qWait(milliseconds)
+
+
 def save(widget, out, name):
     target = out / f"{name}.png"
     if not write_capture(target, lambda: widget.grab()):
@@ -415,7 +421,7 @@ def render_connection_outcomes(shell, out):
     form, saved = shell.form, shell._saved
 
     def snap(name):
-        QTest.qWait(100)
+        settle(name)
         save(form, out, name)
 
     def hold_check(coroutine, callback):
@@ -489,7 +495,7 @@ def render_connection_management(shell, out):
     form, strip = shell.form, shell.progress_strip
 
     def snap(name):
-        QTest.qWait(100)
+        settle(name)
         save(form, out, name)
 
     def clear():
@@ -703,7 +709,7 @@ def render_connection_usage_states(shell, out):
 
     def snap(name):
         form.connectionWorkspaceScroll.ensureWidgetVisible(form.usageBox)
-        QTest.qWait(80)
+        settle(name, 80)
         save(form, out, name)
 
     zone("Europe/Paris")
@@ -809,7 +815,7 @@ def render_generate_configuration_states(shell, out):
     strip = shell.progress_strip
 
     def snap(name):
-        QTest.qWait(100)
+        settle(name)
         save(form, out, name)
 
     def clear():
@@ -1077,7 +1083,7 @@ def render_active_queue_states(shell, out):
     apply_read = queue._read_done
 
     def snap(name):
-        QTest.qWait(100)
+        settle(name)
         # Keep this feature's review images together in the Actions archive.
         target_dir = out / "images" / "pagination" if "-pager-" in name else out
         target_dir.mkdir(parents=True, exist_ok=True)
@@ -1553,7 +1559,7 @@ def render_queue_template_states(shell, out):
         work.close()
 
     def snap(name):
-        QTest.qWait(100)
+        settle(name)
         save(shell.form, out, name)
 
     recipe = Recipe(
@@ -1781,7 +1787,7 @@ def render_item_table_states(shell, out, state):
     )
 
     def snap(name):
-        QTest.qWait(100)
+        settle(name)
         save(form, out, name)
 
     def select(position):
@@ -1956,7 +1962,7 @@ def render_gallery_composition_states(shell, state, out):
     )
 
     def snap(name):
-        QTest.qWait(100)
+        settle(name)
         if "-pager-" in name:
             gallery._widget("galleryPagerBar")
         # Store the approved pager review states together in one artifact folder.
@@ -2742,7 +2748,7 @@ def render_removal_and_selection_states(shell, item, plan, out):
     gallery.auto_button.setChecked(False)
 
     def snap(name):
-        QTest.qWait(100)
+        settle(name)
         save(shell.form, out, name)
 
     recycle._apply_mode("trash")
