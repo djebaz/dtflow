@@ -75,11 +75,7 @@ The interactive smoke defaults to **192 wheel notches per direction** (16 small 
 **Native acceptance is still pending:** the owner's later baseline and workers-3 smoke both navigated Images, switched views, scrolled and changed page chips but timed out at the unrelated prompt-search field. The field has been dropped from the smoke. The owner's recorder confirms the actual UIA controls `Full screen image view||CheckBox` and `ThumbnailSizeSlider||Slider`; new interactions and warning behavior have not yet been replayed on Windows. Avoid ranking profiles until a complete warning-free owner smoke succeeds. The tool reads the live saved-output catalogue, and the app can update viewer preferences or disposable thumbnail cache; the `--ack-user-state` flag is required. It performs no inference or generation.
 
 
-The **UI renders** Actions workflow uploads a ZIP to Google Drive by default, including automatic PR renders.
-For manual runs, choose `upload_mode: images` to upload every PNG individually with up to four concurrent
-file uploads instead of an archive. ZIP mode uploads no separate preview PNG. The run summary links the
-archive or individual image previews; the upload manifest retains successful files and any failures.
-Explicit Drive rate-limit responses use bounded exponential backoff; other errors fail clearly.
+The **UI renders** Actions workflow uploads each PNG individually to Google Drive by default, with up to four concurrent file uploads, including automatic PR renders and explicit-label requests. Manual runs default to `upload_mode: images`; choose `upload_mode: zip` for an archive instead. The uploader CLI also defaults to images; ZIP mode requires explicit `--mode zip` and uploads no separate preview PNG. The run summary links the archive or individual image previews; the upload manifest retains successful files and any failures. Explicit Drive rate-limit responses use bounded exponential backoff; other errors fail clearly.
 
 Offscreen Qt renders of the real DTFlow forms under the real `dtflow_dark.qss`. Run from the repository root (or set `DTFLOW_ROOT`) with the locked environment:
 

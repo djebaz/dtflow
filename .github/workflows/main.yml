@@ -43,11 +43,11 @@ on:
       upload_mode:
         description: "Google Drive upload format (images uploads every PNG with four workers)"
         required: true
-        default: "zip"
+        default: "images"
         type: choice
         options:
-          - zip
           - images
+          - zip
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review]
     paths:
@@ -219,7 +219,7 @@ jobs:
           CLIENT_ID: ${{ secrets.GOOGLE_OAUTH_CLIENT_ID }}
           CLIENT_SECRET: ${{ secrets.GOOGLE_OAUTH_CLIENT_SECRET }}
           PR_NUMBER: ${{ github.event.pull_request.number || inputs.pr }}
-          UPLOAD_MODE: ${{ inputs.upload_mode || 'zip' }}
+          UPLOAD_MODE: ${{ inputs.upload_mode || 'images' }}
         run: |
           if ! find tmp/ui-renders -type f -name '*.png' -print -quit 2>/dev/null | grep -q .; then
             echo "No render PNGs were produced; skipping Drive upload."

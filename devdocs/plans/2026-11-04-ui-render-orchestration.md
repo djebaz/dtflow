@@ -55,6 +55,8 @@ The owner reported 456 screenshots in 286 seconds after PR #225's fixture repair
 
 ### Change-based Actions selection
 
+- With reduced representative counts, default Drive upload mode is now `images` for automatic PR runs, explicit-label requests, manual dispatch and the uploader CLI. ZIP remains an explicit manual/CLI option; upload concurrency and retry behavior are unchanged.
+
 - Automatic PR rendering skips drafts in both the normal workflow and label-only route, matching CI. `ready_for_review` re-evaluates normal label/path eligibility. Manual dispatch remains an explicit override; changing an already-running PR back to draft does not automatically cancel its run.
 
 - **Owner-requested execution gate, revised billing design:** combine native path filters with an early `tools/ci/action_changes.py` step inside each existing job; no separate detector runner jobs. Synchronize compares previous/new heads; other applicable PR events use the merge base. Entirely docs-only PRs allocate no runner, while irrelevant follow-ups skip expensive steps on their short-lived existing runner. Relevant code, resources/forms, fixtures/mappings, dependencies and workflow inputs remain eligible. Manual runs override filtering; explicit render labels enter through a runner-free reusable-workflow route. Remove shared pre-gate concurrency so irrelevant updates cannot cancel running or pending work; cancel superseded relevant runs explicitly if needed. Screenshot selection still uses the cumulative PR diff. Source implemented; acceptance of the revised workflow shape is pending Actions observation.
