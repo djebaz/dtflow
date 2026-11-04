@@ -55,7 +55,9 @@ class Reporter:
         self.out, self.selection, self.verbose = Path(out), selection, verbose
         self.out.mkdir(parents=True, exist_ok=True)
         self.started = self.previous = time.monotonic()
+        self.manifest_at = 0.0
         self.records, self.notices = {}, Counter()
+        self.unregistered = []
         # Existing Actions runs categories concurrently in the same output root.
         self.log_path = self.out / f"render-details-{report_key}.log"
         self.manifest_path = self.out / f"render-manifest-{report_key}.json"
@@ -96,21 +98,30 @@ class Reporter:
         self.previous = time.monotonic()
 
     def saved(self, target, *, blank):
-        state = self.selection.by_id[target.stem]
-        if state.id in self.records:
-            raise RuntimeError(f"State {state.id} was rendered twice")
+        name = Path(target).stem
+        state = self.selection.by_id.get(name)
+        if name in self.records:
+            raise RuntimeError(f"State {name} was rendered twice")
         now = time.monotonic()
         elapsed, duration = now - self.started, now - self.previous
         self.previous = now
-        self.records[state.id] = {"seconds": round(elapsed, 3), "duration_seconds": round(duration, 3), "blank": blank}
-        completed = sum(s.id in self.records for s in self.selection.states if s.category == state.category)
-        total = sum(s.category == state.category for s in self.selection.states)
-        print(f"[{state.group}] {completed}/{total}  {state.id}  {duration:.2f}s", flush=True)
+        self.records[name] = {"seconds": round(elapsed, 3), "duration_seconds": round(duration, 3), "blank": blank}
+        if state is None:
+            # Rendered although missing from render_catalog.json: shown, but not counted in the selection.
+            self.unregistered.append(name)
+            print(f"[unregistered] {name}  {duration:.2f}s  (add it to render_catalog.json)", flush=True)
+        else:
+            completed = sum(s.id in self.records for s in self.selection.states if s.category == state.category)
+            total = sum(s.category == state.category for s in self.selection.states)
+            print(f"[{state.group}] {completed}/{total}  {state.id}  {duration:.2f}s", flush=True)
         if self.verbose:
             print(f"[{len(self.records):3}] +{elapsed:6.1f}s {target}")
-        self.manifest("running")
+        # A full run saves hundreds of states; the manifest is rewritten at most once a second while running.
+        if now - self.manifest_at >= 1.0:
+            self.manifest("running")
 
     def manifest(self, status, error=None):
+        self.manifest_at = time.monotonic()
         data = {
             "schema_version": 1,
             "status": status,
@@ -124,6 +135,7 @@ class Reporter:
                 }
                 for state in self.selection.states
             ],
+            "unregistered_states": self.unregistered,
             "expected_notices": dict(self.notices),
             "error": error,
         }
@@ -135,7 +147,7 @@ class Reporter:
     def finish(self, error=None):
         missing = [state.id for state in self.selection.states if state.id not in self.records]
         blank = [name for name, record in self.records.items() if record["blank"]]
-        status = "failed" if error or blank else "partial" if missing else "completed"
+        status = "failed" if error or blank or missing else "completed"
         self.manifest(status, error)
         for category in self.selection.categories:
             states = [state for state in self.selection.states if state.category == category]
@@ -143,10 +155,20 @@ class Reporter:
         print(f"Rendered {len(self.records)} states in {time.monotonic() - self.started:.1f}s.")
         if self.notices:
             print(f"Expected offline notices: {sum(self.notices.values())}; details in {self.log_path}")
-        if missing:
-            print(f"WARNING: {len(missing)} selected states were not saved; see {self.manifest_path}.")
+        if self.unregistered:
+            print(
+                f"WARNING: {len(self.unregistered)} rendered states are not in render_catalog.json: {', '.join(self.unregistered)}"
+            )
+        problems = []
         if blank:
-            raise SystemExit(f"Blank renders: {', '.join(blank)}")
+            problems.append(f"Blank renders: {', '.join(blank)}")
+        if missing and not error:
+            # A selected state that was never produced means the catalogue and renderer disagree.
+            problems.append(
+                f"Selected states not saved ({len(missing)}): {', '.join(missing)}; see {self.manifest_path}"
+            )
+        if problems:
+            raise SystemExit("\n".join(problems))
 
     def close(self):
         self.log.close()

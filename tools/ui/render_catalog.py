@@ -6,6 +6,7 @@ The checked-in catalogue is authoring metadata, not a record of accepted renders
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 from dataclasses import dataclass
 from pathlib import Path
@@ -13,7 +14,6 @@ from pathlib import Path
 CATEGORY_ORDER = ("shell", "connection", "generate", "inpaint", "queues", "scripts", "images", "logs")
 STAGE_ORDER = ("empty", "setup", "ready", "running", "results", "failure", "recovery", "layout")
 CATALOG_PATH = Path(__file__).with_suffix(".json")
-FIXTURE_PREREQUISITES = {"removal-and-selection": ("mapped-gallery",)}
 
 
 @dataclass(frozen=True)
@@ -61,14 +61,16 @@ class Selection:
         for prefix in prefixes:
             if not any(state.id.startswith(prefix) for state in catalog):
                 raise ValueError(f"Render prefix matches no states: {prefix}")
-        explicit = bool(groups or states or prefixes)
+        explicit = self.explicit = bool(groups or states or prefixes)
         self.states = tuple(
             state
             for state in catalog
             if (
                 category == "all"
                 or state.category == category
-                or category == "image-navigation" and state.subcategory == "navigation" and state.category == "images"
+                or category == "image-navigation"
+                and state.subcategory == "navigation"
+                and state.category == "images"
             )
             and (
                 not explicit
@@ -81,35 +83,50 @@ class Selection:
             raise ValueError("The combined selectors match no render states.")
         self.by_id = {state.id: state for state in self.states}
         self.fixtures = frozenset(state.fixture for state in self.states)
-        self.categories = tuple(category for category in CATEGORY_ORDER if any(s.category == category for s in self.states))
+        self.categories = tuple(
+            category for category in CATEGORY_ORDER if any(s.category == category for s in self.states)
+        )
 
     def wants_fixture(self, name, category=None):
         return bool(self.fixture_ids(name, category))
 
     def fixture_ids(self, name, category=None):
         return frozenset(
-            s.id
-            for s in self.states
-            if (s.fixture == name or name in FIXTURE_PREREQUISITES.get(s.fixture, ()))
-            and (category is None or s.category == category)
+            s.id for s in self.states if s.fixture == name and (category is None or s.category == category)
         )
 
 
 def parse_inputs(root, argv=None):
-    parser = argparse.ArgumentParser(description="Select and render real Qt widgets with offline fixtures; no providers.")
+    parser = argparse.ArgumentParser(
+        description="Select and render real Qt widgets with offline fixtures; no providers."
+    )
     parser.add_argument("-o", "--out", type=Path, default=root / "tmp/ui-renders", help="Screenshot/report directory")
     parser.add_argument("-c", "--category", choices=("all", *CATEGORY_ORDER, "image-navigation"), default="all")
     parser.add_argument("-g", "--group", action="append", default=[], help="Select category/subcategory; repeatable")
-    parser.add_argument("-s", "--state", action="append", default=[], help="Select an exact stable state ID; repeatable")
-    parser.add_argument("-p", "--prefix", action="append", default=[], help="Select state IDs by literal prefix; repeatable")
-    parser.add_argument("-l", "--list", action="store_true", help="List the selected catalogue, without Qt or rendering")
+    parser.add_argument(
+        "-s", "--state", action="append", default=[], help="Select an exact stable state ID; repeatable"
+    )
+    parser.add_argument(
+        "-p", "--prefix", action="append", default=[], help="Select state IDs by literal prefix; repeatable"
+    )
+    parser.add_argument(
+        "-l", "--list", action="store_true", help="List the selected catalogue, without Qt or rendering"
+    )
     parser.add_argument("-v", "--verbose", action="store_true", help="Also print detailed fixture/platform diagnostics")
     args = parser.parse_args(argv)
     try:
         catalog = load_catalog()
-        args.selection = Selection(catalog, category=args.category, groups=args.group, states=args.state, prefixes=args.prefix)
+        args.selection = Selection(
+            catalog, category=args.category, groups=args.group, states=args.state, prefixes=args.prefix
+        )
     except (ValueError, OSError) as exc:
         parser.error(str(exc))
+    selectors = sorted(
+        [*(f"g:{v}" for v in args.group), *(f"s:{v}" for v in args.state), *(f"p:{v}" for v in args.prefix)]
+    )
+    # Concurrent runs with different selectors must not share a log or manifest.
+    digest = hashlib.sha1("\n".join(selectors).encode()).hexdigest()[:8] if selectors else ""
+    args.report_key = f"{args.category}-{digest}" if digest else args.category
     if args.list:
         for index, state in enumerate(args.selection.states, 1):
             print(f"{index:3}  {state.group:30} {state.stage:8} {state.id}  [fixture: {state.fixture}]")

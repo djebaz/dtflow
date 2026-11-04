@@ -117,23 +117,13 @@ from dtflow.ui.theme import apply_theme  # noqa: E402
 SELECTION = None
 ACTIVE_CATEGORY = None
 REPORTER = None
-CAPTURE_SCOPES = []
-
-
-class _FixtureComplete(BaseException):
-    """Internal control flow: retain prerequisites, omit the unneeded fixture tail."""
 
 
 @contextmanager
 def fixture_scope(name):
-    CAPTURE_SCOPES.append(SELECTION.fixture_ids(name, ACTIVE_CATEGORY))
+    """Start a fixture's timing interval; a fixture always runs to its end so its own cleanup is never skipped."""
     REPORTER.begin()
-    try:
-        yield
-    except _FixtureComplete:
-        pass
-    finally:
-        CAPTURE_SCOPES.pop()
+    yield
 
 
 def wants(category):
@@ -146,29 +136,45 @@ def needs_fixture(name):
 
 def fixture(name):
     """Skip unrelated fixture construction, retaining all selected-group prerequisites."""
+
     def decorate(function):
         @wraps(function)
         def run(*args, **kwargs):
             if needs_fixture(name):
                 with fixture_scope(name):
                     return function(*args, **kwargs)
+
         return run
+
     return decorate
 
 
+def unregistered_category(name):
+    """Review category of a state missing from the catalogue, from its file name."""
+    return "scripts" if name.startswith("scripts_") else name.split("-", 1)[0]
+
+
 def category_selected(target):
-    if Path(target).stem not in SELECTION.catalog_by_id:
-        raise ValueError(f"Unregistered render state: {Path(target).stem}; add it to render_catalog.json.")
-    state = SELECTION.by_id.get(Path(target).stem)
+    """Whether this capture is wanted. A state missing from the catalogue still renders (with a warning in the
+    manifest) unless the run was narrowed by --group/--state/--prefix."""
+    name = Path(target).stem
+    if name not in SELECTION.catalog_by_id:
+        return not SELECTION.explicit and unregistered_category(name) == ACTIVE_CATEGORY
+    state = SELECTION.by_id.get(name)
     return state is not None and state.category == ACTIVE_CATEGORY
+
+
+def output_path(target):
+    """Catalogue path for a registered state; the caller's own path for an unregistered one."""
+    state = SELECTION.catalog_by_id.get(Path(target).stem)
+    return REPORTER.out / state.path if state else Path(target)
 
 
 def write_capture(target, pixels):
     """Selection precedes widget grabs/PNG encoding; stale unselected files are never deleted."""
-    name = Path(target).stem
     if not category_selected(target):
         return True
-    target = REPORTER.out / SELECTION.by_id[name].path
+    target = output_path(target)
     target.parent.mkdir(parents=True, exist_ok=True)
     return pixels().save(str(target))
 
@@ -176,13 +182,11 @@ def write_capture(target, pixels):
 def report(target):
     if not category_selected(target):
         return
-    target = REPORTER.out / SELECTION.by_id[Path(target).stem].path
+    target = output_path(target)
     image = QImage(str(target)).scaled(16, 16)
     colors = {image.pixel(x, y) for x in range(image.width()) for y in range(image.height())}
     REPORTER.saved(target, blank=len(colors) <= 1)
     faulthandler.dump_traceback_later(120, repeat=True)
-    if CAPTURE_SCOPES and CAPTURE_SCOPES[-1] <= REPORTER.records.keys():
-        raise _FixtureComplete()
 
 
 def wait_for(predicate, timeout=8):
@@ -344,7 +348,7 @@ def render_workspace_states(app, state, out):
         app.processEvents()
 
 
-@fixture('connection-outcomes')
+@fixture("connection-outcomes")
 def render_connection_outcomes(shell, out):
     """Check/key/preset presentation through real handlers; all service work is intercepted."""
     form, saved = shell.form, shell._saved
@@ -418,7 +422,7 @@ def render_connection_outcomes(shell, out):
     shell.refresh_presets()
 
 
-@fixture('connection-management')
+@fixture("connection-management")
 def render_connection_management(shell, out):
     """Catalogue/cache/export presentation; mutations and queued workers never execute."""
     form, strip = shell.form, shell.progress_strip
@@ -613,7 +617,7 @@ def render_connection_management(shell, out):
             latest(None, None)
 
 
-@fixture('connection-usage')
+@fixture("connection-usage")
 def render_connection_usage_states(shell, out):
     """Local completed-image counters from synthetic records; no database, provider or generation work."""
     from datetime import UTC, datetime, timedelta
@@ -737,7 +741,7 @@ def render_connection_usage_states(shell, out):
     environ.clear()
 
 
-@fixture('generate-configuration')
+@fixture("generate-configuration")
 def render_generate_configuration_states(shell, out):
     """Local editors/inventory/configuration plus asset progress; no provider or upload worker runs."""
     form, page, controller = shell.form, shell.generation_page, shell.generation
@@ -1001,7 +1005,7 @@ def render_generate_configuration_states(shell, out):
         render_inspector_fit_states(shell, out, "generate")
 
 
-@fixture('active-queue')
+@fixture("active-queue")
 def render_active_queue_states(shell, out):
     """Synthetic read views through the real controller; no queue is persisted, posted or dispatched."""
     form, queue, page = shell.form, shell.queue, shell.queue_page
@@ -1472,7 +1476,7 @@ def header_end_visible(table):
     return header.sectionViewportPosition(last) + header.sectionSize(last) <= table.viewport().width()
 
 
-@fixture('queue-template')
+@fixture("queue-template")
 def render_queue_template_states(shell, out):
     """Template presentation only: synthetic entries, intercepted workers, no library/queue/provider mutations."""
     from dataclasses import replace
@@ -1560,7 +1564,7 @@ def render_queue_template_states(shell, out):
         shell._responsive_workspace()
 
 
-@fixture('item-table')
+@fixture("item-table")
 def render_item_table_states(shell, out, state):
     """The seven-column items table (#127) from synthetic fixtures; thumbnails are generated gradients, not photographs.
 
@@ -1860,7 +1864,7 @@ def render_item_table_states(shell, out, state):
         queue._timer.stop()
 
 
-@fixture('gallery-composition')
+@fixture("gallery-composition")
 def render_gallery_composition_states(shell, state, out):
     """Synthetic gallery projection and GUI settlements only; no DB authority, export or output mutation."""
     form, gallery = shell.form, shell.gallery
@@ -2634,7 +2638,6 @@ def render_gallery_composition_states(shell, state, out):
             snap("images-106-pager-default-100-buffered")
 
 
-@fixture("removal-and-selection")
 def render_removal_and_selection_states(shell, item, plan, out):
     """Images consent, notices and result rows; every removal/query worker is bypassed."""
     recycle, gallery, strip = shell.image_recycle, shell.gallery, activity_strip(shell.form)
@@ -2737,7 +2740,7 @@ def render_removal_and_selection_states(shell, item, plan, out):
     gallery.show_view("Grid")
 
 
-@fixture('initial-refresh-recovery')
+@fixture("initial-refresh-recovery")
 def render_initial_refresh_recovery(app, state, out):
     """Drive the real first-query failure/recovery before any successful render."""
     allow_success = False
@@ -2823,7 +2826,7 @@ def render_initial_refresh_recovery(app, state, out):
             app.processEvents()
 
 
-@fixture('mapped-gallery')
+@fixture("mapped-gallery")
 def render_mapped_gallery_states(app, state, out):
     """Synthetic drive mount/reference; never opens an owner DB or Windows image."""
     root = state / "mapped-fixture"
@@ -3092,7 +3095,7 @@ def render_mapped_gallery_states(app, state, out):
             app.processEvents()
 
 
-@fixture('queue')
+@fixture("queue")
 def render_queue_states(shell, capture):
     """A real paused queue in the temporary state; dispatch settlements are delivered directly, never run."""
     queue, page = shell.queue, shell.queue_page
@@ -3133,7 +3136,7 @@ def render_queue_states(shell, capture):
     wait_for(lambda: not queue._views)
 
 
-@fixture("queue-popover")
+@fixture("queue")
 def render_queue_popover_states(shell, capture):
     """The one-click Queue popover (#135) on Generate, Images and Queues; Add to queue is shown while a queue runs."""
     queue, page, popover = shell.queue, shell.queue_page, shell.queue_popover
@@ -3174,7 +3177,7 @@ def render_queue_popover_states(shell, capture):
     page.planModeCombo.setCurrentText("Repeat")
 
 
-@fixture('startup-splash')
+@fixture("startup-splash")
 def render_startup_splash(out):
     """The startup splash (logo and busy bar) as the first window; offline, no provider or main window."""
     splash = StartupSplash()
@@ -3184,7 +3187,7 @@ def render_startup_splash(out):
     splash.dismiss()
 
 
-@fixture('shell')
+@fixture("shell")
 def render_shell_states(shell, capture):
     """Window-level notices, close consent and header run-control phases, driven through the real handlers."""
     strip = activity_strip(shell.form)
@@ -3322,7 +3325,7 @@ def render_shell_states(shell, capture):
         shell.form.statusBar().showMessage(original_message)
 
 
-@fixture('inpaint')
+@fixture("inpaint")
 def render_inpaint_states(shell, state, capture):
     """Listed editor states only; analysis/dispatch rows are presentation fixtures."""
     page, editor = shell.generation_page, shell.generation.inpaint
@@ -3484,7 +3487,7 @@ def render_inpaint_states(shell, state, capture):
         strip.finish(key)
 
 
-@fixture('logs')
+@fixture("logs")
 def render_logs_states(shell, capture):
     """Real Qt Logs presentations, including bounded paging and Follow inserts."""
     from datetime import datetime
@@ -3697,14 +3700,24 @@ def _render_category(app, args):
                 )
 
             render_scripts_states(
-                args.out, window_factory=script_window,
+                args.out,
+                window_factory=script_window,
                 state_names=[state.id for state in SELECTION.states if state.category == "scripts"],
-                on_saved=report, on_begin=REPORTER.begin, diagnostic=REPORTER.diagnostic,
+                on_saved=report,
+                on_begin=REPORTER.begin,
+                diagnostic=REPORTER.diagnostic,
             )
             return
         workspace_groups = (
-            "connection-setup", "connection-outcomes", "connection-management", "connection-usage",
-            "generate-configuration", "active-queue", "item-table", "queue-template", "gallery-composition",
+            "connection-setup",
+            "connection-outcomes",
+            "connection-management",
+            "connection-usage",
+            "generate-configuration",
+            "active-queue",
+            "item-table",
+            "queue-template",
+            "gallery-composition",
         )
         if any(needs_fixture(group) for group in workspace_groups):
             render_workspace_states(app, state, args.out)
@@ -3742,7 +3755,7 @@ def _render_category(app, args):
                 app.processEvents()
         if wants("images"):
             render_initial_refresh_recovery(app, state, args.out)
-        if not any(needs_fixture(group) for group in ("generation-flow", "queue-empty", "queue", "queue-popover", "shell", "inpaint", "logs")):
+        if not any(needs_fixture(group) for group in ("generation-flow", "queue", "shell", "inpaint", "logs")):
             return
         shell = MainWindow(saved=SavedCredentials(Vault()), environ={}, state_dir=state)
         shell.form.resize(1600, 1000)
@@ -3783,208 +3796,207 @@ def _render_category(app, args):
             wait_for(lambda: page.refreshInventoryButton.isEnabled())
             page.modelCombo.setCurrentText("fake-grid")
             page.promptEdit.setPlainText("Offline renderer fixture; no model inference.")
-            if needs_fixture("queue-empty"):
-                shell.form.queueNavigationButton.click()
-                capture("queues-01-empty")
             if needs_fixture("generation-flow"):
-              with fixture_scope("generation-flow"):
-                QTest.qWait(100)
-                capture("generate-01-empty")
-                page.refreshInventoryButton.click()
-                wait_for(lambda: page.refreshInventoryButton.isEnabled())
-                page.modelCombo.setCurrentText("fake-grid")
-                page.promptEdit.setPlainText(
-                    "Offline calibration grid — verify aspect ratio, edges and zoom. No model inference."
-                )
-                page.negativePromptEdit.setText("Not used by the offline fixture")
-                controller.lora.set_loras((LoRASelection("fake-soft", 0.8),))
-                page.widthSpinBox.setValue(512)
-                page.heightSpinBox.setValue(1024)
-                page.generateButton.click()
-                wait_for(settled, timeout=60)
-                capture("generate-02-portrait")
-                QTest.mouseMove(page.generateButton, QPoint(20, 15))
-                capture("generate-03-hover")
-                page.generateButton.setDown(True)
-                capture("generate-04-pressed")
-                page.generateButton.setDown(False)
-                page.resultPreviewLabel.zoom(2)
-                capture("generate-05-zoom")
-                page.widthSpinBox.setValue(1024)
-                page.heightSpinBox.setValue(576)
-                page.generateButton.click()
-                wait_for(settled, timeout=60)
-                capture("generate-06-landscape")
-                shell.form.resize(800, 680)
-                capture("generate-07-narrow")
-                shell.form.resize(1600, 1000)
-                page.promptEdit.clear()
-                page.seedEdit.setText("invalid")
-                page.generateButton.click()
-                page.seedEdit.setFocus()
-                capture("generate-08-invalid-focus")
-                page.promptEdit.setPlainText("Offline fixture")
-                page.seedEdit.setText("0")
-                controller.lora.set_loras((LoRASelection("fake-mismatch", 0.7), LoRASelection("fake-unknown", 0.5)))
-                page.checkLorasButton.click()
-                wait_for(settled, timeout=60)
-                capture("generate-09-incompatible")
-                controller.lora.set_loras(())
-                gate = asyncio.Event()
-                page.generateButton.click()
-                wait_for(lambda: not page.generateButton.isEnabled())
-                # #133: only another Generate waits; the form and the LoRA panel stay editable for the next request.
-                capture("generate-10-busy-disabled")
-                shell.runner._loop.call_soon_threadsafe(gate.set)
-                wait_for(settled, timeout=60)
-                gate, scenario = None, "lost"
-                page.generateButton.click()
-                wait_for(settled, timeout=60)
-                capture("generate-11-outcome-unknown")
-                throttled = BackendError(
-                    BackendFailure(
-                        ErrorCategory.AUTHENTICATION,
-                        "grpc_permission_denied",
-                        "user failed to pass throttlePolicy, 24_hour in 500",
-                        submission_stage=SubmissionStage.TERMINAL_OBSERVED,
-                        remote_outcome=RemoteOutcome.UNKNOWN,
-                        terminal_status="PERMISSION_DENIED",
-                        diagnostics=(
-                            ("transport", "grpc"),
-                            ("status", "PERMISSION_DENIED"),
-                            ("server_message", "user failed to pass throttlePolicy, 24_hour in 500"),
-                        ),
+                with fixture_scope("generation-flow"):
+                    QTest.qWait(100)
+                    capture("generate-01-empty")
+                    page.refreshInventoryButton.click()
+                    wait_for(lambda: page.refreshInventoryButton.isEnabled())
+                    page.modelCombo.setCurrentText("fake-grid")
+                    page.promptEdit.setPlainText(
+                        "Offline calibration grid — verify aspect ratio, edges and zoom. No model inference."
                     )
-                )
-                controller._generated(None, throttled)
-                capture("generate-11a-api-throttle-explanation")
-                asset_unknown = BackendError(
-                    BackendFailure(
-                        ErrorCategory.VALIDATION,
-                        "prepared_asset_unknown",
-                        "Prepared asset could not be validated; nothing was uploaded or submitted.",
-                        diagnostics=(
-                            ("transport", "http"),
-                            ("operation", "get_byom_urls"),
-                            ("asset", "example_krea2_lora_f16.ckpt"),
-                            ("http_status", "503"),
-                            ("server_message", "Service temporarily unavailable"),
-                            ("cause_code", "cloud_http_rejected"),
-                            ("validation_reason", "cloud_http_rejected"),
-                        ),
-                    )
-                )
-                controller._generated(None, asset_unknown)
-                capture("generate-11b-prepared-asset-api-explanation")
-                uninterpreted = BackendError(
-                    BackendFailure(
-                        ErrorCategory.VALIDATION,
-                        "prepared_asset_unknown",
-                        "DTFlow could not establish the asset status from the DT+ response (no_matching_asset_entry).",
-                        diagnostics=(
-                            ("asset", "example_krea2_lora_f16.ckpt"),
-                            ("transport", "http"),
-                            ("operation", "get_byom_urls"),
-                            ("http_status", "200"),
-                            ("validation_reason", "no_matching_asset_entry"),
-                            (
-                                "interpretation_message",
-                                "DTFlow could not establish the asset status (no_matching_asset_entry).",
-                            ),
-                        ),
-                    )
-                )
-                controller._generated(None, uninterpreted)
-                capture("generate-11c-local-byom-interpretation")
-                strip = shell.progress_strip
-                strip.finish("generation-result")
-                page.expandPromptButton.setChecked(True)
-                capture("generate-13-prompt-expanded")
-                page.expandPromptButton.setChecked(False)
-                scenario = "reject"
-                page.generateButton.click()
-                wait_for(settled, timeout=60)
-                capture("generate-14-failed")
-                strip.finish("generation-result")
-                gate, scenario = asyncio.Event(), "success"
-                page.generateButton.click()
-                wait_for(lambda: "run" in strip.rows)
-                strip.rows["run"].activityStopButton.click()
-                capture("generate-15-stop-requested")
-                wait_for(settled, timeout=60)
-                capture("generate-16-interrupted")
-                gate = None
-                strip.finish("generation-result")
-                shell.activity.set(dispatching=True)
-                capture("generate-17-queue-dispatch-running")
-                behind = []
-                controller.queue_behind = lambda *args: behind.append(args)
-                page.generateButton.click()
-                capture("generate-42-queued-behind")
-                controller.queue_behind = shell.queue.queue_behind
-                shell.activity.set(dispatching=False)
-                page.savePresetButton.click()
-                capture("generate-18-save-preset-editor")
-                shell.inline.dismiss()
-
-                # Real asset-service composition, in-memory transport. Never generates through cloud.
-                shell.form.backendCombo.setCurrentText("cloud")
-                panel = controller.lora
-                panel.confirm_upload = lambda *_: True
-                for name in ("fixture-style.ckpt", "fixture-soft.ckpt"):
-                    fixture = lora_file(state, name, data=name.encode() * 200)
-                    panel.choose_asset_file = lambda *_, fixture=fixture: str(fixture)
-                    page.prepareAssetButton.click()
+                    page.negativePromptEdit.setText("Not used by the offline fixture")
+                    controller.lora.set_loras((LoRASelection("fake-soft", 0.8),))
+                    page.widthSpinBox.setValue(512)
+                    page.heightSpinBox.setValue(1024)
+                    page.generateButton.click()
                     wait_for(settled, timeout=60)
-                    wait_for(lambda name=name: page.assetList.count() >= (1 if "style" in name else 2))
-                page.assetList.setCurrentRow(0)
-                controller.lora.set_loras((LoRASelection("fixture-soft.ckpt", 0.8),))
-                page.assetNoteLabel.setText(
-                    "OFFLINE FIXTURE · in-memory cloud receipts. No provider traffic or real upload."
-                )
-                page.detailsToggle.setChecked(True)
-                capture("generate-12-assets-details")
-                shell.form.backendCombo.setCurrentText("fake")
-                for name, tab in (
-                    ("queues-01-empty", "queueNavigationButton"),
-                    ("images-01-grid", "imagesNavigationButton"),
-                ):
-                    getattr(shell.form, tab).click()
-                    if tab == "imagesNavigationButton":
-                        # The fake generations above are saved outputs; show them loaded, not a mid-refresh frame.
-                        shell.gallery.show_view("Grid")
-                        wait_for(
-                            lambda: (
-                                not shell.gallery._loading
-                                and bool(shell.gallery.items)
-                                and not shell.gallery._thumb_waiting
-                                and not shell.gallery._thumb_active
-                            )
+                    capture("generate-02-portrait")
+                    QTest.mouseMove(page.generateButton, QPoint(20, 15))
+                    capture("generate-03-hover")
+                    page.generateButton.setDown(True)
+                    capture("generate-04-pressed")
+                    page.generateButton.setDown(False)
+                    page.resultPreviewLabel.zoom(2)
+                    capture("generate-05-zoom")
+                    page.widthSpinBox.setValue(1024)
+                    page.heightSpinBox.setValue(576)
+                    page.generateButton.click()
+                    wait_for(settled, timeout=60)
+                    capture("generate-06-landscape")
+                    shell.form.resize(800, 680)
+                    capture("generate-07-narrow")
+                    shell.form.resize(1600, 1000)
+                    page.promptEdit.clear()
+                    page.seedEdit.setText("invalid")
+                    page.generateButton.click()
+                    page.seedEdit.setFocus()
+                    capture("generate-08-invalid-focus")
+                    page.promptEdit.setPlainText("Offline fixture")
+                    page.seedEdit.setText("0")
+                    controller.lora.set_loras((LoRASelection("fake-mismatch", 0.7), LoRASelection("fake-unknown", 0.5)))
+                    page.checkLorasButton.click()
+                    wait_for(settled, timeout=60)
+                    capture("generate-09-incompatible")
+                    controller.lora.set_loras(())
+                    gate = asyncio.Event()
+                    page.generateButton.click()
+                    wait_for(lambda: not page.generateButton.isEnabled())
+                    # #133: only another Generate waits; the form and the LoRA panel stay editable for the next request.
+                    capture("generate-10-busy-disabled")
+                    shell.runner._loop.call_soon_threadsafe(gate.set)
+                    wait_for(settled, timeout=60)
+                    gate, scenario = None, "lost"
+                    page.generateButton.click()
+                    wait_for(settled, timeout=60)
+                    capture("generate-11-outcome-unknown")
+                    throttled = BackendError(
+                        BackendFailure(
+                            ErrorCategory.AUTHENTICATION,
+                            "grpc_permission_denied",
+                            "user failed to pass throttlePolicy, 24_hour in 500",
+                            submission_stage=SubmissionStage.TERMINAL_OBSERVED,
+                            remote_outcome=RemoteOutcome.UNKNOWN,
+                            terminal_status="PERMISSION_DENIED",
+                            diagnostics=(
+                                ("transport", "grpc"),
+                                ("status", "PERMISSION_DENIED"),
+                                ("server_message", "user failed to pass throttlePolicy, 24_hour in 500"),
+                            ),
                         )
-                    QTest.qWait(300)
-                    capture(name)
-                # Detail of a fake-backend output with Additional details open, then the real
-                # Regenerate consent and its confirmed fake-provider submission.
-                gallery = shell.gallery
-                wait_for(lambda: not gallery._loading and bool(gallery.items))
-                gallery.show_view("Detail")
-                gallery.select(gallery.items[0].identity)
-                gallery._widget("galleryAdditionalButton", QPushButton).setChecked(True)
-                QTest.qWait(150)
-                capture("images-28-detail-additional")
-                # Regenerate lives at the end of Additional details; show the armed Confirm in place.
-                gallery._widget("galleryAdditionalScroll", QScrollArea).ensureWidgetVisible(gallery.regenerate_button)
-                gallery.regenerate_button.click()
-                QTest.qWait(150)
-                capture("images-29-regenerate-confirmation")
-                scenario = "success"
-                gallery.regenerate_button.click()
-                wait_for(lambda: page.resultList.count() > 0 and settled())
-                capture("images-30-regenerate-confirmed")
-                shell.form.generationNavigationButton.click()
-                controller.show_metadata()
-                capture("generate-19-metadata-inspection")
-                shell.inline.dismiss()
+                    )
+                    controller._generated(None, throttled)
+                    capture("generate-11a-api-throttle-explanation")
+                    asset_unknown = BackendError(
+                        BackendFailure(
+                            ErrorCategory.VALIDATION,
+                            "prepared_asset_unknown",
+                            "Prepared asset could not be validated; nothing was uploaded or submitted.",
+                            diagnostics=(
+                                ("transport", "http"),
+                                ("operation", "get_byom_urls"),
+                                ("asset", "example_krea2_lora_f16.ckpt"),
+                                ("http_status", "503"),
+                                ("server_message", "Service temporarily unavailable"),
+                                ("cause_code", "cloud_http_rejected"),
+                                ("validation_reason", "cloud_http_rejected"),
+                            ),
+                        )
+                    )
+                    controller._generated(None, asset_unknown)
+                    capture("generate-11b-prepared-asset-api-explanation")
+                    uninterpreted = BackendError(
+                        BackendFailure(
+                            ErrorCategory.VALIDATION,
+                            "prepared_asset_unknown",
+                            "DTFlow could not establish the asset status from the DT+ response (no_matching_asset_entry).",
+                            diagnostics=(
+                                ("asset", "example_krea2_lora_f16.ckpt"),
+                                ("transport", "http"),
+                                ("operation", "get_byom_urls"),
+                                ("http_status", "200"),
+                                ("validation_reason", "no_matching_asset_entry"),
+                                (
+                                    "interpretation_message",
+                                    "DTFlow could not establish the asset status (no_matching_asset_entry).",
+                                ),
+                            ),
+                        )
+                    )
+                    controller._generated(None, uninterpreted)
+                    capture("generate-11c-local-byom-interpretation")
+                    strip = shell.progress_strip
+                    strip.finish("generation-result")
+                    page.expandPromptButton.setChecked(True)
+                    capture("generate-13-prompt-expanded")
+                    page.expandPromptButton.setChecked(False)
+                    scenario = "reject"
+                    page.generateButton.click()
+                    wait_for(settled, timeout=60)
+                    capture("generate-14-failed")
+                    strip.finish("generation-result")
+                    gate, scenario = asyncio.Event(), "success"
+                    page.generateButton.click()
+                    wait_for(lambda: "run" in strip.rows)
+                    strip.rows["run"].activityStopButton.click()
+                    capture("generate-15-stop-requested")
+                    wait_for(settled, timeout=60)
+                    capture("generate-16-interrupted")
+                    gate = None
+                    strip.finish("generation-result")
+                    shell.activity.set(dispatching=True)
+                    capture("generate-17-queue-dispatch-running")
+                    behind = []
+                    controller.queue_behind = lambda *args: behind.append(args)
+                    page.generateButton.click()
+                    capture("generate-42-queued-behind")
+                    controller.queue_behind = shell.queue.queue_behind
+                    shell.activity.set(dispatching=False)
+                    page.savePresetButton.click()
+                    capture("generate-18-save-preset-editor")
+                    shell.inline.dismiss()
+
+                    # Real asset-service composition, in-memory transport. Never generates through cloud.
+                    shell.form.backendCombo.setCurrentText("cloud")
+                    panel = controller.lora
+                    panel.confirm_upload = lambda *_: True
+                    for name in ("fixture-style.ckpt", "fixture-soft.ckpt"):
+                        fixture = lora_file(state, name, data=name.encode() * 200)
+                        panel.choose_asset_file = lambda *_, fixture=fixture: str(fixture)
+                        page.prepareAssetButton.click()
+                        wait_for(settled, timeout=60)
+                        wait_for(lambda name=name: page.assetList.count() >= (1 if "style" in name else 2))
+                    page.assetList.setCurrentRow(0)
+                    controller.lora.set_loras((LoRASelection("fixture-soft.ckpt", 0.8),))
+                    page.assetNoteLabel.setText(
+                        "OFFLINE FIXTURE · in-memory cloud receipts. No provider traffic or real upload."
+                    )
+                    page.detailsToggle.setChecked(True)
+                    capture("generate-12-assets-details")
+                    shell.form.backendCombo.setCurrentText("fake")
+                    for name, tab in (
+                        ("queues-01-empty", "queueNavigationButton"),
+                        ("images-01-grid", "imagesNavigationButton"),
+                    ):
+                        getattr(shell.form, tab).click()
+                        if tab == "imagesNavigationButton":
+                            # The fake generations above are saved outputs; show them loaded, not a mid-refresh frame.
+                            shell.gallery.show_view("Grid")
+                            wait_for(
+                                lambda: (
+                                    not shell.gallery._loading
+                                    and bool(shell.gallery.items)
+                                    and not shell.gallery._thumb_waiting
+                                    and not shell.gallery._thumb_active
+                                )
+                            )
+                        QTest.qWait(300)
+                        capture(name)
+                    # Detail of a fake-backend output with Additional details open, then the real
+                    # Regenerate consent and its confirmed fake-provider submission.
+                    gallery = shell.gallery
+                    wait_for(lambda: not gallery._loading and bool(gallery.items))
+                    gallery.show_view("Detail")
+                    gallery.select(gallery.items[0].identity)
+                    gallery._widget("galleryAdditionalButton", QPushButton).setChecked(True)
+                    QTest.qWait(150)
+                    capture("images-28-detail-additional")
+                    # Regenerate lives at the end of Additional details; show the armed Confirm in place.
+                    gallery._widget("galleryAdditionalScroll", QScrollArea).ensureWidgetVisible(
+                        gallery.regenerate_button
+                    )
+                    gallery.regenerate_button.click()
+                    QTest.qWait(150)
+                    capture("images-29-regenerate-confirmation")
+                    scenario = "success"
+                    gallery.regenerate_button.click()
+                    wait_for(lambda: page.resultList.count() > 0 and settled())
+                    capture("images-30-regenerate-confirmed")
+                    shell.form.generationNavigationButton.click()
+                    controller.show_metadata()
+                    capture("generate-19-metadata-inspection")
+                    shell.inline.dismiss()
             if wants("queues"):
                 render_queue_states(shell, capture)
                 render_queue_popover_states(shell, capture)
@@ -4009,7 +4021,7 @@ def main():
     args = PREPARED_ARGS or parse_inputs(ROOT)
     global SELECTION, ACTIVE_CATEGORY, REPORTER
     SELECTION = args.selection
-    REPORTER = Reporter(args.out, SELECTION, verbose=args.verbose, report_key=args.category)
+    REPORTER = Reporter(args.out, SELECTION, verbose=args.verbose, report_key=args.report_key)
     app = QApplication([])
     apply_theme(app)
     from PySide6.QtCore import QtMsgType, qInstallMessageHandler
