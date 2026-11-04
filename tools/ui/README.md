@@ -138,6 +138,14 @@ The metadata pair checks identical card/child geometry; the default states live 
 
 Render only when requested, using a fresh output directory so old PNGs cannot masquerade as current captures. In Windows offscreen mode set `QT_QPA_FONTDIR=C:\Windows\Fonts` explicitly; this remains layout evidence rather than native desktop acceptance.
 
+#### Run levels and parallel workers
+
+`render_states.py` takes a run level: `-f` (default, about 17 key states, around 25s on a 2-core Windows PC), `-m` (common variants, about 245 states) and `-s` (every state, about 456; this is what the Actions workflow runs). Explicit selectors (`--category`, `--group`, `--prefix`, `--state`) reach states of any level. `-s` now means `--slow`; `--state` has no short form. `--list` prints the selection without starting Qt.
+
+The launcher imports no Qt and starts up to `-j N` worker processes (default one per core, 2 to 4; `-j 1` renders in one process). Each worker owns window groups: `workspace`, `gallery`, `main` (generation flow, queue, shell, inpaint, logs), `scripts`, `images-windows` and `splash`. Qt allows one application per process, so a worker costs about 5 to 7s of startup. The groups are packed into the fewest-slowest split from the measured `WORKER_COST` table in `render_catalog.py`; retune it when a group changes size.
+
+The console shows one line per state with overall done/total, elapsed time, an ETA and the category count; `-v` adds diagnostics. The full worker output goes to `render-details-<key>.log` next to the manifests. The launcher merges the worker manifests into `render-manifest-<key>.json` (per-state `worker`, per-worker `workers` block, `wait_timeouts` and `wait_timed_out` for fixture waits that timed out and rendered as they stood). It fails on a non-zero worker, blank image, missing selected state or a state rendered twice; Ctrl+C kills the workers. The Actions "Summarize renders" step reads the merged manifest.
+
 ```powershell
 $env:QT_QPA_PLATFORM = 'offscreen'
 $env:QT_QPA_FONTDIR = 'C:\Windows\Fonts'
