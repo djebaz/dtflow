@@ -28,6 +28,11 @@ from render_reporting import Reporter  # noqa: E402
 
 # Help/list/selector validation must not import Qt or construct fixture state.
 PREPARED_ARGS = parse_inputs(ROOT) if __name__ == "__main__" else None
+if PREPARED_ARGS is not None and PREPARED_ARGS.workers:
+    # Independent window groups run as separate processes; this parent never imports Qt.
+    from render_launcher import run_workers  # noqa: E402
+
+    raise SystemExit(run_workers(PREPARED_ARGS, ROOT))
 sys.path.insert(0, str(ROOT / "tests"))
 from support.network_guard import install  # noqa: E402
 

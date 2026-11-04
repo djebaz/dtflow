@@ -8,12 +8,26 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import os
 from dataclasses import dataclass
 from pathlib import Path
 
 CATEGORY_ORDER = ("shell", "connection", "generate", "inpaint", "queues", "scripts", "images", "logs")
 STAGE_ORDER = ("empty", "setup", "ready", "running", "results", "failure", "recovery", "layout")
 CATALOG_PATH = Path(__file__).with_suffix(".json")
+
+# Window groups that share no in-memory fixture state and can run as separate processes. Every other fixture
+# belongs to "app" (the workspace window then the main window), which still share one cloud/scenario closure.
+WORKER_FIXTURES = {
+    "scripts": ("scripts",),
+    "images-windows": ("mapped-gallery", "trash-unavailable", "initial-refresh-recovery"),
+    "splash": ("startup-splash",),
+}
+WORKER_ORDER = ("app", "scripts", "images-windows", "splash")  # longest first when workers are scheduled
+
+
+def worker_of(fixture):
+    return next((name for name, fixtures in WORKER_FIXTURES.items() if fixture in fixtures), "app")
 
 
 LEVEL_ORDER = ("f", "m", "s")  # fast ⊂ medium ⊂ slow (every state)
@@ -54,7 +68,7 @@ def load_catalog(path=CATALOG_PATH):
 
 
 class Selection:
-    def __init__(self, catalog, *, category="all", groups=(), states=(), prefixes=(), level="s"):
+    def __init__(self, catalog, *, category="all", groups=(), states=(), prefixes=(), level="s", worker=None):
         self.catalog_by_id = {state.id: state for state in catalog}
         ids = {state.id for state in catalog}
         available_groups = {state.group for state in catalog}
@@ -81,6 +95,7 @@ class Selection:
                 and state.category == "images"
             )
             and state.level in reach
+            and (worker is None or worker_of(state.fixture) == worker)
             and (
                 not explicit
                 or state.id in states
@@ -113,6 +128,14 @@ def parse_inputs(root, argv=None):
     parser.add_argument("-c", "--category", choices=("all", *CATEGORY_ORDER, "image-navigation"), default="all")
     parser.add_argument("-g", "--group", action="append", default=[], help="Select category/subcategory; repeatable")
     parser.add_argument("--state", action="append", default=[], help="Select an exact stable state ID; repeatable")
+    parser.add_argument(
+        "-j",
+        "--jobs",
+        type=int,
+        default=0,
+        help="Worker processes at once (default: cores minus one, at most 4; 1 = one process)",
+    )
+    parser.add_argument("--worker", choices=WORKER_ORDER, help=argparse.SUPPRESS)
     levels = parser.add_mutually_exclusive_group()
     levels.add_argument("-f", "--fast", dest="level", action="store_const", const="f", help="Key states only (default)")
     levels.add_argument(
@@ -139,6 +162,7 @@ def parse_inputs(root, argv=None):
             states=args.state,
             prefixes=args.prefix,
             level=args.level,
+            worker=args.worker,
         )
     except (ValueError, OSError) as exc:
         parser.error(str(exc))
@@ -150,9 +174,19 @@ def parse_inputs(root, argv=None):
     args.report_key = f"{args.category}-{digest}" if digest else args.category
     if args.level != "s":
         args.report_key += f"-{args.level}"
+    # The parent plans workers from the whole selection; a worker's own selection is already narrowed to its group.
+    args.jobs = args.jobs if args.jobs > 0 else max(1, min(4, (os.cpu_count() or 2) - 1))
+    present = {worker_of(state.fixture) for state in args.selection.states}
+    args.workers = [name for name in WORKER_ORDER if name in present] if args.worker is None and not args.list else []
+    if args.jobs == 1 or len(args.workers) < 2:
+        args.workers = []
+    if args.worker:
+        args.report_key += f"-{args.worker}"
     if args.list:
         for index, state in enumerate(args.selection.states, 1):
-            print(f"{index:3}  {state.level} {state.group:30} {state.stage:8} {state.id}  [fixture: {state.fixture}]")
+            print(
+                f"{index:3}  {state.level} {state.group:30} {state.stage:8} {state.id}  [fixture: {state.fixture}, worker: {worker_of(state.fixture)}]"
+            )
         print(f"Selected {len(args.selection.states)} states in {len(args.selection.fixtures)} fixture groups.")
         parser.exit()
     return args
