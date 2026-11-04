@@ -83,7 +83,7 @@ Explicit Drive rate-limit responses use bounded exponential backoff; other error
 
 Offscreen Qt renders of the real DTFlow forms under the real `dtflow_dark.qss`. Run from the repository root (or set `DTFLOW_ROOT`) with the locked environment:
 
-PR #146 adds `queues-50-inspector-minimum-width`, `queues-51-inspector-long-backend` and `generate-50-inspector-after-queues` to `render_states.py`. These fixtures hold the right rail at its configured minimum width, assert that the stack/current page and both item actions fit the viewport with no horizontal scroll range, check backend wrapping, and switch between Queues and Generate to check hidden-page sizing. They run with the corresponding `--category queues` or `--category generate` selection (or `all`), using intercepted workers and synthetic presentation data. Fixture presence is not execution evidence; no new captures were produced in the fixture-extension pass, and native Windows/DPI acceptance remains separate. On Windows offscreen runs, the renderer defaults `QT_QPA_FONTDIR` to `%WINDIR%\Fonts`; see the [development guide](../../devdocs/guides/development.md).
+PR #146 adds `queues-50-inspector-minimum-width`, `queues-51-inspector-long-backend` and `generate-50-inspector-after-queues` to `render_states.py`. These fixtures hold the right rail at its configured minimum width and switch between Queues and Generate to check hidden-page sizing. They run with the corresponding `--category queues` or `--category generate` selection (or `all`), using intercepted workers and synthetic presentation data. Fixture presence is not execution evidence; no new captures were produced in the fixture-extension pass, and native Windows/DPI acceptance remains separate. On Windows offscreen runs, the renderer defaults `QT_QPA_FONTDIR` to `%WINDIR%\Fonts`; see the [development guide](../../devdocs/guides/development.md).
 
 ```powershell
 uv sync
@@ -125,7 +125,7 @@ See the [implementation plan and full matrix command](../../devdocs/plans/2026-1
 
 ### PR #102 gallery squash preparation
 
-Current gallery defaults are 20 records per batch/page chip and at most 100 buffered cards. The existing 100/300 navigation fixtures are explicitly pinned stress/continuity scenarios, not application defaults. `render_states.py` resolves the new default fixtures from `dtflow.gallery_limits`, passes the configured batch size to the pager and checks its query limit, buffered counts and page-2 tooltip.
+Current gallery defaults are 20 records per batch/page chip and at most 100 buffered cards. The existing 100/300 navigation fixtures are explicitly pinned stress/continuity scenarios, not application defaults. `render_states.py` resolves the new default fixtures from `dtflow.gallery_limits`, passes the configured batch size to the pager and shows its query limit, buffered counts and page-2 tooltip.
 
 | State | Evidence provided when actually rendered |
 | --- | --- |
@@ -149,6 +149,8 @@ The [remaining-state implementation plan](../../devdocs/plans/2026-10-17-remaini
 Startup follow-up #168/#169 adds `connection-41-startup-check-and-loading`, `connection-42-startup-unconfigured` and `connection-43-startup-summary-unavailable` through real startup/presentation handlers with intercepted coroutine admission. These definitions submit no provider or credential work and have not been rendered. Lazy Logs creation reuses the existing Logs fixtures; first-use navigation is covered separately by the Qt shell tests.
 
 `connection-44-recheck-after-context-change` covers a fresh pending check after configuration changes, including rejection of the old check's late failure without enabling the current Check button. Coroutine admission is intercepted; this definition has not been rendered.
+
+Renders are for human review and carry no layout assertions (since PR #225); do not add `assert` or similar checks to `render_states.py`. Only save failures, duplicate state names and blank images fail a run, and a timed-out wait warns and renders the current state.
 
 `render_states.py` saves listed offline workflow states as `<tab>-<NN>-<state>.png`, for example `images-01-grid.png`, `generate-01-empty.png` and `queues-02-created-paused.png`. The groups are `connection`, `generate`, `images`, `inpaint`, `queues` and `shell`; numbering is independent within each group. Keep existing names stable and append new numbers within the relevant group, so filenames sort by group without global numbering collisions. Render order may differ from filename order.
 

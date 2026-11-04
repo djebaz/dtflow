@@ -308,3 +308,5 @@ The Grid-only Windows pywinauto matrix no longer awaits the initial `query_done`
 Run `uv run python tools/ui/render_states.py --out tmp/ui-renders` from the checkout. The renderer passes its screen configuration as a path relative to the launch directory: Qt uses colons to separate platform arguments, so an absolute `C:\...` path in `offscreen:configfile=...` is parsed as `configfile=C` and exits with `Could not find platform config file C`. Launch from the repository drive when using the automatic configuration. Explicit platform overrides remain unchanged.
 
 For Windows offscreen rendering, the script defaults `QT_QPA_FONTDIR` to `%WINDIR%\Fonts`, including when offscreen has configuration arguments. An explicitly supplied font directory is preserved. These settings affect offline screenshot startup; they are not native Windows/DPI acceptance.
+
+The renders are for human review. `render_states.py` has no layout or state assertions and new states must not add any; it fails only when an image cannot be saved, a state name repeats, or an image is blank. A timed-out wait prints a warning and renders the current state.
