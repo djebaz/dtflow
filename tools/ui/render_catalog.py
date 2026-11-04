@@ -25,7 +25,35 @@ WORKER_FIXTURES = {
     "images-windows": ("mapped-gallery", "trash-unavailable", "initial-refresh-recovery"),
     "splash": ("startup-splash",),
 }
-WORKER_ORDER = ("workspace", "main", "scripts", "images-windows", "splash")  # longest first when workers are scheduled
+WORKER_ORDER = ("workspace", "main", "scripts", "images-windows", "splash")  # also the order they run in one process
+# Rough seconds of render work: (window build + setup, per selected state). Used only to balance processes.
+WORKER_COST = {
+    "workspace": (3.0, 0.9),
+    "main": (5.0, 0.9),
+    "scripts": (2.0, 1.3),
+    "images-windows": (3.0, 0.9),
+    "splash": (0.1, 0.1),
+}
+
+
+def plan_processes(selection, jobs):
+    """Pack the window groups of this selection into at most `jobs` processes, balanced by estimated cost.
+
+    Each process pays Python and Qt startup once, so a trivial group (the splash) never gets a process of its own.
+    Returns labels such as "workspace" or "main+scripts+splash" (groups joined in their run order)."""
+    counts = {}
+    for state in selection.states:
+        counts[worker_of(state.fixture)] = counts.get(worker_of(state.fixture), 0) + 1
+    cost = {name: WORKER_COST[name][0] + WORKER_COST[name][1] * count for name, count in counts.items()}
+    heavy = sorted((n for n in cost if cost[n] >= 2.0), key=lambda n: -cost[n])
+    light = [n for n in cost if cost[n] < 2.0]
+    bins = [[] for _ in range(max(1, min(jobs, len(heavy))))]
+    loads = [0.0] * len(bins)
+    for name in heavy + light:
+        index = loads.index(min(loads))
+        bins[index].append(name)
+        loads[index] += cost[name]
+    return ["+".join(sorted(group, key=WORKER_ORDER.index)) for group in bins if group]
 
 
 def worker_of(fixture):
@@ -97,7 +125,7 @@ class Selection:
                 and state.category == "images"
             )
             and state.level in reach
-            and (worker is None or worker_of(state.fixture) == worker)
+            and (worker is None or worker_of(state.fixture) in worker)
             and (
                 not explicit
                 or state.id in states
@@ -137,7 +165,7 @@ def parse_inputs(root, argv=None):
         default=0,
         help="Worker processes at once (default: one per core, 2 to 4; 1 = one process)",
     )
-    parser.add_argument("--worker", choices=WORKER_ORDER, help=argparse.SUPPRESS)
+    parser.add_argument("--worker", help=argparse.SUPPRESS)  # "a+b": window groups rendered by this process
     levels = parser.add_mutually_exclusive_group()
     levels.add_argument("-f", "--fast", dest="level", action="store_const", const="f", help="Key states only (default)")
     levels.add_argument(
@@ -164,7 +192,7 @@ def parse_inputs(root, argv=None):
             states=args.state,
             prefixes=args.prefix,
             level=args.level,
-            worker=args.worker,
+            worker=args.worker and tuple(args.worker.split("+")),
         )
     except (ValueError, OSError) as exc:
         parser.error(str(exc))
@@ -178,8 +206,7 @@ def parse_inputs(root, argv=None):
         args.report_key += f"-{args.level}"
     # The parent plans workers from the whole selection; a worker's own selection is already narrowed to its group.
     args.jobs = args.jobs if args.jobs > 0 else max(2, min(4, os.cpu_count() or 2))
-    present = {worker_of(state.fixture) for state in args.selection.states}
-    args.workers = [name for name in WORKER_ORDER if name in present] if args.worker is None and not args.list else []
+    args.workers = plan_processes(args.selection, args.jobs) if args.worker is None and not args.list else []
     if args.jobs == 1 or len(args.workers) < 2:
         args.workers = []
     if args.worker:
