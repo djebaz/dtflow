@@ -1,6 +1,6 @@
 # UI render selection, progress and process orchestration
 
-**Status (2026-11-04):** steps 1-5 below are implemented on PR #226 and the Actions `-s` run passed (456 states, 61.9s, 2-core runner). Remaining subphases: 4b, 5b, 5c, the phase 6 acceptance run and the acceptance gates. Follow-up to merged PR #225 (`30f84282c1cc641beed333021896f4b531c14391`).
+**Status (2026-11-04):** steps 1-5 below are implemented on PR #226 and the Actions `-s` run passed (456 states, 61.9s, 2-core runner). Remaining: Actions confirmation of 4b/5b/5c and phase 6, and the acceptance gates. Follow-up to merged PR #225 (`30f84282c1cc641beed333021896f4b531c14391`).
 
 ## Goal and boundaries
 
@@ -69,10 +69,10 @@ The owner reported 456 screenshots in 286 seconds after PR #225's fixture repair
 2. Done: `level` field and `-f/-m/-s` flags (default `-f`, 17 states; `-m` about 245; `-s` all 456).
 3. Done: launcher (`render_launcher.py`) with `-j` worker processes, merged manifest, per-state `worker`, `workers` block, `wait_timeouts`, kill on Ctrl+C, failure on worker exit, blank, missing or duplicate states. Windows PC: `-f` 23s, `-s` 141s.
 4. Done: worker groups workspace, gallery, main, scripts, images-windows, splash, packed by a measured `WORKER_COST` table.
-   - 4b. Open: split the workspace group further (connection, generate-configuration, queues read-views). Only worth it with more than 2 cores; first read the code to confirm the fixtures do not depend on credentials or queues left by an earlier one. Re-measure `-m` and `-s` with `-j 3/4` on a 4-core machine.
+   - 4b. Done (81c5663, awaiting an Actions run): the workspace group is split further (connection, generate-configuration, queues read-views). Only worth it with more than 2 cores; first read the code to confirm the fixtures do not depend on credentials or queues left by an earlier one. Re-measure `-m` and `-s` with `-j 3/4` on a 4-core machine.
 5. Done: Actions runs the launcher once with `-s`; Summarize renders reads the merged manifest; the 100ms settle wait is gone.
-   - 5b. Open: trim the slow fixed waits (`images-102` 8s timeout on Windows, `images-03`, `images-02`, `images-18`), only after the owner approves lowering the timeout.
-   - 5c. Open: worker timeout and one deadline for local runs and Actions (step `timeout-minutes: 2` vs the 300s subprocess deadline); keep `WORKER_COST` in step with catalog changes.
+   - 5b. Done for `images-102` only (wait 8s to 2s); other slow states untouched until their cause is measured: trim the slow fixed waits (`images-102` 8s timeout on Windows, `images-03`, `images-02`, `images-18`), only after the owner approves lowering the timeout.
+   - 5c. Done: `--stall-timeout` (default 180s) and a 6 minute Actions step limit above the 300s deadline; the stall kill itself has not been triggered yet: worker timeout and one deadline for local runs and Actions (step `timeout-minutes: 2` vs the 300s subprocess deadline); keep `WORKER_COST` in step with catalog changes.
 6. Implemented, awaiting an Actions run: change-based selection. `tools/ui/render_changes.py` diffs the PR head against its merge base, `tools/ui/render_dependencies.json` maps paths to render categories (first matching rule; unmapped path, missing history or any error means a full `-s`; docs-only and non-render paths give a `-f` smoke render). Pull requests use it unless labelled `render-all`; a manual dispatch uses it only with `pr` set and `changed_only` on. The summary shows the selection and the reason per path. The Drive upload stays a separate step.
 7. Done: docs (`tools/ui/README.md`, `AGENTS.md`, development guide). Extend them with any later subphase.
 
