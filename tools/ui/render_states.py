@@ -3709,7 +3709,7 @@ def _render_selection(app, args):
             render_scripts_states(
                 args.out,
                 window_factory=script_window,
-                state_names=[state.id for state in SELECTION.states if state.category == "scripts"],
+                state_names=[item.id for item in SELECTION.states if item.category == "scripts"],
                 on_saved=report,
                 on_begin=REPORTER.begin,
                 diagnostic=REPORTER.diagnostic,
