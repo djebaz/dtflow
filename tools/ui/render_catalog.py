@@ -22,15 +22,24 @@ CATALOG_PATH = Path(__file__).with_suffix(".json")
 WORKER_FIXTURES = {
     "main": ("generation-flow", "queue", "shell", "inpaint", "logs"),
     "scripts": ("scripts",),
+    "gallery": ("gallery-composition",),
     "images-windows": ("mapped-gallery", "trash-unavailable", "initial-refresh-recovery"),
     "splash": ("startup-splash",),
 }
-WORKER_ORDER = ("workspace", "main", "scripts", "images-windows", "splash")  # also the order they run in one process
+WORKER_ORDER = (
+    "workspace",
+    "gallery",
+    "main",
+    "scripts",
+    "images-windows",
+    "splash",
+)  # also the order they run in one process
 # Rough seconds of render work: (window build + setup, per selected state). Used only to balance processes.
 WORKER_COST = {
     "workspace": (3.0, 0.9),
     "main": (5.0, 0.9),
     "scripts": (2.0, 1.3),
+    "gallery": (3.0, 0.9),
     "images-windows": (3.0, 0.9),
     "splash": (0.1, 0.1),
 }
