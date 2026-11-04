@@ -88,8 +88,6 @@ Each component needs: stable component ID; owning source paths and, where needed
 
 For broad files such as `main_window.py`, `main_window.ui` and the QSS, a single file-level category rule is too coarse. Record source scopes such as `_place_export_panel`, `usageTimezoneCombo` and `imageExportBox` so a later conservative diff reader can identify the relevant family. If it cannot identify the scope safely, expose that uncertainty; do not claim a narrow selection is complete. The unknown-change fallback still needs an owner decision and is not changed by this document.
 
-## Next inventory passes
-
 ## Follow-up implementation checklist
 
 PR #226 is squash-merged as `00d49dd`; its working renderer is the baseline for this separate follow-up. This document starts the finer-selection work; no selector behavior changes are implemented yet.
