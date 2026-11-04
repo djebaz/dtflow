@@ -6,7 +6,6 @@ The calibration grid is a fixture, not a generated photograph. Cloud receipts us
 same in-memory API/transport as the asset tests; no real file upload occurs.
 """
 
-import argparse
 import asyncio
 import faulthandler
 import json
@@ -16,12 +15,19 @@ import tempfile
 import time
 import traceback
 from dataclasses import asdict, replace
+from contextlib import contextmanager
+from functools import wraps
 from datetime import UTC, datetime
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import PropertyMock, patch
 
 ROOT = Path(__file__).resolve().parents[2]
+from render_catalog import CATEGORY_ORDER, parse_inputs  # noqa: E402
+from render_reporting import Reporter  # noqa: E402
+
+# Help/list/selector validation must not import Qt or construct fixture state.
+PREPARED_ARGS = parse_inputs(ROOT) if __name__ == "__main__" else None
 sys.path.insert(0, str(ROOT / "tests"))
 from support.network_guard import install  # noqa: E402
 
@@ -108,73 +114,75 @@ from dtflow.ui.splash import StartupSplash  # noqa: E402
 from dtflow.ui.system_trash import TRASH_NAME  # noqa: E402
 from dtflow.ui.theme import apply_theme  # noqa: E402
 
-RENDERED = {}  # state name -> {"seconds", "blank"}, in render order
-STARTED = time.monotonic()
-SELECTED_CATEGORY = "all"
+SELECTION = None
+ACTIVE_CATEGORY = None
+REPORTER = None
+CAPTURE_SCOPES = []
+
+
+class _FixtureComplete(BaseException):
+    """Internal control flow: retain prerequisites, omit the unneeded fixture tail."""
+
+
+@contextmanager
+def fixture_scope(name):
+    CAPTURE_SCOPES.append(SELECTION.fixture_ids(name, ACTIVE_CATEGORY))
+    REPORTER.begin()
+    try:
+        yield
+    except _FixtureComplete:
+        pass
+    finally:
+        CAPTURE_SCOPES.pop()
 
 
 def wants(category):
-    """Return whether a render category should execute."""
-    return SELECTED_CATEGORY in ("all", category) or (category == "images" and SELECTED_CATEGORY == "image-navigation")
+    return ACTIVE_CATEGORY == category
 
 
-RENDER_CATEGORIES = (
-    "all",
-    "connection",
-    "generate",
-    "images",
-    "image-navigation",
-    "queues",
-    "shell",
-    "inpaint",
-    "logs",
-    "scripts",
-)
+def needs_fixture(name):
+    return SELECTION.wants_fixture(name, ACTIVE_CATEGORY)
 
 
-def render_category(target):
-    """Return the review category for a screenshot path."""
-    path = Path(target)
-    if "image-navigation" in path.parts:
-        return "image-navigation"
-    if path.stem.startswith("scripts_"):
-        return "scripts"
-    return path.stem.split("-", 1)[0]
+def fixture(name):
+    """Skip unrelated fixture construction, retaining all selected-group prerequisites."""
+    def decorate(function):
+        @wraps(function)
+        def run(*args, **kwargs):
+            if needs_fixture(name):
+                with fixture_scope(name):
+                    return function(*args, **kwargs)
+        return run
+    return decorate
 
 
 def category_selected(target):
-    """Whether this screenshot belongs to the requested render category."""
-    category = render_category(target)
-    if SELECTED_CATEGORY == "all":
+    if Path(target).stem not in SELECTION.catalog_by_id:
+        raise ValueError(f"Unregistered render state: {Path(target).stem}; add it to render_catalog.json.")
+    state = SELECTION.by_id.get(Path(target).stem)
+    return state is not None and state.category == ACTIVE_CATEGORY
+
+
+def write_capture(target, pixels):
+    """Selection precedes widget grabs/PNG encoding; stale unselected files are never deleted."""
+    name = Path(target).stem
+    if not category_selected(target):
         return True
-    if SELECTED_CATEGORY == "images":
-        return category in {"images", "image-navigation"}
-    return category == SELECTED_CATEGORY
+    target = REPORTER.out / SELECTION.by_id[name].path
+    target.parent.mkdir(parents=True, exist_ok=True)
+    return pixels().save(str(target))
 
 
 def report(target):
-    """Print progress for one written state and remember it for the final summary."""
     if not category_selected(target):
-        Path(target).unlink(missing_ok=True)
         return
+    target = REPORTER.out / SELECTION.by_id[Path(target).stem].path
     image = QImage(str(target)).scaled(16, 16)
     colors = {image.pixel(x, y) for x in range(image.width()) for y in range(image.height())}
-    name = Path(target).stem
-    if name in RENDERED:
-        raise RuntimeError(f"State {name} was rendered twice")
-    seconds = round(time.monotonic() - STARTED, 1)
-    RENDERED[name] = {"seconds": seconds, "blank": len(colors) <= 1}
-    print(f"[{len(RENDERED):3}] +{seconds:5.1f}s {target}")
-    # Dump Python stacks before CI's step timeout if the next state stops making progress.
+    REPORTER.saved(target, blank=len(colors) <= 1)
     faulthandler.dump_traceback_later(120, repeat=True)
-
-
-def summarize():
-    """Print the run total and fail when any render is a single flat color."""
-    blank = [name for name, entry in RENDERED.items() if entry["blank"]]
-    print(f"Rendered {len(RENDERED)} states in {time.monotonic() - STARTED:.1f}s.")
-    if blank:
-        raise SystemExit(f"Blank renders: {', '.join(blank)}")
+    if CAPTURE_SCOPES and CAPTURE_SCOPES[-1] <= REPORTER.records.keys():
+        raise _FixtureComplete()
 
 
 def wait_for(predicate, timeout=8):
@@ -190,7 +198,7 @@ def wait_for(predicate, timeout=8):
 
 def save(widget, out, name):
     target = out / f"{name}.png"
-    if not widget.grab().save(str(target)):
+    if not write_capture(target, lambda: widget.grab()):
         raise RuntimeError(f"Could not save {target.name}")
     report(target)
 
@@ -336,6 +344,7 @@ def render_workspace_states(app, state, out):
         app.processEvents()
 
 
+@fixture('connection-outcomes')
 def render_connection_outcomes(shell, out):
     """Check/key/preset presentation through real handlers; all service work is intercepted."""
     form, saved = shell.form, shell._saved
@@ -409,6 +418,7 @@ def render_connection_outcomes(shell, out):
     shell.refresh_presets()
 
 
+@fixture('connection-management')
 def render_connection_management(shell, out):
     """Catalogue/cache/export presentation; mutations and queued workers never execute."""
     form, strip = shell.form, shell.progress_strip
@@ -603,6 +613,7 @@ def render_connection_management(shell, out):
             latest(None, None)
 
 
+@fixture('connection-usage')
 def render_connection_usage_states(shell, out):
     """Local completed-image counters from synthetic records; no database, provider or generation work."""
     from datetime import UTC, datetime, timedelta
@@ -726,6 +737,7 @@ def render_connection_usage_states(shell, out):
     environ.clear()
 
 
+@fixture('generate-configuration')
 def render_generate_configuration_states(shell, out):
     """Local editors/inventory/configuration plus asset progress; no provider or upload worker runs."""
     form, page, controller = shell.form, shell.generation_page, shell.generation
@@ -989,6 +1001,7 @@ def render_generate_configuration_states(shell, out):
         render_inspector_fit_states(shell, out, "generate")
 
 
+@fixture('active-queue')
 def render_active_queue_states(shell, out):
     """Synthetic read views through the real controller; no queue is persisted, posted or dispatched."""
     form, queue, page = shell.form, shell.queue, shell.queue_page
@@ -1459,6 +1472,7 @@ def header_end_visible(table):
     return header.sectionViewportPosition(last) + header.sectionSize(last) <= table.viewport().width()
 
 
+@fixture('queue-template')
 def render_queue_template_states(shell, out):
     """Template presentation only: synthetic entries, intercepted workers, no library/queue/provider mutations."""
     from dataclasses import replace
@@ -1546,6 +1560,7 @@ def render_queue_template_states(shell, out):
         shell._responsive_workspace()
 
 
+@fixture('item-table')
 def render_item_table_states(shell, out, state):
     """The seven-column items table (#127) from synthetic fixtures; thumbnails are generated gradients, not photographs.
 
@@ -1845,6 +1860,7 @@ def render_item_table_states(shell, out, state):
         queue._timer.stop()
 
 
+@fixture('gallery-composition')
 def render_gallery_composition_states(shell, state, out):
     """Synthetic gallery projection and GUI settlements only; no DB authority, export or output mutation."""
     form, gallery = shell.form, shell.gallery
@@ -2618,6 +2634,7 @@ def render_gallery_composition_states(shell, state, out):
             snap("images-106-pager-default-100-buffered")
 
 
+@fixture("removal-and-selection")
 def render_removal_and_selection_states(shell, item, plan, out):
     """Images consent, notices and result rows; every removal/query worker is bypassed."""
     recycle, gallery, strip = shell.image_recycle, shell.gallery, activity_strip(shell.form)
@@ -2720,6 +2737,7 @@ def render_removal_and_selection_states(shell, item, plan, out):
     gallery.show_view("Grid")
 
 
+@fixture('initial-refresh-recovery')
 def render_initial_refresh_recovery(app, state, out):
     """Drive the real first-query failure/recovery before any successful render."""
     allow_success = False
@@ -2752,7 +2770,7 @@ def render_initial_refresh_recovery(app, state, out):
             shell.gallery.auto_timer.stop()
             shell.gallery.filter_timer.stop()
             target = out / "images-18-refresh-failed.png"
-            if not shell.form.grab().save(str(target)):
+            if not write_capture(target, lambda: shell.form.grab()):
                 raise RuntimeError(f"Could not save {target.name}")
             report(target)
 
@@ -2762,7 +2780,7 @@ def render_initial_refresh_recovery(app, state, out):
             QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)
             app.processEvents()
             target = out / "images-19-refresh-recovered-empty.png"
-            if not shell.form.grab().save(str(target)):
+            if not write_capture(target, lambda: shell.form.grab()):
                 raise RuntimeError(f"Could not save {target.name}")
             report(target)
             shell.gallery.show_view("Detail")
@@ -2775,7 +2793,7 @@ def render_initial_refresh_recovery(app, state, out):
                 shell.image_export.open_folder()
                 wait_for(lambda: "export-open" in activity_strip(shell.form).rows)
             target = out / "images-26-export-folder-missing.png"
-            if not shell.form.grab().save(str(target)):
+            if not write_capture(target, lambda: shell.form.grab()):
                 raise RuntimeError(f"Could not save {target.name}")
             report(target)
             activity_strip(shell.form).finish("export-open")
@@ -2795,7 +2813,7 @@ def render_initial_refresh_recovery(app, state, out):
                 )
                 wait_for(lambda: "viewer-open" in activity_strip(shell.form).rows)
             target = out / "images-27-external-viewer-unavailable.png"
-            if not shell.form.grab().save(str(target)):
+            if not write_capture(target, lambda: shell.form.grab()):
                 raise RuntimeError(f"Could not save {target.name}")
             report(target)
             activity_strip(shell.form).finish("viewer-open")
@@ -2805,6 +2823,7 @@ def render_initial_refresh_recovery(app, state, out):
             app.processEvents()
 
 
+@fixture('mapped-gallery')
 def render_mapped_gallery_states(app, state, out):
     """Synthetic drive mount/reference; never opens an owner DB or Windows image."""
     root = state / "mapped-fixture"
@@ -2876,7 +2895,7 @@ def render_mapped_gallery_states(app, state, out):
                 shell.gallery.show_view(mode)
                 QTest.qWait(150)
                 target = out / f"{name}.png"
-                if not shell.form.grab().save(str(target)):
+                if not write_capture(target, lambda: shell.form.grab()):
                     raise RuntimeError(f"Could not save {target.name}")
                 report(target)
             shell.gallery.show_view("Detail", persist=False)
@@ -2886,11 +2905,11 @@ def render_mapped_gallery_states(app, state, out):
             save(shell.form, out, "images-102-buffered-detail-decoded")
             # Display only: mapped Edit eligibility never reads the fixture or calls a provider.
             target = out / "images-07-mapped-edit-eligible.png"
-            if not shell.form.grab().save(str(target)):
+            if not write_capture(target, lambda: shell.form.grab()):
                 raise RuntimeError(f"Could not save {target.name}")
             report(target)
             target = out / "images-05-mapped-detail-metadata.png"
-            if not shell.form.grab().save(str(target)):
+            if not write_capture(target, lambda: shell.form.grab()):
                 raise RuntimeError(f"Could not save {target.name}")
             report(target)
             shell.gallery._show_refresh_failure(PersistenceError("Offline refresh refusal fixture."), first=False)
@@ -2899,7 +2918,7 @@ def render_mapped_gallery_states(app, state, out):
             wait_for(lambda: not shell.gallery._loading)
             QTest.qWait(100)
             target = out / "images-20-refresh-recovered-populated.png"
-            if not shell.form.grab().save(str(target)):
+            if not write_capture(target, lambda: shell.form.grab()):
                 raise RuntimeError(f"Could not save {target.name}")
             report(target)
 
@@ -2917,7 +2936,7 @@ def render_mapped_gallery_states(app, state, out):
                         shell.gallery.select(item.identity)
                     QTest.qWait(150)
                     target = out / f"{name}.png"
-                    if not shell.form.grab().save(str(target)):
+                    if not write_capture(target, lambda: shell.form.grab()):
                         raise RuntimeError(f"Could not save {target.name}")
                     report(target)
                 warning = activity_strip(shell.form).rows["gallery-snapshot"]
@@ -2930,7 +2949,7 @@ def render_mapped_gallery_states(app, state, out):
                     shell.gallery.refresh()
                     wait_for(lambda: not shell.gallery._loading)
                 target = out / "images-24-live-recovery-stabilizing.png"
-                if not shell.form.grab().save(str(target)):
+                if not write_capture(target, lambda: shell.form.grab()):
                     raise RuntimeError(f"Could not save {target.name}")
                 report(target)
                 shell.gallery.refresh()
@@ -2947,7 +2966,7 @@ def render_mapped_gallery_states(app, state, out):
                 wait_for(lambda: not shell.gallery._loading)
                 QTest.qWait(100)
                 target = out / "images-23-snapshot-warning-dismissed.png"
-                if not shell.form.grab().save(str(target)):
+                if not write_capture(target, lambda: shell.form.grab()):
                     raise RuntimeError(f"Could not save {target.name}")
                 report(target)
             # Drive real recovery callbacks at two controlled clock readings;
@@ -2966,7 +2985,7 @@ def render_mapped_gallery_states(app, state, out):
             wait_for(lambda: not shell.gallery._loading and shell.gallery._snapshot_at is None)
             QTest.qWait(100)
             target = out / "images-25-manual-live-recovery.png"
-            if not shell.form.grab().save(str(target)):
+            if not write_capture(target, lambda: shell.form.grab()):
                 raise RuntimeError(f"Could not save {target.name}")
             report(target)
             shell.gallery.auto_button.setChecked(True)
@@ -2978,7 +2997,7 @@ def render_mapped_gallery_states(app, state, out):
             shell.image_recycle._apply_mode("trash")
             QTest.qWait(100)
             target = out / "images-13-trash-mode.png"
-            if not shell.form.grab().save(str(target)):
+            if not write_capture(target, lambda: shell.form.grab()):
                 raise RuntimeError(f"Could not save {target.name}")
             report(target)
             menu.popup(shell.image_recycle.menu_button.mapToGlobal(QPoint(0, shell.image_recycle.menu_button.height())))
@@ -2995,7 +3014,7 @@ def render_mapped_gallery_states(app, state, out):
                     max(expected_left, screen.left()), max(screen.left(), screen.right() - menu.width() + 1)
                 )
             target = out / "images-10-removal-menu-trash-selected.png"
-            if not menu.grab().save(str(target)):
+            if not write_capture(target, lambda: menu.grab()):
                 raise RuntimeError(f"Could not save {target.name}")
             report(target)
             menu.hide()
@@ -3003,18 +3022,18 @@ def render_mapped_gallery_states(app, state, out):
             menu.popup(shell.image_recycle.menu_button.mapToGlobal(QPoint(0, shell.image_recycle.menu_button.height())))
             QTest.qWait(100)
             target = out / "images-11-removal-menu-permanent-selected.png"
-            if not menu.grab().save(str(target)):
+            if not write_capture(target, lambda: menu.grab()):
                 raise RuntimeError(f"Could not save {target.name}")
             report(target)
             menu.hide()
             target = out / "images-06-permanent-mode.png"
-            if not shell.form.grab().save(str(target)):
+            if not write_capture(target, lambda: shell.form.grab()):
                 raise RuntimeError(f"Could not save {target.name}")
             report(target)
             # Show the disabled icon beside the same disabled text shade.
             shell.gallery._set_checked(item.identity, False)
             target = out / "images-14-delete-disabled.png"
-            if not shell.form.grab().save(str(target)):
+            if not write_capture(target, lambda: shell.form.grab()):
                 raise RuntimeError(f"Could not save {target.name}")
             report(target)
             shell.gallery._set_checked(item.identity, True)
@@ -3031,7 +3050,7 @@ def render_mapped_gallery_states(app, state, out):
                 shell.image_recycle._prepared(plan, None)
                 QTest.qWait(100)
                 target = out / "images-08-permanent-confirmation.png"
-                if not shell.form.grab().save(str(target)):
+                if not write_capture(target, lambda: shell.form.grab()):
                     raise RuntimeError(f"Could not save {target.name}")
                 report(target)
                 shell.inline.dismiss()
@@ -3046,7 +3065,7 @@ def render_mapped_gallery_states(app, state, out):
                 None,
             )
             target = out / "images-12-original-unavailable-thumbnail.png"
-            if not shell.form.grab().save(str(target)):
+            if not write_capture(target, lambda: shell.form.grab()):
                 raise RuntimeError(f"Could not save {target.name}")
             report(target)
             # Confirmed-missing original: file-missing pictogram in Grid and List, distinct from unavailable.
@@ -3055,7 +3074,7 @@ def render_mapped_gallery_states(app, state, out):
                 shell.gallery.show_view(view)
                 QTest.qWait(50)
                 target = out / f"{name}.png"
-                if not shell.form.grab().save(str(target)):
+                if not write_capture(target, lambda: shell.form.grab()):
                     raise RuntimeError(f"Could not save {target.name}")
                 report(target)
             shell.gallery.show_view("Grid")
@@ -3064,7 +3083,7 @@ def render_mapped_gallery_states(app, state, out):
                 "folder", item.identity, None, OSError("Recorded output is not under this shared Windows state.")
             )
             target = out / "images-15-read-alias-unavailable.png"
-            if not shell.form.grab().save(str(target)):
+            if not write_capture(target, lambda: shell.form.grab()):
                 raise RuntimeError(f"Could not save {target.name}")
             report(target)
         finally:
@@ -3073,6 +3092,7 @@ def render_mapped_gallery_states(app, state, out):
             app.processEvents()
 
 
+@fixture('queue')
 def render_queue_states(shell, capture):
     """A real paused queue in the temporary state; dispatch settlements are delivered directly, never run."""
     queue, page = shell.queue, shell.queue_page
@@ -3111,9 +3131,9 @@ def render_queue_states(shell, capture):
     page.removeQueueButton.click()
     page.removeQueueButton.click()
     wait_for(lambda: not queue._views)
-    render_queue_popover_states(shell, capture)
 
 
+@fixture("queue-popover")
 def render_queue_popover_states(shell, capture):
     """The one-click Queue popover (#135) on Generate, Images and Queues; Add to queue is shown while a queue runs."""
     queue, page, popover = shell.queue, shell.queue_page, shell.queue_popover
@@ -3154,6 +3174,7 @@ def render_queue_popover_states(shell, capture):
     page.planModeCombo.setCurrentText("Repeat")
 
 
+@fixture('startup-splash')
 def render_startup_splash(out):
     """The startup splash (logo and busy bar) as the first window; offline, no provider or main window."""
     splash = StartupSplash()
@@ -3163,6 +3184,7 @@ def render_startup_splash(out):
     splash.dismiss()
 
 
+@fixture('shell')
 def render_shell_states(shell, capture):
     """Window-level notices, close consent and header run-control phases, driven through the real handlers."""
     strip = activity_strip(shell.form)
@@ -3300,6 +3322,7 @@ def render_shell_states(shell, capture):
         shell.form.statusBar().showMessage(original_message)
 
 
+@fixture('inpaint')
 def render_inpaint_states(shell, state, capture):
     """Listed editor states only; analysis/dispatch rows are presentation fixtures."""
     page, editor = shell.generation_page, shell.generation.inpaint
@@ -3461,6 +3484,7 @@ def render_inpaint_states(shell, state, capture):
         strip.finish(key)
 
 
+@fixture('logs')
 def render_logs_states(shell, capture):
     """Real Qt Logs presentations, including bounded paging and Follow inserts."""
     from datetime import datetime
@@ -3646,21 +3670,7 @@ def render_logs_states(shell, capture):
     shell._close_logs()
 
 
-def main():
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--out", type=Path, default=ROOT / "tmp" / "ui-renders", help="Screenshot directory")
-    parser.add_argument(
-        "--category",
-        choices=RENDER_CATEGORIES,
-        default="all",
-        help="Render only one UI category (default: all). Images includes Image Navigation.",
-    )
-    args = parser.parse_args()
-    global SELECTED_CATEGORY
-    SELECTED_CATEGORY = args.category
-    args.out.mkdir(parents=True, exist_ok=True)
-    app = QApplication([])
-    apply_theme(app)
+def _render_category(app, args):
     cloud = DtPlus()
     scenario, gate = "success", None
 
@@ -3676,7 +3686,7 @@ def main():
         state = Path(temporary)
         if wants("scripts"):
             # Includes parser-limit, inspection, mixer and Setup fixtures; no JS/queues are started.
-            from render_scripts_states import STATES as SCRIPT_STATES, render_scripts_states
+            from render_scripts_states import render_scripts_states
 
             def script_window():
                 return MainWindow(
@@ -3686,18 +3696,23 @@ def main():
                     no_cache=True,
                 )
 
-            for screenshot in render_scripts_states(args.out, window_factory=script_window, state_names=SCRIPT_STATES):
-                report(screenshot)
-            if args.category == "scripts":
-                summarize()
-                return
-        if any(wants(category) for category in ("connection", "generate", "queues", "images")):
+            render_scripts_states(
+                args.out, window_factory=script_window,
+                state_names=[state.id for state in SELECTION.states if state.category == "scripts"],
+                on_saved=report, on_begin=REPORTER.begin, diagnostic=REPORTER.diagnostic,
+            )
+            return
+        workspace_groups = (
+            "connection-setup", "connection-outcomes", "connection-management", "connection-usage",
+            "generate-configuration", "active-queue", "item-table", "queue-template", "gallery-composition",
+        )
+        if any(needs_fixture(group) for group in workspace_groups):
             render_workspace_states(app, state, args.out)
         if wants("shell"):
             render_startup_splash(args.out)
         if wants("images"):
             render_mapped_gallery_states(app, state, args.out)
-        if wants("images"):
+        if needs_fixture("trash-unavailable"):
             # Missing Qt capability API: startup succeeds with Trash unavailable.
             with patch.object(system_trash, "QFile", object):
                 unavailable = MainWindow(saved=SavedCredentials(Vault()), environ={}, state_dir=state / "no-trash")
@@ -3713,11 +3728,11 @@ def main():
                 )
                 QTest.qWait(100)
                 target = args.out / "images-02-trash-unavailable.png"
-                if not unavailable.form.grab().save(str(target)):
+                if not write_capture(target, lambda: unavailable.form.grab()):
                     raise RuntimeError(f"Could not save {target.name}")
                 report(target)
                 target = args.out / "images-09-removal-mode-menu.png"
-                if not unavailable.image_recycle.menu_button.menu().grab().save(str(target)):
+                if not write_capture(target, lambda: unavailable.image_recycle.menu_button.menu().grab()):
                     raise RuntimeError(f"Could not save {target.name}")
                 report(target)
                 unavailable.image_recycle.menu_button.menu().hide()
@@ -3727,6 +3742,8 @@ def main():
                 app.processEvents()
         if wants("images"):
             render_initial_refresh_recovery(app, state, args.out)
+        if not any(needs_fixture(group) for group in ("generation-flow", "queue-empty", "queue", "queue-popover", "shell", "inpaint", "logs")):
+            return
         shell = MainWindow(saved=SavedCredentials(Vault()), environ={}, state_dir=state)
         shell.form.resize(1600, 1000)
         shell.show()
@@ -3736,8 +3753,7 @@ def main():
 
         def capture(name, popup=None):
             """Composite custom anchored popups or native popup windows at their actual position."""
-            category = name.split("-", 1)[0]
-            if not wants(category):
+            if not category_selected(Path(name + ".png")):
                 return
             app.processEvents()
             preview = controller.inpaint.canvas if controller.inpaint.active else page.resultPreviewLabel
@@ -3755,7 +3771,7 @@ def main():
                 painter = QPainter(image)
                 painter.drawPixmap(at, widget.grab())
                 painter.end()
-            if not image.save(str(target)):
+            if not write_capture(target, lambda: image):
                 raise RuntimeError(f"Could not save {target.name}")
             report(target)
 
@@ -3763,205 +3779,215 @@ def main():
             return page.generateButton.isEnabled()
 
         try:
-            QTest.qWait(100)
-            capture("generate-01-empty")
             page.refreshInventoryButton.click()
             wait_for(lambda: page.refreshInventoryButton.isEnabled())
             page.modelCombo.setCurrentText("fake-grid")
-            page.promptEdit.setPlainText(
-                "Offline calibration grid — verify aspect ratio, edges and zoom. No model inference."
-            )
-            page.negativePromptEdit.setText("Not used by the offline fixture")
-            controller.lora.set_loras((LoRASelection("fake-soft", 0.8),))
-            page.widthSpinBox.setValue(512)
-            page.heightSpinBox.setValue(1024)
-            page.generateButton.click()
-            wait_for(settled, timeout=60)
-            capture("generate-02-portrait")
-            QTest.mouseMove(page.generateButton, QPoint(20, 15))
-            capture("generate-03-hover")
-            page.generateButton.setDown(True)
-            capture("generate-04-pressed")
-            page.generateButton.setDown(False)
-            page.resultPreviewLabel.zoom(2)
-            capture("generate-05-zoom")
-            page.widthSpinBox.setValue(1024)
-            page.heightSpinBox.setValue(576)
-            page.generateButton.click()
-            wait_for(settled, timeout=60)
-            capture("generate-06-landscape")
-            shell.form.resize(800, 680)
-            capture("generate-07-narrow")
-            shell.form.resize(1600, 1000)
-            page.promptEdit.clear()
-            page.seedEdit.setText("invalid")
-            page.generateButton.click()
-            page.seedEdit.setFocus()
-            capture("generate-08-invalid-focus")
-            page.promptEdit.setPlainText("Offline fixture")
-            page.seedEdit.setText("0")
-            controller.lora.set_loras((LoRASelection("fake-mismatch", 0.7), LoRASelection("fake-unknown", 0.5)))
-            page.checkLorasButton.click()
-            wait_for(settled, timeout=60)
-            capture("generate-09-incompatible")
-            controller.lora.set_loras(())
-            gate = asyncio.Event()
-            page.generateButton.click()
-            wait_for(lambda: not page.generateButton.isEnabled())
-            # #133: only another Generate waits; the form and the LoRA panel stay editable for the next request.
-            capture("generate-10-busy-disabled")
-            shell.runner._loop.call_soon_threadsafe(gate.set)
-            wait_for(settled, timeout=60)
-            gate, scenario = None, "lost"
-            page.generateButton.click()
-            wait_for(settled, timeout=60)
-            capture("generate-11-outcome-unknown")
-            throttled = BackendError(
-                BackendFailure(
-                    ErrorCategory.AUTHENTICATION,
-                    "grpc_permission_denied",
-                    "user failed to pass throttlePolicy, 24_hour in 500",
-                    submission_stage=SubmissionStage.TERMINAL_OBSERVED,
-                    remote_outcome=RemoteOutcome.UNKNOWN,
-                    terminal_status="PERMISSION_DENIED",
-                    diagnostics=(
-                        ("transport", "grpc"),
-                        ("status", "PERMISSION_DENIED"),
-                        ("server_message", "user failed to pass throttlePolicy, 24_hour in 500"),
-                    ),
+            page.promptEdit.setPlainText("Offline renderer fixture; no model inference.")
+            if needs_fixture("queue-empty"):
+                shell.form.queueNavigationButton.click()
+                capture("queues-01-empty")
+            if needs_fixture("generation-flow"):
+              with fixture_scope("generation-flow"):
+                QTest.qWait(100)
+                capture("generate-01-empty")
+                page.refreshInventoryButton.click()
+                wait_for(lambda: page.refreshInventoryButton.isEnabled())
+                page.modelCombo.setCurrentText("fake-grid")
+                page.promptEdit.setPlainText(
+                    "Offline calibration grid — verify aspect ratio, edges and zoom. No model inference."
                 )
-            )
-            controller._generated(None, throttled)
-            capture("generate-11a-api-throttle-explanation")
-            asset_unknown = BackendError(
-                BackendFailure(
-                    ErrorCategory.VALIDATION,
-                    "prepared_asset_unknown",
-                    "Prepared asset could not be validated; nothing was uploaded or submitted.",
-                    diagnostics=(
-                        ("transport", "http"),
-                        ("operation", "get_byom_urls"),
-                        ("asset", "example_krea2_lora_f16.ckpt"),
-                        ("http_status", "503"),
-                        ("server_message", "Service temporarily unavailable"),
-                        ("cause_code", "cloud_http_rejected"),
-                        ("validation_reason", "cloud_http_rejected"),
-                    ),
-                )
-            )
-            controller._generated(None, asset_unknown)
-            capture("generate-11b-prepared-asset-api-explanation")
-            uninterpreted = BackendError(
-                BackendFailure(
-                    ErrorCategory.VALIDATION,
-                    "prepared_asset_unknown",
-                    "DTFlow could not establish the asset status from the DT+ response (no_matching_asset_entry).",
-                    diagnostics=(
-                        ("asset", "example_krea2_lora_f16.ckpt"),
-                        ("transport", "http"),
-                        ("operation", "get_byom_urls"),
-                        ("http_status", "200"),
-                        ("validation_reason", "no_matching_asset_entry"),
-                        (
-                            "interpretation_message",
-                            "DTFlow could not establish the asset status (no_matching_asset_entry).",
-                        ),
-                    ),
-                )
-            )
-            controller._generated(None, uninterpreted)
-            capture("generate-11c-local-byom-interpretation")
-            strip = shell.progress_strip
-            strip.finish("generation-result")
-            page.expandPromptButton.setChecked(True)
-            capture("generate-13-prompt-expanded")
-            page.expandPromptButton.setChecked(False)
-            scenario = "reject"
-            page.generateButton.click()
-            wait_for(settled, timeout=60)
-            capture("generate-14-failed")
-            strip.finish("generation-result")
-            gate, scenario = asyncio.Event(), "success"
-            page.generateButton.click()
-            wait_for(lambda: "run" in strip.rows)
-            strip.rows["run"].activityStopButton.click()
-            capture("generate-15-stop-requested")
-            wait_for(settled, timeout=60)
-            capture("generate-16-interrupted")
-            gate = None
-            strip.finish("generation-result")
-            shell.activity.set(dispatching=True)
-            capture("generate-17-queue-dispatch-running")
-            behind = []
-            controller.queue_behind = lambda *args: behind.append(args)
-            page.generateButton.click()
-            capture("generate-42-queued-behind")
-            controller.queue_behind = shell.queue.queue_behind
-            shell.activity.set(dispatching=False)
-            page.savePresetButton.click()
-            capture("generate-18-save-preset-editor")
-            shell.inline.dismiss()
-
-            # Real asset-service composition, in-memory transport. Never generates through cloud.
-            shell.form.backendCombo.setCurrentText("cloud")
-            panel = controller.lora
-            panel.confirm_upload = lambda *_: True
-            for name in ("fixture-style.ckpt", "fixture-soft.ckpt"):
-                fixture = lora_file(state, name, data=name.encode() * 200)
-                panel.choose_asset_file = lambda *_, fixture=fixture: str(fixture)
-                page.prepareAssetButton.click()
+                page.negativePromptEdit.setText("Not used by the offline fixture")
+                controller.lora.set_loras((LoRASelection("fake-soft", 0.8),))
+                page.widthSpinBox.setValue(512)
+                page.heightSpinBox.setValue(1024)
+                page.generateButton.click()
                 wait_for(settled, timeout=60)
-                wait_for(lambda name=name: page.assetList.count() >= (1 if "style" in name else 2))
-            page.assetList.setCurrentRow(0)
-            controller.lora.set_loras((LoRASelection("fixture-soft.ckpt", 0.8),))
-            page.assetNoteLabel.setText(
-                "OFFLINE FIXTURE · in-memory cloud receipts. No provider traffic or real upload."
-            )
-            page.detailsToggle.setChecked(True)
-            capture("generate-12-assets-details")
-            shell.form.backendCombo.setCurrentText("fake")
-            for name, tab in (
-                ("queues-01-empty", "queueNavigationButton"),
-                ("images-01-grid", "imagesNavigationButton"),
-            ):
-                getattr(shell.form, tab).click()
-                if tab == "imagesNavigationButton":
-                    # The fake generations above are saved outputs; show them loaded, not a mid-refresh frame.
-                    shell.gallery.show_view("Grid")
-                    wait_for(
-                        lambda: (
-                            not shell.gallery._loading
-                            and bool(shell.gallery.items)
-                            and not shell.gallery._thumb_waiting
-                            and not shell.gallery._thumb_active
-                        )
+                capture("generate-02-portrait")
+                QTest.mouseMove(page.generateButton, QPoint(20, 15))
+                capture("generate-03-hover")
+                page.generateButton.setDown(True)
+                capture("generate-04-pressed")
+                page.generateButton.setDown(False)
+                page.resultPreviewLabel.zoom(2)
+                capture("generate-05-zoom")
+                page.widthSpinBox.setValue(1024)
+                page.heightSpinBox.setValue(576)
+                page.generateButton.click()
+                wait_for(settled, timeout=60)
+                capture("generate-06-landscape")
+                shell.form.resize(800, 680)
+                capture("generate-07-narrow")
+                shell.form.resize(1600, 1000)
+                page.promptEdit.clear()
+                page.seedEdit.setText("invalid")
+                page.generateButton.click()
+                page.seedEdit.setFocus()
+                capture("generate-08-invalid-focus")
+                page.promptEdit.setPlainText("Offline fixture")
+                page.seedEdit.setText("0")
+                controller.lora.set_loras((LoRASelection("fake-mismatch", 0.7), LoRASelection("fake-unknown", 0.5)))
+                page.checkLorasButton.click()
+                wait_for(settled, timeout=60)
+                capture("generate-09-incompatible")
+                controller.lora.set_loras(())
+                gate = asyncio.Event()
+                page.generateButton.click()
+                wait_for(lambda: not page.generateButton.isEnabled())
+                # #133: only another Generate waits; the form and the LoRA panel stay editable for the next request.
+                capture("generate-10-busy-disabled")
+                shell.runner._loop.call_soon_threadsafe(gate.set)
+                wait_for(settled, timeout=60)
+                gate, scenario = None, "lost"
+                page.generateButton.click()
+                wait_for(settled, timeout=60)
+                capture("generate-11-outcome-unknown")
+                throttled = BackendError(
+                    BackendFailure(
+                        ErrorCategory.AUTHENTICATION,
+                        "grpc_permission_denied",
+                        "user failed to pass throttlePolicy, 24_hour in 500",
+                        submission_stage=SubmissionStage.TERMINAL_OBSERVED,
+                        remote_outcome=RemoteOutcome.UNKNOWN,
+                        terminal_status="PERMISSION_DENIED",
+                        diagnostics=(
+                            ("transport", "grpc"),
+                            ("status", "PERMISSION_DENIED"),
+                            ("server_message", "user failed to pass throttlePolicy, 24_hour in 500"),
+                        ),
                     )
-                QTest.qWait(300)
-                capture(name)
-            # Detail of a fake-backend output with Additional details open, then the real
-            # Regenerate consent and its confirmed fake-provider submission.
-            gallery = shell.gallery
-            wait_for(lambda: not gallery._loading and bool(gallery.items))
-            gallery.show_view("Detail")
-            gallery.select(gallery.items[0].identity)
-            gallery._widget("galleryAdditionalButton", QPushButton).setChecked(True)
-            QTest.qWait(150)
-            capture("images-28-detail-additional")
-            # Regenerate lives at the end of Additional details; show the armed Confirm in place.
-            gallery._widget("galleryAdditionalScroll", QScrollArea).ensureWidgetVisible(gallery.regenerate_button)
-            gallery.regenerate_button.click()
-            QTest.qWait(150)
-            capture("images-29-regenerate-confirmation")
-            scenario = "success"
-            gallery.regenerate_button.click()
-            wait_for(lambda: page.resultList.count() > 0 and settled())
-            capture("images-30-regenerate-confirmed")
-            shell.form.generationNavigationButton.click()
-            controller.show_metadata()
-            capture("generate-19-metadata-inspection")
-            shell.inline.dismiss()
+                )
+                controller._generated(None, throttled)
+                capture("generate-11a-api-throttle-explanation")
+                asset_unknown = BackendError(
+                    BackendFailure(
+                        ErrorCategory.VALIDATION,
+                        "prepared_asset_unknown",
+                        "Prepared asset could not be validated; nothing was uploaded or submitted.",
+                        diagnostics=(
+                            ("transport", "http"),
+                            ("operation", "get_byom_urls"),
+                            ("asset", "example_krea2_lora_f16.ckpt"),
+                            ("http_status", "503"),
+                            ("server_message", "Service temporarily unavailable"),
+                            ("cause_code", "cloud_http_rejected"),
+                            ("validation_reason", "cloud_http_rejected"),
+                        ),
+                    )
+                )
+                controller._generated(None, asset_unknown)
+                capture("generate-11b-prepared-asset-api-explanation")
+                uninterpreted = BackendError(
+                    BackendFailure(
+                        ErrorCategory.VALIDATION,
+                        "prepared_asset_unknown",
+                        "DTFlow could not establish the asset status from the DT+ response (no_matching_asset_entry).",
+                        diagnostics=(
+                            ("asset", "example_krea2_lora_f16.ckpt"),
+                            ("transport", "http"),
+                            ("operation", "get_byom_urls"),
+                            ("http_status", "200"),
+                            ("validation_reason", "no_matching_asset_entry"),
+                            (
+                                "interpretation_message",
+                                "DTFlow could not establish the asset status (no_matching_asset_entry).",
+                            ),
+                        ),
+                    )
+                )
+                controller._generated(None, uninterpreted)
+                capture("generate-11c-local-byom-interpretation")
+                strip = shell.progress_strip
+                strip.finish("generation-result")
+                page.expandPromptButton.setChecked(True)
+                capture("generate-13-prompt-expanded")
+                page.expandPromptButton.setChecked(False)
+                scenario = "reject"
+                page.generateButton.click()
+                wait_for(settled, timeout=60)
+                capture("generate-14-failed")
+                strip.finish("generation-result")
+                gate, scenario = asyncio.Event(), "success"
+                page.generateButton.click()
+                wait_for(lambda: "run" in strip.rows)
+                strip.rows["run"].activityStopButton.click()
+                capture("generate-15-stop-requested")
+                wait_for(settled, timeout=60)
+                capture("generate-16-interrupted")
+                gate = None
+                strip.finish("generation-result")
+                shell.activity.set(dispatching=True)
+                capture("generate-17-queue-dispatch-running")
+                behind = []
+                controller.queue_behind = lambda *args: behind.append(args)
+                page.generateButton.click()
+                capture("generate-42-queued-behind")
+                controller.queue_behind = shell.queue.queue_behind
+                shell.activity.set(dispatching=False)
+                page.savePresetButton.click()
+                capture("generate-18-save-preset-editor")
+                shell.inline.dismiss()
+
+                # Real asset-service composition, in-memory transport. Never generates through cloud.
+                shell.form.backendCombo.setCurrentText("cloud")
+                panel = controller.lora
+                panel.confirm_upload = lambda *_: True
+                for name in ("fixture-style.ckpt", "fixture-soft.ckpt"):
+                    fixture = lora_file(state, name, data=name.encode() * 200)
+                    panel.choose_asset_file = lambda *_, fixture=fixture: str(fixture)
+                    page.prepareAssetButton.click()
+                    wait_for(settled, timeout=60)
+                    wait_for(lambda name=name: page.assetList.count() >= (1 if "style" in name else 2))
+                page.assetList.setCurrentRow(0)
+                controller.lora.set_loras((LoRASelection("fixture-soft.ckpt", 0.8),))
+                page.assetNoteLabel.setText(
+                    "OFFLINE FIXTURE · in-memory cloud receipts. No provider traffic or real upload."
+                )
+                page.detailsToggle.setChecked(True)
+                capture("generate-12-assets-details")
+                shell.form.backendCombo.setCurrentText("fake")
+                for name, tab in (
+                    ("queues-01-empty", "queueNavigationButton"),
+                    ("images-01-grid", "imagesNavigationButton"),
+                ):
+                    getattr(shell.form, tab).click()
+                    if tab == "imagesNavigationButton":
+                        # The fake generations above are saved outputs; show them loaded, not a mid-refresh frame.
+                        shell.gallery.show_view("Grid")
+                        wait_for(
+                            lambda: (
+                                not shell.gallery._loading
+                                and bool(shell.gallery.items)
+                                and not shell.gallery._thumb_waiting
+                                and not shell.gallery._thumb_active
+                            )
+                        )
+                    QTest.qWait(300)
+                    capture(name)
+                # Detail of a fake-backend output with Additional details open, then the real
+                # Regenerate consent and its confirmed fake-provider submission.
+                gallery = shell.gallery
+                wait_for(lambda: not gallery._loading and bool(gallery.items))
+                gallery.show_view("Detail")
+                gallery.select(gallery.items[0].identity)
+                gallery._widget("galleryAdditionalButton", QPushButton).setChecked(True)
+                QTest.qWait(150)
+                capture("images-28-detail-additional")
+                # Regenerate lives at the end of Additional details; show the armed Confirm in place.
+                gallery._widget("galleryAdditionalScroll", QScrollArea).ensureWidgetVisible(gallery.regenerate_button)
+                gallery.regenerate_button.click()
+                QTest.qWait(150)
+                capture("images-29-regenerate-confirmation")
+                scenario = "success"
+                gallery.regenerate_button.click()
+                wait_for(lambda: page.resultList.count() > 0 and settled())
+                capture("images-30-regenerate-confirmed")
+                shell.form.generationNavigationButton.click()
+                controller.show_metadata()
+                capture("generate-19-metadata-inspection")
+                shell.inline.dismiss()
             if wants("queues"):
                 render_queue_states(shell, capture)
+                render_queue_popover_states(shell, capture)
             if wants("shell"):
                 render_shell_states(shell, capture)
             if wants("inpaint"):
@@ -3977,7 +4003,41 @@ def main():
             shell.runner.shutdown()
             shell.form.close()
             app.processEvents()
-    summarize()
+
+
+def main():
+    args = PREPARED_ARGS or parse_inputs(ROOT)
+    global SELECTION, ACTIVE_CATEGORY, REPORTER
+    SELECTION = args.selection
+    REPORTER = Reporter(args.out, SELECTION, verbose=args.verbose, report_key=args.category)
+    app = QApplication([])
+    apply_theme(app)
+    from PySide6.QtCore import QtMsgType, qInstallMessageHandler
+
+    REPORTER.offscreen = platform_name == "offscreen"
+    REPORTER.warning_kind = QtMsgType.QtWarningMsg
+    REPORTER.previous_qt = qInstallMessageHandler(REPORTER.qt_message)
+    error = None
+    try:
+        with REPORTER.console():
+            print(f"Selected {len(SELECTION.states)} states in {len(SELECTION.fixtures)} fixture groups.")
+            print("Order: " + " → ".join(SELECTION.categories))
+            try:
+                for category in CATEGORY_ORDER:
+                    if category in SELECTION.categories:
+                        ACTIVE_CATEGORY = category
+                        print(f"\n=== {category} ===", flush=True)
+                        REPORTER.begin()
+                        _render_category(app, args)
+            except BaseException as exc:
+                error = f"{type(exc).__name__}: {exc}"
+                traceback.print_exc()
+                raise
+            finally:
+                REPORTER.finish(error)
+    finally:
+        qInstallMessageHandler(REPORTER.previous_qt)
+        REPORTER.close()
 
 
 if __name__ == "__main__":
