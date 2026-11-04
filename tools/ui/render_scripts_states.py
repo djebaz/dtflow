@@ -106,7 +106,15 @@ def _prepare_inpaint_entry(window):
     window._leave_scripts(inpaint=True)
 
 
-def render_scripts_states(out: Path, *, window_factory: Callable, state_names=STATES) -> list[Path]:
+def render_scripts_states(
+    out: Path,
+    *,
+    window_factory: Callable,
+    state_names=STATES,
+    on_saved=None,
+    on_begin=None,
+    diagnostic=print,
+) -> list[Path]:
     """Create independently isolated, screenshot-ready native Qt Scripts states."""
     app = QApplication.instance()
     if app is None:
@@ -114,16 +122,18 @@ def render_scripts_states(out: Path, *, window_factory: Callable, state_names=ST
     out.mkdir(parents=True, exist_ok=True)
     results = []
     started = monotonic()
-    print("[scripts] Building native MainWindow...", flush=True)
+    diagnostic("[scripts] Building native MainWindow...")
     window = window_factory()
-    print(f"[scripts] MainWindow built: {monotonic() - started:.1f}s", flush=True)
+    diagnostic(f"[scripts] MainWindow built: {monotonic() - started:.1f}s")
     try:
         window.form.resize(1600, 1000)
         window.show()
-        print(f"[scripts] Window shown: {monotonic() - started:.1f}s", flush=True)
+        diagnostic(f"[scripts] Window shown: {monotonic() - started:.1f}s")
         window._show_scripts()
-        print(f"[scripts] Scripts mode mounted: {monotonic() - started:.1f}s", flush=True)
+        diagnostic(f"[scripts] Scripts mode mounted: {monotonic() - started:.1f}s")
         for index, state in enumerate(state_names):
+            if on_begin is not None:
+                on_begin()
             if state not in STATES:
                 raise ValueError(f"Unknown scripting render state: {state}")
             narrow = state in (
@@ -340,14 +350,14 @@ def render_scripts_states(out: Path, *, window_factory: Callable, state_names=ST
             window.scripts.sync_responsive()
             _shared_overlay(window, state)
             if index == 0:
-                print(f"[scripts] First state prepared: {monotonic() - started:.1f}s", flush=True)
+                diagnostic(f"[scripts] First state prepared: {monotonic() - started:.1f}s")
             # Wrapped rows post parent layout requests after their first resize.
             # Drain the bounded layout cascade before grabbing, not midway
             # through a height-for-width update. No timers, scripts or providers.
             for _ in range(5):
                 app.processEvents()
             if index == 0:
-                print(f"[scripts] First Qt event drain: {monotonic() - started:.1f}s", flush=True)
+                diagnostic(f"[scripts] First Qt event drain: {monotonic() - started:.1f}s")
             if index == 0 or state == "scripts_narrow":
                 # The left scroll disables horizontal scrolling; trace the
                 # actual panel's right edge, not inner list/item padding.
@@ -355,23 +365,23 @@ def render_scripts_states(out: Path, *, window_factory: Callable, state_names=ST
                 stack = window.shell.leftStack
                 panel = window.scripts.left
                 right_edge = panel.mapTo(viewport, QPoint(panel.width(), 0)).x()
-                print(
+                diagnostic(
                     f"[scripts] {state} left viewport={viewport.width()} "
                     f"stack={stack.width()} panel={panel.width()} "
                     f"panel-right={right_edge} excess={max(0, right_edge - viewport.width())}",
-                    flush=True,
                 )
             if state in ("scripts_form_default", "scripts_narrow", "scripts_narrow_details"):
                 toggle = window.scripts.details_button
-                print(
+                diagnostic(
                     f"[scripts] {state} inspector toggle: parent={toggle.parentWidget().objectName()} "
                     f"checked={toggle.isChecked()} icon-null={toggle.icon().isNull()}",
-                    flush=True,
                 )
             target = out / f"{state}.png"
             if not window.form.grab().save(str(target)):
                 raise RuntimeError(f"Could not save Scripts Qt screenshot {target}")
             results.append(target)
+            if on_saved is not None:
+                on_saved(target)
     finally:
         window.runner.shutdown()
         window.form.close()
