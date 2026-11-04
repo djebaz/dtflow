@@ -48,7 +48,7 @@ class CloudUsagePanel(QObject):
         state_dir: Path,
         *,
         active_credential: Callable[[], Awaitable[tuple[str, str | None] | None]] | None = None,
-        on_active: Callable[[str | None], None] | None = None,
+        on_active: Callable[[str | None, int, str, str], None] | None = None,
         clock: Callable[[], datetime] = lambda: datetime.now(UTC),
     ):
         super().__init__(form)
@@ -122,8 +122,6 @@ class CloudUsagePanel(QObject):
                 if identity[1]
                 else "Key (unidentified)"
             )
-            if self._on_active is not None:
-                self._on_active(self.active_label)
             self._error, self._loaded = False, True
         self.render()
 
@@ -156,6 +154,9 @@ class CloudUsagePanel(QObject):
         zone = zone_or_default(self.zone_name)
         counts = self.counts = count_day(self._records, self._clock(), zone, active_credential=self._active)
         start = counts.start.astimezone(zone)
+        if self._on_active is not None:
+            mine = next((key for key in counts.keys if key.active), None)
+            self._on_active(self.active_label, mine.count if mine else 0, mine.level if mine else "ok", zone.key)
         form.usageDayLabel.setText(f"{start:%a %d %b %Y}, local midnight to midnight ({zone.key}, UTC{start:%z})")
         layout = form.usageRowsLayout
         while layout.count():

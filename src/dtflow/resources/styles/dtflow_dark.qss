@@ -487,8 +487,12 @@ QPushButton#activityBarButton[result="true"] {
   padding: 0;
 }
 QLabel#activeKeyLabel {
-  color: ${color.secondary};
   font-size: 9pt;
+  font-weight: ${type.weightEmphasis};
+}
+QLabel#activeKeyLabel[state="neutral"] {
+  color: ${color.secondary};
+  font-weight: ${type.weightBody};
 }
 QToolButton#aboutButton {
   border: 0;

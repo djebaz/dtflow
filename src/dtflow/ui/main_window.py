@@ -453,6 +453,7 @@ class MainWindow:
         grid_status_layout.addWidget(grid_index)
         active_key = QLabel("No DT+ key", form.statusBar())
         active_key.setObjectName("activeKeyLabel")
+        active_key.setProperty("state", "neutral")
         active_key.setContentsMargins(0, 0, 10, 0)
         active_key.setAccessibleName("Active DT+ API key: No DT+ key")
         self.active_key_label = active_key
@@ -1097,16 +1098,24 @@ class MainWindow:
             return None
         return key_identity(credential.secret)
 
-    def _show_active_key(self, label: str | None) -> None:
-        text = label or "No DT+ key"
-        self.active_key_label.setText(text)
-        self.active_key_label.setAccessibleName(f"Active DT+ API key: {text}")
-        self.active_key_label.setToolTip(
-            "The DT+ API key cloud work would use now (environment first, then the saved key). "
-            "Only four characters are shown."
-            if label
-            else "No DT+ API key is available. Set DRAWTHINGS_API_KEY or save one on Connection."
-        )
+    def _show_active_key(self, label: str | None, count: int, level: str, zone: str) -> None:
+        """Bottom bar: today's local completed-image count for the active key, in the selected reset timezone."""
+        bar = self.active_key_label
+        if label is None:
+            text, state = "No DT+ key", "neutral"
+            tip = "No DT+ API key is available. Set DRAWTHINGS_API_KEY or save one on Connection."
+        else:
+            text, state = f"DT+ {count} today", {"ok": "ok", "warn": "warning", "over": "error"}[level]
+            tip = (
+                f"{label}: {count} completed images saved today (day resets at midnight in {zone}). "
+                "A local estimate from saved outputs, not a DT+ balance."
+            )
+        bar.setText(text)
+        bar.setAccessibleName(f"Local DT+ completed images today for the active key: {text}")
+        bar.setToolTip(tip)
+        bar.setProperty("state", state)
+        bar.style().unpolish(bar)
+        bar.style().polish(bar)
 
     def _usage_activity_changed(self) -> None:
         if self.form.workspaceStack.currentWidget() is self.form.connectionPage:

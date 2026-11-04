@@ -783,29 +783,44 @@ def render_connection_usage_states(shell, out):
     form.resize(old)
     QTest.qWait(50)
 
-    # The bottom bar names the active key on every view; the environment is synthetic and never a real credential.
+    # The bottom bar shows today's local count for the active key on every view; keys here are synthetic.
     environ = shell._environ
+    from dtflow.services.cloud_usage import key_identity
 
-    def active_key(text, expected):
+    def active_key(text, expected, count=0):
         environ.clear()
         if text:
             environ[KEY] = text
         panel.active_label = "?"  # wait for this refresh, not a stale result
         panel.refresh()
         wait_for(lambda: panel.active_label == expected)
-        assert shell.active_key_label.text() == (expected or "No DT+ key"), shell.active_key_label.text()
+        if text:
+            ident, hint = key_identity(text)
+            panel._records = records(count, hint=hint, ident=ident)
+            panel.render()
+        want = f"DT+ {count} today" if expected else "No DT+ key"
+        assert shell.active_key_label.text() == want, shell.active_key_label.text()
 
-    active_key("dtp_4F8KabcdEFGH1234", "Key 4F8K\u2022\u2022\u2022\u2022")
-    snap("connection-54-active-key-bottom-bar")
+    zone("Europe/Paris")
+    active_key("dtp_4F8KabcdEFGH1234", "Key 4F8K\u2022\u2022\u2022\u2022", 412)
+    snap("connection-54-bottom-bar-count-amber")
     form.workspaceStack.setCurrentWidget(shell.generation_page)
     QTest.qWait(100)
-    save(form, out, "connection-55-active-key-bottom-bar-generate")
+    save(form, out, "connection-55-bottom-bar-count-generate")
     form.workspaceStack.setCurrentWidget(form.connectionPage)
-    active_key("offline-key-with-unknown-format", "Key (unidentified)")
-    snap("connection-56-active-key-unidentified")
+    active_key("dtp_4F8KabcdEFGH1234", "Key 4F8K\u2022\u2022\u2022\u2022", 12)
+    snap("connection-56-bottom-bar-count-green")
+    active_key("dtp_4F8KabcdEFGH1234", "Key 4F8K\u2022\u2022\u2022\u2022", 503)
+    snap("connection-57-bottom-bar-count-red")
+    zone("Etc/GMT+10")  # the same records fall on the previous local day: the counter recomputes at once
+    assert shell.active_key_label.text() == "DT+ 0 today"
+    snap("connection-58-bottom-bar-count-other-timezone")
+    zone("Europe/Paris")
+    active_key("offline-key-with-unknown-format", "Key (unidentified)", 7)
+    snap("connection-59-bottom-bar-count-unidentified-key")
     shell._saved.remove()  # the injected in-memory vault only
     active_key(None, None)
-    snap("connection-57-active-key-none")
+    snap("connection-60-bottom-bar-no-key")
     environ.clear()
 
 
