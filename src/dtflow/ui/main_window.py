@@ -31,7 +31,7 @@ from dtflow.composition import BACKENDS, BackendSelection
 from dtflow.core.gallery import GalleryQuery
 from dtflow.core.models import BackendError, ValidationError
 from dtflow.diagnostics import event as diagnostic_event
-from dtflow.logging_setup import configured_directory
+from dtflow.logging_setup import configured_directory, development_mode
 from dtflow.paths import application_state_dir
 from dtflow.persistence.cache_coordination import CacheBusyError, CacheCleanupError, CacheSafetyError
 from dtflow.persistence.image_recycle import reconcile as reconcile_images
@@ -472,7 +472,9 @@ class MainWindow:
         self.grid_index_group = grid_status_group
         # The slot stays on every tab (only its text hides) so the activity bar has the same room everywhere.
         grid_status_group.setFixedSize(70, 20)
-        grid_index.setVisible(form.workspaceStack.currentWidget() is self.images_page)
+        # Technical benchmark/diagnostic field: only in the explicit -x/--dev mode, never in ordinary use.
+        grid_status_group.setVisible(development_mode())
+        grid_index.setVisible(form.workspaceStack.currentWidget() is self.images_page and development_mode())
         self.grid_index_label = grid_index
         self.gallery.grid_position_changed.connect(self._sync_grid_index_status)
         self.logs_button = logs_button
@@ -796,7 +798,7 @@ class MainWindow:
         elif index < len(buttons):
             buttons[index].setChecked(True)
         images_active = self.form.workspaceStack.currentWidget() is self.images_page
-        self.grid_index_label.setVisible(images_active)
+        self.grid_index_label.setVisible(images_active and development_mode())
         self.gallery.set_active(images_active)
         self._place_export_panel()
         self._responsive_workspace()

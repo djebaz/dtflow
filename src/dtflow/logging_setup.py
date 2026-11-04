@@ -133,6 +133,14 @@ def _prune(directory: Path, keep: str) -> None:
                 pass
 
 
+_DEVELOPMENT = False
+
+
+def development_mode() -> bool:
+    """Whether this process runs with the explicit ``-x/--dev`` diagnostic mode; it never changes generation."""
+    return _DEVELOPMENT
+
+
 def configure_logging(
     *,
     directory: Path | None = None,
@@ -146,9 +154,12 @@ def configure_logging(
     if not _CONFIGURATION.acquire(blocking=False):
         raise LoggingSetupError("Diagnostic configuration is already in progress.")
     try:
-        return _configure_logging(
+        result = _configure_logging(
             directory=directory, dev=dev, build=build, backend=backend, session=session, report_error=report_error
         )
+        global _DEVELOPMENT
+        _DEVELOPMENT = bool(dev)
+        return result
     finally:
         _CONFIGURATION.release()
 

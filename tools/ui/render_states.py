@@ -2371,7 +2371,15 @@ def render_gallery_composition_states(shell, state, out):
         gallery.pager.present(total=342, visible_start=101, visible_end=124, loaded=200, active_page=2)
         assert gallery.pager.buttons[2].isChecked()
         assert gallery._widget("galleryPagerBar").isVisible()
-        # Global status-bar index is intentionally understated and Images-only.
+        # The grid position is a technical field: hidden in ordinary use, shown only in -x/--dev mode.
+        from dtflow import logging_setup
+
+        assert not shell.grid_index_group.isVisible() and not shell.grid_index_label.isVisible()
+        snap("images-65c-status-position-hidden-by-default")
+        logging_setup._DEVELOPMENT = True  # what -x/--dev sets; the benchmark and probes launch that way
+        shell.grid_index_group.setVisible(True)
+        shell._workspace_changed(form.workspaceStack.currentIndex())
+        # Global status-bar index is intentionally understated and Images-only (dev mode).
         shell._sync_grid_index_status(101, 342)
         assert shell.grid_index_label.isVisible()
         assert shell.grid_index_label.text() == "101/342"
