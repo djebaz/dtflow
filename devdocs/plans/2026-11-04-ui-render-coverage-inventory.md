@@ -100,6 +100,10 @@ These decisions supersede the earlier full-render fallback design. The path-leve
 
 ## Follow-up implementation checklist
 
+### Completion and acceptance
+
+**Complete for the agreed file-level scope.** At implementation head `828cc4767f5f7f1ff2e87ed5c0c3f1ef450532e9`, [CI passed](https://github.com/djebaz/dtflow/actions/runs/41923457176) and the [UI render Action passed](https://github.com/djebaz/dtflow/actions/runs/41923303302). The owner then confirmed that the screenshots are good. This closes the pending Action-run and visual-review gates recorded below for this scope; no new local tests or renders were run to record acceptance. It does not claim exhaustive representative equivalence, independent exercise of every label/failure branch, native Windows/DPI or packaged acceptance. Subsequent documentation-only commits do not change the accepted implementation.
+
 PR #226 is squash-merged as `00d49dd`; its working renderer is the baseline for this separate follow-up. PR #227 implements file-level selection: 37 named packs, 30 component rules, catalogue-ordered exact-state deduplication, page/shared sampling with coverage warnings, and independent `render-all` triggering. All inventory families above have file-level representatives or the documented shared/page fallback. The eight page packs use two to four states each, including populated content and relevant layout variants. Source/fixture review is complete for this inventory slice; owner visual review and Actions acceptance of the final head remain separate. Automatic function/UI-object/QSS scope mapping is explicitly out of scope.
 
 - [x] Complete the source-level component/variant inventory and representative boundaries for the listed families; visual equivalence remains owner review.
@@ -110,11 +114,10 @@ PR #226 is squash-merged as `00d49dd`; its working renderer is the baseline for 
 - [x] Resolve the unknown-change fallback with the owner: affected-page representatives, or the small shared pack when the page is unknown, with a prominent coverage-incomplete warning.
 - [x] Update Action summaries and selection documentation with pack names, distinct screenshot counts, fixture setup counts and exact state lists. No unit tests added/run; renders remain owner-requested only.
 
-## Remaining acceptance and maintenance
+## Acceptance record and future maintenance
 
-- Owner-review the proposed equivalence boundaries and representative IDs above, starting with search, export and activity presentation.
-- Review the populated page samples and narrow/layout representatives visually; static source mapping is not screenshot acceptance.
+- Owner screenshot review: accepted after successful renders at `828cc47`; no remaining visual correction requested.
 - Review whether repeated unnecessary renders justify any additional specific file mappings; keep broad shared files on the small shared pack without sub-file diff analysis.
-- Verify final-head Action selection, artifacts and label behavior; the earlier `7ce4e4c` render run passed, but that evidence does not cover later changes.
+- CI and UI render execution at `828cc47`: passed in the linked runs. Independent exhaustive label/fault-path exercises remain unclaimed, not required implementation work for this completed scope.
 
 **Delivery boundary:** the first selection slice changes developer renderer selection metadata/planning and the Action trigger, not application runtime behavior. No unit tests added/run and no screenshots produced. Static checks do not establish Action execution, screenshot equivalence or native acceptance.

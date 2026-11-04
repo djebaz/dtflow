@@ -1,6 +1,6 @@
 # UI render selection, progress and process orchestration
 
-**Status (2026-11-04):** steps 1-5 below are implemented on PR #226 and the Actions `-s` run passed (456 states, 61.9s, 2-core runner). Remaining: Actions confirmation of 4b/5b/5c and phase 6, and the acceptance gates. Follow-up to merged PR #225 (`30f84282c1cc641beed333021896f4b531c14391`).
+**Status (2026-11-04):** Complete for the owner-agreed file-level representative-selection scope. PR #226 supplied the merged orchestration baseline; #227 completes the simplified selection follow-up. Implementation head `828cc47` passed [CI](https://github.com/djebaz/dtflow/actions/runs/41923457176) and [UI rendering](https://github.com/djebaz/dtflow/actions/runs/41923303302), and the owner accepted the screenshots. Older pending-run wording below records intermediate implementation evidence and is superseded by this completion record, not a claim that every fault/label branch or native Windows/DPI/package scenario was exercised. Automatic sub-file analysis is excluded; further mapping refinement is maintenance, not unfinished scope. See the [acceptance record](2026-11-04-ui-render-coverage-inventory.md#completion-and-acceptance).
 
 ## Goal and boundaries
 
