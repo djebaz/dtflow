@@ -386,7 +386,7 @@
     {"id": "images-50-unselect-menu", "category": "images", "subcategory": "selection", "fixture": "mapped-gallery", "stage": "setup", "level": "m", "path": "images-50-unselect-menu.png"},
     {"id": "images-54-export-panel-checked", "category": "images", "subcategory": "export", "fixture": "gallery-composition", "stage": "ready", "level": "f", "path": "images-54-export-panel-checked.png"},
     {"id": "images-07-mapped-edit-eligible", "category": "images", "subcategory": "listing", "fixture": "mapped-gallery", "stage": "ready", "level": "f", "path": "images-07-mapped-edit-eligible.png"},
-    {"id": "images-74-pager-prefetch-boundary-grid", "category": "images", "subcategory": "navigation", "fixture": "gallery-composition", "stage": "ready", "level": "f", "path": "image-navigation/images-74-pager-prefetch-boundary-grid.png"},
+    {"id": "images-74-pager-prefetch-boundary-grid", "category": "images", "subcategory": "navigation", "fixture": "gallery-composition", "stage": "ready", "level": "m", "path": "image-navigation/images-74-pager-prefetch-boundary-grid.png"},
     {"id": "images-47-selection-all-checked-hidden", "category": "images", "subcategory": "selection", "fixture": "mapped-gallery", "stage": "ready", "level": "f", "path": "images-47-selection-all-checked-hidden.png"},
     {"id": "images-51-detail-checked", "category": "images", "subcategory": "selection", "fixture": "mapped-gallery", "stage": "ready", "level": "m", "path": "images-51-detail-checked.png"},
     {"id": "images-55-export-panel-running", "category": "images", "subcategory": "export", "fixture": "gallery-composition", "stage": "running", "level": "m", "path": "images-55-export-panel-running.png"},
