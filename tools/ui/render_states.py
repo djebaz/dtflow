@@ -806,15 +806,15 @@ def render_connection_usage_states(shell, out):
         assert shell.usage_pill.text() == want, shell.usage_pill.text()
 
     zone("Europe/Paris")
-    active_key("dtp_4F8KabcdEFGH1234", "Key 4F8K\u2022\u2022\u2022\u2022", 412, 91)
+    active_key("dk_4F8Kabcdefghijklmnopqrstu", "Key 4F8K\u2022\u2022\u2022\u2022", 412, 91)
     snap("connection-54-bottom-bar-count-amber")
     form.workspaceStack.setCurrentWidget(shell.generation_page)
     QTest.qWait(100)
     save(form, out, "connection-55-bottom-bar-count-generate")
     form.workspaceStack.setCurrentWidget(form.connectionPage)
-    active_key("dtp_4F8KabcdEFGH1234", "Key 4F8K\u2022\u2022\u2022\u2022", 12, 30)
+    active_key("dk_4F8Kabcdefghijklmnopqrstu", "Key 4F8K\u2022\u2022\u2022\u2022", 12, 30)
     snap("connection-56-bottom-bar-count-green")
-    active_key("dtp_4F8KabcdEFGH1234", "Key 4F8K\u2022\u2022\u2022\u2022", 503, 40)
+    active_key("dk_4F8Kabcdefghijklmnopqrstu", "Key 4F8K\u2022\u2022\u2022\u2022", 503, 40)
     snap("connection-57-bottom-bar-count-red")
     zone("Etc/GMT+10")  # the same records fall on the previous local day: the counter recomputes at once
     assert shell.usage_pill.text() == "0/0"  # those saves belong to the previous local day there

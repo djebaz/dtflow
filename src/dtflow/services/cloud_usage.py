@@ -18,11 +18,10 @@ RED_FROM = 500
 HINT_LENGTH = 4
 CLOUD_BACKEND_ID = "drawthings-cloud"
 
-# The real DT+ key format is not documented in this repository. A hint is therefore derived conservatively: an optional
-# short alphabetic prefix ending in "-" or "_" is skipped, and the remainder must be a long purely alphanumeric run.
-# Anything else gets no excerpt and the caller shows a neutral numbered label instead.
-_PREFIX = re.compile(r"[A-Za-z]{2,10}[-_]")
-_VARIABLE = re.compile(r"[A-Za-z0-9]{12,}")
+# Owner-reported DT+ key format (2026-11-04): ``dk_`` followed by 25 alphanumeric characters. A hint is taken only
+# from a key of exactly that shape; any other shape gets no excerpt and a neutral numbered label, never guessed
+# characters.
+_KEY = re.compile(r"dk_([A-Za-z0-9]{25})")
 
 
 def key_identity(secret: str) -> tuple[str, str | None]:
@@ -32,9 +31,8 @@ def key_identity(secret: str) -> tuple[str, str | None]:
     """
     value = secret.strip()
     digest = hashlib.sha256(b"dtflow.cloud-key.v1\0" + value.encode("utf-8")).hexdigest()[:32]
-    match = _PREFIX.match(value)
-    variable = value[match.end() :] if match else value
-    hint = variable[:HINT_LENGTH] if _VARIABLE.fullmatch(variable) else None
+    match = _KEY.fullmatch(value)
+    hint = match[1][:HINT_LENGTH] if match else None
     return digest, hint
 
 
