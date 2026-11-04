@@ -14,6 +14,8 @@ Changes through 5.4.0 are consolidated in [DTFlow 5.4.0](v5.4.0.md). This file t
 
 ## Added
 
+- Automatic UI render Actions skip draft PRs, including render-label requests, matching CI; marking ready re-evaluates ordinary eligibility. Manual dispatch remains an explicit override.
+
 - Developer UI render selection now uses 30 file-level component rules, small populated page packs and an eight-state shared fallback, with prominent incomplete-coverage warnings instead of automatic exhaustive fallback. The `render-all` label independently triggers exhaustive rendering; summaries separate planned screenshots from fixture setup and list selected packs/states. Automatic sub-file diff analysis is intentionally excluded; owner visual review remains separate. No application generation behavior changes.
 - CI and render Actions combine native path filters with an early check inside each existing job: entirely docs-only PRs allocate no runner, and docs-only follow-up pushes skip expensive steps using the previous-to-current head diff. No separate detector runner jobs remain. Resources, forms, fixtures, mappings and dependency/configuration changes remain eligible. Manual runs and explicit render labels override filtering; the label route reuses the render workflow without a dispatcher runner. Shared cancellation is removed to protect useful running/pending work; follow-up detection still consumes short runner time and is not a fresh validation pass.
 
