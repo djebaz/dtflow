@@ -1,6 +1,6 @@
 # UI render selection, progress and process orchestration
 
-**Status:** Phases 1-2 (selection, reporting) are on the PR branch; levels and process sharding are the agreed next design (2026-11-04). Follow-up to merged PR #225 (`30f84282c1cc641beed333021896f4b531c14391`).
+**Status (2026-11-04):** steps 1-5 below are implemented on PR #226 and the Actions `-s` run passed (456 states, 61.9s, 2-core runner). Remaining subphases: 4b, 5b, 5c, 6 and the acceptance gates. Follow-up to merged PR #225 (`30f84282c1cc641beed333021896f4b531c14391`).
 
 ## Goal and boundaries
 
@@ -65,12 +65,16 @@ The owner reported 456 screenshots in 286 seconds after PR #225's fixture repair
 
 ## Implementation sequence
 
-1. Done on the PR branch: registry, selection, immediate reporting, single-pass run, window phases. Superseded in step 3: in-process window sequencing.
-2. Add `level` and `shard` fields to the catalog and the `-f/-m/-s` flag (default `-f`); propose the f/m split for review. No screenshot content changes.
-3. Launcher and manifest merge with Scripts and the splash/image windows split off first (no shared state); add per-shard "ready after" timings. Owner renders and compares to the single-process baseline.
-4. Verify workspace fixture independence from the code, then split connection, generate-configuration, queues and gallery-composition shards; split the main window flow from the rest.
-5. Trim the 15 slow states; align Actions with the launcher and manifests (its summary step still parses the old log line), keep a full `-s` path.
-6. Change-based Actions selection (below), then docs: `tools/ui/README.md`, `AGENTS.md`, development guide, only after the owner validates.
+1. Done: registry, selection, immediate reporting, single-pass run, window phases (in-process sequencing superseded by step 3).
+2. Done: `level` field and `-f/-m/-s` flags (default `-f`, 17 states; `-m` about 245; `-s` all 456).
+3. Done: launcher (`render_launcher.py`) with `-j` worker processes, merged manifest, per-state `worker`, `workers` block, `wait_timeouts`, kill on Ctrl+C, failure on worker exit, blank, missing or duplicate states. Windows PC: `-f` 23s, `-s` 141s.
+4. Done: worker groups workspace, gallery, main, scripts, images-windows, splash, packed by a measured `WORKER_COST` table.
+   - 4b. Open: split the workspace group further (connection, generate-configuration, queues read-views). Only worth it with more than 2 cores; first read the code to confirm the fixtures do not depend on credentials or queues left by an earlier one. Re-measure `-m` and `-s` with `-j 3/4` on a 4-core machine.
+5. Done: Actions runs the launcher once with `-s`; Summarize renders reads the merged manifest; the 100ms settle wait is gone.
+   - 5b. Open: trim the slow fixed waits (`images-102` 8s timeout on Windows, `images-03`, `images-02`, `images-18`), only after the owner approves lowering the timeout.
+   - 5c. Open: worker timeout and one deadline for local runs and Actions (step `timeout-minutes: 2` vs the 300s subprocess deadline); keep `WORKER_COST` in step with catalog changes.
+6. Open: change-based Actions selection (section above), with a force-all override; separate from the Drive upload.
+7. Done: docs (`tools/ui/README.md`, `AGENTS.md`, development guide). Extend them with any later subphase.
 
 ## Verification gates, not results
 
