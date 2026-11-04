@@ -2616,7 +2616,8 @@ def render_gallery_composition_states(shell, state, out):
 
         gallery.show_view("List")
         # The List really contains 200 distinct table rows and can scroll into batch 2.
-        gallery.table.scrollToItem(gallery.table.item(125, 2))
+        QTest.qWait(60)
+        gallery.table.verticalScrollBar().setValue(125)
         start, _end = list_visible(loaded=200)
         assert start >= 101 and gallery.pager.buttons[2].isChecked()
         assert gallery.table.item(99, 2).text() == "image-0100.png"
