@@ -1088,6 +1088,7 @@ def render_active_queue_states(shell, out):
         shell.generation_page.promptEdit.setPlainText(PROMPT)
         shell.generation_page.seedEdit.setText("123")
         shell.generation.lora.set_loras(())
+        shell.generation.request_for_queue(preview=True)  # draws the random seed the dry-run shows
         present("running", ["succeeded", "running", "pending"], owned=True)
         # #121: one status chip and one state-dependent primary action in the queue header.
         # The header lists model and LoRAs on their own labelled lines, during and after the run.
@@ -1564,6 +1565,7 @@ def render_item_table_states(shell, out, state):
             for x in range(256):
                 image.setPixelColor(x, y, QColor.fromHsv((hue + x // 8) % 360, 120, 70 + y // 2))
         path = fixtures / f"{name}.png"
+        image.save(str(path))
         return str(path)
 
     traveler = "Portrait of a traveler in a blue coat at dawn, soft light, mountains in the distance, realistic fabric details, shallow depth of field."
@@ -1750,9 +1752,11 @@ def render_item_table_states(shell, out, state):
         wait_for(lambda: not preview.label.pixmap().isNull())
         save(preview.label, out, "queues-64-item-table-thumbnail-preview")
         # Hold actual fixture decodes to expose the in-flight refresh state, not just its completed result.
-        from dtflow.ui.queue_thumbnails import REVALIDATE_MS
+        from dtflow.ui.queue_thumbnails import PREVIEW_SIDE, REVALIDATE_MS
 
         path, identity = items[0]["artifacts"][0], "a71b71c1:0"
+        model.thumbnails.pixmap(path, identity=identity)  # warm both cached sizes before the refresh is held
+        model.thumbnails.pixmap(path, PREVIEW_SIDE, identity)
         pending = []
         try:
             with patch.object(
@@ -1760,6 +1764,8 @@ def render_item_table_states(shell, out, state):
             ):
                 model.thumbnails._checked[(path, identity)] -= REVALIDATE_MS / 1000 + 1
                 model.thumbnails._expire()
+                model.thumbnails.pixmap(path, identity=identity)  # queues the held revalidation
+                model.thumbnails.pixmap(path, PREVIEW_SIDE, identity)
                 snap("queues-69-item-table-revalidation-pending")
                 save(preview.label, out, "queues-70-thumbnail-preview-revalidation-pending")
         finally:
