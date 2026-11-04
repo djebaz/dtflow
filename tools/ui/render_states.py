@@ -23,7 +23,7 @@ from types import SimpleNamespace
 from unittest.mock import PropertyMock, patch
 
 ROOT = Path(__file__).resolve().parents[2]
-from render_catalog import CATEGORY_ORDER, parse_inputs  # noqa: E402
+from render_catalog import parse_inputs  # noqa: E402
 from render_reporting import Reporter  # noqa: E402
 
 # Help/list/selector validation must not import Qt or construct fixture state.
@@ -115,7 +115,6 @@ from dtflow.ui.system_trash import TRASH_NAME  # noqa: E402
 from dtflow.ui.theme import apply_theme  # noqa: E402
 
 SELECTION = None
-ACTIVE_CATEGORY = None
 REPORTER = None
 
 
@@ -127,11 +126,12 @@ def fixture_scope(name):
 
 
 def wants(category):
-    return ACTIVE_CATEGORY == category
+    """Whether any selected state belongs to this category."""
+    return category in SELECTION.categories
 
 
 def needs_fixture(name):
-    return SELECTION.wants_fixture(name, ACTIVE_CATEGORY)
+    return SELECTION.wants_fixture(name)
 
 
 def fixture(name):
@@ -159,9 +159,8 @@ def category_selected(target):
     manifest) unless the run was narrowed by --group/--state/--prefix."""
     name = Path(target).stem
     if name not in SELECTION.catalog_by_id:
-        return not SELECTION.explicit and unregistered_category(name) == ACTIVE_CATEGORY
-    state = SELECTION.by_id.get(name)
-    return state is not None and state.category == ACTIVE_CATEGORY
+        return not SELECTION.explicit and unregistered_category(name) in SELECTION.categories
+    return name in SELECTION.by_id
 
 
 def output_path(target):
@@ -3673,7 +3672,8 @@ def render_logs_states(shell, capture):
     shell._close_logs()
 
 
-def _render_category(app, args):
+def _render_selection(app, args):
+    """One pass over every selected category, so the shared windows and fixtures are built only once."""
     cloud = DtPlus()
     scenario, gate = "success", None
 
@@ -3707,7 +3707,6 @@ def _render_category(app, args):
                 on_begin=REPORTER.begin,
                 diagnostic=REPORTER.diagnostic,
             )
-            return
         workspace_groups = (
             "connection-setup",
             "connection-outcomes",
@@ -4019,7 +4018,7 @@ def _render_category(app, args):
 
 def main():
     args = PREPARED_ARGS or parse_inputs(ROOT)
-    global SELECTION, ACTIVE_CATEGORY, REPORTER
+    global SELECTION, REPORTER
     SELECTION = args.selection
     REPORTER = Reporter(args.out, SELECTION, verbose=args.verbose, report_key=args.report_key)
     app = QApplication([])
@@ -4035,12 +4034,8 @@ def main():
             print(f"Selected {len(SELECTION.states)} states in {len(SELECTION.fixtures)} fixture groups.")
             print("Order: " + " → ".join(SELECTION.categories))
             try:
-                for category in CATEGORY_ORDER:
-                    if category in SELECTION.categories:
-                        ACTIVE_CATEGORY = category
-                        print(f"\n=== {category} ===", flush=True)
-                        REPORTER.begin()
-                        _render_category(app, args)
+                REPORTER.begin()
+                _render_selection(app, args)
             except BaseException as exc:
                 error = f"{type(exc).__name__}: {exc}"
                 traceback.print_exc()
