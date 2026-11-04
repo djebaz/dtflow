@@ -153,6 +153,15 @@ def fixture_scope(name):
             FLOW_STOP.pop()
 
 
+def dispose_window(app, form):
+    """Close and free a finished window so later windows (Scripts runs last) start from a clean event loop."""
+    form.close()
+    form.deleteLater()
+    app.processEvents()
+    QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)
+    app.processEvents()
+
+
 def phase(label):
     """Announce the next execution phase; screenshots follow the window that renders them, not the journey."""
     print(f"\n=== {label} ===", flush=True)
@@ -397,8 +406,7 @@ def render_workspace_states(app, state, out):
             render_gallery_composition_states(shell, state, out)
     finally:
         shell.runner.shutdown()
-        shell.form.close()
-        app.processEvents()
+        dispose_window(app, shell.form)
 
 
 @fixture("connection-outcomes")
@@ -2875,8 +2883,7 @@ def render_initial_refresh_recovery(app, state, out):
             activity_strip(shell.form).finish("viewer-open")
         finally:
             shell.runner.shutdown()
-            shell.form.close()
-            app.processEvents()
+            dispose_window(app, shell.form)
 
 
 @fixture("mapped-gallery")
@@ -3144,8 +3151,7 @@ def render_mapped_gallery_states(app, state, out):
             report(target)
         finally:
             shell.runner.shutdown()
-            shell.form.close()
-            app.processEvents()
+            dispose_window(app, shell.form)
 
 
 @fixture("queue")
@@ -3831,8 +3837,7 @@ def _render_selection(app, args):
                 unavailable.image_recycle.menu_button.menu().hide()
             finally:
                 unavailable.runner.shutdown()
-                unavailable.form.close()
-                app.processEvents()
+                dispose_window(app, unavailable.form)
         if wants("images"):
             render_initial_refresh_recovery(app, state, args.out)
         if not any(needs_fixture(group) for group in ("generation-flow", "queue", "shell", "inpaint", "logs")):
@@ -4092,8 +4097,7 @@ def _render_selection(app, args):
             raise
         finally:
             shell.runner.shutdown()
-            shell.form.close()
-            app.processEvents()
+            dispose_window(app, shell.form)
         render_scripts()
 
 
