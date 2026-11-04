@@ -271,7 +271,7 @@ def wait_for(predicate, timeout=8):
     QTest.qWait(30)
 
 
-def settle(name, milliseconds=100):
+def settle(name, milliseconds=0):
     """Let the event loop settle before a capture, but only when that capture is wanted."""
     if category_selected(Path(name + ".png")):
         QTest.qWait(milliseconds)
@@ -718,7 +718,7 @@ def render_connection_usage_states(shell, out):
 
     def snap(name):
         form.connectionWorkspaceScroll.ensureWidgetVisible(form.usageBox)
-        settle(name, 80)
+        settle(name)
         save(form, out, name)
 
     zone("Europe/Paris")
