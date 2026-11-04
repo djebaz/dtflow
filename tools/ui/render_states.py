@@ -23,6 +23,10 @@ from types import SimpleNamespace
 from unittest.mock import PropertyMock, patch
 
 ROOT = Path(__file__).resolve().parents[2]
+for _stream in (sys.stdout, sys.stderr):
+    # Piped Windows output defaults to cp1252, which cannot print the arrows in progress lines.
+    if hasattr(_stream, "reconfigure"):
+        _stream.reconfigure(errors="replace")
 from render_catalog import parse_inputs  # noqa: E402
 from render_reporting import Reporter  # noqa: E402
 

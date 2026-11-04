@@ -71,7 +71,7 @@ def run_workers(args, root):
             text=True,
             encoding="utf-8",
             errors="replace",
-            env={**os.environ, "PYTHONUNBUFFERED": "1"},
+            env={**os.environ, "PYTHONUNBUFFERED": "1", "PYTHONIOENCODING": "utf-8"},
         )
         for line in process.stdout:
             line = line.rstrip()
