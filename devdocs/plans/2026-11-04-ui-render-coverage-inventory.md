@@ -78,15 +78,25 @@ The following are candidate coverage families. A row lists distinct possible req
 5. **Fixture dependency groups are not coverage families.** One selected state can require setup/transitions in a larger fixture. That setup may execute without saving all intermediate states; selection counts and cost must describe saved representatives separately from prerequisite work.
 6. **Capture completion is not equivalence.** The reported Generate differences, including `generate-20-local-controls` and `generate-21-checkpoint-editor`, still need owner visual review. Do not declare equivalence merely because both images were saved or a full run completed.
 
-## Candidate global-style pack, not yet selected automatically
+## Approved shared fallback pack, not yet selected automatically
 
-A first owner-review pack could use: `generate-21-checkpoint-editor` (inputs/list/editor), `queues-60-item-table` (table/rows), `scripts_form_default` (dynamic form), `images-105-pager-default-20-first-batch` (cards/pager), `inpaint-03-mask-painted` (canvas overlay), `logs-02-mixed-severity` (dense diagnostic text), `shell-08-overlay-several-rows` (shared rows) and `images-08-permanent-confirmation` (destructive intent). Add a narrow or dark/light/state-color variant only where the changed selector or token affects a distinct branch. This is an eight-state proposal for broad appearance sampling, not a claim that it covers every QSS rule or every host.
+The owner-approved shared fallback pack contains: `generate-21-checkpoint-editor` (inputs/list/editor), `queues-60-item-table` (table/rows), `scripts_form_default` (dynamic form), `images-105-pager-default-20-first-batch` (cards/pager), `inpaint-03-mask-painted` (canvas overlay), `logs-02-mixed-severity` (dense diagnostic text), `shell-08-overlay-several-rows` (shared rows) and `images-08-permanent-confirmation` (destructive intent). Add a narrow or dark/light/state-color variant only where the changed selector or token affects a distinct branch. This is broad appearance sampling, not a claim that it covers every QSS rule or every host.
+
+Keep fallback packs as named state lists, not a second speed level. `-f` remains general fast review and provides the starting pool for smaller page-specific packs; it is not automatically the shared fallback pack. Reliably mapped changes may select any required state outside `-f`. Page-specific membership remains to be inventoried and reviewed.
 
 ## Proposed inventory record shape for the next implementation step
 
 Each component needs: stable component ID; owning source paths and, where needed, function/UI-object scope; direct consumers; visual variant requirements; representative state IDs; optional mounting representatives; prerequisite fixture IDs; confidence/evidence; and known gaps. Keep component appearance and consumer mounting separate so the planner can deduplicate the former without discarding the latter.
 
-For broad files such as `main_window.py`, `main_window.ui` and the QSS, a single file-level category rule is too coarse. Record source scopes such as `_place_export_panel`, `usageTimezoneCombo` and `imageExportBox` so a later conservative diff reader can identify the relevant family. If it cannot identify the scope safely, expose that uncertainty; do not claim a narrow selection is complete. The unknown-change fallback still needs an owner decision and is not changed by this document.
+For broad files such as `main_window.py`, `main_window.ui` and the QSS, a single file-level category rule is too coarse. Record source scopes such as `_place_export_panel`, `usageTimezoneCombo` and `imageExportBox` so a later conservative diff reader can identify the relevant family. If it cannot identify the scope safely, expose that uncertainty; do not claim a narrow selection is complete.
+
+## Owner-approved selection policy
+
+- **Unmapped impact:** render representatives for the affected page. If the page is unknown, use the small shared pack. Prominently warn that coverage is incomplete and explain which changes could not be mapped; do not silently expand to exhaustive rendering.
+- **Shared styles/tokens:** select affected components first when reliably identifiable; use the small shared pack for broad or uncertain impact. Retain distinct mount/layout/interaction variants, not every identical consumer.
+- **Labels:** `render` requests mapped selection. Adding `render-all` immediately requests every state, independently of whether `render` is present. Do not enable rendering on unlabelled PRs by default.
+
+These decisions supersede the earlier full-render fallback design. They are approved requirements, not implemented behavior or proof of representative completeness.
 
 ## Follow-up implementation checklist
 
@@ -97,7 +107,7 @@ PR #226 is squash-merged as `00d49dd`; its working renderer is the baseline for 
 - [ ] Resolve changed scopes to deduplicated state selections; retain distinct mounting/layout branches and explain selection reasons.
 - [ ] Use a small representative pack for broad shared appearance changes rather than every consumer page.
 - [ ] Preserve category fast defaults, explicit levels/manual selectors and the exhaustive `render-all` override; ensure adding `render-all` triggers rendering immediately.
-- [ ] Resolve the unknown-change fallback with the owner before changing it; retain the existing conservative behavior meanwhile.
+- [x] Resolve the unknown-change fallback with the owner: affected-page representatives, or the small shared pack when the page is unknown, with a prominent coverage-incomplete warning.
 - [ ] Update Action summaries and selection documentation; review static selection output without adding or running unit tests. Run renders only when explicitly requested.
 
 ## Remaining inventory work
