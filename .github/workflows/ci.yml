@@ -38,7 +38,15 @@ on:
       # - '.github/workflows/ci.yml'
   pull_request:
      types: [opened, synchronize, reopened, ready_for_review]
-     paths: *ci-paths
+     paths:
+     - '**/*.py'
+     - 'pyproject.toml'
+     - 'uv.lock'
+     - '.python-version'
+     - 'src/dtflow/**'
+     - 'tests/**'
+     - '.github/workflows/ci.yml'
+
 
 concurrency:
   group: ci-${{ github.event_name == 'pull_request' && github.ref || github.run_id }}

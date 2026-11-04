@@ -486,6 +486,30 @@ QPushButton#activityBarButton {
 QPushButton#activityBarButton[result="true"] {
   padding: 0;
 }
+/* Bottom-bar usage pill "active/all": filled status colors reuse the existing surface and border tokens. */
+QLabel#usagePill {
+  border: 1px solid ${color.borderStrong};
+  border-radius: ${size.radiusXs};
+  color: ${color.secondary};
+  font-size: 8pt;
+  font-weight: ${type.weightStrong};
+  padding: 0 7px;
+}
+QLabel#usagePill[state="ok"] {
+  background: ${color.connectionSurface};
+  border-color: ${color.statusOkBorder};
+  color: ${color.success};
+}
+QLabel#usagePill[state="warning"] {
+  background: ${color.warningSurface};
+  border-color: ${color.statusWarningBorder};
+  color: ${color.warning};
+}
+QLabel#usagePill[state="error"] {
+  background: ${color.dangerSurface};
+  border-color: ${color.statusErrorBorder};
+  color: ${color.error};
+}
 QToolButton#aboutButton {
   border: 0;
   padding: 0;
@@ -1361,6 +1385,12 @@ QWidget#GalleryDetailPage QLabel[textRole="supporting"] {
   font-size: ${type.small};
   font-weight: ${type.weightBody};
 }
+QFrame[role="usageRow"] {
+  background: ${color.itemSurface};
+  border-radius: ${size.radiusSm};
+}
+QFrame[role="usageRow"] QLabel { background: transparent; }
+QLabel#usageCount { font-size: ${type.section}; }
 QLabel[textRole="section"] {
   font-size: ${type.section};
   font-weight: ${type.weightEmphasis};
