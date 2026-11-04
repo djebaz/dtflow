@@ -138,6 +138,10 @@ The metadata pair checks identical card/child geometry; the default states live 
 
 Render only when requested, using a fresh output directory so old PNGs cannot masquerade as current captures. In Windows offscreen mode set `QT_QPA_FONTDIR=C:\Windows\Fonts` explicitly; this remains layout evidence rather than native desktop acceptance.
 
+#### Change-based selection in Actions
+
+On pull requests the UI renders workflow renders only the groups the diff can affect: `render_changes.py` compares the PR head with its merge base and `render_dependencies.json` maps changed paths to render categories. Any path that is not mapped (shared styles, forms, core code, the renderer, dependency files), a missing base or an error renders every state, and the summary lists the reason per path. Docs-only or non-render changes get a fast `-f` smoke render. Add the `render-all` label to a PR, or dispatch without `changed_only`, for a full `-s` render. Update `render_dependencies.json` when a source file starts or stops feeding a screenshot. `python tools/ui/render_changes.py --base origin/main --head HEAD` shows the selection locally.
+
 #### Run levels and parallel workers
 
 `render_states.py` takes a run level: `-f` (default, about 17 key states, around 25s on a 2-core Windows PC), `-m` (common variants, about 245 states) and `-s` (every state, about 456; this is what the Actions workflow runs). Explicit selectors (`--category`, `--group`, `--prefix`, `--state`) reach states of any level. `-s` now means `--slow`; `--state` has no short form. `--list` prints the selection without starting Qt.
