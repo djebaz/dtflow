@@ -18,9 +18,12 @@ STAGE_ORDER = ("empty", "setup", "ready", "running", "results", "failure", "reco
 CATALOG_PATH = Path(__file__).with_suffix(".json")
 
 # Window groups that can run as separate processes, each with its own temp state, fake cloud and scenario.
-# Every fixture not listed here belongs to the "workspace" window (connection, generate configuration, queue
-# read-views, gallery composition).
+# Every fixture not listed here belongs to the "workspace" window. The workspace fixtures only share the window,
+# not state: each one renders the same from a fresh window (verified by comparing split and single-process renders).
 WORKER_FIXTURES = {
+    "connection": ("connection-setup", "connection-management", "connection-usage", "connection-outcomes"),
+    "generate": ("generate-configuration",),
+    "queues": ("active-queue", "item-table", "queue-template"),
     "main": ("generation-flow", "queue", "shell", "inpaint", "logs"),
     "scripts": ("scripts",),
     "gallery": ("gallery-composition",),
@@ -29,6 +32,9 @@ WORKER_FIXTURES = {
 }
 WORKER_ORDER = (
     "workspace",
+    "connection",
+    "generate",
+    "queues",
     "gallery",
     "main",
     "scripts",
@@ -39,6 +45,9 @@ WORKER_ORDER = (
 WORKER_COST = {
     # (startup seconds, seconds per state), measured on a Windows PC from the full -s run (2026-11-04).
     "workspace": (6.0, 0.40),
+    "connection": (3.0, 0.41),
+    "generate": (3.0, 0.37),
+    "queues": (3.0, 0.42),
     "main": (6.0, 0.41),
     "scripts": (6.0, 0.90),
     "gallery": (6.0, 0.98),
@@ -199,6 +208,13 @@ def parse_inputs(root, argv=None):
     )
     parser.add_argument(
         "-l", "--list", action="store_true", help="List the selected catalogue, without Qt or rendering"
+    )
+    parser.add_argument(
+        "--stall-timeout",
+        type=int,
+        default=180,
+        metavar="SECONDS",
+        help="Kill a worker that saves no state for this long and fail the run (default 180; 0 turns it off)",
     )
     parser.add_argument("-v", "--verbose", action="store_true", help="Also print detailed fixture/platform diagnostics")
     args = parser.parse_args(argv)

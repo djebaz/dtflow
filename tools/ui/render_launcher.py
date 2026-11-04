@@ -125,12 +125,28 @@ def run_workers(args, root):
         running.append(process)
         failing = False
         waits = 0
+        progressed = [time.monotonic()]
+        stalled = []
+        done_reading = threading.Event()
+
+        def watchdog():
+            # Stack dumps and Qt notices are output too, so only a saved state counts as progress.
+            while not done_reading.wait(5):
+                if time.monotonic() - progressed[0] > args.stall_timeout:
+                    stalled.append(True)
+                    emit(f"WARNING: worker {worker} saved no state for {args.stall_timeout}s; stopping it.")
+                    process.kill()
+                    return
+
+        if args.stall_timeout > 0:
+            threading.Thread(target=watchdog, daemon=True).start()
         for line in process.stdout:
             line = line.rstrip()
             if not line:
                 continue
             match = PROGRESS.match(line)
             if match:
+                progressed[0] = time.monotonic()
                 progress(worker, match)
                 if waits:
                     # A fixture wait timed out while preparing this state; it was rendered as it stood.
@@ -143,9 +159,12 @@ def run_workers(args, root):
             # Window headers, summaries and expected Qt notices stay in the log; problems reach the console.
             loud = failing or line.startswith("WARNING")
             emit(f"{worker:<{width}} | {line}", show=loud)
+        done_reading.set()
         code = process.wait()
+        if stalled:
+            code = code or -9
         seconds = time.monotonic() - begun
-        emit(f"Worker {worker} finished in {clock(seconds)} (exit {code}).")
+        emit(f"Worker {worker} finished in {clock(seconds)} (exit {code}{', stalled' if stalled else ''}).")
         return worker, code, seconds
 
     pool = ThreadPoolExecutor(max_workers=min(args.jobs, len(args.workers)))

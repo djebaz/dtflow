@@ -127,7 +127,8 @@ jobs:
       # directly (not through uv) so the faulthandler stack shows exactly where it stalled.
       - name: Render states
         id: render
-        timeout-minutes: 2
+        # Longer than the 300s render deadline below, so the watchdog's stack traces appear before the step is cut.
+        timeout-minutes: 6
         env:
           BASE_REF: ${{ steps.target.outputs.base_ref }}
           # Pull requests select by change unless labelled render-all; a manual dispatch must opt in.

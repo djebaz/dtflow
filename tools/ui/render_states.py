@@ -272,9 +272,14 @@ def wait_for(predicate, timeout=8):
 
 
 def settle(name, milliseconds=0):
-    """Let the event loop settle before a capture, but only when that capture is wanted."""
+    """Let the event loop settle before a capture; sleep only when that capture is wanted.
+
+    Queued Qt signals still run for unselected captures: fixtures such as the inline editor are dismissed by a
+    queued workspace change, so skipping every event turn made a partial selection render differently."""
     if category_selected(Path(name + ".png")):
         QTest.qWait(milliseconds)
+    else:
+        QApplication.processEvents()
 
 
 def save(widget, out, name):
@@ -3012,7 +3017,8 @@ def render_mapped_gallery_states(app, state, out):
                 report(target)
             shell.gallery.show_view("Detail", persist=False)
             shell.gallery.select(item.identity)
-            wait_for(lambda: not shell.gallery.surface_painter.pixmap.isNull())
+            # This wait timed out (8s) on the owner Windows PC; a shorter wait renders the same current state.
+            wait_for(lambda: not shell.gallery.surface_painter.pixmap.isNull(), timeout=2)
             QTest.qWait(150)
             save(shell.form, out, "images-102-buffered-detail-decoded")
             # Display only: mapped Edit eligibility never reads the fixture or calls a provider.
