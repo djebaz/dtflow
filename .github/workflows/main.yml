@@ -120,6 +120,7 @@ jobs:
         timeout-minutes: 2
         run: |
           mkdir -p tmp
+          echo "Runner CPUs: $(nproc)"
           set -o pipefail
           status=0
           category="${{ inputs.category || 'all' }}"
@@ -233,6 +234,8 @@ jobs:
               "": "⚠️ Did not run",
           }.get(status, f"❌ Failed (exit {status})")
 
+          categories = {Path(row["path"]).name: row["category"] for row in manifest.get("states", []) if "category" in row}
+
           def size(path):
               with path.open("rb") as handle:
                   head = handle.read(24)
@@ -244,6 +247,8 @@ jobs:
                   return "Image Navigation"
               if path.stem.startswith("scripts_"):
                   return "Scripts"
+              if path.name in categories:
+                  return categories[path.name]
               parts = path.stem.split("-", 2)
               if len(parts) == 3 and parts[1].isdigit():
                   return parts[0]
