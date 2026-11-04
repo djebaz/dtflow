@@ -171,7 +171,7 @@ def upload_file(access_token: str, path: Path, folder_id: str, remote_name: str)
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--source", type=Path, required=True, help="Directory containing render PNGs")
-    parser.add_argument("--mode", choices=("zip", "images"), default="zip", help="Upload format (default: zip)")
+    parser.add_argument("--mode", choices=("images", "zip"), default="images", help="Upload format (default: images)")
     parser.add_argument("--archive", type=Path, help="ZIP archive required in zip mode; unused in images mode")
     parser.add_argument("--refresh-token", required=True)
     parser.add_argument("--client-id", required=True)

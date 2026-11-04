@@ -14,6 +14,13 @@ Changes through 5.4.0 are consolidated in [DTFlow 5.4.0](v5.4.0.md). This file t
 
 ## Added
 
+- UI render uploads now default to individual images rather than ZIP, including automatic/manual Actions and the uploader CLI. ZIP remains an explicit option; upload concurrency and retry behavior are unchanged.
+
+- Automatic UI render Actions skip draft PRs, including render-label requests, matching CI; marking ready re-evaluates ordinary eligibility. Manual dispatch remains an explicit override.
+
+- Developer UI render selection now uses 30 file-level component rules, small populated page packs and an eight-state shared fallback, with prominent incomplete-coverage warnings instead of automatic exhaustive fallback. The `render-all` label independently triggers exhaustive rendering; summaries separate planned screenshots from fixture setup and list selected packs/states. Automatic sub-file diff analysis is intentionally excluded; owner visual review remains separate. No application generation behavior changes.
+- CI and render Actions combine native path filters with an early check inside each existing job: entirely docs-only PRs allocate no runner, and docs-only follow-up pushes skip expensive steps using the previous-to-current head diff. No separate detector runner jobs remain. Resources, forms, fixtures, mappings and dependency/configuration changes remain eligible. Manual runs and explicit render labels override filtering; the label route reuses the render workflow without a dispatcher runner. Shared cancellation is removed to protect useful running/pending work; follow-up detection still consumes short runner time and is not a fresh validation pass.
+
 - Scripts library cards now have a compact top-right Remove button with two distinct clicks to confirm in place, without a confirmation overlay. Removal affects the selected saved version’s library membership only; queued source bytes, run history and outputs are retained.
 - The 14 px script Remove control has a padded 22 px click target, including while confirming.
 
@@ -45,5 +52,5 @@ Changes through 5.4.0 are consolidated in [DTFlow 5.4.0](v5.4.0.md). This file t
 
 ## Release audit
 
-- PRs: #193, #199, #201, #215, #217, #218, #219.
+- PRs: #193, #199, #201, #215, #217, #218, #219, #227.
 - Scope: Version bump 5.4.0 and release-note consolidation; Scripts preview corrections, canonical Designer migration, headless/native queue runtime and full form/Setup integration; bounded parallel scripts with attempts schema 6, ready LoRA binding and lifecycle repairs; portable mixer inventory/preparation preview, independent schema-1 authoring preferences and explicit chunks. Exact Windows artifact, provider compatibility and release publication remain separate gates.

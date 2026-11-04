@@ -1,15 +1,17 @@
 name: UI renders
 
 # Renders the offline UI preview states and uploads the screenshots. Runs on manual dispatch for a chosen
-# pull request, and automatically on every push to a pull request labelled "render" (and when the label is added).
-# Pull request events render only the groups the diff against the base branch can affect (tools/ui/render_changes.py and
-# render_dependencies.json); the "render-all" label, or a manual dispatch without "changed_only", renders every state.
+# pull request, and on pushes/label additions with "render" or "render-all".
+# Mapped selection uses render_changes.py, render_coverage.json and render_dependencies.json.
+# "render-all", or a manual all-category dispatch without "changed_only", renders every state.
 # tools/ui/render_states.py uses offline fixtures and a network guard; no provider traffic, generation or secrets.
 run-name: >-
   UI renders · ${{ github.event_name == 'pull_request' && format('PR #{0} · {1}', github.event.pull_request.number, github.event.pull_request.title)
   || inputs.pr != '' && format('PR #{0}', inputs.pr) || format('branch {0}', github.ref_name) }}
 
 on:
+  # Label-only requests enter through render-request.yml, without a separate runner job.
+  workflow_call:
   workflow_dispatch:
     inputs:
       pr:
@@ -34,25 +36,36 @@ on:
           - logs
           - scripts
       changed_only:
-        description: "With a pull request number and category all: render only the groups the PR changed (falls back to everything when a path is unmapped)"
+        description: "With a PR and category all: render mapped representatives; uncertain impact uses a sample pack with a coverage warning"
         required: false
         default: false
         type: boolean
       upload_mode:
         description: "Google Drive upload format (images uploads every PNG with four workers)"
         required: true
-        default: "zip"
+        default: "images"
         type: choice
         options:
-          - zip
           - images
+          - zip
   pull_request:
-    types: [opened, synchronize, reopened, labeled]
-
-# A newer push or dispatch for the same pull request cancels the render in progress.
-concurrency:
-  group: ui-renders-${{ github.event.pull_request.number || inputs.pr || github.ref }}
-  cancel-in-progress: true
+    types: [opened, synchronize, reopened, ready_for_review]
+    paths:
+      - 'src/dtflow/**'
+      - 'tools/ui/**'
+      - 'tests/fixtures/**'
+      - 'tests/helpers/**'
+      - 'tests/conftest.py'
+      - 'pyproject.toml'
+      - 'uv.lock'
+      - '.python-version'
+      - '.github/actions/**'
+      - '.github/workflows/main.yml'
+      - '.github/workflows/render-request.yml'
+      - 'tools/ci/action_changes.py'
+      - 'tools/ci/action_dependencies.json'
+      - '!**/*.md'
+      - '!**/*.rst'
 
 permissions:
   contents: read
@@ -71,11 +84,14 @@ jobs:
   render:
     name: Render UI states
     runs-on: ubuntu-24.04
-    # Pull request events run only when the PR carries the "render" label; adding any other label does nothing.
+    # Like CI, automatic PR runs skip drafts; manual dispatch remains explicit.
     if: >-
       github.event_name != 'pull_request'
-      || (github.event.action == 'labeled' && github.event.label.name == 'render')
-      || (github.event.action != 'labeled' && contains(github.event.pull_request.labels.*.name, 'render'))
+      || (!github.event.pull_request.draft && (
+        (github.event.action == 'labeled' && (github.event.label.name == 'render' || github.event.label.name == 'render-all'))
+        || (github.event.action != 'labeled' && (contains(github.event.pull_request.labels.*.name, 'render') || contains(github.event.pull_request.labels.*.name, 'render-all')))
+      ))
+    # No shared pre-gate concurrency: irrelevant pushes must not cancel running/pending renders.
     timeout-minutes: 15
     steps:
       - name: Resolve target commit
@@ -108,24 +124,38 @@ jobs:
           # The change-based selection diffs against the merge base with the target branch.
           fetch-depth: 0
 
+      - name: Check this update before expensive setup
+        id: changes
+        run: |
+          if [ -f tools/ci/action_changes.py ] && [ -f tools/ci/action_dependencies.json ]; then
+            python3 tools/ci/action_changes.py --kind render
+          else
+            echo "run=true" >> "$GITHUB_OUTPUT"
+            echo "Change gate unavailable at target; run conservatively." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
       # PySide6 needs libEGL at import time; the other Qt libraries and fonts are already on the runner image.
       - name: Install Qt runtime library
+        if: steps.changes.outputs.run == 'true'
         run: |
           sudo apt-get install -y --no-install-recommends libegl1 \
             || { sudo apt-get update && sudo apt-get install -y --no-install-recommends libegl1; }
 
       - uses: astral-sh/setup-uv@v10.3.3
+        if: steps.changes.outputs.run == 'true'
         with:
           enable-cache: true
           cache-dependency-glob: uv.lock
 
       # The render script imports the offline test fixtures, so the dev group is included.
       - name: Sync environment
+        if: steps.changes.outputs.run == 'true'
         run: uv sync --locked
 
       # A normal run takes well under a minute. If a state hangs, the watchdog aborts Python
       # directly (not through uv) so the faulthandler stack shows exactly where it stalled.
       - name: Render states
+        if: steps.changes.outputs.run == 'true'
         id: render
         # Longer than the 300s render deadline below, so the watchdog's stack traces appear before the step is cut.
         timeout-minutes: 6
@@ -150,12 +180,13 @@ jobs:
             if grep -q -- '--slow' "$help_file"; then level_flag="-s"; fi
             if [ "$category" = "all" ]; then
               selection_args="$level_flag"
-              if [ "$AUTO_SELECT" = "true" ] && [ -f tools/ui/render_changes.py ] && [ -n "$BASE_REF" ]; then
-                if .venv/bin/python tools/ui/render_changes.py --base "origin/$BASE_REF" --head HEAD \
+              if [ "$AUTO_SELECT" = "true" ] && [ -f tools/ui/render_changes.py ]; then
+                if .venv/bin/python tools/ui/render_changes.py --base "origin/${BASE_REF:-main}" --head HEAD \
                     --json tmp/render-selection.json | tee tmp/render-selection.txt; then
                   selection_args=$(python3 -c "import json;print(' '.join(json.load(open('tmp/render-selection.json'))['args']))")
                 else
-                  echo "::warning::Change-based selection failed; rendering every state."
+                  echo "::error::Selection planner failed; refusing silent exhaustive rendering. See selection output."
+                  exit 1
                 fi
               fi
               # The launcher splits the states over parallel Qt worker processes and merges their manifests.
@@ -165,7 +196,7 @@ jobs:
                 2>&1 | tee tmp/render.log || status=$?
             else
               timeout --signal=ABRT --kill-after=10s 300s \
-                .venv/bin/python tools/ui/render_states.py $level_flag --out tmp/ui-renders --category "$category" \
+                .venv/bin/python tools/ui/render_states.py --out tmp/ui-renders --category "$category" \
                 2>&1 | tee tmp/render.log || status=$?
             fi
           else
@@ -182,13 +213,13 @@ jobs:
 
       - name: Upload renders to Google Drive
         id: drive
-        if: always()
+        if: always() && steps.changes.outputs.run == 'true'
         env:
           REFRESH_TOKEN: ${{ secrets.GOOGLE_DRIVE_REFRESH_TOKEN }}
           CLIENT_ID: ${{ secrets.GOOGLE_OAUTH_CLIENT_ID }}
           CLIENT_SECRET: ${{ secrets.GOOGLE_OAUTH_CLIENT_SECRET }}
           PR_NUMBER: ${{ github.event.pull_request.number || inputs.pr }}
-          UPLOAD_MODE: ${{ inputs.upload_mode || 'zip' }}
+          UPLOAD_MODE: ${{ inputs.upload_mode || 'images' }}
         run: |
           if ! find tmp/ui-renders -type f -name '*.png' -print -quit 2>/dev/null | grep -q .; then
             echo "No render PNGs were produced; skipping Drive upload."
@@ -223,7 +254,7 @@ jobs:
       # Built only from what this run produced (the merged render manifest, log and PNG files), so it
       # needs no upkeep when states are added or removed.
       - name: Summarize renders
-        if: always()
+        if: always() && steps.changes.outputs.run == 'true'
         env:
           RENDER_STATUS: ${{ steps.render.outputs.status }}
           TARGET: ${{ steps.target.outputs.label }}
@@ -310,7 +341,12 @@ jobs:
           if finals:
               md.append(f"| Script result | {'; '.join(finals)} |")
           if selection:
-              md.append(f"| Selection | {selection['mode']} (`{' '.join(selection['args'])}`), {len(selection['changed'])} changed paths |")
+              md.append(f"| Selection | {selection['mode']}, {len(selection['changed'])} changed paths |")
+              if selection.get("states"):
+                  md.append(f"| Planned screenshots | {len(selection['states'])} distinct states |")
+                  md.append(f"| Fixture setup | {len(selection.get('fixtures', []))} groups; setup may execute unselected transitions |")
+              if selection.get("packs"):
+                  md.append(f"| Representative packs | {', '.join(selection['packs'])} |")
           if drive.get("folder_url"):
               md.append(f"| Screenshots | [Google Drive folder]({drive['folder_url']}) |")
           if (drive.get("archive") or {}).get("view_url"):
@@ -372,7 +408,13 @@ jobs:
                       md.append(f"| {path.name} | {width}×{height} | {path.stat().st_size // 1024} |")
                   md.append("")
           if selection:
+              if selection.get("warnings"):
+                  md += ["", "**⚠ Coverage incomplete: representative sampling, not exhaustive coverage.**", ""]
+                  md += [f"- {warning}" for warning in selection["warnings"][:8]]
+                  md.append("")
               md += ["<details><summary>Why these states were selected</summary>", "", "```", *selection["reasons"][:80], "```", "</details>", ""]
+              if selection.get("states"):
+                  md += ["<details><summary>Exact planned states and fixture setup</summary>", "", "```", *selection["states"], "", "Fixture groups:", *selection.get("fixtures", []), "```", "</details>", ""]
           if workers:
               md += ["### Workers", "", "| Worker | Seconds | Exit |", "|---|---:|---:|"]
               md += [f"| {name} | {item['elapsed_seconds']:.1f} | {item['exit_code']} |" for name, item in workers.items()]
@@ -400,7 +442,7 @@ jobs:
           print(f"{verdict}: {len(pngs)} states rendered.")
 
       - name: Update pull request render comment
-        if: always() && (github.event.pull_request.number || inputs.pr)
+        if: always() && steps.changes.outputs.run == 'true' && (github.event.pull_request.number || inputs.pr)
         env:
           GH_TOKEN: ${{ github.token }}
           PR_NUMBER: ${{ github.event.pull_request.number || inputs.pr }}
