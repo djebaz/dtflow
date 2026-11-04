@@ -2330,7 +2330,7 @@ def render_gallery_composition_states(shell, state, out):
         card = gallery.hover_card
         hover_record = replace(
             chevron_records[0],
-            prompt="Long recorded prompt. " * 200,
+            prompt="Long recorded prompt. " * 80,
             loras=(("portrait_enhancer_v2", 0.8), ("film_grain_xl", 0.35)),
         )
         gallery.items[0] = hover_record
