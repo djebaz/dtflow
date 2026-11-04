@@ -55,6 +55,7 @@ The owner reported 456 screenshots in 286 seconds after PR #225's fixture repair
 
 ### Change-based Actions selection
 
+- **Owner refinement / inventory in progress (2026-11-04):** move from whole-category expansion to specific component/variant representatives, deduplicating identical shared presentation while retaining distinct mounting/layout/interaction coverage. The [first coverage inventory](2026-11-04-ui-render-coverage-inventory.md) records current consumers, candidate state IDs and gaps; it does not change the current category-based selector. Representative selection and the unknown-change fallback remain separate follow-up decisions; `render-all` remains the exhaustive owner override.
 - Maintain a tracked explicit path-to-render-group dependency map, including shared dependencies and rationale; do not infer dependencies solely from filenames.
 - Compare the PR head with its merge base against the target branch, not just the latest commit. Account for renamed/deleted paths and changed maps/registry/workflow code.
 - Examples: Scripts controller/forms select Scripts; gallery detail selects Detail plus navigation; refresh/loading selects recovery/loading; usage-panel changes select Connection usage and shared activity counter states.
