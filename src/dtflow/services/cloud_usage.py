@@ -38,11 +38,21 @@ def key_identity(secret: str) -> tuple[str, str | None]:
     return digest, hint
 
 
+# Most populous city whose year-round or standard-time offset is that whole hour; a presentation hint only.
+_BIGGEST_CITY = {
+    -12: "Baker Island", -11: "Pago Pago", -10: "Honolulu", -9: "Anchorage", -8: "Los Angeles", -7: "Phoenix",
+    -6: "Mexico City", -5: "Lima", -4: "Santiago", -3: "S\u00e3o Paulo", -2: "South Georgia", -1: "Praia",
+    0: "London", 1: "Lagos", 2: "Cairo", 3: "Istanbul", 4: "Dubai", 5: "Karachi", 6: "Dhaka", 7: "Jakarta",
+    8: "Shanghai", 9: "Tokyo", 10: "Sydney", 11: "Noum\u00e9a", 12: "Auckland", 13: "Nuku\u2019alofa",
+    14: "Kiritimati",
+}  # fmt: skip
+
+
 def timezone_choices(now: datetime | None = None) -> tuple[tuple[str, str], ...]:
     """One (label, IANA id) per whole-hour offset from GMT-12 to GMT+14, each with its current local time.
 
     Fixed offsets use ``Etc/GMT`` zones (their sign is inverted by convention). The default Europe/Paris takes the
-    entry matching its current offset so its daylight-saving boundaries stay correct; other entries are fixed.
+    entry matching its current offset (and adds its name) so its daylight-saving boundaries stay correct.
     """
     now = (now or datetime.now(UTC)).astimezone(UTC)
     available = available_timezones()
@@ -51,13 +61,13 @@ def timezone_choices(now: datetime | None = None) -> tuple[tuple[str, str], ...]
     choices = []
     for hours in range(-12, 15):
         zone = "UTC" if hours == 0 else f"Etc/GMT{-hours:+d}"
-        suffix = ""
+        city = _BIGGEST_CITY[hours]
         if hours == paris_hours:
-            zone, suffix = DEFAULT_TIMEZONE, " \u00b7 Paris"
+            zone, city = DEFAULT_TIMEZONE, f"{city}, Paris"
         if zone not in available:
             continue
         local = now.astimezone(ZoneInfo(zone))
-        choices.append((f"GMT{hours:+03d} \u00b7 {local:%H:%M}{suffix}", zone))
+        choices.append((f"GMT{hours:+03d} \u00b7 {local:%H:%M} \u00b7 {city}", zone))
     return tuple(choices)
 
 
