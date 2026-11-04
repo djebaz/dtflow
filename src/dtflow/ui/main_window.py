@@ -6,7 +6,7 @@ import os
 from pathlib import Path
 
 from PySide6.QtCore import QEvent, QFile, QIODevice, QObject, QSize, Qt, QTimer, Slot
-from PySide6.QtGui import QIcon, QKeySequence, QShortcut
+from PySide6.QtGui import QFontMetrics, QIcon, QKeySequence, QShortcut
 from PySide6.QtUiTools import QUiLoader
 from PySide6.QtWidgets import (
     QAbstractButton,
@@ -456,6 +456,12 @@ class MainWindow:
         pill.setProperty("state", "neutral")
         pill.setAccessibleName("Local DT+ completed images today, active key / all keys")
         self.usage_pill = pill
+        # Fixed width (room for 5+5 digits) so the placeholder-to-number switch never moves the buttons beside it.
+        pill.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        bold = pill.font()
+        bold.setPointSizeF(8)
+        bold.setBold(True)
+        pill.setFixedWidth(QFontMetrics(bold).horizontalAdvance("99999/99999") + 16)
         form.statusBar().addPermanentWidget(grid_status_group)
         form.statusBar().addPermanentWidget(status_actions)
         # The usage pill is the extreme-right item, after the Help and Logs buttons, with a quiet right margin.
