@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import itertools
 import json
 import os
 from dataclasses import dataclass
@@ -36,11 +37,12 @@ WORKER_ORDER = (
 )  # also the order they run in one process
 # Rough seconds of render work: (window build + setup, per selected state). Used only to balance processes.
 WORKER_COST = {
-    "workspace": (3.0, 0.9),
-    "main": (5.0, 0.9),
-    "scripts": (2.0, 1.3),
-    "gallery": (3.0, 0.9),
-    "images-windows": (3.0, 0.9),
+    # (startup seconds, seconds per state), measured on a Windows PC from the full -s run (2026-11-04).
+    "workspace": (6.0, 0.40),
+    "main": (6.0, 0.41),
+    "scripts": (6.0, 0.90),
+    "gallery": (6.0, 0.98),
+    "images-windows": (6.0, 0.66),
     "splash": (0.1, 0.1),
 }
 
@@ -54,14 +56,18 @@ def plan_processes(selection, jobs):
     for state in selection.states:
         counts[worker_of(state.fixture)] = counts.get(worker_of(state.fixture), 0) + 1
     cost = {name: WORKER_COST[name][0] + WORKER_COST[name][1] * count for name, count in counts.items()}
-    heavy = sorted((n for n in cost if cost[n] >= 2.0), key=lambda n: -cost[n])
-    light = [n for n in cost if cost[n] < 2.0]
-    bins = [[] for _ in range(max(1, min(jobs, len(heavy))))]
-    loads = [0.0] * len(bins)
-    for name in heavy + light:
-        index = loads.index(min(loads))
-        bins[index].append(name)
-        loads[index] += cost[name]
+    names = sorted(cost, key=lambda n: -cost[n])
+    count = max(1, min(jobs, sum(cost[n] >= 2.0 for n in names)))
+    best, best_peak = None, None
+    # At most six groups: try every assignment and keep the one with the lowest slowest process.
+    for choice in itertools.product(range(count), repeat=len(names)):
+        loads = [0.0] * count
+        for name, index in zip(names, choice, strict=True):
+            loads[index] += cost[name]
+        peak = max(loads)
+        if best_peak is None or peak < best_peak - 1e-9:
+            best, best_peak = choice, peak
+    bins = [[n for n, i in zip(names, best, strict=True) if i == index] for index in range(count)]
     return ["+".join(sorted(group, key=WORKER_ORDER.index)) for group in bins if group]
 
 
