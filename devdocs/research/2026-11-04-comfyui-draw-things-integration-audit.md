@@ -214,8 +214,8 @@ Owner decision: use **the SHA-256 of the exact selected public download artifact
 
 - `segmentation` (YOLO26 end2end) is **always required**; it finds up to `MAX_PEOPLE = 10` people, strongest first.
 - The **clothes model (SegFormer) is required** for `face` and `hair`. Without it, `PersonLayers.layer("face")` returns `None`. So both `mask_region` values need SegFormer, not only a "face detector".
-- The **faces model is optional**, and changes what `face_skin` means. SegFormer paints neck and chest as `Face`; only when face boxes are found does `_cap_face` relabel those far-from-face pixels as synthetic `skin`. So without the faces model, `face_skin` can include neck/chest. That contradicts the issue's "Face skin only" wording unless the faces model is present. Decision D4.
-- **A face detector that finds nothing does not empty the mask.** `analyze_people` only applies `_cap_face` when `face_boxes` is non-empty, so zero detected faces leaves every SegFormer `Face` pixel in place. The "No face detected" pause must be defined explicitly: the selected person's chosen-region mask is empty, **or** no person was found, **or** (when the faces model is configured) it returned zero boxes. Decision D4 covers which of these trigger the pause.
+- The **faces model is optional**, and changes what `face_skin` means. SegFormer paints neck and chest as `Face`; only when face boxes are found does `_cap_face` relabel those far-from-face pixels as synthetic `skin`. So without the faces model, `face_skin` can include neck/chest. That contradicts the issue's "Face skin only" wording unless the faces model is present. Decision D4. **Owner decision D4 (2026-11-04): the faces model is required for this node**; the auto-download provides it.
+- **A face detector that finds nothing does not empty the mask.** `analyze_people` only applies `_cap_face` when `face_boxes` is non-empty, so zero detected faces leaves every SegFormer `Face` pixel in place. The "No face detected" pause must be defined explicitly: the selected person's chosen-region mask is empty, **or** no person was found, **or** (when the faces model is configured) it returned zero boxes. Decision D4 covers which of these trigger the pause. **D4 decided:** all three conditions trigger the pause.
 - **Several people.** Nothing headless picks a person today; the editor lets the user click one. The node needs a `person` parameter. Natural options: `strongest` (index 1, the highest YOLO score), `largest_face` (most face pixels), or `all` (union of every person's region). Decision D5.
 
 **Model files, download and the stored-model schema.**
@@ -235,14 +235,14 @@ Owner decision: use **the SHA-256 of the exact selected public download artifact
 
 This plan orders the work in #223 into reviewable PRs. Every PR follows the V1 test policy (no new or changed tests, ruff before commit, existing suite at the end) and no live generation or download without owner approval.
 
-**Owner decisions needed before the affected step** (recommendation first; D2 and D3 are decided, the rest are open):
+**Owner decisions needed before the affected step** (recommendation first; D2, D3 and D4 are decided, the rest are open):
 
 | # | Question | Recommendation | Blocks |
 | --- | --- | --- | --- |
 | D1 | `widgets_values` as an object keyed by parameter name, or an array like stock ComfyUI? | Object: allowed by v1.0, no positional mapping, clearer strict-import errors. | Step 1 |
 | D2 | How are image operations authorised in a workflow? | **Decided (owner, 2026-11-04):** no extra confirmation; each node uses an automatic owner probe, and an unsupported checkpoint just fails that node. | — |
 | D3 | A node with several output images feeding an image operation? | **Decided (owner, 2026-11-04):** fan out; the rest of the chain runs once per image, paired by branch. | — |
-| D4 | Is the faces model **required** for `DTFDetectFaceMask`, and what triggers "No face detected"? | Required for this node, so `face_skin` excludes neck/chest as #223 promises. Pause when no person is found, when the faces model finds zero boxes, or when the chosen region mask is empty. | Step 3 |
+| D4 | Is the faces model required for `DTFDetectFaceMask`, and what triggers "No face detected"? | **Decided (owner, 2026-11-04):** required (provided by the planned auto-download), so `face_skin` excludes neck/chest. Pause when no person is found, when the faces model finds zero boxes, or when the chosen region mask is empty. | — |
 | D5 | With several people, which person's mask? | `person` parameter with `strongest` (default, deterministic) and `all` (union); add `largest_face` only if needed. | Step 3 |
 | D6 | Run a workflow as one queue item of a new `workflow` kind (store 7 → 8, one-way), like Scripts? | Yes; reuses admission, reservations, Stop and the crash rule of #205. | Step 4 |
 | D7 | Licence review of YOLO26 (AGPL-3.0/commercial) and SegFormer/NudeNet weights before advertising one-click downloads. | Owner review; until then the catalogue can ship only verified and licence-cleared entries, and manual "Models…" stays. | Step 5 |
