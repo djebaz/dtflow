@@ -108,6 +108,9 @@ def run_workers(args, root):
     for worker, tag in tags.items():
         emit(f"  {tag} = {worker}")
 
+    timed_out = []
+    running = []
+
     def run_one(worker):
         begun = time.monotonic()
         process = subprocess.Popen(
@@ -119,7 +122,9 @@ def run_workers(args, root):
             errors="replace",
             env={**os.environ, "PYTHONUNBUFFERED": "1", "PYTHONIOENCODING": "utf-8"},
         )
+        running.append(process)
         failing = False
+        waits = 0
         for line in process.stdout:
             line = line.rstrip()
             if not line:
@@ -127,7 +132,13 @@ def run_workers(args, root):
             match = PROGRESS.match(line)
             if match:
                 progress(worker, match)
+                if waits:
+                    # A fixture wait timed out while preparing this state; it was rendered as it stood.
+                    timed_out.append(match["id"])
+                    emit(f"  ^ {match['id']}: fixture wait timed out, rendered as it stood")
+                    waits = 0
                 continue
+            waits += line.startswith("WARNING: offline UI fixture wait timed out")
             failing = failing or line.startswith("Traceback")
             # Window headers, summaries and expected Qt notices stay in the log; problems reach the console.
             loud = failing or line.startswith("WARNING")
@@ -137,8 +148,17 @@ def run_workers(args, root):
         emit(f"Worker {worker} finished in {clock(seconds)} (exit {code}).")
         return worker, code, seconds
 
-    with ThreadPoolExecutor(max_workers=min(args.jobs, len(args.workers))) as pool:
+    pool = ThreadPoolExecutor(max_workers=min(args.jobs, len(args.workers)))
+    try:
         results = list(pool.map(run_one, args.workers))
+    except BaseException:
+        # Ctrl+C or an internal error must not leave orphaned Qt renderer processes behind.
+        for process in running:
+            if process.poll() is None:
+                process.kill()
+        raise
+    finally:
+        pool.shutdown(wait=True, cancel_futures=True)
 
     manifests = {}
     for worker, _code, _seconds in results:
@@ -148,13 +168,16 @@ def run_workers(args, root):
         except (OSError, ValueError):
             manifests[worker] = None
     records = {}
+    duplicates = []
     notices, unregistered = {}, []
     for worker, data in manifests.items():
         if data is None:
             continue
         for row in data["states"]:
             if row["status"] == "saved":
-                records[row["id"]] = {**row, "worker": worker}
+                if row["id"] in records:
+                    duplicates.append(row["id"])
+                records[row["id"]] = {**row, "worker": worker, "wait_timed_out": row["id"] in timed_out}
         for name, count in data.get("expected_notices", {}).items():
             notices[name] = notices.get(name, 0) + count
         unregistered += data.get("unregistered_states", [])
@@ -170,7 +193,7 @@ def run_workers(args, root):
     missing = [s["id"] for s in states if s["status"] != "saved"]
     blank = [s["id"] for s in states if s.get("blank")]
     failed = [f"{worker} (exit {code})" for worker, code, _ in results if code != 0]
-    status = "failed" if failed or missing or blank else "completed"
+    status = "failed" if failed or missing or blank or duplicates else "completed"
     data = {
         "schema_version": 1,
         "status": status,
@@ -180,6 +203,7 @@ def run_workers(args, root):
         "workers": {
             worker: {"exit_code": code, "elapsed_seconds": round(seconds, 3)} for worker, code, seconds in results
         },
+        "wait_timeouts": sorted(timed_out),
         "states": states,
         "unregistered_states": unregistered,
         "expected_notices": notices,
@@ -198,12 +222,18 @@ def run_workers(args, root):
     emit(f"Rendered {len(states) - len(missing)} states in {wall:.1f}s wall time (workers: {timings}).")
     if notices:
         emit(f"Expected offline notices: {sum(notices.values())}; details in the per-worker logs next to {target.name}")
+    if timed_out:
+        emit(
+            f"WARNING: fixture waits timed out ({len(timed_out)}), rendered as they stood: {', '.join(sorted(timed_out))}"
+        )
     if unregistered:
         emit(f"WARNING: rendered states missing from render_catalog.json: {', '.join(unregistered)}")
     log.close()
     problems = []
     if failed:
         problems.append(f"Failed workers: {', '.join(failed)}")
+    if duplicates:
+        problems.append(f"States rendered by more than one worker: {', '.join(duplicates)}")
     if blank:
         problems.append(f"Blank renders: {', '.join(blank)}")
     if missing:

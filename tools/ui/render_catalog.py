@@ -180,7 +180,14 @@ def parse_inputs(root, argv=None):
     levels.add_argument(
         "-m", "--medium", dest="level", action="store_const", const="m", help="Fast plus common variants"
     )
-    levels.add_argument("-s", "--slow", dest="level", action="store_const", const="s", help="Every state")
+    levels.add_argument(
+        "-s",
+        "--slow",
+        dest="level",
+        action="store_const",
+        const="s",
+        help="Slow level: every state (-s no longer means --state; that option is long-only)",
+    )
     parser.add_argument(
         "-p", "--prefix", action="append", default=[], help="Select state IDs by literal prefix; repeatable"
     )
