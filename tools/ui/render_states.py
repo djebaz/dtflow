@@ -118,11 +118,63 @@ SELECTION = None
 REPORTER = None
 
 
+class _FlowComplete(BaseException):
+    """Internal control flow: the generation flow has saved every state this run selected."""
+
+
+FLOW_STOP = []  # ids the generation flow must still save; empty list means "run to the end"
+FLOW_FOLLOWERS = ("queue", "shell", "inpaint", "logs")  # later fixtures in the same window
+WORKSPACE_GROUPS = {
+    "connection": ("connection-setup", "connection-outcomes", "connection-management", "connection-usage"),
+    "generate": ("generate-configuration",),
+    "queues": ("active-queue", "item-table", "queue-template"),
+    "images": ("gallery-composition",),
+}
+
+
 @contextmanager
 def fixture_scope(name):
-    """Start a fixture's timing interval; a fixture always runs to its end so its own cleanup is never skipped."""
+    """Start a fixture's timing interval.
+
+    Fixtures run to their end so their own cleanup is never skipped. The only exception is the generation flow:
+    when no fixture that shares its window follows, it stops after the last selected state, because the rest of
+    the flow (real fake generations, cloud receipts, regenerate) would only produce discarded captures.
+    """
     REPORTER.begin()
-    yield
+    stop_early = name == "generation-flow" and not any(needs_fixture(group) for group in FLOW_FOLLOWERS)
+    if stop_early:
+        FLOW_STOP.append(SELECTION.fixture_ids(name))
+    try:
+        yield
+    except _FlowComplete:
+        pass
+    finally:
+        if stop_early:
+            FLOW_STOP.pop()
+
+
+def phase(label):
+    """Announce the next execution phase; screenshots follow the window that renders them, not the journey."""
+    print(f"\n=== {label} ===", flush=True)
+
+
+def planned_phases():
+    """Execution phases of this run, in the order they happen."""
+    phases = []
+    if needs_fixture("startup-splash"):
+        phases.append("startup splash")
+    workspace = [c for c, groups in WORKSPACE_GROUPS.items() if any(needs_fixture(g) for g in groups)]
+    if workspace:
+        phases.append("workspace window: " + ", ".join(workspace))
+    images = [n for n in ("mapped-gallery", "trash-unavailable", "initial-refresh-recovery") if needs_fixture(n)]
+    if images:
+        phases.append("image windows: " + ", ".join(images))
+    main = [n for n in ("generation-flow", *FLOW_FOLLOWERS) if needs_fixture(n)]
+    if main:
+        phases.append("main window: " + ", ".join(main))
+    if wants("scripts"):
+        phases.append("scripts window")
+    return phases
 
 
 def wants(category):
@@ -186,6 +238,8 @@ def report(target):
     colors = {image.pixel(x, y) for x in range(image.width()) for y in range(image.height())}
     REPORTER.saved(target, blank=len(colors) <= 1)
     faulthandler.dump_traceback_later(120, repeat=True)
+    if FLOW_STOP and FLOW_STOP[-1] <= REPORTER.records.keys():
+        raise _FlowComplete()
 
 
 def wait_for(predicate, timeout=8):
@@ -3099,6 +3153,8 @@ def render_queue_states(shell, capture):
     """A real paused queue in the temporary state; dispatch settlements are delivered directly, never run."""
     queue, page = shell.queue, shell.queue_page
     shell.form.queueNavigationButton.click()
+    QTest.qWait(300)
+    capture("queues-01-empty")
     page.queueCountSpinBox.setValue(3)
     page.createQueueButton.click()
     wait_for(lambda: queue._view() is not None)
@@ -3672,6 +3728,24 @@ def render_logs_states(shell, capture):
     shell._close_logs()
 
 
+class _ScriptsAfterFailure:
+    """If an earlier block raises, still render Scripts (own window), then let the original error propagate."""
+
+    def __init__(self):
+        self.run = None
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc, tb):
+        if exc_type is not None and self.run is not None:
+            try:
+                self.run()
+            except Exception:
+                traceback.print_exc()
+        return False
+
+
 def _render_selection(app, args):
     """One pass over every selected category, so the shared windows and fixtures are built only once."""
     cloud = DtPlus()
@@ -3682,9 +3756,11 @@ def _render_selection(app, args):
             return cloud.backend()
         return FakeBackend(scenario=scenario, gate=gate)
 
+    after_failure = _ScriptsAfterFailure()
     with (
         tempfile.TemporaryDirectory(prefix="dtflow-ui-") as temporary,
         patch.object(session, "create_backend", backend),
+        after_failure,
     ):
         state = Path(temporary)
         scripts_done = False
@@ -3695,6 +3771,7 @@ def _render_selection(app, args):
             if scripts_done or not wants("scripts"):
                 return
             scripts_done = True
+            phase("scripts window")
             # Includes parser-limit, inspection, mixer and Setup fixtures; no JS/queues are started.
             from render_scripts_states import render_scripts_states
 
@@ -3715,22 +3792,17 @@ def _render_selection(app, args):
                 diagnostic=REPORTER.diagnostic,
             )
 
+        after_failure.run = render_scripts
+
         # The splash is the first window the user sees.
-        if wants("shell"):
+        if needs_fixture("startup-splash"):
+            phase("startup splash")
             render_startup_splash(args.out)
-        workspace_groups = (
-            "connection-setup",
-            "connection-outcomes",
-            "connection-management",
-            "connection-usage",
-            "generate-configuration",
-            "active-queue",
-            "item-table",
-            "queue-template",
-            "gallery-composition",
-        )
-        if any(needs_fixture(group) for group in workspace_groups):
+        if any(needs_fixture(group) for groups in WORKSPACE_GROUPS.values() for group in groups):
+            phase("workspace window")
             render_workspace_states(app, state, args.out)
+        if any(needs_fixture(n) for n in ("mapped-gallery", "trash-unavailable", "initial-refresh-recovery")):
+            phase("image windows")
         if wants("images"):
             render_mapped_gallery_states(app, state, args.out)
         if needs_fixture("trash-unavailable"):
@@ -3766,6 +3838,7 @@ def _render_selection(app, args):
         if not any(needs_fixture(group) for group in ("generation-flow", "queue", "shell", "inpaint", "logs")):
             render_scripts()
             return
+        phase("main window")
         shell = MainWindow(saved=SavedCredentials(Vault()), environ={}, state_dir=state)
         shell.form.resize(1600, 1000)
         shell.show()
@@ -3964,10 +4037,7 @@ def _render_selection(app, args):
                     page.detailsToggle.setChecked(True)
                     capture("generate-12-assets-details")
                     shell.form.backendCombo.setCurrentText("fake")
-                    for name, tab in (
-                        ("queues-01-empty", "queueNavigationButton"),
-                        ("images-01-grid", "imagesNavigationButton"),
-                    ):
+                    for name, tab in (("images-01-grid", "imagesNavigationButton"),):
                         getattr(shell.form, tab).click()
                         if tab == "imagesNavigationButton":
                             # The fake generations above are saved outputs; show them loaded, not a mid-refresh frame.
@@ -4043,7 +4113,8 @@ def main():
     try:
         with REPORTER.console():
             print(f"Selected {len(SELECTION.states)} states in {len(SELECTION.fixtures)} fixture groups.")
-            print("Order: " + " → ".join(SELECTION.categories))
+            print("Phases: " + " → ".join(planned_phases()))
+            print("Summary and manifest follow the product journey: " + " → ".join(SELECTION.categories))
             try:
                 REPORTER.begin()
                 _render_selection(app, args)

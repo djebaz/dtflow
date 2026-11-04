@@ -172,7 +172,7 @@
     {"id": "inpaint-11-result-fixture", "category": "inpaint", "subcategory": "editing", "fixture": "inpaint", "stage": "results", "path": "inpaint-11-result-fixture.png"},
     {"id": "inpaint-15-model-unreadable", "category": "inpaint", "subcategory": "editing", "fixture": "inpaint", "stage": "failure", "path": "inpaint-15-model-unreadable.png"},
     {"id": "inpaint-20-model-unknown", "category": "inpaint", "subcategory": "editing", "fixture": "inpaint", "stage": "failure", "path": "inpaint-20-model-unknown.png"},
-    {"id": "queues-01-empty", "category": "queues", "subcategory": "execution", "fixture": "generation-flow", "stage": "empty", "path": "queues-01-empty.png"},
+    {"id": "queues-01-empty", "category": "queues", "subcategory": "execution", "fixture": "queue", "stage": "empty", "path": "queues-01-empty.png"},
     {"id": "queues-28-list-filter-empty", "category": "queues", "subcategory": "execution", "fixture": "active-queue", "stage": "empty", "path": "queues-28-list-filter-empty.png"},
     {"id": "queues-44-empty-relaunch-last", "category": "queues", "subcategory": "execution", "fixture": "active-queue", "stage": "empty", "path": "queues-44-empty-relaunch-last.png"},
     {"id": "queues-100-template-library-empty", "category": "queues", "subcategory": "templates", "fixture": "queue-template", "stage": "empty", "path": "queues-100-template-library-empty.png"},
