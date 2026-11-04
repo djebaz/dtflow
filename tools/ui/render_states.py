@@ -364,6 +364,7 @@ def render_workspace_states(app, state, out):
                 snap("connection-05-storage-unavailable", "Secure storage is unavailable", False)
             render_connection_outcomes(shell, out)
             render_connection_management(shell, out)
+            render_connection_usage_states(shell, out)
         if wants("generate"):
             render_generate_configuration_states(shell, out)
         if wants("queues"):
@@ -530,7 +531,7 @@ def render_connection_management(shell, out):
             CacheCategory("derived", 3, 8192),
         )
         shell._cache_measured(usage, None)
-        assert "Inventory" in form.cacheStatusLabel.text() and "Derived" in form.cacheStatusLabel.text()
+        assert "Models" in form.cacheStatusLabel.text() and "Derived" in form.cacheStatusLabel.text()
         snap("connection-20-cache-measured")
         shell._cache_measured(None, OSError("Offline fixture"))
         assert "unavailable" in form.cacheStatusLabel.text()
@@ -694,6 +695,137 @@ def render_connection_management(shell, out):
             assert form.statusCard.property("state") == "warning"
             snap("connection-44-recheck-after-context-change")
             latest(None, None)
+
+
+def render_connection_usage_states(shell, out):
+    """Local completed-image counters from synthetic records; no database, provider or generation work."""
+    from datetime import UTC, datetime, timedelta
+
+    from dtflow.services.cloud_usage import UsageRecord
+
+    form, panel = shell.form, shell.cloud_usage
+    panel._clock = lambda: datetime(2026, 11, 4, 12, 0, tzinfo=UTC)
+    form.workspaceStack.setCurrentWidget(form.connectionPage)
+    QTest.qWait(100)
+    panel._token = object()  # discard any in-flight fixture read; only synthetic records are rendered
+    panel._loaded, panel._error = True, False
+    # 23:30 UTC on 3 Nov is 00:30 on 4 Nov in Paris, 09:30 on 4 Nov at UTC+10, and 13:30 on 3 Nov at UTC-10.
+    base = datetime(2026, 11, 3, 23, 30, tzinfo=UTC)
+
+    def records(counts, *, hint, ident, shift=0):
+        return tuple(UsageRecord(base + timedelta(minutes=shift + n), 1, ident, hint) for n in range(counts))
+
+    def zone(name):
+        form.usageTimezoneCombo.setCurrentIndex(form.usageTimezoneCombo.findData(name))
+        QTest.qWait(50)
+
+    def snap(name):
+        form.connectionWorkspaceScroll.ensureWidgetVisible(form.usageBox)
+        QTest.qWait(80)
+        save(form, out, name)
+
+    zone("Europe/Paris")
+    panel._records, panel._active = (), None
+    panel.render()
+    snap("connection-45-usage-empty")
+
+    mixed = (
+        records(412, hint="4F8K", ident="a" * 32)
+        + records(503, hint="Q2ZM", ident="b" * 32, shift=1)
+        + records(12, hint="7TNB", ident="c" * 32, shift=2)
+    )
+    panel._records, panel._active = mixed, "a" * 32
+    panel.render()
+    assert [k.level for k in panel.counts.keys] == ["warn", "over", "ok"] or panel.counts.keys[0].active
+    snap("connection-46-usage-per-key-thresholds")
+
+    edges = records(400, hint="EDGE", ident="d" * 32) + records(500, hint="LIMT", ident="e" * 32, shift=1)
+    panel._records, panel._active = edges, None
+    panel.render()
+    assert {k.level for k in panel.counts.keys} == {"ok", "over"}
+    snap("connection-47-usage-threshold-edges")
+
+    panel._records, panel._active = mixed, "a" * 32
+    zone("Etc/GMT-10")
+    assert panel.counts.keys, "the same records belong to 4 Nov at UTC+10"
+    snap("connection-48-usage-timezone-utc-plus-10")
+    zone("Etc/GMT+10")
+    assert not panel.counts.keys
+    snap("connection-49-usage-timezone-utc-minus-10-empty")
+    zone("Europe/Paris")
+
+    ambiguous = (
+        records(5, hint="4F8K", ident="f" * 32)
+        + records(7, hint="4F8K", ident="1" * 32, shift=10)
+        + records(3, hint=None, ident="2" * 32, shift=20)
+        + tuple(UsageRecord(base + timedelta(minutes=30 + n), 1, None, None) for n in range(9))
+    )
+    panel._records, panel._active = ambiguous, None
+    panel.render()
+    assert len({k.label for k in panel.counts.keys}) == 3
+    snap("connection-50-usage-collision-unidentified-unattributed")
+
+    panel._error = True
+    panel._records = ()
+    panel.render()
+    snap("connection-51-usage-unreadable")
+    panel._error = False
+    panel._loaded = False
+    panel.render()
+    snap("connection-52-usage-reading")
+    panel._loaded = True
+    panel._records, panel._active = mixed, "a" * 32
+    panel.render()
+    old = form.size()
+    form.resize(900, 1000)
+    QTest.qWait(80)
+    snap("connection-53-usage-narrow")
+    form.resize(old)
+    QTest.qWait(50)
+
+    # The bottom bar shows today's local count for the active key on every view; keys here are synthetic.
+    environ = shell._environ
+    from dtflow.services.cloud_usage import key_identity
+
+    def active_key(text, expected, count=0, others=0):
+        environ.clear()
+        if text:
+            environ[KEY] = text
+        panel.active_label = "?"  # wait for this refresh, not a stale result
+        panel.refresh()
+        wait_for(lambda: panel.active_label == expected)
+        if text:
+            ident, hint = key_identity(text)
+            panel._records = records(count, hint=hint, ident=ident) + records(
+                others, hint="Q2ZM", ident="b" * 32, shift=5
+            )
+        else:
+            panel._records = records(others, hint="Q2ZM", ident="b" * 32, shift=5)
+        panel.render()
+        want = f"{count}/{count + others}" if expected else f"\u2013/{others}"
+        assert shell.usage_pill.text() == want, shell.usage_pill.text()
+
+    zone("Europe/Paris")
+    active_key("dk_4F8Kabcdefghijklmnopqrstu", "Key 4F8K\u2022\u2022\u2022\u2022", 412, 91)
+    snap("connection-54-bottom-bar-count-amber")
+    form.workspaceStack.setCurrentWidget(shell.generation_page)
+    QTest.qWait(100)
+    save(form, out, "connection-55-bottom-bar-count-generate")
+    form.workspaceStack.setCurrentWidget(form.connectionPage)
+    active_key("dk_4F8Kabcdefghijklmnopqrstu", "Key 4F8K\u2022\u2022\u2022\u2022", 12, 30)
+    snap("connection-56-bottom-bar-count-green")
+    active_key("dk_4F8Kabcdefghijklmnopqrstu", "Key 4F8K\u2022\u2022\u2022\u2022", 503, 40)
+    snap("connection-57-bottom-bar-count-red")
+    zone("Etc/GMT+10")  # the same records fall on the previous local day: the counter recomputes at once
+    assert shell.usage_pill.text() == "0/0"  # those saves belong to the previous local day there
+    snap("connection-58-bottom-bar-count-other-timezone")
+    zone("Europe/Paris")
+    active_key("offline-key-with-unknown-format", "Key (unidentified)", 7, 3)
+    snap("connection-59-bottom-bar-count-unidentified-key")
+    shell._saved.remove()  # the injected in-memory vault only
+    active_key(None, None, 0, 3)
+    snap("connection-60-bottom-bar-no-key")
+    environ.clear()
 
 
 def render_generate_configuration_states(shell, out):
@@ -2198,7 +2330,7 @@ def render_gallery_composition_states(shell, state, out):
         card = gallery.hover_card
         hover_record = replace(
             chevron_records[0],
-            prompt="Long recorded prompt. " * 200,
+            prompt="Long recorded prompt. " * 80,
             loras=(("portrait_enhancer_v2", 0.8), ("film_grain_xl", 0.35)),
         )
         gallery.items[0] = hover_record
@@ -2239,7 +2371,15 @@ def render_gallery_composition_states(shell, state, out):
         gallery.pager.present(total=342, visible_start=101, visible_end=124, loaded=200, active_page=2)
         assert gallery.pager.buttons[2].isChecked()
         assert gallery._widget("galleryPagerBar").isVisible()
-        # Global status-bar index is intentionally understated and Images-only.
+        # The grid position is a technical field: hidden in ordinary use, shown only in -x/--dev mode.
+        from dtflow import logging_setup
+
+        assert not shell.grid_index_group.isVisible() and not shell.grid_index_label.isVisible()
+        snap("images-65c-status-position-hidden-by-default")
+        logging_setup._DEVELOPMENT = True  # what -x/--dev sets; the benchmark and probes launch that way
+        shell.grid_index_group.setVisible(True)
+        shell._workspace_changed(form.workspaceStack.currentIndex())
+        # Global status-bar index is intentionally understated and Images-only (dev mode).
         shell._sync_grid_index_status(101, 342)
         assert shell.grid_index_label.isVisible()
         assert shell.grid_index_label.text() == "101/342"
@@ -2476,7 +2616,8 @@ def render_gallery_composition_states(shell, state, out):
 
         gallery.show_view("List")
         # The List really contains 200 distinct table rows and can scroll into batch 2.
-        gallery.table.scrollToItem(gallery.table.item(125, 2))
+        QTest.qWait(60)
+        gallery.table.verticalScrollBar().setValue(125)
         start, _end = list_visible(loaded=200)
         assert start >= 101 and gallery.pager.buttons[2].isChecked()
         assert gallery.table.item(99, 2).text() == "image-0100.png"

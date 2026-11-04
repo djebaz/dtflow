@@ -4,6 +4,8 @@ Changes through 5.4.0 are consolidated in [DTFlow 5.4.0](v5.4.0.md). This file t
 
 ## Highlights
 
+- **Local DT+ completed-image counter (#221):** Connection shows a compact card with one count per DT+ API key of final images saved on the selected calendar day, and the bottom bar shows an `active/all` pill (active key's count / all keys' count) on every view. The day is local midnight to midnight in a selectable timezone (one entry per whole GMT offset from -12 to +14 with its current local time and largest city; default Europe/Paris with daylight-saving handling), recomputed locally from saved UTC times. Colors are visual guidance from the owner's working 400/500 assumption (green to 400, amber 401-499, red 500+); the counts are an estimate from saved outputs, not a DT+ balance, confirmed quota or remaining allowance, and nothing blocks generation. Each saved cloud attempt records an opaque key identity (execution state schema 7); older attempts are reported as unattributed. See [Connect](../guides/desktop.md#local-dt-completed-image-counter).
+
 - **Parallel Scripts (PR #218):** Optional DTFlow-only `pipeline.runBatch` runs bounded independent text-to-image jobs with shared queue capacity, durable child attempts and ordered per-job outputs. The portable Krea2 mixer exposes 1..10 requested jobs at once (default 4), with its Draw Things sequential fallback retained. Effective concurrency and model/LoRA support remain backend-dependent; this is not unchanged iOS-script parity or provider entitlement.
 
 - **Scripts forms (PR #217, merged):** Native nested/repeated forms and Inspect > Setup > Run Script preloading without a pre-run queue/provider session, version-specific answer suggestions and owned native picker inputs. `image` retains supplied-image selection semantics; `imageField`/`directory` use pickers, with optional script-authored cropping of owned copies. This does not add canvas pixel/mask generation support.
@@ -19,6 +21,7 @@ Changes through 5.4.0 are consolidated in [DTFlow 5.4.0](v5.4.0.md). This file t
 
 ## Changed
 
+- The Images grid position field in the status bar (`101/342`) is a technical benchmark/diagnostic field and now appears only in the explicit `-x/--dev` mode.
 - Images grid selection checkboxes retain their appearance with a 56 × 56 px click target, twice their 28 px housing size. List and Detail controls are unchanged.
 
 ## Fixed

@@ -6,7 +6,7 @@ import os
 from pathlib import Path
 
 from PySide6.QtCore import QEvent, QFile, QIODevice, QObject, QSize, Qt, QTimer, Slot
-from PySide6.QtGui import QIcon, QKeySequence, QShortcut
+from PySide6.QtGui import QFontMetrics, QIcon, QKeySequence, QShortcut
 from PySide6.QtUiTools import QUiLoader
 from PySide6.QtWidgets import (
     QAbstractButton,
@@ -16,6 +16,7 @@ from PySide6.QtWidgets import (
     QComboBox,
     QFileDialog,
     QHBoxLayout,
+    QLabel,
     QLineEdit,
     QMainWindow,
     QPlainTextEdit,
@@ -30,7 +31,7 @@ from dtflow.composition import BACKENDS, BackendSelection
 from dtflow.core.gallery import GalleryQuery
 from dtflow.core.models import BackendError, ValidationError
 from dtflow.diagnostics import event as diagnostic_event
-from dtflow.logging_setup import configured_directory
+from dtflow.logging_setup import configured_directory, development_mode
 from dtflow.paths import application_state_dir
 from dtflow.persistence.cache_coordination import CacheBusyError, CacheCleanupError, CacheSafetyError
 from dtflow.persistence.image_recycle import reconcile as reconcile_images
@@ -45,17 +46,21 @@ from dtflow.persistence.original_io import (
 from dtflow.services.cache_management import CATEGORIES, cache_usage, purge_cache
 from dtflow.services.catalogue import Catalogue, import_user_loras
 from dtflow.services.connection import Presentation, check_connection, present_failure, present_status
+from dtflow.services.cloud_usage import key_identity
 from dtflow.services.credentials import (
+    EnvironmentCredentials,
     OptionalSavedCredentials,
     SavedCredentials,
     SecureStorageUnavailable,
     credential_status,
+    resolve_credentials,
 )
 from dtflow.services.presets import export_presets, import_presets, load_presets
 from dtflow.ui.activity import Activity
 from dtflow.ui.activity_strip import ActivityStrip
 from dtflow.ui.brand import connection_icon, status_dot
 from dtflow.ui.button_focus import KeyboardFocusGuard
+from dtflow.ui.cloud_usage_panel import CloudUsagePanel
 from dtflow.ui.gallery_page import GalleryPage
 from dtflow.ui.generation_page import GenerationPage
 from dtflow.ui.image_export_panel import ImageExportPanel
@@ -415,7 +420,7 @@ class MainWindow:
         about_button.setAccessibleName("About DTFlow")
         status_actions = QWidget(form.statusBar())
         status_actions_layout = QHBoxLayout(status_actions)
-        status_actions_layout.setContentsMargins(0, 0, 12, 0)
+        status_actions_layout.setContentsMargins(0, 0, 8, 0)
         status_actions_layout.setSpacing(6)
         about_button.setFixedSize(20, 20)
         logs_button = QToolButton(status_actions)
@@ -446,12 +451,30 @@ class MainWindow:
         grid_index.setAccessibleName("0/0")
         grid_index.setToolTip("First visible image position in the Grid workspace")
         grid_status_layout.addWidget(grid_index)
+        pill = QLabel("\u2013/0", form.statusBar())
+        pill.setObjectName("usagePill")
+        pill.setProperty("state", "neutral")
+        pill.setAccessibleName("Local DT+ completed images today, active key / all keys")
+        self.usage_pill = pill
+        # Fixed width (room for 5+5 digits) so the placeholder-to-number switch never moves the buttons beside it.
+        pill.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        bold = pill.font()
+        bold.setPointSizeF(8)
+        bold.setBold(True)
+        pill.setFixedWidth(QFontMetrics(bold).horizontalAdvance("99999/99999") + 16)
         form.statusBar().addPermanentWidget(grid_status_group)
         form.statusBar().addPermanentWidget(status_actions)
+        # The usage pill is the extreme-right item, after the Help and Logs buttons, with a quiet right margin.
+        pill_margin = QWidget(form.statusBar())
+        pill_margin.setFixedWidth(12)
+        form.statusBar().addPermanentWidget(pill)
+        form.statusBar().addPermanentWidget(pill_margin)
         self.grid_index_group = grid_status_group
         # The slot stays on every tab (only its text hides) so the activity bar has the same room everywhere.
         grid_status_group.setFixedSize(70, 20)
-        grid_index.setVisible(form.workspaceStack.currentWidget() is self.images_page)
+        # Technical benchmark/diagnostic field: only in the explicit -x/--dev mode, never in ordinary use.
+        grid_status_group.setVisible(development_mode())
+        grid_index.setVisible(form.workspaceStack.currentWidget() is self.images_page and development_mode())
         self.grid_index_label = grid_index
         self.gallery.grid_position_changed.connect(self._sync_grid_index_status)
         self.logs_button = logs_button
@@ -525,6 +548,15 @@ class MainWindow:
         self.generation.sync_backend()
         startup.mark("backend and restored catalogue applied")
         self.refresh_credentials(background=True)
+        self.cloud_usage = CloudUsagePanel(
+            form,
+            self.runner,
+            self.state_dir,
+            active_credential=self._active_credential_id,
+            on_active=self._show_active_key,
+        )
+        self.cloud_usage.refresh()  # the bottom bar names the active key on every view from startup
+        self.activity.listen(self._usage_activity_changed)
         self.refresh_custom_loras(background=True)
         self.refresh_presets(background=True)
         self._workspace_changed(0)
@@ -726,6 +758,7 @@ class MainWindow:
             self.inline.dismiss()
         if index == 0:
             self.refresh_cache()
+            self.cloud_usage.refresh()
         for stack in (self.shell.leftStack, self.shell.centerStack, self.shell.rightStack):
             stack.setCurrentIndex(index)
         if index == 1 and self._scripts_active:
@@ -765,7 +798,7 @@ class MainWindow:
         elif index < len(buttons):
             buttons[index].setChecked(True)
         images_active = self.form.workspaceStack.currentWidget() is self.images_page
-        self.grid_index_label.setVisible(images_active)
+        self.grid_index_label.setVisible(images_active and development_mode())
         self.gallery.set_active(images_active)
         self._place_export_panel()
         self._responsive_workspace()
@@ -1068,6 +1101,40 @@ class MainWindow:
         button.style().unpolish(button)
         button.style().polish(button)
 
+    async def _active_credential_id(self) -> tuple[str, str | None] | None:
+        """Opaque identity and hint of the key cloud work would use now; a local read, no provider call."""
+        try:
+            credential = await resolve_credentials(EnvironmentCredentials(self._environ), self._optional_saved)
+        except BackendError:
+            return None
+        return key_identity(credential.secret)
+
+    def _show_active_key(self, label: str | None, count: int, total: int, level: str, zone: str) -> None:
+        """Bottom-bar pill ``active/all``: today's local completed images for the active key and for all keys."""
+        pill = self.usage_pill
+        if label is None:
+            text, state = f"\u2013/{total}", "neutral"
+            tip = (
+                f"No DT+ API key is available; {total} completed images were saved today across all keys. "
+                "Set DRAWTHINGS_API_KEY or save a key on Connection."
+            )
+        else:
+            text, state = f"{count}/{total}", {"ok": "ok", "warn": "warning", "over": "error"}[level]
+            tip = (
+                f"{label}: {count} of {total} completed images saved today across all keys "
+                f"(day resets at midnight in {zone}). A local estimate from saved outputs, not a DT+ balance."
+            )
+        pill.setText(text)
+        pill.setAccessibleName(f"Local DT+ completed images today, active key / all keys: {text}")
+        pill.setToolTip(tip)
+        pill.setProperty("state", state)
+        pill.style().unpolish(pill)
+        pill.style().polish(pill)
+
+    def _usage_activity_changed(self) -> None:
+        if self.form.workspaceStack.currentWidget() is self.form.connectionPage:
+            self.cloud_usage.schedule_refresh()
+
     def _read_summary(self, key, read, apply) -> None:
         """Optional startup reads cannot block painting or replace a newer explicit refresh."""
         token = self._summary_reads[key] = object()
@@ -1087,6 +1154,8 @@ class MainWindow:
             return
         self.form.keyEdit.clear()
         self._credentials_read(credential_status(self._environ, self._saved), None)
+        if getattr(self, "cloud_usage", None) is not None:
+            self.cloud_usage.schedule_refresh()  # the active-key mark follows a saved or removed key
 
     def _credentials_read(self, status, error) -> None:
         if error is not None:

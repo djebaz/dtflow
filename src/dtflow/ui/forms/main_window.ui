@@ -658,6 +658,32 @@
             </widget>
            </item>
            <item>
+            <widget class="QGroupBox" name="usageBox">
+             <property name="title"><string /></property>
+             <property name="role" stdset="0"><string>sectionCard</string></property>
+             <property name="accessibleName"><string>Local completed DT+ images</string></property>
+             <layout class="QVBoxLayout" name="usageCardLayout">
+              <property name="leftMargin"><number>0</number></property><property name="topMargin"><number>0</number></property>
+              <property name="rightMargin"><number>0</number></property><property name="bottomMargin"><number>0</number></property>
+              <property name="spacing"><number>0</number></property>
+              <item><widget class="QFrame" name="usageBoxHeader"><property name="role" stdset="0"><string>sectionHeader</string></property>
+               <layout class="QHBoxLayout" name="usageBoxHeaderLayout"><property name="leftMargin"><number>10</number></property><property name="topMargin"><number>7</number></property><property name="rightMargin"><number>10</number></property><property name="bottomMargin"><number>7</number></property>
+                <item><widget class="QLabel" name="usageHeading"><property name="text"><string>Local completed images</string></property><property name="textRole" stdset="0"><string>panelHeading</string></property></widget></item>
+               </layout></widget></item>
+              <item><widget class="QWidget" name="usageBoxContents"><property name="role" stdset="0"><string>sectionContents</string></property>
+               <layout class="QVBoxLayout" name="usageLayout"><property name="leftMargin"><number>10</number></property><property name="topMargin"><number>8</number></property><property name="rightMargin"><number>10</number></property><property name="bottomMargin"><number>10</number></property><property name="spacing"><number>8</number></property>
+                <item><widget class="QLabel" name="usageTimezoneLabel"><property name="text"><string>Day resets at midnight in</string></property><property name="textRole" stdset="0"><string>caption</string></property><property name="buddy"><cstring>usageTimezoneCombo</cstring></property></widget></item>
+                <item><widget class="SearchableComboBox" name="usageTimezoneCombo"><property name="accessibleName"><string>Daily reset timezone</string></property><property name="toolTip"><string>Counts are recalculated locally from saved image times. Nothing is sent to DT+.</string></property></widget></item>
+                <item><widget class="QLabel" name="usageDayLabel"><property name="wordWrap"><bool>true</bool></property><property name="role" stdset="0"><string>secondary</string></property></widget></item>
+                <item><layout class="QVBoxLayout" name="usageRowsLayout"><property name="spacing"><number>4</number></property></layout></item>
+                <item><widget class="QLabel" name="usageEmptyLabel"><property name="text"><string>No DT+ images were saved on this day.</string></property><property name="wordWrap"><bool>true</bool></property><property name="role" stdset="0"><string>secondary</string></property></widget></item>
+                <item><widget class="QLabel" name="usageUnattributedLabel"><property name="wordWrap"><bool>true</bool></property><property name="role" stdset="0"><string>secondary</string></property></widget></item>
+                <item><widget class="QLabel" name="usageNoteLabel"><property name="text"><string>An estimate from images saved by this app, per API key. It is not a DT+ balance, a confirmed quota or remaining allowance; rejected or missing outputs are not counted.</string></property><property name="wordWrap"><bool>true</bool></property><property name="role" stdset="0"><string>secondary</string></property></widget></item>
+               </layout></widget></item>
+             </layout>
+            </widget>
+           </item>
+           <item>
             <widget class="QGroupBox" name="presetLibraryBox">
              <property name="title"><string /></property>
              <property name="role" stdset="0"><string>sectionCard</string></property>
@@ -951,6 +977,13 @@
    </property>
   </action>
  </widget>
+ <customwidgets>
+  <customwidget>
+   <class>SearchableComboBox</class>
+   <extends>QComboBox</extends>
+   <header>dtflow.ui.search_select</header>
+  </customwidget>
+ </customwidgets>
  <resources />
  <connections />
 </ui>
