@@ -16,18 +16,20 @@ CATEGORY_ORDER = ("shell", "connection", "generate", "inpaint", "queues", "scrip
 STAGE_ORDER = ("empty", "setup", "ready", "running", "results", "failure", "recovery", "layout")
 CATALOG_PATH = Path(__file__).with_suffix(".json")
 
-# Window groups that share no in-memory fixture state and can run as separate processes. Every other fixture
-# belongs to "app" (the workspace window then the main window), which still share one cloud/scenario closure.
+# Window groups that can run as separate processes, each with its own temp state, fake cloud and scenario.
+# Every fixture not listed here belongs to the "workspace" window (connection, generate configuration, queue
+# read-views, gallery composition).
 WORKER_FIXTURES = {
+    "main": ("generation-flow", "queue", "shell", "inpaint", "logs"),
     "scripts": ("scripts",),
     "images-windows": ("mapped-gallery", "trash-unavailable", "initial-refresh-recovery"),
     "splash": ("startup-splash",),
 }
-WORKER_ORDER = ("app", "scripts", "images-windows", "splash")  # longest first when workers are scheduled
+WORKER_ORDER = ("workspace", "main", "scripts", "images-windows", "splash")  # longest first when workers are scheduled
 
 
 def worker_of(fixture):
-    return next((name for name, fixtures in WORKER_FIXTURES.items() if fixture in fixtures), "app")
+    return next((name for name, fixtures in WORKER_FIXTURES.items() if fixture in fixtures), "workspace")
 
 
 LEVEL_ORDER = ("f", "m", "s")  # fast ⊂ medium ⊂ slow (every state)
