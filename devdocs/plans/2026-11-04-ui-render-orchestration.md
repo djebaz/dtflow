@@ -1,6 +1,6 @@
 # UI render selection, progress and process orchestration
 
-**Status:** Approved direction; implementation pending. Follow-up to merged PR #225 (`30f84282c1cc641beed333021896f4b531c14391`). This initial draft PR records scope, not delivered runtime behavior.
+**Status:** Phases 1-2 (selection, reporting) are on the PR branch; levels and process sharding are the agreed next design (2026-11-04). Follow-up to merged PR #225 (`30f84282c1cc641beed333021896f4b531c14391`).
 
 ## Goal and boundaries
 
@@ -27,14 +27,31 @@ The owner reported 456 screenshots in 286 seconds after PR #225's fixture repair
 - Count/summarize narrowly identified offscreen platform warnings and explicitly labelled expected fixture failures. Preserve unexpected warnings, exceptions, save failures, duplicate names, blank screenshots and fixture-wait timeouts. Never globally disable warnings or change production logging policy.
 - Maintain the non-terminating diagnostic stack watchdog separately from terminating worker and Actions timeouts. Document what each measures.
 
+### Run levels
+
+- Each catalog state gets a `level`: `f` (fast), `m` (medium) or `s` (slow, everything). Levels are nested: `-m` includes `f`, `-s` includes both.
+- `-f` is the default: one or two key states per fixture group so every screen is eyeballed, targeting about 60 states and about one minute. `-m` adds common variants and drops the slow pager, trash and refresh-recovery waits (about 250 states). `-s` renders all 456 states.
+- Levels combine with category/subcategory/state selectors (`--category queues -m`) and are applied during selection, before any window or fixture is built. A shard whose states are all filtered out is never started.
+- **Behaviour change:** a bare run no longer renders everything. Actions, release checks and any "all states" use pass `-s` explicitly. Prerequisite setup inside a fixture group still runs even when only a fast state is selected.
+- Djé reviews the first f/m split by eye; the proposal is drawn from per-state durations and category coverage in a full manifest.
+
+### Measured baseline (four full-run manifests, per-state capture seconds)
+
+- Everything except Scripts totals about 230s in every run, so window order is not the cost. Scripts cost 46s when run first and 95s when run last (594s run: 115s). Closed windows and timers surviving into the Scripts window is the working explanation; commit 932bd04 frees windows and is unmeasured.
+- Per fixture group (latest run): gallery-composition 57s, image windows and splash 43s, active-queue/item-table/queue-template 32s, main window queue/shell/inpaint/logs 34s, connection 25s, generation-flow 23s, generate-configuration 17s, Scripts 46-95s.
+- 373 of 399 non-Scripts states take 0.36s or less (144s in total); 15 states over 2s take 70s, mostly gallery pager/buffer, trash and refresh-recovery waits.
+- Per-process startup cost is not yet recorded; the first implementation step adds a "ready after Ns" line per shard.
+
 ### Shared process orchestration
 
-- Keep the existing renderer as an internal single-worker execution path; a parent orchestrates isolated Qt child processes and merges progress/results.
-- Default to at most two workers locally, with a configurable limit; Actions can explicitly select three. Performance must be measured rather than promised.
-- Group work by isolated category/fixture ownership, not arbitrary individual states. Avoid unnecessary processes for one small selection and prevent recursive worker spawning.
-- Give each worker isolated temporary application state, logs and output staging. Preflight disjoint final filenames; avoid shared mutable fixture state and simultaneous writes to the same output.
-- Parent handles worker crashes/timeouts, cancellation and draining, partial manifests, missing outputs and stable final summaries. A failed worker must not be reported as a completed category.
-- Replace Actions' separate xargs orchestration with the shared entry point. Reconcile the current two-minute step deadline with its 300-second subprocess deadline; leave cleanup/reporting time beyond worker deadlines.
+- Shard by process, not by thread or window: Qt widgets need one `QApplication` main thread, so parallelism is several `render_states.py` workers, each with its own windows, temp state directory, in-memory credentials, fake cloud and gate. This also removes the shared `cloud`/`scenario`/`gate` closure coupling between windows.
+- A shard is a window group: (1) main window generation flow (`generate`, `images-01`, `images-28..30`, `queues-01`; serial); (2) main window queue, shell, inpaint, logs; (3) workspace connection (changes credentials, one ordered process); (4) workspace generate-configuration; (5) workspace queues read-views; (6) workspace gallery-composition, split in two if its states are independent; (7) splash and the one-shot image windows; (8) Scripts. Whether workspace fixtures (3-6) depend on credentials or queues left by an earlier one is unverified and must be read from the code before splitting.
+- The shard map lives in the catalog (a `shard` field next to `fixture`) so selection, levels and orchestration read one source. Wall time becomes the slowest shard (gallery-composition, about 57s) instead of the sum, provided cores are free.
+- A small launcher reads the catalog, plans shards after level/selector filtering, starts them longest first as subprocesses with `--jobs` workers (auto = cores minus one, capped at 4; 1 keeps today's single-process behaviour), gives each its own `--report-key`, output staging and temp state, then merges the manifests and prints the final summary in journey order. Console lines stay labelled `[category/sub] n/N id duration` as completion happens, with the shard name added when several run.
+- Single-state and single-shard selections run in one process with no launcher; workers never spawn workers.
+- Offscreen remains the default platform, including on Windows, so concurrent workers do not fight for focus.
+- Parent handles worker crashes/timeouts, cancellation, partial manifests and missing outputs; a failed worker is never reported as a completed category. Preflight disjoint final filenames. Replace Actions' separate xargs orchestration with the same entry point and reconcile its two-minute step deadline with the 300-second subprocess deadline.
+- Parallel gain depends on the core count of the machine, which is unknown for the owner's Windows PC; do not promise a speedup. Within a shard, trim fixed `wait_for` settle delays on the 15 slow states and skip the generation flow when only `queues-01` is selected.
 
 ### Change-based Actions selection
 
@@ -48,11 +65,12 @@ The owner reported 456 screenshots in 286 seconds after PR #225's fixture repair
 
 ## Implementation sequence
 
-1. Inventory all registered/implicit states and fixture dependencies; establish the registry and listing/selection without changing screenshot content.
-2. Make selection gate fixture construction and saving, and make immediate progress/manifest reporting consistent across existing groups.
-3. Add bounded parent/worker orchestration and lifecycle handling; verify parity with sequential rendering.
-4. Add conservative diff mapping, explainable selection and overrides; migrate Actions to the shared orchestrator and align deadlines.
-5. Update `tools/ui/README.md` and the development guide with actual commands and evidence; update release/status notes only when implementation changes their scope.
+1. Done on the PR branch: registry, selection, immediate reporting, single-pass run, window phases. Superseded in step 3: in-process window sequencing.
+2. Add `level` and `shard` fields to the catalog and the `-f/-m/-s` flag (default `-f`); propose the f/m split for review. No screenshot content changes.
+3. Launcher and manifest merge with Scripts and the splash/image windows split off first (no shared state); add per-shard "ready after" timings. Owner renders and compares to the single-process baseline.
+4. Verify workspace fixture independence from the code, then split connection, generate-configuration, queues and gallery-composition shards; split the main window flow from the rest.
+5. Trim the 15 slow states; align Actions with the launcher and manifests (its summary step still parses the old log line), keep a full `-s` path.
+6. Change-based Actions selection (below), then docs: `tools/ui/README.md`, `AGENTS.md`, development guide, only after the owner validates.
 
 ## Verification gates, not results
 
@@ -60,4 +78,4 @@ Use static syntax/configuration checks and bounded offline fixtures for selectio
 
 ## Pending implementation decisions
 
-Finalize registry location/schema, group granularity, actual CLI spellings, worker event transport, default worker deadlines, manifest/log retention and exact changed-path mappings after inspecting current code. The design above does not introduce any executable API or new production workflow engine.
+Open: the first `f`/`m` state split (owner review by eye); `shard` names and whether gallery-composition splits; worker event transport (stdout lines vs per-shard manifest files); default deadlines; exact changed-path mappings. The design introduces no new production workflow engine.
