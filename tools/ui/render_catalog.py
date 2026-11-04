@@ -135,7 +135,7 @@ def parse_inputs(root, argv=None):
         "--jobs",
         type=int,
         default=0,
-        help="Worker processes at once (default: cores minus one, at most 4; 1 = one process)",
+        help="Worker processes at once (default: one per core, 2 to 4; 1 = one process)",
     )
     parser.add_argument("--worker", choices=WORKER_ORDER, help=argparse.SUPPRESS)
     levels = parser.add_mutually_exclusive_group()
@@ -177,7 +177,7 @@ def parse_inputs(root, argv=None):
     if args.level != "s":
         args.report_key += f"-{args.level}"
     # The parent plans workers from the whole selection; a worker's own selection is already narrowed to its group.
-    args.jobs = args.jobs if args.jobs > 0 else max(1, min(4, (os.cpu_count() or 2) - 1))
+    args.jobs = args.jobs if args.jobs > 0 else max(2, min(4, os.cpu_count() or 2))
     present = {worker_of(state.fixture) for state in args.selection.states}
     args.workers = [name for name in WORKER_ORDER if name in present] if args.worker is None and not args.list else []
     if args.jobs == 1 or len(args.workers) < 2:
