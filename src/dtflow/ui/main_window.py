@@ -45,17 +45,21 @@ from dtflow.persistence.original_io import (
 from dtflow.services.cache_management import CATEGORIES, cache_usage, purge_cache
 from dtflow.services.catalogue import Catalogue, import_user_loras
 from dtflow.services.connection import Presentation, check_connection, present_failure, present_status
+from dtflow.services.cloud_usage import key_identity
 from dtflow.services.credentials import (
+    EnvironmentCredentials,
     OptionalSavedCredentials,
     SavedCredentials,
     SecureStorageUnavailable,
     credential_status,
+    resolve_credentials,
 )
 from dtflow.services.presets import export_presets, import_presets, load_presets
 from dtflow.ui.activity import Activity
 from dtflow.ui.activity_strip import ActivityStrip
 from dtflow.ui.brand import connection_icon, status_dot
 from dtflow.ui.button_focus import KeyboardFocusGuard
+from dtflow.ui.cloud_usage_panel import CloudUsagePanel
 from dtflow.ui.gallery_page import GalleryPage
 from dtflow.ui.generation_page import GenerationPage
 from dtflow.ui.image_export_panel import ImageExportPanel
@@ -525,6 +529,10 @@ class MainWindow:
         self.generation.sync_backend()
         startup.mark("backend and restored catalogue applied")
         self.refresh_credentials(background=True)
+        self.cloud_usage = CloudUsagePanel(
+            form, self.runner, self.state_dir, active_credential=self._active_credential_id
+        )
+        self.activity.listen(self._usage_activity_changed)
         self.refresh_custom_loras(background=True)
         self.refresh_presets(background=True)
         self._workspace_changed(0)
@@ -726,6 +734,7 @@ class MainWindow:
             self.inline.dismiss()
         if index == 0:
             self.refresh_cache()
+            self.cloud_usage.refresh()
         for stack in (self.shell.leftStack, self.shell.centerStack, self.shell.rightStack):
             stack.setCurrentIndex(index)
         if index == 1 and self._scripts_active:
@@ -1068,6 +1077,18 @@ class MainWindow:
         button.style().unpolish(button)
         button.style().polish(button)
 
+    async def _active_credential_id(self) -> str | None:
+        """Opaque identity of the key cloud work would use now; a local read, no provider call."""
+        try:
+            credential = await resolve_credentials(EnvironmentCredentials(self._environ), self._optional_saved)
+        except BackendError:
+            return None
+        return key_identity(credential.secret)[0]
+
+    def _usage_activity_changed(self) -> None:
+        if self.form.workspaceStack.currentWidget() is self.form.connectionPage:
+            self.cloud_usage.schedule_refresh()
+
     def _read_summary(self, key, read, apply) -> None:
         """Optional startup reads cannot block painting or replace a newer explicit refresh."""
         token = self._summary_reads[key] = object()
@@ -1087,6 +1108,8 @@ class MainWindow:
             return
         self.form.keyEdit.clear()
         self._credentials_read(credential_status(self._environ, self._saved), None)
+        if getattr(self, "cloud_usage", None) is not None:
+            self.cloud_usage.schedule_refresh()  # the active-key mark follows a saved or removed key
 
     def _credentials_read(self, status, error) -> None:
         if error is not None:

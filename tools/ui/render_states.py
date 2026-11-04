@@ -364,6 +364,7 @@ def render_workspace_states(app, state, out):
                 snap("connection-05-storage-unavailable", "Secure storage is unavailable", False)
             render_connection_outcomes(shell, out)
             render_connection_management(shell, out)
+            render_connection_usage_states(shell, out)
         if wants("generate"):
             render_generate_configuration_states(shell, out)
         if wants("queues"):
@@ -530,7 +531,7 @@ def render_connection_management(shell, out):
             CacheCategory("derived", 3, 8192),
         )
         shell._cache_measured(usage, None)
-        assert "Inventory" in form.cacheStatusLabel.text() and "Derived" in form.cacheStatusLabel.text()
+        assert "Models" in form.cacheStatusLabel.text() and "Derived" in form.cacheStatusLabel.text()
         snap("connection-20-cache-measured")
         shell._cache_measured(None, OSError("Offline fixture"))
         assert "unavailable" in form.cacheStatusLabel.text()
@@ -694,6 +695,93 @@ def render_connection_management(shell, out):
             assert form.statusCard.property("state") == "warning"
             snap("connection-44-recheck-after-context-change")
             latest(None, None)
+
+
+def render_connection_usage_states(shell, out):
+    """Local completed-image counters from synthetic records; no database, provider or generation work."""
+    from datetime import UTC, datetime, timedelta
+
+    from dtflow.services.cloud_usage import UsageRecord
+
+    form, panel = shell.form, shell.cloud_usage
+    panel._clock = lambda: datetime(2026, 11, 4, 12, 0, tzinfo=UTC)
+    form.workspaceStack.setCurrentWidget(form.connectionPage)
+    QTest.qWait(100)
+    panel._token = object()  # discard any in-flight fixture read; only synthetic records are rendered
+    panel._loaded, panel._error = True, False
+    # 23:30 UTC on 3 Nov is 00:30 on 4 Nov in Paris, 09:30 on 4 Nov at UTC+10, and 13:30 on 3 Nov at UTC-10.
+    base = datetime(2026, 11, 3, 23, 30, tzinfo=UTC)
+
+    def records(counts, *, hint, ident, shift=0):
+        return tuple(UsageRecord(base + timedelta(minutes=shift + n), 1, ident, hint) for n in range(counts))
+
+    def zone(name):
+        form.usageTimezoneCombo.setCurrentIndex(form.usageTimezoneCombo.findData(name))
+        QTest.qWait(50)
+
+    def snap(name):
+        form.connectionWorkspaceScroll.ensureWidgetVisible(form.usageBox)
+        QTest.qWait(80)
+        save(form, out, name)
+
+    zone("Europe/Paris")
+    panel._records, panel._active = (), None
+    panel.render()
+    snap("connection-45-usage-empty")
+
+    mixed = (
+        records(412, hint="4F8K", ident="a" * 32)
+        + records(503, hint="Q2ZM", ident="b" * 32, shift=1)
+        + records(12, hint="7TNB", ident="c" * 32, shift=2)
+    )
+    panel._records, panel._active = mixed, "a" * 32
+    panel.render()
+    assert [k.level for k in panel.counts.keys] == ["warn", "over", "ok"] or panel.counts.keys[0].active
+    snap("connection-46-usage-per-key-thresholds")
+
+    edges = records(400, hint="EDGE", ident="d" * 32) + records(500, hint="LIMT", ident="e" * 32, shift=1)
+    panel._records, panel._active = edges, None
+    panel.render()
+    assert {k.level for k in panel.counts.keys} == {"ok", "over"}
+    snap("connection-47-usage-threshold-edges")
+
+    panel._records, panel._active = mixed, "a" * 32
+    zone("Etc/GMT-10")
+    assert panel.counts.keys, "the same records belong to 4 Nov at UTC+10"
+    snap("connection-48-usage-timezone-utc-plus-10")
+    zone("Etc/GMT+10")
+    assert not panel.counts.keys
+    snap("connection-49-usage-timezone-utc-minus-10-empty")
+    zone("Europe/Paris")
+
+    ambiguous = (
+        records(5, hint="4F8K", ident="f" * 32)
+        + records(7, hint="4F8K", ident="1" * 32, shift=10)
+        + records(3, hint=None, ident="2" * 32, shift=20)
+        + tuple(UsageRecord(base + timedelta(minutes=30 + n), 1, None, None) for n in range(9))
+    )
+    panel._records, panel._active = ambiguous, None
+    panel.render()
+    assert len({k.label for k in panel.counts.keys}) == 3
+    snap("connection-50-usage-collision-unidentified-unattributed")
+
+    panel._error = True
+    panel._records = ()
+    panel.render()
+    snap("connection-51-usage-unreadable")
+    panel._error = False
+    panel._loaded = False
+    panel.render()
+    snap("connection-52-usage-reading")
+    panel._loaded = True
+    panel._records, panel._active = mixed, "a" * 32
+    panel.render()
+    old = form.size()
+    form.resize(900, 1000)
+    QTest.qWait(80)
+    snap("connection-53-usage-narrow")
+    form.resize(old)
+    QTest.qWait(50)
 
 
 def render_generate_configuration_states(shell, out):

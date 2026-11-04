@@ -67,6 +67,11 @@ class DirectCloudBackend(DrawThingsBackend):
     def scope(self) -> str:
         return self._auth.scope
 
+    @property
+    def credential_usage(self) -> tuple[str, str | None] | None:
+        """Opaque identity of the key that authorized this client's generations, for local usage attribution."""
+        return self._auth.key_identity
+
     async def negotiate_asset(self, content: AssetContent) -> AssetNegotiation:
         """Metadata-only BYOM negotiation for one converted LoRA; never transfers bytes."""
         return await negotiate_lora_asset(self._auth, content)

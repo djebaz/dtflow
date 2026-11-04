@@ -1361,6 +1361,12 @@ QWidget#GalleryDetailPage QLabel[textRole="supporting"] {
   font-size: ${type.small};
   font-weight: ${type.weightBody};
 }
+QFrame[role="usageRow"] {
+  background: ${color.itemSurface};
+  border-radius: ${size.radiusSm};
+}
+QFrame[role="usageRow"] QLabel { background: transparent; }
+QLabel#usageCount { font-size: ${type.section}; }
 QLabel[textRole="section"] {
   font-size: ${type.section};
   font-weight: ${type.weightEmphasis};

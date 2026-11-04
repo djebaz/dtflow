@@ -27,7 +27,16 @@ from dtflow.persistence.queues import QUEUE_SCHEMA, QueueMixin, add_kind, add_up
 
 # 1: attempts only. 2: queues. 3: request v2. 4: up next. 5: script kind. 6: script child slots.
 # A supported older writer open backs up, then migrates/reconciles transactionally.
-SCHEMA_VERSION = 6
+SCHEMA_VERSION = 7
+
+
+# Schema 7: a credential-free, per-attempt attribution of cloud output to an opaque key identity. Completion time is
+# the attempt's existing ``updated_at_utc`` at its ``succeeded`` transition; no second timestamp is kept.
+CLOUD_USAGE_SCHEMA = """CREATE TABLE IF NOT EXISTS cloud_usage (
+    attempt_id TEXT PRIMARY KEY REFERENCES attempts(attempt_id),
+    credential_id TEXT NOT NULL,
+    key_hint TEXT
+)"""
 
 
 class PersistenceError(RuntimeError):
@@ -130,7 +139,7 @@ class SQLiteAttempts(QueueMixin):
             connection.execute("PRAGMA synchronous=FULL")
             connection.execute("PRAGMA foreign_keys=ON")
             connection.execute("PRAGMA busy_timeout=2000")
-            if version in (1, 2, 3, 4, 5):
+            if version in (1, 2, 3, 4, 5, 6):
                 # A fresh consistent backup for each migration attempt; never rely
                 # on an old/partial backup left by a previously failed upgrade.
                 copy = self.directory / f"attempts.pre-v{SCHEMA_VERSION}-from-v{version}-{uuid4().hex}.sqlite3"
@@ -157,6 +166,7 @@ class SQLiteAttempts(QueueMixin):
                     connection.execute(statement)
                 add_up_next(connection)
                 add_kind(connection)
+                connection.execute(CLOUD_USAGE_SCHEMA)
                 if version in (1, 2):
                     self._migrate_requests(connection)
                 connection.execute(f"PRAGMA user_version={SCHEMA_VERSION}")
@@ -248,6 +258,17 @@ class SQLiteAttempts(QueueMixin):
                     None,
                     "[]",
                 ),
+            )
+
+    async def record_credential(self, attempt_id: str, credential_id: str, key_hint: str | None) -> None:
+        """Attribute one attempt to an opaque credential identity; never the credential itself."""
+        await self._run(self._record_credential, attempt_id, credential_id, key_hint)
+
+    def _record_credential(self, attempt_id, credential_id, key_hint) -> None:
+        with self._db() as db:
+            db.execute(
+                "INSERT OR IGNORE INTO cloud_usage (attempt_id, credential_id, key_hint) VALUES (?,?,?)",
+                (attempt_id, credential_id, key_hint),
             )
 
     async def transition(

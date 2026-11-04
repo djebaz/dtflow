@@ -106,6 +106,21 @@ class GenerationService:
                 )
             ) from exc
 
+    async def _attribute_credential(self, attempt_id: str) -> None:
+        """Record which opaque key identity produced this saved output (cloud only); best effort, never a failure.
+
+        The identity is a digest plus a short hint, never the credential. Missing attribution is disclosed by the
+        usage display as unattributed rather than guessed.
+        """
+        usage = getattr(self.backend, "credential_usage", None)
+        record = getattr(self.store, "record_credential", None)
+        if usage is None or record is None:
+            return
+        try:
+            await record(attempt_id, usage[0], usage[1])
+        except Exception:
+            log.warning("Cloud key attribution could not be recorded.", exc_info=False)
+
     async def check_connection(self):
         return await self._bounded(
             self.backend.check_connection(), self.timeouts.connect + self.timeouts.inventory, "connectivity"
@@ -333,6 +348,7 @@ class GenerationService:
                 saved = await settle(asyncio.to_thread(commit_originals))
                 paths, metadata = saved[:2]
                 display_image = saved[2] if image_operation else None
+            await self._attribute_credential(attempt_id)
             await self.store.transition(
                 attempt_id, ("saving",), "succeeded", stage, outcome, artifacts=(*paths, metadata)
             )

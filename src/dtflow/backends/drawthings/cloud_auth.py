@@ -18,6 +18,7 @@ import httpx
 from dtflow.backends.drawthings.errors import api_error, diagnostics, error
 from dtflow.core.models import BackendError, CredentialProvider, ErrorCategory, ValidationError
 from dtflow.diagnostics import api_error_data, event
+from dtflow.services.cloud_usage import key_identity
 
 log = logging.getLogger(__name__)
 
@@ -109,6 +110,7 @@ class CloudAuth:
             timeout=httpx.Timeout(30.0, connect=10.0, pool=10.0),
         )
         self._key: str | None = None
+        self._identity: tuple[str, str | None] | None = None
         self._token: str | None = None
         self._expires = 0.0
         self._margin = 0.0
@@ -125,6 +127,11 @@ class CloudAuth:
     def scope(self) -> str:
         """Opaque identity of this client's credential/origin scope; carries nothing derived from the credential."""
         return self._scope
+
+    @property
+    def key_identity(self) -> tuple[str, str | None] | None:
+        """Opaque credential identity and optional four-character hint once the key was resolved; never the key."""
+        return self._identity
 
     async def token(self) -> str:
         if self._closed:
@@ -160,6 +167,7 @@ class CloudAuth:
             if credential is None or not credential.secret.strip():
                 raise error(ErrorCategory.AUTHENTICATION, "missing_cloud_credentials", "Cloud API key is missing.")
             self._key = credential.secret.strip()
+            self._identity = key_identity(self._key)
         started = self._clock()
         reply = await self._post("/sdk/token", {"apiKey": self._key, "appCheckType": "none", "appCheckToken": None})
         try:
