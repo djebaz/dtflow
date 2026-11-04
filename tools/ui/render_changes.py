@@ -1,4 +1,4 @@
-"""Choose which UI render groups a pull request needs (no Qt, standard library only).
+"""Choose UI render representatives for a pull request (no Qt, standard library only).
 
     python tools/ui/render_changes.py --base origin/main --head HEAD [--force-all] [--json OUT]
 
@@ -37,6 +37,23 @@ def load_rules(path=RULES):
     return [(rule, [glob_regex(p) for p in rule["paths"]]) for rule in rules]
 
 
+def load_coverage(catalog):
+    coverage = json.loads(COVERAGE.read_text(encoding="utf-8"))
+    if coverage.get("schema_version") != 1:
+        raise ValueError("Unsupported render coverage schema")
+    packs = coverage["packs"]
+    known = {state["id"] for state in catalog}
+    for name, states in packs.items():
+        if not states or len(states) != len(set(states)) or set(states) - known:
+            raise ValueError(f"Invalid representative pack: {name}")
+    if "shared" not in packs:
+        raise ValueError("Missing shared fallback pack")
+    for component in coverage["components"]:
+        if component["pack"] not in packs or not component["paths"] or not component["why"]:
+            raise ValueError("Invalid component mapping")
+    return coverage
+
+
 def changed_paths(base, head):
     merge_base = subprocess.run(
         ["git", "merge-base", base, head], cwd=ROOT, capture_output=True, text=True, check=True
@@ -54,17 +71,14 @@ def changed_paths(base, head):
 
 def representative_plan(changed, rules, coverage, catalog):
     """Resolve first-match component rules, then page sampling; preserve catalogue order."""
-    selected, reasons, warnings = set(), [], []
+    selected, selected_packs, reasons, warnings = set(), set(), [], []
     components = [(rule, [glob_regex(p) for p in rule["paths"]]) for rule in coverage["components"]]
     packs = coverage["packs"]
-    known = {state["id"] for state in catalog}
-    for name, states in packs.items():
-        if not states or set(states) - known:
-            raise ValueError(f"Invalid representative pack: {name}")
     for path in changed:
         component = next((r for r, patterns in components if any(p.match(path) for p in patterns)), None)
         if component:
             selected.update(packs[component["pack"]])
+            selected_packs.add(component["pack"])
             reasons.append(f"{path}: {component['why']} -> {component['pack']}")
             if component.get("gap"):
                 warnings.append(f"{path}: {component['gap']}")
@@ -77,10 +91,16 @@ def representative_plan(changed, rules, coverage, catalog):
         names = [f"page.{category}" for category in categories] or ["shared"]
         for name in names:
             selected.update(packs[name])
-        warning = f"{path}: scope not mapped; sampling {', '.join(names)}"
+            selected_packs.add(name)
+        warning = f"{path}: no component mapping; sampling {', '.join(names)}"
         reasons.append(warning)
         warnings.append(warning)
-    return [state["id"] for state in catalog if state["id"] in selected], reasons, warnings
+    return (
+        [state["id"] for state in catalog if state["id"] in selected],
+        [name for name in packs if name in selected_packs],
+        reasons,
+        warnings,
+    )
 
 
 def plan(base, head, force_all=False):
@@ -88,8 +108,8 @@ def plan(base, head, force_all=False):
     if force_all:
         result["reasons"].append("force-all requested")
         return result
-    coverage = json.loads(COVERAGE.read_text(encoding="utf-8"))
     catalog = json.loads(CATALOG.read_text(encoding="utf-8"))["states"]
+    coverage = load_coverage(catalog)
     try:
         merge_base, changed = changed_paths(base, head)
     except (subprocess.CalledProcessError, OSError) as error:
@@ -97,12 +117,14 @@ def plan(base, head, force_all=False):
         warning = f"could not compute the diff against {base} ({error}); sampling shared pack"
         result["warnings"].append(warning)
         states = coverage["packs"]["shared"]
+        selected_packs = ["shared"]
         reasons = [warning]
     else:
-        states, reasons, warnings = representative_plan(changed, load_rules(), coverage, catalog)
+        states, selected_packs, reasons, warnings = representative_plan(changed, load_rules(), coverage, catalog)
         result["warnings"].extend(warnings)
     result.update(changed=changed, merge_base=merge_base, reasons=reasons)
     result["coverage_complete"] = not result["warnings"]
+    result["packs"] = selected_packs
     if states:
         result.update(
             mode="representatives", states=states, args=[arg for state in states for arg in ("--state", state)]
@@ -112,6 +134,10 @@ def plan(base, head, force_all=False):
         # Keep the existing cheap startup smoke for docs-only/non-render changes.
         result.update(mode="fast", states=[], args=["-f"])
         result["reasons"].append("no screenshot-impacting paths; rendering the fast level")
+    selected_ids = set(states) if states else {state["id"] for state in catalog if state["level"] == "f"}
+    selected_rows = [state for state in catalog if state["id"] in selected_ids]
+    result["states"] = [state["id"] for state in selected_rows]
+    result["fixtures"] = list(dict.fromkeys(state["fixture"] for state in selected_rows))
     return result
 
 
@@ -123,7 +149,15 @@ def main(argv=None):
     parser.add_argument("--json", help="Write the plan to this file")
     args = parser.parse_args(argv)
     result = plan(args.base, args.head, args.force_all)
-    print(f"Render selection: {result['mode']} ({' '.join(result['args'])})")
+    if result["mode"] == "full":
+        print("Render selection: full (-s, explicit exhaustive override)")
+    else:
+        print(
+            f"Render selection: {result['mode']}; {len(result['states'])} screenshots, "
+            f"{len(result['fixtures'])} prerequisite fixture groups"
+        )
+        if result["packs"]:
+            print(f"  Packs: {', '.join(result['packs'])}")
     for line in result["reasons"]:
         print(f"  {line}")
     for warning in result["warnings"]:

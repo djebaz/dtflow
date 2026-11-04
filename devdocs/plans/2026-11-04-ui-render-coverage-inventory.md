@@ -48,7 +48,7 @@ The following are candidate coverage families. A row lists distinct possible req
 | Shared export card | `ui/image_export_panel.py`, `forms/main_window.ui::imageExportBox`; `MainWindow._place_export_panel()` moves the same card between Connection and Images | `connection-28-export-idle` for the normal card; `images-54-export-panel-checked` for Images mounting; `images-53-export-panel-empty-scope` for scope gating | Mounting/scroll width, hidden scope controls, checked-image requirements or navigation changes. A shared control-style edit normally needs one card instance, not every export outcome. |
 | Export progress/results | Shared export controller feeds the activity strip; card and status presentation are separate coverage | `connection-30-export-progress`; `connection-33-export-partial`; `images-55-export-panel-running` | Select a changed result/progress variant. Add Images only for its mounting/selection interaction, not because the same export worker runs there. |
 | Usage table and shared bottom count | `ui/cloud_usage_panel.py`; table in Connection and a count pill in the main window's bottom bar | `connection-46-usage-per-key-thresholds` for table levels; `connection-54-bottom-bar-count-amber` for the pill; `connection-55-bottom-bar-count-generate` for cross-page mounting | Table row layout versus pill projection, color thresholds, timezone text or unidentified key state changes. A table-only edit should not select every page with the pill. |
-| Main-window shell, rails and resizing | `ui/main_window.py`, `forms/main_window.ui`, `forms/workspace_shell.ui`; multiple page layouts | Candidate cross-layout samples: `generate-20-local-controls`, `queues-50-inspector-minimum-width`, `scripts_form_default`, `images-105-pager-default-20-first-batch`, `logs-15-shared-header-aligned` | Select the impacted layout class or object subtree. A page-specific object in `main_window.ui` is not a reason to select unrelated pages. Whole-shell layout changes need a small cross-layout pack, not all states. |
+| Main-window shell, rails and resizing | `ui/main_window.py`, `forms/main_window.ui`, `forms/workspace_shell.ui`; multiple page layouts | Candidate cross-layout samples: `generate-20-local-controls`, `queues-50-inspector-minimum-width`, `scripts_form_default`, `images-105-pager-default-20-first-batch`, `logs-15-shared-header-aligned` | Broad shared files use the small shared pack, not all states. Do not infer changed object subtrees automatically; add a specific file mapping only when repeated unnecessary renders justify it. |
 | Inspector integration | Generate/Queue inspector seams and Scripts' dedicated inspector/drawer | `generate-50-inspector-after-queues`; `queues-50-inspector-minimum-width`; `scripts_narrow_details` | Hidden-page width leakage, rail minimum, long content or drawer behavior changes. Scripts' drawer is not equivalent to the ordinary rail. |
 | Shared preview/canvas base | `ui/image_preview.py::ImagePreview`; Generate result and `ui/inpaint_canvas.py::InpaintCanvas` | `generate-02-portrait` for image placement; `generate-05-zoom` for zoom presentation; `inpaint-03-mask-painted` for the subclass overlay | Base viewport change may need the mask subclass once. Inpaint-only brush/mask behavior should not force gallery or Generate examples. Gallery has its own presentation code, so it is not automatically covered by this base. |
 | Queue thumbnail preview | `ui/queue_thumbnails.py`, including `HoverPreview`; used by the Queue item view | `queues-64-item-table-thumbnail-preview`; `queues-70-thumbnail-preview-revalidation-pending` | Popup placement, stale/absent image state or origin-row integration changes. A gallery thumbnail's similar pixels do not prove identical widget ownership or mounting. |
@@ -86,9 +86,9 @@ Keep fallback packs as named state lists, not a second speed level. `-f` remains
 
 ## Proposed inventory record shape for the next implementation step
 
-Each component needs: stable component ID; owning source paths and, where needed, function/UI-object scope; direct consumers; visual variant requirements; representative state IDs; optional mounting representatives; prerequisite fixture IDs; confidence/evidence; and known gaps. Keep component appearance and consumer mounting separate so the planner can deduplicate the former without discarding the latter.
+Each component needs: stable component ID; owning source paths; direct consumers; visual variant requirements; representative state IDs; optional mounting representatives; prerequisite fixture IDs; confidence/evidence; and known gaps. Function/object names may document source ownership, but are not automatic selection rules. Keep component appearance and consumer mounting separate so the planner can deduplicate the former without discarding the latter.
 
-For broad files such as `main_window.py`, `main_window.ui` and the QSS, a single file-level category rule is too coarse. Record source scopes such as `_place_export_panel`, `usageTimezoneCombo` and `imageExportBox` so a later conservative diff reader can identify the relevant family. If it cannot identify the scope safely, expose that uncertainty; do not claim a narrow selection is complete.
+**Owner-approved simplification:** keep file-to-component packs for focused files, file-to-page packs for page controllers/forms, and the eight-state shared pack for broad shared files such as `main_window.py`, `main_window.ui` and the QSS. Do not build automatic function/object/QSS-selector diff analysis. Add or refine a specific file mapping only when repeated unnecessary renders justify it. Preserve deduplication, coverage-incomplete warnings and the exhaustive `render-all` override.
 
 ## Owner-approved selection policy
 
@@ -96,25 +96,25 @@ For broad files such as `main_window.py`, `main_window.ui` and the QSS, a single
 - **Shared styles/tokens:** select affected components first when reliably identifiable; use the small shared pack for broad or uncertain impact. Retain distinct mount/layout/interaction variants, not every identical consumer.
 - **Labels:** `render` requests mapped selection. Adding `render-all` immediately requests every state, independently of whether `render` is present. Do not enable rendering on unlabelled PRs by default.
 
-These decisions supersede the earlier full-render fallback design. The first path-level implementation follows them; complete scoped mapping and representative completeness are not established.
+These decisions supersede the earlier full-render fallback design. The path-level implementation follows them; representative completeness is not established, and automatic sub-file scope analysis is out of scope.
 
 ## Follow-up implementation checklist
 
-PR #226 is squash-merged as `00d49dd`; its working renderer is the baseline for this separate follow-up. PR #227 now implements the first path-level selection slice: 15 named packs, seven component rules, catalogue-ordered exact-state deduplication, page/shared sampling with coverage warnings, and independent `render-all` triggering. Page packs start from existing fast states and remain review candidates. Function/UI-object/QSS scope mapping and complete component inventory remain pending; this is not full fine-grained coverage.
+PR #226 is squash-merged as `00d49dd`; its working renderer is the baseline for this separate follow-up. PR #227 implements file-level selection: 37 named packs, 30 component rules, catalogue-ordered exact-state deduplication, page/shared sampling with coverage warnings, and independent `render-all` triggering. All inventory families above have file-level representatives or the documented shared/page fallback. The eight page packs use two to four states each, including populated content and relevant layout variants. Source/fixture review is complete for this inventory slice; owner visual review and Actions acceptance of the final head remain separate. Automatic function/UI-object/QSS scope mapping is explicitly out of scope.
 
-- [ ] Complete the component/variant inventory and review representative boundaries.
-- [ ] Finish encoding coverage families and source scopes; the first seven path-level component rules and named representative packs are tracked separately from fixture prerequisites in `render_coverage.json`.
-- [ ] Resolve changed scopes to deduplicated state selections; retain distinct mounting/layout branches and explain selection reasons.
-- [ ] Use a small representative pack for broad shared appearance changes rather than every consumer page.
+- [x] Complete the source-level component/variant inventory and representative boundaries for the listed families; visual equivalence remains owner review.
+- [x] Encode file-to-component/page coverage families: 30 file-level rules and 37 packs are tracked separately from fixture prerequisites in `render_coverage.json`.
+- [x] Resolve changed paths to deduplicated state selections with mapping reasons; retain distinct mounting/layout representatives where mapped (source implemented; Actions acceptance pending).
+- [x] Use the eight-state shared pack for broad shared files rather than every consumer page, including theme helpers and the shared workspace form.
 - [x] Preserve category fast defaults, explicit levels/manual selectors and the exhaustive `render-all` override; ensure adding `render-all` triggers rendering immediately (source implemented; Actions acceptance pending).
 - [x] Resolve the unknown-change fallback with the owner: affected-page representatives, or the small shared pack when the page is unknown, with a prominent coverage-incomplete warning.
-- [ ] Update Action summaries and selection documentation; review static selection output without adding or running unit tests. Run renders only when explicitly requested.
+- [x] Update Action summaries and selection documentation with pack names, distinct screenshot counts, fixture setup counts and exact state lists. No unit tests added/run; renders remain owner-requested only.
 
-## Remaining inventory work
+## Remaining acceptance and maintenance
 
 - Owner-review the proposed equivalence boundaries and representative IDs above, starting with search, export and activity presentation.
-- Catalogue remaining page-specific controls and narrow/layout exceptions; identify which existing states actually expose each component rather than relying on filenames.
-- Record exact QSS selectors/token consumers and broad-form object subtrees before implementing scoped diff rules.
-- Translate the agreed inventory into tracked component/variant requirements and exact-state selection, replacing the current category-only rules. Keep `render-all` separate.
+- Review the populated page samples and narrow/layout representatives visually; static source mapping is not screenshot acceptance.
+- Review whether repeated unnecessary renders justify any additional specific file mappings; keep broad shared files on the small shared pack without sub-file diff analysis.
+- Verify final-head Action selection, artifacts and label behavior; the earlier `7ce4e4c` render run passed, but that evidence does not cover later changes.
 
 **Delivery boundary:** the first selection slice changes developer renderer selection metadata/planning and the Action trigger, not application runtime behavior. No unit tests added/run and no screenshots produced. Static checks do not establish Action execution, screenshot equivalence or native acceptance.

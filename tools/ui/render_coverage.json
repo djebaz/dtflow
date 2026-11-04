@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "comment": "First slice: exact-path component samples and named fallback packs. Page packs snapshot existing fast states, not exhaustive page coverage. Function/UI-object/QSS scope mapping remains pending.",
+  "comment": "File-level component packs and small page/shared fallback samples. Packs start from fast states but include necessary populated/variant states outside -f. No automatic function, object or QSS-selector diff analysis. First matching component rule wins, then fallback page ownership. Samples are not exhaustive acceptance evidence.",
   "packs": {
     "shared": [
       "generate-21-checkpoint-editor",
@@ -13,37 +13,45 @@
       "images-08-permanent-confirmation"
     ],
     "page.shell": [
-      "shell-01-about"
+      "shell-01-about",
+      "shell-08-overlay-several-rows",
+      "shell-22-activity-queued-width-240"
     ],
     "page.connection": [
       "connection-01-local-idle",
+      "connection-07-connected",
       "connection-28-export-idle",
-      "connection-45-usage-empty",
-      "connection-07-connected"
+      "connection-46-usage-per-key-thresholds"
     ],
     "page.generate": [
-      "generate-21-checkpoint-editor",
+      "generate-20-local-controls",
+      "generate-02-portrait",
       "generate-47-compute-units-meter"
     ],
     "page.inpaint": [
-      "inpaint-01-empty"
+      "inpaint-03-mask-painted",
+      "inpaint-13-select-people-found"
     ],
     "page.queues": [
-      "queues-01-empty",
-      "queues-33-elapsed-eta"
+      "queues-11-running",
+      "queues-60-item-table",
+      "queues-38-composer-cross"
     ],
     "page.scripts": [
-      "scripts_empty",
-      "scripts_live_configure",
+      "scripts_imported_supported",
+      "scripts_form_default",
+      "scripts_results",
       "scripts_narrow"
     ],
     "page.images": [
-      "images-53-export-panel-empty-scope",
-      "images-72-pager-empty",
-      "images-66-pager-grid-fullscreen"
+      "images-105-pager-default-20-first-batch",
+      "images-67-pager-list-normal",
+      "images-05-mapped-detail-metadata"
     ],
     "page.logs": [
-      "logs-01-empty"
+      "logs-02-mixed-severity",
+      "logs-03-details",
+      "logs-16-narrow-header-900"
     ],
     "search": [
       "generate-21-checkpoint-editor",
@@ -51,25 +59,141 @@
       "generate-23-custom-checkpoint-editor"
     ],
     "lora-editor": [
-      "generate-24-lora-selection-editor"
+      "generate-24-lora-selection-editor",
+      "generate-25-lora-selection-single",
+      "queues-43a-composer-lora-weights-editor"
     ],
     "export-hosts": [
       "connection-28-export-idle",
+      "images-54-export-panel-checked",
       "images-53-export-panel-empty-scope",
-      "images-54-export-panel-checked"
+      "connection-30-export-progress",
+      "connection-33-export-partial"
     ],
     "usage": [
       "connection-46-usage-per-key-thresholds",
-      "connection-54-bottom-bar-count-amber"
+      "connection-54-bottom-bar-count-amber",
+      "connection-48-usage-timezone-utc-plus-10",
+      "connection-50-usage-collision-unidentified-unattributed"
     ],
     "feedback": [
+      "images-08-permanent-confirmation",
+      "shell-09-overlay-notice-during-confirmation",
       "shell-08-overlay-several-rows",
-      "images-08-permanent-confirmation"
+      "shell-10-overlay-info-result"
     ],
     "activity": [
       "shell-22-activity-queued-width-239",
       "shell-22-activity-queued-width-240",
-      "shell-23-activity-unknown-stripes"
+      "shell-23-activity-unknown-stripes",
+      "shell-25-activity-success-lifetime",
+      "shell-26-activity-success-fade",
+      "shell-08-overlay-several-rows"
+    ],
+    "snapshot": [
+      "images-21-snapshot-grid",
+      "images-24-live-recovery-stabilizing",
+      "images-23-snapshot-warning-dismissed"
+    ],
+    "preview-base": [
+      "generate-02-portrait",
+      "generate-05-zoom",
+      "inpaint-03-mask-painted"
+    ],
+    "inspector": [
+      "generate-50-inspector-after-queues",
+      "queues-50-inspector-minimum-width",
+      "scripts_narrow_details"
+    ],
+    "queue-thumbnails": [
+      "queues-64-item-table-thumbnail-preview",
+      "queues-70-thumbnail-preview-revalidation-pending"
+    ],
+    "queue-table": [
+      "queues-60-item-table",
+      "queues-61-item-table-long-lora",
+      "queues-63-item-table-narrow"
+    ],
+    "queue-composer": [
+      "queues-38-composer-cross",
+      "queues-39-composer-model-search",
+      "queues-43a-composer-lora-weights-editor",
+      "queues-41-composer-narrow"
+    ],
+    "queue-templates": [
+      "queues-92-template-library",
+      "queues-95-template-delete-consent"
+    ],
+    "gallery-navigation": [
+      "images-105-pager-default-20-first-batch",
+      "images-67-pager-list-normal",
+      "images-69-pager-detail-normal"
+    ],
+    "gallery-loading": [
+      "images-71-pager-loading",
+      "images-87-pager-empty-load-failed"
+    ],
+    "gallery-selection": [
+      "images-65c-grid-checkbox-padded-focus",
+      "images-51-detail-checked"
+    ],
+    "gallery-hover": [
+      "images-99-detail-hover-card-long-prompt",
+      "images-99a-detail-hover-card-empty"
+    ],
+    "gallery-detail": [
+      "images-05-mapped-detail-metadata",
+      "images-57-detail-fullscreen",
+      "images-100-detail-thumbnail-badges"
+    ],
+    "scripts-form": [
+      "scripts_form_default",
+      "scripts_form_long_values",
+      "scripts_setup_narrow",
+      "scripts_setup_crop_multiple"
+    ],
+    "scripts-editor": [
+      "scripts_editor_dirty",
+      "scripts_editor_syntax_error",
+      "scripts_editor_narrow"
+    ],
+    "scripts-library": [
+      "scripts_library_remove_armed",
+      "scripts_library_remove_narrow"
+    ],
+    "inpaint-canvas": [
+      "inpaint-03-mask-painted",
+      "inpaint-05-mask-view"
+    ],
+    "removal": [
+      "images-08-permanent-confirmation",
+      "images-31-trash-confirmation",
+      "images-37-trash-progress"
+    ],
+    "splash": [
+      "shell-30-startup-splash"
+    ],
+    "diagnostic-notice": [
+      "shell-21-diagnostic-warning"
+    ],
+    "gallery-page": [
+      "images-105-pager-default-20-first-batch",
+      "images-67-pager-list-normal",
+      "images-05-mapped-detail-metadata",
+      "images-21-snapshot-grid",
+      "images-24-live-recovery-stabilizing",
+      "images-23-snapshot-warning-dismissed"
+    ],
+    "run-control": [
+      "shell-11-run-control-ready",
+      "shell-12-run-control-paused",
+      "shell-14-run-control-queue-running",
+      "queues-81-stopping-caveat-400"
+    ],
+    "queue-popover": [
+      "queues-45-popover-generate",
+      "queues-46-popover-images-composer-plan",
+      "queues-47-popover-queues-while-running"
     ]
   },
   "components": [
@@ -78,24 +202,26 @@
       "paths": [
         "src/dtflow/ui/search_select.py"
       ],
-      "why": "shared selector variants; identical callers deduplicated",
+      "why": "shared selector: editable, empty and custom variants",
       "gap": "open Connection timezone selector has no fixture"
     },
     {
       "pack": "lora-editor",
       "paths": [
         "src/dtflow/ui/lora_selection_editor.py",
-        "src/dtflow/ui/forms/lora_selection_editor.ui"
+        "src/dtflow/ui/forms/lora_selection_*.ui",
+        "src/dtflow/ui/lora_panel.py"
       ],
-      "why": "shared weighted LoRA editor"
+      "why": "shared weighted editor plus distinct Queue weight configuration"
     },
     {
       "pack": "export-hosts",
       "paths": [
-        "src/dtflow/ui/image_export_panel.py"
+        "src/dtflow/ui/image_export_panel.py",
+        "src/dtflow/services/image_export.py",
+        "src/dtflow/core/export.py"
       ],
-      "why": "one export card with distinct Connection and Images mounts",
-      "gap": "file-level sampling; individual result scopes are not mapped yet"
+      "why": "one export card in two hosts plus progress and partial result"
     },
     {
       "pack": "usage",
@@ -103,8 +229,7 @@
         "src/dtflow/ui/cloud_usage_panel.py",
         "src/dtflow/services/cloud_usage.py"
       ],
-      "why": "usage table and shared bottom counter",
-      "gap": "file-level sampling; timezone and identity branches are not fully mapped"
+      "why": "table, bottom counter, timezone and identity variants"
     },
     {
       "pack": "feedback",
@@ -112,28 +237,212 @@
         "src/dtflow/ui/inline_feedback.py",
         "src/dtflow/ui/forms/inline_feedback.ui"
       ],
-      "why": "shared overlay and destructive intent",
-      "gap": "file-level sampling; editor and lifetime branches are not fully mapped"
+      "why": "danger confirmation, notice protection and mixed/persistent overlay rows"
     },
     {
       "pack": "activity",
       "paths": [
         "src/dtflow/ui/activity*.py",
-        "src/dtflow/ui/forms/activity_*.ui"
+        "src/dtflow/ui/forms/activity_*.ui",
+        "src/dtflow/ui/live_control_fx.py",
+        "src/dtflow/ui/progress_*.py"
       ],
-      "why": "activity dock/fallback and unknown phase",
-      "gap": "file-level sampling; other phase and lifetime branches remain unmapped"
+      "why": "shared dock boundary, unknown phase, lifetime/fade and overlay; no per-page duplicates"
+    },
+    {
+      "pack": "preview-base",
+      "paths": [
+        "src/dtflow/ui/image_preview.py"
+      ],
+      "why": "base preview and Inpaint subclass; gallery is a separate implementation"
+    },
+    {
+      "pack": "inspector",
+      "paths": [
+        "src/dtflow/ui/rail_fit.py",
+        "src/dtflow/ui/forms/scripts_inspector.ui",
+        "src/dtflow/ui/forms/scripts_details.ui"
+      ],
+      "why": "ordinary rail and distinct Scripts drawer integration"
+    },
+    {
+      "pack": "queue-thumbnails",
+      "paths": [
+        "src/dtflow/ui/queue_thumbnails.py"
+      ],
+      "why": "thumbnail popup and revalidation-pending variant"
+    },
+    {
+      "pack": "queue-table",
+      "paths": [
+        "src/dtflow/ui/queue_model.py",
+        "src/dtflow/ui/queue_item_delegate.py"
+      ],
+      "why": "item table content, long text and narrow layout"
+    },
+    {
+      "pack": "queue-composer",
+      "paths": [
+        "src/dtflow/ui/queue_composer.py",
+        "src/dtflow/ui/planning_presenter.py"
+      ],
+      "why": "composer cross-plan, model chooser, weights and narrow mounting"
+    },
+    {
+      "pack": "queue-templates",
+      "paths": [
+        "src/dtflow/ui/queue_templates.py",
+        "src/dtflow/ui/forms/queue_template_library.ui"
+      ],
+      "why": "recipe library and its delete-consent mounting"
+    },
+    {
+      "pack": "gallery-page",
+      "paths": [
+        "src/dtflow/ui/gallery_page.py"
+      ],
+      "why": "gallery views plus special snapshot recovery/dismissal presentation",
+      "gap": "large page controller uses bounded samples, not every presentation branch"
+    },
+    {
+      "pack": "gallery-navigation",
+      "paths": [
+        "src/dtflow/ui/gallery_pager.py",
+        "src/dtflow/ui/gallery_preparation.py"
+      ],
+      "why": "Grid/List/Detail navigation representatives",
+      "gap": "paging and buffering boundaries are sampled, not exhaustively rendered"
+    },
+    {
+      "pack": "gallery-loading",
+      "paths": [
+        "src/dtflow/ui/gallery_loading.py",
+        "src/dtflow/ui/forms/gallery_loading.ui"
+      ],
+      "why": "loading and failed-empty presentation"
+    },
+    {
+      "pack": "gallery-selection",
+      "paths": [
+        "src/dtflow/ui/gallery_selection_check.py"
+      ],
+      "why": "Grid checkbox hit-target and Detail selected mounting"
+    },
+    {
+      "pack": "gallery-hover",
+      "paths": [
+        "src/dtflow/ui/gallery_hover_card.py"
+      ],
+      "why": "long and empty hover-card content"
+    },
+    {
+      "pack": "gallery-detail",
+      "paths": [
+        "src/dtflow/ui/gallery_detail_preview.py",
+        "src/dtflow/ui/forms/gallery_detail_page.ui"
+      ],
+      "why": "Detail metadata, fullscreen and badge presentation"
+    },
+    {
+      "pack": "scripts-form",
+      "paths": [
+        "src/dtflow/ui/scripts_form.py",
+        "src/dtflow/ui/scripts_live_form.py"
+      ],
+      "why": "dynamic form, wrapping, narrow Setup and crop controls"
+    },
+    {
+      "pack": "scripts-editor",
+      "paths": [
+        "src/dtflow/ui/scripts_editor.py",
+        "src/dtflow/ui/forms/scripts_editor.ui"
+      ],
+      "why": "dirty editor, syntax diagnosis and narrow layout"
+    },
+    {
+      "pack": "scripts-library",
+      "paths": [
+        "src/dtflow/ui/scripts_library_card.py",
+        "src/dtflow/ui/forms/scripts_library_card.ui"
+      ],
+      "why": "library removal intent and narrow card mounting"
+    },
+    {
+      "pack": "page.logs",
+      "paths": [
+        "src/dtflow/ui/logs_*.py",
+        "src/dtflow/ui/forms/logs_workspace.ui"
+      ],
+      "why": "populated table, details and narrow header",
+      "gap": "filter popups and paging branches are not all represented"
+    },
+    {
+      "pack": "inpaint-canvas",
+      "paths": [
+        "src/dtflow/ui/inpaint_canvas.py"
+      ],
+      "why": "mask overlay and mask-only view"
+    },
+    {
+      "pack": "page.inpaint",
+      "paths": [
+        "src/dtflow/ui/inpaint_editor.py",
+        "src/dtflow/ui/forms/inpaint_editor.ui"
+      ],
+      "why": "painted editor and local selection controls"
+    },
+    {
+      "pack": "removal",
+      "paths": [
+        "src/dtflow/ui/image_recycle_panel.py",
+        "src/dtflow/ui/system_trash.py",
+        "src/dtflow/ui/trash_icon.py"
+      ],
+      "why": "danger confirmation and distinct Trash confirmation/progress"
+    },
+    {
+      "pack": "splash",
+      "paths": [
+        "src/dtflow/ui/splash.py"
+      ],
+      "why": "distinct startup window"
+    },
+    {
+      "pack": "diagnostic-notice",
+      "paths": [
+        "src/dtflow/ui/diagnostic_notice.py"
+      ],
+      "why": "diagnostic producer mounting of the shared warning"
+    },
+    {
+      "pack": "run-control",
+      "paths": [
+        "src/dtflow/ui/run_control.py"
+      ],
+      "why": "ready/paused/running control plus stopping caveat"
+    },
+    {
+      "pack": "queue-popover",
+      "paths": [
+        "src/dtflow/ui/queue_popover.py",
+        "src/dtflow/ui/forms/queue_popover.ui"
+      ],
+      "why": "popover Generate, Images composer and running Queue integrations"
     },
     {
       "pack": "shared",
       "paths": [
         "src/dtflow/resources/styles/**",
-        "src/dtflow/ui/tokens.py",
+        "src/dtflow/ui/theme.py",
         "src/dtflow/ui/main_window.py",
-        "src/dtflow/ui/forms/main_window.ui"
+        "src/dtflow/ui/forms/main_window.ui",
+        "src/dtflow/ui/forms/workspace_shell.ui",
+        "src/dtflow/ui/button_focus.py",
+        "src/dtflow/ui/wheel_guard.py",
+        "src/dtflow/ui/empty_hint.py"
       ],
-      "why": "broad shared presentation uses cross-shape representatives",
-      "gap": "component scope not yet identifiable from this broad file"
+      "why": "broad shared file uses the approved cross-shape pack",
+      "gap": "broad shared impact is sampled; automatic sub-file analysis is intentionally out of scope"
     }
   ]
 }

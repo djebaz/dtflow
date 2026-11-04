@@ -311,7 +311,12 @@ jobs:
           if finals:
               md.append(f"| Script result | {'; '.join(finals)} |")
           if selection:
-              md.append(f"| Selection | {selection['mode']} (`{' '.join(selection['args'])}`), {len(selection['changed'])} changed paths |")
+              md.append(f"| Selection | {selection['mode']}, {len(selection['changed'])} changed paths |")
+              if selection.get("states"):
+                  md.append(f"| Planned screenshots | {len(selection['states'])} distinct states |")
+                  md.append(f"| Fixture setup | {len(selection.get('fixtures', []))} groups; setup may execute unselected transitions |")
+              if selection.get("packs"):
+                  md.append(f"| Representative packs | {', '.join(selection['packs'])} |")
           if drive.get("folder_url"):
               md.append(f"| Screenshots | [Google Drive folder]({drive['folder_url']}) |")
           if (drive.get("archive") or {}).get("view_url"):
@@ -375,7 +380,11 @@ jobs:
           if selection:
               if selection.get("warnings"):
                   md += ["", "**⚠ Coverage incomplete: representative sampling, not exhaustive coverage.**", ""]
+                  md += [f"- {warning}" for warning in selection["warnings"][:8]]
+                  md.append("")
               md += ["<details><summary>Why these states were selected</summary>", "", "```", *selection["reasons"][:80], "```", "</details>", ""]
+              if selection.get("states"):
+                  md += ["<details><summary>Exact planned states and fixture setup</summary>", "", "```", *selection["states"], "", "Fixture groups:", *selection.get("fixtures", []), "```", "</details>", ""]
           if workers:
               md += ["### Workers", "", "| Worker | Seconds | Exit |", "|---|---:|---:|"]
               md += [f"| {name} | {item['elapsed_seconds']:.1f} | {item['exit_code']} |" for name, item in workers.items()]
