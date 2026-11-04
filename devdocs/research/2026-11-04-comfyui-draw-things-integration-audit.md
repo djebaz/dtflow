@@ -221,7 +221,7 @@ Owner decision: use **the SHA-256 of the exact selected public download artifact
 **Model files, download and the stored-model schema.**
 
 - The ONNX contract checks are strict and decide which public files can be catalogued. `_segmentation_session` needs one `[1,3,640,640]` input, outputs `[1,300,38]` and `[1,32,160,160]`, and metadata `task=segment`, `end2end=true` and `names[0]=person`. `_faces_session` needs a 320×320 input, Ultralytics metadata `task=detect` with contiguous `names`, at least one `FACE_*` class, and one `[1, 4+len(names), N]` output. `_clothes_session` needs one NCHW float input and an `[N,18,h,w]` output. All files must be ≤ 256 MiB (`MAX_MODEL_BYTES`); the YOLO26 (10.7 MB) and SegFormer (110 MB) candidates fit; the NudeNet file size is not yet recorded.
-- **Unverified and the biggest provisioning risk:** whether the DeepGHS `320n.onnx` carries Ultralytics `task`/`names` metadata with `FACE_*` names. If it does not, the current `_faces_session` rejects it, and either a different artifact or a documented contract change is needed. The same check applies to the official `yolo26n-seg.onnx` (`end2end=true` metadata). Close both by running `classify_models` on the downloaded files during the verification step of 10.3.1.
+- **Faces model contract: owner-checked (2026-11-04).** The owner reports that the NudeNet `320n.onnx` file has been checked and is accepted by DTFlow's faces contract (`_faces_session`: Ultralytics `task=detect`, `FACE_*` names, 320×320 input). Remaining before auto-download: confirm the downloaded bytes match the pinned SHA-256 in 10.3.1. The official `yolo26n-seg.onnx` should get the same `classify_models` check (`end2end=true` metadata) when it is downloaded.
 - `person_models.json` is schema 1 and stores only `path` + `sha256` per role, and a newer schema is rejected rather than rewritten. A catalogue download can stay inside that schema: save the file to a DTFlow-managed folder (for example `<state>/models/person/<sha256>.onnx`), then record it as an ordinary `ModelRef`. That needs **no schema bump**, keeps older builds able to read the file, and preserves user-chosen paths. The catalogue itself (URL, pinned revision, SHA-256, size, licence) can be a small read-only data file shipped with the app.
 - The existing readiness check `model_issue` only opens each file; full SHA-256 checking happens at load. Workflow preflight can reuse `model_issues` for "is it present and readable", then hash once when the download completes.
 
@@ -259,7 +259,7 @@ This plan orders the work in #223 into reviewable PRs. Every PR follows the V1 t
 
 **Main risks**
 
-- The candidate face-model file may not pass the current faces contract (10.7); this is the most likely V1 surprise and is cheap to check first.
+- Detector downloads still need the clean-environment URL/SHA-256 check of 10.3.1; the faces file itself is owner-checked against the contract.
 - With automatic probes (D2), an unsupported checkpoint is only discovered when its node runs, after earlier nodes may have used credits. Accepted by the owner.
 - Store bump 7 → 8 (D6) is one-way, like 5 → 6 → 7 for Scripts; older builds will refuse the store.
 - Fan-out (D3) multiplies cloud generations quickly when batches chain; the total shown before the run is the only guard. Accepted by the owner.
