@@ -632,6 +632,49 @@ def save_confidence(confidence, inside, out_dir: Path, stem: str):
     return heatmap, legend
 
 
+def save_score_overlay(source, confidence, person_mask, detections, out_dir, stem, opacity, body_floor):
+    """Show SCHP scores within the exact YOLO silhouette, with detector boxes."""
+    import numpy as np
+    from PIL import Image, ImageDraw, ImageFilter
+
+    inside = person_mask > 0
+    heat = Image.fromarray(confidence_colors(confidence, inside)).convert("RGBA")
+    heat.putalpha(Image.fromarray(np.where(inside, round(255 * opacity), 0).astype(np.uint8)))
+    overlay = Image.alpha_composite(source.convert("RGBA"), heat).convert("RGB")
+    # Outline the actual segmentation mask, including holes, rather than its box.
+    silhouette = Image.fromarray(inside.astype(np.uint8) * 255)
+    eroded = np.asarray(silhouette.filter(ImageFilter.MinFilter(3))) > 0
+    edge = inside & ~eroded
+    overlay.paste("white", mask=Image.fromarray(edge.astype(np.uint8) * 255))
+    draw = ImageDraw.Draw(overlay)
+    for detection in detections:
+        x0, y0, x1, y1 = detection["box_xyxy"]
+        x0, y0 = max(0, int(x0)), max(0, int(y0))
+        x1, y1 = min(source.width, int(x1)), min(source.height, int(y1))
+        if x1 <= x0 or y1 <= y0 or not inside[y0:y1, x0:x1].any():
+            continue
+        draw.rectangle((x0, y0, x1 - 1, y1 - 1), outline="cyan", width=1)
+        draw.text((x0 + 2, y0 + 2), f"{detection['label']} {detection['score']:.2f}",
+                  fill="cyan", stroke_width=1, stroke_fill="black")
+    width, height = source.size
+    result = Image.new("RGB", (width + 380, max(height, 250)), "white")
+    result.paste(overlay, (0, 0))
+    draw = ImageDraw.Draw(result)
+    left = width + 14
+    draw.text((left, 16), "SCHP confidence | YOLO person mask", fill="black")
+    draw.text((left, 42), "White outline: person silhouette", fill="black")
+    draw.text((left, 66), "Cyan boxes: NudeNet detections", fill="black")
+    draw.text((left, 90), f"Score overlay opacity: {opacity:.0%}", fill="black")
+    ramp = np.linspace(0, 1, 320, dtype=np.float32)[None, :]
+    bar = np.repeat(confidence_colors(ramp, np.ones_like(ramp, dtype=bool)), 18, axis=0)
+    result.paste(Image.fromarray(bar), (left, 122))
+    draw.text((left, 146), "0.0 blue     0.5 orange     >=0.9 red", fill="black")
+    draw.text((left, 172), f"Body interior cutoff: {body_floor:.2f}", fill="black")
+    draw.text((left, 198), "Uncalibrated maximum SCHP class score", fill="black")
+    draw.text((left, 222), "Outside silhouette: original image", fill="black")
+    result.save(out_dir / "overlays" / f"{stem}_score_overlay.png")
+
+
 def make_visuals(source, labels, out_dir: Path, stem: str, opacity: float, title: str, confidence_view, class_names=None, class_colors=None, overlay_only=False):
     """Write flat per-type outputs, with one shared stem and matching mask/legend colors."""
     import numpy as np
@@ -830,6 +873,12 @@ def main(argv: list[str] | None = None) -> int:
                 x0, y0, x1, y1 = box
                 person_mask = np.zeros((source.height, source.width), dtype=np.uint8)
                 person_mask[y0:y1, x0:x1] = np.where(mask[y0:y1, x0:x1] > 0, 255, 0).astype(np.uint8)
+                save_score_overlay(
+                    source, confidence, person_mask, body_detections, output_root,
+                    person_stem, args.opacity, args.body_confidence
+                )
+                details["person_cutoff"] = "YOLO instance segmentation silhouette, not detection box"
+                details["score_overlay"] = f"{person_stem}_score_overlay.png"
                 confidence_view = None
                 raw_coverage = refined_coverage = None
                 if not args.body_only:
