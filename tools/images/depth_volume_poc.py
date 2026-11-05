@@ -48,7 +48,8 @@ def volume_regions(depth, silhouette, *, resolution=384, edge_threshold=0.30):
     if not np.any(inside):
         return np.zeros((height, width), dtype=np.int32), np.zeros((height, width), dtype=np.uint8)
     low, high = np.percentile(z[inside], [2, 98])
-    z = (z - low) / max(float(high - low), 1e-6)
+    # Percentile scalars can promote normalization to float64; Sobel needs float32 input.
+    z = ((z - low) / max(float(high - low), 1e-6)).astype(np.float32)
     z = cv2.GaussianBlur(z, (0, 0), 1.0)
     gx = cv2.Sobel(z, cv2.CV_32F, 1, 0, ksize=3)
     gy = cv2.Sobel(z, cv2.CV_32F, 0, 1, ksize=3)
@@ -139,15 +140,14 @@ def main(argv=None):
     files = sorted(p for p in args.input_dir.iterdir() if p.suffix.lower() in IMAGE_SUFFIXES and p.is_file())
     for index, path in enumerate(files, 1):
         source = load_rgb(path)
-        people = select_people(selection._instances(person_session, source, 0.25), source.size, 0, 8, False)
+        people = select_people(selection._instances(person_session, source, 0.25), source.size, 0, 1, False)
         if not people:
             print(f"{path.name}: no people", flush=True)
             continue
         _, detections, _ = detect_body_parts(faces_session, source, NUDENET_CONFIDENCE)
         z = estimate_depth(source, depth)
         rgb = np.asarray(source, dtype=np.uint8)
-        folder = args.output_dir / f"{index:04d}_{path.stem}"
-        folder.mkdir(exist_ok=True)
+        prefix = f"{index:04d}_{path.stem}"
         records = []
         for person_index, (_, silhouette, _) in enumerate(people, 1):
             person = silhouette > 0
@@ -155,8 +155,8 @@ def main(argv=None):
             seed = (regions.astype(np.uint32) * 2654435761) & 0xFFFFFFFF
             palette = np.stack(((seed >> 16) & 255, (seed >> 8) & 255, seed & 255), axis=-1).astype(np.uint8)
             palette[regions == 0] = 0
-            Image.fromarray(palette).save(folder / f"p{person_index:02d}_regions.png")
-            Image.fromarray(edges).save(folder / f"p{person_index:02d}_edges.png")
+            Image.fromarray(palette).save(args.output_dir / f"{prefix}_regions.png")
+            Image.fromarray(edges).save(args.output_dir / f"{prefix}_edges.png")
             overlay = rgb.copy()
             for detection_index, detection in enumerate(detections, 1):
                 box = detection["box_xyxy"]
@@ -166,14 +166,14 @@ def main(argv=None):
                 mask, selected = choose_regions(regions, box, person, max_regions=args.max_regions)
                 if not selected:
                     continue
-                name = f"p{person_index:02d}_d{detection_index:03d}"
-                Image.fromarray(mask).save(folder / f"{name}_mask.png")
+                name = f"{prefix}_d{detection_index:03d}"
+                Image.fromarray(mask).save(args.output_dir / f"{name}_mask.png")
                 cv2.rectangle(overlay, (x0, y0), (x1, y1), (0, 255, 255), 2)
                 records.append({"person": person_index, "label": detection["label"], "score": float(detection["score"]),
                                 "box": [int(v) for v in box], "mask": f"{name}_mask.png", "regions": selected})
-            Image.fromarray(overlay).save(folder / f"p{person_index:02d}_boxes.png")
-        (folder / "regions.json").write_text(json.dumps(records, indent=2), encoding="utf-8")
-        print(f"{path.name}: {len(people)} people, {len(records)} masks -> {folder}", flush=True)
+            Image.fromarray(overlay).save(args.output_dir / f"{prefix}_boxes.png")
+        (args.output_dir / f"{prefix}_regions.json").write_text(json.dumps(records, indent=2), encoding="utf-8")
+        print(f"{path.name}: 1 person, {len(records)} masks -> {args.output_dir}", flush=True)
     return 0
 
 
