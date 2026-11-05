@@ -28,7 +28,7 @@
       "url": "https://huggingface.co/zhangsongbo365/nudenet_onnx/resolve/0ae0d1dc2a9f6ab9573b0de7e07676a3a6e53719/320n.onnx",
       "sha256": "776773dd37d99aa2ffe63bec9f92a835d82f3e40d627ffb47d9c3455aec600aa",
       "size_mib": 11.59,
-      "licence": "See the publisher's model card",
+      "licence": "MIT",
       "licence_url": "https://huggingface.co/zhangsongbo365/nudenet_onnx",
       "source_url": "https://huggingface.co/zhangsongbo365/nudenet_onnx"
     }
