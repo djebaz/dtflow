@@ -153,12 +153,20 @@ class DTFGraphicsNode(QDMGraphicsNode):
         # Upstream paints hover before checking selection. Use its selected path
         # for selected+hovered nodes, without changing hover event handling.
         hovered = self.hovered
+        selected_pen = self._pen_selected
         try:
             if self.isSelected():
+                if hovered or self._was_moved:
+                    self._pen_selected = self._pen_selected_active
                 self.hovered = False
             super().paint(painter, option, widget)
         finally:
             self.hovered = hovered
+            self._pen_selected = selected_pen
+
+    def mouseReleaseEvent(self, event) -> None:
+        super().mouseReleaseEvent(event)
+        self.update()  # repaint after upstream clears its movement flag
 
     def initSizes(self) -> None:
         super().initSizes()
@@ -178,6 +186,7 @@ class DTFGraphicsNode(QDMGraphicsNode):
         self._color_hovered = shell.token_color("color.inputBorderHover")
         self._pen_default = QPen(self._color, 1.5)
         self._pen_selected = QPen(self._color_selected, 2.0)
+        self._pen_selected_active = QPen(self._color_selected.lighter(110), 2.0)
         self._pen_hovered = QPen(self._color_hovered, 2.5)
         self._brush_title = QBrush(shell.token_color("color.sectionHeader"))
         self._brush_background = QBrush(shell.token_color("color.surface"))
