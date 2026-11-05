@@ -1035,13 +1035,39 @@ def select_people(people, image_size, min_area, max_people, repair):
     return [(score, mask, box) for _, score, mask, box in selected[:max_people]]
 
 
-def save_depth_geometry(source, person_mask, out_dir, stem, estimator):
-    """Export relative depth, estimated normals, and depth curvature."""
+DEPTH_URL = "https://huggingface.co/onnx-community/depth-anything-v2-small/resolve/4472b7362082ad9968fee890ca0f1e5aca36b93d/onnx/model.onnx"
+DEPTH_SHA256 = "afb6a5c28f3b6bf1618c6e43f02073ef9dfdc70e937502d51603e57b0a1df10c"
+DEPTH_BYTES = 99_060_839
+
+
+def depth_session(path, *, allow_download, threads):
+    """Load a pinned ONNX depth checkpoint without PyTorch or Transformers."""
+    import onnxruntime as ort
+
+    ensure_checkpoint(path, (DEPTH_URL, DEPTH_BYTES, "sha256", DEPTH_SHA256),
+                      allow_download=allow_download)
+    options = ort.SessionOptions()
+    options.intra_op_num_threads = threads
+    return ort.InferenceSession(str(path), sess_options=options, providers=["CPUExecutionProvider"])
+
+
+def save_depth_geometry(source, person_mask, out_dir, stem, session):
+    """Export relative depth, approximate normals, and depth curvature."""
     import numpy as np
     from PIL import Image
 
-    result = estimator(source)
-    depth = np.asarray(result["depth"].resize(source.size, Image.Resampling.BICUBIC), dtype=np.float32)
+    side = 518
+    image = source.resize((side, side), Image.Resampling.BICUBIC)
+    rgb = np.asarray(image, dtype=np.float32) / 255.0
+    rgb = (rgb - np.array([0.485, 0.456, 0.406], dtype=np.float32)) / np.array(
+        [0.229, 0.224, 0.225], dtype=np.float32
+    )
+    tensor = np.transpose(rgb, (2, 0, 1))[None].astype(np.float32)
+    raw = np.asarray(session.run(None, {session.get_inputs()[0].name: tensor})[0]).squeeze()
+    if raw.ndim != 2:
+        raise RuntimeError(f"Unexpected depth output shape: {raw.shape}")
+    depth_image = Image.fromarray(raw.astype(np.float32), mode="F")
+    depth = np.asarray(depth_image.resize(source.size, Image.Resampling.BICUBIC), dtype=np.float32)
     inside = person_mask > 0
     if not inside.any():
         return
@@ -1202,13 +1228,11 @@ def main(argv: list[str] | None = None) -> int:
         print(f"No supported images found in {args.input_dir}", file=sys.stderr)
         return 2
 
-    depth_estimator = None
-    if args.depth_geometry:
-        try:
-            from transformers import pipeline
-        except ImportError as exc:
-            raise RuntimeError("Depth geometry requires transformers and torch") from exc
-        depth_estimator = pipeline("depth-estimation", model="depth-anything/Depth-Anything-V2-Small-hf", device="cpu")
+    depth_estimator = (
+        depth_session(Path("tmp/models/depth-anything-v2-small.onnx"),
+                      allow_download=not args.no_download, threads=args.threads)
+        if args.depth_geometry else None
+    )
 
     # Reuse the production decoder, model checks, detection thresholds and NMS.
     # Existing user files retain their model contracts; missing files get role defaults.
