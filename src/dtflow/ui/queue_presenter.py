@@ -433,7 +433,10 @@ def item_rows(view: dict) -> tuple[ItemRow, ...]:
                 item["seed"],
                 tuple(path for path in artifacts if path != metadata),
                 metadata,
-                (failure.get("message") or failure.get("code")) if item.get("script") else failure.get("code"),
+                # A script or workflow run keeps its own plain reason (provider wording included), not just a code.
+                (failure.get("message") or failure.get("code"))
+                if item.get("script") or item.get("workflow")
+                else failure.get("code"),
                 item.get("operation") or "txt2img",
                 item.get("strength"),
                 item.get("prompt") or "",

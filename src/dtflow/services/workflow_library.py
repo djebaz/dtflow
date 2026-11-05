@@ -21,6 +21,7 @@ LIBRARY_DIR = Path("workflows") / "library"
 REFERENCE = Path(__file__).parents[1] / "resources" / "workflows" / "reference_workflow_v1.json"
 MAX_FILE_BYTES = 2 * 1024 * 1024  # a 200-node workflow is far below this; larger files are refused unread
 MAX_NAME = 80
+_RESERVED = {"CON", "PRN", "AUX", "NUL", *(f"COM{n}" for n in range(1, 10)), *(f"LPT{n}" for n in range(1, 10))}
 _FORBIDDEN = re.compile(r'[<>:"/\\|?*\x00-\x1f]')
 
 
@@ -45,6 +46,8 @@ def check_name(name: str) -> str:
         raise WorkflowError(f"A workflow name may have at most {MAX_NAME} characters.")
     if _FORBIDDEN.search(name) or name.startswith(".") or name.endswith("."):
         raise WorkflowError('A workflow name cannot contain < > : " / \\ | ? * or start or end with a dot.')
+    if name.split(".")[0].strip().upper() in _RESERVED:
+        raise WorkflowError(f"{name!r} is reserved by Windows; choose another workflow name.")
     return name
 
 

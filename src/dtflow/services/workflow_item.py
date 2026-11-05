@@ -39,6 +39,7 @@ from dtflow.core.tasks import settle
 from dtflow.core.workflows import (
     DETECT_FACE,
     GENERATE,
+    GENERATIVE,
     IMAGE_OPERATIONS,
     INPAINT,
     MASK,
@@ -92,6 +93,15 @@ def failure_text(exc: BaseException) -> str:
         shown = present_generation_failure(exc)
         return f"{shown.headline}: {shown.detail}" if shown.detail else shown.headline
     return type(exc).__name__
+
+
+def first_problem(steps: list[dict[str, Any]]) -> tuple[str, str] | None:
+    """(``Title (image n): cause``, cause) of the first failed, then unconfirmed, step in run order."""
+    for wanted in ("failed", "unknown"):
+        for step in steps:
+            if step.get("state") == wanted and step.get("message"):
+                return f"{step.get('title')} ({step.get('branch_label')}): {step['message']}", step["message"]
+    return None
 
 
 def settings_of(request) -> dict[str, Any]:
@@ -285,7 +295,7 @@ class _Execution:
                     names = ", ".join(entry.name for entry in missing)
                     raise ValidationError(f"Detection models are missing ({names}). Download them in Workflows first.")
         except ValidationError as exc:
-            self.halted = f"The workflow cannot run: {exc}"
+            self.halt(f"The workflow cannot run: {exc}")
             await self.finish()
             return
         self.start_roots()
@@ -329,19 +339,26 @@ class _Execution:
     async def interrupt(self) -> None:
         """This process stops dispatching: in-flight waits are cancelled and recorded honestly, nothing is replayed."""
         self.stopping = True
+        self.close_pauses()
+        await self.cancel_tasks()
+        await self.finish(interrupted=True)
+
+    def halt(self, message: str) -> None:
+        """The run ends with ``message``: nothing new starts and open pauses close (their answer no longer matters)."""
+        self.halted = message
+        self.go.set()
+        self.close_pauses()
+
+    def close_pauses(self) -> None:
         for future in self.decisions.values():
             if not future.done():
                 future.set_result("cancel")
-        await self.cancel_tasks()
-        await self.finish(interrupted=True)
 
     def stop(self) -> None:
         """Queue Stop: nothing new starts; open pauses close; in-flight generations finish and stay recorded."""
         self.stopping = True
         self.go.set()
-        for future in self.decisions.values():
-            if not future.done():
-                future.set_result("cancel")
+        self.close_pauses()
 
     async def finish(self, *, interrupted: bool = False) -> None:
         stamp = _now()
@@ -358,6 +375,7 @@ class _Execution:
         steps = self.run["steps"]
         results = self.run["results"]
         incomplete = [step for step in steps if step["state"] in BAD_STEP_STATES]
+        problem = first_problem(steps)
         if self.halted:
             state, message = "failed", self.halted
         elif self.stopping or interrupted:
@@ -371,6 +389,9 @@ class _Execution:
             state, message = "unknown", "No result was saved and a step has no confirmed outcome."
         else:
             state, message = "failed", "No result was saved."
+        if problem and state in ("partial", "unknown", "failed") and problem[1] not in (message or ""):
+            # The provider's own cause (auth, quota, refusal) reaches Queues through the run message.
+            message = f"{message} First problem: {problem[0]}"
         self.run.update(state=state, message=message, finished_at=stamp)
         await settle(self.flush())
         diagnostic_event(
@@ -415,6 +436,8 @@ class _Execution:
             )
             if busy:
                 return False
+            # The whole Generate scope reruns: a new batch replaces every branch, so no branch keeps steps made from
+            # an image the new batch does not contain. Earlier saved images stay in Images.
             reset = [k for k in self.steps if k[1][0] == node_id]
             weight = generate_outputs(node)
         else:
@@ -423,9 +446,10 @@ class _Execution:
                 return False
             wanted = descendants(self.graph, node_id) | {node_id}
             reset = [k for k in self.steps if k[1] == branch and k[0] in wanted]
-            weight = 1
+            weight = 1 if node.type in GENERATIVE else 0  # Detect/Save submit nothing; downstream is in the plan
+        whole = node.type == GENERATE
         for other in reset:
-            if self.steps[other]["state"] in BAD_STEP_STATES or other == key:
+            if whole or self.steps[other]["state"] in BAD_STEP_STATES or other == key:
                 self.steps[other].update(
                     state="pending", stage=None, message=None, output=None, mask=None, started_at=None, finished_at=None
                 )
@@ -522,19 +546,22 @@ class _Execution:
             await self.end(keys, "stopped", "Not run: the run stopped.")
             return None
         if self.run["submitted"] + weight > self.allowance:
-            self.halted = (
+            self.halt(
                 f"Stopped: the next submission would exceed the planned {self.request.planned} generation(s) plus "
                 f"{self.allowance - self.request.planned} allowed retry submission(s). Nothing more was sent."
             )
             diagnostic_event(log, "workflow.loop_guard", level=logging.WARNING, data={"planned": self.request.planned})
             await self.end(keys, "failed", self.halted)
             return None
-        while not self.go.is_set() and not self.stopping:
+        # Counted at the check so concurrent branches cannot pass it together; given back when nothing is sent.
+        self.run["submitted"] += weight
+        while not self.go.is_set() and not self.stopping and not self.halted:
             for key in keys:
                 self.steps[key]["stage"] = "Waiting: queue paused"
             self.dirty = True
             await self.go.wait()
-        if self.stopping:
+        if self.stopping or self.halted:
+            self.run["submitted"] -= weight
             await self.end(keys, "cancelled", "Stopped before submission; nothing was sent.")
             return None
         attempt_id = uuid4().hex
@@ -547,12 +574,12 @@ class _Execution:
                     reserved = False  # paused or settling queue: wait, Stop ends the wait
                 if reserved:
                     break
-                if self.stopping:
+                if self.stopping or self.halted:
+                    self.run["submitted"] -= weight
                     await self.end(keys, "cancelled", "Stopped before submission; nothing was sent.")
                     return None
                 self.set_stage(keys, "Waiting for a free slot")
                 await asyncio.sleep(self.runner.poll)
-            self.run["submitted"] += weight
             diagnostic_event(
                 log, "workflow.step_submitted", level=logging.INFO, data={"attempt_id": attempt_id, "weight": weight}
             )

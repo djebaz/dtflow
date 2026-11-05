@@ -106,6 +106,7 @@ _CLASS_PART = {k: name for name, ids in GARMENT_CLASSES.items() for k in ids}
 _MEAN = (0.485, 0.456, 0.406)
 _STD = (0.229, 0.224, 0.225)
 _sessions: dict[tuple[str, str], object] = {}
+_hashed: dict[str, tuple[int, int, str]] = {}  # model path -> (size, mtime_ns, sha256) last hashed
 _lock = threading.Lock()
 
 
@@ -306,12 +307,28 @@ def model_issues(models: PersonModels) -> dict[str, str | None]:
     }
 
 
+def _stamp(path) -> tuple[int, int] | None:
+    try:
+        info = os.stat(path)
+    except OSError:
+        return None
+    return info.st_size, info.st_mtime_ns
+
+
 def _verified_session(ref: ModelRef, builder):
+    key = (ref.sha256, builder.__name__)
+    stamp = _stamp(ref.path)
+    with _lock:
+        # A file already hashed with this size and modification time is not re-read for every image (workflow runs
+        # detect once per branch); any change to the file makes it read and hashed again.
+        if key in _sessions and stamp is not None and _hashed.get(str(ref.path)) == (*stamp, ref.sha256):
+            return _sessions[key]
     data = _read_model(ref.path)
     if len(data) > MAX_MODEL_BYTES or hashlib.sha256(data).hexdigest() != ref.sha256:
         raise ValidationError("A selected model file changed since it was chosen; choose it again.")
-    key = (ref.sha256, builder.__name__)
     with _lock:
+        if stamp is not None and _stamp(ref.path) == stamp:
+            _hashed[str(ref.path)] = (*stamp, ref.sha256)
         if key not in _sessions:
             _sessions[key] = builder(data)
         return _sessions[key]

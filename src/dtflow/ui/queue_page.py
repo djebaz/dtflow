@@ -281,6 +281,7 @@ class QueuePage:
         self._list_key: tuple | None = None
         self._output_folder: Path | None = None
         self._images_hook = None  # set_images_hook wires Open in Images to the Images workspace
+        self._open_workflow_hook = None  # set_open_workflow_hook(fn(queue_id)) shows a workflow run in Workflows
         self._run_progress: dict[tuple[str, str], tuple[int, int]] = {}
         self._run_stages: dict[tuple[str, str], str] = {}
         self._run_stage_started: dict[tuple[str, str], float] = {}
@@ -1049,8 +1050,13 @@ class QueuePage:
         page.uncertaintyBox.setVisible(note is not None)
         if note is not None:
             self._show(page.uncertaintyLabel, *note)
-        scripted = view is not None and view.get("kind") in RUN_KINDS
-        page.itemRetryButton.setEnabled(row is not None and row.state in RELAUNCH_STATES and not scripted)
+        kind = view.get("kind") if view is not None else None
+        if kind == "workflow":
+            # A workflow item retries its first failed or unconfirmed step with the original settings (#220).
+            page.itemRetryButton.setEnabled(row is not None and self._workflow_retry_target(view) is not None)
+        else:
+            scripted = kind in RUN_KINDS
+            page.itemRetryButton.setEnabled(row is not None and row.state in RELAUNCH_STATES and not scripted)
         if row is None:
             for name in (
                 "itemIdLabel",
@@ -1109,6 +1115,10 @@ class QueuePage:
         row = self.model.row_at(self.page.queueItemsView.currentIndex().row())
         if row is not None and row.outputs and row.outputs[0] == path:
             self._show_item()
+
+    def set_open_workflow_hook(self, hook) -> None:
+        """``hook(queue_id)`` switches to Workflows and follows that workflow queue's run (steps, Retry, pauses)."""
+        self._open_workflow_hook = hook
 
     def set_images_hook(self, hook) -> None:
         """Wire Open in Images: hook(identity) shows that committed output in the Images Detail view."""
@@ -1170,6 +1180,9 @@ class QueuePage:
         self._relaunch_actions(relaunch, queue_id)
         edit = menu.addAction("Edit as new queue…")
         edit.triggered.connect(lambda _=False: self.edit_as_new(queue_id))
+        if (self._views.get(queue_id) or {}).get("kind") == "workflow" and self._open_workflow_hook is not None:
+            show = menu.addAction("Open in Workflows")
+            show.triggered.connect(lambda _=False: self._open_workflow_hook(queue_id))
         if (self._views.get(queue_id) or {}).get("kind") in RUN_KINDS:
             relaunch.setEnabled(False)
             edit.setEnabled(False)
@@ -1309,8 +1322,58 @@ class QueuePage:
         if queue_id is not None:
             self.relaunch(queue_id)
 
+    @staticmethod
+    def _workflow_retry_target(view: dict | None) -> tuple[int, tuple[int, int]] | None:
+        """(node id, branch) of a workflow run's first failed step, else its first step with no confirmed outcome."""
+        item = next((item for item in (view or {}).get("items", ()) if item.get("workflow")), None)
+        steps = (item or {}).get("workflow", {}).get("steps") or ()
+        for wanted in ("failed", "unknown"):
+            for step in steps:
+                if step.get("state") == wanted:
+                    try:
+                        return int(step["node_id"]), (int(step["branch"][0]), int(step["branch"][1]))
+                    except (KeyError, TypeError, ValueError, IndexError):
+                        return None
+        return None
+
+    def _retry_workflow(self, queue_id: str) -> None:
+        target = self._workflow_retry_target(self._views.get(queue_id))
+        if target is None:
+            return
+        node_id, branch = target
+
+        async def work():
+            from dtflow.services.workflow_queue import retry_step
+
+            return await retry_step(self._state, queue_id, node_id, branch)
+
+        def retried(new_id, failure) -> None:
+            if failure is not None:
+                failed = Presentation("error", "Not retried", str(failure))
+                self._message(failed if isinstance(failure, ValidationError) else present_generation_failure(failure))
+                return
+            if new_id == queue_id:
+                self._message(Presentation("ok", "Retry posted", "The running workflow retries that step next."))
+                self.refresh()
+                return
+            self._select_after = new_id
+
+            def started(how, error) -> None:
+                if error is not None:
+                    self._message(Presentation("warning", "Retry saved, paused", str(error)))
+                else:
+                    self._message(Presentation("ok", "Retry started", f"The failed step runs again ({how})."))
+                self.refresh()
+
+            self.start_created(new_id, started)
+
+        self._runner.submit(work(), retried)
+
     def retry_item(self) -> None:
         """Retry item: the selected item again, as a one-item queue with its own new attempt (possibly billable)."""
+        if (self._view() or {}).get("kind") == "workflow" and self._selected is not None:
+            self._retry_workflow(self._selected)
+            return
         row = self.model.row_at(self.page.queueItemsView.currentIndex().row())
         if row is None or self._selected is None or row.state not in RELAUNCH_STATES:
             return

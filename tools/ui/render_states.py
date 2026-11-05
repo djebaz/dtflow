@@ -1970,15 +1970,32 @@ def render_item_table_states(shell, out, state):
         snap("queues-72-script-parent-summary")
         select(1)
         snap("queues-73-script-step-details")
-        # A workflow run is one queue item too: Relaunch, Edit as new and item Retry stay off (Run is in Workflows).
+        # A workflow run is one queue item: Relaunch and Edit as new stay off (Run is in Workflows); item Retry reruns
+        # its first failed step, and the item keeps the run's own reason (provider wording included).
+        reason = (
+            "1 result(s) saved; 2 step(s) failed, stopped or unconfirmed. First problem: Inpaint face "
+            "(Generate #1 image 2): DT+ refused the request: not enough credits."
+        )
+        workflow_item = dict(
+            items[0],
+            item_id="offline-workflow-item",
+            state="failed",
+            prompt="Workflow: Portrait finishing",
+            failure={"code": "workflow_partial", "message": reason},
+            workflow={
+                "state": "partial",
+                "message": reason,
+                "steps": [{"node_id": 3, "branch": [1, 1], "state": "failed", "title": "Inpaint face"}],
+            },
+        )
         workflow_view = dict(
             view,
             kind="workflow",
             queue_id="offline-workflow-queue",
             status="finished",
             first=dict(view["first"], prompt="Workflow: Portrait finishing"),
-            items=[dict(items[0], item_id="offline-workflow-item", prompt="Workflow: Portrait finishing")],
-            summary={name: int(name == "succeeded") for name in counts},
+            items=[workflow_item],
+            summary={name: int(name == "failed") for name in counts},
             cap=1,
         )
         queue._selected = workflow_view["queue_id"]

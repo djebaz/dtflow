@@ -12,8 +12,9 @@ Item state mapping (the same rule script items use for steps that failed inside 
 
 - any step ``unknown``                  -> item ``unknown`` (never success or failure, never replayed)
 - run ``cancelled`` (Stop)              -> item ``cancelled``
-- run ``succeeded`` or ``partial``      -> item ``succeeded``; a partial run keeps its note in ``run.message`` and the
-                                           failed/stopped steps in ``run.steps`` (like a script's ``steps_failed``)
+- run ``succeeded``                     -> item ``succeeded``
+- run ``partial`` (some results saved,  -> item ``failed`` with the run message: results saved, steps that did not
+  a step failed or stopped)                finish, and the first problem's own cause (provider/auth/quota wording)
 - run ``failed`` (or anything else)     -> item ``failed`` with the run's plain message
 """
 
@@ -149,9 +150,10 @@ def item_outcome(run: Any) -> tuple[str, str | None]:
     state = run.get("state")
     if state == "cancelled":
         return "cancelled", None
-    if state in ("succeeded", "partial"):
+    if state == "succeeded":
         return "succeeded", None
-    return "failed", json.dumps({"code": "workflow_failed", "message": message or "Workflow run failed."})
+    code = "workflow_partial" if state == "partial" else "workflow_failed"
+    return "failed", json.dumps({"code": code, "message": message or "Workflow run failed."})
 
 
 def interrupted_run(run: dict[str, Any]) -> dict[str, Any]:
