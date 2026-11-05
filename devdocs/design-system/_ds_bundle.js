@@ -1,4 +1,4 @@
-/* @ds-bundle: {"format":4,"namespace":"DTFlowDesignSystem_cee425","components":[{"name":"Button","sourcePath":"components/controls/Button.jsx"},{"name":"Checkbox","sourcePath":"components/controls/Checkbox.jsx"},{"name":"ComboBox","sourcePath":"components/controls/ComboBox.jsx"},{"name":"ConnectionButton","sourcePath":"components/controls/ConnectionButton.jsx"},{"name":"Slider","sourcePath":"components/controls/Slider.jsx"},{"name":"SpinBox","sourcePath":"components/controls/SpinBox.jsx"},{"name":"Tabs","sourcePath":"components/controls/Tabs.jsx"},{"name":"TextArea","sourcePath":"components/controls/TextArea.jsx"},{"name":"TextField","sourcePath":"components/controls/TextField.jsx"},{"name":"DataTable","sourcePath":"components/data/DataTable.jsx"},{"name":"ListBox","sourcePath":"components/data/ListBox.jsx"},{"name":"ListItem","sourcePath":"components/data/ListItem.jsx"},{"name":"LoraChip","sourcePath":"components/data/LoraChip.jsx"},{"name":"Badge","sourcePath":"components/feedback/Badge.jsx"},{"name":"EmptyState","sourcePath":"components/feedback/EmptyState.jsx"},{"name":"ProgressBar","sourcePath":"components/feedback/ProgressBar.jsx"},{"name":"StatusCard","sourcePath":"components/feedback/StatusCard.jsx"},{"name":"Tooltip","sourcePath":"components/feedback/Tooltip.jsx"},{"name":"FloatingToolbar","sourcePath":"components/gallery/FloatingToolbar.jsx"},{"name":"ImageCard","sourcePath":"components/gallery/ImageCard.jsx"},{"name":"MetadataBlock","sourcePath":"components/gallery/MetadataBlock.jsx"},{"name":"OverlayChip","sourcePath":"components/gallery/OverlayChip.jsx"},{"name":"RoundButton","sourcePath":"components/gallery/RoundButton.jsx"},{"name":"Thumbnail","sourcePath":"components/gallery/Thumbnail.jsx"},{"name":"ToolbarRow","sourcePath":"components/gallery/ToolbarRow.jsx"},{"name":"Icon","sourcePath":"components/icons/Icon.jsx"},{"name":"Panel","sourcePath":"components/layout/Panel.jsx"},{"name":"SectionCard","sourcePath":"components/layout/SectionCard.jsx"},{"name":"StatusBar","sourcePath":"components/layout/StatusBar.jsx"},{"name":"Brand","sourcePath":"components/shell/Brand.jsx"},{"name":"MenuBar","sourcePath":"components/shell/MenuBar.jsx"},{"name":"Navigation","sourcePath":"components/shell/Navigation.jsx"},{"name":"Label","sourcePath":"components/text/Label.jsx"}],"sourceHashes":{"components/controls/Button.jsx":"f14ec6d739bb","components/controls/Checkbox.jsx":"f332472f9420","components/controls/ComboBox.jsx":"e15bf83b7b25","components/controls/ConnectionButton.jsx":"670eda76f58d","components/controls/Slider.jsx":"f4556b87ee4e","components/controls/SpinBox.jsx":"a4211b926753","components/controls/Tabs.jsx":"d4e4e705f1b6","components/controls/TextArea.jsx":"67025bc56697","components/controls/TextField.jsx":"bd72feeda989","components/data/DataTable.jsx":"03eff42da8fd","components/data/ListBox.jsx":"916112a411db","components/data/ListItem.jsx":"5642cecf3a58","components/data/LoraChip.jsx":"5895c133f0a6","components/feedback/Badge.jsx":"c66c8e10200d","components/feedback/EmptyState.jsx":"acb08ae18792","components/feedback/ProgressBar.jsx":"4f2dab81e37f","components/feedback/StatusCard.jsx":"23714abe526f","components/feedback/Tooltip.jsx":"5b4e1864d5eb","components/gallery/FloatingToolbar.jsx":"9fd57e566d7b","components/gallery/ImageCard.jsx":"dfa22147cf84","components/gallery/MetadataBlock.jsx":"7e5482a10822","components/gallery/OverlayChip.jsx":"993e3d1c925d","components/gallery/RoundButton.jsx":"56134f2608fb","components/gallery/Thumbnail.jsx":"e6a4fb41d455","components/gallery/ToolbarRow.jsx":"aa1f557189a3","components/icons/Icon.jsx":"19c963de1fd2","components/layout/Panel.jsx":"ecb20e5b5515","components/layout/SectionCard.jsx":"93730e97c5e7","components/layout/StatusBar.jsx":"c23523f1d38e","components/shell/Brand.jsx":"305fba5ddd21","components/shell/MenuBar.jsx":"b0bedd4b2b2c","components/shell/Navigation.jsx":"1458cf401c77","components/text/Label.jsx":"0b494e9af7b5","ui_kits/Chrome.jsx":"0d1e3abe60b3","ui_kits/connection/ConnectionScreen.jsx":"788ae50719fd","ui_kits/generate/GenerateScreen.jsx":"cfd09e7d9667","ui_kits/images/DetailView.jsx":"d20bc8c7757c","ui_kits/images/GridView.jsx":"12ca127afd43","ui_kits/images/Header.jsx":"56de6859e778","ui_kits/images/ImagesScreen.jsx":"887a21b9982b","ui_kits/images/ListView.jsx":"6eed4cabae4f","ui_kits/images/data.js":"cf4811173fd5","ui_kits/queues/QueuesScreen.jsx":"e504c6c859f4"},"inlinedExternals":[],"unexposedExports":[]} */
+/* @ds-bundle: {"format":4,"namespace":"DTFlowDesignSystem_cee425","components":[{"name":"Button","sourcePath":"components/controls/Button.jsx"},{"name":"Checkbox","sourcePath":"components/controls/Checkbox.jsx"},{"name":"ComboBox","sourcePath":"components/controls/ComboBox.jsx"},{"name":"ConnectionButton","sourcePath":"components/controls/ConnectionButton.jsx"},{"name":"Slider","sourcePath":"components/controls/Slider.jsx"},{"name":"SpinBox","sourcePath":"components/controls/SpinBox.jsx"},{"name":"Tabs","sourcePath":"components/controls/Tabs.jsx"},{"name":"TextArea","sourcePath":"components/controls/TextArea.jsx"},{"name":"TextField","sourcePath":"components/controls/TextField.jsx"},{"name":"DataTable","sourcePath":"components/data/DataTable.jsx"},{"name":"ListBox","sourcePath":"components/data/ListBox.jsx"},{"name":"ListItem","sourcePath":"components/data/ListItem.jsx"},{"name":"LoraChip","sourcePath":"components/data/LoraChip.jsx"},{"name":"Badge","sourcePath":"components/feedback/Badge.jsx"},{"name":"EmptyState","sourcePath":"components/feedback/EmptyState.jsx"},{"name":"ProgressBar","sourcePath":"components/feedback/ProgressBar.jsx"},{"name":"StatusCard","sourcePath":"components/feedback/StatusCard.jsx"},{"name":"Tooltip","sourcePath":"components/feedback/Tooltip.jsx"},{"name":"FloatingToolbar","sourcePath":"components/gallery/FloatingToolbar.jsx"},{"name":"ImageCard","sourcePath":"components/gallery/ImageCard.jsx"},{"name":"MetadataBlock","sourcePath":"components/gallery/MetadataBlock.jsx"},{"name":"OverlayChip","sourcePath":"components/gallery/OverlayChip.jsx"},{"name":"RoundButton","sourcePath":"components/gallery/RoundButton.jsx"},{"name":"Thumbnail","sourcePath":"components/gallery/Thumbnail.jsx"},{"name":"ToolbarRow","sourcePath":"components/gallery/ToolbarRow.jsx"},{"name":"Icon","sourcePath":"components/icons/Icon.jsx"},{"name":"Panel","sourcePath":"components/layout/Panel.jsx"},{"name":"SectionCard","sourcePath":"components/layout/SectionCard.jsx"},{"name":"StatusBar","sourcePath":"components/layout/StatusBar.jsx"},{"name":"Brand","sourcePath":"components/shell/Brand.jsx"},{"name":"MenuBar","sourcePath":"components/shell/MenuBar.jsx"},{"name":"Navigation","sourcePath":"components/shell/Navigation.jsx"},{"name":"Label","sourcePath":"components/text/Label.jsx"}],"sourceHashes":{"components/controls/Button.jsx":"f14ec6d739bb","components/controls/Checkbox.jsx":"f332472f9420","components/controls/ComboBox.jsx":"e15bf83b7b25","components/controls/ConnectionButton.jsx":"233a0443e571","components/controls/Slider.jsx":"f4556b87ee4e","components/controls/SpinBox.jsx":"a4211b926753","components/controls/Tabs.jsx":"d4e4e705f1b6","components/controls/TextArea.jsx":"67025bc56697","components/controls/TextField.jsx":"bd72feeda989","components/data/DataTable.jsx":"03eff42da8fd","components/data/ListBox.jsx":"916112a411db","components/data/ListItem.jsx":"5642cecf3a58","components/data/LoraChip.jsx":"5895c133f0a6","components/feedback/Badge.jsx":"c66c8e10200d","components/feedback/EmptyState.jsx":"acb08ae18792","components/feedback/ProgressBar.jsx":"4f2dab81e37f","components/feedback/StatusCard.jsx":"23714abe526f","components/feedback/Tooltip.jsx":"5b4e1864d5eb","components/gallery/FloatingToolbar.jsx":"9fd57e566d7b","components/gallery/ImageCard.jsx":"dfa22147cf84","components/gallery/MetadataBlock.jsx":"7e5482a10822","components/gallery/OverlayChip.jsx":"993e3d1c925d","components/gallery/RoundButton.jsx":"56134f2608fb","components/gallery/Thumbnail.jsx":"e6a4fb41d455","components/gallery/ToolbarRow.jsx":"aa1f557189a3","components/icons/Icon.jsx":"19c963de1fd2","components/layout/Panel.jsx":"ecb20e5b5515","components/layout/SectionCard.jsx":"93730e97c5e7","components/layout/StatusBar.jsx":"e46b8008847a","components/shell/Brand.jsx":"305fba5ddd21","components/shell/MenuBar.jsx":"b0bedd4b2b2c","components/shell/Navigation.jsx":"88b962083626","components/text/Label.jsx":"0b494e9af7b5","ui_kits/Chrome.jsx":"459d7b3d4182","ui_kits/connection/ConnectionScreen.jsx":"7a9771a70833","ui_kits/generate/GenerateScreen.jsx":"665b41ab2c20","ui_kits/images/DetailView.jsx":"d20bc8c7757c","ui_kits/images/GridView.jsx":"12ca127afd43","ui_kits/images/Header.jsx":"56de6859e778","ui_kits/images/ImagesScreen.jsx":"d7818ea07fab","ui_kits/images/ListView.jsx":"6eed4cabae4f","ui_kits/images/data.js":"cf4811173fd5","ui_kits/queues/QueuesScreen.jsx":"b6b6307a5ac8"},"inlinedExternals":[],"unexposedExports":[]} */
 
 (() => {
 
@@ -148,8 +148,8 @@ function ConnectionButton({
     title: "Show connection workspace \u2014 " + state,
     className: ["dt-conn", state === "unknown" ? "" : state, checked ? "checked" : ""].filter(Boolean).join(" ")
   }, rest), /*#__PURE__*/React.createElement("svg", {
-    width: "40",
-    height: "24",
+    width: "30",
+    height: "18",
     viewBox: "0 0 40 24",
     fill: "none",
     "aria-hidden": "true"
@@ -849,11 +849,16 @@ Object.assign(__ds_scope, { SectionCard });
 // components/layout/StatusBar.jsx
 try { (() => {
 function StatusBar({
-  children
+  children,
+  trailing
 }) {
   return /*#__PURE__*/React.createElement("div", {
     className: "dt-statusbar"
-  }, children);
+  }, /*#__PURE__*/React.createElement("span", {
+    className: "dt-statusbar-text"
+  }, children), trailing ? /*#__PURE__*/React.createElement("span", {
+    className: "dt-statusbar-trailing"
+  }, trailing) : null);
 }
 Object.assign(__ds_scope, { StatusBar });
 })(); } catch (e) { __ds_ns.__errors.push({ path: "components/layout/StatusBar.jsx", error: String((e && e.message) || e) }); }
@@ -916,16 +921,11 @@ try { (() => {
 function Navigation({
   current,
   onChange,
-  connectionState = "unknown",
-  items = ["Generate", "Queues", "Images"]
+  items = ["Generate", "Queues"]
 }) {
   return /*#__PURE__*/React.createElement("div", {
     className: "dt-nav"
-  }, /*#__PURE__*/React.createElement(__ds_scope.ConnectionButton, {
-    state: connectionState,
-    checked: current === "Connection",
-    onClick: () => onChange && onChange("Connection")
-  }), items.map(t => /*#__PURE__*/React.createElement(__ds_scope.Button, {
+  }, items.map(t => /*#__PURE__*/React.createElement(__ds_scope.Button, {
     key: t,
     variant: "navigation",
     checked: current === t,

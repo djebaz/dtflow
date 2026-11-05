@@ -14,6 +14,12 @@ Changes through 5.4.0 are consolidated in [DTFlow 5.4.0](v5.4.0.md). This file t
 
 ## Added
 
+- Native Workflows mockups: canonical library/canvas/inspector forms, compact token-based controls, accepted canvas reuse and four independent `workflows` render states, including branch-local pause with siblings continuing. Owner approved the mockup design on 2026-11-05. Preview only; no workflow admission, provider work or production Workflows tab. Graph dependencies are dev-only. Local Workflows captures were reviewed; no unit tests added/run.
+
+- Shared utility navigation: Connection's colored power icon moves to the extreme right of the bottom bar with extra-small corners; Images becomes a blue primary-action button above ordinary inspectors (above the centre on narrow windows), absent from Images and Logs. The preview primary row reads Generate, Workflows, Queues; Scripts remains inside Generate.
+
+- Shared left-rail correction: hidden pages can no longer force Connection, Generate and Queues wider than their fixed scroll viewport. A synthetic width-pressure capture reproduced the issue and shows zero excess width after correction; the owner confirmed the fix in the native app. Rail width, vertical scrolling and execution behavior remain unchanged.
+
 - PR #228: owner-accepted isolated nodeeditor-qtpy canvas POC and Essentials-only packaging baseline under `tools/node_editor_poc/`, with no application runtime integration. The owner closed POC acceptance gaps after reviewing the final Windows one-file EXE. No unit tests added or run. See the [POC evidence and checklist](../../tools/node_editor_poc/README.md).
 
 - PR #228 follow-up: readable port labels, invalid-link drag cleanup, selection-free undo history, stable link IDs, a quieter grid and blue selected/hover/drag borders in the isolated POC. The owner built and reviewed the final Windows one-file EXE, confirmed editing/undo/redo and export, and closed the POC acceptance gaps on 2026-11-05. The exported draft passed the strict importer with preserved IDs. Historical automated timing failure remains undiagnosed, not an owner acceptance blocker; production integration and new benchmark claims are excluded. No unit tests added/run.
@@ -56,5 +62,5 @@ Changes through 5.4.0 are consolidated in [DTFlow 5.4.0](v5.4.0.md). This file t
 
 ## Release audit
 
-- PRs: #193, #199, #201, #215, #217, #218, #219, #227, #228.
-- Scope: Version bump 5.4.0 and release-note consolidation; Scripts preview corrections, canonical Designer migration, headless/native queue runtime and full form/Setup integration; bounded parallel scripts with attempts schema 6, ready LoRA binding and lifecycle repairs; portable mixer inventory/preparation preview, independent schema-1 authoring preferences and explicit chunks; isolated node-editor POC with owner-reviewed Windows navigation. Exact Windows release artifact, provider compatibility and release publication remain separate gates.
+- PRs: #193, #199, #201, #215, #217, #218, #219, #227, #228, #229.
+- Scope: Version bump 5.4.0 and release-note consolidation; Scripts preview corrections, canonical Designer migration, headless/native queue runtime and full form/Setup integration; bounded parallel scripts with attempts schema 6, ready LoRA binding and lifecycle repairs; portable mixer inventory/preparation preview, independent schema-1 authoring preferences and explicit chunks; isolated node-editor POC with owner-reviewed Windows navigation; offline Workflows workspace mockups, owner-accepted shared left-rail sizing correction and approved Connection/Images utility-navigation relocation. Exact Windows release artifact, provider compatibility and release publication remain separate gates.

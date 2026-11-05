@@ -101,6 +101,20 @@ uv run python tools/ui/preview_gallery_detail.py --capture out/gallery-detail-op
 
 `states.py` families: buttons, connection, gallery, inputs, checks, lists, tabs, labels, popups.
 
+## Workflows mockup captures
+
+From the repository root, after `uv sync --locked` (dev dependencies include the accepted canvas library):
+
+```powershell
+uv run --frozen python tools/ui/render_states.py --category workflows -s -j 1 --out tmp/ui-workflows-preview
+```
+
+This saves only four Workflows captures: editing, running, branch-local pause with a sibling continuing, and narrow editing. The three canonical `workflows_*.ui` forms and scoped QSS are mounted in an offline shared shell; the renderer injects the accepted POC canvas. Normal application launch does not expose this mockup or import the dev-only graph library. Inputs/model choices and outputs are fixtures, with no executor, provider or file persistence. Narrow mode keeps the selected node readable and permits off-canvas neighbours. The [plan](../../devdocs/plans/2026-11-05-workflows-ui-preview.md) records visual review and owner boundaries.
+
+For the owner-reported left-rail issue, `--category connection -s --state connection-61-left-rail-fit` selects one synthetic wide-hidden-page capture at 1180×790. Its geometry diagnostics cover switches through Generate, Queues and Connection; no layout assertions are made. User state is not read or modified.
+
+Navigation coverage reuses existing states: `workflows-01-editing` shows the full text primary tabs and Images above the inspector; `workflows-04-narrow` crosses the shared breakpoint at 1040 px and shows Images above the centre. `connection-07-connected`, `queues-33-elapsed-eta`, `images-21-snapshot-grid` and `logs-02-mixed-severity` cover the footer Connection icon, activity space and the absence of a redundant Images button in Images/Logs. All are offline layout evidence, not native/DPI acceptance.
+
 ## Interactive Windows gallery performance automation (PR #104, draft)
 
 This test is **not** an offscreen capture. `windows_gallery_benchmark.py` uses optional [pywinauto](https://github.com/pywinauto/pywinauto) to drive a separate, real DTFlow GUI process on an unlocked Windows desktop. It exercises Images Grid/List/Detail, pager chips, scrolling and positive-prompt filter editing and reads the existing `-x` gallery diagnostic logs. It does not generate images.

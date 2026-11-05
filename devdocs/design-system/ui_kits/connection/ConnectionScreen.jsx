@@ -8,7 +8,7 @@ function ConnectionScreen() {
   const pick = (b) => { setBackend(b); setSt({ s: "neutral", h: "Not checked. Check the " + b + " connection.", t: st.t }); };
   const check = () => { setSt({ s: "warning", h: "Checking…", t: "Contacting the " + backend + " backend." }); setTimeout(() => setSt({ s: "ok", h: "Connected. The " + backend + " backend answered.", t: "An explicit, non-generative check. It does not poll." }), 700); };
   return <><div className="shell">
-    <div className="rail"><Chrome tab="Connection" conn={st.s === "neutral" ? "unknown" : st.s} onTab={go} />
+    <div className="rail"><Chrome tab="Connection" onTab={go} />
       <Panel eyebrow="CONNECTION CONTEXT" className="railscroll">
         <SectionCard title="Backend" icon={Ic("server")}><div className="form">
           <Label textRole="caption">Provider</Label><ComboBox options={["fake", "local", "cloud"]} value={backend} onChange={(e) => pick(e.target.value)} aria-label="Generation backend" />
@@ -25,7 +25,7 @@ function ConnectionScreen() {
     <Panel eyebrow="CONNECTION" className="work"><Label textRole="title">Connection readiness</Label>
       <Label textRole="supporting">Verify the selected backend without submitting generation. DTFlow never falls back to another provider.</Label>
       <StatusCard state={st.s} heading={st.h} minHeight={160}>{st.t}</StatusCard></Panel>
-    {insp ? <div className="rail"><Panel eyebrow="SAFETY & EVIDENCE" style={{ flex: 1 }}>
+    {insp ? <div className="rail"><ImagesAction onTab={go} /><Panel eyebrow="SAFETY & EVIDENCE" style={{ flex: 1 }}>
       <SectionCard title="Connection check" icon={Ic("shield-check")}><Label textRole="supporting" style={{ display: "block", whiteSpace: "pre-line", color: "var(--color-text)" }}>{"• No generation request\n• No automatic backend fallback\n• Credentials are never shown or logged\n• Failures retain explicit provider evidence"}</Label></SectionCard></Panel></div> : null}
-  </div><StatusBar /></>;
+  </div><StatusBar tab="Connection" conn={st.s === "neutral" ? "unknown" : st.s} onTab={go} /></>;
 }

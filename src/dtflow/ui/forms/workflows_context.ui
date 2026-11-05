@@ -1,0 +1,430 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ui version="4.0">
+ <class>workflowsContext</class>
+ <widget class="QWidget" name="workflowsContext">
+  <layout class="QVBoxLayout" name="workflowsContextLayout">
+   <property name="leftMargin">
+    <number>0</number>
+   </property>
+   <property name="topMargin">
+    <number>0</number>
+   </property>
+   <property name="rightMargin">
+    <number>0</number>
+   </property>
+   <property name="bottomMargin">
+    <number>0</number>
+   </property>
+   <property name="spacing">
+    <number>8</number>
+   </property>
+   <item>
+    <widget class="QGroupBox" name="workflowLibrary">
+     <property name="role" stdset="0">
+      <string>sectionCard</string>
+     </property>
+     <layout class="QVBoxLayout" name="workflowLibraryLayout">
+      <property name="leftMargin">
+       <number>0</number>
+      </property>
+      <property name="topMargin">
+       <number>0</number>
+      </property>
+      <property name="rightMargin">
+       <number>0</number>
+      </property>
+      <property name="bottomMargin">
+       <number>0</number>
+      </property>
+      <property name="spacing">
+       <number>0</number>
+      </property>
+      <item>
+       <widget class="QFrame" name="workflowLibraryHeader">
+        <property name="role" stdset="0">
+         <string>sectionHeader</string>
+        </property>
+        <layout class="QVBoxLayout" name="workflowLibraryHeaderLayout">
+         <property name="leftMargin">
+          <number>8</number>
+         </property>
+         <property name="topMargin">
+          <number>8</number>
+         </property>
+         <property name="rightMargin">
+          <number>8</number>
+         </property>
+         <property name="bottomMargin">
+          <number>8</number>
+         </property>
+         <property name="spacing">
+          <number>0</number>
+         </property>
+         <item>
+          <widget class="QLabel" name="workflowLibraryTitle">
+           <property name="text">
+            <string>Workflows</string>
+           </property>
+           <property name="wordWrap">
+            <bool>true</bool>
+           </property>
+           <property name="textRole" stdset="0">
+            <string>panelHeading</string>
+           </property>
+          </widget>
+         </item>
+        </layout>
+       </widget>
+      </item>
+      <item>
+       <widget class="QWidget" name="workflowLibraryContents">
+        <property name="role" stdset="0">
+         <string>sectionContents</string>
+        </property>
+        <layout class="QVBoxLayout" name="workflowLibraryContentsLayout">
+         <property name="leftMargin">
+          <number>12</number>
+         </property>
+         <property name="topMargin">
+          <number>12</number>
+         </property>
+         <property name="rightMargin">
+          <number>12</number>
+         </property>
+         <property name="bottomMargin">
+          <number>12</number>
+         </property>
+         <property name="spacing">
+          <number>6</number>
+         </property>
+         <item>
+          <widget class="QLineEdit" name="workflowSearch">
+           <property name="placeholderText">
+            <string>Find workflow</string>
+           </property>
+          </widget>
+         </item>
+         <item>
+          <widget class="QListWidget" name="workflowList">
+           <item>
+            <property name="text">
+             <string>Portrait finishing</string>
+            </property>
+           </item>
+           <item>
+            <property name="text">
+             <string>Product relight</string>
+            </property>
+           </item>
+           <property name="maximumHeight">
+            <number>86</number>
+           </property>
+           <property name="currentRow">
+            <number>0</number>
+           </property>
+          </widget>
+         </item>
+         <item>
+          <widget class="QWidget" name="workflowFileActions">
+           <layout class="QHBoxLayout" name="workflowFileActionsLayout">
+            <property name="leftMargin">
+             <number>0</number>
+            </property>
+            <property name="topMargin">
+             <number>0</number>
+            </property>
+            <property name="rightMargin">
+             <number>0</number>
+            </property>
+            <property name="bottomMargin">
+             <number>0</number>
+            </property>
+            <property name="spacing">
+             <number>4</number>
+            </property>
+            <item>
+             <widget class="QPushButton" name="newWorkflowButton">
+              <property name="text">
+               <string>New</string>
+              </property>
+             </widget>
+            </item>
+            <item>
+             <widget class="QPushButton" name="openWorkflowButton">
+              <property name="text">
+               <string>Open…</string>
+              </property>
+             </widget>
+            </item>
+           </layout>
+          </widget>
+         </item>
+        </layout>
+       </widget>
+      </item>
+     </layout>
+    </widget>
+   </item>
+   <item>
+    <widget class="QGroupBox" name="workflowNodes">
+     <property name="role" stdset="0">
+      <string>sectionCard</string>
+     </property>
+     <layout class="QVBoxLayout" name="workflowNodesLayout">
+      <property name="leftMargin">
+       <number>0</number>
+      </property>
+      <property name="topMargin">
+       <number>0</number>
+      </property>
+      <property name="rightMargin">
+       <number>0</number>
+      </property>
+      <property name="bottomMargin">
+       <number>0</number>
+      </property>
+      <property name="spacing">
+       <number>0</number>
+      </property>
+      <item>
+       <widget class="QFrame" name="workflowNodesHeader">
+        <property name="role" stdset="0">
+         <string>sectionHeader</string>
+        </property>
+        <layout class="QVBoxLayout" name="workflowNodesHeaderLayout">
+         <property name="leftMargin">
+          <number>8</number>
+         </property>
+         <property name="topMargin">
+          <number>8</number>
+         </property>
+         <property name="rightMargin">
+          <number>8</number>
+         </property>
+         <property name="bottomMargin">
+          <number>8</number>
+         </property>
+         <property name="spacing">
+          <number>0</number>
+         </property>
+         <item>
+          <widget class="QLabel" name="workflowNodesTitle">
+           <property name="text">
+            <string>Add node</string>
+           </property>
+           <property name="wordWrap">
+            <bool>true</bool>
+           </property>
+           <property name="textRole" stdset="0">
+            <string>panelHeading</string>
+           </property>
+          </widget>
+         </item>
+        </layout>
+       </widget>
+      </item>
+      <item>
+       <widget class="QWidget" name="workflowNodesContents">
+        <property name="role" stdset="0">
+         <string>sectionContents</string>
+        </property>
+        <layout class="QVBoxLayout" name="workflowNodesContentsLayout">
+         <property name="leftMargin">
+          <number>12</number>
+         </property>
+         <property name="topMargin">
+          <number>12</number>
+         </property>
+         <property name="rightMargin">
+          <number>12</number>
+         </property>
+         <property name="bottomMargin">
+          <number>12</number>
+         </property>
+         <property name="spacing">
+          <number>6</number>
+         </property>
+         <item>
+          <widget class="QLineEdit" name="nodeSearch">
+           <property name="placeholderText">
+            <string>Find node</string>
+           </property>
+          </widget>
+         </item>
+         <item>
+          <widget class="QListWidget" name="nodePalette">
+           <item>
+            <property name="text">
+             <string>Generate</string>
+            </property>
+           </item>
+           <item>
+            <property name="text">
+             <string>Detect face mask</string>
+            </property>
+           </item>
+           <item>
+            <property name="text">
+             <string>Inpaint</string>
+            </property>
+           </item>
+           <item>
+            <property name="text">
+             <string>Img2img refine</string>
+            </property>
+           </item>
+           <item>
+            <property name="text">
+             <string>Save image</string>
+            </property>
+           </item>
+           <property name="maximumHeight">
+            <number>160</number>
+           </property>
+          </widget>
+         </item>
+         <item>
+          <widget class="QLabel" name="paletteHelp">
+           <property name="text">
+            <string>Double-click to add a node.</string>
+           </property>
+           <property name="wordWrap">
+            <bool>true</bool>
+           </property>
+           <property name="role" stdset="0">
+            <string>secondary</string>
+           </property>
+          </widget>
+         </item>
+        </layout>
+       </widget>
+      </item>
+     </layout>
+    </widget>
+   </item>
+   <item>
+    <widget class="QGroupBox" name="workflowSources">
+     <property name="role" stdset="0">
+      <string>sectionCard</string>
+     </property>
+     <layout class="QVBoxLayout" name="workflowSourcesLayout">
+      <property name="leftMargin">
+       <number>0</number>
+      </property>
+      <property name="topMargin">
+       <number>0</number>
+      </property>
+      <property name="rightMargin">
+       <number>0</number>
+      </property>
+      <property name="bottomMargin">
+       <number>0</number>
+      </property>
+      <property name="spacing">
+       <number>0</number>
+      </property>
+      <item>
+       <widget class="QFrame" name="workflowSourcesHeader">
+        <property name="role" stdset="0">
+         <string>sectionHeader</string>
+        </property>
+        <layout class="QVBoxLayout" name="workflowSourcesHeaderLayout">
+         <property name="leftMargin">
+          <number>8</number>
+         </property>
+         <property name="topMargin">
+          <number>8</number>
+         </property>
+         <property name="rightMargin">
+          <number>8</number>
+         </property>
+         <property name="bottomMargin">
+          <number>8</number>
+         </property>
+         <property name="spacing">
+          <number>0</number>
+         </property>
+         <item>
+          <widget class="QLabel" name="workflowSourcesTitle">
+           <property name="text">
+            <string>Inputs</string>
+           </property>
+           <property name="wordWrap">
+            <bool>true</bool>
+           </property>
+           <property name="textRole" stdset="0">
+            <string>panelHeading</string>
+           </property>
+          </widget>
+         </item>
+        </layout>
+       </widget>
+      </item>
+      <item>
+       <widget class="QWidget" name="workflowSourcesContents">
+        <property name="role" stdset="0">
+         <string>sectionContents</string>
+        </property>
+        <layout class="QVBoxLayout" name="workflowSourcesContentsLayout">
+         <property name="leftMargin">
+          <number>12</number>
+         </property>
+         <property name="topMargin">
+          <number>12</number>
+         </property>
+         <property name="rightMargin">
+          <number>12</number>
+         </property>
+         <property name="bottomMargin">
+          <number>12</number>
+         </property>
+         <property name="spacing">
+          <number>6</number>
+         </property>
+         <item>
+          <widget class="QLabel" name="workflowSourceText">
+           <property name="text">
+            <string>Generate → one branch per image</string>
+           </property>
+           <property name="wordWrap">
+            <bool>true</bool>
+           </property>
+          </widget>
+         </item>
+         <item>
+          <widget class="QLabel" name="workflowSourceNote">
+           <property name="text">
+            <string>Saved application finals feed later image steps.</string>
+           </property>
+           <property name="wordWrap">
+            <bool>true</bool>
+           </property>
+           <property name="role" stdset="0">
+            <string>secondary</string>
+           </property>
+          </widget>
+         </item>
+        </layout>
+       </widget>
+      </item>
+     </layout>
+    </widget>
+   </item>
+   <item>
+    <spacer name="bottomSpacer">
+     <property name="orientation">
+      <enum>Qt::Vertical</enum>
+     </property>
+     <property name="sizeHint" stdset="0">
+      <size>
+       <width>0</width>
+       <height>20</height>
+      </size>
+     </property>
+    </spacer>
+   </item>
+  </layout>
+ </widget>
+ <resources />
+ <connections />
+</ui>

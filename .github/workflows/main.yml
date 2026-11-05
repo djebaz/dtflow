@@ -35,6 +35,7 @@ on:
           - inpaint
           - logs
           - scripts
+          - workflows
       changed_only:
         description: "With a PR and category all: render mapped representatives; uncertain impact uses a sample pack with a coverage warning"
         required: false

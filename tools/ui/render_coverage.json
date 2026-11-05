@@ -194,9 +194,28 @@
       "queues-45-popover-generate",
       "queues-46-popover-images-composer-plan",
       "queues-47-popover-queues-while-running"
+    ],
+    "page.workflows": [
+      "workflows-01-editing",
+      "workflows-02-running",
+      "workflows-03-branch-paused",
+      "workflows-04-narrow"
     ]
   },
   "components": [
+    {
+      "pack": "page.workflows",
+      "paths": [
+        "src/dtflow/ui/workflows_preview.py",
+        "src/dtflow/ui/forms/workflows_*.ui",
+        "tools/ui/render_workflows_states.py",
+        "tools/node_editor_poc/nodeeditor_app.py",
+        "tools/node_editor_poc/poc_shell.py",
+        "tools/node_editor_poc/poc_contract.py",
+        "tools/node_editor_poc/reference_workflow_v1.json"
+      ],
+      "why": "isolated Workflows mockup and its accepted canvas: authoring, execution, branch-local pause and narrow layout"
+    },
     {
       "pack": "search",
       "paths": [

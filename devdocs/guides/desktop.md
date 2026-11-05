@@ -1,6 +1,6 @@
 # Desktop guide
 
-DTFlow's desktop application has Connection, Generate, Queues and Images pages. Connection, Generate and Queues share navigation on the left, the workspace in the center and an Inspector on the right. The panel icon beside the brand toggles details. Images uses the same logo/navigation in two aligned header rows and hides the content rails; returning restores splitter geometry and the shared Inspector choice.
+DTFlow's desktop application has Connection, Generate, Queues and Images pages. Generate and Queues use the primary left navigation. The colored Connection power icon sits at the extreme right of the bottom bar; Images opens through the blue primary-action button above ordinary right-hand inspectors (above the centre at narrow widths). That Images button is absent from Images and Logs. The panel icon beside the brand toggles details. Images uses the same logo/primary navigation in two aligned header rows and hides the content rails; returning restores splitter geometry and the shared Inspector choice. Workflows is currently an offline mockup, not a normal-launch tab.
 
 ## Inline actions and progress
 

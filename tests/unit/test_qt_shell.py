@@ -69,13 +69,14 @@ def test_shared_header_and_window_modes(window, qtbot):
         nav = window.shell.navigationFrame
         filters = window.logs_form.logsSessionLabel
         assert filters.mapTo(window.form, QPoint()).y() > nav.mapTo(window.form, QPoint(0, nav.height())).y()
-        for button in (
-            window.form.connectionNavigationButton,
-            window.form.generationNavigationButton,
-            window.form.queueNavigationButton,
-            window.form.imagesNavigationButton,
-        ):
+        for button in (window.form.generationNavigationButton, window.form.queueNavigationButton):
             assert nav.rect().contains(button.mapTo(nav, button.rect().bottomRight()))
+        # Connection lives in the footer status bar; Images is absent from Logs.
+        footer = window.form.statusBar()
+        connection = window.form.connectionNavigationButton
+        assert footer.isAncestorOf(connection)
+        assert footer.rect().contains(connection.mapTo(footer, connection.rect().bottomRight()))
+        assert not window.form.imagesNavigationButton.isVisible()
         controls = (
             window.logs_form.logsSessionCombo,
             window.logs_form.logsSearch,

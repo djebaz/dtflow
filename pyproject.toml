@@ -30,11 +30,14 @@ dtflow = "dtflow.cli:main"
 
 [dependency-groups]
 dev = [
+    "nodeeditor-qtpy==0.8.2",
+    "orjson==3.13.0",
     "playwright>=1.64.1",
     "pytest",
     "pytest-asyncio>=1.4.0",
     "pytest-qt>=4.5.0",
     "pytest-xdist>=3.8.0",
+    "qtpy==2.4.3",
     "ruff",
 ]
 mask-poc = [

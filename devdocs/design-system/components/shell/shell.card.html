@@ -8,6 +8,6 @@
 <script src="../../_ds_bundle.js"></script></head><body><div id="root" style="display:contents"></div>
 <script type="text/babel">
 const { Brand, Navigation, MenuBar } = window.DTFlowDesignSystem_cee425;
-function Demo(){const [t,setT]=React.useState("Generate");return <><div style={{width:260}}><Brand logo="../../assets/dtflow-app.png"/></div><div style={{width:260,height:70}}><MenuBar menus={[{label:"Help",items:["About DTFlow"]}]}/></div><div style={{width:260}}><Navigation current={t} onChange={setT} connectionState="ok"/></div></>}
+function Demo(){const [t,setT]=React.useState("Generate");return <><div style={{width:260}}><Brand logo="../../assets/dtflow-app.png"/></div><div style={{width:260,height:70}}><MenuBar menus={[{label:"Help",items:["About DTFlow"]}]}/></div><div style={{width:260}}><Navigation current={t} onChange={setT}/></div></>}
 ReactDOM.createRoot(document.getElementById('root')).render(<Demo/>);
 </script></body></html>

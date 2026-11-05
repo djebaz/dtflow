@@ -65,6 +65,7 @@ from PySide6.QtTest import QTest  # noqa: E402
 from PySide6.QtWidgets import (  # noqa: E402
     QApplication,
     QFrame,
+    QLabel,
     QLineEdit,
     QMenu,
     QPushButton,
@@ -192,6 +193,8 @@ def planned_phases():
         phases.append("main window: " + ", ".join(main))
     if wants("scripts"):
         phases.append("scripts window")
+    if wants("workflows"):
+        phases.append("workflows preview window")
     return phases
 
 
@@ -399,6 +402,29 @@ def render_workspace_states(app, state, out):
             form.connectionNavigationButton.click()
             form.backendCombo.setCurrentText("local")
             snap("connection-01-local-idle", "No API key available.", False)
+            if category_selected(Path("connection-61-left-rail-fit.png")):
+                # A hidden page may carry a large size hint after real inventory/history
+                # loads. Reproduce that pressure without reading private owner data.
+                pressure = QLabel("offline_long_identifier_" * 12)
+                shell.shell.leftStack.addWidget(pressure)
+                form.resize(1180, 790)
+                for button in (
+                    form.generationNavigationButton,
+                    form.queueNavigationButton,
+                    form.connectionNavigationButton,
+                ):
+                    button.click()
+                    QTest.qWait(30)
+                    stack = shell.shell.leftStack
+                    viewport = shell.shell.leftScroll.viewport().width()
+                    REPORTER.diagnostic(
+                        f"[left-rail] {button.objectName()} viewport={viewport} stack={stack.width()} "
+                        f"page={stack.currentWidget().width()} excess={stack.width() - viewport}"
+                    )
+                snap("connection-61-left-rail-fit", "No API key available.", False)
+                shell.shell.leftStack.removeWidget(pressure)
+                pressure.deleteLater()
+                form.resize(1600, 1000)
 
             form.backendCombo.setCurrentText("cloud")
             snap("connection-02-cloud-no-key", "No API key available.", False)
@@ -3827,6 +3853,21 @@ def _render_selection(app, args):
         after_failure,
     ):
         state = Path(temporary)
+        if wants("workflows"):
+            phase("workflows preview window")
+            from render_workflows_states import render_workflows_states
+
+            render_workflows_states(
+                args.out,
+                window_factory=lambda: MainWindow(
+                    saved=SavedCredentials(Vault()),
+                    environ={},
+                    state_dir=state / "workflows-preview",
+                    no_cache=True,
+                ),
+                state_names=[item.id for item in SELECTION.states if item.category == "workflows"],
+                capture=save,
+            )
         scripts_done = False
 
         def render_scripts():

@@ -12,7 +12,7 @@ import os
 from dataclasses import dataclass
 from pathlib import Path
 
-CATEGORY_ORDER = ("shell", "connection", "generate", "inpaint", "queues", "scripts", "images", "logs")
+CATEGORY_ORDER = ("shell", "connection", "generate", "inpaint", "queues", "scripts", "workflows", "images", "logs")
 STAGE_ORDER = ("empty", "setup", "ready", "running", "results", "failure", "recovery", "layout")
 CATALOG_PATH = Path(__file__).with_suffix(".json")
 
@@ -25,6 +25,7 @@ WORKER_FIXTURES = {
     "queues": ("active-queue", "item-table", "queue-template"),
     "main": ("generation-flow", "queue", "shell", "inpaint", "logs"),
     "scripts": ("scripts",),
+    "workflows": ("workflows",),
     "gallery": ("gallery-composition",),
     "images-windows": ("mapped-gallery", "trash-unavailable", "initial-refresh-recovery"),
     "splash": ("startup-splash",),
@@ -37,6 +38,7 @@ WORKER_ORDER = (
     "gallery",
     "main",
     "scripts",
+    "workflows",
     "images-windows",
     "splash",
 )  # also the order they run in one process
@@ -49,6 +51,7 @@ WORKER_COST = {
     "queues": (3.0, 0.42),
     "main": (6.0, 0.41),
     "scripts": (6.0, 0.90),
+    "workflows": (6.0, 0.8),  # initial planning estimate, not a measured benchmark
     "gallery": (6.0, 0.98),
     "images-windows": (6.0, 0.66),
     "splash": (0.1, 0.1),
