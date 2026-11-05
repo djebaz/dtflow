@@ -4,8 +4,9 @@
 Run from the repository root with its uv-managed environment:
     uv run python tools/images/schp_atr18_smoke.py --help
 
-Requires existing local YOLO26 end2end segmentation and NudeNet-style face ONNX
-models. Only the pinned SCHP model may be downloaded. No provider calls.
+Missing SCHP, YOLO26 person and NudeNet face ONNX files download automatically.
+Use --pose-model without a path to fetch the default pose checkpoint too.
+Existing local files are reused; --no-download disables every download. No provider calls.
 Raw and refined outputs are grouped by type and aligned to the oriented source.
 Optionally add -k / --pose-model for conservative arm/leg label correction;
 -q controls joint confidence and -w controls limb-zone width. Pose-corrected
@@ -20,6 +21,7 @@ import hashlib
 import json
 import os
 import sys
+import tempfile
 import time
 import urllib.error
 import urllib.request
@@ -86,6 +88,31 @@ MAX_IMAGE_PIXELS = 16_000_000
 DISPLAY_LABELS = (*LABELS, "Skin")  # synthetic class 18, never an SCHP prediction
 DISPLAY_COLORS = (*COLORS, (255, 0, 255))  # vivid magenta stays visible over natural skin
 
+# Published upstream asset digests and sizes; no export toolchain is required.
+# NudeNet uses the Git blob identity from its pinned source commit.
+CHECKPOINTS = {
+    "person": (
+        "https://github.com/ultralytics/assets/releases/download/v8.4.0/yolo26n-seg.onnx",
+        11_218_582,
+        "sha256",
+        "711e0ef837c677ae4006f65fe503a62a6b0529979f4828ed50b674a7482b7d2e",
+    ),
+    "faces": (
+        "https://raw.githubusercontent.com/notAI-tech/NudeNet/"
+        "21ccea100712f0844a4f6bb66c9f3972b2c32f85/nudenet/320n.onnx",
+        12_150_158,
+        "git-sha1",
+        "68eedc3934ac160fce68e2bd4336cfe17eef140b",
+    ),
+    "pose": (
+        "https://github.com/ultralytics/assets/releases/download/v8.4.0/yolo26n-pose.onnx",
+        12_125_856,
+        "sha256",
+        "93fc5e1d6b7690f33b4e1d60d6e9aec1cea14bdbc361bfae11778969be662078",
+    ),
+}
+
+
 
 def sha256_file(path: Path) -> str:
     """Return a streaming SHA-256 without loading the entire model into RAM."""
@@ -96,48 +123,60 @@ def sha256_file(path: Path) -> str:
     return digest.hexdigest()
 
 
-def ensure_model(path: Path, *, allow_download: bool) -> str:
-    """Reuse or safely download the pinned ONNX file; never accept a bad digest."""
+def ensure_checkpoint(path: Path, spec, *, allow_download: bool):
+    """Reuse a local checkpoint or download and verify the pinned role default."""
     if path.is_file():
-        actual = sha256_file(path)
-        if actual == MODEL_SHA256:
-            print(f"Model verified and reused: {path}")
-            return actual
-        raise RuntimeError(
-            f"Existing model has an unexpected SHA-256: {path}\n"
-            f"Expected {MODEL_SHA256}\nFound    {actual}\n"
-            "Remove or move that file explicitly before retrying."
-        )
+        print(f"Reusing local checkpoint: {path}", flush=True)
+        return
     if not allow_download:
-        raise FileNotFoundError(f"Model is missing and --no-download was selected: {path}")
+        raise FileNotFoundError(f"Checkpoint missing with --no-download: {path}")
+    url, expected_bytes, algorithm, expected_digest = spec
+    digest = hashlib.sha256() if algorithm == "sha256" else hashlib.sha1()
+    if algorithm == "git-sha1":
+        digest.update(f"blob {expected_bytes}\0".encode("ascii"))
     path.parent.mkdir(parents=True, exist_ok=True)
-    part = path.with_name(path.name + ".part")
-    digest = hashlib.sha256()
-    print(f"Downloading model (~{MODEL_BYTES / 1024 / 1024:.1f} MiB): {MODEL_URL}", flush=True)
+    print(f"Downloading {path.name} ({expected_bytes / 1024 / 1024:.1f} MiB): {url}", flush=True)
+    fd, temporary = tempfile.mkstemp(prefix=path.name + ".", suffix=".part", dir=path.parent)
+    part = Path(temporary)
     try:
-        request = urllib.request.Request(MODEL_URL, headers={"User-Agent": "dtflow-schp-smoke/1.0"})
-        with urllib.request.urlopen(request, timeout=90) as response, part.open("wb") as dest:
-            total = 0
-            shown_at = time.monotonic()
-            while chunk := response.read(1024 * 1024):
-                dest.write(chunk)
-                digest.update(chunk)
-                total += len(chunk)
-                if time.monotonic() - shown_at >= 1:
-                    print(f"  Downloaded {total / 1024 / 1024:.1f} MiB", flush=True)
-                    shown_at = time.monotonic()
-        actual = digest.hexdigest()
-        if total != MODEL_BYTES or actual != MODEL_SHA256:
+        request = urllib.request.Request(url, headers={"User-Agent": "dtflow-schp-smoke/1.0"})
+        total = 0
+        shown_at = time.monotonic()
+        with os.fdopen(fd, "wb") as dest:
+            with urllib.request.urlopen(request, timeout=90) as response:
+                while chunk := response.read(1024 * 1024):
+                    total += len(chunk)
+                    if total > expected_bytes:
+                        raise RuntimeError(f"Download exceeds expected checkpoint size: {path.name}")
+                    dest.write(chunk)
+                    digest.update(chunk)
+                    if time.monotonic() - shown_at >= 1:
+                        print(f"  {path.name}: {total / 1024 / 1024:.1f} MiB", flush=True)
+                        shown_at = time.monotonic()
+        if total != expected_bytes or digest.hexdigest() != expected_digest:
             raise RuntimeError(
-                f"Downloaded content failed integrity checks: {total} bytes; SHA-256 {actual}; "
-                f"expected {MODEL_BYTES} bytes and SHA-256 {MODEL_SHA256}."
+                f"Checkpoint download failed integrity checks: {path.name}; "
+                f"{total} bytes, {algorithm} {digest.hexdigest()}"
             )
-        os.replace(part, path)
+        # Do not replace a file another run supplied while this download was active.
+        if not path.exists():
+            os.replace(part, path)
+        print(f"Checkpoint ready: {path}", flush=True)
     finally:
-        # Only remove our incomplete temporary download; preserve existing checkpoints.
         part.unlink(missing_ok=True)
-    print(f"Model downloaded and SHA-256 verified: {path}")
-    return MODEL_SHA256
+
+
+def ensure_model(path: Path, *, allow_download: bool) -> str:
+    """Retain SCHP's pinned SHA-256 check for both cached and downloaded files."""
+    ensure_checkpoint(path, (MODEL_URL, MODEL_BYTES, "sha256", MODEL_SHA256), allow_download=allow_download)
+    actual = sha256_file(path)
+    if actual != MODEL_SHA256:
+        raise RuntimeError(
+            f"Existing SCHP model has an unexpected SHA-256: {path}\n"
+            f"Expected {MODEL_SHA256}\nFound    {actual}\n"
+            "Move or remove that file explicitly before retrying."
+        )
+    return actual
 
 
 def load_session(model_path: Path, threads: int):
@@ -517,26 +556,24 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("-i", "--input-dir", type=Path, required=True, help="Folder containing images (non-recursive).")
     parser.add_argument("-o", "--output-dir", type=Path, default=Path("tmp/schp-atr18-smoke"), help="Output folder; existing folders are preserved using a numbered sibling.")
     parser.add_argument("-m", "--model", type=Path, default=Path("tmp/models") / MODEL_NAME, help="Cached INT8 ONNX file.")
-    parser.add_argument("-n", "--no-download", action="store_true", help="Require an existing, hash-verified ONNX file.")
+    parser.add_argument("-n", "--no-download", action="store_true", help="Disable downloads for every checkpoint.")
     parser.add_argument("-a", "--opacity", type=float, default=0.50, help="Overlay opacity between 0.0 and 1.0 (default 0.50).")
     parser.add_argument("-t", "--threads", type=int, default=4, help="ONNX Runtime CPU inference threads (default 4).")
     parser.add_argument("-c", "--min-confidence", type=float, default=0.0, help="Minimum pixel score for refined outputs only; raw outputs remain untouched.")
-    parser.add_argument("-p", "--person-model", type=Path, required=True, help="Local YOLO26 end2end segmentation ONNX.")
-    parser.add_argument("-f", "--faces-model", type=Path, required=True, help="Local NudeNet-style 320 px FACE_* ONNX.")
+    parser.add_argument("-p", "--person-model", type=Path, default=Path("tmp/models/yolo26n-seg.onnx"), help="Person ONNX path; download the default checkpoint if missing.")
+    parser.add_argument("-f", "--faces-model", type=Path, default=Path("tmp/models/320n.onnx"), help="Face ONNX path; download NudeNet 320n if missing.")
     parser.add_argument("-d", "--confidence", type=float, default=0.25, help="Person detection threshold (default 0.25).")
-    parser.add_argument("-k", "--pose-model", type=Path, help="Optional local YOLO pose ONNX for arm/leg correction.")
+    parser.add_argument(
+        "-k", "--pose-model", type=Path, nargs="?", const=Path("tmp/models/yolo26n-pose.onnx"),
+        help="Enable pose correction; optional ONNX path, default tmp/models/yolo26n-pose.onnx; download if missing.",
+    )
     parser.add_argument("-q", "--pose-kpt-confidence", type=float, default=0.3, help="Minimum joint score (default 0.3).")
     parser.add_argument("-w", "--pose-width", type=float, default=0.20, help="Limb-zone half-width / bone length (default 0.20).")
     args = parser.parse_args(argv)
-    if args.pose_model is not None and not args.pose_model.is_file():
-        parser.error(f"Local pose model file not found: {args.pose_model}")
     if not 0.0 <= args.pose_kpt_confidence <= 1.0:
         parser.error("--pose-kpt-confidence must be between 0 and 1")
     if not 0.0 < args.pose_width <= 1.0:
         parser.error("--pose-width must be greater than 0 and at most 1")
-    for path in (args.person_model, args.faces_model):
-        if not path.is_file():
-            parser.error(f"Local model file not found: {path}")
     if not 0.0 <= args.confidence <= 1.0:
         parser.error("--confidence must be between 0 and 1")
     if not 0.0 <= args.opacity <= 1.0:
@@ -564,7 +601,10 @@ def main(argv: list[str] | None = None) -> int:
         return 2
 
     # Reuse the production decoder, model checks, detection thresholds and NMS.
-    # Caller-selected auxiliary models are local only; record their actual digests.
+    # Existing user files retain their model contracts; missing files get role defaults.
+    for role, path in (("person", args.person_model), ("faces", args.faces_model), ("pose", args.pose_model)):
+        if path is not None:
+            ensure_checkpoint(path, CHECKPOINTS[role], allow_download=not args.no_download)
     person_ref = selection.describe_model(args.person_model)
     faces_ref = selection.describe_model(args.faces_model)
     person_session = selection._verified_session(person_ref, selection._segmentation_session)
