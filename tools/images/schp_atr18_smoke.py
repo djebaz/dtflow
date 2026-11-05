@@ -919,6 +919,10 @@ def save_boundary_overlay(source, strength, person_mask, threshold, out_dir, ste
     ):
         draw.text((left, 16 + row * 26), text, fill="black")
     result.save(out_dir / "overlays" / f"{stem}_boundary_overlay.png")
+    # Also save the actual edge map without source-image colors or legend.
+    Image.fromarray(edges.astype(np.uint8) * 255).save(
+        out_dir / "overlays" / f"{stem}_edge_map.png"
+    )
 
 
 def make_visuals(
