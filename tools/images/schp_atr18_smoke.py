@@ -1026,10 +1026,10 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument(
         "-d", "--confidence", type=float, default=0.25, help="Person detection threshold (default 0.25)."
     )
-    parser.add_argument("--max-people", type=int, default=2, help="Maximum retained people per image (default 2).")
-    parser.add_argument("--min-person-area", type=float, default=0.10,
+    parser.add_argument("-j", "--max-people", type=int, default=2, help="Maximum retained people per image (default 2).")
+    parser.add_argument("-u", "--min-person-area", type=float, default=0.10,
                         help="Minimum person mask fraction of full image (default 0.10).")
-    parser.add_argument("--repair-person-mask", action=argparse.BooleanOptionalAction, default=True,
+    parser.add_argument("-z", "--repair-person-mask", action=argparse.BooleanOptionalAction, default=True,
                         help="Close narrow per-person mask gaps (default enabled).")
     parser.add_argument(
         "-k",
