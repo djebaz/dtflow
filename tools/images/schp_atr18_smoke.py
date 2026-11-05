@@ -1035,6 +1035,33 @@ def select_people(people, image_size, min_area, max_people, repair):
     return [(score, mask, box) for _, score, mask, box in selected[:max_people]]
 
 
+def save_depth_geometry(source, person_mask, out_dir, stem, estimator):
+    """Export relative depth, estimated normals, and depth curvature."""
+    import numpy as np
+    from PIL import Image
+
+    result = estimator(source)
+    depth = np.asarray(result["depth"].resize(source.size, Image.Resampling.BICUBIC), dtype=np.float32)
+    inside = person_mask > 0
+    if not inside.any():
+        return
+    low, high = np.percentile(depth[inside], (2, 98))
+    depth = np.clip((depth - low) / max(float(high - low), 1e-6), 0, 1)
+    dy, dx = np.gradient(depth)
+    normals = np.stack((-dx, -dy, np.ones_like(depth)), axis=-1)
+    normals /= np.maximum(np.linalg.norm(normals, axis=-1, keepdims=True), 1e-6)
+    curvature = np.abs(np.gradient(dx, axis=1) + np.gradient(dy, axis=0))
+    curvature /= max(float(np.percentile(curvature[inside], 98)), 1e-6)
+    for name, values in (
+        ("depth", depth),
+        ("normals", (normals + 1) * 0.5),
+        ("curvature", np.clip(curvature, 0, 1)),
+    ):
+        pixels = (values * 255).astype(np.uint8)
+        pixels[~inside] = 0
+        Image.fromarray(pixels).save(out_dir / "overlays" / f"{stem}_{name}.png")
+
+
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     """Build the smoke-test CLI with simple paths and predictable output options."""
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -1106,6 +1133,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     )
     parser.add_argument("--edge-method", choices=("existing", "canny", "slic"), default="existing",
                         help="Boundary algorithm; SLIC requires scikit-image, Canny requires OpenCV (default existing).")
+    parser.add_argument("--depth-geometry", action="store_true", help="Export Depth Anything V2 Small geometry diagnostics.")
     parser.add_argument("--canny-low", type=int, default=60, help="Canny lower hysteresis threshold (default 60).")
     parser.add_argument("--canny-high", type=int, default=140, help="Canny upper hysteresis threshold (default 140).")
     parser.add_argument(
@@ -1173,6 +1201,14 @@ def main(argv: list[str] | None = None) -> int:
     if not files:
         print(f"No supported images found in {args.input_dir}", file=sys.stderr)
         return 2
+
+    depth_estimator = None
+    if args.depth_geometry:
+        try:
+            from transformers import pipeline
+        except ImportError as exc:
+            raise RuntimeError("Depth geometry requires transformers and torch") from exc
+        depth_estimator = pipeline("depth-estimation", model="depth-anything/Depth-Anything-V2-Small-hf", device="cpu")
 
     # Reuse the production decoder, model checks, detection thresholds and NMS.
     # Existing user files retain their model contracts; missing files get role defaults.
@@ -1263,6 +1299,8 @@ def main(argv: list[str] | None = None) -> int:
                     flat=True,
                 )
                 save_person_overlay(source, person_mask, output_root, person_stem)
+                if depth_estimator is not None:
+                    save_depth_geometry(source, person_mask, output_root, person_stem, depth_estimator)
                 details["person_cutoff"] = "YOLO instance segmentation silhouette, not detection box"
                 details["person_postprocessing"] = (
                     "none: preserve decoded background gaps; missed gaps are not reconstructed"
