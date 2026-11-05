@@ -1,0 +1,129 @@
+name: Workflow preview screenshot
+
+# Loads a workflow JSON (default: the reference test workflow) into the offline Workflows preview,
+# headless, and uploads the window and canvas screenshots as an artifact.
+# tools/ui/capture_workflow_preview.py: strict POC importer, network guard, no executor, providers or secrets.
+run-name: >-
+  Workflow preview · ${{ github.event_name == 'pull_request' && format('PR #{0}', github.event.pull_request.number)
+  || inputs.pr != '' && format('PR #{0}', inputs.pr) || format('branch {0}', github.ref_name) }}
+
+on:
+  workflow_dispatch:
+    inputs:
+      pr:
+        description: "Pull request number to capture (empty: the branch this workflow runs from)"
+        required: false
+        default: ""
+        type: string
+      workflow:
+        description: "Workflow JSON path in the repository"
+        required: true
+        default: "tools/node_editor_poc/reference_workflow_v1.json"
+        type: string
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+    paths:
+      - 'tools/node_editor_poc/**'
+      - 'tools/ui/capture_workflow_preview.py'
+      - 'src/dtflow/ui/workflows_preview.py'
+      - 'src/dtflow/ui/forms/workflows_*.ui'
+      - 'src/dtflow/resources/styles/**'
+      - '.github/workflows/workflow-preview.yml'
+      - '!**/*.md'
+
+permissions:
+  contents: read
+  pull-requests: read
+
+concurrency:
+  group: workflow-preview-${{ github.event.pull_request.number || inputs.pr || github.ref }}
+  cancel-in-progress: true
+
+env:
+  UV_LOCKED: "1"
+  QT_QPA_PLATFORM: offscreen
+  PYTHONUNBUFFERED: "1"
+  PYTHONFAULTHANDLER: "1"
+
+jobs:
+  capture:
+    name: Capture workflow preview
+    runs-on: ubuntu-24.04
+    # Like CI and UI renders, automatic PR runs skip drafts; manual dispatch remains explicit.
+    if: github.event_name != 'pull_request' || !github.event.pull_request.draft
+    timeout-minutes: 10
+    steps:
+      - name: Resolve target commit
+        id: target
+        env:
+          GH_TOKEN: ${{ github.token }}
+          INPUT_PR: ${{ github.event.pull_request.number || inputs.pr }}
+        run: |
+          sha="$GITHUB_SHA"
+          label="branch $GITHUB_REF_NAME"
+          if [ -n "$INPUT_PR" ]; then
+            [[ "$INPUT_PR" =~ ^[1-9][0-9]*$ ]] || { echo "pr must be a positive number." >&2; exit 1; }
+            pr_json=$(gh api "repos/$GITHUB_REPOSITORY/pulls/$INPUT_PR")
+            head_repo=$(jq -r '.head.repo.full_name // ""' <<<"$pr_json")
+            [ "$head_repo" = "$GITHUB_REPOSITORY" ] || {
+              echo "Only same-repository PR branches are supported; fork/deleted repositories are refused." >&2; exit 1; }
+            sha=$(jq -r .head.sha <<<"$pr_json")
+            label="PR #$INPUT_PR ($(jq -r .head.ref <<<"$pr_json"))"
+          fi
+          echo "Capturing $label at $sha" | tee -a "$GITHUB_STEP_SUMMARY"
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+          echo "short=${sha:0:7}" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/checkout@v7.0.1
+        with:
+          ref: ${{ steps.target.outputs.sha }}
+          persist-credentials: false
+
+      # PySide6 needs libEGL at import time; the other Qt libraries and fonts are already on the runner image.
+      - name: Install Qt runtime library
+        run: |
+          sudo apt-get install -y --no-install-recommends libegl1 \
+            || { sudo apt-get update && sudo apt-get install -y --no-install-recommends libegl1; }
+
+      - uses: astral-sh/setup-uv@v10.3.3
+        with:
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+
+      # The dev group carries nodeeditor-qtpy and the offline test fixtures (fake vault, network guard).
+      - name: Sync environment
+        run: uv sync --locked
+
+      - name: Load workflow and capture
+        env:
+          WORKFLOW_PATH: ${{ inputs.workflow || 'tools/node_editor_poc/reference_workflow_v1.json' }}
+        run: |
+          case "$WORKFLOW_PATH" in
+            /*|*..*) echo "::error::workflow must be a relative repository path without '..'."; exit 1 ;;
+          esac
+          [ -f "$WORKFLOW_PATH" ] || { echo "::error::$WORKFLOW_PATH not found at this commit."; exit 1; }
+          mkdir -p tmp
+          set -o pipefail
+          timeout --signal=ABRT --kill-after=10s 180s \
+            .venv/bin/python tools/ui/capture_workflow_preview.py --workflow "$WORKFLOW_PATH" --out tmp/workflow-preview \
+            2>&1 | grep -v 'does not support propagateSizeHints' | tee tmp/workflow-preview.log
+          {
+            echo "### Workflow preview"
+            echo
+            echo "Loaded \`$WORKFLOW_PATH\` into the offline Workflows preview."
+            echo
+            grep -E '^(Saved|Loaded|Draft note)' tmp/workflow-preview.log | sed 's/^/- /'
+            echo
+            echo "Screenshots are in the **workflow-preview-${{ steps.target.outputs.short }}** artifact below."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: workflow-preview-${{ steps.target.outputs.short }}
+          path: |
+            tmp/workflow-preview/*.png
+            tmp/workflow-preview.log
+          if-no-files-found: warn
+          retention-days: 14
