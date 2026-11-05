@@ -266,3 +266,26 @@ clothes fusion, label views, folder mode, combined overlay) were run in a sandbo
 or pose weights; the NudeNet 320n and SegFormer B0 sessions were real. All other model results come from the owner's
 runs on real photos, reviewed by eye. No accuracy, speed or licence claim is made. Thresholds and defaults are
 sample-fitted on a handful of images.
+
+
+## SCHP ATR-18 folder smoke test (CPU ONNX)
+
+\`schp_atr18_smoke.py\` is a **standalone human-parsing comparison tool**, not production support for SCHP. It uses DTFlow's existing \`numpy\`, \`Pillow\`, and \`onnxruntime\` dependencies; no PyTorch, Transformers, OpenCV, or provider calls. It downloads a pinned INT8 ONNX file on the first run (or uses a SHA-256-verified cached file), and runs local CPU inference on each still image directly. It does **not** call YOLO person detection or crop each subject like DTFlow's current person-selection pipeline.
+
+From the repository root in PowerShell, replace the input folder:
+
+\`\`\`powershell
+uv run python3 tools/images/schp_atr18_smoke.py --input-dir "C:\Images\Test" --output-dir "tmp\schp-smoke"
+\`\`\`
+
+Outputs are grouped by **type**, not image: \`overlays/\` contains the originals with a colored translucent overlay; \`comparisons/\` contains side-by-side originals, overlays, and a class legend; \`masks/\` contains 0/255 grayscale masks per detected class; \`labels/\` contains 8-bit class-ID maps; \`confidence/\` contains grayscale uncalibrated per-pixel top-class softmax scores; \`manifests/\` contains per-image JSON reports and \`summary.csv\`. Matching numbered filename stems keep outputs related without making separate subfolders for every image. Output colors are intentionally distinct between left/right body parts and thin boundaries separate touching classes. Existing source images and model files are never overwritten by segmentation.
+
+To inspect uncertain regions, try a *separate output directory* with an optional minimum class score:
+
+\`\`\`powershell
+uv run python3 tools/images/schp_atr18_smoke.py --input-dir "C:\Images\Test" --output-dir "tmp\schp-smoke-70" --min-confidence 0.70
+\`\`\`
+
+\`--min-confidence\` defaults to \`0.0\` (no filtering), supports \`0.0\`–\`1.0\`, and changes the **class masks and overlay**, not the underlying ONNX predictions. Pixels whose highest-class softmax score is below the threshold become background in the saved class-ID map; the grayscale confidence map retains their scores so suppression can be inspected. This is **not a calibrated probability of correctness** and a high score does not prove that the body-part classification is right. Raising the threshold may erase legitimate thin details. \`--opacity\` (default \`0.5\`) controls overlay transparency; \`--threads\` (default \`4\`) controls ONNX CPU threads; \`--no-download\` refuses to fetch a missing local model. Reuse of a cached model still verifies its SHA-256.
+
+**Owner smoke evidence (2026-11-05):** The earlier standalone script downloaded the checkpoint and generated functioning overlays on Windows. The owner found the segmentation quality uncertain and requested grouped output folders and more distinguishable colors. The new grouping, palette, confidence threshold and confidence image are proposed follow-up changes; their Windows smoke/accuracy/performance have **not** yet been verified. The model's declared MIT license is not a completed provenance/commercial-usage review. Do not run model downloads or inference automatically as routine CI validation.
