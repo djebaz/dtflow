@@ -437,6 +437,9 @@ def refine_body_parts(
     rounding=0.0,
     save_diagnostics=True,
     boundary_threshold=0.12,
+    edge_method="existing",
+    canny_low=60,
+    canny_high=140,
 ):
     """Select each box independently using image/score edges; retain overlapping masks.
 
@@ -455,7 +458,17 @@ def refine_body_parts(
     colors = body_palette(names)
     combined = np.zeros(labels.shape, dtype=np.uint8)
     claimed = np.zeros(labels.shape, dtype=bool)
-    strength = body_boundary_strength(source, confidence, person_mask)
+    if edge_method == "canny":
+        try:
+            import cv2
+        except ImportError as exc:
+            raise RuntimeError("Canny requires OpenCV: uv pip install opencv-python-headless") from exc
+        import numpy as np
+        gray = cv2.cvtColor(np.asarray(source), cv2.COLOR_RGB2GRAY)
+        edges = cv2.Canny(gray, canny_low, canny_high, L2gradient=True)
+        strength = (edges > 0).astype(np.float32)
+    else:
+        strength = body_boundary_strength(source, confidence, person_mask)
     boundary = (person_mask > 0) & (strength >= boundary_threshold)
     layers = []
     unions = {}
@@ -538,7 +551,9 @@ def refine_body_parts(
             "status": "applied" if claimed.any() else "no_supported_body_parts",
             "interior_seed_score": boundary_confidence,
             "boundary_strength_threshold": boundary_threshold,
-            "boundary_rgb_weight": 0.65,
+            "edge_method": edge_method,
+            "canny_thresholds": [canny_low, canny_high] if edge_method == "canny" else None,
+            "boundary_rgb_weight": 0.65 if edge_method == "existing" else None,
             "boundary_score_weight": 0.35,
             "boundary_rgb_blur_source_pixels": 1.0,
             "rounding_radius_source_pixels": rounding,
@@ -841,7 +856,7 @@ def save_body_overlay(source, layers, class_names, colors, out_dir, stem, opacit
 
 
 def save_boundary_overlay(source, strength, person_mask, threshold, out_dir, stem):
-    """Expose the actual image/score barriers used for region selection."""
+    """Expose the active edge barriers used for region selection."""
     import numpy as np
     from PIL import Image, ImageDraw
 
@@ -855,9 +870,9 @@ def save_boundary_overlay(source, strength, person_mask, threshold, out_dir, ste
     for row, text in enumerate(
         (
             "Cyan: computed region barriers",
-            "65% image contrast + 35% score change",
+            "Edge map: active boundary algorithm",
             f"Edge strength threshold: {threshold:.3f}",
-            "Photo blur: 1 source pixel",
+            "Canny uses binary edge strength (0 or 1)",
             "Heuristic edges; shadows may also appear",
         )
     ):
@@ -1052,6 +1067,10 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         default=RED_CORE_CONFIDENCE,
         help="SCHP seed score for equal-area region ties (default 0.90); never excludes lower-score pixels.",
     )
+    parser.add_argument("--edge-method", choices=("existing", "canny"), default="existing",
+                        help="Boundary algorithm; Canny requires opencv-python-headless (default existing).")
+    parser.add_argument("--canny-low", type=int, default=60, help="Canny lower hysteresis threshold (default 60).")
+    parser.add_argument("--canny-high", type=int, default=140, help="Canny upper hysteresis threshold (default 140).")
     parser.add_argument(
         "-g",
         "--boundary",
@@ -1079,6 +1098,8 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         parser.error("--rounding must be between 0 and 32 source pixels")
     if not 0.0 <= args.body_confidence <= 1.0:
         parser.error("--body-confidence must be between 0 and 1")
+    if not 0 <= args.canny_low < args.canny_high <= 255:
+        parser.error("--canny-low and --canny-high must satisfy 0 <= low < high <= 255")
     if not 0.0 < args.boundary <= 1.0:
         parser.error("--boundary must be greater than 0 and at most 1")
     if not 0.0 <= args.pose_kpt_confidence <= 1.0:
@@ -1283,6 +1304,9 @@ def main(argv: list[str] | None = None) -> int:
                     rounding=args.rounding,
                     save_diagnostics=not args.body_only,
                     boundary_threshold=args.boundary,
+                    edge_method=args.edge_method,
+                    canny_low=args.canny_low,
+                    canny_high=args.canny_high,
                 )
                 if not args.body_only:
                     make_visuals(
@@ -1339,6 +1363,8 @@ def main(argv: list[str] | None = None) -> int:
                 "nudenet_class_names": nudenet_names,
                 "body_interior_seed_score": args.body_confidence,
                 "body_boundary_strength_threshold": args.boundary,
+                "edge_method": args.edge_method,
+                "canny_thresholds": [args.canny_low, args.canny_high] if args.edge_method == "canny" else None,
                 "body_only": args.body_only,
                 "rounding_radius_source_pixels": args.rounding,
                 "nudenet_detection_threshold": NUDENET_CONFIDENCE,
