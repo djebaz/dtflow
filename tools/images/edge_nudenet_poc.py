@@ -369,7 +369,7 @@ def grow_independent_zones(cv, edges, inside, detections, resolution, edge_weigh
     return layers, reports, summary
 
 
-def save_overlap_preview(cv, source, box, inside, layers, reports, names, destination, finishing, palette):
+def save_overlap_preview(cv, source, box, inside, layers, reports, names, destination, finishing, palette, blur=0):
     """Average fills without losing mask ownership; outline every independent zone."""
     x0, y0, x1, y1 = box
     width, height = x1 - x0, y1 - y0
@@ -382,18 +382,41 @@ def save_overlap_preview(cv, source, box, inside, layers, reports, names, destin
         shades[zone_id] = shade
         colors[mask] += shade
         coverage[mask] += 1
-    colors /= np.maximum(coverage, 1)[..., None]
-    colors[coverage == 0] = (128, 128, 128)
-    restored_colors = cv.resize(colors, (width, height), interpolation=cv.INTER_NEAREST)
+    # Render soft coverage, not enlarged nearest-neighbor label stair-steps.
+    # These temporary display buffers never feed back into masks or area counts.
+    colors = cv.GaussianBlur(colors, (0, 0), 0.45, borderType=cv.BORDER_REPLICATE)
+    coverage = cv.GaussianBlur(coverage, (0, 0), 0.45, borderType=cv.BORDER_REPLICATE)
+    restored_colors = cv.resize(colors, (width, height), interpolation=cv.INTER_LINEAR)
+    restored_coverage = cv.resize(coverage, (width, height), interpolation=cv.INTER_LINEAR)
+    if blur > 0:
+        # Feather only the premultiplied zone layer, never the photograph.
+        restored_colors = cv.GaussianBlur(restored_colors, (0, 0), blur, borderType=cv.BORDER_REPLICATE)
+        restored_coverage = cv.GaussianBlur(restored_coverage, (0, 0), blur, borderType=cv.BORDER_REPLICATE)
+    restored_colors /= np.maximum(restored_coverage, 1e-6)[..., None]
+    zone_alpha = np.clip(restored_coverage, 0, 1)[..., None]
+    restored_colors = restored_colors * zone_alpha + 128 * (1 - zone_alpha)
     rgb = np.asarray(source).copy()
     region = rgb[y0:y1, x0:x1]
     region[inside] = (region[inside] * 0.45 + restored_colors[inside] * 0.55).astype(np.uint8)
-    # Clip contours to the exact source-resolution silhouette as well as the grid.
+    # Trace the small masks before enlargement, using subpixel AA strokes instead
+    # of tracing the stair-steps of an already nearest-neighbor-upscaled mask.
+    coordinate_scale = np.array([width / grid_shape[1], height / grid_shape[0]], dtype=np.float32)
+    stroke = np.zeros_like(region) if blur > 0 else region
+    stroke_alpha = np.zeros((height, width), dtype=np.uint8) if blur > 0 else None
     for zone_id, mask in layers:
-        restored = cv.resize(mask.astype(np.uint8), (width, height), interpolation=cv.INTER_NEAREST)
-        restored[~inside] = 0
-        contours, _ = cv.findContours(restored, cv.RETR_LIST, cv.CHAIN_APPROX_SIMPLE)
-        cv.polylines(region, contours, True, shades[zone_id], 2, lineType=cv.LINE_8)
+        contours, _ = cv.findContours(mask.astype(np.uint8), cv.RETR_LIST, cv.CHAIN_APPROX_SIMPLE)
+        display_contours = []
+        for contour in contours:
+            simplified = cv.approxPolyDP(contour, 0.35, True).astype(np.float32)
+            points = (simplified + 0.5) * coordinate_scale - 0.5
+            display_contours.append(np.rint(points * 256).astype(np.int32))
+        cv.polylines(stroke, display_contours, True, shades[zone_id], 2, lineType=cv.LINE_AA, shift=8)
+        if stroke_alpha is not None:
+            cv.polylines(stroke_alpha, display_contours, True, 255, 2, lineType=cv.LINE_AA, shift=8)
+    if blur > 0:
+        blurred_stroke = cv.GaussianBlur(stroke, (0, 0), blur, borderType=cv.BORDER_CONSTANT).astype(np.float32)
+        opacity = cv.GaussianBlur(stroke_alpha, (0, 0), blur, borderType=cv.BORDER_CONSTANT).astype(np.float32) / 255.0
+        region[:] = np.clip(region * (1 - opacity[..., None]) + blurred_stroke, 0, 255).astype(np.uint8)
     # Stroke thickness can protrude beyond the mask; restore all non-person pixels.
     original = np.asarray(source.crop(box))
     region[~inside] = original[~inside]
@@ -417,6 +440,8 @@ def save_overlap_preview(cv, source, box, inside, layers, reports, names, destin
     ]
     if finishing:
         notes.append("Each zone rounded / expanded")
+    if blur > 0:
+        notes.append(f"Display feather: {blur:g} source px")
     panel_width = max(380, max(font.getbbox(text)[2] for text in [*(text for text, _ in rows), *notes]) + 80)
     preview = Image.new(
         "RGB", (source.width + panel_width, max(source.height, 100 + 36 * (len(rows) + len(notes)))), (24, 27, 34)
@@ -459,7 +484,20 @@ def save_score_preview(cv, source, box, inside, scores, destination):
 
 
 def save_outputs(
-    source, box, inside, edges, zones, reports, output, prefix, detector, finishing=False, overlap_layers=None, cv=None
+    source,
+    box,
+    inside,
+    edges,
+    zones,
+    reports,
+    output,
+    prefix,
+    detector,
+    finishing=False,
+    overlap_layers=None,
+    cv=None,
+    overlay_only=False,
+    blur=0,
 ):
     x0, y0, x1, y1 = box
     names = {0: "background", UNKNOWN: "unknown"}
@@ -477,6 +515,7 @@ def save_outputs(
             output / f"{prefix}_zones_overlay.jpg",
             finishing,
             palette,
+            blur=blur,
         )
     else:
         save_preview(
@@ -493,7 +532,11 @@ def save_outputs(
                 "Gray: unreached / unknown",
             ),
             palette=palette,
+            antialias=True,
+            contour_blur=blur,
         )
+    if overlay_only:
+        return {str(key): name for key, name in names.items()}
     alpha = np.zeros((source.height, source.width), dtype=np.uint8)
     alpha[y0:y1, x0:x1] = inside.astype(np.uint8) * 255
     cutout = source.convert("RGBA")
@@ -570,6 +613,16 @@ def main(argv=None):
     )
     parser.add_argument("-s", "--parts-confidence", type=float, default=0.25)
     parser.add_argument(
+        "-f", "--overlay-only", action="store_true", help="Write only *_zones_overlay.jpg; no other images or JSON"
+    )
+    parser.add_argument(
+        "-c",
+        "--blur",
+        type=float,
+        default=0,
+        help="Additional display-only Gaussian feather of zone borders/outlines, source-pixel sigma 0..32 (try 2)",
+    )
+    parser.add_argument(
         "-a",
         "--overlap",
         action="store_true",
@@ -621,6 +674,8 @@ def main(argv=None):
         parser.error("smooth must be finite and in [0,12]")
     if not math.isfinite(args.expand) or not 0 <= args.expand <= 32:
         parser.error("expand must be finite and in [0,32]")
+    if not math.isfinite(args.blur) or not 0 <= args.blur <= 32:
+        parser.error("blur must be finite and in [0,32]")
     if args.threads < 1 or not 64 <= args.resolution <= 1024 or not 0 < args.parts_confidence <= 1:
         parser.error("threads >= 1, resolution in [64,1024], parts-confidence in (0,1] required")
     if (
@@ -694,6 +749,8 @@ def main(argv=None):
                     "smooth": args.smooth,
                     "expand": args.expand,
                     "overlap": args.overlap,
+                    "overlay_only": args.overlay_only,
+                    "display_blur_source_pixels": args.blur,
                     "finishing_units": "region-growth grid pixels",
                 },
             }
@@ -758,8 +815,10 @@ def main(argv=None):
                     finishing=bool(args.smooth or args.expand),
                     overlap_layers=overlap_layers,
                     cv=cv,
+                    overlay_only=args.overlay_only,
+                    blur=args.blur,
                 )
-                if scores is not None:
+                if scores is not None and not args.overlay_only:
                     save_score_preview(cv, source, box, inside, scores, output / f"{prefix}_scores_overlay.jpg")
                 report.update(
                     crop_box=list(box),
@@ -778,7 +837,8 @@ def main(argv=None):
                 report["status"] = "no_person"
                 print(f"{path.name}: no person", flush=True)
             report["total_seconds"] = time.perf_counter() - started
-            (output / f"{prefix}_report.json").write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
+            if not args.overlay_only:
+                (output / f"{prefix}_report.json").write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
         except Exception as exc:
             failures += 1
             print(f"{path.name}: {type(exc).__name__}: {exc}", file=sys.stderr, flush=True)

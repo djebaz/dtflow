@@ -218,7 +218,9 @@ def competing_zones(crop, inside, raw, confidence, detections, resolution, min_c
     return result, reports
 
 
-def save_preview(source, box, inside, labels, names, destination, heading, notes, palette=None):
+def save_preview(
+    source, box, inside, labels, names, destination, heading, notes, palette=None, antialias=False, contour_blur=0
+):
     """Render an overlay with its own visible-label legend outside the photograph."""
     x0, y0, x1, y1 = box
     full = np.zeros((source.height, source.width), dtype=np.uint16)
@@ -232,6 +234,19 @@ def save_preview(source, box, inside, labels, names, destination, heading, notes
     color = color_table[full]
     rgb = np.asarray(source).copy()
     active = full > 0
+    if antialias:
+        # Display-only smoothing with coverage normalization avoids black halos
+        # beside the silhouette. Keep the label map and measured areas unchanged.
+        radius = (0.8**2 + contour_blur**2) ** 0.5
+        blurred_color = np.asarray(Image.fromarray(color).filter(ImageFilter.GaussianBlur(radius)), dtype=np.float32)
+        coverage = (
+            np.asarray(
+                Image.fromarray(active.astype(np.uint8) * 255).filter(ImageFilter.GaussianBlur(radius)),
+                dtype=np.float32,
+            )
+            / 255.0
+        )
+        color = np.clip(blurred_color / np.maximum(coverage, 1e-6)[..., None], 0, 255)
     rgb[active] = (rgb[active] * 0.45 + color[active] * 0.55).astype(np.uint8)
 
     # Keep the legend outside the photograph, showing only zones actually present.
