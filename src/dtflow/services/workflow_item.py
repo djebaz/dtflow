@@ -279,6 +279,14 @@ class _Execution:
             self.plan = plan_workflow(self.graph)
             if any(key[0] not in self.plan.nodes for key in self.steps):
                 raise ValidationError("The stored run does not match its workflow.")
+            if self.plan.needs_face_models:
+                # Required local detectors are checked before any (possibly billable) submission; never downloaded here.
+                from dtflow.services.model_provisioning import WORKFLOW_FACE_ROLES, missing_models
+
+                missing = await asyncio.to_thread(missing_models, self.runner.state, WORKFLOW_FACE_ROLES)
+                if missing:
+                    names = ", ".join(entry.name for entry in missing)
+                    raise ValidationError(f"Detection models are missing ({names}). Download them in Workflows first.")
         except ValidationError as exc:
             self.halted = f"The workflow cannot run: {exc}"
             await self.finish()
