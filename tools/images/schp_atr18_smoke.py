@@ -519,6 +519,7 @@ def refine_body_parts(
         else:
             allowed = candidate & ~boundary[region]
             supported, seeded = largest_body_region(allowed, confidence[region], boundary_confidence)
+        allowed = candidate & ~boundary[region] if superpixels is None else candidate
         selected_pixels = int(supported.sum())
         if rounding > 0 and supported.any() and edge_method != "slic":
             # Stay inside the chosen component: never fill a silhouette gap or
@@ -546,9 +547,9 @@ def refine_body_parts(
                 "box_xyxy": detection["box_xyxy"],
                 "person_supported_pixels": int(candidate.sum()),
                 "interior_seed_pixels": int((allowed & (confidence[region] >= boundary_confidence)).sum()),
-                "seed_selection": "largest_component_with_high_score_seed"
-                if seeded
-                else "largest_component_no_high_score_seed",
+                "seed_selection": ("slic_superpixels_with_high_score_seed" if seeded else "slic_superpixels_no_high_score_seed")
+                if superpixels is not None
+                else ("largest_component_with_high_score_seed" if seeded else "largest_component_no_high_score_seed"),
                 "boundary_supported_pixels": int(allowed.sum()),
                 "selected_segment_pixels_before_rounding": selected_pixels,
                 "rounded_segment_pixels": int(supported.sum()),
