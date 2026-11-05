@@ -470,9 +470,15 @@ def refine_body_parts(
             py0, py1 = max(0, int(ys.min()) - 4), min(source.height, int(ys.max()) + 5)
             crop = np.asarray(source.crop((px0, py0, px1, py1)))
             area = int((person_mask[py0:py1, px0:px1] > 0).sum())
-            segments = slic(crop, n_segments=max(16, round(area / 400)),
-                            compactness=10, sigma=1, start_label=1,
-                            channel_axis=-1, enforce_connectivity=True)
+            segments = slic(
+                crop,
+                n_segments=max(16, round(area / 400)),
+                compactness=10,
+                sigma=1,
+                start_label=1,
+                channel_axis=-1,
+                enforce_connectivity=True,
+            )
             superpixels = np.zeros(labels.shape, dtype=np.int32)
             superpixels[py0:py1, px0:px1] = segments
             strength = np.zeros(labels.shape, dtype=np.float32)
@@ -547,7 +553,9 @@ def refine_body_parts(
                 "box_xyxy": detection["box_xyxy"],
                 "person_supported_pixels": int(candidate.sum()),
                 "interior_seed_pixels": int((allowed & (confidence[region] >= boundary_confidence)).sum()),
-                "seed_selection": ("slic_superpixels_with_high_score_seed" if seeded else "slic_superpixels_no_high_score_seed")
+                "seed_selection": (
+                    "slic_superpixels_with_high_score_seed" if seeded else "slic_superpixels_no_high_score_seed"
+                )
                 if superpixels is not None
                 else ("largest_component_with_high_score_seed" if seeded else "largest_component_no_high_score_seed"),
                 "boundary_supported_pixels": int(allowed.sum()),
@@ -912,9 +920,7 @@ def save_boundary_overlay(source, strength, person_mask, threshold, out_dir, ste
         draw.text((left, 16 + row * 26), text, fill="black")
     result.save(out_dir / "overlays" / f"{stem}_boundary_overlay.png")
     # Also save the actual edge map without source-image colors or legend.
-    Image.fromarray(edges.astype(np.uint8) * 255).save(
-        out_dir / "overlays" / f"{stem}_edge_map.png"
-    )
+    Image.fromarray(edges.astype(np.uint8) * 255).save(out_dir / "overlays" / f"{stem}_edge_map.png")
 
 
 def make_visuals(
@@ -1044,15 +1050,15 @@ def depth_session(path, *, allow_download, threads):
     """Load a pinned ONNX depth checkpoint without PyTorch or Transformers."""
     import onnxruntime as ort
 
-    ensure_checkpoint(path, (DEPTH_URL, DEPTH_BYTES, "sha256", DEPTH_SHA256),
-                      allow_download=allow_download)
+    ensure_checkpoint(path, (DEPTH_URL, DEPTH_BYTES, "sha256", DEPTH_SHA256), allow_download=allow_download)
     options = ort.SessionOptions()
     options.intra_op_num_threads = threads
     return ort.InferenceSession(str(path), sess_options=options, providers=["CPUExecutionProvider"])
 
 
-def save_depth_geometry(source, person_mask, out_dir, stem, session, *, smoothing=1.0,
-                        curvature_gain=2.0, normal_strength=8.0):
+def save_depth_geometry(
+    source, person_mask, out_dir, stem, session, *, smoothing=1.0, curvature_gain=2.0, normal_strength=8.0
+):
     """Export float-depth multiscale geometry and contrast-enhanced diagnostics."""
     import numpy as np
     from PIL import Image
@@ -1067,11 +1073,11 @@ def save_depth_geometry(source, person_mask, out_dir, stem, session, *, smoothin
         kernel /= kernel.sum()
         result = values
         for axis in (0, 1):
-            padded = np.pad(result, [(radius, radius) if i == axis else (0, 0)
-                                     for i in range(2)], mode="reflect")
-            result = sum(float(weight) * np.take(padded, range(i, i + values.shape[axis]),
-                                                axis=axis)
-                         for i, weight in enumerate(kernel)).astype(np.float32)
+            padded = np.pad(result, [(radius, radius) if i == axis else (0, 0) for i in range(2)], mode="reflect")
+            result = sum(
+                float(weight) * np.take(padded, range(i, i + values.shape[axis]), axis=axis)
+                for i, weight in enumerate(kernel)
+            ).astype(np.float32)
         return result
 
     def contrast(values, inside, percentile=98):
@@ -1082,15 +1088,15 @@ def save_depth_geometry(source, person_mask, out_dir, stem, session, *, smoothin
     side = 518
     image = source.resize((side, side), Image.Resampling.BICUBIC)
     rgb = np.asarray(image, dtype=np.float32) / 255.0
-    rgb = (rgb - np.array([0.485, 0.456, 0.406], dtype=np.float32)) / np.array(
-        [0.229, 0.224, 0.225], dtype=np.float32
-    )
+    rgb = (rgb - np.array([0.485, 0.456, 0.406], dtype=np.float32)) / np.array([0.229, 0.224, 0.225], dtype=np.float32)
     tensor = np.transpose(rgb, (2, 0, 1))[None].astype(np.float32)
     raw = np.asarray(session.run(None, {session.get_inputs()[0].name: tensor})[0]).squeeze()
     if raw.ndim != 2 or not np.isfinite(raw).all():
         raise RuntimeError(f"Unexpected or nonfinite depth output: {raw.shape}")
-    depth = np.asarray(Image.fromarray(raw.astype(np.float32), mode="F").resize(
-        source.size, Image.Resampling.BICUBIC), dtype=np.float32)
+    depth = np.asarray(
+        Image.fromarray(raw.astype(np.float32), mode="F").resize(source.size, Image.Resampling.BICUBIC),
+        dtype=np.float32,
+    )
     inside = person_mask > 0
     if not inside.any():
         return
@@ -1112,8 +1118,7 @@ def save_depth_geometry(source, person_mask, out_dir, stem, session, *, smoothin
     for factor in (0.5, 1.0, 2.0):
         layer = blur(relative, max(0.35, smoothing * factor))
         gy, gx = np.gradient(layer)
-        curvature_layers.append(np.abs(np.gradient(gx, axis=1) +
-                                       np.gradient(gy, axis=0)))
+        curvature_layers.append(np.abs(np.gradient(gx, axis=1) + np.gradient(gy, axis=0)))
     curvature = np.maximum.reduce([contrast(layer, inside) for layer in curvature_layers])
     curvature = np.clip(curvature * curvature_gain, 0.0, 1.0)
     # Normal-direction discontinuities are a geometric edge cue, not a closed mask.
@@ -1177,11 +1182,23 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument(
         "-d", "--confidence", type=float, default=0.25, help="Person detection threshold (default 0.25)."
     )
-    parser.add_argument("-j", "--max-people", type=int, default=2, help="Maximum retained people per image (default 2).")
-    parser.add_argument("-u", "--min-person-area", type=float, default=0.10,
-                        help="Minimum person mask fraction of full image (default 0.10).")
-    parser.add_argument("-z", "--repair-person-mask", action=argparse.BooleanOptionalAction, default=True,
-                        help="Close narrow per-person mask gaps (default enabled).")
+    parser.add_argument(
+        "-j", "--max-people", type=int, default=2, help="Maximum retained people per image (default 2)."
+    )
+    parser.add_argument(
+        "-u",
+        "--min-person-area",
+        type=float,
+        default=0.10,
+        help="Minimum person mask fraction of full image (default 0.10).",
+    )
+    parser.add_argument(
+        "-z",
+        "--repair-person-mask",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Close narrow per-person mask gaps (default enabled).",
+    )
     parser.add_argument(
         "-k",
         "--pose-model",
@@ -1203,12 +1220,24 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         default=RED_CORE_CONFIDENCE,
         help="SCHP seed score for equal-area region ties (default 0.90); never excludes lower-score pixels.",
     )
-    parser.add_argument("--edge-method", choices=("existing", "canny", "slic"), default="existing",
-                        help="Boundary algorithm; SLIC requires scikit-image, Canny requires OpenCV (default existing).")
-    parser.add_argument("--depth-geometry", action="store_true", help="Export Depth Anything V2 Small geometry diagnostics.")
-    parser.add_argument("--depth-smoothing", type=float, default=1.0, help="Geometry Gaussian sigma in pixels (default 1.0).")
-    parser.add_argument("--curvature-gain", type=float, default=2.0, help="Multiscale curvature display gain (default 2.0).")
-    parser.add_argument("--normal-strength", type=float, default=8.0, help="Normal gradient amplification (default 8.0).")
+    parser.add_argument(
+        "--edge-method",
+        choices=("existing", "canny", "slic"),
+        default="existing",
+        help="Boundary algorithm; SLIC requires scikit-image, Canny requires OpenCV (default existing).",
+    )
+    parser.add_argument(
+        "--depth-geometry", action="store_true", help="Export Depth Anything V2 Small geometry diagnostics."
+    )
+    parser.add_argument(
+        "--depth-smoothing", type=float, default=1.0, help="Geometry Gaussian sigma in pixels (default 1.0)."
+    )
+    parser.add_argument(
+        "--curvature-gain", type=float, default=2.0, help="Multiscale curvature display gain (default 2.0)."
+    )
+    parser.add_argument(
+        "--normal-strength", type=float, default=8.0, help="Normal gradient amplification (default 8.0)."
+    )
     parser.add_argument("--canny-low", type=int, default=60, help="Canny lower hysteresis threshold (default 60).")
     parser.add_argument("--canny-high", type=int, default=140, help="Canny upper hysteresis threshold (default 140).")
     parser.add_argument(
@@ -1280,9 +1309,11 @@ def main(argv: list[str] | None = None) -> int:
         return 2
 
     depth_estimator = (
-        depth_session(Path("tmp/models/depth-anything-v2-small.onnx"),
-                      allow_download=not args.no_download, threads=args.threads)
-        if args.depth_geometry else None
+        depth_session(
+            Path("tmp/models/depth-anything-v2-small.onnx"), allow_download=not args.no_download, threads=args.threads
+        )
+        if args.depth_geometry
+        else None
     )
 
     # Reuse the production decoder, model checks, detection thresholds and NMS.
@@ -1323,7 +1354,9 @@ def main(argv: list[str] | None = None) -> int:
             source = load_rgb(path)
             detect_start = time.perf_counter()
             detected_people = selection._instances(person_session, source, args.confidence)
-            people = select_people(detected_people, source.size, args.min_person_area, args.max_people, args.repair_person_mask)
+            people = select_people(
+                detected_people, source.size, args.min_person_area, args.max_people, args.repair_person_mask
+            )
             nudenet_names, body_detections, face_boxes = {}, [], []
             if people:
                 nudenet_names, body_detections, face_boxes = detect_body_parts(
@@ -1375,8 +1408,16 @@ def main(argv: list[str] | None = None) -> int:
                 )
                 save_person_overlay(source, person_mask, output_root, person_stem)
                 if depth_estimator is not None:
-                    save_depth_geometry(source, person_mask, output_root, person_stem, depth_estimator,
-                                        smoothing=args.depth_smoothing, curvature_gain=args.curvature_gain,\n                                        normal_strength=args.normal_strength)
+                    save_depth_geometry(
+                        source,
+                        person_mask,
+                        output_root,
+                        person_stem,
+                        depth_estimator,
+                        smoothing=args.depth_smoothing,
+                        curvature_gain=args.curvature_gain,
+                        normal_strength=args.normal_strength,
+                    )
                 details["person_cutoff"] = "YOLO instance segmentation silhouette, not detection box"
                 details["person_postprocessing"] = (
                     "none: preserve decoded background gaps; missed gaps are not reconstructed"
