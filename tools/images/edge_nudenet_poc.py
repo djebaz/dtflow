@@ -1131,7 +1131,8 @@ def save_sweep(cv, args, source, box, inside, edges, scores, detections, base_re
 
 
 def save_comparison(cv, args, source, box, inside, edges, detections, base_report, output, prefix, analysis_seconds):
-    """Compare the two owner-selected recipes, sharing one image's model analysis."""
+    """Compare favorites or a focused box-fit grid with one model analysis per image."""
+    box_refine = args.compare == "box-refine"
     presets = (
         (
             "7 / Outside-in",
@@ -1164,7 +1165,30 @@ def save_comparison(cv, args, source, box, inside, edges, detections, base_repor
             "-l center -g 1.75 -z 1 -u 8 -x 0 -c 3 -a",
         ),
     )
-    if args.start == "box":
+    if box_refine:
+        candidates = (
+            ("Baseline", 8.0, 12.0),
+            ("Less rounding", 6.0, 12.0),
+            ("More rounding", 10.0, 12.0),
+            ("Weaker edge influence", 8.0, 8.0),
+            ("Stronger edge influence", 8.0, 16.0),
+        )
+        presets = tuple(
+            (
+                name,
+                {
+                    "start": "box",
+                    "smooth": smooth,
+                    "edge_weight": weight,
+                    "expand": 0.0,
+                    "blur": 3.0,
+                    "overlap": args.overlap,
+                },
+                f"-l box -u {smooth:g} -e {weight:g} -x 0 -c 3 " + ("-a" if args.overlap else "(exclusive zones)"),
+            )
+            for name, smooth, weight in candidates
+        )
+    elif args.start == "box":
         box_preset = (
             "Box auto-fit / current settings",
             {"start": "box", "smooth": args.smooth, "expand": args.expand, "blur": args.blur, "overlap": args.overlap},
@@ -1175,12 +1199,22 @@ def save_comparison(cv, args, source, box, inside, edges, detections, base_repor
     tick = time.perf_counter()
     panels, results = [], []
     font = ImageFont.load_default(size=18)
+    if box_refine:
+        original = Image.new("RGB", (max(source.width, 380), source.height + 104), (24, 27, 34))
+        original.paste(source, (0, 104))
+        draw = ImageDraw.Draw(original)
+        draw.text((20, 12), "1 / Original", fill="white", font=font)
+        draw.text((20, 42), "Unmodified image; same display scale", fill="white", font=font)
+        panels.append(original)
     for name, overrides, caption in presets:
         trial = argparse.Namespace(**vars(args))
         for key, value in overrides.items():
             setattr(trial, key, value)
         preset_settings = dict(
-            overrides, box_fit_auto_budget=trial.start == "box", center_only_settings_active=trial.start == "center"
+            overrides,
+            edge_weight=trial.edge_weight,
+            box_fit_auto_budget=trial.start == "box",
+            center_only_settings_active=trial.start == "center",
         )
         if box is None:
             image = source.copy()
@@ -1214,17 +1248,29 @@ def save_comparison(cv, args, source, box, inside, edges, detections, base_repor
         panel = Image.new("RGB", (panel_width, image.height + 104), (24, 27, 34))
         panel.paste(image, (0, 104))
         draw = ImageDraw.Draw(panel)
-        for row, text in enumerate((name, caption, status)):
+        title = f"{len(panels) + 1} / {name}" if box_refine else name
+        for row, text in enumerate((title, caption, status)):
             draw.text((20, 12 + row * 30), text, fill="white", font=font)
         panels.append(panel)
+        if box_refine:
+            result["tile"] = len(panels)
         results.append(result)
-    combined = Image.new(
-        "RGB", (sum(p.width for p in panels) + 16 * (len(panels) - 1), max(p.height for p in panels)), (10, 12, 16)
-    )
-    left = 0
-    for panel in panels:
-        combined.paste(panel, (left, 0))
-        left += panel.width + 16
+    if box_refine:
+        cell_width, cell_height = max(p.width for p in panels), max(p.height for p in panels)
+        combined = Image.new("RGB", (3 * cell_width + 32, 2 * cell_height + 16), (10, 12, 16))
+        for index, panel in enumerate(panels):
+            combined.paste(panel, ((index % 3) * (cell_width + 16), (index // 3) * (cell_height + 16)))
+    else:
+        combined = Image.new(
+            "RGB", (sum(p.width for p in panels) + 16 * (len(panels) - 1), max(p.height for p in panels)), (10, 12, 16)
+        )
+        left = 0
+        for panel in panels:
+            combined.paste(panel, (left, 0))
+            left += panel.width + 16
+    native_size = list(combined.size)
+    if args.compare_size:
+        combined.thumbnail((args.compare_size, args.compare_size), Image.Resampling.LANCZOS)
     combined.save(output / f"{prefix}_compare.jpg", quality=95, subsampling=0)
     if not args.overlay_only:
         report = dict(base_report)
@@ -1241,11 +1287,20 @@ def save_comparison(cv, args, source, box, inside, edges, detections, base_repor
             "start",
             "center_only_settings_active",
             "box_fit_auto_budget",
+            "edge_weight",
         }
         report["settings"] = {key: value for key, value in base_report["settings"].items() if key not in owned}
         report.update(
             comparison={
-                "layout": "left to right: " + "; ".join(name for name, _, _ in presets),
+                "mode": args.compare,
+                "native_size": native_size,
+                "saved_size": list(combined.size),
+                "max_side": args.compare_size,
+                "layout": (
+                    "3 columns x 2 rows, row-major: Original; " + "; ".join(name for name, _, _ in presets)
+                    if box_refine
+                    else "left to right: " + "; ".join(name for name, _, _ in presets)
+                ),
                 "inference_shared": True,
                 "presets": results,
             },
@@ -1255,7 +1310,10 @@ def save_comparison(cv, args, source, box, inside, edges, detections, base_repor
             total_seconds_scope="shared image analysis plus all zoning/render passes; model startup excluded",
         )
         (output / f"{prefix}_compare_report.json").write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
-    print(f"{base_report['source']}: comparison saved -> {prefix}_compare.jpg", flush=True)
+    print(
+        f"{base_report['source']}: comparison saved {combined.width}x{combined.height} -> {prefix}_compare.jpg",
+        flush=True,
+    )
 
 
 def main(argv=None):
@@ -1368,8 +1426,17 @@ def main(argv=None):
     parser.add_argument(
         "-cp",
         "--compare",
-        action="store_true",
-        help="Whole directory: presets 7/20 side by side; -l box adds current box-fit panel; -f omits combined JSON",
+        nargs="?",
+        const="favorites",
+        choices=("favorites", "box-refine"),
+        help="Whole directory: favorites (default) compares 7/20 (+ current -l box); box-refine makes original + 5 box candidates in a 3x2 sheet; -f omits JSON",
+    )
+    parser.add_argument(
+        "-cs",
+        "--compare-size",
+        type=int,
+        default=2560,
+        help="Maximum saved comparison JPG long side in pixels; downscale only, 0 keeps native size (default 2560)",
     )
     parser.add_argument(
         "-sw",
@@ -1383,6 +1450,8 @@ def main(argv=None):
     args = parser.parse_args(argv)
     if args.compare and args.sweep:
         parser.error("--compare processes the whole directory and cannot be combined with --sweep")
+    if args.compare_size != 0 and args.compare_size < 256:
+        parser.error("compare-size must be 0 (native) or at least 256 pixels")
     if args.start == "box" and args.sweep == "growth":
         parser.error("-g/-z are inactive for box-fit; use --sweep or --sweep refined with -l box")
     if args.person_model is None:
