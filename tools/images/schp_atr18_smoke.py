@@ -423,54 +423,6 @@ def largest_body_region(candidate, confidence, seed_floor):
     return components == chosen, bool(chosen in seeded)
 
 
-def canny_edges(source, low, high):
-    """Compute Canny hysteresis edges with NumPy and Pillow, without OpenCV."""
-    import numpy as np
-    from PIL import ImageFilter
-
-    gray = np.asarray(source.convert("L").filter(ImageFilter.GaussianBlur(1.0)), dtype=np.float32)
-    padded = np.pad(gray, 1, mode="edge")
-    gx = (
-        -padded[:-2, :-2] + padded[:-2, 2:]
-        - 2 * padded[1:-1, :-2] + 2 * padded[1:-1, 2:]
-        - padded[2:, :-2] + padded[2:, 2:]
-    )
-    gy = (
-        -padded[:-2, :-2] - 2 * padded[:-2, 1:-1] - padded[:-2, 2:]
-        + padded[2:, :-2] + 2 * padded[2:, 1:-1] + padded[2:, 2:]
-    )
-    magnitude = np.hypot(gx, gy) / 4.0
-    angle = (np.rad2deg(np.arctan2(gy, gx)) + 180.0) % 180.0
-    p = np.pad(magnitude, 1)
-    horizontal = (angle < 22.5) | (angle >= 157.5)
-    diagonal_a = (angle >= 22.5) & (angle < 67.5)
-    vertical = (angle >= 67.5) & (angle < 112.5)
-    diagonal_b = ~(horizontal | diagonal_a | vertical)
-    center = p[1:-1, 1:-1]
-    keep = (
-        (horizontal & (center >= p[1:-1, :-2]) & (center >= p[1:-1, 2:]))
-        | (diagonal_a & (center >= p[:-2, 2:]) & (center >= p[2:, :-2]))
-        | (vertical & (center >= p[:-2, 1:-1]) & (center >= p[2:, 1:-1]))
-        | (diagonal_b & (center >= p[:-2, :-2]) & (center >= p[2:, 2:]))
-    )
-    candidates = keep & (magnitude >= low)
-    strong = candidates & (magnitude >= high)
-    # Hysteresis: propagate strong edges through 8-connected weak candidates.
-    from collections import deque
-
-    output = strong.copy()
-    queue = deque(zip(*np.nonzero(strong)))
-    height, width = output.shape
-    while queue:
-        y, x = queue.popleft()
-        for ny in range(max(0, y - 1), min(height, y + 2)):
-            for nx in range(max(0, x - 1), min(width, x + 2)):
-                if candidates[ny, nx] and not output[ny, nx]:
-                    output[ny, nx] = True
-                    queue.append((ny, nx))
-    return output.astype(np.float32)
-
-
 def refine_body_parts(
     source,
     labels,
@@ -507,7 +459,13 @@ def refine_body_parts(
     combined = np.zeros(labels.shape, dtype=np.uint8)
     claimed = np.zeros(labels.shape, dtype=bool)
     if edge_method == "canny":
-        strength = canny_edges(source, canny_low, canny_high)
+        try:
+            import cv2
+        except ImportError as exc:
+            raise RuntimeError("Canny requires OpenCV: uv pip install opencv-python-headless") from exc
+        gray = cv2.cvtColor(np.asarray(source), cv2.COLOR_RGB2GRAY)
+        edges = cv2.Canny(gray, canny_low, canny_high, L2gradient=True)
+        strength = (edges > 0).astype(np.float32)
     else:
         strength = body_boundary_strength(source, confidence, person_mask)
     boundary = (person_mask > 0) & (strength >= boundary_threshold)
@@ -1113,7 +1071,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="SCHP seed score for equal-area region ties (default 0.90); never excludes lower-score pixels.",
     )
     parser.add_argument("--edge-method", choices=("existing", "canny"), default="existing",
-                        help="Boundary algorithm; Canny uses NumPy/Pillow (default existing).")
+                        help="Boundary algorithm; Canny requires opencv-python-headless (default existing).")
     parser.add_argument("--canny-low", type=int, default=60, help="Canny lower hysteresis threshold (default 60).")
     parser.add_argument("--canny-high", type=int, default=140, help="Canny upper hysteresis threshold (default 140).")
     parser.add_argument(
