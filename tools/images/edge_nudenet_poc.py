@@ -23,6 +23,22 @@ from PIL import Image, ImageDraw, ImageFont
 from pascal_nudenet_poc import UNKNOWN, save_preview, verified_checkpoint
 from schp_atr18_smoke import CHECKPOINTS, IMAGE_SUFFIXES, detect_body_parts, load_rgb, person_crop_box, select_people
 
+PERSON_SPECS = {
+    "n": CHECKPOINTS["person"],
+    "s": (
+        "https://github.com/ultralytics/assets/releases/download/v8.4.0/yolo26s-seg.onnx",
+        41_912_273,
+        "sha256",
+        "d205b2c489e7cf0cdb183bb23e56dc8a32a79602e8c5b1f5ecb01af0dc6822c3",
+    ),
+    "m": (
+        "https://github.com/ultralytics/assets/releases/download/v8.4.0/yolo26m-seg.onnx",
+        94_615_730,
+        "sha256",
+        "38a6e1140fba87287d5943170975e111872a4a1c489d6209646455ac01081dac",
+    ),
+}
+
 REVISION = "01a752eb4006688376e576dc24941c54608f6dd0"
 EDGE_SPEC = (
     f"https://huggingface.co/opencv/edge_detection_dexined/resolve/{REVISION}/edge_detection_dexined_2024sep.onnx",
@@ -397,7 +413,7 @@ def contract_zones(cv, edges, inside, detections, resolution, edge_weight, smoot
     field = cv.resize(edges, size, interpolation=cv.INTER_AREA)
     valid = cv.resize(inside.astype(np.uint8), size, interpolation=cv.INTER_NEAREST) > 0
     sx, sy = size[0] / width, size[1] / height
-    yy, xx = np.ogrid[:size[1], :size[0]]
+    yy, xx = np.ogrid[: size[1], : size[0]]
     angles, samples = 128, 64
     theta = np.arange(angles, dtype=np.float32) * (2 * np.pi / angles)
     directions = np.stack((np.cos(theta), np.sin(theta)), axis=1)
@@ -409,12 +425,12 @@ def contract_zones(cv, edges, inside, detections, resolution, edge_weight, smoot
     for zone_id, detection in enumerate(detections, 7):
         x0, y0, x1, y1 = detection["box_xyxy"]
         cx, cy = (x0 + x1) * sx / 2, (y0 + y1) * sy / 2
-        half = np.array([max(1.0, (x1 - x0) * sx * box_scale / 2),
-                         max(1.0, (y1 - y0) * sy * box_scale / 2)], dtype=np.float32)
+        half = np.array(
+            [max(1.0, (x1 - x0) * sx * box_scale / 2), max(1.0, (y1 - y0) * sy * box_scale / 2)], dtype=np.float32
+        )
         record = dict(detection, zone_id=zone_id, status="rejected_no_person_core", start="edge")
         reports.append(record)
-        core = valid & (((xx - cx) / max(half[0] * 0.35, 1)) ** 2
-                        + ((yy - cy) / max(half[1] * 0.35, 1)) ** 2 <= 1)
+        core = valid & (((xx - cx) / max(half[0] * 0.35, 1)) ** 2 + ((yy - cy) / max(half[1] * 0.35, 1)) ** 2 <= 1)
         if not core.any():
             continue
         # Radial intersection with a signed-distance rounded rectangle.
@@ -431,8 +447,7 @@ def contract_zones(cv, edges, inside, detections, resolution, edge_weight, smoot
         map_x = (cx + directions[:, 0, None] * radii).astype(np.float32)
         map_y = (cy + directions[:, 1, None] * radii).astype(np.float32)
         responses = cv.remap(field, map_x, map_y, cv.INTER_LINEAR, borderMode=cv.BORDER_CONSTANT)
-        supported = cv.remap(valid.astype(np.uint8), map_x, map_y, cv.INTER_NEAREST,
-                             borderMode=cv.BORDER_CONSTANT) > 0
+        supported = cv.remap(valid.astype(np.uint8), map_x, map_y, cv.INTER_NEAREST, borderMode=cv.BORDER_CONSTANT) > 0
         # Prefer an enclosing outer edge over equally strong eyes/mouth edges.
         unary = 2.0 * (1 - fractions)[None, :] - edge_weight * responses
         unary += np.where(supported, 0.0, 4.0)
@@ -449,7 +464,7 @@ def contract_zones(cv, edges, inside, detections, resolution, edge_weight, smoot
         for step in range(angles * 3 - 1, -1, -1):
             path[step] = state
             state = int(parents[step, state])
-        selected = fractions[path[angles:2 * angles]]
+        selected = fractions[path[angles : 2 * angles]]
         # Smooth the cyclic radial profile, not independent contour fragments.
         for _ in range(3):
             selected = (np.roll(selected, 1) + 2 * selected + np.roll(selected, -1)) / 4
@@ -466,23 +481,35 @@ def contract_zones(cv, edges, inside, detections, resolution, edge_weight, smoot
         finished = finish_zones(cv, mask.astype(np.uint16) * zone_id, valid, fixed, smooth, expand) == zone_id
         restored = cv.resize(finished.astype(np.uint8), (width, height), interpolation=cv.INTER_NEAREST) > 0
         pixels = int(np.count_nonzero(restored & inside))
-        selected_response = cv.remap(field, (cx + directions[:, 0] * final_radii).astype(np.float32)[None],
-                                     (cy + directions[:, 1] * final_radii).astype(np.float32)[None],
-                                     cv.INTER_LINEAR, borderMode=cv.BORDER_CONSTANT)
-        record.update(status="assigned" if pixels else "empty_after_restoration", pixels=pixels,
-                      box_scale=box_scale, roundness=roundness,
-                      mean_contour_response=float(selected_response.mean()),
-                      mean_retained_radius=float(selected.mean()))
+        selected_response = cv.remap(
+            field,
+            (cx + directions[:, 0] * final_radii).astype(np.float32)[None],
+            (cy + directions[:, 1] * final_radii).astype(np.float32)[None],
+            cv.INTER_LINEAR,
+            borderMode=cv.BORDER_CONSTANT,
+        )
+        record.update(
+            status="assigned" if pixels else "empty_after_restoration",
+            pixels=pixels,
+            box_scale=box_scale,
+            roundness=roundness,
+            mean_contour_response=float(selected_response.mean()),
+            mean_retained_radius=float(selected.mean()),
+        )
         if pixels:
             layers.append((zone_id, finished))
             coverage += finished.astype(np.uint16)
     for record in reports:
         record.setdefault("pixels", 0)
     restored = cv.resize(coverage, (width, height), interpolation=cv.INTER_NEAREST)
-    return layers, reports, {
-        "unknown_pixels": int(np.count_nonzero(inside & (restored == 0))),
-        "overlap_pixels": int(np.count_nonzero(inside & (restored > 1))),
-    }
+    return (
+        layers,
+        reports,
+        {
+            "unknown_pixels": int(np.count_nonzero(inside & (restored == 0))),
+            "overlap_pixels": int(np.count_nonzero(inside & (restored > 1))),
+        },
+    )
 
 
 def exclusive_contours(cv, layers, reports, inside):
@@ -491,7 +518,7 @@ def exclusive_contours(cv, layers, reports, inside):
     shape = layers[0][1].shape if layers else (1, 1)
     labels = np.zeros(shape, dtype=np.uint16)
     best = np.full(shape, np.inf, dtype=np.float32)
-    yy, xx = np.ogrid[:shape[0], :shape[1]]
+    yy, xx = np.ogrid[: shape[0], : shape[1]]
     by_id = {record["zone_id"]: record for record in reports}
     for zone_id, mask in layers:
         x0, y0, x1, y1 = by_id[zone_id]["box_xyxy"]
@@ -745,7 +772,14 @@ def main(argv=None):
     parser.add_argument("-b", "--detector", choices=("dexined", "pidinet", "pidinet-tiny", "lip-20"), default="dexined")
     parser.add_argument("-m", "--model", type=Path, help="Checkpoint path; default follows the selected detector")
     parser.add_argument(
-        "-p", "--person-model", type=Path, default=Path("tmp/models/yolo26n-seg-ultralytics-v8.4.0.onnx")
+        "-ps",
+        "--person-size",
+        choices=("n", "s", "m"),
+        default="n",
+        help="YOLO26 person segmenter: nano, small or medium; default n; missing checkpoint downloads",
+    )
+    parser.add_argument(
+        "-p", "--person-model", type=Path, help="Override path for the exact pinned --person-size checkpoint"
     )
     parser.add_argument("-n", "--nudenet-model", type=Path, default=Path("tmp/models/nudenet-320n.onnx"))
     parser.add_argument(
@@ -755,6 +789,27 @@ def main(argv=None):
         "-r", "--resolution", type=int, default=384, help="Region-growth dimension, not edge-model input"
     )
     parser.add_argument("-s", "--parts-confidence", type=float, default=0.25)
+    parser.add_argument(
+        "-l",
+        "--start",
+        choices=("center", "edge"),
+        default="center",
+        help="Center-out growth (default) or experimental outside-in rounded-box shrink-wrap",
+    )
+    parser.add_argument(
+        "-k",
+        "--box-scale",
+        type=float,
+        default=1.25,
+        help="Outside-in initial box width/height multiplier, 1..3 (default 1.25)",
+    )
+    parser.add_argument(
+        "-y",
+        "--roundness",
+        type=float,
+        default=0.3,
+        help="Outside-in initial corner radius / shorter box side, 0..0.5 (default 0.3)",
+    )
     parser.add_argument(
         "-q",
         "--person-mask-threshold",
@@ -807,18 +862,20 @@ def main(argv=None):
         help="Competing geometric expansion into unknown pixels, growth-grid radius 0..32 (try 3)",
     )
     parser.add_argument(
-        "-g", "--growth", type=float, default=2.5, help="Path budget relative to detection half-diagonal"
+        "-g", "--growth", type=float, default=2.5, help="Center-start path budget relative to detection half-diagonal"
     )
     parser.add_argument(
         "-z",
         "--balance",
         type=float,
         default=0,
-        help="Center-anchored seed and soft radial growth penalty, 0..4; 0 keeps legacy growth (try 1)",
+        help="Center-start seed/radial growth penalty, 0..4; 0 keeps legacy growth (try 1)",
     )
     parser.add_argument("-d", "--no-download", action="store_true")
     parser.add_argument("-w", "--overwrite", action="store_true", help="Delete recognized previous POC outputs only")
     args = parser.parse_args(argv)
+    if args.person_model is None:
+        args.person_model = Path("tmp/models") / f"yolo26{args.person_size}-seg-ultralytics-v8.4.0.onnx"
     if args.model is None:
         if args.detector == "dexined":
             filename = "edge_detection_dexined_2024sep.onnx"
@@ -843,6 +900,10 @@ def main(argv=None):
         parser.error("blur must be finite and in [0,32]")
     if not math.isfinite(args.balance) or not 0 <= args.balance <= 4:
         parser.error("balance must be finite and in [0,4]")
+    if not math.isfinite(args.box_scale) or not 1 <= args.box_scale <= 3:
+        parser.error("box-scale must be finite and in [1,3]")
+    if not math.isfinite(args.roundness) or not 0 <= args.roundness <= 0.5:
+        parser.error("roundness must be finite and in [0,0.5]")
     if args.threads < 1 or not 64 <= args.resolution <= 1024 or not 0 < args.parts_confidence <= 1:
         parser.error("threads >= 1, resolution in [64,1024], parts-confidence in (0,1] required")
     if (
@@ -862,7 +923,7 @@ def main(argv=None):
     edge_files = edge_checkpoints(args.detector, args.model)
     for path, spec in (
         *edge_files,
-        (args.person_model, CHECKPOINTS["person"]),
+        (args.person_model, PERSON_SPECS[args.person_size]),
         (args.nudenet_model, CHECKPOINTS["faces"]),
     ):
         verified_checkpoint(path, spec, not args.no_download)
@@ -903,6 +964,8 @@ def main(argv=None):
                 "people": len(people),
                 "edge_backend": "OpenCV DNN CPU" if args.detector == "dexined" else "ONNX Runtime CPU",
                 "detector_backend": "ONNX Runtime CPU",
+                "person_segmenter": f"yolo26{args.person_size}-seg",
+                "person_checkpoint_sha256": PERSON_SPECS[args.person_size][3],
                 "edge_detector": args.detector,
                 "edge_revision": (
                     REVISION
@@ -919,6 +982,7 @@ def main(argv=None):
                     "resolution": args.resolution,
                     "parts_confidence": args.parts_confidence,
                     "person_mask_threshold": args.person_mask_threshold,
+                    "person_size": args.person_size,
                     "repair_person": args.repair_person,
                     "sensitivity": args.sensitivity,
                     "smooth": args.smooth,
@@ -927,6 +991,10 @@ def main(argv=None):
                     "overlay_only": args.overlay_only,
                     "display_blur_source_pixels": args.blur,
                     "balance": args.balance,
+                    "start": args.start,
+                    "box_scale": args.box_scale,
+                    "roundness": args.roundness,
+                    "center_only_settings_active": args.start == "center",
                     "finishing_units": "region-growth grid pixels",
                 },
             }
@@ -951,7 +1019,25 @@ def main(argv=None):
                 detections = [d for d in detections if not d["label"].startswith("ARMPITS_")]
                 tick = time.perf_counter()
                 overlap_layers = None
-                if args.overlap:
+                if args.start == "edge":
+                    overlap_layers, details, zone_summary = contract_zones(
+                        cv,
+                        edges,
+                        inside,
+                        detections,
+                        args.resolution,
+                        args.edge_weight,
+                        args.smooth,
+                        args.expand,
+                        args.box_scale,
+                        args.roundness,
+                    )
+                    zones = None
+                    if not args.overlap:
+                        zones = exclusive_contours(cv, overlap_layers, details, inside)
+                        overlap_layers = None
+                        zone_summary = {"unknown_pixels": int(np.count_nonzero(zones == UNKNOWN)), "overlap_pixels": 0}
+                elif args.overlap:
                     overlap_layers, details, zone_summary = grow_independent_zones(
                         cv,
                         edges,
