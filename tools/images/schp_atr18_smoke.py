@@ -949,6 +949,40 @@ def make_visuals(
     return {class_names[idx]: round(100.0 * int(counts[idx]) / labels.size, 3) for idx in range(len(class_names))}
 
 
+def repair_person_silhouette(mask, box):
+    """Close narrow gaps in one YOLO instance without combining separate instances."""
+    import numpy as np
+    from PIL import Image, ImageFilter
+
+    x0, y0, x1, y1 = box
+    result = np.zeros_like(mask, dtype=np.uint8)
+    crop = np.where(mask[y0:y1, x0:x1] > 0, 255, 0).astype(np.uint8)
+    if not crop.size or not crop.any():
+        return result
+    # A small per-instance morphological closing reconnects narrow cracks and
+    # fills tiny holes. It never uses another detection's silhouette.
+    image = Image.fromarray(crop)
+    closed = image.filter(ImageFilter.MaxFilter(5)).filter(ImageFilter.MinFilter(5))
+    result[y0:y1, x0:x1] = np.maximum(crop, np.asarray(closed, dtype=np.uint8))
+    return result
+
+
+def select_people(people, image_size, min_area, max_people, repair):
+    """Filter by source-image silhouette pixels, then retain the largest instances."""
+    import numpy as np
+
+    width, height = image_size
+    selected = []
+    for score, mask, box in people:
+        cleaned = repair_person_silhouette(mask, box) if repair else np.where(mask > 0, 255, 0).astype(np.uint8)
+        area = int(np.count_nonzero(cleaned))
+        fraction = area / (width * height)
+        if fraction >= min_area:
+            selected.append((area, score, cleaned, box))
+    selected.sort(key=lambda item: (item[0], item[1]), reverse=True)
+    return [(score, mask, box) for _, score, mask, box in selected[:max_people]]
+
+
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     """Build the smoke-test CLI with simple paths and predictable output options."""
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -992,6 +1026,11 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument(
         "-d", "--confidence", type=float, default=0.25, help="Person detection threshold (default 0.25)."
     )
+    parser.add_argument("--max-people", type=int, default=2, help="Maximum retained people per image (default 2).")
+    parser.add_argument("--min-person-area", type=float, default=0.10,
+                        help="Minimum person mask fraction of full image (default 0.10).")
+    parser.add_argument("--repair-person-mask", action=argparse.BooleanOptionalAction, default=True,
+                        help="Close narrow per-person mask gaps (default enabled).")
     parser.add_argument(
         "-k",
         "--pose-model",
@@ -1050,6 +1089,10 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         parser.error("--confidence must be between 0 and 1")
     if not 0.0 <= args.opacity <= 1.0:
         parser.error("--opacity must be between 0 and 1")
+    if args.max_people < 1:
+        parser.error("--max-people must be at least 1")
+    if not 0.0 <= args.min_person_area <= 1.0:
+        parser.error("--min-person-area must be between 0 and 1")
     if args.threads < 1:
         parser.error("--threads must be at least 1")
     if not 0.0 <= args.min_confidence <= 1.0:
@@ -1110,7 +1153,8 @@ def main(argv: list[str] | None = None) -> int:
         try:
             source = load_rgb(path)
             detect_start = time.perf_counter()
-            people = selection._instances(person_session, source, args.confidence)
+            detected_people = selection._instances(person_session, source, args.confidence)
+            people = select_people(detected_people, source.size, args.min_person_area, args.max_people, args.repair_person_mask)
             nudenet_names, body_detections, face_boxes = {}, [], []
             if people:
                 nudenet_names, body_detections, face_boxes = detect_body_parts(
@@ -1309,6 +1353,10 @@ def main(argv: list[str] | None = None) -> int:
                     "outside_person": [0, 0, 0],
                 },
                 "person_detection_threshold": args.confidence,
+                "max_people": args.max_people,
+                "min_person_area": args.min_person_area,
+                "repair_person_mask": args.repair_person_mask,
+                "detected_people_before_filter": len(detected_people),
                 "face_detection_threshold": NUDENET_CONFIDENCE,
                 "face_nms_iou": selection.FACES_IOU,
                 "face_boxes": [list(box) for box in face_boxes],
