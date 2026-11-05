@@ -134,6 +134,22 @@
           </widget>
          </item>
          <item>
+          <widget class="QLabel" name="workflowRunLockNote">
+           <property name="visible">
+            <bool>false</bool>
+           </property>
+           <property name="text">
+            <string>This workflow is running. Its settings are locked until the run ends; the run keeps the settings it started with.</string>
+           </property>
+           <property name="wordWrap">
+            <bool>true</bool>
+           </property>
+           <property name="role" stdset="0">
+            <string>workflowLockNote</string>
+           </property>
+          </widget>
+         </item>
+         <item>
           <widget class="QWidget" name="workflowParamsHost">
            <layout class="QVBoxLayout" name="workflowParamsHostLayout">
             <property name="leftMargin">

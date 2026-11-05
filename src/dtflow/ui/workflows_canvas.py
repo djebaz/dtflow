@@ -16,7 +16,7 @@ from functools import cache
 
 os.environ.setdefault("QT_API", "pyside6")  # qtpy: the only binding DTFlow ships
 
-from PySide6.QtCore import QObject, Qt, QTimer
+from PySide6.QtCore import QEvent, QObject, QPoint, QPointF, Qt, QTimer
 from PySide6.QtGui import QBrush, QColor, QFont, QPen, QPixmap
 from PySide6.QtWidgets import QGraphicsSimpleTextItem, QGraphicsView, QLabel, QSizePolicy, QVBoxLayout, QWidget
 
@@ -39,6 +39,8 @@ SOCKET_TYPES = {wf.IMAGE: 0, wf.MASK: 1}
 SOCKET_NAMES = {value: key for key, value in SOCKET_TYPES.items()}
 NODE_WIDTH = 240
 THUMB_SIZE = 96
+# Fit never zooms out below this scale, so 10 pt node text stays about 10 px or larger; the wheel still zooms further.
+MIN_FIT_SCALE = 0.75
 # Step state -> token for the node outline and status pill (DESIGN.md: amber warns, red fails, never colour alone).
 STATE_TOKENS = {
     "running": "color.focus",
@@ -176,6 +178,38 @@ class DTFGraphicsView(QDMGraphicsView):
             return
         super().leftMouseButtonRelease(event)
 
+    def _request_add(self, view_pos: QPoint) -> None:
+        canvas = self.grScene.scene.canvas
+        if canvas is not None:
+            canvas.on_add_request(self.mapToScene(view_pos), view_pos)
+
+    def mouseDoubleClickEvent(self, event) -> None:
+        # Double-click on empty canvas: the searchable add-node picker at that point.
+        if event.button() == Qt.MouseButton.LeftButton and self.itemAt(event.pos()) is None:
+            self._request_add(event.pos())
+            event.accept()
+            return
+        super().mouseDoubleClickEvent(event)
+
+    def event(self, event) -> bool:
+        # Tab would move keyboard focus away; on the canvas it opens the add-node picker (at the pointer if inside).
+        if (
+            event.type() == QEvent.Type.KeyPress
+            and event.key() == Qt.Key.Key_Tab
+            and event.modifiers() == Qt.KeyboardModifier.NoModifier
+        ):
+            pointer = self.viewport().mapFromGlobal(self.cursor().pos())
+            inside = self.viewport().rect().contains(pointer)
+            self._request_add(pointer if inside else self.viewport().rect().center())
+            return True
+        return super().event(event)
+
+    def mousePressEvent(self, event) -> None:
+        canvas = self.grScene.scene.canvas
+        if canvas is not None:
+            canvas.on_pressed()
+        super().mousePressEvent(event)
+
     def keyPressEvent(self, event) -> None:
         if event.key() == Qt.Key.Key_F and event.modifiers() == Qt.KeyboardModifier.NoModifier:
             canvas = self.grScene.scene.canvas
@@ -224,7 +258,7 @@ class DTFGraphicsNode(QDMGraphicsNode):
         self.width = NODE_WIDTH
         self.title_height = 28
         self.edge_roundness = float(_tokens()["size.panelRadius"].removesuffix("px"))
-        self.height = self.title_height + 22 * ports + 76 + (THUMB_SIZE + 4 if spec.thumbnail else 0)
+        self.height = self.title_height + 22 * ports + 88 + (THUMB_SIZE + 4 if spec.thumbnail else 0)
 
     def initAssets(self) -> None:
         super().initAssets()
@@ -333,7 +367,7 @@ class DTFNode(Node):
         for socket, port in zip(self.inputs + self.outputs, self.SPEC.inputs + self.SPEC.outputs, strict=True):
             socket.grSocket.setText("")
             label = QGraphicsSimpleTextItem(port.name, socket.grSocket)
-            label.setFont(token_font("type.small"))
+            label.setFont(token_font("type.body"))
             label.setBrush(QBrush(token_color("color.text")))
             label.setAcceptedMouseButtons(Qt.MouseButton.NoButton)
             width, height = label.boundingRect().width(), label.boundingRect().height()
@@ -408,6 +442,9 @@ class WorkflowCanvas(QObject):
         self.on_changed: Callable[[], None] = lambda: None
         self.on_rejected: Callable[[str], None] = lambda message: None
         self.on_restored: Callable[[], None] = lambda: None  # undo/redo replaced node objects and values
+        # Double-click on empty canvas or Tab: (scene point, view point) for the add-node picker.
+        self.on_add_request: Callable[[QPointF, QPoint], None] = lambda scene_pos, view_pos: None
+        self.on_pressed: Callable[[], None] = lambda: None
         self.scene.setNodeClassSelector(lambda data: NODE_CLASSES[data["dtf_type"]])
         self._apply_canvas_theme()
         self.scene.addItemSelectedListener(self._selection_changed)
@@ -538,11 +575,15 @@ class WorkflowCanvas(QObject):
         # Typing bursts in one field coalesce into one undo step.
         self.scene.history.storeHistory(f"Edit {name}", setModified=True, merge_key=f"param:{node_id}:{name}")
 
-    def add_node(self, node_type: str) -> int:
+    def add_node(self, node_type: str, at: QPointF | None = None) -> int:
+        """Add a node centred on the view, or with its top-left corner at the scene point ``at``."""
         next_id = max((node.comfy_id for node in self.scene.nodes), default=0) + 1
         node = NODE_CLASSES[node_type](self.scene, next_id)
-        center = self.view.mapToScene(self.view.viewport().rect().center())
-        node.setPos(center.x() - NODE_WIDTH / 2, center.y() - 80)
+        if at is not None:
+            node.setPos(at.x(), at.y())
+        else:
+            center = self.view.mapToScene(self.view.viewport().rect().center())
+            node.setPos(center.x() - NODE_WIDTH / 2, center.y() - 80)
         self.scene.history.storeHistory(f"Add {node.SPEC.title}", setModified=True)
         self.select_node(next_id)
         return next_id
@@ -569,9 +610,20 @@ class WorkflowCanvas(QObject):
         self._selection_changed()
 
     def fit_view(self) -> None:
-        if self.scene.nodes:
-            rect = self.scene.grScene.itemsBoundingRect().adjusted(-60, -60, 60, 60)
-            self.view.fitInView(rect, Qt.AspectRatioMode.KeepAspectRatio)
+        """Fit the workflow, but never below ``MIN_FIT_SCALE``: a larger workflow then shows from its top-left."""
+        if not self.scene.nodes:
+            return
+        rect = self.scene.grScene.itemsBoundingRect().adjusted(-60, -60, 60, 60)
+        self.view.fitInView(rect, Qt.AspectRatioMode.KeepAspectRatio)
+        if abs(self.view.transform().m11()) >= MIN_FIT_SCALE:
+            return
+        self.view.resetTransform()
+        self.view.scale(MIN_FIT_SCALE, MIN_FIT_SCALE)
+        viewport = self.view.viewport().rect()
+        half_width, half_height = viewport.width() / MIN_FIT_SCALE / 2, viewport.height() / MIN_FIT_SCALE / 2
+        self.view.centerOn(
+            min(rect.center().x(), rect.left() + half_width), min(rect.center().y(), rect.top() + half_height)
+        )
 
     def center_on(self, node_id: int, *, reset_zoom: bool = False) -> None:
         node = self.node(node_id)
