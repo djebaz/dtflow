@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""DexiNed/OpenCV CPU edges and NudeNet-seeded zones; no Pascal or depth model.
+"""DexiNed/OpenCV or PiDiNet/ONNX Runtime CPU edges with NudeNet-seeded zones.
 
 Automatically downloads missing pinned ONNX checkpoints. Writes flat edge views,
 a zone preview with legend, an RGBA person cutout and a JSON report. Only the
@@ -30,6 +30,79 @@ EDGE_SPEC = (
     "sha256",
     "a50d01dc8481549c7dedb9eb3e0123b810a016520df75e4669a504609982cdd0",
 )
+PIDINET_REVISION = "6b3f899da74e697a7d2c2e7cba10cfce057d6e55"
+PIDINET_FILES = {
+    "pidinet": (
+        "pidinet_table5.onnx",
+        144_170,
+        "bca69bf456d073689303e2a56974baa2a6a1753b77425d8cac4986352093ce32",
+        2_881_392,
+        "e7c11c8f06033295d34c0e4e09f672728ff63544ee5a2103e211623a779c5c11",
+    ),
+    "pidinet-tiny": (
+        "table5_pidinet_tiny.onnx",
+        86_530,
+        "05b1f8df5627f0a2f5a69c5adfddb353c3ad6fcc4feece089f8125f99b90244e",
+        307_120,
+        "fd11bdd6fa5358ba15212a3c8887ce9aed48bdbeb5cc2032f5612e7447062c9a",
+    ),
+}
+
+
+def edge_checkpoints(detector, model):
+    """External weights retain their pinned basename, as referenced by the graph."""
+    if detector == "dexined":
+        return [(model, EDGE_SPEC)]
+    filename, size, digest, data_size, data_digest = PIDINET_FILES[detector]
+    base = f"https://huggingface.co/bdck/PiDiNet_ONNX/resolve/{PIDINET_REVISION}"
+    return [
+        (model, (f"{base}/{filename}", size, "sha256", digest)),
+        (model.parent / f"{filename}.data", (f"{base}/{filename}.data", data_size, "sha256", data_digest)),
+    ]
+
+
+def load_pidinet(path, threads):
+    """CPU-only ORT session; no PyTorch, export or GPU dependency at runtime."""
+    import onnxruntime as ort
+
+    options = ort.SessionOptions()
+    options.intra_op_num_threads = threads
+    options.inter_op_num_threads = 1
+    options.execution_mode = ort.ExecutionMode.ORT_SEQUENTIAL
+    options.add_session_config_entry("session.intra_op.allow_spinning", "0")
+    options.add_session_config_entry("session.inter_op.allow_spinning", "0")
+    session = ort.InferenceSession(str(path), sess_options=options, providers=["CPUExecutionProvider"])
+    if session.get_providers() != ["CPUExecutionProvider"]:
+        raise RuntimeError("PiDiNet must use ONNX Runtime CPU only")
+    inputs = session.get_inputs()
+    if len(inputs) != 1 or inputs[0].type != "tensor(float)" or len(inputs[0].shape) != 4:
+        raise RuntimeError("PiDiNet requires one float NCHW input")
+    batch, channels, height, width = inputs[0].shape
+    if (isinstance(batch, int) and batch != 1) or (isinstance(channels, int) and channels != 3):
+        raise RuntimeError(f"Unsupported PiDiNet input: {inputs[0].shape}")
+    size = (width if isinstance(width, int) else 512, height if isinstance(height, int) else 512)
+    if min(size) < 1 or max(size) > 2048:
+        raise RuntimeError(f"Unsupported PiDiNet spatial dimensions: {size}")
+    outputs = session.get_outputs()
+    if not any(item.name == "fused" for item in outputs):
+        raise RuntimeError("PiDiNet does not expose its expected fused probability output")
+    return session, inputs[0].name, size
+
+
+def pidinet_edges(cv, model, crop):
+    """Publisher's RGB/ImageNet normalization; fused output already has sigmoid."""
+    session, input_name, size = model
+    rgb = np.asarray(crop.resize(size, Image.Resampling.BILINEAR), dtype=np.float32) / 255.0
+    rgb = (rgb - np.asarray([0.485, 0.456, 0.406], dtype=np.float32)) / np.asarray(
+        [0.229, 0.224, 0.225], dtype=np.float32
+    )
+    tensor = np.ascontiguousarray(rgb.transpose(2, 0, 1)[None], dtype=np.float32)
+    output = np.asarray(session.run(["fused"], {input_name: tensor})[0])
+    if output.ndim != 4 or output.shape[:2] != (1, 1) or not np.isfinite(output).all():
+        raise RuntimeError(f"Invalid PiDiNet fused output: {output.shape}")
+    if output.min() < -1e-5 or output.max() > 1.00001:
+        raise RuntimeError("Expected PiDiNet probabilities, not logits")
+    return cv.resize(np.clip(output[0, 0], 0, 1), crop.size, interpolation=cv.INTER_LINEAR)
 
 
 def detect_edges(cv, net, crop):
@@ -106,7 +179,7 @@ def grow_zones(cv, edges, inside, detections, resolution, edge_weight, growth):
     return result, reports
 
 
-def save_outputs(source, box, inside, edges, zones, reports, output, prefix):
+def save_outputs(source, box, inside, edges, zones, reports, output, prefix, detector):
     x0, y0, x1, y1 = box
     names = {0: "background", UNKNOWN: "unknown"}
     names.update({r["zone_id"]: r["label"].lower() for r in reports})
@@ -131,7 +204,7 @@ def save_outputs(source, box, inside, edges, zones, reports, output, prefix):
     rgb = np.asarray(source, dtype=np.float32).copy()
     opacity = (full_edges * 0.85)[..., None]
     rgb = (rgb * (1 - opacity) + np.array([255, 64, 32]) * opacity).astype(np.uint8)
-    legend = ("DexiNed edges", "Red: stronger edge response", "Not an anatomical prediction")
+    legend = (f"{detector} edges", "Red: stronger edge response", "Not an anatomical prediction")
     font = ImageFont.load_default(size=18)
     panel_width = max(330, max(font.getbbox(text)[2] for text in legend) + 40)
     preview = Image.new("RGB", (source.width + panel_width, max(source.height, 140)), (24, 27, 34))
@@ -160,6 +233,7 @@ def output_directory(args, files, parser):
         r"(?:pascal|zones)_labels\.png|(?:pascal|zones)_\d+_[a-z_]+\.png)"
     )
     protected = {p.resolve() for p in (*files, args.model, args.person_model, args.nudenet_model)}
+    protected.update(path.resolve() for path, _ in edge_checkpoints(args.detector, args.model))
     for entry in previous:
         if (
             entry.is_symlink()
@@ -177,13 +251,18 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("-i", "--input-dir", type=Path, required=True)
     parser.add_argument("-o", "--output-dir", type=Path, default=Path("tmp/edge-nudenet-poc"))
-    parser.add_argument("-m", "--model", type=Path, default=Path("tmp/models/edge_detection_dexined_2024sep.onnx"))
+    parser.add_argument("-b", "--detector", choices=("dexined", "pidinet", "pidinet-tiny"), default="dexined")
+    parser.add_argument("-m", "--model", type=Path, help="Checkpoint path; default follows the selected detector")
     parser.add_argument(
         "-p", "--person-model", type=Path, default=Path("tmp/models/yolo26n-seg-ultralytics-v8.4.0.onnx")
     )
     parser.add_argument("-n", "--nudenet-model", type=Path, default=Path("tmp/models/nudenet-320n.onnx"))
-    parser.add_argument("-t", "--threads", type=int, default=4, help="OpenCV threads; ORT detectors use at most 4")
-    parser.add_argument("-r", "--resolution", type=int, default=384, help="Region-growth dimension; DexiNed uses 512")
+    parser.add_argument(
+        "-t", "--threads", type=int, default=4, help="Edge inference threads; person/parts use at most 4"
+    )
+    parser.add_argument(
+        "-r", "--resolution", type=int, default=384, help="Region-growth dimension, not edge-model input"
+    )
     parser.add_argument("-s", "--parts-confidence", type=float, default=0.25)
     parser.add_argument("-e", "--edge-weight", type=float, default=12, help="Higher values resist crossing edges more")
     parser.add_argument(
@@ -192,6 +271,11 @@ def main(argv=None):
     parser.add_argument("-d", "--no-download", action="store_true")
     parser.add_argument("-w", "--overwrite", action="store_true", help="Delete recognized previous POC outputs only")
     args = parser.parse_args(argv)
+    if args.model is None:
+        filename = (
+            "edge_detection_dexined_2024sep.onnx" if args.detector == "dexined" else PIDINET_FILES[args.detector][0]
+        )
+        args.model = Path("tmp/models") / filename
     if not args.input_dir.is_dir():
         parser.error("input-dir must be an existing directory")
     if args.threads < 1 or not 64 <= args.resolution <= 1024 or not 0 < args.parts_confidence <= 1:
@@ -210,16 +294,20 @@ def main(argv=None):
     from dtflow.services import person_selection as selection
 
     output, previous = output_directory(args, files, parser)
+    edge_files = edge_checkpoints(args.detector, args.model)
     for path, spec in (
-        (args.model, EDGE_SPEC),
+        *edge_files,
         (args.person_model, CHECKPOINTS["person"]),
         (args.nudenet_model, CHECKPOINTS["faces"]),
     ):
         verified_checkpoint(path, spec, not args.no_download)
     cv.setNumThreads(args.threads)
-    net = cv.dnn.readNetFromONNX(str(args.model))
-    net.setPreferableBackend(cv.dnn.DNN_BACKEND_OPENCV)
-    net.setPreferableTarget(cv.dnn.DNN_TARGET_CPU)
+    if args.detector == "dexined":
+        net = cv.dnn.readNetFromONNX(str(args.model))
+        net.setPreferableBackend(cv.dnn.DNN_BACKEND_OPENCV)
+        net.setPreferableTarget(cv.dnn.DNN_TARGET_CPU)
+    else:
+        net = load_pidinet(args.model, args.threads)
     people_session = selection._verified_session(
         selection.describe_model(args.person_model), selection._segmentation_session
     )
@@ -240,12 +328,14 @@ def main(argv=None):
             people = select_people(selection._instances(people_session, source, 0.25), source.size, 0, 1, False)
             report = {
                 "source": path.name,
-                "algorithm": "dexined-nudenet-edge-growth-v1",
+                "algorithm": f"{args.detector}-nudenet-edge-growth-v1",
                 "people": len(people),
-                "edge_backend": "OpenCV DNN CPU",
+                "edge_backend": "OpenCV DNN CPU" if args.detector == "dexined" else "ONNX Runtime CPU",
                 "detector_backend": "ONNX Runtime CPU",
-                "edge_revision": REVISION,
-                "edge_sha256": EDGE_SPEC[3],
+                "edge_detector": args.detector,
+                "edge_revision": REVISION if args.detector == "dexined" else PIDINET_REVISION,
+                "edge_sha256": edge_files[0][1][3],
+                "edge_checkpoints": {path.name: spec[3] for path, spec in edge_files},
                 "settings": {
                     "edge_weight": args.edge_weight,
                     "growth": args.growth,
@@ -259,7 +349,7 @@ def main(argv=None):
                 x0, y0, x1, y1 = box
                 crop, inside = source.crop(box), mask[y0:y1, x0:x1] > 0
                 tick = time.perf_counter()
-                edges = detect_edges(cv, net, crop)
+                edges = detect_edges(cv, net, crop) if args.detector == "dexined" else pidinet_edges(cv, net, crop)
                 report["edge_seconds"] = time.perf_counter() - tick
                 _, detections, _ = detect_body_parts(parts_session, crop, args.parts_confidence)
                 detections = [d for d in detections if not d["label"].startswith("ARMPITS_")]
@@ -268,7 +358,7 @@ def main(argv=None):
                     cv, edges, inside, detections, args.resolution, args.edge_weight, args.growth
                 )
                 report["growth_seconds"] = time.perf_counter() - tick
-                names = save_outputs(source, box, inside, edges, zones, details, output, prefix)
+                names = save_outputs(source, box, inside, edges, zones, details, output, prefix, args.detector)
                 report.update(
                     crop_box=list(box),
                     label_names=names,
