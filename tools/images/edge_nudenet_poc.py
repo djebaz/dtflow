@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""DexiNed/OpenCV or PiDiNet/ONNX Runtime CPU edges with NudeNet-seeded zones.
+"""CPU edge or SCHP LIP-20 score boundaries with NudeNet-seeded zones.
 
 Automatically downloads missing pinned ONNX checkpoints. Writes flat edge views,
 a zone preview with legend, an RGBA person cutout and a JSON report. Only the
@@ -47,12 +47,21 @@ PIDINET_FILES = {
         "fd11bdd6fa5358ba15212a3c8887ce9aed48bdbeb5cc2032f5612e7447062c9a",
     ),
 }
+LIP_REVISION = "7c0028fe34dcd8bd534ffa291a9086cdc856e4a9"
+LIP_SPEC = (
+    f"https://huggingface.co/pirocheto/schp-lip-20/resolve/{LIP_REVISION}/onnx/schp-lip-20-int8-static.onnx",
+    68_314_352,
+    "sha256",
+    "871c9e209dc67d6be61c73dcc79cb49e638fcf5bbc35a19b4c7429eba0bfc046",
+)
 
 
 def edge_checkpoints(detector, model):
     """External weights retain their pinned basename, as referenced by the graph."""
     if detector == "dexined":
         return [(model, EDGE_SPEC)]
+    if detector == "lip-20":
+        return [(model, LIP_SPEC)]
     filename, size, digest, data_size, data_digest = PIDINET_FILES[detector]
     base = f"https://huggingface.co/bdck/PiDiNet_ONNX/resolve/{PIDINET_REVISION}"
     return [
@@ -61,7 +70,7 @@ def edge_checkpoints(detector, model):
     ]
 
 
-def load_pidinet(path, threads):
+def load_pidinet(path, threads, detector="pidinet"):
     """CPU-only ORT session; no PyTorch, export or GPU dependency at runtime."""
     import onnxruntime as ort
 
@@ -73,19 +82,23 @@ def load_pidinet(path, threads):
     options.add_session_config_entry("session.inter_op.allow_spinning", "0")
     session = ort.InferenceSession(str(path), sess_options=options, providers=["CPUExecutionProvider"])
     if session.get_providers() != ["CPUExecutionProvider"]:
-        raise RuntimeError("PiDiNet must use ONNX Runtime CPU only")
+        raise RuntimeError(f"{detector} must use ONNX Runtime CPU only")
     inputs = session.get_inputs()
     if len(inputs) != 1 or inputs[0].type != "tensor(float)" or len(inputs[0].shape) != 4:
-        raise RuntimeError("PiDiNet requires one float NCHW input")
+        raise RuntimeError(f"{detector} requires one float NCHW input")
     batch, channels, height, width = inputs[0].shape
     if (isinstance(batch, int) and batch != 1) or (isinstance(channels, int) and channels != 3):
-        raise RuntimeError(f"Unsupported PiDiNet input: {inputs[0].shape}")
-    size = (width if isinstance(width, int) else 512, height if isinstance(height, int) else 512)
+        raise RuntimeError(f"Unsupported {detector} input: {inputs[0].shape}")
+    default_size = 473 if detector == "lip-20" else 512
+    size = (width if isinstance(width, int) else default_size, height if isinstance(height, int) else default_size)
     if min(size) < 1 or max(size) > 2048:
-        raise RuntimeError(f"Unsupported PiDiNet spatial dimensions: {size}")
+        raise RuntimeError(f"Unsupported {detector} spatial dimensions: {size}")
+    if detector == "lip-20" and size != (473, 473):
+        raise RuntimeError(f"Expected LIP-20 473-square input, got {size}")
     outputs = session.get_outputs()
-    if not any(item.name == "fused" for item in outputs):
-        raise RuntimeError("PiDiNet does not expose its expected fused probability output")
+    expected_output = "logits" if detector == "lip-20" else "fused"
+    if not any(item.name == expected_output for item in outputs):
+        raise RuntimeError(f"{detector} does not expose its expected {expected_output} output")
     return session, inputs[0].name, size
 
 
@@ -103,6 +116,54 @@ def pidinet_edges(cv, model, crop):
     if output.min() < -1e-5 or output.max() > 1.00001:
         raise RuntimeError("Expected PiDiNet probabilities, not logits")
     return cv.resize(np.clip(output[0, 0], 0, 1), crop.size, interpolation=cv.INTER_LINEAR)
+
+
+def lip_score_boundaries(cv, model, crop, inside, resolution, sensitivity):
+    """Use spatial changes in winning softmax scores, never class IDs as barriers.
+
+    Restore logits before softmax on the bounded growth grid. Neighbor differences
+    use only pairs inside the person, excluding artificial silhouette boundaries.
+    """
+    session, input_name, size = model
+    rgb = np.asarray(crop.resize(size, Image.Resampling.BILINEAR), dtype=np.float32) / 255.0
+    rgb = (rgb - np.asarray([0.406, 0.456, 0.485], dtype=np.float32)) / np.asarray(
+        [0.225, 0.224, 0.229], dtype=np.float32
+    )
+    tensor = np.ascontiguousarray(rgb.transpose(2, 0, 1)[None], dtype=np.float32)
+    logits = np.asarray(session.run(["logits"], {input_name: tensor})[0])
+    if logits.shape != (1, 20, 473, 473) or not np.isfinite(logits).all():
+        raise RuntimeError(f"Invalid LIP-20 logits: {logits.shape}")
+    scale = min(1.0, resolution / max(crop.size))
+    work_size = (max(1, round(crop.width * scale)), max(1, round(crop.height * scale)))
+    maximum = np.full((work_size[1], work_size[0]), -np.inf, dtype=np.float32)
+    denominator = np.zeros_like(maximum)
+    for plane in logits[0]:
+        score = cv.resize(plane, work_size, interpolation=cv.INTER_LINEAR)
+        updated = np.maximum(maximum, score)
+        denominator = denominator * np.exp(maximum - updated) + np.exp(score - updated)
+        maximum = updated
+    confidence = 1.0 / denominator
+    valid = cv.resize(inside.astype(np.uint8), work_size, interpolation=cv.INTER_NEAREST) > 0
+    strength = np.zeros_like(confidence)
+    for a, b in ((np.s_[:, :-1], np.s_[:, 1:]), (np.s_[:-1, :], np.s_[1:, :])):
+        change = np.abs(confidence[a] - confidence[b]) * (valid[a] & valid[b])
+        np.maximum(strength[a], change, out=strength[a])
+        np.maximum(strength[b], change, out=strength[b])
+    # Normalize the derived cost, not the confidence preview; record the exact scale.
+    normalizer = max(float(np.percentile(strength[valid], 98)), 1e-3) if valid.any() else 1.0
+    barriers = np.clip(sensitivity * strength / normalizer, 0, 1)
+    barriers[~valid] = 0
+    return (
+        cv.resize(barriers, crop.size, interpolation=cv.INTER_LINEAR),
+        cv.resize(confidence, crop.size, interpolation=cv.INTER_LINEAR),
+        {
+            "signal": "absolute neighboring winning-softmax-score differences",
+            "normalizer_p98": normalizer,
+            "working_size": list(work_size),
+            "scores_calibrated": False,
+            "semantic_class_constraints": False,
+        },
+    )
 
 
 def detect_edges(cv, net, crop):
@@ -179,6 +240,27 @@ def grow_zones(cv, edges, inside, detections, resolution, edge_weight, growth):
     return result, reports
 
 
+def save_score_preview(cv, source, box, inside, scores, destination):
+    """Show unnormalized model scores with a fixed 0..1 scale, not accuracy claims."""
+    x0, y0, x1, y1 = box
+    color = cv.applyColorMap(np.rint(np.clip(scores, 0, 1) * 255).astype(np.uint8), cv.COLORMAP_TURBO)
+    color = color[:, :, ::-1]
+    rgb = np.asarray(source).copy()
+    region = rgb[y0:y1, x0:x1]
+    region[inside] = (region[inside] * 0.35 + color[inside] * 0.65).astype(np.uint8)
+    preview = Image.new("RGB", (source.width + 380, max(source.height, 320)), (24, 27, 34))
+    preview.paste(Image.fromarray(rgb), (0, 0))
+    draw, font = ImageDraw.Draw(preview), ImageFont.load_default(size=18)
+    draw.text((source.width + 20, 20), "LIP-20 winning class score", fill="white", font=font)
+    draw.text((source.width + 20, 54), "Uncalibrated; not an accuracy map", fill="white", font=font)
+    for index, value in enumerate((0.0, 0.25, 0.5, 0.75, 1.0)):
+        bgr = cv.applyColorMap(np.array([[round(value * 255)]], dtype=np.uint8), cv.COLORMAP_TURBO)[0, 0]
+        y = 100 + index * 36
+        draw.rectangle((source.width + 20, y, source.width + 44, y + 24), fill=tuple(int(v) for v in bgr[::-1]))
+        draw.text((source.width + 60, y), f"{value:.2f}", fill="white", font=font)
+    preview.save(destination, quality=95, subsampling=0)
+
+
 def save_outputs(source, box, inside, edges, zones, reports, output, prefix, detector):
     x0, y0, x1, y1 = box
     names = {0: "background", UNKNOWN: "unknown"}
@@ -204,7 +286,11 @@ def save_outputs(source, box, inside, edges, zones, reports, output, prefix, det
     rgb = np.asarray(source, dtype=np.float32).copy()
     opacity = (full_edges * 0.85)[..., None]
     rgb = (rgb * (1 - opacity) + np.array([255, 64, 32]) * opacity).astype(np.uint8)
-    legend = (f"{detector} edges", "Red: stronger edge response", "Not an anatomical prediction")
+    legend = (
+        "LIP-20 score changes" if detector == "lip-20" else f"{detector} edges",
+        "Red: stronger score variation" if detector == "lip-20" else "Red: stronger edge response",
+        "Not an anatomical prediction",
+    )
     font = ImageFont.load_default(size=18)
     panel_width = max(330, max(font.getbbox(text)[2] for text in legend) + 40)
     preview = Image.new("RGB", (source.width + panel_width, max(source.height, 140)), (24, 27, 34))
@@ -228,7 +314,7 @@ def output_directory(args, files, parser):
     if previous and not args.overwrite:
         parser.error("output-dir is not empty; use -w / --overwrite to remove previous POC outputs")
     generated = re.compile(
-        r"\d{4,}_.+_(?:edges\.png|edges_overlay\.jpg|pascal_overlay\.jpg|zones_overlay\.jpg|"
+        r"\d{4,}_.+_(?:scores_overlay\.jpg|edges\.png|edges_overlay\.jpg|pascal_overlay\.jpg|zones_overlay\.jpg|"
         r"person_cutout\.png|report\.json|person\.png|confidence\.png|"
         r"(?:pascal|zones)_labels\.png|(?:pascal|zones)_\d+_[a-z_]+\.png)"
     )
@@ -251,7 +337,7 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("-i", "--input-dir", type=Path, required=True)
     parser.add_argument("-o", "--output-dir", type=Path, default=Path("tmp/edge-nudenet-poc"))
-    parser.add_argument("-b", "--detector", choices=("dexined", "pidinet", "pidinet-tiny"), default="dexined")
+    parser.add_argument("-b", "--detector", choices=("dexined", "pidinet", "pidinet-tiny", "lip-20"), default="dexined")
     parser.add_argument("-m", "--model", type=Path, help="Checkpoint path; default follows the selected detector")
     parser.add_argument(
         "-p", "--person-model", type=Path, default=Path("tmp/models/yolo26n-seg-ultralytics-v8.4.0.onnx")
@@ -264,6 +350,13 @@ def main(argv=None):
         "-r", "--resolution", type=int, default=384, help="Region-growth dimension, not edge-model input"
     )
     parser.add_argument("-s", "--parts-confidence", type=float, default=0.25)
+    parser.add_argument(
+        "-v",
+        "--sensitivity",
+        type=float,
+        default=1.0,
+        help="LIP-20 score-boundary gain: >1 strengthens faint changes, <1 weakens them (default 1)",
+    )
     parser.add_argument("-e", "--edge-weight", type=float, default=12, help="Higher values resist crossing edges more")
     parser.add_argument(
         "-g", "--growth", type=float, default=2.5, help="Path budget relative to detection half-diagonal"
@@ -272,12 +365,19 @@ def main(argv=None):
     parser.add_argument("-w", "--overwrite", action="store_true", help="Delete recognized previous POC outputs only")
     args = parser.parse_args(argv)
     if args.model is None:
-        filename = (
-            "edge_detection_dexined_2024sep.onnx" if args.detector == "dexined" else PIDINET_FILES[args.detector][0]
-        )
+        if args.detector == "dexined":
+            filename = "edge_detection_dexined_2024sep.onnx"
+        elif args.detector == "lip-20":
+            filename = "schp-lip-20-int8-static.onnx"
+        else:
+            filename = PIDINET_FILES[args.detector][0]
         args.model = Path("tmp/models") / filename
     if not args.input_dir.is_dir():
         parser.error("input-dir must be an existing directory")
+    if not math.isfinite(args.sensitivity) or args.sensitivity <= 0:
+        parser.error("sensitivity must be finite and > 0")
+    if args.detector != "lip-20" and args.sensitivity != 1.0:
+        parser.error("--sensitivity applies only to --detector lip-20")
     if args.threads < 1 or not 64 <= args.resolution <= 1024 or not 0 < args.parts_confidence <= 1:
         parser.error("threads >= 1, resolution in [64,1024], parts-confidence in (0,1] required")
     if (
@@ -307,7 +407,7 @@ def main(argv=None):
         net.setPreferableBackend(cv.dnn.DNN_BACKEND_OPENCV)
         net.setPreferableTarget(cv.dnn.DNN_TARGET_CPU)
     else:
-        net = load_pidinet(args.model, args.threads)
+        net = load_pidinet(args.model, args.threads, args.detector)
     people_session = selection._verified_session(
         selection.describe_model(args.person_model), selection._segmentation_session
     )
@@ -333,7 +433,13 @@ def main(argv=None):
                 "edge_backend": "OpenCV DNN CPU" if args.detector == "dexined" else "ONNX Runtime CPU",
                 "detector_backend": "ONNX Runtime CPU",
                 "edge_detector": args.detector,
-                "edge_revision": REVISION if args.detector == "dexined" else PIDINET_REVISION,
+                "edge_revision": (
+                    REVISION
+                    if args.detector == "dexined"
+                    else LIP_REVISION
+                    if args.detector == "lip-20"
+                    else PIDINET_REVISION
+                ),
                 "edge_sha256": edge_files[0][1][3],
                 "edge_checkpoints": {path.name: spec[3] for path, spec in edge_files},
                 "settings": {
@@ -341,6 +447,7 @@ def main(argv=None):
                     "growth": args.growth,
                     "resolution": args.resolution,
                     "parts_confidence": args.parts_confidence,
+                    "sensitivity": args.sensitivity,
                 },
             }
             if people:
@@ -349,7 +456,16 @@ def main(argv=None):
                 x0, y0, x1, y1 = box
                 crop, inside = source.crop(box), mask[y0:y1, x0:x1] > 0
                 tick = time.perf_counter()
-                edges = detect_edges(cv, net, crop) if args.detector == "dexined" else pidinet_edges(cv, net, crop)
+                scores = None
+                if args.detector == "dexined":
+                    edges = detect_edges(cv, net, crop)
+                elif args.detector == "lip-20":
+                    edges, scores, score_details = lip_score_boundaries(
+                        cv, net, crop, inside, args.resolution, args.sensitivity
+                    )
+                    report["score_boundaries"] = score_details
+                else:
+                    edges = pidinet_edges(cv, net, crop)
                 report["edge_seconds"] = time.perf_counter() - tick
                 _, detections, _ = detect_body_parts(parts_session, crop, args.parts_confidence)
                 detections = [d for d in detections if not d["label"].startswith("ARMPITS_")]
@@ -359,6 +475,8 @@ def main(argv=None):
                 )
                 report["growth_seconds"] = time.perf_counter() - tick
                 names = save_outputs(source, box, inside, edges, zones, details, output, prefix, args.detector)
+                if scores is not None:
+                    save_score_preview(cv, source, box, inside, scores, output / f"{prefix}_scores_overlay.jpg")
                 report.update(
                     crop_box=list(box),
                     label_names=names,
