@@ -5,8 +5,8 @@ Dependencies: numpy, onnxruntime, Pillow (all already declared by DTFlow).
 No Transformers, PyTorch, huggingface_hub, OpenCV, or DTFlow imports.
 
 The pinned model is downloaded once from Hugging Face with SHA-256 verification.
-The output includes full-resolution indexed masks, binary class masks, overlays,
-and original-versus-overlay comparison images with a legend.
+The output includes source-aligned class masks, confidence maps, colorful overlays,
+and original-versus-overlay comparisons; files are grouped by output type.
 
 Usage (from the DTFlow repository root):
     python3 tools/images/schp_atr18_smoke.py --input-dir "C:\\photos" --output-dir "tmp\\schp-smoke"
@@ -43,13 +43,27 @@ LABELS = (
     "Pants", "Dress", "Belt", "Left-shoe", "Right-shoe", "Face",
     "Left-leg", "Right-leg", "Left-arm", "Right-arm", "Bag", "Scarf",
 )
-# Match DTFlow's established labels and RGB per-layer colors where available.
+# High-contrast qualitative palette. Left/right pairs intentionally differ.
+# Visual-only colors: class IDs are untouched by changes to this palette.
 COLORS = (
-    (0, 0, 0), (255, 87, 34), (121, 85, 72), (96, 125, 139),
-    (66, 135, 245), (171, 71, 188), (52, 168, 83), (233, 30, 99),
-    (255, 193, 7), (141, 110, 99), (141, 110, 99), (255, 112, 112),
-    (156, 204, 101), (156, 204, 101), (255, 183, 77), (255, 183, 77),
-    (0, 150, 136), (0, 188, 212),
+    (0, 0, 0),       # 00 Background
+    (255, 67, 54),   # 01 Hat - scarlet
+    (0, 188, 172),   # 02 Hair - turquoise
+    (255, 214, 0),   # 03 Sunglasses - yellow
+    (46, 94, 255),   # 04 Upper-clothes - blue
+    (226, 45, 171),  # 05 Skirt - magenta
+    (28, 168, 70),   # 06 Pants - green
+    (255, 127, 24),  # 07 Dress - orange
+    (129, 68, 213),  # 08 Belt - violet
+    (0, 128, 204),   # 09 Left-shoe - azure
+    (255, 91, 145),  # 10 Right-shoe - pink
+    (186, 223, 41),  # 11 Face - lime
+    (63, 204, 242),  # 12 Left-leg - cyan
+    (219, 50, 27),   # 13 Right-leg - red
+    (153, 132, 255), # 14 Left-arm - lavender
+    (69, 214, 54),   # 15 Right-arm - bright green
+    (139, 80, 30),   # 16 Bag - brown
+    (255, 173, 0),   # 17 Scarf - amber
 )
 # IMPORTANT: This model uses RGB pixels, but its published mean/std follow
 # the BGR-indexed normalization constants used during SCHP training.
@@ -167,30 +181,53 @@ def load_rgb(path: Path):
     return background.convert("RGB")
 
 
-def make_visuals(source, labels, out_dir: Path, stem: str, opacity: float):
-    """Save source-aligned class IDs, binary masks, overlay and labelled comparison."""
+def classify_logits(logits):
+    """Return argmax class IDs and uncalibrated per-pixel softmax top-class scores."""
+    import numpy as np
+
+    if logits.shape != (1, len(LABELS), SIDE, SIDE):
+        raise RuntimeError(f"Unexpected logits shape: {logits.shape}")
+    scores = np.asarray(logits[0], dtype=np.float32)
+    if not np.isfinite(scores).all():
+        raise RuntimeError("Model returned non-finite class logits.")
+    labels = np.argmax(scores, axis=0).astype(np.uint8)
+    maximum = np.max(scores, axis=0)
+    # Stable softmax; probability of the top predicted class, not a calibrated
+    # correctness estimate and not a model-level/whole-person detection score.
+    confidence = 1.0 / np.exp(scores - maximum[None, :, :]).sum(axis=0)
+    return labels, confidence.astype(np.float32)
+
+
+def make_visuals(source, labels, confidence, out_dir: Path, stem: str, opacity: float):
+    """Write flat per-type outputs, with one shared stem and matching mask/legend colors."""
     import numpy as np
     from PIL import Image, ImageDraw, ImageFont
 
-    out_dir.mkdir(parents=True, exist_ok=True)
-    # Preserve raw class IDs so results remain inspectable without a color legend.
-    indexed = Image.fromarray(labels.astype(np.uint8))
-    indexed.save(out_dir / f"{stem}_labels.png")
+    # Class labels are in the source grid after optional confidence suppression.
+    Image.fromarray(labels.astype(np.uint8)).save(out_dir / "labels" / f"{stem}_labels.png")
+    confidence_gray = np.rint(np.clip(confidence, 0, 1) * 255).astype(np.uint8)
+    Image.fromarray(confidence_gray).save(out_dir / "confidence" / f"{stem}_confidence.png")
 
     color_lut = np.asarray(COLORS, dtype=np.uint8)
-    colored = Image.fromarray(color_lut[labels], mode="RGB")
+    colored = Image.fromarray(color_lut[labels])
     alpha = Image.fromarray(np.where(labels > 0, round(255 * opacity), 0).astype(np.uint8))
     colored.putalpha(alpha)
     overlay = Image.alpha_composite(source.convert("RGBA"), colored).convert("RGB")
-    overlay.save(out_dir / f"{stem}_overlay.png")
+
+    # A thin outline separates adjacent colors and improves visual inspection.
+    edges = np.zeros(labels.shape, dtype=bool)
+    edges[:, 1:] |= (labels[:, 1:] != labels[:, :-1]) & (labels[:, 1:] != 0)
+    edges[1:, :] |= (labels[1:, :] != labels[:-1, :]) & (labels[1:, :] != 0)
+    if edges.any():
+        overlay.paste((255, 255, 255), mask=Image.fromarray((edges * 220).astype(np.uint8)))
+    overlay.save(out_dir / "overlays" / f"{stem}_overlay.png")
 
     counts = np.bincount(labels.reshape(-1), minlength=len(LABELS))
     detected = [idx for idx in range(1, len(LABELS)) if counts[idx] > 0]
     for idx in detected:
         binary = Image.fromarray((labels == idx).astype(np.uint8) * 255)
-        binary.save(out_dir / f"{stem}_mask_{idx:02d}_{LABELS[idx].lower().replace('-', '_')}.png")
+        binary.save(out_dir / "masks" / f"{stem}_mask_{idx:02d}_{LABELS[idx].lower().replace('-', '_')}.png")
 
-    # Left: original; middle: mask overlay; right: legend and pixel coverage.
     w, h = source.size
     legend_width = 250
     compared = Image.new("RGB", (w * 2 + legend_width, max(h, 56 + len(LABELS) * 26)), "white")
@@ -209,7 +246,7 @@ def make_visuals(source, labels, out_dir: Path, stem: str, opacity: float):
             draw.rectangle((left, y, left + 14, y + 14), fill=COLORS[idx])
         pct = 100.0 * int(counts[idx]) / labels.size
         draw.text((left + 22, y + 1), f"{idx:02d} {name}: {pct:.1f}%", fill=(20, 20, 20), font=font)
-    compared.save(out_dir / f"{stem}_compare.png")
+    compared.save(out_dir / "comparisons" / f"{stem}_compare.png")
     return {LABELS[idx]: round(100.0 * int(counts[idx]) / labels.size, 3) for idx in range(len(LABELS))}
 
 
@@ -222,11 +259,14 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--no-download", action="store_true", help="Require an existing, hash-verified ONNX file.")
     parser.add_argument("--opacity", type=float, default=0.50, help="Overlay opacity between 0.0 and 1.0 (default 0.50).")
     parser.add_argument("--threads", type=int, default=4, help="ONNX Runtime CPU inference threads (default 4).")
+    parser.add_argument("--min-confidence", type=float, default=0.0, help="Minimum uncalibrated pixel softmax score, 0.0 to 1.0; default 0.0 (disabled).")
     args = parser.parse_args(argv)
     if not 0.0 <= args.opacity <= 1.0:
         parser.error("--opacity must be between 0 and 1")
     if args.threads < 1:
         parser.error("--threads must be at least 1")
+    if not 0.0 <= args.min_confidence <= 1.0:
+        parser.error("--min-confidence must be between 0 and 1")
     if not args.input_dir.is_dir():
         parser.error(f"--input-dir is not an existing folder: {args.input_dir}")
     return args
@@ -249,6 +289,8 @@ def main(argv: list[str] | None = None) -> int:
     print(f"CPU ONNX session ready in {time.perf_counter() - t_load:.2f}s; {len(files)} image(s) queued")
 
     output_root = args.output_dir.resolve()
+    for kind in ("labels", "confidence", "overlays", "masks", "comparisons", "manifests"):
+        (output_root / kind).mkdir(parents=True, exist_ok=True)
     summary_rows = []
     fail_count = 0
     for n, path in enumerate(files, start=1):
@@ -261,13 +303,20 @@ def main(argv: list[str] | None = None) -> int:
             inf_start = time.perf_counter()
             logits = session.run(["logits"], {"pixel_values": tensor})[0]
             inference_seconds = time.perf_counter() - inf_start
-            if logits.shape != (1, len(LABELS), SIDE, SIDE):
-                raise RuntimeError(f"Unexpected logits shape: {logits.shape}")
-            small_labels = np.argmax(logits[0], axis=0).astype(np.uint8)
-            # Keep class IDs intact on the original pixel grid with nearest-neighbor.
-            label_image = Image.fromarray(small_labels).resize(source.size, Image.Resampling.NEAREST)
-            full_labels = np.asarray(label_image, dtype=np.uint8)
-            class_coverages = make_visuals(source, full_labels, output_root / stem, stem, args.opacity)
+            small_labels, small_confidence = classify_logits(logits)
+            # Nearest-neighbor restoration keeps labels and confidence aligned on
+            # exactly the same source pixel grid; don't smooth discrete classes.
+            full_labels = np.asarray(
+                Image.fromarray(small_labels).resize(source.size, Image.Resampling.NEAREST), dtype=np.uint8
+            ).copy()
+            full_confidence = np.asarray(
+                Image.fromarray(small_confidence, mode="F").resize(source.size, Image.Resampling.NEAREST),
+                dtype=np.float32,
+            )
+            unfiltered_foreground = full_labels != 0
+            suppressed = unfiltered_foreground & (full_confidence < args.min_confidence)
+            full_labels[suppressed] = 0
+            class_coverages = make_visuals(source, full_labels, full_confidence, output_root, stem, args.opacity)
             elapsed = time.perf_counter() - stamp
             record = {
                 "image_name": path.name,
@@ -277,12 +326,17 @@ def main(argv: list[str] | None = None) -> int:
                 "model_url": MODEL_URL,
                 "model_sha256": model_hash,
                 "class_labels": list(LABELS),
+                "min_confidence": args.min_confidence,
+                "confidence_definition": "uncalibrated per-pixel maximum softmax probability",
+                "mean_top_class_confidence": round(float(full_confidence.mean()), 4),
+                "suppressed_foreground_pixels": int(suppressed.sum()),
+                "original_foreground_pixels": int(unfiltered_foreground.sum()),
                 "preprocessing": {"resize": [SIDE, SIDE], "resampling": "bilinear", "mean": MEAN, "std": STD},
                 "inference_seconds": round(inference_seconds, 3),
                 "total_seconds": round(elapsed, 3),
                 "class_coverages_percent": class_coverages,
             }
-            (output_root / stem / f"{stem}_report.json").write_text(
+            (output_root / "manifests" / f"{stem}_report.json").write_text(
                 json.dumps(record, indent=2, ensure_ascii=True) + "\n", encoding="utf-8"
             )
             summary_rows.append({"image": path.name, "status": "ok", "inference_s": f"{inference_seconds:.3f}", "total_s": f"{elapsed:.3f}"})
@@ -292,7 +346,7 @@ def main(argv: list[str] | None = None) -> int:
             summary_rows.append({"image": path.name, "status": "error", "inference_s": "", "total_s": ""})
             print(f"[{n}/{len(files)}] ERROR {path.name}: {type(exc).__name__}: {exc}", file=sys.stderr, flush=True)
     output_root.mkdir(parents=True, exist_ok=True)
-    with (output_root / "summary.csv").open("w", newline="", encoding="utf-8") as stream:
+    with (output_root / "manifests" / "summary.csv").open("w", newline="", encoding="utf-8") as stream:
         writer = csv.DictWriter(stream, fieldnames=("image", "status", "inference_s", "total_s"))
         writer.writeheader()
         writer.writerows(summary_rows)
