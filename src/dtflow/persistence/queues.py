@@ -48,11 +48,22 @@ from dtflow.persistence.script_items import (
     read_run_snapshot,
     script_request_from_record,
 )
+from dtflow.persistence.workflow_items import (
+    KIND_WORKFLOW,
+    interrupted_run,
+    is_workflow_record,
+    workflow_request_from_record,
+)
+from dtflow.persistence.workflow_items import item_outcome as workflow_outcome
 
 QUEUE_STATES = ("paused", "queued", "running", "cancelled")
 UP_NEXT_ACTIONS = ("enqueue", "dequeue", "cancel", "earlier", "later")
 ITEM_STATES = ("pending", "running", "succeeded", "failed", "unknown", "save_failed", "cancelled")
 ACTIONS = ("pause", "resume", "cancel", "cap")
+# Workflow queues only (#223): answered by the workflow runner, which takes them with their payloads
+# (``take_workflow_controls``); ``apply_controls`` leaves them pending for it.
+WORKFLOW_ACTIONS = ("workflow_branch", "workflow_retry")
+BRANCH_DECISIONS = ("continue", "stop")
 MAX_ITEMS = MAX_QUEUE_ITEMS
 
 QUEUE_SCHEMA = (
@@ -174,6 +185,13 @@ def _check_new_queue(requests: Sequence[ResolvedGenerationRequest]) -> None:
 def _check_script_record(record: Any) -> None:
     try:
         script_request_from_record(record)
+    except ValidationError as exc:
+        raise QueueError(str(exc)) from exc
+
+
+def _check_workflow_record(record: Any) -> None:
+    try:
+        workflow_request_from_record(record)
     except ValidationError as exc:
         raise QueueError(str(exc)) from exc
 
@@ -334,6 +352,14 @@ class QueueMixin:
         with self._txn() as db:
             return _insert_paused(db, backend, 1, (), self._now(), kind=KIND_SCRIPT, records=(record,))
 
+    async def create_workflow_queue(self, backend: dict[str, Any], record: dict[str, Any]) -> str:
+        return await self._run(self._create_workflow_queue, backend, record)
+
+    def _create_workflow_queue(self, backend, record) -> str:
+        _check_workflow_record(record)
+        with self._txn() as db:
+            return _insert_paused(db, backend, 1, (), self._now(), kind=KIND_WORKFLOW, records=(record,))
+
     # -- controls -------------------------------------------------------------------------------------------------
 
     async def apply_controls(self, queue_id: str) -> tuple[str, ...]:
@@ -353,6 +379,8 @@ class QueueMixin:
                 (queue_id,),
             ).fetchall():
                 action, payload = control["action"], json.loads(control["payload_json"])
+                if action in WORKFLOW_ACTIONS and queue["kind"] == KIND_WORKFLOW:
+                    continue  # left pending for the workflow runner (take_workflow_controls)
                 if action == "pause" and state == "running":
                     state = "paused"
                 elif action == "resume" and state == "paused":
@@ -387,6 +415,28 @@ class QueueMixin:
             if state != queue["state"]:
                 db.execute("UPDATE queues SET state=?, updated_at_utc=? WHERE queue_id=?", (state, now, queue_id))
         return tuple(applied)
+
+    async def take_workflow_controls(self, queue_id: str) -> tuple[tuple[str, dict[str, Any]], ...]:
+        """Consume a workflow queue's pending branch decisions and Retry requests, in order, with their payloads."""
+        return await self._run(self._take_workflow_controls, queue_id)
+
+    def _take_workflow_controls(self, queue_id: str) -> tuple[tuple[str, dict[str, Any]], ...]:
+        taken: list[tuple[str, dict[str, Any]]] = []
+        marks = ",".join("?" * len(WORKFLOW_ACTIONS))
+        with self._txn() as db:
+            now = self._now()
+            for control in db.execute(
+                f"SELECT * FROM queue_controls WHERE queue_id=? AND applied_at_utc IS NULL AND action IN ({marks})"
+                " ORDER BY control_id",
+                (queue_id, *WORKFLOW_ACTIONS),
+            ).fetchall():
+                payload = json.loads(control["payload_json"])
+                taken.append((control["action"], payload))
+                self._event(db, queue_id, control["action"], now, payload)
+                db.execute(
+                    "UPDATE queue_controls SET applied_at_utc=? WHERE control_id=?", (now, control["control_id"])
+                )
+        return tuple(taken)
 
     # -- dispatch -------------------------------------------------------------------------------------------------
 
@@ -512,7 +562,9 @@ class QueueMixin:
                 return None
             if self._reserved(db, queue["backend_key"]) >= min(queue["cap"], limit):
                 return None
-            decode = script_request_from_record if queue["kind"] == KIND_SCRIPT else request_from_record
+            decode = {KIND_SCRIPT: script_request_from_record, KIND_WORKFLOW: workflow_request_from_record}.get(
+                queue["kind"], request_from_record
+            )
             # Bound one claim transaction even if externally corrupted rows exceed
             # the normal queue creation limit. Never reserve an invalid request.
             for _ in range(MAX_ITEMS):
@@ -602,7 +654,8 @@ class QueueMixin:
             queue = db.execute(
                 "SELECT queue_id, backend_key, kind, state FROM queues WHERE queue_id=?", (queue_id,)
             ).fetchone()
-            if queue is None or queue["kind"] != KIND_SCRIPT or queue["state"] != "running":
+            # A workflow run (#223) shares the script child lanes: its first submission uses the item's reservation.
+            if queue is None or queue["kind"] not in (KIND_SCRIPT, KIND_WORKFLOW) or queue["state"] != "running":
                 raise QueueError("The script queue is not running; no child generation was submitted.")
             if (
                 db.execute("SELECT 1 FROM queue_items WHERE queue_id=? AND state='running'", (queue_id,)).fetchone()
@@ -636,6 +689,15 @@ class QueueMixin:
             if item is None:
                 raise QueueError("Unknown queue item.")
             record = json.loads(item["request_json"])
+            if is_workflow_record(record):
+                state, failure_json = workflow_outcome(record.get("run"))
+                if failure is not None and state == "failed":
+                    failure_json = json.dumps(failure)  # the runner's own reason (a run that could not start)
+                db.execute(
+                    "UPDATE queue_items SET state=?, failure_json=?, updated_at_utc=? WHERE item_id=?",
+                    (state, failure_json, self._now(), item_id),
+                )
+                return state
             if is_script_record(record):
                 state, failure_json = self._script_outcome(db, record, failure)
                 db.execute(
@@ -665,6 +727,50 @@ class QueueMixin:
             return "failed", json.dumps(failure or {"code": "script_not_started"})
         state, failure_json = item_outcome(run, child_states(db, run.children))
         return state, failure_json
+
+    async def update_workflow_run(self, item_id: str, run: dict[str, Any]) -> None:
+        """Replace a reserved workflow item's run state in one short transaction (dispatch owner only).
+
+        The state is encoded on the caller's loop, so later in-memory changes never race the write."""
+        encoded = json.dumps(run, allow_nan=False)
+        await self._run(self._update_workflow_run, item_id, encoded)
+
+    def _update_workflow_run(self, item_id: str, encoded: str) -> None:
+        with self._txn() as db:
+            item = db.execute("SELECT request_json, state FROM queue_items WHERE item_id=?", (item_id,)).fetchone()
+            if item is None:
+                raise QueueError("Unknown queue item.")
+            record = json.loads(item["request_json"])
+            if not is_workflow_record(record) or item["state"] != "running":
+                raise QueueError("Only a running workflow item's run state can change.")
+            record["run"] = json.loads(encoded)
+            db.execute(
+                "UPDATE queue_items SET request_json=? WHERE item_id=?", (json.dumps(record, allow_nan=False), item_id)
+            )
+
+    async def workflow_scopes(self, queue_id: str) -> tuple[tuple[str, str, str], ...]:
+        """Distinct (checkpoint, operation, evidence id) of the image nodes of a workflow queue's pending item (D2)."""
+        return await self._run(self._workflow_scopes, queue_id)
+
+    def _workflow_scopes(self, queue_id: str) -> tuple[tuple[str, str, str], ...]:
+        from dtflow.core.workflows import IMAGE_OPERATIONS, load_workflow
+
+        scopes: dict[tuple[str, str], str] = {}
+        for row in self._db().execute(
+            "SELECT request_json FROM queue_items WHERE queue_id=? AND state='pending' ORDER BY position", (queue_id,)
+        ):
+            try:
+                record = json.loads(row["request_json"])
+                if not is_workflow_record(record):
+                    continue
+                graph = load_workflow(record["workflow"])
+            except (TypeError, ValueError, KeyError):
+                continue  # claim_next and the runner reject a malformed item without submitting anything
+            for node in graph.nodes:
+                if node.type in IMAGE_OPERATIONS:
+                    key = (str(node.params["checkpoint"]), IMAGE_OPERATIONS[node.type])
+                    scopes.setdefault(key, f"workflow-{record['run_id']}")
+        return tuple((model, operation, evidence) for (model, operation), evidence in scopes.items())
 
     async def image_scopes(self, queue_id: str) -> tuple[tuple[str, str, str], ...]:
         """Distinct (checkpoint, operation, consent evidence id) of the queue's pending image items."""
@@ -701,6 +807,9 @@ class QueueMixin:
             "SELECT item_id, queue_id, request_json FROM queue_items WHERE state='running'"
         ).fetchall():
             record = json.loads(item["request_json"])
+            if is_workflow_record(record):
+                _reconcile_workflow_item(db, item, record, now)
+                continue
             if is_script_record(record):
                 _reconcile_script_item(db, item, record, now, directory)
                 continue
@@ -743,6 +852,25 @@ def _reconcile_script_item(db: sqlite3.Connection, item, record: dict, now: str,
     db.execute(
         "UPDATE queue_items SET state=?, failure_json=?, updated_at_utc=? WHERE item_id=?",
         (state, failure_json, now, item["item_id"]),
+    )
+    QueueMixin._event(db, item["queue_id"], "reconciled", now, {"item_id": item["item_id"]})
+
+
+def _reconcile_workflow_item(db: sqlite3.Connection, item, record: dict, now: str) -> None:
+    """A reserved workflow item is never resumed or replayed: ``unknown`` if a step was running (it may have been
+    submitted) or already unknown, otherwise ``failed``; its run state records the same."""
+    try:
+        record["run"] = interrupted_run(record["run"])
+        state, failure_json = workflow_outcome(record["run"])
+        if state != "unknown":
+            state = "failed"
+            failure_json = json.dumps({"code": "workflow_interrupted", "message": record["run"]["message"]})
+        stored = json.dumps(record, allow_nan=False)
+    except Exception:
+        state, failure_json, stored = "unknown", json.dumps({"code": "workflow_unreadable"}), item["request_json"]
+    db.execute(
+        "UPDATE queue_items SET state=?, failure_json=?, request_json=?, updated_at_utc=? WHERE item_id=?",
+        (state, failure_json, stored, now, item["item_id"]),
     )
     QueueMixin._event(db, item["queue_id"], "reconciled", now, {"item_id": item["item_id"]})
 
@@ -798,18 +926,31 @@ def post_control(directory: Path, queue_id: str, action: str, payload: dict[str,
 
     A queue waiting up next holds no reservation, so Pause (leave the order) and Cancel apply to it at once instead.
     """
-    if action not in ACTIONS:
+    if action not in ACTIONS and action not in WORKFLOW_ACTIONS:
         raise QueueError("Unknown queue action.")
     payload = payload or {}
     if action == "cap" and not (type(payload.get("cap")) is int and 1 <= payload["cap"] <= MAX_QUEUE_CONCURRENCY):
         raise QueueError(f"Queue concurrency must be an integer in 1..{MAX_QUEUE_CONCURRENCY}.")
+    if action in WORKFLOW_ACTIONS:
+        branch = payload.get("branch")
+        if not (
+            type(payload.get("node_id")) is int
+            and isinstance(branch, (list, tuple))
+            and len(branch) == 2
+            and all(type(x) is int for x in branch)
+            and (action != "workflow_branch" or payload.get("decision") in BRANCH_DECISIONS)
+        ):
+            raise QueueError("A workflow control needs a node id, a branch and (for a decision) continue or stop.")
+        payload = {key: list(value) if key == "branch" else value for key, value in payload.items()}
     connection = _shared_connection(directory)
     try:
         connection.execute("BEGIN IMMEDIATE")
         try:
-            row = connection.execute("SELECT state FROM queues WHERE queue_id=?", (queue_id,)).fetchone()
+            row = connection.execute("SELECT state, kind FROM queues WHERE queue_id=?", (queue_id,)).fetchone()
             if row is None:
                 raise QueueError("Unknown queue.")
+            if action in WORKFLOW_ACTIONS and row["kind"] != KIND_WORKFLOW:
+                raise QueueError("Branch decisions and step Retry apply to workflow queues only.")
             if row["state"] == "queued" and action in ("pause", "cancel"):
                 _leave_up_next(connection, queue_id, datetime.now(UTC).isoformat(), cancel=action == "cancel")
                 connection.execute("COMMIT")
@@ -884,6 +1025,35 @@ def insert_script_queue(
                 datetime.now(UTC).isoformat(),
                 up_next=live,
                 kind=KIND_SCRIPT,
+                records=(record,),
+            )
+            connection.execute("COMMIT")
+        except BaseException:
+            connection.execute("ROLLBACK")
+            raise
+    finally:
+        connection.close()
+    return queue_id
+
+
+def insert_workflow_queue(
+    directory: Path, backend: dict[str, Any], record: dict[str, Any], *, up_next: bool = False
+) -> str:
+    """Add one paused workflow queue (one item, cap 1) while another owner holds the state; see ``insert_queue``."""
+    _check_workflow_record(record)
+    connection = _shared_connection(directory)
+    try:
+        connection.execute("BEGIN IMMEDIATE")
+        try:
+            live = up_next and _dispatch_live(connection)
+            queue_id = _insert_paused(
+                connection,
+                backend,
+                1,
+                (),
+                datetime.now(UTC).isoformat(),
+                up_next=live,
+                kind=KIND_WORKFLOW,
                 records=(record,),
             )
             connection.execute("COMMIT")
@@ -1205,10 +1375,13 @@ def read_queue_summaries(directory: Path, *, described: Sequence[str] = ()) -> t
                 request = {}
             request = request if isinstance(request, dict) else {}
             script_name = request.get("source_name") if is_script_record(request) else None
+            workflow_name = request.get("name") if is_workflow_record(request) else None
             queue["script_elapsed"] = _script_queue_elapsed(directory, request) if script_name is not None else None
             queue["first"] = {
                 "prompt": f"Script: {script_name}"
                 if isinstance(script_name, str)
+                else f"Workflow: {workflow_name}"
+                if isinstance(workflow_name, str)
                 else (request.get("prompt") if isinstance(request.get("prompt"), str) else ""),
                 "prompt_runs": _item_request_fields(request)["prompt_runs"],
                 "model": request.get("model_id") if isinstance(request.get("model_id"), str) else "",
@@ -1467,6 +1640,30 @@ def _script_view(connection: sqlite3.Connection, request: dict) -> dict[str, Any
     return view
 
 
+def _workflow_view(request: dict) -> dict[str, Any]:
+    """A workflow item's run state plus its name and the stage of the step that is running now (for activity)."""
+    run = request.get("run") if isinstance(request.get("run"), dict) else {}
+    view = {**run, "name": request.get("name"), "run_id": request.get("run_id")}
+    running = [step for step in run.get("steps") or () if isinstance(step, dict) and step.get("state") == "running"]
+    current = max(running, key=lambda step: str(step.get("started_at") or ""), default=None)
+    view["stage"] = (
+        f"{current.get('title')} · {current.get('branch_label')}: {current.get('stage') or 'Running'}"
+        if current is not None
+        else None
+    )
+    return view
+
+
+def _workflow_item_fields(request: dict, workflow: dict[str, Any]) -> dict[str, Any]:
+    """Row fields of a workflow item: the run and the saved results' files (each step's image is in Images)."""
+    return {
+        "workflow": workflow,
+        "prompt": f"Workflow: {request.get('name', '')}",
+        "seed": None,  # the record's "seed" is a Retry seed, not a generation seed
+        "artifacts": [result["path"] for result in workflow.get("results") or () if isinstance(result, dict)],
+    }
+
+
 def _item_durations(connection: sqlite3.Connection, queue_id: str) -> dict[str, float]:
     """Observed backend seconds per settled item; an item without a recorded duration is simply absent."""
     durations: dict[str, float] = {}
@@ -1510,6 +1707,7 @@ def _read(connection: sqlite3.Connection, queue_id: str | None) -> tuple[dict[st
             if not isinstance(request, dict):
                 request = {}
             script = _script_view(connection, request) if is_script_record(request) else None
+            workflow = _workflow_view(request) if is_workflow_record(request) else None
             items.append(
                 {
                     "position": item["position"],
@@ -1517,7 +1715,9 @@ def _read(connection: sqlite3.Connection, queue_id: str | None) -> tuple[dict[st
                     "state": item["state"],
                     "updated_at_utc": item["updated_at_utc"],
                     "attempt_id": item["attempt_id"],
-                    "request_id": request.get("run_id") if script is not None else request.get("request_id"),
+                    "request_id": request.get("run_id")
+                    if script is not None or workflow is not None
+                    else request.get("request_id"),
                     "seed": request.get("seed"),
                     "operation": request.get("operation") or "txt2img",
                     "strength": request.get("strength"),
@@ -1525,6 +1725,7 @@ def _read(connection: sqlite3.Connection, queue_id: str | None) -> tuple[dict[st
                     "failure": json.loads(item["failure_json"]) if item["failure_json"] else None,
                     "artifacts": json.loads(item["artifacts_json"]) if item["artifacts_json"] else [],
                     **(_script_item_fields(request, script) if script else {}),
+                    **(_workflow_item_fields(request, workflow) if workflow is not None else {}),
                 }
             )
         durations = _item_durations(connection, row["queue_id"])
