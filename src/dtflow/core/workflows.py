@@ -1,0 +1,795 @@
+"""DTFlow workflow contract v1: node catalogue, strict ComfyUI-format adapter, graph checks and fan-out plan (#223).
+
+Backend-neutral and Qt/Pillow-free. The file shape is ComfyUI saved-workflow JSON v1.0 (``version`` 1, ``state``,
+``nodes``, object ``links``); it is *structure* compatibility only, never a claim that DTFlow nodes run in ComfyUI.
+
+Rules (audit 10.7/10.8, owner decisions D1-D8):
+
+- ``widgets_values`` is an array in the fixed per-type order of ``NodeSpec.params`` (D1). DTFlow uses named parameter
+  dicts internally; arrays exist only at the file boundary. The order is versioned by ``extra.dtflow``
+  (``{"schema": "dtflow-workflow", "version": 1}``), never by ComfyUI's top-level ``version``.
+- Import is all-or-nothing: any unknown node, key, value, port, link, flag, mode or contract version rejects the whole
+  file with one reason. Nothing is repaired, dropped or guessed. Groups, reroutes, subgraphs and ``models`` are rejected.
+- Range and semantic checks of generation settings reuse ``ResolvedGenerationRequest`` (see ``node_request``); this
+  module adds only graph checks: types, cycles, one link per input and same-branch pairing (D3).
+- Fan-out (D3): only ``DTFGenerate`` produces several images (``batch_size * batch_count``). Every downstream node runs
+  once per image ("branch"); converging inputs must come from the same branches, never a cross product.
+  ``plan_workflow`` returns the total number of generations the run will submit, the base of the runtime loop guard.
+"""
+
+from __future__ import annotations
+
+import math
+import uuid
+from dataclasses import dataclass, field
+from typing import Any
+from uuid import uuid4
+
+from dtflow.core.models import SEED_LIMIT, LoRASelection, ResolvedGenerationRequest, Sampler, ValidationError
+
+SCHEMA = "dtflow-workflow"
+CONTRACT_VERSION = 1
+COMFY_FORMAT_VERSION = 1
+IMAGE = "IMAGE"
+MASK = "MASK"
+PORT_TYPES = (IMAGE, MASK)
+MAX_NODES = 200  # practical bound on one file, not a chain-length limit
+MAX_PLANNED_GENERATIONS = 256  # practical bound on one run's submissions after fan-out
+LORA_WEIGHT_RANGE = (0.0, 3.0)  # the LoRA editor's range; imported values outside it are rejected, never clamped
+MASK_REGIONS = ("face_skin", "face_skin_and_hair")
+PERSON_CHOICES = ("strongest", "all")
+SAMPLERS = tuple(sampler.value for sampler in Sampler)
+
+GENERATE = "DTFGenerate"
+DETECT_FACE = "DTFDetectFaceMask"
+INPAINT = "DTFInpaint"
+IMG2IMG = "DTFImg2Img"
+SAVE = "DTFSaveImage"
+GENERATIVE = (GENERATE, INPAINT, IMG2IMG)
+IMAGE_OPERATIONS = {INPAINT: "inpaint", IMG2IMG: "img2img"}
+
+
+class WorkflowError(ValidationError):
+    """The whole file or run is rejected; ``str(error)`` is the single actionable reason."""
+
+
+@dataclass(frozen=True)
+class Param:
+    name: str
+    kind: str  # checkpoint | loras | text | string | int | float | choice | bool
+    default: object
+    label: str
+    minimum: float | None = None
+    maximum: float | None = None
+    step: float | None = None
+    choices: tuple[str, ...] = ()
+    hint: str = ""
+
+
+@dataclass(frozen=True)
+class Port:
+    name: str
+    type: str
+
+
+@dataclass(frozen=True)
+class NodeSpec:
+    type: str
+    title: str
+    inputs: tuple[Port, ...]
+    outputs: tuple[Port, ...]
+    params: tuple[Param, ...]
+    description: str = ""
+    thumbnail: bool = False
+
+    def defaults(self) -> dict[str, object]:
+        return {param.name: _copy(param.default) for param in self.params}
+
+    def param(self, name: str) -> Param:
+        return next(param for param in self.params if param.name == name)
+
+
+def _model_params(strength: float | None) -> tuple[Param, ...]:
+    """Each generative node owns its exact checkpoint, LoRAs and sampling settings (no workflow-wide model)."""
+    params = [
+        Param("checkpoint", "checkpoint", "", "Checkpoint", hint="Exact model file on the selected backend."),
+        Param("loras", "loras", [], "LoRAs", LORA_WEIGHT_RANGE[0], LORA_WEIGHT_RANGE[1], 0.1),
+        Param("prompt", "text", "", "Prompt"),
+        Param("negative_prompt", "text", "", "Negative prompt"),
+        Param("seed", "int", 0, "Seed", 0, SEED_LIMIT, 1),
+        Param("steps", "int", 20, "Steps", 1, 150, 1),
+        Param("guidance", "float", 4.5, "Guidance", 0.0, 50.0, 0.1),
+        Param("sampler", "choice", Sampler.DPMPP_2M_KARRAS.value, "Sampler", choices=SAMPLERS),
+    ]
+    if strength is not None:
+        params.append(Param("strength", "float", strength, "Strength", 0.0, 1.0, 0.01))
+    return tuple(params)
+
+
+CATALOG: dict[str, NodeSpec] = {
+    spec.type: spec
+    for spec in (
+        NodeSpec(
+            GENERATE,
+            "Generate",
+            (),
+            (Port("IMAGE", IMAGE),),
+            _model_params(None)
+            + (
+                Param("width", "int", 1024, "Width", 128, 2048, 64),
+                Param("height", "int", 1024, "Height", 128, 2048, 64),
+                Param("batch_size", "int", 1, "Batch size", 1, 4, 1),
+                Param("batch_count", "int", 1, "Batch count", 1, 4, 1),
+            ),
+            "Text-to-image. Several images fan out: every downstream node runs once per image.",
+            thumbnail=True,
+        ),
+        NodeSpec(
+            DETECT_FACE,
+            "Detect face mask",
+            (Port("image", IMAGE),),
+            (Port("MASK", MASK),),
+            (
+                Param("mask_region", "choice", "face_skin", "Mask region", choices=MASK_REGIONS),
+                Param("person", "choice", "strongest", "Person", choices=PERSON_CHOICES),
+            ),
+            "Local analysis (person segmentation, clothes/face parsing, faces model). No person, no face box or an "
+            "empty region pauses only that image branch.",
+        ),
+        NodeSpec(
+            INPAINT,
+            "Inpaint",
+            (Port("image", IMAGE), Port("mask", MASK)),
+            (Port("IMAGE", IMAGE),),
+            _model_params(0.75)
+            + (
+                Param("grow", "int", 0, "Mask grow", -64, 64, 1),
+                Param("feather", "float", 0.0, "Mask feather", 0.0, 64.0, 0.5),
+                Param("preserve_outside", "bool", True, "Keep outside mask"),
+            ),
+            "Inpaints the masked region at the source image size.",
+            thumbnail=True,
+        ),
+        NodeSpec(
+            IMG2IMG,
+            "Img2img refine",
+            (Port("image", IMAGE),),
+            (Port("IMAGE", IMAGE),),
+            _model_params(0.35),
+            "Image-to-image refinement at the source image size.",
+            thumbnail=True,
+        ),
+        NodeSpec(
+            SAVE,
+            "Save image",
+            (Port("image", IMAGE),),
+            (),
+            (Param("label", "string", "result", "Result label"),),
+            "Marks its image as a workflow result. Every step's image is already saved in Images.",
+            thumbnail=True,
+        ),
+    )
+}
+
+
+@dataclass
+class GraphNode:
+    id: int
+    type: str
+    pos: tuple[float, float]
+    params: dict[str, object]
+    size: tuple[float, float] = (240.0, 160.0)
+
+    @property
+    def spec(self) -> NodeSpec:
+        return CATALOG[self.type]
+
+    @property
+    def label(self) -> str:
+        return f"{CATALOG[self.type].title} #{self.id}"
+
+
+@dataclass
+class GraphLink:
+    id: int
+    origin_id: int
+    origin_slot: int
+    target_id: int
+    target_slot: int
+    type: str
+
+
+@dataclass
+class Graph:
+    nodes: list[GraphNode] = field(default_factory=list)
+    links: list[GraphLink] = field(default_factory=list)
+    workflow_id: str = ""
+    view: dict | None = None  # extra.ds (canvas scale/offset) is kept, never interpreted
+    last_link_id: int = 0
+    frontend_version: str | None = None
+
+    def node(self, node_id: int) -> GraphNode:
+        for node in self.nodes:
+            if node.id == node_id:
+                return node
+        raise WorkflowError(f"Node #{node_id} does not exist.")
+
+    def input_link(self, node_id: int, slot: int) -> GraphLink | None:
+        return next((x for x in self.links if x.target_id == node_id and x.target_slot == slot), None)
+
+    def children(self, node_id: int) -> list[int]:
+        return sorted({link.target_id for link in self.links if link.origin_id == node_id})
+
+    def next_node_id(self) -> int:
+        return max((node.id for node in self.nodes), default=0) + 1
+
+    def next_link_id(self) -> int:
+        return max(self.last_link_id, max((link.id for link in self.links), default=0)) + 1
+
+    def diagnostics(self) -> list[str]:
+        """Draft-level notes (not import errors): what must be fixed before the graph can run."""
+        notes = []
+        for node in self.nodes:
+            for slot, port in enumerate(node.spec.inputs):
+                if self.input_link(node.id, slot) is None:
+                    notes.append(f"{node.label}: input '{port.name}' is not connected.")
+            for param in node.spec.params:
+                if param.kind == "checkpoint" and not str(node.params.get(param.name, "")).strip():
+                    notes.append(f"{node.label}: choose a checkpoint.")
+        if not any(node.type == SAVE for node in self.nodes):
+            notes.append("Add a Save image node to mark the workflow result.")
+        return notes
+
+
+def check_param(param: Param, value: object, where: str = "", *, draft: bool = False) -> object:
+    """Return the value when it fits ``param`` exactly; raise WorkflowError otherwise. Never clamps or coerces.
+
+    ``draft`` accepts an empty checkpoint, so an unfinished workflow can be saved; running still requires one.
+    """
+    label = f"{where}{param.label}"
+    if param.kind in ("checkpoint", "text", "string"):
+        if not isinstance(value, str):
+            raise WorkflowError(f"{label} must be text.")
+        if param.kind == "string" and not value.strip():
+            raise WorkflowError(f"{label} must not be empty.")
+        if param.kind == "checkpoint" and not value.strip() and not draft:
+            raise WorkflowError(f"{label}: choose a checkpoint.")
+        return value
+    if param.kind == "choice":
+        if value not in param.choices:
+            raise WorkflowError(f"{label} must be one of {', '.join(param.choices)}; got {value!r}.")
+        return value
+    if param.kind == "bool":
+        if type(value) is not bool:
+            raise WorkflowError(f"{label} must be true or false.")
+        return value
+    if param.kind == "int":
+        if type(value) is not int:
+            raise WorkflowError(f"{label} must be an integer.")
+        if not param.minimum <= value <= param.maximum:
+            raise WorkflowError(f"{label} must be between {param.minimum:g} and {param.maximum:g}; got {value}.")
+        if param.step and param.step > 1 and value % param.step:
+            raise WorkflowError(f"{label} must be a multiple of {param.step:g}; got {value}.")
+        return value
+    if param.kind == "float":
+        if type(value) not in (int, float) or not math.isfinite(value):
+            raise WorkflowError(f"{label} must be a number.")
+        if not param.minimum <= value <= param.maximum:
+            raise WorkflowError(f"{label} must be between {param.minimum:g} and {param.maximum:g}; got {value}.")
+        return float(value)
+    if param.kind == "loras":
+        if not isinstance(value, list):
+            raise WorkflowError(f"{label} must be a list of [file, weight] pairs.")
+        result, seen = [], set()
+        for index, entry in enumerate(value):
+            if not (isinstance(entry, list) and len(entry) == 2):
+                raise WorkflowError(f"{label}[{index}] must be a [file, weight] pair.")
+            name, weight = entry
+            if not isinstance(name, str) or not name.strip():
+                raise WorkflowError(f"{label}[{index}] file must be a non-empty string.")
+            if name in seen:
+                raise WorkflowError(f"{label}: {name} is listed twice.")
+            seen.add(name)
+            if type(weight) not in (int, float) or not math.isfinite(weight):
+                raise WorkflowError(f"{label}[{index}] weight must be a number.")
+            if not param.minimum <= weight <= param.maximum:
+                raise WorkflowError(
+                    f"{label}[{index}] weight must be between {param.minimum:g} and {param.maximum:g}; got {weight}."
+                )
+            result.append([name, float(weight)])
+        return result
+    raise AssertionError(param.kind)
+
+
+_TOP_KEYS = {"id", "revision", "version", "state", "nodes", "links", "groups", "reroutes", "config", "extra", "models"}
+_STATE_KEYS = {"lastNodeId", "lastLinkId", "lastRerouteId", "lastGroupid"}
+_NODE_KEYS = {"id", "type", "pos", "size", "flags", "order", "mode", "inputs", "outputs", "properties"}
+_NODE_KEYS |= {"widgets_values", "title", "color", "bgcolor"}
+_LINK_KEYS = {"id", "origin_id", "origin_slot", "target_id", "target_slot", "type"}
+_EXTRA_KEYS = {"dtflow", "ds", "frontendVersion"}
+
+
+def _int(value: object, label: str, minimum: int = 0) -> int:
+    if type(value) is not int or value < minimum:
+        raise WorkflowError(f"{label} must be an integer >= {minimum}.")
+    return value
+
+
+def _pair(value: object, label: str) -> tuple[float, float]:
+    if not (
+        isinstance(value, list) and len(value) == 2 and all(type(v) in (int, float) and math.isfinite(v) for v in value)
+    ):
+        raise WorkflowError(f"{label} must be a [x, y] number pair.")
+    return float(value[0]), float(value[1])
+
+
+def _keys(obj: object, allowed: set[str], required: set[str], label: str) -> dict:
+    if not isinstance(obj, dict):
+        raise WorkflowError(f"{label} must be an object.")
+    unknown = sorted(set(obj) - allowed)
+    if unknown:
+        raise WorkflowError(f"{label} has unsupported key(s): {', '.join(unknown)}.")
+    missing = sorted(required - set(obj))
+    if missing:
+        raise WorkflowError(f"{label} is missing: {', '.join(missing)}.")
+    return obj
+
+
+def load_workflow(data: object, *, draft: bool = False) -> Graph:
+    """Strictly parse a DTFlow ComfyUI-format workflow. Raises WorkflowError with one reason.
+
+    ``draft`` only relaxes the empty-checkpoint rule (an unfinished editor save); every structural rule still applies.
+    """
+    top = _keys(data, _TOP_KEYS, {"version", "state", "nodes", "links", "extra"}, "Workflow")
+    if type(top["version"]) is not int or top["version"] != COMFY_FORMAT_VERSION:
+        raise WorkflowError(f"Only ComfyUI workflow format version 1 is supported; got {top['version']!r}.")
+    for key in ("groups", "reroutes", "models"):
+        if top.get(key):
+            raise WorkflowError(f"Workflow '{key}' are not supported by DTFlow workflows.")
+    if top.get("config"):
+        raise WorkflowError("Workflow 'config' is not supported by DTFlow workflows.")
+    if "definitions" in top.get("extra", {}) or "subgraphs" in top:
+        raise WorkflowError("Subgraphs are not supported by DTFlow workflows.")
+    extra = _keys(top["extra"], _EXTRA_KEYS, {"dtflow"}, "extra")
+    dtflow = _keys(extra["dtflow"], {"schema", "version"}, {"schema", "version"}, "extra.dtflow")
+    if dtflow["schema"] != SCHEMA:
+        raise WorkflowError(f"extra.dtflow.schema must be {SCHEMA!r}; this is not a DTFlow workflow.")
+    if type(dtflow["version"]) is not int or dtflow["version"] != CONTRACT_VERSION:
+        raise WorkflowError(
+            f"DTFlow workflow contract version {dtflow['version']!r} is not supported (expected {CONTRACT_VERSION})."
+        )
+    frontend = extra.get("frontendVersion")
+    if frontend is not None and not isinstance(frontend, str):
+        raise WorkflowError("extra.frontendVersion must be text.")
+    state = _keys(top["state"], _STATE_KEYS, _STATE_KEYS, "state")
+    for key in _STATE_KEYS:
+        _int(state[key], f"state.{key}")
+    if "id" in top and not isinstance(top["id"], str):
+        raise WorkflowError("Workflow id must be text.")
+    if not isinstance(top["nodes"], list):
+        raise WorkflowError("nodes must be an array.")
+    if not isinstance(top["links"], list):
+        raise WorkflowError("links must be an array.")
+    if len(top["nodes"]) > MAX_NODES:
+        raise WorkflowError(f"A workflow may hold at most {MAX_NODES} nodes.")
+
+    graph = Graph(
+        workflow_id=str(top.get("id", "")),
+        view=extra.get("ds"),
+        last_link_id=state["lastLinkId"],
+        frontend_version=frontend,
+    )
+    raw_nodes: dict[int, dict] = {}
+    for index, raw in enumerate(top["nodes"]):
+        where = f"nodes[{index}]"
+        node = _keys(raw, _NODE_KEYS, _NODE_KEYS - {"inputs", "outputs", "title", "color", "bgcolor"}, where)
+        node_id = _int(node["id"], f"{where}.id", 1)
+        if node_id in raw_nodes:
+            raise WorkflowError(f"Node id {node_id} is used twice.")
+        spec = CATALOG.get(node["type"])
+        if spec is None:
+            raise WorkflowError(f"Node #{node_id} has unsupported type {node['type']!r}.")
+        where = f"{spec.title} #{node_id}"
+        if node["mode"] != 0:
+            raise WorkflowError(f"{where}: muted or bypassed nodes (mode {node['mode']!r}) are not supported.")
+        if node["flags"] not in ({}, {"collapsed": False}, {"collapsed": True}):
+            raise WorkflowError(f"{where}: unsupported flags {node['flags']!r}.")
+        if node["properties"] not in ({}, {"Node name for S&R": spec.type}):
+            raise WorkflowError(f"{where}: unsupported properties.")
+        for key in ("title", "color", "bgcolor"):
+            if key in node:
+                raise WorkflowError(f"{where}: custom '{key}' is not supported by DTFlow workflows.")
+        _int(node["order"], f"{where} order")
+        values = node["widgets_values"]
+        if not isinstance(values, list):
+            raise WorkflowError(f"{where}: widgets_values must be an array (DTFlow contract {CONTRACT_VERSION}).")
+        if len(values) != len(spec.params):
+            raise WorkflowError(f"{where}: widgets_values has {len(values)} entries, expected {len(spec.params)}.")
+        params = {
+            param.name: check_param(param, value, f"{where}: ", draft=draft)
+            for param, value in zip(spec.params, values, strict=True)
+        }
+        _check_ports(node.get("inputs", []), spec.inputs, f"{where} inputs", is_input=True)
+        _check_ports(node.get("outputs", []), spec.outputs, f"{where} outputs", is_input=False)
+        raw_nodes[node_id] = node
+        graph.nodes.append(
+            GraphNode(
+                node_id, spec.type, _pair(node["pos"], f"{where} pos"), params, _pair(node["size"], f"{where} size")
+            )
+        )
+
+    link_ids: set[int] = set()
+    targets: set[tuple[int, int]] = set()
+    for index, raw in enumerate(top["links"]):
+        if isinstance(raw, list):
+            raise WorkflowError("Array links are the older 0.4 format; DTFlow reads version 1 object links only.")
+        link = _keys(raw, _LINK_KEYS | {"parentId"}, _LINK_KEYS, f"links[{index}]")
+        if link.get("parentId") is not None:
+            raise WorkflowError(f"Link {link['id']}: reroutes are not supported by DTFlow workflows.")
+        link_id = _int(link["id"], f"links[{index}].id", 1)
+        if link_id in link_ids:
+            raise WorkflowError(f"Link id {link_id} is used twice.")
+        link_ids.add(link_id)
+        origin, target = raw_nodes.get(link["origin_id"]), raw_nodes.get(link["target_id"])
+        if origin is None or target is None:
+            raise WorkflowError(f"Link {link_id} refers to a missing node.")
+        origin_ports, target_ports = CATALOG[origin["type"]].outputs, CATALOG[target["type"]].inputs
+        o_slot, t_slot = link["origin_slot"], link["target_slot"]
+        if not (type(o_slot) is int and 0 <= o_slot < len(origin_ports)):
+            raise WorkflowError(f"Link {link_id}: origin slot {o_slot!r} does not exist.")
+        if not (type(t_slot) is int and 0 <= t_slot < len(target_ports)):
+            raise WorkflowError(f"Link {link_id}: target slot {t_slot!r} does not exist.")
+        if origin_ports[o_slot].type != target_ports[t_slot].type:
+            raise WorkflowError(
+                f"Link {link_id}: {origin_ports[o_slot].type} output cannot feed {target_ports[t_slot].type} input."
+            )
+        if link["type"] != origin_ports[o_slot].type:
+            raise WorkflowError(
+                f"Link {link_id}: type {link['type']!r} does not match its {origin_ports[o_slot].type} ports."
+            )
+        if (link["target_id"], t_slot) in targets:
+            raise WorkflowError(f"Link {link_id}: input already has a link.")
+        targets.add((link["target_id"], t_slot))
+        if target.get("inputs", [{}] * len(target_ports))[t_slot].get("link") != link_id:
+            raise WorkflowError(f"Link {link_id}: target input does not reference it.")
+        if link_id not in (origin.get("outputs", [{}] * len(origin_ports))[o_slot].get("links") or []):
+            raise WorkflowError(f"Link {link_id}: origin output does not list it.")
+        graph.links.append(GraphLink(link_id, link["origin_id"], o_slot, link["target_id"], t_slot, link["type"]))
+
+    for node in raw_nodes.values():
+        for slot, port in enumerate(node.get("inputs", [])):
+            if port.get("link") is not None and (node["id"], slot) not in targets:
+                raise WorkflowError(f"Node #{node['id']} input '{port['name']}' references a missing link.")
+        for port in node.get("outputs", []):
+            for link_id in port.get("links") or []:
+                if link_id not in link_ids:
+                    raise WorkflowError(f"Node #{node['id']} output '{port['name']}' lists missing link {link_id}.")
+
+    if max((n.id for n in graph.nodes), default=0) > state["lastNodeId"]:
+        raise WorkflowError("state.lastNodeId is lower than a node id.")
+    if max(link_ids, default=0) > state["lastLinkId"]:
+        raise WorkflowError("state.lastLinkId is lower than a link id.")
+    topological_order(graph)  # rejects cycles
+    return graph
+
+
+def _check_ports(ports: object, expected: tuple[Port, ...], where: str, *, is_input: bool) -> None:
+    if not isinstance(ports, list) or len(ports) != len(expected):
+        raise WorkflowError(f"{where} must list exactly: {', '.join(p.name for p in expected) or 'nothing'}.")
+    allowed = {"name", "type", "link", "localized_name"} if is_input else {"name", "type", "links", "slot_index"}
+    if not is_input:
+        allowed.add("localized_name")
+    for slot, (port, spec) in enumerate(zip(ports, expected, strict=True)):
+        port = _keys(port, allowed, {"name", "type"}, f"{where}[{slot}]")
+        if port["name"] != spec.name or port["type"] != spec.type:
+            raise WorkflowError(f"{where}[{slot}] must be {spec.name}:{spec.type}; got {port['name']}:{port['type']}.")
+        if "localized_name" in port and port["localized_name"] != spec.name:
+            raise WorkflowError(f"{where}[{slot}] localized_name must be {spec.name}.")
+        if not is_input and port.get("slot_index", slot) != slot:
+            raise WorkflowError(f"{where}[{slot}] slot_index must be {slot}.")
+
+
+def topological_order(graph: Graph) -> list[int]:
+    """Kahn order by node id; raises WorkflowError on a cycle."""
+    incoming = {node.id: 0 for node in graph.nodes}
+    children: dict[int, list[int]] = {node.id: [] for node in graph.nodes}
+    for link in graph.links:
+        incoming[link.target_id] += 1
+        children[link.origin_id].append(link.target_id)
+    ready = sorted(node_id for node_id, count in incoming.items() if count == 0)
+    order = []
+    while ready:
+        node_id = ready.pop(0)
+        order.append(node_id)
+        for child in children[node_id]:
+            incoming[child] -= 1
+            if incoming[child] == 0:
+                ready.append(child)
+                ready.sort()
+    if len(order) != len(graph.nodes):
+        raise WorkflowError("The graph has a cycle; DTFlow workflows must be acyclic.")
+    return order
+
+
+def would_cycle(graph: Graph, origin_id: int, target_id: int) -> bool:
+    """True when a new origin -> target link would close a cycle (editor connection check)."""
+    if origin_id == target_id:
+        return True
+    stack, seen = [target_id], set()
+    while stack:
+        current = stack.pop()
+        if current == origin_id:
+            return True
+        if current in seen:
+            continue
+        seen.add(current)
+        stack.extend(graph.children(current))
+    return False
+
+
+def dump_workflow(graph: Graph) -> dict:
+    """Write ComfyUI v1.0 with widgets_values arrays, ``extra.dtflow`` and stable positive link ids."""
+    order = {node_id: index for index, node_id in enumerate(topological_order(graph))}
+    links = sorted(graph.links, key=lambda link: (order[link.target_id], link.target_slot))
+    ids = [_int(link.id, "Link id", 1) for link in links]
+    if len(set(ids)) != len(ids):
+        raise WorkflowError("Link ids must be unique.")
+    nodes = []
+    for node in sorted(graph.nodes, key=lambda n: n.id):
+        spec = CATALOG[node.type]
+        entry: dict[str, Any] = {
+            "id": node.id,
+            "type": node.type,
+            "pos": [round(float(node.pos[0]), 1), round(float(node.pos[1]), 1)],
+            "size": [round(float(node.size[0]), 1), round(float(node.size[1]), 1)],
+            "flags": {},
+            "order": order[node.id],
+            "mode": 0,
+        }
+        if spec.inputs:
+            entry["inputs"] = [
+                {
+                    "name": port.name,
+                    "type": port.type,
+                    "link": next(
+                        (link.id for link in links if link.target_id == node.id and link.target_slot == slot), None
+                    ),
+                }
+                for slot, port in enumerate(spec.inputs)
+            ]
+        if spec.outputs:
+            entry["outputs"] = [
+                {
+                    "name": port.name,
+                    "type": port.type,
+                    "links": [link.id for link in links if link.origin_id == node.id and link.origin_slot == slot],
+                    "slot_index": slot,
+                }
+                for slot, port in enumerate(spec.outputs)
+            ]
+        entry["properties"] = {"Node name for S&R": node.type}
+        entry["widgets_values"] = [_copy(node.params[param.name]) for param in spec.params]
+        nodes.append(entry)
+    extra: dict = {"dtflow": {"schema": SCHEMA, "version": CONTRACT_VERSION}}
+    if graph.view is not None:
+        extra["ds"] = graph.view
+    if graph.frontend_version is not None:
+        extra["frontendVersion"] = graph.frontend_version
+    return {
+        "id": graph.workflow_id or str(uuid.uuid4()),
+        "revision": 0,
+        "version": COMFY_FORMAT_VERSION,
+        "state": {
+            "lastNodeId": max((n.id for n in graph.nodes), default=0),
+            "lastLinkId": max(graph.last_link_id, max(ids, default=0)),
+            "lastRerouteId": 0,
+            "lastGroupid": 0,
+        },
+        "nodes": nodes,
+        "links": [
+            {
+                "id": link.id,
+                "origin_id": link.origin_id,
+                "origin_slot": link.origin_slot,
+                "target_id": link.target_id,
+                "target_slot": link.target_slot,
+                "type": link.type,
+            }
+            for link in links
+        ],
+        "groups": [],
+        "config": {},
+        "extra": extra,
+    }
+
+
+# --- fan-out plan (D3) -------------------------------------------------------------------------------------------
+
+Branch = tuple[int, int]  # (originating DTFGenerate node id, image index within its batch)
+
+
+def branch_label(branch: Branch) -> str:
+    return f"Generate #{branch[0]} image {branch[1] + 1}"
+
+
+@dataclass(frozen=True)
+class NodePlan:
+    node_id: int
+    type: str
+    branches: tuple[Branch, ...]  # the image branches this node runs for, in order
+    generations: int  # submissions this node makes over all its branches (0 for local nodes)
+
+
+@dataclass(frozen=True)
+class WorkflowPlan:
+    order: tuple[int, ...]
+    nodes: dict[int, NodePlan]
+    total_generations: int  # the planned submission total shown before the run (D3, loop guard base)
+    local_analyses: int
+    needs_face_models: bool
+
+    def summary(self) -> str:
+        noun = "generation" if self.total_generations == 1 else "generations"
+        text = f"{self.total_generations} {noun}"
+        if self.local_analyses:
+            text += f" and {self.local_analyses} local face detection" + ("s" if self.local_analyses != 1 else "")
+        return text
+
+
+def generate_outputs(node: GraphNode) -> int:
+    return int(node.params["batch_size"]) * int(node.params["batch_count"])
+
+
+def plan_workflow(graph: Graph) -> WorkflowPlan:
+    """Validate the graph for running and compute per-node branches and the planned generation total.
+
+    Requires every input connected, a checkpoint on every generative node, at least one Save node, same-branch
+    pairing on converging inputs and settings that pass ``ResolvedGenerationRequest`` validation. Raises
+    WorkflowError naming the node.
+    """
+    if not graph.nodes:
+        raise WorkflowError("The workflow is empty.")
+    order = topological_order(graph)
+    if not any(node.type == SAVE for node in graph.nodes):
+        raise WorkflowError("Add a Save image node to mark the workflow result.")
+    plans: dict[int, NodePlan] = {}
+    total = analyses = 0
+    for node_id in order:
+        node = graph.node(node_id)
+        spec = node.spec
+        for param in spec.params:
+            check_param(param, node.params.get(param.name), f"{node.label}: ")
+        if node.type == GENERATE:
+            node_request(node, Sampler(node.params["sampler"]))  # range/semantic checks through request validation
+            branches = tuple((node.id, index) for index in range(generate_outputs(node)))
+        else:
+            inputs = []
+            for slot, port in enumerate(spec.inputs):
+                link = graph.input_link(node.id, slot)
+                if link is None:
+                    raise WorkflowError(f"{node.label}: input '{port.name}' is not connected.")
+                inputs.append(plans[link.origin_id].branches)
+            branches = inputs[0]
+            if any(other != branches for other in inputs[1:]):
+                raise WorkflowError(
+                    f"{node.label}: its image and mask must come from the same generated images (same branch); "
+                    "DTFlow never pairs images from different Generate nodes."
+                )
+            if node.type in IMAGE_OPERATIONS:
+                node_request(node, Sampler(node.params["sampler"]), width=1024, height=1024)
+        generations = len(branches) if node.type in GENERATIVE else 0
+        if node.type == DETECT_FACE:
+            analyses += len(branches)
+        total += generations
+        plans[node.id] = NodePlan(node.id, node.type, branches, generations)
+    if total > MAX_PLANNED_GENERATIONS:
+        raise WorkflowError(
+            f"This workflow would submit {total} generations; one run is limited to {MAX_PLANNED_GENERATIONS}."
+        )
+    return WorkflowPlan(tuple(order), plans, total, analyses, any(n.type == DETECT_FACE for n in graph.nodes))
+
+
+def node_request(
+    node: GraphNode,
+    sampler: Sampler | None = None,
+    *,
+    width: int | None = None,
+    height: int | None = None,
+    request_id: str | None = None,
+    evidence: tuple[tuple[str, str], ...] = (),
+) -> ResolvedGenerationRequest:
+    """The txt2img settings base of a generative node, validated by ``ResolvedGenerationRequest``.
+
+    Image operations pass the source image's size as ``width``/``height``; the image-operation entry then attaches
+    the prepared inputs and switches the operation. Raises WorkflowError naming the node.
+    """
+    params = node.params
+    if node.type not in GENERATIVE:
+        raise WorkflowError(f"{node.label} does not generate.")
+    try:
+        return ResolvedGenerationRequest(
+            request_id or uuid4().hex,
+            str(params["prompt"]),
+            str(params["checkpoint"]),
+            int(params["seed"]),
+            negative_prompt=str(params["negative_prompt"]),
+            width_px=int(params["width"]) if width is None else width,
+            height_px=int(params["height"]) if height is None else height,
+            steps=int(params["steps"]),
+            guidance=float(params["guidance"]),
+            sampler_id=sampler or Sampler(params["sampler"]),
+            batch_size=int(params.get("batch_size", 1)),
+            batch_count=int(params.get("batch_count", 1)),
+            loras=tuple(LoRASelection(name, float(weight)) for name, weight in params["loras"]),
+            resolution_evidence=(("source", "workflow"), ("workflow_node", str(node.id)), *evidence),
+        )
+    except ValidationError as exc:
+        raise WorkflowError(f"{node.label}: {exc}") from exc
+    except (KeyError, TypeError, ValueError) as exc:
+        raise WorkflowError(f"{node.label}: settings are incomplete.") from exc
+
+
+def summary(node_type: str, params: dict[str, object]) -> str:
+    """Short on-node text so the canvas shows configuration without opening the inspector."""
+    if node_type == DETECT_FACE:
+        region = "face skin + hair" if params["mask_region"] == "face_skin_and_hair" else "face skin"
+        return f"{region} · person: {params['person']}"
+    if node_type == SAVE:
+        return f"label: {params['label']}"
+    lines = [str(params["checkpoint"]) or "No checkpoint"]
+    loras = params["loras"]
+    lines.append(f"{len(loras)} LoRA" + ("s" if len(loras) != 1 else "") if loras else "no LoRA")
+    detail = f"{params['steps']} steps · cfg {float(params['guidance']):g}"
+    if "strength" in params:
+        detail += f" · str {float(params['strength']):.2f}"
+    if node_type == GENERATE:
+        count = int(params["batch_size"]) * int(params["batch_count"])
+        detail = f"{params['width']}×{params['height']} · " + detail + (f" · ×{count}" if count > 1 else "")
+    lines.append(detail)
+    return "\n".join(lines)
+
+
+def new_node(graph: Graph, node_type: str, pos: tuple[float, float]) -> GraphNode:
+    """Append a node of ``node_type`` with default parameters and the next free id."""
+    spec = CATALOG.get(node_type)
+    if spec is None:
+        raise WorkflowError(f"Unknown node type {node_type!r}.")
+    node = GraphNode(graph.next_node_id(), node_type, (float(pos[0]), float(pos[1])), spec.defaults())
+    graph.nodes.append(node)
+    return node
+
+
+def connect(graph: Graph, origin_id: int, origin_slot: int, target_id: int, target_slot: int) -> GraphLink:
+    """Add a typed link, replacing any link already on that input; rejects type mismatches and cycles."""
+    origin, target = graph.node(origin_id), graph.node(target_id)
+    try:
+        out_port = origin.spec.outputs[origin_slot]
+        in_port = target.spec.inputs[target_slot]
+    except IndexError as exc:
+        raise WorkflowError("That port does not exist.") from exc
+    if out_port.type != in_port.type:
+        raise WorkflowError(f"{out_port.type} output cannot feed {in_port.type} input.")
+    if would_cycle(graph, origin_id, target_id):
+        raise WorkflowError("That connection would make a cycle.")
+    graph.links = [x for x in graph.links if not (x.target_id == target_id and x.target_slot == target_slot)]
+    link = GraphLink(graph.next_link_id(), origin_id, origin_slot, target_id, target_slot, out_port.type)
+    graph.links.append(link)
+    graph.last_link_id = link.id
+    return link
+
+
+def remove_node(graph: Graph, node_id: int) -> None:
+    graph.nodes = [node for node in graph.nodes if node.id != node_id]
+    graph.links = [x for x in graph.links if node_id not in (x.origin_id, x.target_id)]
+
+
+def _copy(value: object) -> object:
+    return [list(item) if isinstance(item, list) else item for item in value] if isinstance(value, list) else value
+
+
+def copy_params(params: dict[str, object]) -> dict[str, object]:
+    return {name: _copy(value) for name, value in params.items()}
+
+
+def copy_graph(graph: Graph) -> Graph:
+    return load_workflow(dump_workflow(graph), draft=True)
