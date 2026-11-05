@@ -17,15 +17,19 @@ from collections import OrderedDict
 import poc_shell as shell  # first: sets the start-up clock and loads tokens before the library import
 from PySide6.QtCore import Qt, QTimer
 from PySide6.QtGui import QBrush, QPen
-from PySide6.QtWidgets import QGraphicsView, QLabel, QVBoxLayout
+from PySide6.QtWidgets import QGraphicsSimpleTextItem, QGraphicsView, QLabel, QVBoxLayout
 
 import poc_contract as contract
 from nodeeditor.node_content_widget import QDMNodeContentWidget
 from nodeeditor.node_edge import EDGE_TYPE_BEZIER, Edge
+from nodeeditor.node_edge_dragging import EdgeDragging
 from nodeeditor.node_editor_widget import NodeEditorWidget
 from nodeeditor.node_graphics_node import QDMGraphicsNode
+from nodeeditor.node_graphics_socket import QDMGraphicsSocket
 from nodeeditor.node_graphics_view import MODE_NOOP, QDMGraphicsView
 from nodeeditor.node_node import Node
+from nodeeditor.node_scene import Scene
+from nodeeditor.node_scene_history import SceneHistory
 from nodeeditor.node_socket import LEFT_TOP, RIGHT_TOP
 
 SOCKET_TYPES = {contract.IMAGE: 0, contract.MASK: 1}
@@ -33,11 +37,69 @@ SOCKET_NAMES = {value: key for key, value in SOCKET_TYPES.items()}
 NODE_WIDTH = 230
 
 
+class DTFHistory(SceneHistory):
+    def storeHistory(self, desc, setModified=False, *args, **kwargs):
+        if self.is_restoring_history:
+            return False
+        # Keep selection callbacks, but do not make selection an undoable edit.
+        if not setModified and desc in {"Selection Changed", "Deselected Everything"}:
+            if self.history_stack:
+                self.history_stack[self.history_current_step]["merge_key"] = None
+            return False
+        return super().storeHistory(desc, setModified, *args, **kwargs)
+
+
+class DTFEdge(Edge):
+    def __init__(self, scene, start_socket=None, end_socket=None, *args, comfy_id=0, **kwargs):
+        self.comfy_id = comfy_id
+        super().__init__(scene, start_socket, end_socket, *args, **kwargs)
+        if start_socket is not None and end_socket is not None and not self.comfy_id:
+            self.comfy_id = scene.next_link_id()
+
+    def serialize(self):
+        data = super().serialize()
+        data["comfy_id"] = self.comfy_id
+        return data
+
+    def deserialize(self, data, hashmap=None, restore_id=True, *args, **kwargs):
+        result = super().deserialize(data, {} if hashmap is None else hashmap, restore_id, *args, **kwargs)
+        if result:
+            self.comfy_id = data["comfy_id"] if restore_id else self.scene.next_link_id()
+            self.scene.last_link_id = max(self.scene.last_link_id, self.comfy_id)
+        return result
+
+
+class DTFScene(Scene):
+    historyClass = DTFHistory
+
+    def __init__(self):
+        self.last_link_id = 0
+        super().__init__()
+
+    def next_link_id(self):
+        self.last_link_id += 1
+        return self.last_link_id
+
+    def getEdgeClass(self):
+        return DTFEdge
+
+
+class DTFEdgeDragging(EdgeDragging):
+    def edgeDragEnd(self, item):
+        # Validate before the library's rejection print/keep-dragging path.
+        if isinstance(item, QDMGraphicsSocket) and self.drag_edge is not None and self.drag_start_socket is not None:
+            if not self.drag_edge.validateEdge(self.drag_start_socket, item.socket):
+                self.cancelDragEdge()
+                return True  # consume the gesture; do not start another edge
+        return super().edgeDragEnd(item)
+
+
 class DTFGraphicsView(QDMGraphicsView):
     """Plain-wheel zoom and empty-background left-drag navigation."""
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        self.dragging = DTFEdgeDragging(self)
         self._panning = False
         self.setTransformationAnchor(QGraphicsView.ViewportAnchor.AnchorUnderMouse)
 
@@ -74,11 +136,13 @@ class DTFGraphicsView(QDMGraphicsView):
             QGraphicsView.mouseReleaseEvent(self, event)
             self.setDragMode(self._previous_drag_mode)
             self._panning = False
+            self.grScene.scene.onItemsDeselected()
             return
         super().leftMouseButtonRelease(event)
 
 
 class DTFEditorWidget(NodeEditorWidget):
+    Scene_class = DTFScene
     GraphicsView_class = DTFGraphicsView
 
 
@@ -160,6 +224,20 @@ class DTFNode(Node):
             output_text=[p.name for p in self.SPEC.outputs],
         )
         self.content.refresh()
+        # Upstream draws socket text clipped inside the tiny connector. Put readable
+        # labels beside it instead, parented to the socket so they follow its geometry/LOD.
+        self.port_labels = []
+        for socket, port in zip(self.inputs + self.outputs, self.SPEC.inputs + self.SPEC.outputs, strict=True):
+            socket.grSocket.setText("")
+            label = QGraphicsSimpleTextItem(port.name, socket.grSocket)
+            label.setFont(shell.token_font())
+            label.setBrush(QBrush(shell.token_color("color.text")))
+            label.setAcceptedMouseButtons(Qt.MouseButton.NoButton)
+            width, height = label.boundingRect().width(), label.boundingRect().height()
+            label.setPos(12 if socket.is_input else -12 - width, -height / 2)
+            label.setToolTip(f"{port.name}: {port.type}")
+            socket.grSocket.setToolTip(f"{port.name}: {port.type}")
+            self.port_labels.append(label)
 
     def initSettings(self) -> None:
         super().initSettings()
@@ -257,6 +335,7 @@ class NodeEditorWindow(shell.PocWindow):
         self.scene.clear()
         self.view_state = graph.view
         self.workflow_id = graph.workflow_id
+        self.scene.last_link_id = max(graph.last_link_id, max((link.id for link in graph.links), default=0))
         nodes = {}
         for item in graph.nodes:
             node = NODE_CLASSES[item.type](self.scene, item.id)
@@ -265,11 +344,12 @@ class NodeEditorWindow(shell.PocWindow):
             node.content.refresh()
             nodes[item.id] = node
         for link in graph.links:
-            Edge(
+            DTFEdge(
                 self.scene,
                 nodes[link.origin_id].outputs[link.origin_slot],
                 nodes[link.target_id].inputs[link.target_slot],
                 edge_type=EDGE_TYPE_BEZIER,
+                comfy_id=link.id,
             )
         self._recolor_edges()
         self.scene.history.clear()
@@ -278,7 +358,7 @@ class NodeEditorWindow(shell.PocWindow):
         QTimer.singleShot(0, self.fit_view)  # after the view has its real size
 
     def current_graph(self) -> contract.Graph:
-        graph = contract.Graph(workflow_id=self.workflow_id, view=self.view_state)
+        graph = contract.Graph(workflow_id=self.workflow_id, view=self.view_state, last_link_id=self.scene.last_link_id)
         for node in self.scene.nodes:
             pos = node.grNode.scenePos()
             graph.nodes.append(
@@ -298,7 +378,12 @@ class NodeEditorWindow(shell.PocWindow):
                 out, inp = inp, out
             graph.links.append(
                 contract.GraphLink(
-                    0, out.node.comfy_id, out.index, inp.node.comfy_id, inp.index, SOCKET_NAMES[out.socket_type]
+                    edge.comfy_id,
+                    out.node.comfy_id,
+                    out.index,
+                    inp.node.comfy_id,
+                    inp.index,
+                    SOCKET_NAMES[out.socket_type],
                 )
             )
         return graph

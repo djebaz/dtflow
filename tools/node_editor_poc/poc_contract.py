@@ -164,6 +164,7 @@ class Graph:
     links: list[GraphLink] = field(default_factory=list)
     workflow_id: str = ""
     view: dict | None = None  # extra.ds (canvas scale/offset) is kept, never interpreted
+    last_link_id: int = 0
 
     def node(self, node_id: int) -> GraphNode:
         return next(node for node in self.nodes if node.id == node_id)
@@ -297,7 +298,7 @@ def load_workflow(data: object) -> Graph:
     if not isinstance(top["links"], list):
         raise WorkflowError("links must be an array.")
 
-    graph = Graph(workflow_id=str(top.get("id", "")), view=extra.get("ds"))
+    graph = Graph(workflow_id=str(top.get("id", "")), view=extra.get("ds"), last_link_id=state["lastLinkId"])
     raw_nodes: dict[int, dict] = {}
     for index, raw in enumerate(top["nodes"]):
         where = f"nodes[{index}]"
@@ -424,13 +425,12 @@ def topological_order(graph: Graph) -> list[int]:
 
 
 def dump_workflow(graph: Graph) -> dict:
-    """Write the ComfyUI v1.0 saved-workflow shape with widgets_values arrays. Link ids are renumbered."""
+    """Write ComfyUI v1.0 with widgets_values arrays and stable positive link ids."""
     order = {node_id: index for index, node_id in enumerate(topological_order(graph))}
     links = sorted(graph.links, key=lambda link: (order[link.target_id], link.target_slot))
-    renumbered = [
-        GraphLink(index, link.origin_id, link.origin_slot, link.target_id, link.target_slot, link.type)
-        for index, link in enumerate(links, 1)
-    ]
+    ids = [_int(link.id, "Link id", 1) for link in links]
+    if len(set(ids)) != len(ids):
+        raise WorkflowError("Link ids must be unique.")
     nodes = []
     for node in sorted(graph.nodes, key=lambda n: n.id):
         spec = CATALOG[node.type]
@@ -449,7 +449,7 @@ def dump_workflow(graph: Graph) -> dict:
                     "name": port.name,
                     "type": port.type,
                     "link": next(
-                        (link.id for link in renumbered if link.target_id == node.id and link.target_slot == slot), None
+                        (link.id for link in links if link.target_id == node.id and link.target_slot == slot), None
                     ),
                 }
                 for slot, port in enumerate(spec.inputs)
@@ -459,7 +459,7 @@ def dump_workflow(graph: Graph) -> dict:
                 {
                     "name": port.name,
                     "type": port.type,
-                    "links": [link.id for link in renumbered if link.origin_id == node.id and link.origin_slot == slot],
+                    "links": [link.id for link in links if link.origin_id == node.id and link.origin_slot == slot],
                     "slot_index": slot,
                 }
                 for slot, port in enumerate(spec.outputs)
@@ -476,7 +476,7 @@ def dump_workflow(graph: Graph) -> dict:
         "version": 1,
         "state": {
             "lastNodeId": max((n.id for n in graph.nodes), default=0),
-            "lastLinkId": len(renumbered),
+            "lastLinkId": max(graph.last_link_id, max(ids, default=0)),
             "lastRerouteId": 0,
             "lastGroupid": 0,
         },
@@ -490,7 +490,7 @@ def dump_workflow(graph: Graph) -> dict:
                 "target_slot": link.target_slot,
                 "type": link.type,
             }
-            for link in renumbered
+            for link in links
         ],
         "groups": [],
         "config": {},

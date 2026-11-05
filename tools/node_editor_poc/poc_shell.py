@@ -13,6 +13,7 @@ import json
 import re
 import sys
 import time
+import traceback
 from pathlib import Path
 
 from PySide6.QtCore import QPointF, QRectF, Qt, QTimer, Signal
@@ -469,12 +470,27 @@ def run(window_class: type[PocWindow], argv: list[str] | None = None) -> int:
     report_path = None
     if "--smoke-report" in argv:
         report_path = Path(argv[argv.index("--smoke-report") + 1])
+
+        # Windowed EXEs have no usable console. Retain startup/timer exceptions
+        # at the explicitly requested report path instead of losing the cause.
+        def smoke_exception(exc_type, exc, tb):
+            report_path.write_text(
+                json.dumps({"error": "".join(traceback.format_exception(exc_type, exc, tb))}, indent=2),
+                encoding="utf-8",
+            )
+            instance = QApplication.instance()
+            if instance is not None:
+                instance.exit(1)
+
+        sys.excepthook = smoke_exception
     open_path = Path(argv[argv.index("--open") + 1]) if "--open" in argv else FIXTURE
     app = QApplication(argv)
     t_app = time.perf_counter()
     app.setStyleSheet(load_stylesheet())
     window = window_class()
     if not window.open_path(open_path):
+        if report_path is not None:
+            raise RuntimeError(f"Smoke fixture could not be opened: {open_path}")
         window.show_status(f"Could not open {open_path.name}", error=True)
     window.show()
     t_show = time.perf_counter()

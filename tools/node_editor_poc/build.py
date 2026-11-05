@@ -21,7 +21,6 @@ import platform
 import statistics
 import subprocess
 import sys
-import tempfile
 import time
 from importlib.metadata import distributions
 from pathlib import Path
@@ -60,15 +59,33 @@ def folder_size(path: Path) -> tuple[int, int]:
 def measure(executable: Path, runs: int) -> dict:
     """Spawn-to-first-frame and spawn-to-exit wall times, in seconds, for ``runs`` consecutive launches."""
     first_frame, exit_times, reports = [], [], []
-    for _ in range(runs):
-        with tempfile.TemporaryDirectory() as tmp:
-            report_path = Path(tmp) / "report.json"
-            start_wall, start = time.time(), time.perf_counter()
-            subprocess.run([str(executable), "--smoke-report", str(report_path)], check=True, timeout=180)
-            exit_times.append(round(time.perf_counter() - start, 3))
-            report = json.loads(report_path.read_text(encoding="utf-8"))
-            first_frame.append(round(report["wall_time_first_frame"] - start_wall, 3))
-            reports.append(report)
+    report_dir = executable.parent / "smoke-reports" / str(time.time_ns())
+    report_dir.mkdir(parents=True)
+    for index in range(runs):
+        report_path = report_dir / f"run-{index + 1}.json"
+        log_path = report_path.with_suffix(".log")
+        start_wall, start = time.time(), time.perf_counter()
+        # Keep both reports and console evidence on failure, including a timeout.
+        with log_path.open("w", encoding="utf-8", newline="\n") as log:
+            try:
+                result = subprocess.run(
+                    [str(executable), "--smoke-report", str(report_path)],
+                    stdout=log,
+                    stderr=subprocess.STDOUT,
+                    timeout=180,
+                )
+            except (OSError, subprocess.TimeoutExpired) as exc:
+                raise RuntimeError(f"Smoke launch failed; evidence retained in {report_dir}") from exc
+        exit_times.append(round(time.perf_counter() - start, 3))
+        if result.returncode != 0:
+            raise RuntimeError(f"Smoke exited {result.returncode}; inspect {report_path} and {log_path}")
+        if not report_path.is_file():
+            raise RuntimeError(f"Smoke produced no report; inspect {log_path}")
+        report = json.loads(report_path.read_text(encoding="utf-8"))
+        if "error" in report or not report.get("export_reimport_stable"):
+            raise RuntimeError(f"Smoke reported an error or unstable export; inspect {report_path}")
+        first_frame.append(round(report["wall_time_first_frame"] - start_wall, 3))
+        reports.append(report)
     return {
         "runs": runs,
         "spawn_to_first_frame_s": first_frame,
