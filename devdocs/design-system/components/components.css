@@ -27,7 +27,7 @@ code,pre{font-family:var(--font-family-mono);font-size:var(--font-size-small)}
 .dt-btn.disclosure.checked{background:var(--color-accent);border-color:var(--color-accent);color:var(--color-on-accent)}
 .dt-btn.disclosure.checked:hover{background:var(--color-accent-hover)}
 .dt-btn.disclosure.checked:active{background:var(--color-accent-pressed)}
-.dt-conn{width:58px;height:34px;padding:0;background:var(--color-input);border:1px solid var(--color-border);border-radius:var(--radius-panel);display:inline-flex;align-items:center;justify-content:center;cursor:pointer;color:var(--color-text)}
+.dt-conn{width:40px;height:20px;padding:0;background:var(--color-input);border:1px solid var(--color-border);border-radius:var(--radius-xs);display:inline-flex;align-items:center;justify-content:center;cursor:pointer;color:var(--color-text)}
 .dt-conn:hover{border-color:var(--color-input-border-hover)}
 .dt-conn.checked{background:var(--color-selection)}
 .dt-conn.ok{background:var(--color-connection-surface);border-color:var(--color-connection-accent)}
@@ -100,7 +100,8 @@ select.dt-field:disabled,.dt-combo-btn:disabled{background-image:url(../assets/i
 .dt-panel{background:var(--color-surface);border:1px solid var(--color-panel-edge);border-radius:var(--radius-panel);display:flex;flex-direction:column;gap:10px;padding:12px;min-width:0}
 .dt-listbox{background:var(--color-input);border:1px solid var(--color-border);border-radius:var(--radius-input);padding:4px;overflow:auto}
 .dt-empty{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;flex:1;text-align:center}
-.dt-statusbar{position:fixed;left:0;right:0;bottom:0;height:24px;background:var(--color-background);font-size:var(--font-size-small);color:var(--color-secondary);padding:4px 8px;border-top:1px solid var(--color-statusbar-edge)}
+.dt-statusbar{position:fixed;left:0;right:0;bottom:0;height:24px;background:var(--color-background);font-size:var(--font-size-small);color:var(--color-secondary);padding:1px 8px;border-top:1px solid var(--color-statusbar-edge);display:flex;align-items:center;gap:8px}
+.dt-statusbar-text{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.dt-statusbar-trailing{display:flex;align-items:center;gap:6px;flex:none}
 /* gallery */
 .dt-toolrow{flex:1;min-width:0;background:var(--color-surface);border-radius:var(--radius-panel);display:flex;align-items:center;gap:8px;padding:6px 8px;min-height:46px}
 .dt-ftb{position:absolute;display:flex;align-items:center;gap:3px;background:var(--color-toolbar);border:1px solid var(--color-button-border);border-radius:var(--radius-button);padding:3px}
