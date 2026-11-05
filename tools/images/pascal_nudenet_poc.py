@@ -300,7 +300,9 @@ def save_preview(
     for text in notes:
         draw.text((left, top), text, fill=(175, 180, 190), font=font)
         top += row_height
-    preview.save(destination, quality=95, subsampling=0)
+    if destination is not None:
+        preview.save(destination, quality=95, subsampling=0)
+    return preview
 
 
 def save_outputs(source, box, inside, raw, zones, reports, output, prefix):

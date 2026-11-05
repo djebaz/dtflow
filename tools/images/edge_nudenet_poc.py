@@ -628,7 +628,9 @@ def save_overlap_preview(cv, source, box, inside, layers, reports, names, destin
     for text in notes:
         draw.text((left, top), text, fill=(175, 180, 190), font=font)
         top += 36
-    preview.save(destination, quality=95, subsampling=0)
+    if destination is not None:
+        preview.save(destination, quality=95, subsampling=0)
+    return preview
 
 
 def save_score_preview(cv, source, box, inside, scores, destination):
@@ -652,6 +654,47 @@ def save_score_preview(cv, source, box, inside, scores, destination):
     preview.save(destination, quality=95, subsampling=0)
 
 
+def render_zone_preview(source, box, inside, zones, reports, cv, overlap_layers, finishing, blur, destination=None):
+    """Shared zone renderer; comparison panels stay in memory, with no intermediate files."""
+    names = {0: "background", UNKNOWN: "unknown"}
+    names.update({r["zone_id"]: r["label"].lower() for r in reports})
+    palette = zone_palette(reports)
+    if overlap_layers is not None:
+        preview = save_overlap_preview(
+            cv,
+            source,
+            box,
+            inside,
+            overlap_layers,
+            reports,
+            names,
+            destination,
+            finishing,
+            palette,
+            blur=blur,
+        )
+    else:
+        preview = save_preview(
+            source,
+            box,
+            inside,
+            zones,
+            names,
+            destination,
+            "Edge-guided zones",
+            (
+                "NudeNet names are suggestions",
+                "Rounded / expanded after growth" if finishing else "Boundaries follow edge costs",
+                "Unassigned areas: original image",
+            ),
+            palette=palette,
+            antialias=True,
+            contour_blur=blur,
+            hide_unknown=True,
+        )
+    return preview, {str(key): name for key, name in names.items()}
+
+
 def save_outputs(
     source,
     box,
@@ -669,44 +712,20 @@ def save_outputs(
     blur=0,
 ):
     x0, y0, x1, y1 = box
-    names = {0: "background", UNKNOWN: "unknown"}
-    names.update({r["zone_id"]: r["label"].lower() for r in reports})
-    palette = zone_palette(reports)
-    if overlap_layers is not None:
-        save_overlap_preview(
-            cv,
-            source,
-            box,
-            inside,
-            overlap_layers,
-            reports,
-            names,
-            output / f"{prefix}_zones_overlay.jpg",
-            finishing,
-            palette,
-            blur=blur,
-        )
-    else:
-        save_preview(
-            source,
-            box,
-            inside,
-            zones,
-            names,
-            output / f"{prefix}_zones_overlay.jpg",
-            "Edge-guided zones",
-            (
-                "NudeNet names are suggestions",
-                "Rounded / expanded after growth" if finishing else "Boundaries follow edge costs",
-                "Unassigned areas: original image",
-            ),
-            palette=palette,
-            antialias=True,
-            contour_blur=blur,
-            hide_unknown=True,
-        )
+    _, names = render_zone_preview(
+        source,
+        box,
+        inside,
+        zones,
+        reports,
+        cv,
+        overlap_layers,
+        finishing,
+        blur,
+        output / f"{prefix}_zones_overlay.jpg",
+    )
     if overlay_only:
-        return {str(key): name for key, name in names.items()}
+        return names
     alpha = np.zeros((source.height, source.width), dtype=np.uint8)
     alpha[y0:y1, x0:x1] = inside.astype(np.uint8) * 255
     cutout = source.convert("RGBA")
@@ -731,7 +750,7 @@ def save_outputs(
     for index, text in enumerate(legend):
         draw.text((source.width + 20, 20 + index * 34), text, fill="white", font=font)
     preview.save(output / f"{prefix}_edges_overlay.jpg", quality=95, subsampling=0)
-    return {str(key): name for key, name in names.items()}
+    return names
 
 
 def output_directory(args, files, parser):
@@ -746,7 +765,7 @@ def output_directory(args, files, parser):
     if previous and not args.overwrite:
         parser.error("output-dir is not empty; use -w / --overwrite to remove previous POC outputs")
     generated = re.compile(
-        r"\d{4,}_.+_(?:scores_overlay\.jpg|edges\.png|edges_overlay\.jpg|pascal_overlay\.jpg|zones_overlay\.jpg|"
+        r"\d{4,}_.+_(?:compare\.jpg|scores_overlay\.jpg|edges\.png|edges_overlay\.jpg|pascal_overlay\.jpg|zones_overlay\.jpg|"
         r"person_cutout\.png|report\.json|person\.png|confidence\.png|"
         r"(?:pascal|zones)_labels\.png|(?:pascal|zones)_\d+_[a-z_]+\.png)"
     )
@@ -763,6 +782,295 @@ def output_directory(args, files, parser):
         ):
             parser.error(f"Refusing cleanup of unrelated/redirected entry: {entry.name}")
     return output, previous
+
+
+def compute_zones(cv, edges, inside, detections, args):
+    """One zoning path shared by normal processing and parameter sweeps."""
+    layers = None
+    if args.start == "edge":
+        layers, details, summary = contract_zones(
+            cv,
+            edges,
+            inside,
+            detections,
+            args.resolution,
+            args.edge_weight,
+            args.smooth,
+            args.expand,
+            args.box_scale,
+            args.roundness,
+        )
+        zones = None
+        if not args.overlap:
+            zones = exclusive_contours(cv, layers, details, inside)
+            layers = None
+            summary = {"unknown_pixels": int(np.count_nonzero(zones == UNKNOWN)), "overlap_pixels": 0}
+    elif args.overlap:
+        layers, details, summary = grow_independent_zones(
+            cv,
+            edges,
+            inside,
+            detections,
+            args.resolution,
+            args.edge_weight,
+            args.growth,
+            args.smooth,
+            args.expand,
+            args.balance,
+        )
+        zones = None
+    else:
+        zones, details = grow_zones(
+            cv,
+            edges,
+            inside,
+            detections,
+            args.resolution,
+            args.edge_weight,
+            args.growth,
+            args.smooth,
+            args.expand,
+            args.balance,
+        )
+        summary = {"unknown_pixels": int(np.count_nonzero(zones == UNKNOWN)), "overlap_pixels": 0}
+    return zones, layers, details, summary
+
+
+def sweep_cases(args):
+    """Broad one-factor comparison or a small grid around owner-selected winners."""
+    if args.sweep == "growth":
+        cases = []
+        for balance in (1.0, 2.0):
+            for index in range(10):
+                trial = argparse.Namespace(**vars(args))
+                trial.start = "center"
+                trial.growth = round(1.0 + 0.8 * index / 9, 6)
+                trial.balance = balance
+                cases.append((trial, "growth_balance"))
+        return cases
+    if args.sweep == "refined":
+        cases = []
+        for smooth in (8.0, 10.0, 12.0):
+            for blur in (3.0, 3.75, 4.5):
+                trial = argparse.Namespace(**vars(args))
+                trial.start, trial.box_scale, trial.expand = "edge", 1.6, 0.0
+                trial.smooth, trial.blur = smooth, blur
+                cases.append((trial, "refined"))
+        return cases
+    alternatives = {
+        "smooth": (args.smooth / 2, min(12, args.smooth * 1.5)) if args.smooth else (1, 3),
+        "expand": (max(0, args.expand - 2), min(32, args.expand + 2)) if args.expand else (2, 5),
+        "blur": (args.blur / 2, min(32, args.blur * 1.5)) if args.blur else (2, 6),
+        "balance": (args.balance / 2, min(4, args.balance * 1.5)) if args.balance else (0.5, 1.5),
+        "growth": (args.growth * 0.75, args.growth * 1.25),
+        "box_scale": (max(1, args.box_scale - 0.2), min(3, args.box_scale + 0.2)),
+    }
+    seen, cases = set(), []
+    for start in (args.start, "center" if args.start == "edge" else "edge"):
+        active = (
+            ("smooth", "expand", "blur", "balance", "growth")
+            if start == "center"
+            else ("smooth", "expand", "blur", "box_scale")
+        )
+        changes = [("baseline", None)] + [(name, value) for name in active for value in alternatives[name]]
+        for name, value in changes:
+            if value is not None and not math.isfinite(value):
+                continue
+            trial = argparse.Namespace(**vars(args))
+            trial.start = start
+            if value is not None:
+                setattr(trial, name, round(value, 4))
+                if name == "growth" and trial.growth <= 0:
+                    continue
+            identity = (start, trial.smooth, trial.expand, trial.blur, trial.balance, trial.growth, trial.box_scale)
+            if identity not in seen:
+                seen.add(identity)
+                cases.append((trial, name))
+    return cases
+
+
+def save_sweep(cv, args, source, box, inside, edges, scores, detections, base_report, output, index, analysis_seconds):
+    """Reuse the first image's inference; write unique flat files for each setting."""
+    cases = sweep_cases(args)
+    descriptions = {
+        "broad": "one-setting variants across both start modes",
+        "refined": "refined u=8/10/12 x c=3/3.75/4.5; edge start, k=1.6, x=0",
+        "growth": "10 g values from 1.0 through 1.8, each with z=1 and z=2; center start",
+    }
+    description = descriptions[args.sweep]
+    print(f"Sweep: first sorted input only, {len(cases)} variants; {description}", flush=True)
+    failures = 0
+    flags = (("u", "smooth"), ("x", "expand"), ("c", "blur"), ("z", "balance"), ("g", "growth"), ("k", "box_scale"))
+    settings_names = {"blur": "display_blur_source_pixels"}
+    for number, (trial, varied) in enumerate(cases, 1):
+        tag = "_".join(f"{flag}{getattr(trial, name):.9g}".replace(".", "p") for flag, name in flags)
+        # Keep names bounded even when the source has a very long prompt filename.
+        prefix = f"{index:04d}_sweep{number:02d}_{trial.start}_{varied}_{tag}"
+        try:
+            tick = time.perf_counter()
+            zones, layers, details, summary = compute_zones(cv, edges, inside, detections, trial)
+            growth_seconds = time.perf_counter() - tick
+            names = save_outputs(
+                source,
+                box,
+                inside,
+                edges,
+                zones,
+                details,
+                output,
+                prefix,
+                trial.detector,
+                finishing=bool(trial.smooth or trial.expand),
+                overlap_layers=layers,
+                cv=cv,
+                overlay_only=trial.overlay_only,
+                blur=trial.blur,
+            )
+            if scores is not None and not trial.overlay_only:
+                save_score_preview(cv, source, box, inside, scores, output / f"{prefix}_scores_overlay.jpg")
+            report = dict(base_report, settings=dict(base_report["settings"]))
+            for _, name in flags:
+                report["settings"][settings_names.get(name, name)] = getattr(trial, name)
+            report["settings"].update(start=trial.start, center_only_settings_active=trial.start == "center")
+            report.update(
+                crop_box=list(box),
+                label_names=names,
+                detections=details,
+                **summary,
+                coordinates="crop-relative, EXIF-oriented pixels",
+                growth_seconds=growth_seconds,
+                sweep={
+                    "index": number,
+                    "varied": varied,
+                    "preset": args.sweep,
+                    "strategy": {
+                        "broad": "one_setting_at_a_time",
+                        "refined": "focused_smooth_blur_grid",
+                        "growth": "growth_balance_grid",
+                    }[args.sweep],
+                    "source_selection": "first_sorted_supported_image",
+                    "inference_reused": True,
+                },
+                shared_analysis_seconds=analysis_seconds,
+                total_seconds=time.perf_counter() - tick,
+                total_seconds_scope="this variant's zoning and output only; model analysis shared across variants",
+                limitation="Zones are heuristic; changes are a parameter comparison, not accuracy validation.",
+            )
+            if not trial.overlay_only:
+                (output / f"{prefix}_report.json").write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
+            print(f"Sweep {number}/{len(cases)}: {trial.start}, {varied}; {tag}", flush=True)
+        except Exception as exc:
+            failures += 1
+            print(f"{prefix}: {type(exc).__name__}: {exc}", file=sys.stderr, flush=True)
+    return failures
+
+
+def save_comparison(cv, args, source, box, inside, edges, detections, base_report, output, prefix, analysis_seconds):
+    """Compare the two owner-selected recipes, sharing one image's model analysis."""
+    presets = (
+        (
+            "7 / Outside-in",
+            {
+                "start": "edge",
+                "smooth": 12.0,
+                "expand": 0.0,
+                "blur": 3.0,
+                "box_scale": 1.6,
+                "growth": 1.4,
+                "balance": 1.0,
+                "roundness": 0.3,
+                "overlap": True,
+            },
+            "-l edge -k 1.6 -u 12 -x 0 -c 3 -a",
+        ),
+        (
+            "20 / Center-out",
+            {
+                "start": "center",
+                "smooth": 8.0,
+                "expand": 0.0,
+                "blur": 3.0,
+                "box_scale": 1.6,
+                "growth": 1.75,
+                "balance": 1.0,
+                "roundness": 0.3,
+                "overlap": True,
+            },
+            "-l center -g 1.75 -z 1 -u 8 -x 0 -c 3 -a",
+        ),
+    )
+    tick = time.perf_counter()
+    panels, results = [], []
+    font = ImageFont.load_default(size=18)
+    for name, overrides, caption in presets:
+        trial = argparse.Namespace(**vars(args))
+        for key, value in overrides.items():
+            setattr(trial, key, value)
+        if box is None:
+            image = source.copy()
+            result = {"name": name, "settings": overrides, "status": "no_person", "detections": []}
+            status = "No person detected; zoning not run"
+        else:
+            started = time.perf_counter()
+            zones, layers, details, summary = compute_zones(cv, edges, inside, detections, trial)
+            growth_seconds = time.perf_counter() - started
+            image, names = render_zone_preview(
+                source,
+                box,
+                inside,
+                zones,
+                details,
+                cv,
+                layers,
+                bool(trial.smooth or trial.expand),
+                trial.blur,
+            )
+            result = {
+                "name": name,
+                "settings": overrides,
+                "label_names": names,
+                "detections": details,
+                "growth_seconds": growth_seconds,
+                **summary,
+            }
+            status = f"{sum(d['pixels'] > 0 for d in details)} zones | zoning {growth_seconds:.2f}s"
+        panel_width = max(image.width, font.getbbox(caption)[2] + 40)
+        panel = Image.new("RGB", (panel_width, image.height + 104), (24, 27, 34))
+        panel.paste(image, (0, 104))
+        draw = ImageDraw.Draw(panel)
+        for row, text in enumerate((name, caption, status)):
+            draw.text((20, 12 + row * 30), text, fill="white", font=font)
+        panels.append(panel)
+        results.append(result)
+    combined = Image.new("RGB", (panels[0].width + 16 + panels[1].width, max(p.height for p in panels)), (10, 12, 16))
+    combined.paste(panels[0], (0, 0))
+    combined.paste(panels[1], (panels[0].width + 16, 0))
+    combined.save(output / f"{prefix}_compare.jpg", quality=95, subsampling=0)
+    if not args.overlay_only:
+        report = dict(base_report)
+        # Preset-owned zoning values live with each preset, not in shared settings.
+        owned = {
+            "smooth",
+            "expand",
+            "display_blur_source_pixels",
+            "box_scale",
+            "growth",
+            "balance",
+            "roundness",
+            "overlap",
+            "start",
+            "center_only_settings_active",
+        }
+        report["settings"] = {key: value for key, value in base_report["settings"].items() if key not in owned}
+        report.update(
+            comparison={"layout": "left: refined 7; right: broad 20", "inference_shared": True, "presets": results},
+            crop_box=list(box) if box is not None else None,
+            shared_analysis_seconds=analysis_seconds,
+            total_seconds=analysis_seconds + time.perf_counter() - tick,
+            total_seconds_scope="shared image analysis plus both zoning/render passes; model startup excluded",
+        )
+        (output / f"{prefix}_compare_report.json").write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
+    print(f"{base_report['source']}: comparison saved -> {prefix}_compare.jpg", flush=True)
 
 
 def main(argv=None):
@@ -872,8 +1180,24 @@ def main(argv=None):
         help="Center-start seed/radial growth penalty, 0..4; 0 keeps legacy growth (try 1)",
     )
     parser.add_argument("-d", "--no-download", action="store_true")
+    parser.add_argument(
+        "-cp",
+        "--compare",
+        action="store_true",
+        help="Whole directory: selected presets 7 and 20 side by side in one JPG per image; -f omits combined JSON",
+    )
+    parser.add_argument(
+        "-sw",
+        "--sweep",
+        nargs="?",
+        const="broad",
+        choices=("broad", "refined", "growth"),
+        help="First image only: broad varies six settings; refined compares 9 winners-nearby combinations; growth runs 10 g values x z=1/2",
+    )
     parser.add_argument("-w", "--overwrite", action="store_true", help="Delete recognized previous POC outputs only")
     args = parser.parse_args(argv)
+    if args.compare and args.sweep:
+        parser.error("--compare processes the whole directory and cannot be combined with --sweep")
     if args.person_model is None:
         args.person_model = Path("tmp/models") / f"yolo26{args.person_size}-seg-ultralytics-v8.4.0.onnx"
     if args.model is None:
@@ -916,6 +1240,8 @@ def main(argv=None):
     files = sorted(p for p in args.input_dir.iterdir() if p.is_file() and p.suffix.lower() in IMAGE_SUFFIXES)
     if not files:
         parser.error("No supported images found")
+    if args.sweep:
+        files = files[:1]
     import cv2 as cv
     from dtflow.services import person_selection as selection
 
@@ -998,6 +1324,21 @@ def main(argv=None):
                     "finishing_units": "region-growth grid pixels",
                 },
             }
+            if args.compare and not people:
+                save_comparison(
+                    cv,
+                    args,
+                    source,
+                    None,
+                    None,
+                    None,
+                    [],
+                    report,
+                    output,
+                    prefix,
+                    time.perf_counter() - started,
+                )
+                continue
             if people:
                 _, mask, person_box = people[0]
                 box = tuple(int(v) for v in person_crop_box(person_box, source.size))
@@ -1017,54 +1358,40 @@ def main(argv=None):
                 report["edge_seconds"] = time.perf_counter() - tick
                 _, detections, _ = detect_body_parts(parts_session, crop, args.parts_confidence)
                 detections = [d for d in detections if not d["label"].startswith("ARMPITS_")]
+                if args.compare:
+                    save_comparison(
+                        cv,
+                        args,
+                        source,
+                        box,
+                        inside,
+                        edges,
+                        detections,
+                        report,
+                        output,
+                        prefix,
+                        time.perf_counter() - started,
+                    )
+                    continue
+                if args.sweep:
+                    print(f"Sweep input: {path.name}", flush=True)
+                    failures += save_sweep(
+                        cv,
+                        args,
+                        source,
+                        box,
+                        inside,
+                        edges,
+                        scores,
+                        detections,
+                        report,
+                        output,
+                        index,
+                        time.perf_counter() - started,
+                    )
+                    continue
                 tick = time.perf_counter()
-                overlap_layers = None
-                if args.start == "edge":
-                    overlap_layers, details, zone_summary = contract_zones(
-                        cv,
-                        edges,
-                        inside,
-                        detections,
-                        args.resolution,
-                        args.edge_weight,
-                        args.smooth,
-                        args.expand,
-                        args.box_scale,
-                        args.roundness,
-                    )
-                    zones = None
-                    if not args.overlap:
-                        zones = exclusive_contours(cv, overlap_layers, details, inside)
-                        overlap_layers = None
-                        zone_summary = {"unknown_pixels": int(np.count_nonzero(zones == UNKNOWN)), "overlap_pixels": 0}
-                elif args.overlap:
-                    overlap_layers, details, zone_summary = grow_independent_zones(
-                        cv,
-                        edges,
-                        inside,
-                        detections,
-                        args.resolution,
-                        args.edge_weight,
-                        args.growth,
-                        args.smooth,
-                        args.expand,
-                        args.balance,
-                    )
-                    zones = None
-                else:
-                    zones, details = grow_zones(
-                        cv,
-                        edges,
-                        inside,
-                        detections,
-                        args.resolution,
-                        args.edge_weight,
-                        args.growth,
-                        args.smooth,
-                        args.expand,
-                        args.balance,
-                    )
-                    zone_summary = {"unknown_pixels": int(np.count_nonzero(zones == UNKNOWN)), "overlap_pixels": 0}
+                zones, overlap_layers, details, zone_summary = compute_zones(cv, edges, inside, detections, args)
                 report["growth_seconds"] = time.perf_counter() - tick
                 names = save_outputs(
                     source,
