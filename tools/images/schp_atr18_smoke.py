@@ -1205,7 +1205,10 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     )
     parser.add_argument("--edge-method", choices=("existing", "canny", "slic"), default="existing",
                         help="Boundary algorithm; SLIC requires scikit-image, Canny requires OpenCV (default existing).")
-    parser.add_argument("--depth-geometry", action="store_true", help="Export Depth Anything V2 Small geometry diagnostics.")\n    parser.add_argument("--depth-smoothing", type=float, default=1.0, help="Geometry Gaussian sigma in pixels (default 1.0).")\n    parser.add_argument("--curvature-gain", type=float, default=2.0, help="Multiscale curvature display gain (default 2.0).")\n    parser.add_argument("--normal-strength", type=float, default=8.0, help="Normal gradient amplification (default 8.0).")
+    parser.add_argument("--depth-geometry", action="store_true", help="Export Depth Anything V2 Small geometry diagnostics.")
+    parser.add_argument("--depth-smoothing", type=float, default=1.0, help="Geometry Gaussian sigma in pixels (default 1.0).")
+    parser.add_argument("--curvature-gain", type=float, default=2.0, help="Multiscale curvature display gain (default 2.0).")
+    parser.add_argument("--normal-strength", type=float, default=8.0, help="Normal gradient amplification (default 8.0).")
     parser.add_argument("--canny-low", type=int, default=60, help="Canny lower hysteresis threshold (default 60).")
     parser.add_argument("--canny-high", type=int, default=140, help="Canny upper hysteresis threshold (default 140).")
     parser.add_argument(
@@ -1229,7 +1232,8 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="Round body-region contours by this source-pixel radius; default 3 in body-only mode, otherwise 0.",
     )
     args = parser.parse_args(argv)
-    if args.depth_smoothing < 0 or args.curvature_gain <= 0 or args.normal_strength <= 0:\n        parser.error("depth smoothing must be >= 0; curvature gain and normal strength must be > 0")\n    if args.rounding is None:
+    if args.depth_smoothing < 0 or args.curvature_gain <= 0 or args.normal_strength <= 0:\n        parser.error("depth smoothing must be >= 0; curvature gain and normal strength must be > 0")
+    if args.rounding is None:
         args.rounding = 3.0 if args.body_only else 0.0
     if not 0.0 <= args.rounding <= 32.0:
         parser.error("--rounding must be between 0 and 32 source pixels")
