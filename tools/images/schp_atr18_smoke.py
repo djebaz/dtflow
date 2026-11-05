@@ -381,7 +381,7 @@ def body_palette(names):
 
 
 def refine_body_parts(source, labels, person_mask, confidence, detections, names, boundary_confidence, out_dir, stem, *, rounding=0.0, save_diagnostics=True):
-    """Keep the biggest connected SCHP segment inside each NudeNet box.
+    """Keep the biggest connected confidence region inside each NudeNet box.
 
     The score threshold excludes uncertain SCHP pixels; it is an experimental
     boundary hint, not confidence in the anatomical label supplied by NudeNet.
@@ -397,7 +397,7 @@ def refine_body_parts(source, labels, person_mask, confidence, detections, names
     class_ids = {key: len(DISPLAY_LABELS) + idx for idx, key in enumerate(ordered)}
     class_names = (*DISPLAY_LABELS, *(f"NN_{names[key]}" for key in ordered))
     colors = body_palette(names)
-    combined = labels.copy()
+    combined = np.zeros(labels.shape, dtype=np.uint8)
     claimed = np.zeros(labels.shape, dtype=bool)
     boundary = np.zeros(labels.shape, dtype=bool)
     unions = {}
@@ -411,37 +411,18 @@ def refine_body_parts(source, labels, person_mask, confidence, detections, names
         if x1 <= x0 or y1 <= y0:
             continue
         region = np.s_[y0:y1, x0:x1]
-        predicted = labels[region]
         candidate = person_mask[region] > 0
         name = detection["label"]
-        if name.startswith("FACE_"):
-            material = predicted == 11
-        elif name.endswith("_EXPOSED"):
-            material = np.isin(predicted, (11, 12, 13, 14, 15, 18))
-        elif name.endswith("_COVERED"):
-            material = np.isin(predicted, (4, 5, 6, 7, 8, 9, 10, 17))
-        else:
-            material = predicted != 0
-        candidate = candidate & material
         confident = candidate & (confidence[region] >= boundary_confidence)
         boundary[region] |= candidate & ~confident
-        # Keep the biggest connected SCHP segment in this detector box.
-        # Separate classes cannot merge just because both sides have high scores.
+        # SCHP labels must not split the body layer: use confidence alone.
         supported = np.zeros(candidate.shape, dtype=bool)
-        selected_class = None
-        selected_pixels = 0
-        for schp_class in np.unique(predicted[confident]):
-            components, count = label_components(confident & (predicted == schp_class))
-            if not count:
-                continue
+        components, count = label_components(confident)
+        if count:
             sizes = np.bincount(components.ravel(), minlength=count + 1)
             sizes[0] = 0
-            winner = int(sizes.argmax())
-            area = int(sizes[winner])
-            if area > selected_pixels:
-                supported = components == winner
-                selected_pixels = area
-                selected_class = int(schp_class)
+            supported = components == int(sizes.argmax())
+        selected_pixels = int(supported.sum())
         if rounding > 0 and supported.any():
             supported = smooth_mask(supported, blur_sigma=rounding) & (person_mask[region] > 0)
         class_id = class_ids[detection["class_id"]]
@@ -456,11 +437,12 @@ def refine_body_parts(source, labels, person_mask, confidence, detections, names
             "label": name,
             "score": detection["score"],
             "box_xyxy": detection["box_xyxy"],
-            "material_supported_pixels": int(candidate.sum()),
-            "confidence_supported_pixels": int(supported.sum()),
+            "person_supported_pixels": int(candidate.sum()),
+            "confidence_supported_pixels": int(confident.sum()),
+            "selected_segment_pixels_before_rounding": selected_pixels,
+            "rounded_segment_pixels": int(supported.sum()),
             "low_confidence_pixels_excluded": int((candidate & ~confident).sum()),
             "other_segment_pixels_excluded": int((confident & ~supported).sum()),
-            "selected_schp_class_id": selected_class,
         })
         if supported.any() and draw is not None:
             draw.rectangle((x0, y0, x1 - 1, y1 - 1), outline=colors[class_id], width=2)
@@ -479,7 +461,7 @@ def refine_body_parts(source, labels, person_mask, confidence, detections, names
         "assigned_pixels": int(claimed.sum()),
         "confidence_definition": "SCHP class score, not anatomical-part correctness",
         "independent_masks_preserve_overlaps": True,
-        "segment_selection": "largest connected SCHP-class segment inside each NudeNet box",
+        "segment_selection": "largest connected confidence region inside each NudeNet box, independent of SCHP class",
         "combined_overlap_rule": "highest NudeNet detection score",
         "detections": reports,
     }
@@ -671,7 +653,7 @@ def make_visuals(source, labels, out_dir: Path, stem: str, opacity: float, title
         result = Image.new("RGB", (width + 380, max(height, 80 + len(detected) * 28)), "white")
         result.paste(overlay, (0, 0))
         draw = ImageDraw.Draw(result)
-        draw.text((width + 14, 16), "Body parts", fill=(20, 20, 20))
+        draw.text((width + 14, 16), "Class legend", fill=(20, 20, 20))
         draw.text((width + 14, 38), title, fill=(75, 75, 75))
         for row, idx in enumerate(detected):
             y = 72 + row * 28
@@ -734,7 +716,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("-q", "--pose-kpt-confidence", type=float, default=0.3, help="Minimum joint score (default 0.3).")
     parser.add_argument("-w", "--pose-width", type=float, default=0.20, help="Limb-zone half-width / bone length (default 0.20).")
     parser.add_argument("-b", "--body-confidence", type=float, default=0.5, help="SCHP score floor inside NudeNet body masks; 0 disables boundary exclusion (default 0.5).")
-    parser.add_argument("-e", "--body-only", action="store_true", help="Save only body overlay images with embedded legends, plus reports.")
+    parser.add_argument("-e", "--body-only", action="store_true", help="Save only separate body and clothing overlays with embedded legends, plus reports.")
     parser.add_argument("-r", "--rounding", type=float, default=None, help="Round body-region contours by this source-pixel radius; default 3 in body-only mode, otherwise 0.")
     args = parser.parse_args(argv)
     if args.rounding is None:
@@ -850,7 +832,6 @@ def main(argv: list[str] | None = None) -> int:
                     refined_coverage = make_visuals(
                         source, refined, output_root, f"{person_stem}_refined", args.opacity, refined_title, confidence_view
                     )
-                body_base = refined
                 if pose is not None:
                     matched = pose_matches.get(index - 1)
                     corrected, changed, pose_details = correct_pose_limbs(
@@ -869,9 +850,15 @@ def main(argv: list[str] | None = None) -> int:
                         )
                         save_pose_overlay(source, matched, args.pose_kpt_confidence, output_root, person_stem)
                     details["pose_correction"] = pose_details
-                    body_base = corrected
+                clothing = np.where(
+                    np.isin(raw, (1, 3, 4, 5, 6, 7, 8, 9, 10, 16, 17)), raw, 0
+                ).astype(np.uint8)
+                details["clothing_class_coverages_percent_of_source"] = make_visuals(
+                    source, clothing, output_root, f"{person_stem}_clothes", args.opacity,
+                    "SCHP clothing and accessories", confidence_view, overlay_only=args.body_only
+                )
                 body, body_names, body_colors, body_details = refine_body_parts(
-                    source, body_base, person_mask, confidence, body_detections, nudenet_names,
+                    source, raw, person_mask, confidence, body_detections, nudenet_names,
                     args.body_confidence, output_root, person_stem,
                     rounding=args.rounding, save_diagnostics=not args.body_only
                 )
