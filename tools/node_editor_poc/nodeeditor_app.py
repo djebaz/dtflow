@@ -1,6 +1,7 @@
 """Node-editor POC candidate: nodeeditor-qtpy 0.8.2 on pyside6-essentials (#223, audit 10.8 step 6).
 
-Canvas, nodes, sockets, edges, selection, pan/zoom and undo/redo come from the library. DTFlow-side code owns
+Canvas, nodes, sockets, edges, selection and undo/redo come from the library, with a small view subclass for
+plain-wheel zoom and empty-background left-drag panning. DTFlow-side code owns
 node types, typed-port rules, parameters, the inspector, theme tokens and the ComfyUI-format adapter
 (``poc_contract``); the library's own JSON session format is used only internally for its undo snapshots and is
 never written to disk. No executor, providers, models or generation.
@@ -16,19 +17,69 @@ from collections import OrderedDict
 import poc_shell as shell  # first: sets the start-up clock and loads tokens before the library import
 from PySide6.QtCore import Qt, QTimer
 from PySide6.QtGui import QBrush, QPen
-from PySide6.QtWidgets import QLabel, QVBoxLayout
+from PySide6.QtWidgets import QGraphicsView, QLabel, QVBoxLayout
 
 import poc_contract as contract
 from nodeeditor.node_content_widget import QDMNodeContentWidget
 from nodeeditor.node_edge import EDGE_TYPE_BEZIER, Edge
 from nodeeditor.node_editor_widget import NodeEditorWidget
 from nodeeditor.node_graphics_node import QDMGraphicsNode
+from nodeeditor.node_graphics_view import MODE_NOOP, QDMGraphicsView
 from nodeeditor.node_node import Node
 from nodeeditor.node_socket import LEFT_TOP, RIGHT_TOP
 
 SOCKET_TYPES = {contract.IMAGE: 0, contract.MASK: 1}
 SOCKET_NAMES = {value: key for key, value in SOCKET_TYPES.items()}
 NODE_WIDTH = 230
+
+
+class DTFGraphicsView(QDMGraphicsView):
+    """Plain-wheel zoom and empty-background left-drag navigation."""
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._panning = False
+        self.setTransformationAnchor(QGraphicsView.ViewportAnchor.AnchorUnderMouse)
+
+    def wheelEvent(self, event) -> None:
+        delta = event.angleDelta().y() or event.pixelDelta().y()
+        if delta:
+            # Use the real scale: fitInView does not update the library's zoom counter.
+            current = abs(self.transform().m11())
+            target = max(0.05, min(3.0, current * 1.2 ** (max(-1200, min(1200, delta)) / 120)))
+            self.scale(target / current, target / current)
+        event.accept()
+
+    def leftMouseButtonPress(self, event) -> None:
+        if (
+            self.mode == MODE_NOOP
+            and event.modifiers() == Qt.KeyboardModifier.NoModifier
+            and self.itemAt(event.pos()) is None
+        ):
+            self._panning = True
+            self._previous_drag_mode = self.dragMode()
+            self.setDragMode(QGraphicsView.DragMode.ScrollHandDrag)
+            QGraphicsView.mousePressEvent(self, event)
+            return
+        super().leftMouseButtonPress(event)
+
+    def mouseMoveEvent(self, event) -> None:
+        if self._panning:
+            QGraphicsView.mouseMoveEvent(self, event)
+            return
+        super().mouseMoveEvent(event)
+
+    def leftMouseButtonRelease(self, event) -> None:
+        if self._panning:
+            QGraphicsView.mouseReleaseEvent(self, event)
+            self.setDragMode(self._previous_drag_mode)
+            self._panning = False
+            return
+        super().leftMouseButtonRelease(event)
+
+
+class DTFEditorWidget(NodeEditorWidget):
+    GraphicsView_class = DTFGraphicsView
 
 
 class DTFGraphicsNode(QDMGraphicsNode):
@@ -164,7 +215,7 @@ class NodeEditorWindow(shell.PocWindow):
     CANDIDATE = "nodeeditor-qtpy 0.8.2"
 
     def build_canvas(self):
-        self.editor = NodeEditorWidget()
+        self.editor = DTFEditorWidget()
         self.scene = self.editor.scene
         self.view = self.editor.view
         self.scene.setNodeClassSelector(lambda data: NODE_CLASSES[data["dtf_type"]])

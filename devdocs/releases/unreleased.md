@@ -14,6 +14,8 @@ Changes through 5.4.0 are consolidated in [DTFlow 5.4.0](v5.4.0.md). This file t
 
 ## Added
 
+- PR #228: isolated nodeeditor-qtpy canvas POC and Essentials-only packaging baseline under `tools/node_editor_poc/`, with no application runtime integration. Windows owner feedback approved the visuals and rebuilt plain-wheel zoom/empty-canvas left-drag navigation; full interaction, DPI, clean-machine and timing acceptance remain separate. No unit tests added or run. See the [POC evidence and checklist](../../tools/node_editor_poc/README.md).
+
 - UI render uploads now default to individual images rather than ZIP, including automatic/manual Actions and the uploader CLI. ZIP remains an explicit option; upload concurrency and retry behavior are unchanged.
 
 - Automatic UI render Actions skip draft PRs, including render-label requests, matching CI; marking ready re-evaluates ordinary eligibility. Manual dispatch remains an explicit override.
@@ -52,5 +54,5 @@ Changes through 5.4.0 are consolidated in [DTFlow 5.4.0](v5.4.0.md). This file t
 
 ## Release audit
 
-- PRs: #193, #199, #201, #215, #217, #218, #219, #227.
-- Scope: Version bump 5.4.0 and release-note consolidation; Scripts preview corrections, canonical Designer migration, headless/native queue runtime and full form/Setup integration; bounded parallel scripts with attempts schema 6, ready LoRA binding and lifecycle repairs; portable mixer inventory/preparation preview, independent schema-1 authoring preferences and explicit chunks. Exact Windows artifact, provider compatibility and release publication remain separate gates.
+- PRs: #193, #199, #201, #215, #217, #218, #219, #227, #228.
+- Scope: Version bump 5.4.0 and release-note consolidation; Scripts preview corrections, canonical Designer migration, headless/native queue runtime and full form/Setup integration; bounded parallel scripts with attempts schema 6, ready LoRA binding and lifecycle repairs; portable mixer inventory/preparation preview, independent schema-1 authoring preferences and explicit chunks; isolated node-editor POC with owner-reviewed Windows navigation. Exact Windows release artifact, provider compatibility and release publication remain separate gates.
