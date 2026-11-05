@@ -12,7 +12,7 @@ Optionally add -k / --pose-model for conservative arm/leg label correction;
 -q controls joint confidence and -w controls limb-zone width. Pose-corrected
 outputs have a _pose suffix; raw/refined masks and SCHP confidence stay intact.
 All NudeNet classes add _body outputs with independent anatomical masks.
---body-confidence controls the SCHP score floor inside these masks (default 0.5).
+--body-confidence controls the red interior score floor (default 0.90).
 """
 
 from __future__ import annotations
@@ -88,6 +88,7 @@ STD = (0.225, 0.224, 0.229)
 IMAGE_SUFFIXES = frozenset({".jpg", ".jpeg", ".png", ".webp", ".bmp", ".tif", ".tiff"})
 MAX_IMAGE_PIXELS = 16_000_000
 NUDENET_CONFIDENCE = 0.10
+RED_CORE_CONFIDENCE = 0.90
 DISPLAY_LABELS = (*LABELS, "Skin")  # synthetic class 18, never an SCHP prediction
 DISPLAY_COLORS = (*COLORS, (255, 0, 255))  # vivid magenta stays visible over natural skin
 
@@ -424,7 +425,13 @@ def refine_body_parts(source, labels, person_mask, confidence, detections, names
             supported = components == int(sizes.argmax())
         selected_pixels = int(supported.sum())
         if rounding > 0 and supported.any():
-            supported = smooth_mask(supported, blur_sigma=rounding) & (person_mask[region] > 0)
+            supported = smooth_mask(supported, blur_sigma=rounding) & confident
+            # Smoothing cannot bridge the non-red boundary into another core.
+            components, count = label_components(supported)
+            if count:
+                sizes = np.bincount(components.ravel(), minlength=count + 1)
+                sizes[0] = 0
+                supported = components == int(sizes.argmax())
         class_id = class_ids[detection["class_id"]]
         if save_diagnostics:
             if class_id not in unions:
@@ -458,8 +465,9 @@ def refine_body_parts(source, labels, person_mask, confidence, detections, names
         "status": "applied" if claimed.any() else "no_supported_body_parts",
         "pixel_score_threshold": boundary_confidence,
         "rounding_radius_source_pixels": rounding,
+        "rounding_preserves_confidence_boundaries": True,
         "assigned_pixels": int(claimed.sum()),
-        "confidence_definition": "SCHP class score, not anatomical-part correctness",
+        "confidence_definition": "SCHP maximum class score; pixels below the interior floor form boundaries",
         "independent_masks_preserve_overlaps": True,
         "segment_selection": "largest connected confidence region inside each NudeNet box, independent of SCHP class",
         "combined_overlap_rule": "highest NudeNet detection score",
@@ -590,7 +598,7 @@ def create_output_dir(requested: Path) -> Path:
 
 
 def confidence_colors(confidence, inside):
-    """Map fixed scores 0 / 0.5 / 1 to blue / orange / red; outside is black."""
+    """Map 0 / 0.5 / red-core floor to blue / orange / red; saturate above it."""
     import numpy as np
 
     score = np.clip(confidence, 0, 1)
@@ -598,7 +606,8 @@ def confidence_colors(confidence, inside):
     orange = np.asarray((255, 165, 0), dtype=np.float32)
     red = np.asarray((255, 0, 0), dtype=np.float32)
     first = blue + (orange - blue) * (score[..., None] * 2)
-    second = orange + (red - orange) * ((score[..., None] - 0.5) * 2)
+    red_fraction = np.clip((score[..., None] - 0.5) / (RED_CORE_CONFIDENCE - 0.5), 0, 1)
+    second = orange + (red - orange) * red_fraction
     colors = np.where((score <= 0.5)[..., None], first, second)
     return np.where(inside[..., None], np.rint(colors), 0).astype(np.uint8)
 
@@ -715,7 +724,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     )
     parser.add_argument("-q", "--pose-kpt-confidence", type=float, default=0.3, help="Minimum joint score (default 0.3).")
     parser.add_argument("-w", "--pose-width", type=float, default=0.20, help="Limb-zone half-width / bone length (default 0.20).")
-    parser.add_argument("-b", "--body-confidence", type=float, default=0.5, help="SCHP score floor inside NudeNet body masks; 0 disables boundary exclusion (default 0.5).")
+    parser.add_argument("-b", "--body-confidence", type=float, default=RED_CORE_CONFIDENCE, help="Red interior score floor; lower scores are boundaries (default 0.90, matching the confidence heatmap).")
     parser.add_argument("-e", "--body-only", action="store_true", help="Save only separate body and clothing overlays with embedded legends, plus reports.")
     parser.add_argument("-r", "--rounding", type=float, default=None, help="Round body-region contours by this source-pixel radius; default 3 in body-only mode, otherwise 0.")
     args = parser.parse_args(argv)
@@ -864,7 +873,7 @@ def main(argv: list[str] | None = None) -> int:
                 )
                 details["body_class_coverages_percent_of_source"] = make_visuals(
                     source, body, output_root, f"{person_stem}_body", args.opacity,
-                    f"NudeNet body + SCHP score >= {args.body_confidence:.2f}", confidence_view,
+                    f"NudeNet body | interior score >= {args.body_confidence:.2f}", confidence_view,
                     class_names=body_names, class_colors=body_colors, overlay_only=args.body_only
                 )
                 details["body_refinement"] = body_details
@@ -909,7 +918,7 @@ def main(argv: list[str] | None = None) -> int:
                 "raw_definition": "unfiltered SCHP classification, restored to source grid and clipped to person",
                 "min_confidence_refined_only": args.min_confidence,
                 "confidence_definition": "uncalibrated maximum softmax after source-crop logit restoration; zero outside person",
-                "confidence_palette": {"0.0": [0, 80, 255], "0.5": [255, 165, 0], "1.0": [255, 0, 0], "outside_person": [0, 0, 0]},
+                "confidence_palette": {"0.0": [0, 80, 255], "0.5": [255, 165, 0], str(RED_CORE_CONFIDENCE): [255, 0, 0], "1.0": [255, 0, 0], "outside_person": [0, 0, 0]},
                 "person_detection_threshold": args.confidence,
                 "face_detection_threshold": NUDENET_CONFIDENCE,
                 "face_nms_iou": selection.FACES_IOU,
