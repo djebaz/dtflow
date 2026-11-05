@@ -512,7 +512,7 @@ def contract_zones(cv, edges, inside, detections, resolution, edge_weight, smoot
     )
 
 
-def fit_box_zones(cv, edges, inside, detections, resolution, edge_weight, smooth, expand):
+def fit_box_zones(cv, edges, inside, detections, resolution, edge_weight, smooth, expand, percentile=50):
     """Auto-budget each zone against a rounded width/height-normalized box.
 
     The target box is a soft size prior, not a filled rectangle. Its boundary
@@ -569,7 +569,10 @@ def fit_box_zones(cv, edges, inside, detections, resolution, edge_weight, smooth
         if boundary_count < 4:
             record["status"] = "rejected_insufficient_reachable_box_boundary"
             continue
-        needed = boundary_count // 2 + 1
+        rank = (boundary_count - 1) * percentile / 100
+        lower_rank, upper_rank = math.floor(rank), math.ceil(rank)
+        fraction = rank - lower_rank
+        needed = upper_rank + 1
         boundary_costs = []
         settled = np.zeros_like(valid)
         outside = np.maximum(envelope, 0)
@@ -586,9 +589,14 @@ def fit_box_zones(cv, edges, inside, detections, resolution, edge_weight, smooth
             if boundary[y, x]:
                 boundary_costs.append(cost)
                 if len(boundary_costs) == needed:
-                    # Dijkstra settles costs in order. Once the middle ring costs
-                    # are known, the median and every pixel at/below it are known.
-                    budget = cost if boundary_count % 2 else (boundary_costs[-2] + cost) / 2
+                    # Costs settle in order; stop once the requested percentile's
+                    # bracketing values (and every pixel below the budget) are known.
+                    if lower_rank == upper_rank:
+                        budget = cost
+                    elif fraction == 0.5:
+                        budget = (boundary_costs[-2] + cost) / 2
+                    else:
+                        budget = boundary_costs[-2] + fraction * (cost - boundary_costs[-2])
                     break
             for dy, dx, step, costs in moves:
                 py, px = y + dy, x + dx
@@ -619,7 +627,8 @@ def fit_box_zones(cv, edges, inside, detections, resolution, edge_weight, smooth
             boundary_samples=boundary_count,
             search_settled_pixels=int(np.count_nonzero(settled)),
             search_domain_pixels=int(np.count_nonzero(domain)),
-            budget_solver="early_median_dijkstra",
+            budget_solver="early_percentile_dijkstra",
+            fit_percentile=percentile,
             normalized_search_margin=0.35,
             fit_metric="separate box half-width / half-height",
         )
@@ -923,6 +932,7 @@ def compute_zones(cv, edges, inside, detections, args):
                 args.edge_weight,
                 args.smooth,
                 args.expand,
+                args.fit_percentile,
             )
         else:
             layers, details, summary = contract_zones(
@@ -1133,6 +1143,8 @@ def save_sweep(cv, args, source, box, inside, edges, scores, detections, base_re
 def save_comparison(cv, args, source, box, inside, edges, detections, base_report, output, prefix, analysis_seconds):
     """Compare favorites or a focused box-fit grid with one model analysis per image."""
     box_refine = args.compare == "box-refine"
+    box_fit = args.compare == "box-fit"
+    grid_mode = box_refine or box_fit
     presets = (
         (
             "7 / Outside-in",
@@ -1165,7 +1177,24 @@ def save_comparison(cv, args, source, box, inside, edges, detections, base_repor
             "-l center -g 1.75 -z 1 -u 8 -x 0 -c 3 -a",
         ),
     )
-    if box_refine:
+    if box_fit:
+        presets = tuple(
+            (
+                f"Fit {percentile}%",
+                {
+                    "start": "box",
+                    "smooth": 6.0,
+                    "edge_weight": 12.0,
+                    "expand": 0.0,
+                    "blur": 3.0,
+                    "overlap": args.overlap,
+                    "fit_percentile": float(percentile),
+                },
+                f"-l box -fp {percentile} -u 6 -e 12 -x 0 -c 3 " + ("-a" if args.overlap else "(exclusive zones)"),
+            )
+            for percentile in (35, 50, 65)
+        )
+    elif box_refine:
         candidates = (
             ("Baseline", 8.0, 12.0),
             ("Less rounding", 6.0, 12.0),
@@ -1199,7 +1228,7 @@ def save_comparison(cv, args, source, box, inside, edges, detections, base_repor
     tick = time.perf_counter()
     panels, results = [], []
     font = ImageFont.load_default(size=18)
-    if box_refine:
+    if grid_mode:
         original = Image.new("RGB", (max(source.width, 380), source.height + 104), (24, 27, 34))
         original.paste(source, (0, 104))
         draw = ImageDraw.Draw(original)
@@ -1213,6 +1242,7 @@ def save_comparison(cv, args, source, box, inside, edges, detections, base_repor
         preset_settings = dict(
             overrides,
             edge_weight=trial.edge_weight,
+            fit_percentile=trial.fit_percentile,
             box_fit_auto_budget=trial.start == "box",
             center_only_settings_active=trial.start == "center",
         )
@@ -1248,18 +1278,19 @@ def save_comparison(cv, args, source, box, inside, edges, detections, base_repor
         panel = Image.new("RGB", (panel_width, image.height + 104), (24, 27, 34))
         panel.paste(image, (0, 104))
         draw = ImageDraw.Draw(panel)
-        title = f"{len(panels) + 1} / {name}" if box_refine else name
+        title = f"{len(panels) + 1} / {name}" if grid_mode else name
         for row, text in enumerate((title, caption, status)):
             draw.text((20, 12 + row * 30), text, fill="white", font=font)
         panels.append(panel)
-        if box_refine:
+        if grid_mode:
             result["tile"] = len(panels)
         results.append(result)
-    if box_refine:
+    if grid_mode:
         cell_width, cell_height = max(p.width for p in panels), max(p.height for p in panels)
-        combined = Image.new("RGB", (3 * cell_width + 32, 2 * cell_height + 16), (10, 12, 16))
+        columns = 2 if box_fit else 3
+        combined = Image.new("RGB", (columns * cell_width + 16 * (columns - 1), 2 * cell_height + 16), (10, 12, 16))
         for index, panel in enumerate(panels):
-            combined.paste(panel, ((index % 3) * (cell_width + 16), (index // 3) * (cell_height + 16)))
+            combined.paste(panel, ((index % columns) * (cell_width + 16), (index // columns) * (cell_height + 16)))
     else:
         combined = Image.new(
             "RGB", (sum(p.width for p in panels) + 16 * (len(panels) - 1), max(p.height for p in panels)), (10, 12, 16)
@@ -1288,6 +1319,7 @@ def save_comparison(cv, args, source, box, inside, edges, detections, base_repor
             "center_only_settings_active",
             "box_fit_auto_budget",
             "edge_weight",
+            "fit_percentile",
         }
         report["settings"] = {key: value for key, value in base_report["settings"].items() if key not in owned}
         report.update(
@@ -1297,8 +1329,8 @@ def save_comparison(cv, args, source, box, inside, edges, detections, base_repor
                 "saved_size": list(combined.size),
                 "max_side": args.compare_size,
                 "layout": (
-                    "3 columns x 2 rows, row-major: Original; " + "; ".join(name for name, _, _ in presets)
-                    if box_refine
+                    f"{columns} columns x 2 rows, row-major: Original; " + "; ".join(name for name, _, _ in presets)
+                    if grid_mode
                     else "left to right: " + "; ".join(name for name, _, _ in presets)
                 ),
                 "inference_shared": True,
@@ -1340,6 +1372,13 @@ def main(argv=None):
         "-r", "--resolution", type=int, default=384, help="Region-growth dimension, not edge-model input"
     )
     parser.add_argument("-s", "--parts-confidence", type=float, default=0.25)
+    parser.add_argument(
+        "-fp",
+        "--fit-percentile",
+        type=float,
+        default=50,
+        help="Box-fit boundary-cost percentile for auto budget, 0..100; higher permits more growth (default 50)",
+    )
     parser.add_argument(
         "-l",
         "--start",
@@ -1428,8 +1467,8 @@ def main(argv=None):
         "--compare",
         nargs="?",
         const="favorites",
-        choices=("favorites", "box-refine"),
-        help="Whole directory: favorites (default) compares 7/20 (+ current -l box); box-refine makes original + 5 box candidates in a 3x2 sheet; -f omits JSON",
+        choices=("favorites", "box-refine", "box-fit"),
+        help="Whole directory: favorites compares 7/20; box-refine makes a 3x2 u/e sheet; box-fit makes a 2x2 fit-percentile sheet (35/50/65); -f omits JSON",
     )
     parser.add_argument(
         "-cs",
@@ -1452,6 +1491,8 @@ def main(argv=None):
         parser.error("--compare processes the whole directory and cannot be combined with --sweep")
     if args.compare_size != 0 and args.compare_size < 256:
         parser.error("compare-size must be 0 (native) or at least 256 pixels")
+    if not math.isfinite(args.fit_percentile) or not 0 <= args.fit_percentile <= 100:
+        parser.error("fit-percentile must be finite and in [0,100]")
     if args.start == "box" and args.sweep == "growth":
         parser.error("-g/-z are inactive for box-fit; use --sweep or --sweep refined with -l box")
     if args.person_model is None:
@@ -1580,6 +1621,7 @@ def main(argv=None):
                     "roundness": args.roundness,
                     "center_only_settings_active": args.start == "center",
                     "box_fit_auto_budget": args.start == "box",
+                    "fit_percentile": args.fit_percentile,
                     "finishing_units": "region-growth grid pixels",
                 },
             }
