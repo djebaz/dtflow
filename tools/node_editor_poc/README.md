@@ -45,6 +45,21 @@ The navigation one-file EXE is 40,723,733 bytes versus 37,689,664 bytes for the 
 
 The size and owner approval above refer to the earlier navigation build, not to these additional changes. Repeat the manual checklist before accepting the follow-up; build success and static checks are not interaction acceptance.
 
+## Design-system alignment plan
+
+`DESIGN.md`, `tokens.json` and `dtflow_dark.qss` remain authoritative. Applying the stylesheet is not sufficient: the canvas paints its own items, while some shell widgets currently use generic or mismatched roles. Scope is visual/interaction alignment of this isolated POC, not a new production workspace or executor.
+
+| Area | Concrete target | Touchpoints |
+| --- | --- | --- |
+| Canvas grid | **Implemented, awaiting visual review:** existing `color.canvas` background; minor `color.itemSurface` lines at 25% opacity, major `color.panelEdge` lines at 30%, both 1-unit pens. Keep the library's existing zoom-dependent grid suppression. No global palette change. | `_apply_canvas_theme` |
+| Node hierarchy | Map titles to `type.body` + `type.weightEmphasis`, port/evidence labels to `type.small`, summaries to body/secondary. Use `color.sectionHeader`, `color.surface`, `size.panelRadius`, and a quiet `color.border`; keep focus distinct from ordinary selection. Audit the actual rendered title item, not only a font field. | `DTFGraphicsNode`, `DTFNodeContent`, port labels |
+| Graph states | Specify neutral/hover/selected/keyboard-focus node and edge states. Reserve amber/red for warnings/failures, not MASK taxonomy; retain square MASK versus round IMAGE sockets, explicit names/type tooltips and neutral/blue type cues. Keep status words, not colour alone, for refused links. | Node/socket/edge palette and view |
+| Inspector and controls | Match existing section-card/header roles rather than using a 17pt workspace title for every selected node. Use 12px panel padding, 8px gaps, `size.controlContent` 22px minimum content height, shared select/editor/focus/disabled states and a right rail that scrolls without horizontal overflow. Placeholder checkpoint/LoRA controls remain clearly illustrative. | `Inspector`, LoRA rows, shared QSS selectors |
+| Toolbar and feedback | Group File / Edit / View / Add actions, reuse existing SVG icons, give icon controls tooltips/accessibility names, and apply shared action roles. Replace modal POC warnings and inline status styles with a window-owned feedback seam using canonical feedback roles, without importing execution/services or inventing progress. | `_build_actions`, `show_status`, open/save error presentation |
+| Responsive acceptance | Review default/narrow layouts, long node/checkpoint names, dense ports, 100/150/200% Windows scaling, high/low zoom and all interaction states. Keep thumbnails aspect-fit and the canvas dominant. Check graph/save behavior after presentation changes. | Manual owner review, source/packaged builds |
+
+Order: (1) approve the quieter grid; (2) align node type/surfaces/states; (3) align inspector/toolbar/feedback; (4) rebuild only and let the owner run the visual/interaction checklist. Keep this work in POC adapters and existing token/QSS roles; promote a missing shared role only when needed for production, with the DESIGN token snapshot updated together. Static Designer migration belongs to the production-integration boundary, not a rewrite of this disposable prototype. No unit tests, automatic EXE launches, production palette changes or full application integration are authorized by this plan. Remaining rows are planned, not implemented or accepted.
+
 ## Manual smoke checklist
 
 1. Launch the source app, then the one-file EXE on a PC without Python on PATH. Record the EXE size, extracted size and first-launch time.

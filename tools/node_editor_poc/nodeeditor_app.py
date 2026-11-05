@@ -325,8 +325,13 @@ class NodeEditorWindow(shell.PocWindow):
         gr.setBackgroundColor(shell.token_color("color.canvas"))
         # setGridColorLight() prints a debug line in 0.8.2, so set the pens directly.
         gr._color_light, gr._color_dark = shell.token_color("color.itemSurface"), shell.token_color("color.panelEdge")
+        # Grid is a navigation aid, not a panel border: keep both token colours
+        # translucent over the canvas and avoid the upstream 2px major lines.
+        gr._color_light.setAlphaF(0.25)
+        gr._color_dark.setAlphaF(0.30)
         gr._pen_light.setColor(gr._color_light)
         gr._pen_dark.setColor(gr._color_dark)
+        gr._pen_dark.setWidth(1)
         gr._pen_state.setColor(shell.token_color("color.secondary"))
         gr._font_state = shell.token_font("type.title", "type.weightTitle")
 
