@@ -458,7 +458,28 @@ def refine_body_parts(
     colors = body_palette(names)
     combined = np.zeros(labels.shape, dtype=np.uint8)
     claimed = np.zeros(labels.shape, dtype=bool)
-    if edge_method == "canny":
+    superpixels = None
+    if edge_method == "slic":
+        try:
+            from skimage.segmentation import slic, find_boundaries
+        except ImportError as exc:
+            raise RuntimeError("SLIC requires scikit-image: uv pip install scikit-image") from exc
+        ys, xs = np.nonzero(person_mask)
+        if len(xs):
+            px0, px1 = max(0, int(xs.min()) - 4), min(source.width, int(xs.max()) + 5)
+            py0, py1 = max(0, int(ys.min()) - 4), min(source.height, int(ys.max()) + 5)
+            crop = np.asarray(source.crop((px0, py0, px1, py1)))
+            area = int((person_mask[py0:py1, px0:px1] > 0).sum())
+            segments = slic(crop, n_segments=max(16, round(area / 400)),
+                            compactness=10, sigma=1, start_label=1,
+                            channel_axis=-1, enforce_connectivity=True)
+            superpixels = np.zeros(labels.shape, dtype=np.int32)
+            superpixels[py0:py1, px0:px1] = segments
+            strength = np.zeros(labels.shape, dtype=np.float32)
+            strength[py0:py1, px0:px1] = find_boundaries(segments, mode="thick").astype(np.float32)
+        else:
+            strength = np.zeros(labels.shape, dtype=np.float32)
+    elif edge_method == "canny":
         try:
             import cv2
         except ImportError as exc:
@@ -484,10 +505,22 @@ def refine_body_parts(
         candidate = person_mask[region] > 0
         name = detection["label"]
         # Neither SCHP classes nor another body mask can exclude this region.
-        allowed = candidate & ~boundary[region]
-        supported, seeded = largest_body_region(allowed, confidence[region], boundary_confidence)
+        if superpixels is not None:
+            # SLIC regions are closed. Keep whole superpixels whose centers fall
+            # inside the detection box, independently for each body detection.
+            ids = superpixels[region]
+            valid = ids[candidate & (ids > 0)]
+            if valid.size:
+                selected_ids = np.unique(valid)
+                supported = candidate & np.isin(ids, selected_ids)
+            else:
+                supported = np.zeros_like(candidate)
+            seeded = bool(np.any(supported & (confidence[region] >= boundary_confidence)))
+        else:
+            allowed = candidate & ~boundary[region]
+            supported, seeded = largest_body_region(allowed, confidence[region], boundary_confidence)
         selected_pixels = int(supported.sum())
-        if rounding > 0 and supported.any():
+        if rounding > 0 and supported.any() and edge_method != "slic":
             # Stay inside the chosen component: never fill a silhouette gap or
             # expand into another region across an image/score barrier.
             supported = smooth_mask(supported, blur_sigma=rounding) & supported
@@ -1070,8 +1103,8 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         default=RED_CORE_CONFIDENCE,
         help="SCHP seed score for equal-area region ties (default 0.90); never excludes lower-score pixels.",
     )
-    parser.add_argument("--edge-method", choices=("existing", "canny"), default="existing",
-                        help="Boundary algorithm; Canny requires opencv-python-headless (default existing).")
+    parser.add_argument("--edge-method", choices=("existing", "canny", "slic"), default="existing",
+                        help="Boundary algorithm; SLIC requires scikit-image, Canny requires OpenCV (default existing).")
     parser.add_argument("--canny-low", type=int, default=60, help="Canny lower hysteresis threshold (default 60).")
     parser.add_argument("--canny-high", type=int, default=140, help="Canny upper hysteresis threshold (default 140).")
     parser.add_argument(
