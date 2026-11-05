@@ -2260,14 +2260,14 @@ QLabel#scriptsEmptyTitle, QLabel[role="scriptsEmptyTitle"] {
   font-size: ${type.section};
 }
 
-/* Offline Workflows preview: compact controls, existing cards and token roles.
-   These object names are mounted only by the preview fixture, never normal navigation. */
+/* Workflows workspace (#223): compact controls, existing cards and token roles. Node content
+   widgets are proxied into the canvas, so they must not inherit the global QWidget background. */
 QLabel#workflowName, QLabel#workflowNodeTitle {
   color: ${color.title};
   font-size: ${type.section};
   font-weight: ${type.weightEmphasis};
 }
-QLabel#workflowPreviewBadge, QLabel#workflowGestureHint,
+QLabel#workflowStateBadge, QLabel#workflowGestureHint,
 QLabel#workflowSelectionCount, QLabel#workflowSummary {
   color: ${color.secondary};
   font-size: ${type.small};
@@ -2281,7 +2281,8 @@ QWidget#workflowsContext QListWidget::item {
   padding: 4px 6px;
 }
 QWidget#workflowsInspector QComboBox, QWidget#workflowsInspector QLineEdit,
-QWidget#workflowsInspector QSpinBox, QWidget#workflowsInspector QDoubleSpinBox {
+QWidget#workflowsInspector QSpinBox, QWidget#workflowsInspector QDoubleSpinBox,
+QWidget#workflowsInspector QPlainTextEdit {
   min-height: ${size.controlContent};
   padding: 2px 6px;
 }
@@ -2291,15 +2292,85 @@ QWidget#workflowsInspector QPushButton {
   min-height: ${size.controlContent};
   padding: 3px 8px;
 }
-QLabel#workflowBranchStatus[workflowState="warning"] {
+QLabel#workflowPlanText[workflowState="ok"], QLabel#workflowRunStatus[workflowState="succeeded"] {
+  color: ${color.success};
+  font-weight: ${type.weightEmphasis};
+}
+QLabel#workflowPlanText[workflowState="error"], QLabel#workflowRunStatus[workflowState="failed"] {
+  color: ${color.error};
+  font-weight: ${type.weightEmphasis};
+}
+QLabel#workflowBranchStatus[workflowState="warning"], QLabel#workflowRunStatus[workflowState="paused"],
+QLabel#workflowPlanText[workflowState="warning"],
+QLabel#workflowRunStatus[workflowState="partial"] {
   color: ${color.warning};
   font-weight: ${type.weightEmphasis};
 }
-QLabel#workflowThumb1, QLabel#workflowThumb2 {
+QLabel#workflowRunStatus[workflowState="running"] {
+  color: ${color.focus};
+  font-weight: ${type.weightEmphasis};
+}
+QLabel#workflowRunStatus[workflowState="unknown"], QLabel#workflowRunStatus[workflowState="cancelled"] {
+  color: ${color.unknown};
+  font-weight: ${type.weightEmphasis};
+}
+QLabel[role="workflowParamLabel"] {
+  color: ${color.secondary};
+  font-size: ${type.small};
+}
+QLabel[role="workflowParamError"] {
+  color: ${color.error};
+  font-size: ${type.small};
+}
+QFrame[role="workflowPause"] {
+  background: ${color.warningSurface};
+  border: 1px solid ${color.statusWarningBorder};
+  border-radius: ${size.inputRadius};
+}
+QFrame[role="workflowPause"] QLabel {
+  background: transparent;
+}
+QFrame[role="workflowStep"] {
+  border: 1px solid ${color.sectionBorder};
+  border-radius: ${size.inputRadius};
+}
+QToolButton#workflowResultThumb {
+  background: ${color.canvas};
+  border: 1px solid ${color.sectionBorder};
+  border-radius: ${size.inputRadius};
+  padding: 2px;
+}
+QToolButton#workflowResultThumb:hover {
+  border-color: ${color.focus};
+}
+QWidget#dtfNodeContent, QWidget#dtfNodeContent QLabel {
+  background: transparent;
+}
+QLabel#dtfNodeSummary {
+  color: ${color.secondary};
+  font-size: ${type.small};
+}
+QLabel#dtfNodeThumb {
   background: ${color.canvas};
   border: 1px solid ${color.sectionBorder};
   border-radius: ${size.inputRadius};
 }
+QLabel#dtfNodeStatus {
+  font-size: ${type.small};
+  font-weight: ${type.weightEmphasis};
+  padding: 1px 6px;
+  border-radius: ${size.radiusXs};
+  border: 1px solid ${color.borderStrong};
+  color: ${color.secondary};
+  background: ${color.itemSurface};
+}
+QLabel#dtfNodeStatus[workflowState="running"] { color: ${color.selectionText}; border-color: ${color.selectionBorder}; background: ${color.selection}; }
+QLabel#dtfNodeStatus[workflowState="paused"] { color: ${color.warning}; border-color: ${color.statusWarningBorder}; background: ${color.warningSurface}; }
+QLabel#dtfNodeStatus[workflowState="failed"] { color: ${color.dangerText}; border-color: ${color.statusErrorBorder}; background: ${color.dangerSurface}; }
+QLabel#dtfNodeStatus[workflowState="succeeded"] { color: ${color.success}; border-color: ${color.statusOkBorder}; }
+QLabel#dtfNodeStatus[workflowState="unknown"] { color: ${color.unknown}; }
+QLabel#dtfNodeStatus[workflowState="skipped"], QLabel#dtfNodeStatus[workflowState="stopped"],
+QLabel#dtfNodeStatus[workflowState="cancelled"] { color: ${color.disabled}; }
 QFrame#scriptsHookItem {
   border: 0;
   border-bottom: 1px solid ${color.sectionBorder};

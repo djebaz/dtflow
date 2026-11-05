@@ -102,25 +102,37 @@
            <property name="placeholderText">
             <string>Find workflow</string>
            </property>
+           <property name="accessibleName">
+            <string>Find workflow</string>
+           </property>
+           <property name="clearButtonEnabled">
+            <bool>true</bool>
+           </property>
           </widget>
          </item>
          <item>
           <widget class="QListWidget" name="workflowList">
-           <item>
-            <property name="text">
-             <string>Portrait finishing</string>
-            </property>
-           </item>
-           <item>
-            <property name="text">
-             <string>Product relight</string>
-            </property>
-           </item>
            <property name="maximumHeight">
-            <number>86</number>
+            <number>120</number>
            </property>
-           <property name="currentRow">
-            <number>0</number>
+           <property name="accessibleName">
+            <string>Saved workflows</string>
+           </property>
+           <property name="toolTip">
+            <string>Double-click to open a saved workflow</string>
+           </property>
+          </widget>
+         </item>
+         <item>
+          <widget class="QLabel" name="workflowLibraryNote">
+           <property name="text">
+            <string>No saved workflows yet. New starts from the reference workflow.</string>
+           </property>
+           <property name="wordWrap">
+            <bool>true</bool>
+           </property>
+           <property name="role" stdset="0">
+            <string>secondary</string>
            </property>
           </widget>
          </item>
@@ -147,12 +159,131 @@
               <property name="text">
                <string>New</string>
               </property>
+              <property name="toolTip">
+               <string>New workflow from the reference workflow</string>
+              </property>
+              <property name="accessibleName">
+               <string>New workflow from the reference workflow</string>
+              </property>
              </widget>
             </item>
             <item>
              <widget class="QPushButton" name="openWorkflowButton">
               <property name="text">
-               <string>Open…</string>
+               <string>Open</string>
+              </property>
+              <property name="toolTip">
+               <string>Open the selected workflow</string>
+              </property>
+              <property name="accessibleName">
+               <string>Open the selected workflow</string>
+              </property>
+             </widget>
+            </item>
+            <item>
+             <widget class="QPushButton" name="duplicateWorkflowButton">
+              <property name="text">
+               <string>Duplicate</string>
+              </property>
+              <property name="toolTip">
+               <string>Duplicate the selected workflow</string>
+              </property>
+              <property name="accessibleName">
+               <string>Duplicate the selected workflow</string>
+              </property>
+             </widget>
+            </item>
+           </layout>
+          </widget>
+         </item>
+         <item>
+          <widget class="QWidget" name="workflowManageActions">
+           <layout class="QHBoxLayout" name="workflowManageActionsLayout">
+            <property name="leftMargin">
+             <number>0</number>
+            </property>
+            <property name="topMargin">
+             <number>0</number>
+            </property>
+            <property name="rightMargin">
+             <number>0</number>
+            </property>
+            <property name="bottomMargin">
+             <number>0</number>
+            </property>
+            <property name="spacing">
+             <number>4</number>
+            </property>
+            <item>
+             <widget class="QPushButton" name="renameWorkflowButton">
+              <property name="text">
+               <string>Rename…</string>
+              </property>
+              <property name="toolTip">
+               <string>Rename the selected workflow</string>
+              </property>
+              <property name="accessibleName">
+               <string>Rename the selected workflow</string>
+              </property>
+             </widget>
+            </item>
+            <item>
+             <widget class="QPushButton" name="deleteWorkflowButton">
+              <property name="text">
+               <string>Delete</string>
+              </property>
+              <property name="toolTip">
+               <string>Delete the selected workflow file</string>
+              </property>
+              <property name="accessibleName">
+               <string>Delete the selected workflow file</string>
+              </property>
+             </widget>
+            </item>
+           </layout>
+          </widget>
+         </item>
+         <item>
+          <widget class="QWidget" name="workflowTransferActions">
+           <layout class="QHBoxLayout" name="workflowTransferActionsLayout">
+            <property name="leftMargin">
+             <number>0</number>
+            </property>
+            <property name="topMargin">
+             <number>0</number>
+            </property>
+            <property name="rightMargin">
+             <number>0</number>
+            </property>
+            <property name="bottomMargin">
+             <number>0</number>
+            </property>
+            <property name="spacing">
+             <number>4</number>
+            </property>
+            <item>
+             <widget class="QPushButton" name="importWorkflowButton">
+              <property name="text">
+               <string>Import…</string>
+              </property>
+              <property name="toolTip">
+               <string>Import a DTFlow workflow JSON file</string>
+              </property>
+              <property name="accessibleName">
+               <string>Import a DTFlow workflow JSON file</string>
+              </property>
+             </widget>
+            </item>
+            <item>
+             <widget class="QPushButton" name="exportWorkflowButton">
+              <property name="text">
+               <string>Export…</string>
+              </property>
+              <property name="toolTip">
+               <string>Export the open workflow as a JSON file</string>
+              </property>
+              <property name="accessibleName">
+               <string>Export the open workflow as a JSON file</string>
               </property>
              </widget>
             </item>
@@ -249,44 +380,28 @@
            <property name="placeholderText">
             <string>Find node</string>
            </property>
+           <property name="accessibleName">
+            <string>Find node</string>
+           </property>
+           <property name="clearButtonEnabled">
+            <bool>true</bool>
+           </property>
           </widget>
          </item>
          <item>
           <widget class="QListWidget" name="nodePalette">
-           <item>
-            <property name="text">
-             <string>Generate</string>
-            </property>
-           </item>
-           <item>
-            <property name="text">
-             <string>Detect face mask</string>
-            </property>
-           </item>
-           <item>
-            <property name="text">
-             <string>Inpaint</string>
-            </property>
-           </item>
-           <item>
-            <property name="text">
-             <string>Img2img refine</string>
-            </property>
-           </item>
-           <item>
-            <property name="text">
-             <string>Save image</string>
-            </property>
-           </item>
            <property name="maximumHeight">
-            <number>160</number>
+            <number>140</number>
+           </property>
+           <property name="accessibleName">
+            <string>Node types</string>
            </property>
           </widget>
          </item>
          <item>
           <widget class="QLabel" name="paletteHelp">
            <property name="text">
-            <string>Double-click to add a node.</string>
+            <string>Double-click or press Enter to add a node at the canvas centre.</string>
            </property>
            <property name="wordWrap">
             <bool>true</bool>
@@ -347,7 +462,7 @@
          <item>
           <widget class="QLabel" name="workflowSourcesTitle">
            <property name="text">
-            <string>Inputs</string>
+            <string>Branches</string>
            </property>
            <property name="wordWrap">
             <bool>true</bool>
@@ -394,7 +509,7 @@
          <item>
           <widget class="QLabel" name="workflowSourceNote">
            <property name="text">
-            <string>Saved application finals feed later image steps.</string>
+            <string>Every later node runs once per generated image and uses that image's saved final.</string>
            </property>
            <property name="wordWrap">
             <bool>true</bool>

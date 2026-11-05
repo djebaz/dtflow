@@ -2126,6 +2126,53 @@ class QueuePage:
 
         self._runner.submit(work(), created)
 
+    def start_workflow(self, workflow: dict, name: str, done) -> None:
+        """Workflows Run: one workflow queue on the current connection, started like Scripts' Run Script.
+
+        ``workflow`` is the ``dump_workflow`` document. ``done(result, failure)`` gets ``(queue id, run id, how)``
+        where ``how`` is ``"started"``, ``"up next"`` (behind the queue this window runs) or ``"after generation"``.
+        The run is an ordinary queue, also visible in Queues; creation itself never generates."""
+        if self._runner.closed:
+            done(None, ValidationError("DTFlow is closing; nothing was queued."))
+            return
+        backend_name, endpoint = self._backend()
+        backend = {"name": backend_name, "endpoint": endpoint, "scenario": "success", **self._simulation()}
+
+        async def work():
+            from dtflow.services.workflow_queue import create_workflow_queue
+
+            return await create_workflow_queue(self._state, backend, workflow, name)
+
+        def created(result, failure) -> None:
+            if failure is not None:
+                done(None, failure)
+                return
+            queue_id, run_id = result
+            self.start_created(queue_id, lambda how, error: done(None if error else (queue_id, run_id, how), error))
+
+        self._runner.submit(work(), created)
+
+    def start_created(self, queue_id: str, done) -> None:
+        """Start a just-created paused queue now, up next behind this window's run, or after the generation."""
+        if self._runner.closed:
+            done(None, ValidationError("DTFlow is closing; the queue stays paused."))
+            return
+        if self._activity.generating:
+            self._after_generation.append(queue_id)
+            done("after generation", None)
+        elif self.dispatching_here:
+
+            def ordered(_, failure) -> None:
+                done(None if failure else "up next", failure)
+                self.refresh()
+
+            self._runner.submit(change_queue_order(self._state, queue_id, "enqueue"), ordered)
+            return
+        else:
+            self._dispatch(queue_id, resume_fallback=None)
+            done("started", None)
+        self.refresh()
+
     def _after_generation_ended(self) -> None:
         if self._after_generation and not self._activity.generating and not self._activity.dispatching:
             self._waiting_timer.start(0)  # once the generation's own result has settled
