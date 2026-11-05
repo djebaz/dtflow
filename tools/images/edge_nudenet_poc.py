@@ -530,6 +530,20 @@ def fit_box_zones(cv, edges, inside, detections, resolution, edge_weight, smooth
     layers, reports = [], []
     coverage = np.zeros(valid.shape, dtype=np.uint16)
     neighbors = ((-1, 0), (1, 0), (0, -1), (0, 1), (-1, -1), (-1, 1), (1, -1), (1, 1))
+    # Edge costs depend on the image, not the detection. Compute them once in
+    # NumPy instead of repeating Python max/float arithmetic for every heap edge.
+    field64 = field.astype(np.float64)
+    move_costs = []
+    for dy, dx in neighbors:
+        ya, yb = max(0, -dy), min(h, h - dy)
+        xa, xb = max(0, -dx), min(w, w - dx)
+        strength = np.maximum(field64[ya:yb, xa:xb], field64[ya + dy : yb + dy, xa + dx : xb + dx])
+        if dy and dx:
+            strength = np.maximum(strength, field64[ya:yb, xa + dx : xb + dx])
+            strength = np.maximum(strength, field64[ya + dy : yb + dy, xa:xb])
+        costs = np.full(valid.shape, np.inf, dtype=np.float64)
+        costs[ya:yb, xa:xb] = 1.0 + edge_weight * strength * strength
+        move_costs.append((dy, dx, costs))
     for zone_id, detection in enumerate(detections, 7):
         x0, y0, x1, y1 = detection["box_xyxy"]
         cx, cy = (x0 + x1) * sx / 2, (y0 + y1) * sy / 2
@@ -544,37 +558,53 @@ def fit_box_zones(cv, edges, inside, detections, resolution, edge_weight, smooth
         if not core.any():
             continue
         seed_y, seed_x = np.unravel_index(int(np.where(core, nx * nx + ny * ny, np.inf).argmin()), valid.shape)
+        # Four-connectivity has the same reachable set as eight-neighbor movement
+        # that forbids corner cutting. Determine the ring's reachable size in C++.
+        connected = domain.astype(np.uint8)
+        cv.floodFill(connected, None, (int(seed_x), int(seed_y)), 2, flags=4)
+        domain = connected == 2
+        band = min(0.25, max(0.06, 1.0 / min(rx, ry)))
+        boundary = domain & (np.abs(envelope) <= band)
+        boundary_count = int(np.count_nonzero(boundary))
+        if boundary_count < 4:
+            record["status"] = "rejected_insufficient_reachable_box_boundary"
+            continue
+        needed = boundary_count // 2 + 1
+        boundary_costs = []
+        settled = np.zeros_like(valid)
+        outside = np.maximum(envelope, 0)
+        outside_cost = 32 * outside * outside
+        moves = [(dy, dx, math.hypot(dx / rx, dy / ry), costs) for dy, dx, costs in move_costs]
         distance = np.full(valid.shape, np.inf, dtype=np.float64)
         distance[seed_y, seed_x] = 0
         queue = [(0.0, int(seed_y), int(seed_x))]
         while queue:
             cost, y, x = heapq.heappop(queue)
-            if cost != distance[y, x]:
+            if cost != distance[y, x] or settled[y, x]:
                 continue
-            for dy, dx in neighbors:
+            settled[y, x] = True
+            if boundary[y, x]:
+                boundary_costs.append(cost)
+                if len(boundary_costs) == needed:
+                    # Dijkstra settles costs in order. Once the middle ring costs
+                    # are known, the median and every pixel at/below it are known.
+                    budget = cost if boundary_count % 2 else (boundary_costs[-2] + cost) / 2
+                    break
+            for dy, dx, step, costs in moves:
                 py, px = y + dy, x + dx
-                if not (0 <= py < h and 0 <= px < w) or not domain[py, px]:
+                if not (0 <= py < h and 0 <= px < w) or not domain[py, px] or settled[py, px]:
                     continue
-                strength = max(float(field[y, x]), float(field[py, px]))
                 if dy and dx:
                     if not domain[y, px] or not domain[py, x]:
                         continue
-                    strength = max(strength, float(field[y, px]), float(field[py, x]))
-                step = math.hypot(dx / rx, dy / ry)
-                outside = max(0.0, float(envelope[py, px]))
-                candidate = cost + step * (1.0 + edge_weight * strength * strength + 32 * outside * outside)
+                candidate = cost + step * (costs[y, x] + outside_cost[py, px])
                 if candidate < distance[py, px]:
                     distance[py, px] = candidate
                     heapq.heappush(queue, (candidate, py, px))
-        reached = np.isfinite(distance)
-        # The band is at least one grid pixel wide, including small detections.
-        band = min(0.25, max(0.06, 1.0 / min(rx, ry)))
-        boundary = domain & reached & (np.abs(envelope) <= band)
-        if np.count_nonzero(boundary) < 4:
-            record["status"] = "rejected_insufficient_reachable_box_boundary"
+        if len(boundary_costs) < needed:
+            record["status"] = "rejected_incomplete_box_boundary_search"
             continue
-        budget = float(np.percentile(distance[boundary], 50))
-        mask = reached & (distance <= budget) & domain
+        mask = (distance <= budget) & domain
         fixed = np.zeros_like(valid)
         fixed[seed_y, seed_x] = True
         labels = finish_zones(cv, mask.astype(np.uint16) * zone_id, valid, fixed, smooth, expand)
@@ -586,7 +616,10 @@ def fit_box_zones(cv, edges, inside, detections, resolution, edge_weight, smooth
             pixels=pixels,
             seed_xy=[round(float(seed_x / sx), 2), round(float(seed_y / sy), 2)],
             auto_budget=budget,
-            boundary_samples=int(np.count_nonzero(boundary)),
+            boundary_samples=boundary_count,
+            search_settled_pixels=int(np.count_nonzero(settled)),
+            search_domain_pixels=int(np.count_nonzero(domain)),
+            budget_solver="early_median_dijkstra",
             normalized_search_margin=0.35,
             fit_metric="separate box half-width / half-height",
         )
@@ -957,7 +990,8 @@ def sweep_cases(args):
         for smooth in (8.0, 10.0, 12.0):
             for blur in (3.0, 3.75, 4.5):
                 trial = argparse.Namespace(**vars(args))
-                trial.start, trial.box_scale, trial.expand = "edge", 1.6, 0.0
+                if args.start != "box":
+                    trial.start, trial.box_scale, trial.expand = "edge", 1.6, 0.0
                 trial.smooth, trial.blur = smooth, blur
                 cases.append((trial, "refined"))
         return cases
@@ -968,14 +1002,16 @@ def sweep_cases(args):
         "balance": (args.balance / 2, min(4, args.balance * 1.5)) if args.balance else (0.5, 1.5),
         "growth": (args.growth * 0.75, args.growth * 1.25),
         "box_scale": (max(1, args.box_scale - 0.2), min(3, args.box_scale + 0.2)),
+        "edge_weight": (args.edge_weight / 2, args.edge_weight * 1.5) if args.edge_weight else (6, 18),
     }
     seen, cases = set(), []
-    for start in (args.start, "center" if args.start == "edge" else "edge"):
-        active = (
-            ("smooth", "expand", "blur", "balance", "growth")
-            if start == "center"
-            else ("smooth", "expand", "blur", "box_scale")
-        )
+    starts = ("box",) if args.start == "box" else (args.start, "center" if args.start == "edge" else "edge")
+    for start in starts:
+        active = {
+            "center": ("smooth", "expand", "blur", "balance", "growth"),
+            "edge": ("smooth", "expand", "blur", "box_scale"),
+            "box": ("smooth", "expand", "blur", "edge_weight"),
+        }[start]
         changes = [("baseline", None)] + [(name, value) for name in active for value in alternatives[name]]
         for name, value in changes:
             if value is not None and not math.isfinite(value):
@@ -986,7 +1022,16 @@ def sweep_cases(args):
                 setattr(trial, name, round(value, 4))
                 if name == "growth" and trial.growth <= 0:
                     continue
-            identity = (start, trial.smooth, trial.expand, trial.blur, trial.balance, trial.growth, trial.box_scale)
+            identity = (
+                start,
+                trial.smooth,
+                trial.expand,
+                trial.blur,
+                trial.balance,
+                trial.growth,
+                trial.box_scale,
+                trial.edge_weight,
+            )
             if identity not in seen:
                 seen.add(identity)
                 cases.append((trial, name))
@@ -1002,9 +1047,23 @@ def save_sweep(cv, args, source, box, inside, edges, scores, detections, base_re
         "growth": "10 g values from 1.0 through 1.8, each with z=1 and z=2; center start",
     }
     description = descriptions[args.sweep]
+    if args.start == "box":
+        description = (
+            "box-fit only: one-setting variants of u/x/c/e; auto budgets unchanged"
+            if args.sweep == "broad"
+            else "box-fit only: u=8/10/12 x c=3/3.75/4.5; other settings unchanged"
+        )
     print(f"Sweep: first sorted input only, {len(cases)} variants; {description}", flush=True)
     failures = 0
-    flags = (("u", "smooth"), ("x", "expand"), ("c", "blur"), ("z", "balance"), ("g", "growth"), ("k", "box_scale"))
+    flags = (
+        ("u", "smooth"),
+        ("x", "expand"),
+        ("c", "blur"),
+        ("z", "balance"),
+        ("g", "growth"),
+        ("k", "box_scale"),
+        ("e", "edge_weight"),
+    )
     settings_names = {"blur": "display_blur_source_pixels"}
     for number, (trial, varied) in enumerate(cases, 1):
         tag = "_".join(f"{flag}{getattr(trial, name):.9g}".replace(".", "p") for flag, name in flags)
@@ -1048,7 +1107,9 @@ def save_sweep(cv, args, source, box, inside, edges, scores, detections, base_re
                     "varied": varied,
                     "preset": args.sweep,
                     "strategy": {
-                        "broad": "one_setting_at_a_time",
+                        "broad": "box_active_settings_one_at_a_time"
+                        if args.start == "box"
+                        else "one_setting_at_a_time",
                         "refined": "focused_smooth_blur_grid",
                         "growth": "growth_balance_grid",
                     }[args.sweep],
@@ -1103,6 +1164,14 @@ def save_comparison(cv, args, source, box, inside, edges, detections, base_repor
             "-l center -g 1.75 -z 1 -u 8 -x 0 -c 3 -a",
         ),
     )
+    if args.start == "box":
+        box_preset = (
+            "Box auto-fit / current settings",
+            {"start": "box", "smooth": args.smooth, "expand": args.expand, "blur": args.blur, "overlap": args.overlap},
+            f"-l box -u {args.smooth:g} -x {args.expand:g} -c {args.blur:g} "
+            + ("-a" if args.overlap else "(exclusive zones)"),
+        )
+        presets = (box_preset,) + presets
     tick = time.perf_counter()
     panels, results = [], []
     font = ImageFont.load_default(size=18)
@@ -1110,9 +1179,12 @@ def save_comparison(cv, args, source, box, inside, edges, detections, base_repor
         trial = argparse.Namespace(**vars(args))
         for key, value in overrides.items():
             setattr(trial, key, value)
+        preset_settings = dict(
+            overrides, box_fit_auto_budget=trial.start == "box", center_only_settings_active=trial.start == "center"
+        )
         if box is None:
             image = source.copy()
-            result = {"name": name, "settings": overrides, "status": "no_person", "detections": []}
+            result = {"name": name, "settings": preset_settings, "status": "no_person", "detections": []}
             status = "No person detected; zoning not run"
         else:
             started = time.perf_counter()
@@ -1131,7 +1203,7 @@ def save_comparison(cv, args, source, box, inside, edges, detections, base_repor
             )
             result = {
                 "name": name,
-                "settings": overrides,
+                "settings": preset_settings,
                 "label_names": names,
                 "detections": details,
                 "growth_seconds": growth_seconds,
@@ -1146,9 +1218,13 @@ def save_comparison(cv, args, source, box, inside, edges, detections, base_repor
             draw.text((20, 12 + row * 30), text, fill="white", font=font)
         panels.append(panel)
         results.append(result)
-    combined = Image.new("RGB", (panels[0].width + 16 + panels[1].width, max(p.height for p in panels)), (10, 12, 16))
-    combined.paste(panels[0], (0, 0))
-    combined.paste(panels[1], (panels[0].width + 16, 0))
+    combined = Image.new(
+        "RGB", (sum(p.width for p in panels) + 16 * (len(panels) - 1), max(p.height for p in panels)), (10, 12, 16)
+    )
+    left = 0
+    for panel in panels:
+        combined.paste(panel, (left, 0))
+        left += panel.width + 16
     combined.save(output / f"{prefix}_compare.jpg", quality=95, subsampling=0)
     if not args.overlay_only:
         report = dict(base_report)
@@ -1164,14 +1240,19 @@ def save_comparison(cv, args, source, box, inside, edges, detections, base_repor
             "overlap",
             "start",
             "center_only_settings_active",
+            "box_fit_auto_budget",
         }
         report["settings"] = {key: value for key, value in base_report["settings"].items() if key not in owned}
         report.update(
-            comparison={"layout": "left: refined 7; right: broad 20", "inference_shared": True, "presets": results},
+            comparison={
+                "layout": "left to right: " + "; ".join(name for name, _, _ in presets),
+                "inference_shared": True,
+                "presets": results,
+            },
             crop_box=list(box) if box is not None else None,
             shared_analysis_seconds=analysis_seconds,
             total_seconds=analysis_seconds + time.perf_counter() - tick,
-            total_seconds_scope="shared image analysis plus both zoning/render passes; model startup excluded",
+            total_seconds_scope="shared image analysis plus all zoning/render passes; model startup excluded",
         )
         (output / f"{prefix}_compare_report.json").write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
     print(f"{base_report['source']}: comparison saved -> {prefix}_compare.jpg", flush=True)
@@ -1288,7 +1369,7 @@ def main(argv=None):
         "-cp",
         "--compare",
         action="store_true",
-        help="Whole directory: selected presets 7 and 20 side by side in one JPG per image; -f omits combined JSON",
+        help="Whole directory: presets 7/20 side by side; -l box adds current box-fit panel; -f omits combined JSON",
     )
     parser.add_argument(
         "-sw",
@@ -1296,14 +1377,14 @@ def main(argv=None):
         nargs="?",
         const="broad",
         choices=("broad", "refined", "growth"),
-        help="First image only: broad varies six settings; refined compares 9 winners-nearby combinations; growth runs 10 g values x z=1/2",
+        help="First image only: broad varies mode-active settings; refined compares 9 u/c combinations; growth runs 20 g/z variants (center only)",
     )
     parser.add_argument("-w", "--overwrite", action="store_true", help="Delete recognized previous POC outputs only")
     args = parser.parse_args(argv)
     if args.compare and args.sweep:
         parser.error("--compare processes the whole directory and cannot be combined with --sweep")
-    if args.start == "box" and (args.compare or args.sweep):
-        parser.error("--start box is standalone; existing --compare/--sweep presets target center/edge modes")
+    if args.start == "box" and args.sweep == "growth":
+        parser.error("-g/-z are inactive for box-fit; use --sweep or --sweep refined with -l box")
     if args.person_model is None:
         args.person_model = Path("tmp/models") / f"yolo26{args.person_size}-seg-ultralytics-v8.4.0.onnx"
     if args.model is None:
