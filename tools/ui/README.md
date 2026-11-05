@@ -113,6 +113,8 @@ This saves only four Workflows captures: editing, running, branch-local pause wi
 
 For the owner-reported left-rail issue, `--category connection -s --state connection-61-left-rail-fit` selects one synthetic wide-hidden-page capture at 1180×790. Its geometry diagnostics cover switches through Generate, Queues and Connection; no layout assertions are made. User state is not read or modified.
 
+To see a real workflow file instead of the staged mockup states, `tools/ui/capture_workflow_preview.py` loads a ComfyUI v1.0 JSON (default `tools/node_editor_poc/reference_workflow_v1.json`) through the strict POC importer, keeps its node positions and parameters, and saves `<stem>-window.png` and `<stem>-canvas.png`. The **Workflow preview screenshot** Actions workflow (`.github/workflows/workflow-preview.yml`) runs it headless on dispatch (inputs `pr`, `workflow`) or on non-draft PRs touching the POC or Workflows preview files, and uploads the PNGs as an artifact. Offline only, like the renders.
+
 Navigation coverage reuses existing states: `workflows-01-editing` shows the full text primary tabs and Images above the inspector; `workflows-04-narrow` crosses the shared breakpoint at 1040 px and shows Images above the centre. `connection-07-connected`, `queues-33-elapsed-eta`, `images-21-snapshot-grid` and `logs-02-mixed-severity` cover the footer Connection icon, activity space and the absence of a redundant Images button in Images/Logs. All are offline layout evidence, not native/DPI acceptance.
 
 ## Interactive Windows gallery performance automation (PR #104, draft)
