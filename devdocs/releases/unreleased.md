@@ -14,9 +14,9 @@ Changes through 5.4.0 are consolidated in [DTFlow 5.4.0](v5.4.0.md). This file t
 
 ## Added
 
-- PR #228: isolated nodeeditor-qtpy canvas POC and Essentials-only packaging baseline under `tools/node_editor_poc/`, with no application runtime integration. Windows owner feedback approved the visuals and rebuilt plain-wheel zoom/empty-canvas left-drag navigation; full interaction, DPI, clean-machine and timing acceptance remain separate. No unit tests added or run. See the [POC evidence and checklist](../../tools/node_editor_poc/README.md).
+- PR #228: owner-accepted isolated nodeeditor-qtpy canvas POC and Essentials-only packaging baseline under `tools/node_editor_poc/`, with no application runtime integration. The owner closed POC acceptance gaps after reviewing the final Windows one-file EXE. No unit tests added or run. See the [POC evidence and checklist](../../tools/node_editor_poc/README.md).
 
-- PR #228 follow-up: readable port labels, invalid-link drag cleanup, selection-free undo history and stable link IDs in the isolated POC. Explicit smoke runs retain failure evidence instead of discarding temporary reports; the original launch failure remains undiagnosed. Follow-up interactions are not owner-smoke accepted; no EXE launch or unit tests performed.
+- PR #228 follow-up: readable port labels, invalid-link drag cleanup, selection-free undo history, stable link IDs, a quieter grid and blue selected/hover/drag borders in the isolated POC. The owner built and reviewed the final Windows one-file EXE, confirmed editing/undo/redo and export, and closed the POC acceptance gaps on 2026-11-05. The exported draft passed the strict importer with preserved IDs. Historical automated timing failure remains undiagnosed, not an owner acceptance blocker; production integration and new benchmark claims are excluded. No unit tests added/run.
 
 - UI render uploads now default to individual images rather than ZIP, including automatic/manual Actions and the uploader CLI. ZIP remains an explicit option; upload concurrency and retry behavior are unchanged.
 

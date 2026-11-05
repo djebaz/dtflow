@@ -2,6 +2,8 @@
 
 Isolated proof of concept. Nothing here is imported by `src/dtflow`. There is no executor, provider, model, or generation code, and no tests.
 
+**Owner acceptance — 2026-11-05:** The owner built and ran the final Windows one-file POC, reported that it works well, confirmed editing and undo/redo, and exported a workflow. Inspection of that local export passed the strict POC importer with four nodes, three links and preserved IDs 2, 4 and 5; the disconnected Inpaint mask was an intentional edit. The owner explicitly closed the remaining POC acceptance gaps. The POC is accepted for the nodeeditor-qtpy canvas direction; no further POC validation is required. Historical measurement/diagnostic limitations below remain factual, not open acceptance blockers. No new benchmark, clean-machine/DPI matrix or automated-launch result is implied, and production workflow integration is outside this acceptance.
+
 - `nodeeditor_app.py`: the candidate, nodeeditor-qtpy 0.8.2 on pyside6-essentials 6.12.0. It covers five reference nodes, IMAGE/MASK branching, drag/connect with typed-port and cycle rejection, pan/zoom, undo/redo (including inspector edits), a fixture thumbnail, the selection-linked inspector, DTFlow tokens and QSS, and ComfyUI-format open/save.
 - `baseline_app.py`: an Essentials-only reference with the same shell, fixture, and packaging. It's a viewer only, with no connecting and no undo.
 - `poc_contract.py`: a headless catalogue plus a strict all-or-nothing ComfyUI v1.0 import/export. `widgets_values` are written as arrays (D1).
@@ -34,17 +36,17 @@ The POC now uses a view subclass (no dependency patch) for plain-wheel zoom base
 
 The navigation one-file EXE is 40,723,733 bytes versus 37,689,664 bytes for the baseline (+3,034,069 bytes, decimal MB: 40.72 versus 37.69). These are local artifacts, not release assets. The original candidate build's automated timing launch exited with status 1, so no successful Windows candidate timing series is claimed; it was not rerun after the owner requested build-only. A navigation onedir comparison, controlled cold-start measurement, clean-machine launch without Python installed, DPI/font matrix, and full rejection/undo/save checklist remain unverified on Windows. Owner visual/navigation approval is not acceptance of those separate checks.
 
-## POC friction follow-up (2026-11-05; pending owner smoke)
+## POC friction follow-up (2026-11-05; owner accepted)
 
 - Port names now render beside the socket, using DTFlow font/colour tokens and type tooltips, instead of upstream's text clipped inside the tiny connector. Labels follow the socket's visibility at low zoom.
 - Invalid drag completion cancels the provisional edge immediately and keeps the actionable status message, without upstream's `NOT VALID EDGE` print. It does not replace an existing valid input link on rejection.
 - Selection/deselection callbacks still update the inspector, but their history stamps are omitted. Real edits remain undoable; a selection change breaks parameter-edit coalescing. Empty-background navigation also notifies the inspector when selection clears.
 - Imported positive link IDs and `state.lastLinkId` are preserved. New links get monotonically allocated IDs, retained in undo snapshots; deletion/undo does not rewind the allocator and export no longer renumbers surviving links. The file adapter rejects duplicate or nonpositive IDs.
 - Grid debug-print avoidance and type-colour refresh remain in place; no installed dependency is patched.
-- Selected-node outlines take precedence over hover: resting selection uses `color.focus`, and selected + hovered or dragged uses a subtle 110% lightness variant of that same token, at the same border width. Release repaints after the library clears its movement flag. The upstream hover/drag event handling is otherwise unchanged. Pending owner visual review.
+- Selected-node outlines take precedence over hover: resting selection uses `color.focus`, and selected + hovered or dragged uses a subtle 110% lightness variant of that same token, at the same border width. Release repaints after the library clears its movement flag. The upstream hover/drag event handling is otherwise unchanged.
 - Explicit `--measure` runs now retain JSON reports and console logs beside each EXE under `smoke-reports/<run>/`, including failures/timeouts. Smoke-mode startup/timer exceptions write an error report and request a failing exit rather than losing the traceback in a windowed EXE. This improves diagnosis only: the previous exit-1 cause remains unknown until another owner-authorized smoke run captures it. No EXE launch or unit tests were performed for this follow-up.
 
-The size and owner approval above refer to the earlier navigation build, not to these additional changes. Repeat the manual checklist before accepting the follow-up; build success and static checks are not interaction acceptance.
+The size measurements above refer to the earlier navigation build. The later owner-built EXE was reviewed interactively and accepted as recorded at the top; build success and static checks alone were not treated as interaction acceptance.
 
 ## Design-system alignment plan
 
@@ -52,7 +54,7 @@ The size and owner approval above refer to the earlier navigation build, not to 
 
 | Area | Concrete target | Touchpoints |
 | --- | --- | --- |
-| Canvas grid | **Implemented, awaiting visual review:** existing `color.canvas` background; minor `color.itemSurface` lines at 25% opacity, major `color.panelEdge` lines at 30%, both 1-unit pens. Keep the library's existing zoom-dependent grid suppression. No global palette change. | `_apply_canvas_theme` |
+| Canvas grid | **Implemented; included in owner POC acceptance:** existing `color.canvas` background; minor `color.itemSurface` lines at 25% opacity, major `color.panelEdge` lines at 30%, both 1-unit pens. Keep the library's existing zoom-dependent grid suppression. No global palette change. | `_apply_canvas_theme` |
 | Node hierarchy | Map titles to `type.body` + `type.weightEmphasis`, port/evidence labels to `type.small`, summaries to body/secondary. Use `color.sectionHeader`, `color.surface`, `size.panelRadius`, and a quiet `color.border`; keep focus distinct from ordinary selection. Audit the actual rendered title item, not only a font field. | `DTFGraphicsNode`, `DTFNodeContent`, port labels |
 | Graph states | Specify neutral/hover/selected/keyboard-focus node and edge states. Reserve amber/red for warnings/failures, not MASK taxonomy; retain square MASK versus round IMAGE sockets, explicit names/type tooltips and neutral/blue type cues. Keep status words, not colour alone, for refused links. | Node/socket/edge palette and view |
 | Inspector and controls | Match existing section-card/header roles rather than using a 17pt workspace title for every selected node. Use 12px panel padding, 8px gaps, `size.controlContent` 22px minimum content height, shared select/editor/focus/disabled states and a right rail that scrolls without horizontal overflow. Placeholder checkpoint/LoRA controls remain clearly illustrative. | `Inspector`, LoRA rows, shared QSS selectors |
@@ -61,7 +63,9 @@ The size and owner approval above refer to the earlier navigation build, not to 
 
 Order: (1) approve the quieter grid; (2) align node type/surfaces/states; (3) align inspector/toolbar/feedback; (4) rebuild only and let the owner run the visual/interaction checklist. Keep this work in POC adapters and existing token/QSS roles; promote a missing shared role only when needed for production, with the DESIGN token snapshot updated together. Static Designer migration belongs to the production-integration boundary, not a rewrite of this disposable prototype. No unit tests, automatic EXE launches, production palette changes or full application integration are authorized by this plan. Remaining rows are planned, not implemented or accepted.
 
-## Manual smoke checklist
+The remaining design-alignment rows are future integration guidance, not blockers to the accepted library POC.
+
+## Manual smoke checklist (reference; POC acceptance closed by owner)
 
 1. Launch the source app, then the one-file EXE on a PC without Python on PATH. Record the EXE size, extracted size and first-launch time.
 2. Drag empty canvas with the left mouse button to pan; drag nodes to move them and ports to connect them. Shift + left-drag selects a rectangle. Zoom with the wheel (no Ctrl required), including after pressing F to fit the view. Middle-button panning remains available but is not required.
