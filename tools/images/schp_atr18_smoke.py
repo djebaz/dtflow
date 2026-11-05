@@ -1051,10 +1051,33 @@ def depth_session(path, *, allow_download, threads):
     return ort.InferenceSession(str(path), sess_options=options, providers=["CPUExecutionProvider"])
 
 
-def save_depth_geometry(source, person_mask, out_dir, stem, session):
-    """Export relative depth, approximate normals, and depth curvature."""
+def save_depth_geometry(source, person_mask, out_dir, stem, session, *, smoothing=1.0,
+                        curvature_gain=2.0, normal_strength=8.0):
+    """Export float-depth multiscale geometry and contrast-enhanced diagnostics."""
     import numpy as np
     from PIL import Image
+
+    def blur(values, sigma):
+        """Apply a small separable Gaussian to floating-point depth without extra dependencies."""
+        if sigma <= 0:
+            return values
+        radius = max(1, int(np.ceil(3 * sigma)))
+        offsets = np.arange(-radius, radius + 1, dtype=np.float32)
+        kernel = np.exp(-0.5 * (offsets / sigma) ** 2)
+        kernel /= kernel.sum()
+        result = values
+        for axis in (0, 1):
+            padded = np.pad(result, [(radius, radius) if i == axis else (0, 0)
+                                     for i in range(2)], mode="reflect")
+            result = sum(float(weight) * np.take(padded, range(i, i + values.shape[axis]),
+                                                axis=axis)
+                         for i, weight in enumerate(kernel)).astype(np.float32)
+        return result
+
+    def contrast(values, inside, percentile=98):
+        """Scale a nonnegative geometric response using its person-only percentile."""
+        limit = max(float(np.percentile(values[inside], percentile)), 1e-8)
+        return np.clip(values / limit, 0.0, 1.0)
 
     side = 518
     image = source.resize((side, side), Image.Resampling.BICUBIC)
@@ -1064,24 +1087,47 @@ def save_depth_geometry(source, person_mask, out_dir, stem, session):
     )
     tensor = np.transpose(rgb, (2, 0, 1))[None].astype(np.float32)
     raw = np.asarray(session.run(None, {session.get_inputs()[0].name: tensor})[0]).squeeze()
-    if raw.ndim != 2:
-        raise RuntimeError(f"Unexpected depth output shape: {raw.shape}")
-    depth_image = Image.fromarray(raw.astype(np.float32), mode="F")
-    depth = np.asarray(depth_image.resize(source.size, Image.Resampling.BICUBIC), dtype=np.float32)
+    if raw.ndim != 2 or not np.isfinite(raw).all():
+        raise RuntimeError(f"Unexpected or nonfinite depth output: {raw.shape}")
+    depth = np.asarray(Image.fromarray(raw.astype(np.float32), mode="F").resize(
+        source.size, Image.Resampling.BICUBIC), dtype=np.float32)
     inside = person_mask > 0
     if not inside.any():
         return
     low, high = np.percentile(depth[inside], (2, 98))
-    depth = np.clip((depth - low) / max(float(high - low), 1e-6), 0, 1)
-    dy, dx = np.gradient(depth)
-    normals = np.stack((-dx, -dy, np.ones_like(depth)), axis=-1)
+    relative = (depth - low) / max(float(high - low), 1e-6)
+    # Derivatives operate on unclipped float depth; 8-bit conversion is display-only.
+    smooth = blur(relative, smoothing)
+    dy, dx = np.gradient(smooth)
+    # Normalize gradient magnitudes by a robust person-local scale, not a fixed z=1.
+    gradient = np.hypot(dx, dy)
+    gradient_scale = max(float(np.percentile(gradient[inside], 95)), 1e-6)
+    nx = -normal_strength * dx / gradient_scale
+    ny = -normal_strength * dy / gradient_scale
+    normals = np.stack((nx, ny, np.ones_like(nx)), axis=-1)
     normals /= np.maximum(np.linalg.norm(normals, axis=-1, keepdims=True), 1e-6)
-    curvature = np.abs(np.gradient(dx, axis=1) + np.gradient(dy, axis=0))
-    curvature /= max(float(np.percentile(curvature[inside], 98)), 1e-6)
+
+    # Multiple smoothing scales expose fine and broad volume transitions.
+    curvature_layers = []
+    for factor in (0.5, 1.0, 2.0):
+        layer = blur(relative, max(0.35, smoothing * factor))
+        gy, gx = np.gradient(layer)
+        curvature_layers.append(np.abs(np.gradient(gx, axis=1) +
+                                       np.gradient(gy, axis=0)))
+    curvature = np.maximum.reduce([contrast(layer, inside) for layer in curvature_layers])
+    curvature = np.clip(curvature * curvature_gain, 0.0, 1.0)
+    # Normal-direction discontinuities are a geometric edge cue, not a closed mask.
+    normal_dx = np.linalg.norm(np.diff(normals, axis=1), axis=-1)
+    normal_dy = np.linalg.norm(np.diff(normals, axis=0), axis=-1)
+    edges = np.zeros_like(relative)
+    edges[:, 1:] = np.maximum(edges[:, 1:], normal_dx)
+    edges[1:, :] = np.maximum(edges[1:, :], normal_dy)
+    edges = contrast(edges, inside)
     for name, values in (
-        ("depth", depth),
+        ("depth", np.clip(relative, 0, 1)),
         ("normals", (normals + 1) * 0.5),
-        ("curvature", np.clip(curvature, 0, 1)),
+        ("curvature", curvature),
+        ("geometry_edges", edges),
     ):
         pixels = (values * 255).astype(np.uint8)
         pixels[~inside] = 0
@@ -1159,7 +1205,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     )
     parser.add_argument("--edge-method", choices=("existing", "canny", "slic"), default="existing",
                         help="Boundary algorithm; SLIC requires scikit-image, Canny requires OpenCV (default existing).")
-    parser.add_argument("--depth-geometry", action="store_true", help="Export Depth Anything V2 Small geometry diagnostics.")
+    parser.add_argument("--depth-geometry", action="store_true", help="Export Depth Anything V2 Small geometry diagnostics.")\n    parser.add_argument("--depth-smoothing", type=float, default=1.0, help="Geometry Gaussian sigma in pixels (default 1.0).")\n    parser.add_argument("--curvature-gain", type=float, default=2.0, help="Multiscale curvature display gain (default 2.0).")\n    parser.add_argument("--normal-strength", type=float, default=8.0, help="Normal gradient amplification (default 8.0).")
     parser.add_argument("--canny-low", type=int, default=60, help="Canny lower hysteresis threshold (default 60).")
     parser.add_argument("--canny-high", type=int, default=140, help="Canny upper hysteresis threshold (default 140).")
     parser.add_argument(
@@ -1183,7 +1229,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="Round body-region contours by this source-pixel radius; default 3 in body-only mode, otherwise 0.",
     )
     args = parser.parse_args(argv)
-    if args.rounding is None:
+    if args.depth_smoothing < 0 or args.curvature_gain <= 0 or args.normal_strength <= 0:\n        parser.error("depth smoothing must be >= 0; curvature gain and normal strength must be > 0")\n    if args.rounding is None:
         args.rounding = 3.0 if args.body_only else 0.0
     if not 0.0 <= args.rounding <= 32.0:
         parser.error("--rounding must be between 0 and 32 source pixels")
@@ -1324,7 +1370,7 @@ def main(argv: list[str] | None = None) -> int:
                 )
                 save_person_overlay(source, person_mask, output_root, person_stem)
                 if depth_estimator is not None:
-                    save_depth_geometry(source, person_mask, output_root, person_stem, depth_estimator)
+                    save_depth_geometry(source, person_mask, output_root, person_stem, depth_estimator,\n                                        smoothing=args.depth_smoothing, curvature_gain=args.curvature_gain,\n                                        normal_strength=args.normal_strength)
                 details["person_cutoff"] = "YOLO instance segmentation silhouette, not detection box"
                 details["person_postprocessing"] = (
                     "none: preserve decoded background gaps; missed gaps are not reconstructed"
