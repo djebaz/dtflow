@@ -512,6 +512,98 @@ def contract_zones(cv, edges, inside, detections, resolution, edge_weight, smoot
     )
 
 
+def fit_box_zones(cv, edges, inside, detections, resolution, edge_weight, smooth, expand):
+    """Auto-budget each zone against a rounded width/height-normalized box.
+
+    The target box is a soft size prior, not a filled rectangle. Its boundary
+    calibrates the edge-weighted budget; a 35% normalized outer search margin
+    bounds excursions. Finishing still operates separately on the inferred mask.
+    """
+    height, width = inside.shape
+    scale = min(1.0, resolution / max(height, width))
+    size = (max(1, round(width * scale)), max(1, round(height * scale)))
+    field = cv.resize(edges, size, interpolation=cv.INTER_AREA)
+    valid = cv.resize(inside.astype(np.uint8), size, interpolation=cv.INTER_NEAREST) > 0
+    h, w = valid.shape
+    sx, sy = w / width, h / height
+    yy, xx = np.ogrid[:h, :w]
+    layers, reports = [], []
+    coverage = np.zeros(valid.shape, dtype=np.uint16)
+    neighbors = ((-1, 0), (1, 0), (0, -1), (0, 1), (-1, -1), (-1, 1), (1, -1), (1, 1))
+    for zone_id, detection in enumerate(detections, 7):
+        x0, y0, x1, y1 = detection["box_xyxy"]
+        cx, cy = (x0 + x1) * sx / 2, (y0 + y1) * sy / 2
+        rx, ry = max(1.0, (x1 - x0) * sx / 2), max(1.0, (y1 - y0) * sy / 2)
+        nx, ny = (xx - cx) / rx, (yy - cy) / ry
+        qx, qy = np.abs(nx) - 0.7, np.abs(ny) - 0.7
+        envelope = np.hypot(np.maximum(qx, 0), np.maximum(qy, 0)) + np.minimum(np.maximum(qx, qy), 0) - 0.3
+        domain = valid & (envelope <= 0.35)
+        core = domain & (nx * nx + ny * ny <= 0.3**2)
+        record = dict(detection, zone_id=zone_id, status="rejected_no_person_core", start="box", pixels=0)
+        reports.append(record)
+        if not core.any():
+            continue
+        seed_y, seed_x = np.unravel_index(int(np.where(core, nx * nx + ny * ny, np.inf).argmin()), valid.shape)
+        distance = np.full(valid.shape, np.inf, dtype=np.float64)
+        distance[seed_y, seed_x] = 0
+        queue = [(0.0, int(seed_y), int(seed_x))]
+        while queue:
+            cost, y, x = heapq.heappop(queue)
+            if cost != distance[y, x]:
+                continue
+            for dy, dx in neighbors:
+                py, px = y + dy, x + dx
+                if not (0 <= py < h and 0 <= px < w) or not domain[py, px]:
+                    continue
+                strength = max(float(field[y, x]), float(field[py, px]))
+                if dy and dx:
+                    if not domain[y, px] or not domain[py, x]:
+                        continue
+                    strength = max(strength, float(field[y, px]), float(field[py, x]))
+                step = math.hypot(dx / rx, dy / ry)
+                outside = max(0.0, float(envelope[py, px]))
+                candidate = cost + step * (1.0 + edge_weight * strength * strength + 32 * outside * outside)
+                if candidate < distance[py, px]:
+                    distance[py, px] = candidate
+                    heapq.heappush(queue, (candidate, py, px))
+        reached = np.isfinite(distance)
+        # The band is at least one grid pixel wide, including small detections.
+        band = min(0.25, max(0.06, 1.0 / min(rx, ry)))
+        boundary = domain & reached & (np.abs(envelope) <= band)
+        if np.count_nonzero(boundary) < 4:
+            record["status"] = "rejected_insufficient_reachable_box_boundary"
+            continue
+        budget = float(np.percentile(distance[boundary], 50))
+        mask = reached & (distance <= budget) & domain
+        fixed = np.zeros_like(valid)
+        fixed[seed_y, seed_x] = True
+        labels = finish_zones(cv, mask.astype(np.uint16) * zone_id, valid, fixed, smooth, expand)
+        mask = labels == zone_id
+        restored = cv.resize(mask.astype(np.uint8), (width, height), interpolation=cv.INTER_NEAREST) > 0
+        pixels = int(np.count_nonzero(restored & inside))
+        record.update(
+            status="assigned" if pixels else "empty_after_restoration",
+            pixels=pixels,
+            seed_xy=[round(float(seed_x / sx), 2), round(float(seed_y / sy), 2)],
+            auto_budget=budget,
+            boundary_samples=int(np.count_nonzero(boundary)),
+            normalized_search_margin=0.35,
+            fit_metric="separate box half-width / half-height",
+        )
+        if pixels:
+            layers.append((zone_id, mask))
+            coverage += mask.astype(np.uint16)
+    restored = cv.resize(coverage, (width, height), interpolation=cv.INTER_NEAREST)
+    return (
+        layers,
+        reports,
+        {
+            "unknown_pixels": int(np.count_nonzero(inside & (restored == 0))),
+            "overlap_pixels": int(np.count_nonzero(inside & (restored > 1))),
+        },
+    )
+
+
 def exclusive_contours(cv, layers, reports, inside):
     """Resolve overlapping inward contours by normalized distance to box centers."""
     height, width = inside.shape
@@ -787,19 +879,31 @@ def output_directory(args, files, parser):
 def compute_zones(cv, edges, inside, detections, args):
     """One zoning path shared by normal processing and parameter sweeps."""
     layers = None
-    if args.start == "edge":
-        layers, details, summary = contract_zones(
-            cv,
-            edges,
-            inside,
-            detections,
-            args.resolution,
-            args.edge_weight,
-            args.smooth,
-            args.expand,
-            args.box_scale,
-            args.roundness,
-        )
+    if args.start in ("edge", "box"):
+        if args.start == "box":
+            layers, details, summary = fit_box_zones(
+                cv,
+                edges,
+                inside,
+                detections,
+                args.resolution,
+                args.edge_weight,
+                args.smooth,
+                args.expand,
+            )
+        else:
+            layers, details, summary = contract_zones(
+                cv,
+                edges,
+                inside,
+                detections,
+                args.resolution,
+                args.edge_weight,
+                args.smooth,
+                args.expand,
+                args.box_scale,
+                args.roundness,
+            )
         zones = None
         if not args.overlap:
             zones = exclusive_contours(cv, layers, details, inside)
@@ -1100,9 +1204,9 @@ def main(argv=None):
     parser.add_argument(
         "-l",
         "--start",
-        choices=("center", "edge"),
+        choices=("center", "edge", "box"),
         default="center",
-        help="Center-out growth (default) or experimental outside-in rounded-box shrink-wrap",
+        help="center: budgeted growth (default); edge: inward shrink-wrap; box: experimental per-box auto-fit budget",
     )
     parser.add_argument(
         "-k",
@@ -1198,6 +1302,8 @@ def main(argv=None):
     args = parser.parse_args(argv)
     if args.compare and args.sweep:
         parser.error("--compare processes the whole directory and cannot be combined with --sweep")
+    if args.start == "box" and (args.compare or args.sweep):
+        parser.error("--start box is standalone; existing --compare/--sweep presets target center/edge modes")
     if args.person_model is None:
         args.person_model = Path("tmp/models") / f"yolo26{args.person_size}-seg-ultralytics-v8.4.0.onnx"
     if args.model is None:
@@ -1271,6 +1377,8 @@ def main(argv=None):
             raise RuntimeError(f"Output entry changed before cleanup: {entry.name}")
         entry.unlink()
     print(f"CPU models loaded; removed {len(previous)} prior outputs; {len(files)} images", flush=True)
+    if args.start == "box":
+        print("Box-fit: width/height-normalized per-zone auto budgets; -g, -z, -k and -y are inactive", flush=True)
     failures = 0
     for index, path in enumerate(files, 1):
         prefix = f"{index:04d}_{path.stem}"
@@ -1321,6 +1429,7 @@ def main(argv=None):
                     "box_scale": args.box_scale,
                     "roundness": args.roundness,
                     "center_only_settings_active": args.start == "center",
+                    "box_fit_auto_budget": args.start == "box",
                     "finishing_units": "region-growth grid pixels",
                 },
             }
