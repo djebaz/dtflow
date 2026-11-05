@@ -11,7 +11,7 @@ function QueuesScreen() {
   const rows = q ? Array.from({ length: q.total }, (_, i) => ({ n: <span style={{ display: "block", textAlign: "right" }}>{i + 1}</span>, i: "d8293ddf", sd: 3567690377 + i, s: i < q.done ? "succeeded" : "pending", a: "—", o: "—" })) : [];
   const cols = [{ key: "n", label: "#" }, { key: "i", label: "Item" }, { key: "sd", label: "Seed" }, { key: "s", label: "State" }, { key: "a", label: "Attempt" }, { key: "o", label: "Outputs" }];
   return <><div className="shell">
-    <div className="rail"><Chrome tab="Queues" conn="unknown" onTab={go} />
+    <div className="rail"><Chrome tab="Queues" onTab={go} />
       <Panel eyebrow="DURABLE QUEUES" className="railscroll" style={{ flex: 1 }}>
         <ListBox label="Durable queues" minHeight={200} style={{ flex: 1 }}>{qs.map((x) => <ListItem key={x.id} selected={sel === x.id} onClick={() => setSel(x.id)}>{x.id} · {x.be} · {x.st} · {x.done}/{x.total}</ListItem>)}</ListBox>
         <div className="row" style={{ justifyContent: "space-between" }}><Label textRole="caption">Items</Label><SpinBox min={1} max={1000} value={plan ? 1 : count} disabled={plan} onChange={(e) => setCount(+e.target.value)} style={{ width: 106 }} title="Item N uses the form's seed + N - 1." /></div>
@@ -40,9 +40,9 @@ function QueuesScreen() {
         : <div className="host" style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", flexDirection: "column", gap: 8 }}><Label textRole="section">No queue selected</Label><Label textRole="supporting">Select a queue from the left, or create one from the Generate form.</Label></div>}
       {q ? <ProgressBar value={q.done} max={q.total} label={q.done + " of " + q.total + " settled · " + q.done + " succeeded"} aria-label="Queue progress" /> : null}
     </div>
-    {insp ? <div className="rail"><Panel eyebrow="ITEM EVIDENCE" style={{ flex: 1 }}>
+    {insp ? <div className="rail"><ImagesAction onTab={go} /><Panel eyebrow="ITEM EVIDENCE" style={{ flex: 1 }}>
       <SectionCard title="Selected item" icon={Ic("list-checks")}><div className="form"><Label textRole="caption">Item</Label><Label textRole="identifier">{q ? "d8293ddf" : "—"}</Label><Label textRole="caption">Attempt</Label><span>—</span><Label textRole="caption">Backend</Label><Label textRole="value">{q ? q.be : "—"}</Label><Label textRole="caption">Outputs</Label><div className="row" style={{ justifyContent: "space-between" }}><span>—</span><Button disabled style={{ minWidth: 110 }}>Open folder</Button></div></div></SectionCard>
       <div className="host" style={{ padding: 10, flex: 1, minHeight: 120, background: "var(--color-input)", border: "1px solid var(--color-border)" }}><Label textRole="identifier">03:37:13 &nbsp;created, items 1, cap 2</Label></div>
     </Panel></div> : null}
-  </div><StatusBar /></>;
+  </div><StatusBar tab="Queues" onTab={go} /></>;
 }

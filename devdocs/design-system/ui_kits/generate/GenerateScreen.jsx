@@ -6,7 +6,7 @@ function GenerateScreen() {
   const F = (l, c) => <><Label textRole="caption">{l}</Label>{c}</>;
   const gen = () => { setBusy(true); setDone(false); setTimeout(() => { setBusy(false); setDone(true); }, 600); };
   return <><div className="shell">
-    <div className="rail"><Chrome tab="Generate" conn="unknown" onTab={go} />
+    <div className="rail"><Chrome tab="Generate" onTab={go} />
       <div className="railscroll">
         <SectionCard title="Backend" icon={Ic("server")}><div className="form">{F("Provider", <ComboBox options={["fake"]} disabled />)}{F("Model", <ComboBox options={["fake-fixture (default)"]} />)}<Button style={{ gridColumn: "1/-1" }}>Refresh inventory</Button><Label textRole="supporting" style={{ gridColumn: "1/-1" }}>Inventory has not been refreshed.</Label></div></SectionCard>
         <SectionCard title="Parameters" icon={Ic("detail")}><div className="form">{F("Seed", <TextField defaultValue="0" />)}{F("Steps", <SpinBox min={1} max={150} defaultValue={4} />)}{F("Width", <SpinBox min={64} max={4096} defaultValue={320} />)}{F("Height", <SpinBox min={64} max={4096} defaultValue={192} />)}{F("Guidance", <SpinBox step="0.5" defaultValue={1} />)}{F("Sampler", <ComboBox options={["euler_a", "dpmpp_2m_karras"]} />)}</div></SectionCard>
@@ -28,7 +28,7 @@ function GenerateScreen() {
       <ProgressBar value={done ? 1 : 0} max={1} label={done ? "Saved" : busy ? "Generating…" : "Idle"} />
       <span className={done ? "dt-st-ok" : "dt-st-unknown"} style={{ fontSize: "var(--font-size-small)", fontWeight: 600 }}>{done ? "Saved. 1 image with reproducibility metadata. Fixture output; no model inference performed." : "No generation yet."}</span>
     </div>
-    {insp ? <div className="rail"><Panel className="railscroll" style={{ flex: 1 }}>
+    {insp ? <div className="rail"><ImagesAction onTab={go} /><Panel className="railscroll" style={{ flex: 1 }}>
       <ListBox label="LoRAs" minHeight={110} style={{ flex: "none" }}>{loras.map((l) => <ListItem key={l} selected={loraSel === l} onClick={() => setLoraSel(loraSel === l ? null : l)}>{l}</ListItem>)}</ListBox>
       <div className="row"><Button style={{ flex: 1 }} onClick={() => setLoras([...loras, "fake-lora-" + (loras.length + 1) + " @ 0.8"])}>Add LoRA</Button><Button style={{ flex: 1 }} disabled={!loraSel} onClick={() => { setLoras(loras.filter((x) => x !== loraSel)); setLoraSel(null); }}>Remove</Button><Button style={{ flex: 1 }}>Check</Button></div>
       <Checkbox label="Use LoRA trigger prefixes" />
@@ -37,5 +37,5 @@ function GenerateScreen() {
       <Button checked={det} onClick={() => setDet(!det)}>Attempt details</Button>
       {det ? <div className="stack"><div className="host" style={{ minHeight: 50 }}></div><Label textRole="supporting">No durable attempt yet.</Label><div className="host" style={{ padding: 8, color: "var(--color-secondary)" }}><Label textRole="identifier">Effective request and resolution evidence</Label></div></div> : null}
     </Panel></div> : null}
-  </div><StatusBar /></>;
+  </div><StatusBar tab="Generate" onTab={go} /></>;
 }

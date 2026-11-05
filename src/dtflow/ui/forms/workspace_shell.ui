@@ -220,52 +220,6 @@
            <number>4</number>
           </property>
           <item>
-           <widget class="QPushButton" name="connectionNavigationButton">
-            <property name="text">
-             <string />
-            </property>
-            <property name="checkable">
-             <bool>true</bool>
-            </property>
-            <property name="checked">
-             <bool>true</bool>
-            </property>
-            <property name="autoExclusive">
-             <bool>true</bool>
-            </property>
-            <property name="role" stdset="0">
-             <string>connectionNavigation</string>
-            </property>
-            <property name="accessibleName">
-             <string>Show connection workspace</string>
-            </property>
-            <property name="toolTip">
-             <string>Show connection workspace — not checked</string>
-            </property>
-            <property name="focusPolicy">
-             <enum>Qt::StrongFocus</enum>
-            </property>
-            <property name="minimumSize">
-             <size>
-              <width>58</width>
-              <height>34</height>
-             </size>
-            </property>
-            <property name="maximumSize">
-             <size>
-              <width>58</width>
-              <height>34</height>
-             </size>
-            </property>
-            <property name="iconSize">
-             <size>
-              <width>40</width>
-              <height>24</height>
-             </size>
-            </property>
-           </widget>
-          </item>
-          <item>
            <widget class="QPushButton" name="generationNavigationButton">
             <property name="text">
              <string>Generate</string>
@@ -303,31 +257,6 @@
             </property>
            </widget>
           </item>
-          <item>
-           <widget class="QPushButton" name="imagesNavigationButton">
-            <property name="text">
-             <string>Images</string>
-            </property>
-            <property name="enabled">
-             <bool>false</bool>
-            </property>
-            <property name="checkable">
-             <bool>true</bool>
-            </property>
-            <property name="autoExclusive">
-             <bool>true</bool>
-            </property>
-            <property name="toolTip">
-             <string>Images preview is not mounted yet</string>
-            </property>
-            <property name="accessibleName">
-             <string>Images workspace — not available yet</string>
-            </property>
-            <property name="role" stdset="0">
-             <string>navigation</string>
-            </property>
-           </widget>
-          </item>
          </layout>
         </widget>
        </item>
@@ -342,7 +271,14 @@
          <property name="horizontalScrollBarPolicy">
           <enum>Qt::ScrollBarAlwaysOff</enum>
          </property>
-         <widget class="QStackedWidget" name="leftStack" />
+         <widget class="QStackedWidget" name="leftStack">
+          <property name="sizePolicy">
+           <sizepolicy hsizetype="Ignored" vsizetype="Preferred">
+            <horstretch>0</horstretch>
+            <verstretch>0</verstretch>
+           </sizepolicy>
+          </property>
+         </widget>
         </widget>
        </item>
       </layout>
@@ -377,6 +313,40 @@
         <number>8</number>
        </property>
        <item>
+        <widget class="QWidget" name="compactImagesSlot">
+         <layout class="QHBoxLayout" name="compactImagesSlotLayout">
+          <property name="leftMargin">
+           <number>0</number>
+          </property>
+          <property name="rightMargin">
+           <number>0</number>
+          </property>
+          <property name="topMargin">
+           <number>0</number>
+          </property>
+          <property name="bottomMargin">
+           <number>0</number>
+          </property>
+          <property name="spacing">
+           <number>0</number>
+          </property>
+          <item>
+           <spacer name="compactImagesSlotSpacer">
+            <property name="orientation">
+             <enum>Qt::Horizontal</enum>
+            </property>
+            <property name="sizeType">
+             <enum>QSizePolicy::Expanding</enum>
+            </property>
+           </spacer>
+          </item>
+         </layout>
+         <property name="visible">
+          <bool>false</bool>
+         </property>
+        </widget>
+       </item>
+       <item>
         <widget class="QStackedWidget" name="centerStack" />
        </item>
       </layout>
@@ -398,6 +368,85 @@
        <property name="spacing">
         <number>8</number>
        </property>
+       <item>
+        <widget class="QWidget" name="imagesHeaderHome">
+         <layout class="QHBoxLayout" name="imagesHeaderHomeLayout">
+          <property name="leftMargin">
+           <number>0</number>
+          </property>
+          <property name="rightMargin">
+           <number>0</number>
+          </property>
+          <property name="topMargin">
+           <number>0</number>
+          </property>
+          <property name="bottomMargin">
+           <number>0</number>
+          </property>
+          <property name="spacing">
+           <number>0</number>
+          </property>
+          <item>
+           <widget class="QWidget" name="imagesUtilityHeader">
+            <layout class="QHBoxLayout" name="imagesUtilityHeaderLayout">
+             <property name="leftMargin">
+              <number>0</number>
+             </property>
+             <property name="rightMargin">
+              <number>0</number>
+             </property>
+             <property name="topMargin">
+              <number>0</number>
+             </property>
+             <property name="bottomMargin">
+              <number>0</number>
+             </property>
+             <property name="spacing">
+              <number>0</number>
+             </property>
+             <item>
+              <widget class="QPushButton" name="imagesNavigationButton">
+               <property name="text">
+                <string>Images</string>
+               </property>
+               <property name="checkable">
+                <bool>true</bool>
+               </property>
+               <property name="autoExclusive">
+                <bool>true</bool>
+               </property>
+               <property name="role" stdset="0">
+                <string>primary</string>
+               </property>
+               <property name="enabled">
+                <bool>true</bool>
+               </property>
+               <property name="toolTip">
+                <string>Browse saved Images</string>
+               </property>
+               <property name="accessibleName">
+                <string>Show saved Images</string>
+               </property>
+               <property name="minimumSize">
+                <size>
+                 <width>0</width>
+                 <height>36</height>
+                </size>
+               </property>
+               <property name="maximumSize">
+                <size>
+                 <width>16777215</width>
+                 <height>36</height>
+                </size>
+               </property>
+              </widget>
+             </item>
+            </layout>
+           </widget>
+          </item>
+         </layout>
+        </widget>
+       </item>
        <item>
         <widget class="QScrollArea" name="rightScroll">
          <property name="widgetResizable">
@@ -426,6 +475,85 @@
        </size>
       </property>
      </widget>
+    </widget>
+   </item>
+   <item>
+    <widget class="QWidget" name="connectionStatusDock">
+     <layout class="QHBoxLayout" name="connectionStatusDockLayout">
+      <property name="leftMargin">
+       <number>0</number>
+      </property>
+      <property name="rightMargin">
+       <number>0</number>
+      </property>
+      <property name="topMargin">
+       <number>0</number>
+      </property>
+      <property name="bottomMargin">
+       <number>0</number>
+      </property>
+      <property name="spacing">
+       <number>0</number>
+      </property>
+      <item>
+       <widget class="QPushButton" name="connectionNavigationButton">
+        <property name="text">
+         <string />
+        </property>
+        <property name="checkable">
+         <bool>true</bool>
+        </property>
+        <property name="checked">
+         <bool>true</bool>
+        </property>
+        <property name="autoExclusive">
+         <bool>true</bool>
+        </property>
+        <property name="role" stdset="0">
+         <string>connectionNavigation</string>
+        </property>
+        <property name="accessibleName">
+         <string>Show connection workspace</string>
+        </property>
+        <property name="toolTip">
+         <string>Show connection workspace — not checked</string>
+        </property>
+        <property name="focusPolicy">
+         <enum>Qt::StrongFocus</enum>
+        </property>
+        <property name="minimumSize">
+         <size>
+          <width>40</width>
+          <height>20</height>
+         </size>
+        </property>
+        <property name="maximumSize">
+         <size>
+          <width>40</width>
+          <height>20</height>
+         </size>
+        </property>
+        <property name="iconSize">
+         <size>
+          <width>30</width>
+          <height>18</height>
+         </size>
+        </property>
+       </widget>
+      </item>
+     </layout>
+     <property name="minimumSize">
+      <size>
+       <width>40</width>
+       <height>20</height>
+      </size>
+     </property>
+     <property name="maximumSize">
+      <size>
+       <width>40</width>
+       <height>20</height>
+      </size>
+     </property>
     </widget>
    </item>
   </layout>

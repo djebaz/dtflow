@@ -218,6 +218,7 @@ class MainWindow:
         self.activity = Activity()
         form = self.form
         self.shell = load_ui(FORMS_DIR / "workspace_shell.ui", form.centralWidget())
+        self._images_header = self.shell.imagesUtilityHeader
         # Restore the standard left-stack width policy outside Scripts.
         # The scroll viewport has horizontal overflow hidden.
         self._left_stack_default_horizontal_policy = self.shell.leftStack.sizePolicy().horizontalPolicy()
@@ -304,6 +305,10 @@ class MainWindow:
         self.shell.workspaceSplitter.setStretchFactor(1, 1)
         self.shell.workspaceSplitter.setStretchFactor(2, 0)
         self.shell.workspaceSplitter.setSizes([260, 700, 300])
+        # The fixed left rail belongs to its scroll viewport, not to the widest
+        # (possibly hidden) page after inventory/queue content changes.
+        self.shell.leftStack.currentChanged.connect(self._fit_context_pages)
+        self._fit_context_pages()
         # A stack is as wide as its widest page; size the right rail from the shown page only,
         # so one tab's inspector cannot push every other tab's inspector past the rail.
         self.shell.rightStack.currentChanged.connect(self._fit_inspector_page)
@@ -464,11 +469,10 @@ class MainWindow:
         pill.setFixedWidth(QFontMetrics(bold).horizontalAdvance("99999/99999") + 16)
         form.statusBar().addPermanentWidget(grid_status_group)
         form.statusBar().addPermanentWidget(status_actions)
-        # The usage pill is the extreme-right item, after the Help and Logs buttons, with a quiet right margin.
-        pill_margin = QWidget(form.statusBar())
-        pill_margin.setFixedWidth(12)
+        # Connection keeps its existing colored status glyph and is the last
+        # permanent control, independent of the active workspace or inspector.
         form.statusBar().addPermanentWidget(pill)
-        form.statusBar().addPermanentWidget(pill_margin)
+        form.statusBar().addPermanentWidget(self.shell.connectionStatusDock)
         self.grid_index_group = grid_status_group
         # The slot stays on every tab (only its text hides) so the activity bar has the same room everywhere.
         grid_status_group.setFixedSize(70, 20)
@@ -529,7 +533,7 @@ class MainWindow:
                     (QEvent.Type.Resize, QEvent.Type.Show, QEvent.Type.LayoutRequest),
                 )
             )
-        for widget in (self.shell.imagesNavigationButton, self.shell.runControl):
+        for widget in (self.shell.queueNavigationButton, self.shell.runControl):
             widget.installEventFilter(
                 _LayoutGuard(self._align_run_control, form, (QEvent.Type.Resize, QEvent.Type.Move))
             )
@@ -789,14 +793,12 @@ class MainWindow:
             self.form.queueNavigationButton,
             self.form.imagesNavigationButton,
         )
-        if logs_active:
-            # Logs covers the workspace; no header tab stays selected underneath it.
-            for button in buttons:
-                button.setAutoExclusive(False)
-                button.setChecked(False)
-                button.setAutoExclusive(True)
-        elif index < len(buttons):
-            buttons[index].setChecked(True)
+        # Utilities have different parents now; synchronize selection explicitly
+        # instead of relying on sibling-only Qt auto-exclusivity.
+        for position, button in enumerate(buttons):
+            button.setAutoExclusive(False)
+            button.setChecked(not logs_active and index == position)
+            button.setAutoExclusive(True)
         images_active = self.form.workspaceStack.currentWidget() is self.images_page
         self.grid_index_label.setVisible(images_active and development_mode())
         self.gallery.set_active(images_active)
@@ -836,19 +838,28 @@ class MainWindow:
         )
 
     def _align_run_control(self) -> None:
-        """Centre the header control above the Images tab; both rows share the rail's left edge."""
+        """Align the header control with Queues in the primary navigation row."""
         shell = self.shell
-        images = shell.imagesNavigationButton.geometry()
-        if not (shell.brandFrame.isVisible() and shell.navigationFrame.isVisible()) or images.width() <= 0:
+        anchor = shell.queueNavigationButton.geometry()
+        if not (shell.brandFrame.isVisible() and shell.navigationFrame.isVisible()) or anchor.width() <= 0:
             return
         control, offset = shell.runControl, shell.runControlOffset
         # The Queue button sits between the offset and the control. Its fixed width plus one more layout spacing are
         # constants, not read from positions that lag a pending relayout, so the target cannot oscillate (hovering
         # the logo requests layouts and used to make the icons drift).
         gap = shell.quickQueueButton.width() + max(0, shell.brandLayout.spacing())
-        width = max(0, images.center().x() - control.width() // 2 - offset.x() - gap)
+        width = max(0, anchor.center().x() - control.width() // 2 - offset.x() - gap)
         if offset.width() != width:
             offset.setFixedWidth(width)
+
+    def _fit_context_pages(self, *_args) -> None:
+        stack = self.shell.leftStack
+        for index in range(stack.count()):
+            page = stack.widget(index)
+            policy = page.sizePolicy()
+            if policy.horizontalPolicy() != QSizePolicy.Policy.Ignored:
+                policy.setHorizontalPolicy(QSizePolicy.Policy.Ignored)
+                page.setSizePolicy(policy)
 
     def _fit_inspector_page(self, *_args) -> None:
         stack = self.shell.rightStack
@@ -880,7 +891,7 @@ class MainWindow:
                     (self.logs_form.logsBrandSlot, shell.brandFrame),
                     (self.logs_form.logsNavigationSlot, shell.navigationFrame),
                 ):
-                    # The four navigation buttons need their own size hint;
+                    # Primary navigation needs its own size hint;
                     # the old 248–300 px rail width clips them in a header row.
                     width = shell.leftRail.width()
                     if frame is shell.navigationFrame:
@@ -926,6 +937,7 @@ class MainWindow:
         # whether the Images page changed during this navigation.
         shell.leftRail.setVisible(not images and not logs)
         shell.rightRail.setVisible(not images and not logs and not narrow)
+        self._place_images_header(images=images, logs=logs, narrow=narrow)
         if self._logs_form is not None:
             self._logs_form.logsBrandSlot.setVisible(logs)
             self._logs_form.logsNavigationSlot.setVisible(logs)
@@ -935,6 +947,22 @@ class MainWindow:
         elif hasattr(self, "scripts"):
             self.scripts.drawer.hide()
         self._align_run_control()
+
+    def _place_images_header(self, *, images, logs, narrow) -> None:
+        """One Images action above ordinary inspectors, never in Images or Logs."""
+        shell = self.shell
+        visible = not images and not logs
+        shell.imagesHeaderHome.setVisible(visible and not narrow)
+        shell.compactImagesSlot.setVisible(visible and narrow)
+        if not visible:
+            self._images_header.hide()
+            return
+        target = shell.compactImagesSlot if narrow else shell.imagesHeaderHome
+        if self._images_header.parentWidget() is not target:
+            target.layout().addWidget(self._images_header)
+        self._images_header.setMinimumWidth(0)
+        self._images_header.setMaximumWidth(300 if narrow else 16777215)
+        self._images_header.show()
 
     def _sync_activity_progress(self):
         if self.progress_strip.retired:
