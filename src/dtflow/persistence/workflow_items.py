@@ -111,6 +111,7 @@ def _check_seed(seed: Any) -> bool:
             isinstance(value, dict)
             and type(value.get("node_id")) is int
             and all(value.get(key) is None or isinstance(value.get(key), str) for key in ("output", "mask"))
+            and isinstance(value.get("no_target", False), bool)
             for value in seed["values"]
         )
     )

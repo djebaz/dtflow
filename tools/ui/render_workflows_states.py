@@ -182,8 +182,8 @@ def render_workflows_states(out, *, window_factory, state_names, capture):
     page.choices_source = lambda: inventory
     entries = catalogue()  # the shipped pinned catalogue: real names, sizes, licences and URLs (nothing downloads)
     # Earlier runs as Workflows lists them from the queue store (fixture labels; no store is read).
-    recent = [("fixture-queue", "Portrait finishing · 05 Nov 10:02 · Partly done"),
-              ("fixture-earlier", "Portrait finishing · 04 Nov 18:40 · Done")]  # fmt: skip
+    recent = [("fixture-queue", "Failed, some results saved · Portrait finishing · 05 Nov 10:02"),
+              ("fixture-earlier", "Done · Portrait finishing · 04 Nov 18:40")]  # fmt: skip
 
     def open_reference(name="Portrait finishing", *, fanout=True, saved=True, placeholders=False):
         graph = wf.load_workflow(json.loads(json.dumps(reference)), draft=True)

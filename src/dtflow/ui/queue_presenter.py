@@ -263,9 +263,12 @@ class ItemRow:
 
     @property
     def operation_text(self) -> str:
-        return {"txt2img": "Text to image", "img2img": "Image to image", "inpaint": "Inpaint"}.get(
-            self.operation, self.operation
-        )
+        return {
+            "txt2img": "Text to image",
+            "img2img": "Image to image",
+            "inpaint": "Inpaint",
+            "workflow": "Workflow run",
+        }.get(self.operation, self.operation)
 
     @property
     def outcome_line(self) -> str:
@@ -437,7 +440,7 @@ def item_rows(view: dict) -> tuple[ItemRow, ...]:
                 (failure.get("message") or failure.get("code"))
                 if item.get("script") or item.get("workflow")
                 else failure.get("code"),
-                item.get("operation") or "txt2img",
+                "workflow" if item.get("workflow") else item.get("operation") or "txt2img",
                 item.get("strength"),
                 item.get("prompt") or "",
                 item.get("negative_prompt") or "",

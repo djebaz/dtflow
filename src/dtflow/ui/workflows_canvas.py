@@ -390,6 +390,15 @@ class DTFNode(Node):
         data["dtf_type"] = self.SPEC.type
         return data
 
+    def deserialize(self, data: dict, hashmap: dict | None = None, restore_id: bool = True, *args, **kwargs) -> bool:
+        result = super().deserialize(data, {} if hashmap is None else hashmap, restore_id, *args, **kwargs)
+        if result and not restore_id:
+            # Paste: a new node gets a fresh workflow id; undo/redo (restore_id) keeps the recorded one.
+            taken = [node.comfy_id for node in self.scene.nodes if node is not self]
+            self.comfy_id = max(taken, default=0) + 1
+            self.grNode.title = f"{self.SPEC.title} #{self.comfy_id}"
+        return result
+
 
 NODE_CLASSES: dict[str, type[DTFNode]] = {
     spec.type: type(spec.type + "Node", (DTFNode,), {"SPEC": spec}) for spec in wf.CATALOG.values()

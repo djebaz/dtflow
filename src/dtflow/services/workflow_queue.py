@@ -270,18 +270,26 @@ def _step(run: dict[str, Any], node_id: int, branch: Branch) -> dict[str, Any] |
 
 
 def _seed_values(graph: Graph, run: dict[str, Any], start: int, branch: Branch) -> list[dict[str, Any]]:
-    """The saved inputs a Retry run starts from: every upstream step's recorded output and mask on that branch.
+    """The saved inputs a Retry run starts from: every recorded output and mask on that branch that the retried scope
+    (the step and everything downstream of it) reads from outside itself, including converging parallel paths.
 
-    Every input of the retried scope that comes from outside it must still exist on disk."""
+    Every such input must still exist on disk; a face mask skipped by "Continue anyway" passes on as no mask."""
     if graph.node(start).type == GENERATE:
         return []
+    scope = descendants(graph, start) | {start}
+    outside: set[int] = set()
+    for node_id in scope:
+        outside |= ancestors(graph, node_id)
+    outside -= scope
     values = []
-    for node_id in sorted(ancestors(graph, start)):
+    for node_id in sorted(outside):
         step = _step(run, node_id, branch)
         if step is not None:
-            values.append({"node_id": node_id, "output": step.get("output"), "mask": step.get("mask")})
+            value = {"node_id": node_id, "output": step.get("output"), "mask": step.get("mask")}
+            if step.get("type") == DETECT_FACE and step.get("state") == "skipped":
+                value["no_target"] = True
+            values.append(value)
     known = {value["node_id"]: value for value in values}
-    scope = descendants(graph, start) | {start}
     for node_id in scope:
         node = graph.node(node_id)
         for slot, port in enumerate(node.spec.inputs):
@@ -289,6 +297,8 @@ def _seed_values(graph: Graph, run: dict[str, Any], start: int, branch: Branch) 
             if link is None or link.origin_id in scope:
                 continue
             value = known.get(link.origin_id) or {}
+            if port.type == MASK and value.get("no_target"):
+                continue
             path = value.get("mask") if port.type == MASK else value.get("output")
             if graph.node(link.origin_id).type == DETECT_FACE and port.type == MASK and path is None:
                 raise ValidationError("The face mask this step needs was never made; run the workflow again.")

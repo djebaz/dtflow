@@ -1976,8 +1976,11 @@ def render_item_table_states(shell, out, state):
             "1 result(s) saved; 2 step(s) failed, stopped or unconfirmed. First problem: Inpaint face "
             "(Generate #1 image 2): DT+ refused the request: not enough credits."
         )
-        workflow_item = dict(
-            items[0],
+        # A real workflow row has no single model, seed or sampler (``_workflow_item_fields``): clear the borrowed ones.
+        plain = {key: None for key in items[0] if key not in ("item_id", "position", "state", "artifacts")}
+        plain.update(loras=[], artifacts=[], attempt_id=None)
+        workflow_item = {**items[0], **plain}
+        workflow_item.update(
             item_id="offline-workflow-item",
             state="failed",
             prompt="Workflow: Portrait finishing",
@@ -1993,7 +1996,8 @@ def render_item_table_states(shell, out, state):
             kind="workflow",
             queue_id="offline-workflow-queue",
             status="finished",
-            first=dict(view["first"], prompt="Workflow: Portrait finishing"),
+            first=dict(view["first"], prompt="Workflow: Portrait finishing", model="", loras=[], operation="txt2img"),
+            varied=None,
             items=[workflow_item],
             summary={name: int(name == "failed") for name in counts},
             cap=1,
@@ -2002,6 +2006,9 @@ def render_item_table_states(shell, out, state):
         queue._read_done(([workflow_view], workflow_view, 2), None)
         queue._timer.stop()
         select(0)
+        strip = activity_strip(page)
+        if strip is not None and "queue-message" in strip.rows:
+            strip.finish("queue-message")  # an earlier state's notice is not part of this one
         snap("queues-74-workflow-queue")
         queue._selected = None
         queue._activity.set(dispatching=False)

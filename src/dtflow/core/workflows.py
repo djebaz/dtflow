@@ -414,11 +414,12 @@ def load_workflow(data: object, *, draft: bool = False) -> Graph:
         _check_ports(node.get("inputs", []), spec.inputs, f"{where} inputs", is_input=True)
         _check_ports(node.get("outputs", []), spec.outputs, f"{where} outputs", is_input=False)
         raw_nodes[node_id] = node
-        graph.nodes.append(
-            GraphNode(
-                node_id, spec.type, _pair(node["pos"], f"{where} pos"), params, _pair(node["size"], f"{where} size")
-            )
+        graph_node = GraphNode(
+            node_id, spec.type, _pair(node["pos"], f"{where} pos"), params, _pair(node["size"], f"{where} size")
         )
+        if spec.type in GENERATIVE:
+            _check_request(graph_node, draft=draft)
+        graph.nodes.append(graph_node)
 
     link_ids: set[int] = set()
     targets: set[tuple[int, int]] = set()
@@ -696,6 +697,18 @@ def plan_workflow(graph: Graph) -> WorkflowPlan:
             f"This workflow would submit {total} generations; one run is limited to {MAX_PLANNED_GENERATIONS}."
         )
     return WorkflowPlan(tuple(order), plans, total, analyses, any(n.type == DETECT_FACE for n in graph.nodes))
+
+
+def _check_request(node: GraphNode, *, draft: bool) -> None:
+    """The shared request rules across a node's settings (for example batch size × count ≤ the output maximum), so a
+    file the runner could never submit is rejected at the boundary. Image operations are checked at a nominal size
+    (they run at the source size); a draft may still leave its checkpoint empty."""
+    params = dict(node.params)
+    if draft and not str(params.get("checkpoint") or "").strip():
+        params["checkpoint"] = "draft.ckpt"
+    size = None if node.type == GENERATE else 512
+    probe = GraphNode(node.id, node.type, node.pos, params, node.size)
+    node_request(probe, width=size, height=size)
 
 
 def node_request(

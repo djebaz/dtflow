@@ -55,7 +55,13 @@ from dtflow.persistence.store import PersistenceError, SQLiteAttempts
 from dtflow.persistence.workflow_items import BAD_STEP_STATES, WorkflowRequest
 from dtflow.services import session
 from dtflow.services.generation import GenerationService
-from dtflow.services.workflow_queue import BRANCH_CONTROL, RETRY_CONTROL, RETRYABLE, descendants
+from dtflow.services.workflow_queue import (
+    BRANCH_CONTROL,
+    RETRY_CONTROL,
+    RETRYABLE,
+    descendants,
+    planned_submissions,
+)
 
 log = logging.getLogger(__name__)
 
@@ -294,6 +300,12 @@ class _Execution:
                 if missing:
                     names = ", ".join(entry.name for entry in missing)
                     raise ValidationError(f"Detection models are missing ({names}). Download them in Workflows first.")
+                # Integrity before any submission: a changed detector must not fail only after Generate spent credits.
+                from dtflow.persistence.person_models import load_person_models
+                from dtflow.services.person_selection import verify_model_hashes
+
+                models = await asyncio.to_thread(load_person_models, self.runner.state)
+                await asyncio.to_thread(verify_model_hashes, models, WORKFLOW_FACE_ROLES)
         except ValidationError as exc:
             self.halt(f"The workflow cannot run: {exc}")
             await self.finish()
@@ -439,7 +451,10 @@ class _Execution:
             # The whole Generate scope reruns: a new batch replaces every branch, so no branch keeps steps made from
             # an image the new batch does not contain. Earlier saved images stay in Images.
             reset = [k for k in self.steps if k[1][0] == node_id]
-            weight = generate_outputs(node)
+            # Every reset step may submit again (its earlier submission is spent), so the guard grows by all of them.
+            weight = planned_submissions(self.graph, reset)
+            # The run card lists only results made from the new batch; the earlier images stay in Images.
+            self.run["results"] = [item for item in self.run["results"] if int(item["branch"][0]) != node_id]
         else:
             task = self.tasks.get(("branch", branch))
             if task is not None and not task.done():
@@ -478,6 +493,7 @@ class _Execution:
                 self.values[(int(value["node_id"]), branch)] = {
                     "output": value.get("output"),
                     "mask": value.get("mask"),
+                    "no_target": bool(value.get("no_target")),
                 }
             self.spawn(("branch", branch), self.walk(branch))
             return
@@ -555,11 +571,15 @@ class _Execution:
             return None
         # Counted at the check so concurrent branches cannot pass it together; given back when nothing is sent.
         self.run["submitted"] += weight
-        while not self.go.is_set() and not self.stopping and not self.halted:
-            for key in keys:
-                self.steps[key]["stage"] = "Waiting: queue paused"
-            self.dirty = True
-            await self.go.wait()
+        try:
+            while not self.go.is_set() and not self.stopping and not self.halted:
+                for key in keys:
+                    self.steps[key]["stage"] = "Waiting: queue paused"
+                self.dirty = True
+                await self.go.wait()
+        except asyncio.CancelledError:
+            self.run["submitted"] -= weight  # interrupted before any attempt: nothing was sent
+            raise
         if self.stopping or self.halted:
             self.run["submitted"] -= weight
             await self.end(keys, "cancelled", "Stopped before submission; nothing was sent.")
@@ -579,7 +599,11 @@ class _Execution:
                     await self.end(keys, "cancelled", "Stopped before submission; nothing was sent.")
                     return None
                 self.set_stage(keys, "Waiting for a free slot")
-                await asyncio.sleep(self.runner.poll)
+                try:
+                    await asyncio.sleep(self.runner.poll)
+                except asyncio.CancelledError:
+                    self.run["submitted"] -= weight  # interrupted before any attempt: nothing was sent
+                    raise
             diagnostic_event(
                 log, "workflow.step_submitted", level=logging.INFO, data={"attempt_id": attempt_id, "weight": weight}
             )
@@ -719,6 +743,10 @@ class _Execution:
             await self.end([key], "succeeded", mask=str(path))
             return
         reason = result.reason or "Face region is empty"
+        if self.stopping or self.halted:
+            # Stop or a halt already closed the open pauses; a pause made now would never be answered.
+            await self.end([key], "cancelled", reason)
+            return
         future = loop.create_future()
         self.decisions[key] = future
         step = self.steps[key]

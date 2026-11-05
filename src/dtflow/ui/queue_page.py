@@ -1079,7 +1079,7 @@ class QueuePage:
         page.attemptIdLabel.setText(row.attempt_id[:8] if row.attempt_id else "—")  # the full id is in the tooltip
         page.attemptIdLabel.setToolTip(row.attempt_id or "")
         page.itemBackendLabel.setText(summarize(view).backend if view else "—")
-        page.itemSeedLabel.setText(str(row.seed))
+        page.itemSeedLabel.setText("—" if row.seed is None else str(row.seed))
         page.itemDimensionsLabel.setText(row.dimensions_text)
         page.itemOperationLabel.setText(row.operation_text)
         page.itemOutcomeLabel.setText(row.outcome_line)
@@ -1326,14 +1326,27 @@ class QueuePage:
     def _workflow_retry_target(view: dict | None) -> tuple[int, tuple[int, int]] | None:
         """(node id, branch) of a workflow run's first failed step, else its first step with no confirmed outcome."""
         item = next((item for item in (view or {}).get("items", ()) if item.get("workflow")), None)
-        steps = (item or {}).get("workflow", {}).get("steps") or ()
+        run = (item or {}).get("workflow") or {}
+        steps = run.get("steps") or ()
+        # While the run is live the runner retries a step only once its branch is idle; offer only those steps.
+        busy = {
+            tuple(step.get("branch") or ())
+            for step in steps
+            if run.get("state") == "running" and step.get("state") in ("running", "paused")
+        }
         for wanted in ("failed", "unknown"):
             for step in steps:
-                if step.get("state") == wanted:
-                    try:
-                        return int(step["node_id"]), (int(step["branch"][0]), int(step["branch"][1]))
-                    except (KeyError, TypeError, ValueError, IndexError):
-                        return None
+                if step.get("state") != wanted:
+                    continue
+                try:
+                    branch = (int(step["branch"][0]), int(step["branch"][1]))
+                    node_id = int(step["node_id"])
+                except (KeyError, TypeError, ValueError, IndexError):
+                    return None
+                generate = step.get("type") == "DTFGenerate"
+                if branch in busy or (generate and any(other[:1] == branch[:1] for other in busy)):
+                    continue
+                return node_id, branch
         return None
 
     def _retry_workflow(self, queue_id: str) -> None:

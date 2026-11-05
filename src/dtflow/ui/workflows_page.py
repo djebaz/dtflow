@@ -62,7 +62,7 @@ STATE_LABELS = {
     "pending": "Waiting",
     "running": "Running",
     "succeeded": "Done",
-    "partial": "Partly done",
+    "partial": "Failed, some results saved",
     "failed": "Failed",
     "unknown": "Unknown outcome",
     "skipped": "Skipped",
@@ -210,7 +210,8 @@ def recent_workflow_runs(state: Path, limit: int = RECENT_RUNS) -> list[tuple[st
         except ValueError:
             when = ""
         state_ = STATE_LABELS.get(str(run.get("state")), str(run.get("state") or ""))
-        label = " · ".join(part for part in (str(run.get("name") or "Workflow"), when, state_) if part)
+        # The outcome first, so a narrow combo still shows it; the full label is the tooltip.
+        label = " · ".join(part for part in (state_, str(run.get("name") or "Workflow"), when) if part)
         runs.append((created, view["queue_id"], label))
     runs.sort(key=lambda entry: entry[0], reverse=True)
     return [(queue_id, label) for _, queue_id, label in runs[:limit]]
@@ -230,6 +231,13 @@ def download_missing_models(page: QWidget, state: Path, entries, runner, on_done
     model_download.confirm_and_download(
         page, state, entries, runner, lambda _models, error: on_done(error), button=button
     )
+
+
+def _run_shape(graph) -> tuple:
+    """What a run depends on: node types and settings, and links; positions and view are left out."""
+    nodes = tuple(sorted((node.id, node.type, repr(sorted(node.params.items()))) for node in graph.nodes))
+    links = tuple(sorted((link.origin_id, link.origin_slot, link.target_id, link.target_slot) for link in graph.links))
+    return nodes, links
 
 
 class WorkflowsPage(QObject):
@@ -1152,8 +1160,10 @@ class WorkflowsPage(QObject):
             except (wf.WorkflowError, TypeError, ValueError):
                 graph = None
             path = self.path
+            # Only the exact snapshot the run used may show its statuses on the open canvas: same nodes, settings
+            # and links (layout aside). A later edit of the same workflow gets the run's own snapshot instead.
             same = graph is not None and self.canvas is not None and bool(self.name)
-            same = same and self.canvas.workflow_id == graph.workflow_id and bool(graph.workflow_id)
+            same = same and _run_shape(self.canvas.current_graph()) == _run_shape(graph)
             if not same:
                 if graph is not None and not self.dirty:
                     self.open_graph(graph, None, name)

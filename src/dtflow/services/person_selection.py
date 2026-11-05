@@ -309,10 +309,30 @@ def model_issues(models: PersonModels) -> dict[str, str | None]:
 
 def _stamp(path) -> tuple[int, int] | None:
     try:
-        info = os.stat(path)
+        info = os.stat(model_read_path(path))
     except OSError:
         return None
     return info.st_size, info.st_mtime_ns
+
+
+def verify_model_hashes(models: PersonModels, roles) -> None:
+    """Hash the configured files for ``roles`` against their recorded SHA-256 before any work that depends on them
+    (a workflow checks this before its first, possibly billable, submission). Unchanged files hashed before (same size
+    and modification time) are not read again. Raises ValidationError naming the role."""
+    for role in roles:
+        ref = getattr(models, role)
+        if ref is None:
+            raise ValidationError(f"The {role} model is not chosen.")
+        stamp = _stamp(ref.path)
+        with _lock:
+            if stamp is not None and _hashed.get(str(ref.path)) == (*stamp, ref.sha256):
+                continue
+        data = _read_model(ref.path)
+        if len(data) > MAX_MODEL_BYTES or hashlib.sha256(data).hexdigest() != ref.sha256:
+            raise ValidationError(f"The {role} model file changed since it was chosen; download or choose it again.")
+        with _lock:
+            if stamp is not None and _stamp(ref.path) == stamp:
+                _hashed[str(ref.path)] = (*stamp, ref.sha256)
 
 
 def _verified_session(ref: ModelRef, builder):
