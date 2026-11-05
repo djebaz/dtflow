@@ -55,7 +55,7 @@ LIP_SPEC = (
     "871c9e209dc67d6be61c73dcc79cb49e638fcf5bbc35a19b4c7429eba0bfc046",
 )
 # Fixed by semantic class, never detection order, score rank or image contents.
-# Covered/exposed classes deliberately get separate hues; unknown stays gray.
+# Covered/exposed classes deliberately get separate hues; unknown is not painted.
 ZONE_COLORS = {
     "FEMALE_GENITALIA_COVERED": (145, 70, 255),
     "FACE_FEMALE": (0, 110, 255),
@@ -265,7 +265,7 @@ def finish_zones(cv, zones, valid, fixed, smooth, expand):
     return result
 
 
-def grow_zones(cv, edges, inside, detections, resolution, edge_weight, growth, smooth, expand):
+def grow_zones(cv, edges, inside, detections, resolution, edge_weight, growth, smooth, expand, balance=0):
     """Compete from small detector seeds using edge-weighted path lengths only.
 
     No semantic classes or rectangular growth barriers. A per-seed path budget,
@@ -282,6 +282,7 @@ def grow_zones(cv, edges, inside, detections, resolution, edge_weight, growth, s
     distance = np.full((h, w), np.inf, dtype=np.float64)
     fixed = np.zeros_like(valid)
     budgets, reports, queue = {}, [], []
+    centers = {}
     yy, xx = np.ogrid[:h, :w]
     for index, detection in enumerate(detections, 7):
         x0, y0, x1, y1 = detection["box_xyxy"]
@@ -293,11 +294,16 @@ def grow_zones(cv, edges, inside, detections, resolution, edge_weight, growth, s
         reports.append(record)
         if not core.any():
             continue
-        # Prefer a near-center, low-edge point over seeding every pixel of a box.
-        ranking = np.where(core, center_distance + 2 * field, np.inf)
+        # Balanced mode anchors to the nearest valid geometric-center pixel;
+        # a weak edge must not shift the seed to one side of the detector box.
+        ranking = np.where(
+            core, (xx - cx) ** 2 + (yy - cy) ** 2 if balance > 0 else center_distance + 2 * field, np.inf
+        )
         y, x = np.unravel_index(int(np.argmin(ranking)), ranking.shape)
         zones[y, x], distance[y, x], fixed[y, x] = index, 0.0, True
-        budgets[index] = max(4.0, growth * math.hypot((x1 - x0) * sx, (y1 - y0) * sy) / 2)
+        radius = max(1.0, math.hypot((x1 - x0) * sx, (y1 - y0) * sy) / 2)
+        budgets[index] = max(4.0, growth * radius)
+        centers[index] = (cx, cy, radius * radius)
         record.update(status="seeded", seed_xy=[round(float(x / sx), 2), round(float(y / sy), 2)])
         heapq.heappush(queue, (0.0, index, int(y), int(x)))
     while queue:
@@ -316,7 +322,14 @@ def grow_zones(cv, edges, inside, detections, resolution, edge_weight, growth, s
                     continue
                 strength = max(strength, float(field[y, nx]), float(field[ny, x]))
             step = math.sqrt(2) if diagonal else 1.0
-            candidate = cost + step * (1.0 + edge_weight * strength * strength)
+            spatial_cost = 0.0
+            if balance > 0:
+                cx, cy, radius_squared = centers[zone]
+                # Isotropic soft prior, not a box clip or forced mirroring. It
+                # discourages long off-center excursions while preserving edges.
+                radial_squared = ((nx - cx) ** 2 + (ny - cy) ** 2 + (x - cx) ** 2 + (y - cy) ** 2) / 2
+                spatial_cost = balance * radial_squared / radius_squared
+            candidate = cost + step * (1.0 + edge_weight * strength * strength + spatial_cost)
             if candidate <= budgets[zone] and candidate < distance[ny, nx]:
                 distance[ny, nx], zones[ny, nx] = candidate, zone
                 heapq.heappush(queue, (candidate, zone, ny, nx))
@@ -331,7 +344,7 @@ def grow_zones(cv, edges, inside, detections, resolution, edge_weight, growth, s
     return result, reports
 
 
-def grow_independent_zones(cv, edges, inside, detections, resolution, edge_weight, growth, smooth, expand):
+def grow_independent_zones(cv, edges, inside, detections, resolution, edge_weight, growth, smooth, expand, balance=0):
     """Reuse single-zone growth independently; retain masks on the bounded grid.
 
     No other zone's seed, boundary or ownership can block a zone in this mode.
@@ -348,7 +361,9 @@ def grow_independent_zones(cv, edges, inside, detections, resolution, edge_weigh
     for zone_id, detection in enumerate(detections, 7):
         x0, y0, x1, y1 = detection["box_xyxy"]
         scaled = dict(detection, box_xyxy=[x0 * sx, y0 * sy, x1 * sx, y1 * sy])
-        single, details = grow_zones(cv, field, valid, [scaled], resolution, edge_weight, growth, smooth, expand)
+        single, details = grow_zones(
+            cv, field, valid, [scaled], resolution, edge_weight, growth, smooth, expand, balance
+        )
         mask = single == 7
         record = dict(details[0], box_xyxy=list(detection["box_xyxy"]), zone_id=zone_id)
         if "seed_xy" in record:
@@ -367,6 +382,132 @@ def grow_independent_zones(cv, edges, inside, detections, resolution, edge_weigh
         "overlap_pixels": int(np.count_nonzero(inside & (restored_coverage > 1))),
     }
     return layers, reports, summary
+
+
+def contract_zones(cv, edges, inside, detections, resolution, edge_weight, smooth, expand, box_scale, roundness):
+    """Experimental rounded-box shrink-wrap, with one coherent radial contour.
+
+    Search from the enlarged box perimeter toward its central 35% core. Edge
+    attraction competes with an outer-boundary preference and angular smoothness;
+    this is not independent per-pixel inward flooding or anatomical parsing.
+    """
+    height, width = inside.shape
+    scale = min(1.0, resolution / max(height, width))
+    size = (max(1, round(width * scale)), max(1, round(height * scale)))
+    field = cv.resize(edges, size, interpolation=cv.INTER_AREA)
+    valid = cv.resize(inside.astype(np.uint8), size, interpolation=cv.INTER_NEAREST) > 0
+    sx, sy = size[0] / width, size[1] / height
+    yy, xx = np.ogrid[:size[1], :size[0]]
+    angles, samples = 128, 64
+    theta = np.arange(angles, dtype=np.float32) * (2 * np.pi / angles)
+    directions = np.stack((np.cos(theta), np.sin(theta)), axis=1)
+    fractions = np.linspace(1.0, 0.35, samples, dtype=np.float32)
+    # Three circuits permit angular continuity across the seam; retain the middle.
+    transition = (12.0 + 4.0 * smooth) * (fractions[:, None] - fractions[None, :]) ** 2
+    layers, reports = [], []
+    coverage = np.zeros(valid.shape, dtype=np.uint16)
+    for zone_id, detection in enumerate(detections, 7):
+        x0, y0, x1, y1 = detection["box_xyxy"]
+        cx, cy = (x0 + x1) * sx / 2, (y0 + y1) * sy / 2
+        half = np.array([max(1.0, (x1 - x0) * sx * box_scale / 2),
+                         max(1.0, (y1 - y0) * sy * box_scale / 2)], dtype=np.float32)
+        record = dict(detection, zone_id=zone_id, status="rejected_no_person_core", start="edge")
+        reports.append(record)
+        core = valid & (((xx - cx) / max(half[0] * 0.35, 1)) ** 2
+                        + ((yy - cy) / max(half[1] * 0.35, 1)) ** 2 <= 1)
+        if not core.any():
+            continue
+        # Radial intersection with a signed-distance rounded rectangle.
+        radius = float(2 * min(half) * roundness)
+        lower = np.zeros(angles, dtype=np.float32)
+        upper = np.full(angles, float(np.linalg.norm(half)), dtype=np.float32)
+        for _ in range(20):
+            middle = (lower + upper) / 2
+            q = np.abs(directions * middle[:, None]) - (half - radius)
+            sdf = np.linalg.norm(np.maximum(q, 0), axis=1) + np.minimum(np.maximum(q[:, 0], q[:, 1]), 0) - radius
+            lower = np.where(sdf <= 0, middle, lower)
+            upper = np.where(sdf > 0, middle, upper)
+        radii = lower[:, None] * fractions[None, :]
+        map_x = (cx + directions[:, 0, None] * radii).astype(np.float32)
+        map_y = (cy + directions[:, 1, None] * radii).astype(np.float32)
+        responses = cv.remap(field, map_x, map_y, cv.INTER_LINEAR, borderMode=cv.BORDER_CONSTANT)
+        supported = cv.remap(valid.astype(np.uint8), map_x, map_y, cv.INTER_NEAREST,
+                             borderMode=cv.BORDER_CONSTANT) > 0
+        # Prefer an enclosing outer edge over equally strong eyes/mouth edges.
+        unary = 2.0 * (1 - fractions)[None, :] - edge_weight * responses
+        unary += np.where(supported, 0.0, 4.0)
+        cost = np.zeros(samples, dtype=np.float32)
+        parents = np.empty((angles * 3, samples), dtype=np.int16)
+        for step in range(angles * 3):
+            choices = cost[:, None] + transition
+            previous = choices.argmin(axis=0)
+            parents[step] = previous
+            cost = unary[step % angles] + choices[previous, np.arange(samples)]
+            cost -= cost.min()
+        path = np.empty(angles * 3, dtype=np.int16)
+        state = int(cost.argmin())
+        for step in range(angles * 3 - 1, -1, -1):
+            path[step] = state
+            state = int(parents[step, state])
+        selected = fractions[path[angles:2 * angles]]
+        # Smooth the cyclic radial profile, not independent contour fragments.
+        for _ in range(3):
+            selected = (np.roll(selected, 1) + 2 * selected + np.roll(selected, -1)) / 4
+        final_radii = lower * selected
+        points = np.rint(np.array([cx, cy]) + directions * final_radii[:, None]).astype(np.int32)
+        mask = np.zeros(valid.shape, dtype=np.uint8)
+        cv.fillPoly(mask, [points], 1)
+        mask = (mask > 0) & valid
+        fixed = np.zeros_like(valid)
+        center_rank = np.where(core, (xx - cx) ** 2 + (yy - cy) ** 2, np.inf)
+        seed_y, seed_x = np.unravel_index(int(center_rank.argmin()), valid.shape)
+        fixed[seed_y, seed_x] = True
+        mask[seed_y, seed_x] = True
+        finished = finish_zones(cv, mask.astype(np.uint16) * zone_id, valid, fixed, smooth, expand) == zone_id
+        restored = cv.resize(finished.astype(np.uint8), (width, height), interpolation=cv.INTER_NEAREST) > 0
+        pixels = int(np.count_nonzero(restored & inside))
+        selected_response = cv.remap(field, (cx + directions[:, 0] * final_radii).astype(np.float32)[None],
+                                     (cy + directions[:, 1] * final_radii).astype(np.float32)[None],
+                                     cv.INTER_LINEAR, borderMode=cv.BORDER_CONSTANT)
+        record.update(status="assigned" if pixels else "empty_after_restoration", pixels=pixels,
+                      box_scale=box_scale, roundness=roundness,
+                      mean_contour_response=float(selected_response.mean()),
+                      mean_retained_radius=float(selected.mean()))
+        if pixels:
+            layers.append((zone_id, finished))
+            coverage += finished.astype(np.uint16)
+    for record in reports:
+        record.setdefault("pixels", 0)
+    restored = cv.resize(coverage, (width, height), interpolation=cv.INTER_NEAREST)
+    return layers, reports, {
+        "unknown_pixels": int(np.count_nonzero(inside & (restored == 0))),
+        "overlap_pixels": int(np.count_nonzero(inside & (restored > 1))),
+    }
+
+
+def exclusive_contours(cv, layers, reports, inside):
+    """Resolve overlapping inward contours by normalized distance to box centers."""
+    height, width = inside.shape
+    shape = layers[0][1].shape if layers else (1, 1)
+    labels = np.zeros(shape, dtype=np.uint16)
+    best = np.full(shape, np.inf, dtype=np.float32)
+    yy, xx = np.ogrid[:shape[0], :shape[1]]
+    by_id = {record["zone_id"]: record for record in reports}
+    for zone_id, mask in layers:
+        x0, y0, x1, y1 = by_id[zone_id]["box_xyxy"]
+        cx, cy = (x0 + x1) * shape[1] / width / 2, (y0 + y1) * shape[0] / height / 2
+        rx, ry = max(1, (x1 - x0) * shape[1] / width / 2), max(1, (y1 - y0) * shape[0] / height / 2)
+        distance = ((xx - cx) / rx) ** 2 + ((yy - cy) / ry) ** 2
+        take = mask & (distance < best)
+        labels[take], best[take] = zone_id, distance[take]
+    result = cv.resize(labels, (width, height), interpolation=cv.INTER_NEAREST)
+    result[~inside] = 0
+    result[inside & (result == 0)] = UNKNOWN
+    for record in reports:
+        record["pixels"] = int(np.count_nonzero(result == record["zone_id"]))
+        if record["status"] == "assigned" and not record["pixels"]:
+            record["status"] = "empty_after_exclusive_resolution"
+    return result
 
 
 def save_overlap_preview(cv, source, box, inside, layers, reports, names, destination, finishing, palette, blur=0):
@@ -393,11 +534,12 @@ def save_overlap_preview(cv, source, box, inside, layers, reports, names, destin
         restored_colors = cv.GaussianBlur(restored_colors, (0, 0), blur, borderType=cv.BORDER_REPLICATE)
         restored_coverage = cv.GaussianBlur(restored_coverage, (0, 0), blur, borderType=cv.BORDER_REPLICATE)
     restored_colors /= np.maximum(restored_coverage, 1e-6)[..., None]
-    zone_alpha = np.clip(restored_coverage, 0, 1)[..., None]
-    restored_colors = restored_colors * zone_alpha + 128 * (1 - zone_alpha)
+    zone_alpha = 0.55 * np.clip(restored_coverage, 0, 1)[..., None]
     rgb = np.asarray(source).copy()
     region = rgb[y0:y1, x0:x1]
-    region[inside] = (region[inside] * 0.45 + restored_colors[inside] * 0.55).astype(np.uint8)
+    region[inside] = (region[inside] * (1 - zone_alpha[inside]) + restored_colors[inside] * zone_alpha[inside]).astype(
+        np.uint8
+    )
     # Trace the small masks before enlargement, using subpixel AA strokes instead
     # of tracing the stair-steps of an already nearest-neighbor-upscaled mask.
     coordinate_scale = np.array([width / grid_shape[1], height / grid_shape[0]], dtype=np.float32)
@@ -435,7 +577,7 @@ def save_overlap_preview(cv, source, box, inside, layers, reports, names, destin
         "Mixed fills = overlapping zones",
         "Outlines = individual zones",
         "Coverage totals may exceed 100%",
-        "Gray: unreached / unknown",
+        "Unassigned areas: original image",
         "NudeNet names are suggestions",
     ]
     if finishing:
@@ -529,11 +671,12 @@ def save_outputs(
             (
                 "NudeNet names are suggestions",
                 "Rounded / expanded after growth" if finishing else "Boundaries follow edge costs",
-                "Gray: unreached / unknown",
+                "Unassigned areas: original image",
             ),
             palette=palette,
             antialias=True,
             contour_blur=blur,
+            hide_unknown=True,
         )
     if overlay_only:
         return {str(key): name for key, name in names.items()}
@@ -613,6 +756,19 @@ def main(argv=None):
     )
     parser.add_argument("-s", "--parts-confidence", type=float, default=0.25)
     parser.add_argument(
+        "-q",
+        "--person-mask-threshold",
+        type=float,
+        default=0.5,
+        help="YOLO mask probability threshold in (0,1); lower is looser (try 0.35; default 0.5)",
+    )
+    parser.add_argument(
+        "-j",
+        "--repair-person",
+        action="store_true",
+        help="Close narrow silhouette gaps within the selected instance; never merge detections",
+    )
+    parser.add_argument(
         "-f", "--overlay-only", action="store_true", help="Write only *_zones_overlay.jpg; no other images or JSON"
     )
     parser.add_argument(
@@ -653,6 +809,13 @@ def main(argv=None):
     parser.add_argument(
         "-g", "--growth", type=float, default=2.5, help="Path budget relative to detection half-diagonal"
     )
+    parser.add_argument(
+        "-z",
+        "--balance",
+        type=float,
+        default=0,
+        help="Center-anchored seed and soft radial growth penalty, 0..4; 0 keeps legacy growth (try 1)",
+    )
     parser.add_argument("-d", "--no-download", action="store_true")
     parser.add_argument("-w", "--overwrite", action="store_true", help="Delete recognized previous POC outputs only")
     args = parser.parse_args(argv)
@@ -666,6 +829,8 @@ def main(argv=None):
         args.model = Path("tmp/models") / filename
     if not args.input_dir.is_dir():
         parser.error("input-dir must be an existing directory")
+    if not math.isfinite(args.person_mask_threshold) or not 0 < args.person_mask_threshold < 1:
+        parser.error("person-mask-threshold must be finite and in (0,1)")
     if not math.isfinite(args.sensitivity) or args.sensitivity <= 0:
         parser.error("sensitivity must be finite and > 0")
     if args.detector != "lip-20" and args.sensitivity != 1.0:
@@ -676,6 +841,8 @@ def main(argv=None):
         parser.error("expand must be finite and in [0,32]")
     if not math.isfinite(args.blur) or not 0 <= args.blur <= 32:
         parser.error("blur must be finite and in [0,32]")
+    if not math.isfinite(args.balance) or not 0 <= args.balance <= 4:
+        parser.error("balance must be finite and in [0,4]")
     if args.threads < 1 or not 64 <= args.resolution <= 1024 or not 0 < args.parts_confidence <= 1:
         parser.error("threads >= 1, resolution in [64,1024], parts-confidence in (0,1] required")
     if (
@@ -723,7 +890,13 @@ def main(argv=None):
         try:
             started = time.perf_counter()
             source = load_rgb(path)
-            people = select_people(selection._instances(people_session, source, 0.25), source.size, 0, 1, False)
+            people = select_people(
+                selection._instances(people_session, source, 0.25, mask_threshold=args.person_mask_threshold),
+                source.size,
+                0,
+                1,
+                args.repair_person,
+            )
             report = {
                 "source": path.name,
                 "algorithm": f"{args.detector}-nudenet-edge-growth-v1",
@@ -745,12 +918,15 @@ def main(argv=None):
                     "growth": args.growth,
                     "resolution": args.resolution,
                     "parts_confidence": args.parts_confidence,
+                    "person_mask_threshold": args.person_mask_threshold,
+                    "repair_person": args.repair_person,
                     "sensitivity": args.sensitivity,
                     "smooth": args.smooth,
                     "expand": args.expand,
                     "overlap": args.overlap,
                     "overlay_only": args.overlay_only,
                     "display_blur_source_pixels": args.blur,
+                    "balance": args.balance,
                     "finishing_units": "region-growth grid pixels",
                 },
             }
@@ -786,6 +962,7 @@ def main(argv=None):
                         args.growth,
                         args.smooth,
                         args.expand,
+                        args.balance,
                     )
                     zones = None
                 else:
@@ -799,6 +976,7 @@ def main(argv=None):
                         args.growth,
                         args.smooth,
                         args.expand,
+                        args.balance,
                     )
                     zone_summary = {"unknown_pixels": int(np.count_nonzero(zones == UNKNOWN)), "overlap_pixels": 0}
                 report["growth_seconds"] = time.perf_counter() - tick

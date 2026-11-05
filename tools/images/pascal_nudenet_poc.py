@@ -219,7 +219,18 @@ def competing_zones(crop, inside, raw, confidence, detections, resolution, min_c
 
 
 def save_preview(
-    source, box, inside, labels, names, destination, heading, notes, palette=None, antialias=False, contour_blur=0
+    source,
+    box,
+    inside,
+    labels,
+    names,
+    destination,
+    heading,
+    notes,
+    palette=None,
+    antialias=False,
+    contour_blur=0,
+    hide_unknown=False,
 ):
     """Render an overlay with its own visible-label legend outside the photograph."""
     x0, y0, x1, y1 = box
@@ -231,9 +242,14 @@ def save_preview(
     color_table[UNKNOWN] = (128, 128, 128)
     for label, shade in (palette or {}).items():
         color_table[label] = shade
+    if hide_unknown:
+        color_table[UNKNOWN] = 0
     color = color_table[full]
     rgb = np.asarray(source).copy()
     active = full > 0
+    if hide_unknown:
+        active &= full != UNKNOWN
+    opacity = np.full(full.shape, 0.55, dtype=np.float32)
     if antialias:
         # Display-only smoothing with coverage normalization avoids black halos
         # beside the silhouette. Keep the label map and measured areas unchanged.
@@ -247,7 +263,10 @@ def save_preview(
             / 255.0
         )
         color = np.clip(blurred_color / np.maximum(coverage, 1e-6)[..., None], 0, 255)
-    rgb[active] = (rgb[active] * 0.45 + color[active] * 0.55).astype(np.uint8)
+        if hide_unknown:
+            opacity *= coverage
+    alpha = opacity[active][:, None]
+    rgb[active] = (rgb[active] * (1 - alpha) + color[active] * alpha).astype(np.uint8)
 
     # Keep the legend outside the photograph, showing only zones actually present.
     font_size = max(16, min(28, source.height // 50))
@@ -256,7 +275,7 @@ def save_preview(
     padding, swatch, row_height = 20, font_size + 4, font_size + 18
     rows = []
     for label, count in zip(*np.unique(labels, return_counts=True), strict=True):
-        if label == 0:
+        if label == 0 or (hide_unknown and label == UNKNOWN):
             continue
         label = int(label)
         title = names[label].removeprefix("nudenet_").replace("_", " ").title()

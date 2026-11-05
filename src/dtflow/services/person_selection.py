@@ -9,6 +9,7 @@ import ast
 import hashlib
 import io
 import logging
+import math
 import os
 import stat
 import threading
@@ -503,9 +504,12 @@ def _letterbox(image: Image.Image):
     return tensor, (left, top, resized[0], resized[1])
 
 
-def _instances(session, image: Image.Image, threshold: float):
+def _instances(session, image: Image.Image, threshold: float, *, mask_threshold: float = 0.5):
     import numpy as np
 
+    if not math.isfinite(mask_threshold) or not 0 < mask_threshold < 1:
+        raise ValidationError("Person mask threshold must be finite and in (0, 1).")
+    mask_logit = math.log(mask_threshold) - math.log1p(-mask_threshold)
     tensor, (left, top, rw, rh) = _letterbox(image)
     detections, prototypes = _run(session, tensor)
     if not np.isfinite(detections).all() or not np.isfinite(prototypes).all():
@@ -522,7 +526,7 @@ def _instances(session, image: Image.Image, threshold: float):
         if x1 <= x0 or y1 <= y0:
             continue
         logits = (row[6:] @ proto).reshape(160, 160)
-        full = np.asarray(Image.fromarray(logits).resize((SIDE, SIDE), Image.Resampling.BILINEAR)) > 0
+        full = np.asarray(Image.fromarray(logits).resize((SIDE, SIDE), Image.Resampling.BILINEAR)) > mask_logit
         full &= (
             (xx >= max(0.0, x0 - BOX_MARGIN))
             & (xx < min(float(SIDE), x1 + BOX_MARGIN))
