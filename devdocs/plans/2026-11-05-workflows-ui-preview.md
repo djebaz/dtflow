@@ -45,3 +45,7 @@
 ## Acceptance
 
 The owner approved the Workflows mockup design on 2026-11-05. Rendered screenshots establish offline layout evidence only; native Windows/DPI and production workflow behavior remain separate. No automated layout assertions or unit tests are added. Static POC parameter choices are illustrative, not a production contract or live inventory.
+
+## Follow-up: workflow file capture Action (2026-11-05)
+
+[PR #231](https://github.com/djebaz/dtflow/pull/231) adds `tools/ui/capture_workflow_preview.py` and the **Workflow preview screenshot** Actions workflow. They load `tools/node_editor_poc/reference_workflow_v1.json` (or another ComfyUI v1.0 file) into this preview with the file's own positions and parameters and upload window and canvas PNGs. First Actions run passed in 36 s (5 nodes, 5 links). Offline layout evidence only; no tests added.
