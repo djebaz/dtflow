@@ -7,6 +7,9 @@ Run from the repository root with its uv-managed environment:
 Requires existing local YOLO26 end2end segmentation and NudeNet-style face ONNX
 models. Only the pinned SCHP model may be downloaded. No provider calls.
 Raw and refined outputs are grouped by type and aligned to the oriented source.
+Optionally add -k / --pose-model for conservative arm/leg label correction;
+-q controls joint confidence and -w controls limb-zone width. Pose-corrected
+outputs have a _pose suffix; raw/refined masks and SCHP confidence stay intact.
 """
 
 from __future__ import annotations
@@ -81,7 +84,7 @@ STD = (0.225, 0.224, 0.229)
 IMAGE_SUFFIXES = frozenset({".jpg", ".jpeg", ".png", ".webp", ".bmp", ".tif", ".tiff"})
 MAX_IMAGE_PIXELS = 16_000_000
 DISPLAY_LABELS = (*LABELS, "Skin")  # synthetic class 18, never an SCHP prediction
-DISPLAY_COLORS = (*COLORS, (210, 166, 130))
+DISPLAY_COLORS = (*COLORS, (255, 0, 255))  # vivid magenta stays visible over natural skin
 
 
 def sha256_file(path: Path) -> str:
@@ -298,6 +301,114 @@ def segment_person(session, source, mask, box, face_boxes, min_confidence):
     return raw_full, refined_full, confidence_full, details
 
 
+def match_pose_people(people, poses):
+    """Match whole-image skeletons to person instances once, using box IoU."""
+    candidates = []
+    for person_index, (_, _, box) in enumerate(people):
+        x0, y0, x1, y1 = box
+        for pose_index, pose in enumerate(poses):
+            px0, py0, px1, py1 = pose["box_source_xyxy"]
+            intersection = max(0, min(x1, px1) - max(x0, px0)) * max(0, min(y1, py1) - max(y0, py0))
+            union = (x1 - x0) * (y1 - y0) + max(0, px1 - px0) * max(0, py1 - py0) - intersection
+            iou = intersection / union if union > 0 else 0
+            if iou >= 0.25:
+                candidates.append((iou, person_index, pose_index))
+    matched = {}
+    used = set()
+    for iou, person_index, pose_index in sorted(candidates, reverse=True):
+        if person_index not in matched and pose_index not in used:
+            matched[person_index] = (poses[pose_index], iou)
+            used.add(pose_index)
+    return matched
+
+
+def correct_pose_limbs(labels, person_mask, box, matched, kpt_confidence, width):
+    """Correct only arm/leg family conflicts inside unambiguous confident pose zones."""
+    import numpy as np
+
+    from person_parts_mask_poc import limb_zone
+
+    corrected = labels.copy()
+    changed = np.zeros(labels.shape, dtype=bool)
+    if matched is None:
+        return corrected, changed, {"status": "unavailable_no_matching_pose", "changed_pixels": 0}
+    pose, match_iou = matched
+    x0, y0, x1, y1 = box
+    inside = person_mask[y0:y1, x0:x1] > 0
+    points = pose["keypoints"]
+    # COCO subject-side joints. Hands, feet, face, torso and clothes are untouched.
+    segments = {
+        12: ((11, 13), (13, 15)),
+        13: ((12, 14), (14, 16)),
+        14: ((5, 7), (7, 9)),
+        15: ((6, 8), (8, 10)),
+    }
+    zones = {}
+    used_segments = []
+    for class_id, bones in segments.items():
+        zone = np.zeros(inside.shape, dtype=bool)
+        for start, end in bones:
+            ax, ay, ac = points[start]
+            bx, by, bc = points[end]
+            if min(ac, bc) < kpt_confidence:
+                continue
+            part = limb_zone(inside, (ax - x0, ay - y0), (bx - x0, by - y0), "segment", width)
+            if part.any():
+                zone |= part
+                used_segments.append([start, end])
+        zones[class_id] = zone
+    count = sum(zone.astype(np.uint8) for zone in zones.values())
+    original = labels[y0:y1, x0:x1]
+    target = corrected[y0:y1, x0:x1]
+    for class_id, zone in zones.items():
+        # Do not guess through crossings, or rewrite left/right within a family.
+        wrong_family = np.isin(original, (14, 15) if class_id in (12, 13) else (12, 13))
+        replace = zone & (count == 1) & wrong_family
+        target[replace] = class_id
+    changed[y0:y1, x0:x1] = target != original
+    details = {
+        "status": "applied" if used_segments else "unavailable_no_confident_limb_zones",
+        "match_box_iou": match_iou,
+        "keypoints_xyc": points,
+        "used_joint_pairs": used_segments,
+        "keypoint_confidence": kpt_confidence,
+        "zone_half_width_fraction_of_bone": width,
+        "overlapping_zone_pixels_left_unchanged": int((count > 1).sum()),
+        "arm_to_leg_pixels": int((np.isin(original, (14, 15)) & np.isin(target, (12, 13))).sum()),
+        "leg_to_arm_pixels": int((np.isin(original, (12, 13)) & np.isin(target, (14, 15))).sum()),
+        "changed_pixels": int(changed.sum()),
+    }
+    return corrected, changed, details
+
+
+def save_pose_overlay(source, matched, kpt_confidence, out_dir: Path, stem: str):
+    """Show the matched skeleton and joint scores for visual inspection."""
+    from PIL import ImageDraw
+
+    overlay = source.copy()
+    draw = ImageDraw.Draw(overlay)
+    if matched is None:
+        draw.text((8, 8), "No matching pose: arm/leg correction skipped", fill=(255, 80, 80))
+    else:
+        pose, _ = matched
+        points = pose["keypoints"]
+        for start, end, color in (
+            (5, 7, (153, 132, 255)), (7, 9, (153, 132, 255)),
+            (6, 8, (69, 214, 54)), (8, 10, (69, 214, 54)),
+            (11, 13, (63, 204, 242)), (13, 15, (63, 204, 242)),
+            (12, 14, (219, 50, 27)), (14, 16, (219, 50, 27)),
+        ):
+            ax, ay, ac = points[start]
+            bx, by, bc = points[end]
+            if min(ac, bc) >= kpt_confidence:
+                draw.line((ax, ay, bx, by), fill=color, width=3)
+        for idx, (x, y, score) in enumerate(points):
+            if score >= kpt_confidence:
+                draw.ellipse((x - 3, y - 3, x + 3, y + 3), fill="white", outline="black")
+                draw.text((x + 5, y), f"{idx}: {score:.2f}", fill="white", stroke_width=1, stroke_fill="black")
+    overlay.save(out_dir / "persons" / f"{stem}_pose_keypoints.png")
+
+
 def create_output_dir(requested: Path) -> Path:
     """Preserve earlier runs by choosing a numbered sibling if the folder exists."""
     root = requested.resolve()
@@ -413,7 +524,16 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("-p", "--person-model", type=Path, required=True, help="Local YOLO26 end2end segmentation ONNX.")
     parser.add_argument("-f", "--faces-model", type=Path, required=True, help="Local NudeNet-style 320 px FACE_* ONNX.")
     parser.add_argument("-d", "--confidence", type=float, default=0.25, help="Person detection threshold (default 0.25).")
+    parser.add_argument("-k", "--pose-model", type=Path, help="Optional local YOLO pose ONNX for arm/leg correction.")
+    parser.add_argument("-q", "--pose-kpt-confidence", type=float, default=0.3, help="Minimum joint score (default 0.3).")
+    parser.add_argument("-w", "--pose-width", type=float, default=0.20, help="Limb-zone half-width / bone length (default 0.20).")
     args = parser.parse_args(argv)
+    if args.pose_model is not None and not args.pose_model.is_file():
+        parser.error(f"Local pose model file not found: {args.pose_model}")
+    if not 0.0 <= args.pose_kpt_confidence <= 1.0:
+        parser.error("--pose-kpt-confidence must be between 0 and 1")
+    if not 0.0 < args.pose_width <= 1.0:
+        parser.error("--pose-width must be greater than 0 and at most 1")
     for path in (args.person_model, args.faces_model):
         if not path.is_file():
             parser.error(f"Local model file not found: {path}")
@@ -449,6 +569,15 @@ def main(argv: list[str] | None = None) -> int:
     faces_ref = selection.describe_model(args.faces_model)
     person_session = selection._verified_session(person_ref, selection._segmentation_session)
     faces_session = selection._verified_session(faces_ref, selection._faces_session)
+    pose = pose_ref = pose_layout = None
+    if args.pose_model is not None:
+        from person_parts_mask_poc import pose_session
+
+        def build_pose(data):
+            return pose_session(data, args.threads)
+
+        pose_ref = selection.describe_model(args.pose_model)
+        pose, _, pose_layout = selection._verified_session(pose_ref, build_pose)
     model_hash = ensure_model(args.model, allow_download=not args.no_download)
     session = load_session(args.model, args.threads)
     output_root = create_output_dir(args.output_dir)
@@ -465,6 +594,21 @@ def main(argv: list[str] | None = None) -> int:
             detect_start = time.perf_counter()
             people = selection._instances(person_session, source, args.confidence)
             face_boxes = selection._face_boxes(faces_session, source) if people else []
+            pose_matches = {}
+            pose_diagnostics = None
+            if pose is not None and people:
+                from person_parts_mask_poc import decode_pose
+                from yolo_person_zone_mask_poc import letterbox
+
+                pose_tensor, pose_geometry = letterbox(source)
+                pose_output = pose.run(
+                    [pose.get_outputs()[0].name], {pose.get_inputs()[0].name: pose_tensor}
+                )[0]
+                pose_people, pose_diagnostics = decode_pose(
+                    pose_output, pose_layout, pose_geometry, args.confidence, args.pose_kpt_confidence, 0.45
+                )
+                pose_matches = match_pose_people(people, pose_people)
+                del pose_output, pose_tensor
             detection_seconds = time.perf_counter() - detect_start
             person_reports = []
             for index, (score, mask, box) in enumerate(people, start=1):
@@ -483,6 +627,23 @@ def main(argv: list[str] | None = None) -> int:
                 refined_coverage = make_visuals(
                     source, refined, output_root, f"{person_stem}_refined", args.opacity, refined_title, confidence_view
                 )
+                if pose is not None:
+                    matched = pose_matches.get(index - 1)
+                    corrected, changed, pose_details = correct_pose_limbs(
+                        refined, person_mask, box, matched, args.pose_kpt_confidence, args.pose_width
+                    )
+                    pose_title = (
+                        f"Pose: {pose_details['changed_pixels']} corrected pixels"
+                        if pose_details["status"] == "applied" else "Pose unavailable: unchanged"
+                    )
+                    details["pose_class_coverages_percent_of_source"] = make_visuals(
+                        source, corrected, output_root, f"{person_stem}_pose", args.opacity, pose_title, confidence_view
+                    )
+                    Image.fromarray(changed.astype(np.uint8) * 255).save(
+                        output_root / "masks" / f"{person_stem}_pose_changed.png"
+                    )
+                    save_pose_overlay(source, matched, args.pose_kpt_confidence, output_root, person_stem)
+                    details["pose_correction"] = pose_details
                 Image.fromarray(person_mask).save(output_root / "persons" / f"{person_stem}_person.png")
                 crop = source.crop(tuple(details["crop_box"]))
                 crop.save(output_root / "crops" / f"{person_stem}_crop.png")
@@ -509,6 +670,9 @@ def main(argv: list[str] | None = None) -> int:
                 "model_sha256": model_hash,
                 "person_model_sha256": person_ref.sha256,
                 "faces_model_sha256": faces_ref.sha256,
+                "pose_model_sha256": pose_ref.sha256 if pose_ref is not None else None,
+                "pose_detection": pose_diagnostics,
+                "pose_minimum_match_iou": 0.25,
                 "class_labels": list(DISPLAY_LABELS),
                 "synthetic_skin_class_id": 18,
                 "raw_definition": "unfiltered SCHP classification, restored to source grid and clipped to person",
