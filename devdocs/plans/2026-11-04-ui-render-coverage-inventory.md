@@ -148,11 +148,11 @@ Existing Workflows captures now show text navigation, the blue primary Images bu
 
 ## Production Workflows coverage — 2026-11-05 (#223 implementation)
 
-The catalogue now has 471 states in 36 category/subcategory groups. The four preview captures were replaced by ten production Workflows states (`workflows-01-empty-library` … `workflows-10-narrow`, rendered from the real Workflows tab), the Inpaint editor gained the detection model download states (`inpaint-21` … `inpaint-23`), and Queues gained `queues-74-workflow-queue` (a workflow run as one queue item, with Relaunch, Edit as new and item Retry off like a script queue).
+The catalogue now has 472 states in 36 category/subcategory groups. The four preview captures were replaced by eleven production Workflows states (`workflows-01-empty-library` … `workflows-11-library-folded`, rendered from the real Workflows tab), the Inpaint editor gained the detection model download states (`inpaint-21` … `inpaint-23`), and Queues gained `queues-74-workflow-queue` (a workflow run as one queue item, with Relaunch, Edit as new and item Retry off like a script queue).
 
 | Selection record | Inputs | Representatives |
 | --- | --- | --- |
-| `page.workflows` component | Workflows page, canvas, `workflows_*.ui`, renderer, reference fixture | `workflows-02`, `-06`, `-07`, `-10` |
+| `page.workflows` component | Workflows page, canvas, `workflows_*.ui`, renderer, reference fixture | `workflows-02`, `-06`, `-07`, `-10`, `-11` |
 | `workflow-library` component | `services/workflow_library.py` | `workflows-01`, `-02`, `-03` |
 | `model-download` component | `ui/model_download.py`, `services/model_provisioning.py`, `detection_models.json` | `inpaint-21`, `-22`, `-23`, `workflows-05` |
 | Workflows fallback rule | `core/workflows.py`, `services/face_mask.py`, capture tool and `workflow-preview.yml` | `page.workflows` (warning) |

@@ -212,7 +212,8 @@
       "workflows-02-editing",
       "workflows-06-running",
       "workflows-07-branch-paused",
-      "workflows-10-narrow"
+      "workflows-10-narrow",
+      "workflows-11-library-folded"
     ]
   },
   "components": [
