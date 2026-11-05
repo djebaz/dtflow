@@ -12,6 +12,7 @@ import logging
 import os
 import stat
 import threading
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -138,6 +139,7 @@ class PersonAnalysis:
     height: int
     people: tuple[PersonLayers, ...]
     has_clothes: bool
+    faces: int | None = None  # face boxes found by the faces model; None when it did not run
 
 
 def describe_model(path: Path) -> ModelRef:
@@ -581,24 +583,44 @@ def analyze_people(
     faces: ModelRef | None = None,
     *,
     threshold: float = 0.25,
+    on_stage: Callable[[str], None] | None = None,
 ) -> PersonAnalysis:
-    """Find people in the editor's source snapshot; Body/Clothes layers need the optional clothes model."""
+    """Find people in the editor's source snapshot; Body/Clothes layers need the optional clothes model.
+
+    ``on_stage`` (called on this worker thread) receives "Loading model", "Detecting people", "Detecting faces" and
+    "Analysing clothing" as each really starts."""
+    stage = on_stage or (lambda _name: None)
     if not 0 < threshold <= 1:
         raise ValidationError("Confidence must be >0 and <=1.")
     image = Image.open(io.BytesIO(source.encoded)).convert("RGB")
+    stage("Loading model")
     seg = _verified_session(segmentation, _segmentation_session)
     clothes_session = _verified_session(clothes, _clothes_session) if clothes is not None else None
+    faces_session = (
+        _verified_session(faces, _faces_session) if clothes_session is not None and faces is not None else None
+    )
+    stage("Detecting people")
+    instances = _instances(seg, image, threshold)
     face_boxes = None
-    if clothes_session is not None and faces is not None:
-        face_boxes = _face_boxes(_verified_session(faces, _faces_session), image)
+    if faces_session is not None:
+        stage("Detecting faces")
+        face_boxes = _face_boxes(faces_session, image)
+    if clothes_session is not None and instances:
+        stage("Analysing clothing")
     people = []
-    for index, (score, mask, box) in enumerate(_instances(seg, image, threshold), start=1):
+    for index, (score, mask, box) in enumerate(instances, start=1):
         x0, y0, x1, y1 = box
         classes = _clothes_layers(clothes_session, image, mask, box) if clothes_session is not None else None
         if classes is not None and face_boxes:
             classes = _cap_face(classes, box, face_boxes)
         people.append(PersonLayers(index, score, box, mask[y0:y1, x0:x1].tobytes(), classes))
-    return PersonAnalysis(source.width, source.height, tuple(people), clothes_session is not None)
+    return PersonAnalysis(
+        source.width,
+        source.height,
+        tuple(people),
+        clothes_session is not None,
+        None if face_boxes is None else len(face_boxes),
+    )
 
 
 def person_at(analysis: PersonAnalysis, x: int, y: int) -> PersonLayers | None:

@@ -30,7 +30,8 @@
     ],
     "page.inpaint": [
       "inpaint-03-mask-painted",
-      "inpaint-13-select-people-found"
+      "inpaint-13-select-people-found",
+      "inpaint-22-models-download-confirmation"
     ],
     "page.queues": [
       "queues-11-running",
