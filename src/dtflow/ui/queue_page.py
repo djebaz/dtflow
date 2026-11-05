@@ -168,6 +168,12 @@ CLEAR_TEXT = (
     "Finished and cancelled queues will be removed from this list. Their attempts and saved images are kept. "
     "Paused, running and up-next queues stay."
 )
+# Queues whose single item is a script or workflow run: started again from Scripts or Workflows, not copied here.
+RUN_KINDS = ("script", "workflow")
+RUN_KIND_NOTES = {
+    "script": " (a script queue: press Start on the script)",
+    "workflow": " (a workflow queue: press Run in Workflows)",
+}
 REMOVE_TEXT = "This queue will be removed from the list. Its attempts and saved images are kept."
 POSTED = "Posted. The dispatch owner applies it at its next poll, or at the next Start if nothing is dispatching."
 
@@ -977,8 +983,10 @@ class QueuePage:
             feedback(page).dismiss()  # the queue started or went away: the pending consent no longer applies
         page.removeQueueButton.setEnabled(removable)
         has_items = view is not None and bool(sum(view["summary"].values()))
-        copyable = has_items and view.get("kind") != "script"  # a script run is started again from Scripts
-        scripted = " (a script queue: press Start on the script)" if has_items and not copyable else ""
+        kind = view.get("kind") if view is not None else None
+        # A script or workflow run is started again from its own page, never copied as plain requests.
+        copyable = has_items and kind not in RUN_KINDS
+        scripted = RUN_KIND_NOTES.get(kind, "") if has_items and not copyable else ""
         page.relaunchQueueButton.setEnabled(copyable)
         page.editAsNewQueueButton.setEnabled(copyable)
         page.relaunchQueueButton.setToolTip("Run this queue's requests again." + scripted)
@@ -1041,7 +1049,7 @@ class QueuePage:
         page.uncertaintyBox.setVisible(note is not None)
         if note is not None:
             self._show(page.uncertaintyLabel, *note)
-        scripted = view is not None and view.get("kind") == "script"
+        scripted = view is not None and view.get("kind") in RUN_KINDS
         page.itemRetryButton.setEnabled(row is not None and row.state in RELAUNCH_STATES and not scripted)
         if row is None:
             for name in (
@@ -1162,7 +1170,7 @@ class QueuePage:
         self._relaunch_actions(relaunch, queue_id)
         edit = menu.addAction("Edit as new queue…")
         edit.triggered.connect(lambda _=False: self.edit_as_new(queue_id))
-        if (self._views.get(queue_id) or {}).get("kind") == "script":
+        if (self._views.get(queue_id) or {}).get("kind") in RUN_KINDS:
             relaunch.setEnabled(False)
             edit.setEnabled(False)
         remove = menu.addAction("Remove queue…")
@@ -1293,7 +1301,7 @@ class QueuePage:
 
     def _last_queue(self) -> str | None:
         """The most recently created queue with items, for the empty state's Relaunch last."""
-        views = [v for v in self._views.values() if sum(v["summary"].values()) and v.get("kind") != "script"]
+        views = [v for v in self._views.values() if sum(v["summary"].values()) and v.get("kind") not in RUN_KINDS]
         return max(views, key=lambda v: (v["created_at_utc"], v["queue_id"]))["queue_id"] if views else None
 
     def relaunch_last(self) -> None:

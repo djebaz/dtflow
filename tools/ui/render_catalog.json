@@ -223,6 +223,7 @@
     {"id": "queues-70-thumbnail-preview-revalidation-pending", "category": "queues", "subcategory": "items", "fixture": "item-table", "stage": "setup", "level": "s", "path": "queues-70-thumbnail-preview-revalidation-pending.png"},
     {"id": "queues-72-script-parent-summary", "category": "queues", "subcategory": "items", "fixture": "item-table", "stage": "setup", "level": "s", "path": "queues-72-script-parent-summary.png"},
     {"id": "queues-73-script-step-details", "category": "queues", "subcategory": "items", "fixture": "item-table", "stage": "setup", "level": "s", "path": "queues-73-script-step-details.png"},
+    {"id": "queues-74-workflow-queue", "category": "queues", "subcategory": "items", "fixture": "item-table", "stage": "setup", "level": "m", "path": "queues-74-workflow-queue.png"},
     {"id": "queues-90-template-loaded", "category": "queues", "subcategory": "templates", "fixture": "queue-template", "stage": "setup", "level": "m", "path": "queues-90-template-loaded.png"},
     {"id": "queues-91-template-save-name", "category": "queues", "subcategory": "templates", "fixture": "queue-template", "stage": "setup", "level": "m", "path": "queues-91-template-save-name.png"},
     {"id": "queues-92-template-library", "category": "queues", "subcategory": "templates", "fixture": "queue-template", "stage": "setup", "level": "s", "path": "queues-92-template-library.png"},

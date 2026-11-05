@@ -196,7 +196,7 @@ def planned_phases():
     if wants("scripts"):
         phases.append("scripts window")
     if wants("workflows"):
-        phases.append("workflows preview window")
+        phases.append("workflows workspace")
     return phases
 
 
@@ -1970,6 +1970,22 @@ def render_item_table_states(shell, out, state):
         snap("queues-72-script-parent-summary")
         select(1)
         snap("queues-73-script-step-details")
+        # A workflow run is one queue item too: Relaunch, Edit as new and item Retry stay off (Run is in Workflows).
+        workflow_view = dict(
+            view,
+            kind="workflow",
+            queue_id="offline-workflow-queue",
+            status="finished",
+            first=dict(view["first"], prompt="Workflow: Portrait finishing"),
+            items=[dict(items[0], item_id="offline-workflow-item", prompt="Workflow: Portrait finishing")],
+            summary={name: int(name == "succeeded") for name in counts},
+            cap=1,
+        )
+        queue._selected = workflow_view["queue_id"]
+        queue._read_done(([workflow_view], workflow_view, 2), None)
+        queue._timer.stop()
+        select(0)
+        snap("queues-74-workflow-queue")
         queue._selected = None
         queue._activity.set(dispatching=False)
         queue._read_done(([], None, 2), None)
@@ -3886,7 +3902,7 @@ def _render_selection(app, args):
     ):
         state = Path(temporary)
         if wants("workflows"):
-            phase("workflows preview window")
+            phase("workflows workspace")
             from render_workflows_states import render_workflows_states
 
             render_workflows_states(

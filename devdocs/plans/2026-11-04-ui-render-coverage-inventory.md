@@ -145,3 +145,17 @@ All four Workflows images were produced and visually reviewed under `tmp/ui-work
 ## PR #229 utility-navigation coverage
 
 Existing Workflows captures now show text navigation, the blue primary Images button and the footer Connection status control (extra-small corners). `workflows-04-narrow` uses 1040 px to cover the compact Images host. Existing Connection, Queues, Images and Logs representatives cover utility placement and absence in Images/Logs; no new state IDs, packs or exhaustive fallback were added.
+
+## Production Workflows coverage — 2026-11-05 (#223 implementation)
+
+The catalogue now has 471 states in 36 category/subcategory groups. The four preview captures were replaced by ten production Workflows states (`workflows-01-empty-library` … `workflows-10-narrow`, rendered from the real Workflows tab), the Inpaint editor gained the detection model download states (`inpaint-21` … `inpaint-23`), and Queues gained `queues-74-workflow-queue` (a workflow run as one queue item, with Relaunch, Edit as new and item Retry off like a script queue).
+
+| Selection record | Inputs | Representatives |
+| --- | --- | --- |
+| `page.workflows` component | Workflows page, canvas, `workflows_*.ui`, renderer, reference fixture | `workflows-02`, `-06`, `-07`, `-10` |
+| `workflow-library` component | `services/workflow_library.py` | `workflows-01`, `-02`, `-03` |
+| `model-download` component | `ui/model_download.py`, `services/model_provisioning.py`, `detection_models.json` | `inpaint-21`, `-22`, `-23`, `workflows-05` |
+| Workflows fallback rule | `core/workflows.py`, `services/face_mask.py`, capture tool and `workflow-preview.yml` | `page.workflows` (warning) |
+| Workflow run fallback rule | `services/workflow_queue.py`, `services/workflow_item.py`, `persistence/workflow_items.py` | `page.workflows` + `page.queues` (warning) |
+
+`page.queues` now includes `queues-74-workflow-queue`. Shared persistence (`queues.py`, `store.py`), `session.py`, `cli.py`, `pyproject.toml`/`uv.lock` and the shared shell/QSS keep sampling the approved shared pack with a warning, as before.
