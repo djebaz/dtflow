@@ -1232,7 +1232,8 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="Round body-region contours by this source-pixel radius; default 3 in body-only mode, otherwise 0.",
     )
     args = parser.parse_args(argv)
-    if args.depth_smoothing < 0 or args.curvature_gain <= 0 or args.normal_strength <= 0:\n        parser.error("depth smoothing must be >= 0; curvature gain and normal strength must be > 0")
+    if args.depth_smoothing < 0 or args.curvature_gain <= 0 or args.normal_strength <= 0:
+        parser.error("depth smoothing must be >= 0; curvature gain and normal strength must be > 0")
     if args.rounding is None:
         args.rounding = 3.0 if args.body_only else 0.0
     if not 0.0 <= args.rounding <= 32.0:
@@ -1374,7 +1375,8 @@ def main(argv: list[str] | None = None) -> int:
                 )
                 save_person_overlay(source, person_mask, output_root, person_stem)
                 if depth_estimator is not None:
-                    save_depth_geometry(source, person_mask, output_root, person_stem, depth_estimator,\n                                        smoothing=args.depth_smoothing, curvature_gain=args.curvature_gain,\n                                        normal_strength=args.normal_strength)
+                    save_depth_geometry(source, person_mask, output_root, person_stem, depth_estimator,
+                                        smoothing=args.depth_smoothing, curvature_gain=args.curvature_gain,\n                                        normal_strength=args.normal_strength)
                 details["person_cutoff"] = "YOLO instance segmentation silhouette, not detection box"
                 details["person_postprocessing"] = (
                     "none: preserve decoded background gaps; missed gaps are not reconstructed"
