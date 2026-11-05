@@ -10,13 +10,25 @@ is the V1 specification; the file contract is [architecture/workflows.md](../arc
   Save). Open, Save, Rename, Duplicate and Delete act on `<state>/workflows/library/<name>.json`. Import… accepts only a
   file DTFlow fully understands; anything else is rejected whole with one reason. Export… writes the same ComfyUI v1.0
   structure. The palette adds any node type.
-- **Canvas (centre):** wheel zooms, left-drag pans, Shift-drag selects, F fits, Ctrl+Z/Ctrl+Y undo/redo. Only matching
-  IMAGE/MASK ports connect, and connections that would make a cycle are refused.
-- **Inspector (right):** the selected node's settings. Every generative node has its own checkpoint, LoRAs, prompts,
-  seed, steps, guidance and sampler. A value outside the contract (from an imported file) is shown read-only with its
-  reason, never clamped.
+- **Library toggle:** the **Library** button at the start of the canvas toolbar (Ctrl+L) folds the left side (library,
+  Add node and Branches) at any window width, so the canvas gets the room; the Generate / Workflows / Queues
+  navigation then sits above the toolbar. It is open by default from 1100 px window width and folded below; once you
+  press it, DTFlow remembers your choice (`<state>/workflows/workspace.json`). Ctrl+O and Import… show the library
+  again. In a small window with the library open, the workflow name moves above the toolbar buttons.
+- **Canvas (centre):** wheel zooms, left-drag pans, Shift-drag selects, F fits, Ctrl+Z/Ctrl+Y undo/redo. Fit never
+  zooms out below 75 %, so node text stays readable; a larger workflow then shows from its left end (the wheel zooms
+  further out). Double-click empty canvas, or press Tab, to open a searchable list of node types; Enter or a click adds
+  the chosen node at that point, Esc closes the list. Only matching IMAGE/MASK ports connect, and connections that
+  would make a cycle are refused.
+- **Inspector (right):** the selected node's settings. It stays visible at every window width. Every generative node
+  has its own checkpoint, LoRAs, prompts, seed, steps, guidance and sampler. A value outside the contract (from an
+  imported file) is shown read-only with its reason, never clamped. While this workflow's run is live its settings are
+  read-only: the run keeps the settings it started with.
 - Before running, the inspector shows what is missing or the plan, for example "Ready: 6 generations and 2 local face
   detections". Batches fan out: each Generate image is its own branch and every downstream node runs once per branch.
+- **Checkpoints:** the reference workflow's `PLACEHOLDER_…` checkpoints block Run with "Choose a checkpoint for
+  <node>". A checkpoint the model list already loaded on Generate does not contain only warns (Run stays available);
+  no backend is contacted for this check.
 
 ## Running
 
@@ -36,8 +48,13 @@ is the V1 specification; the file contract is [architecture/workflows.md](../arc
   Stop ends that branch. Other branches keep running; an unanswered branch stays paused and submits nothing.
 - **Failures:** a failed or unknown step stops only its own branch; the run ends partial. Retry reruns the step with its
   original settings, then its downstream branch (after the run ended, Retry starts a new workflow queue seeded with that
-  branch's saved images). An unknown remote outcome is shown as unknown and never replayed. A run never submits more
-  than its planned total plus explicit Retries.
+  branch's saved images). Retry is in the Run panel under the canvas, in the selected node's inspector, and in Queues
+  on the workflow item (it retries the first failed, then unknown, step). An unknown remote outcome is shown as unknown
+  and never replayed. A run never submits more than its planned total plus explicit Retries.
+- **Earlier runs:** the Run panel's **Earlier runs** list shows recent workflow runs; choosing one follows it again
+  (steps, Retry, waiting branches), also after a restart. Queues → Open in Workflows does the same for a workflow
+  item. The run's own workflow is put on the canvas unless that workflow is already open, or the open one has unsaved
+  changes (then only the Run panel follows the run).
 - **Outputs:** every step's image is an ordinary saved output in Images with its settings; Save nodes mark the results
   shown in the run card. Masks are kept under `<state>/workflows/runs/<run id>/`.
 

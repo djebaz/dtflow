@@ -19,6 +19,109 @@
     <number>8</number>
    </property>
    <item>
+    <widget class="QWidget" name="workflowShellHeader">
+     <property name="visible">
+      <bool>false</bool>
+     </property>
+     <layout class="QHBoxLayout" name="workflowShellHeaderLayout">
+      <property name="leftMargin">
+       <number>0</number>
+      </property>
+      <property name="topMargin">
+       <number>0</number>
+      </property>
+      <property name="rightMargin">
+       <number>0</number>
+      </property>
+      <property name="bottomMargin">
+       <number>0</number>
+      </property>
+      <property name="spacing">
+       <number>8</number>
+      </property>
+      <item>
+       <widget class="QWidget" name="workflowBrandSlot">
+        <layout class="QVBoxLayout" name="workflowBrandSlotLayout">
+         <property name="leftMargin">
+          <number>0</number>
+         </property>
+         <property name="topMargin">
+          <number>0</number>
+         </property>
+         <property name="rightMargin">
+          <number>0</number>
+         </property>
+         <property name="bottomMargin">
+          <number>0</number>
+         </property>
+         <property name="spacing">
+          <number>0</number>
+         </property>
+        </layout>
+       </widget>
+      </item>
+      <item>
+       <widget class="QWidget" name="workflowNavigationSlot">
+        <layout class="QVBoxLayout" name="workflowNavigationSlotLayout">
+         <property name="leftMargin">
+          <number>0</number>
+         </property>
+         <property name="topMargin">
+          <number>0</number>
+         </property>
+         <property name="rightMargin">
+          <number>0</number>
+         </property>
+         <property name="bottomMargin">
+          <number>0</number>
+         </property>
+         <property name="spacing">
+          <number>0</number>
+         </property>
+        </layout>
+       </widget>
+      </item>
+      <item>
+       <spacer name="workflowShellHeaderSpacer">
+        <property name="orientation">
+         <enum>Qt::Horizontal</enum>
+        </property>
+        <property name="sizeHint" stdset="0">
+         <size>
+          <width>0</width>
+          <height>0</height>
+         </size>
+        </property>
+       </spacer>
+      </item>
+     </layout>
+    </widget>
+   </item>
+   <item>
+    <widget class="QWidget" name="workflowTitleRow">
+     <property name="visible">
+      <bool>false</bool>
+     </property>
+     <layout class="QHBoxLayout" name="workflowTitleRowLayout">
+      <property name="leftMargin">
+       <number>0</number>
+      </property>
+      <property name="topMargin">
+       <number>0</number>
+      </property>
+      <property name="rightMargin">
+       <number>0</number>
+      </property>
+      <property name="bottomMargin">
+       <number>0</number>
+      </property>
+      <property name="spacing">
+       <number>8</number>
+      </property>
+     </layout>
+    </widget>
+   </item>
+   <item>
     <widget class="QWidget" name="workflowToolbar">
      <layout class="QHBoxLayout" name="workflowToolbarLayout">
       <property name="leftMargin">
@@ -36,6 +139,22 @@
       <property name="spacing">
        <number>4</number>
       </property>
+      <item>
+       <widget class="QPushButton" name="libraryToggleButton">
+        <property name="text">
+         <string>Library</string>
+        </property>
+        <property name="checkable">
+         <bool>true</bool>
+        </property>
+        <property name="toolTip">
+         <string>Show or fold the workflow library, Add node and Branches panels (Ctrl+L)</string>
+        </property>
+        <property name="accessibleName">
+         <string>Show or fold the workflow library (Ctrl+L)</string>
+        </property>
+       </widget>
+      </item>
       <item>
        <widget class="QLabel" name="workflowName">
         <property name="text">
@@ -362,6 +481,30 @@
           </widget>
          </item>
          <item>
+          <widget class="QWidget" name="workflowRetryActions">
+           <property name="visible">
+            <bool>false</bool>
+           </property>
+           <layout class="QHBoxLayout" name="workflowRetryActionsLayout">
+            <property name="leftMargin">
+             <number>0</number>
+            </property>
+            <property name="topMargin">
+             <number>0</number>
+            </property>
+            <property name="rightMargin">
+             <number>0</number>
+            </property>
+            <property name="bottomMargin">
+             <number>0</number>
+            </property>
+            <property name="spacing">
+             <number>4</number>
+            </property>
+           </layout>
+          </widget>
+         </item>
+         <item>
           <widget class="QWidget" name="workflowRunActions">
            <layout class="QHBoxLayout" name="workflowRunActionsLayout">
             <property name="leftMargin">
@@ -389,6 +532,45 @@
               </property>
               <property name="accessibleName">
                <string>Stop this workflow run after the current step</string>
+              </property>
+             </widget>
+            </item>
+            <item>
+             <spacer name="workflowRunActionsSpacer">
+              <property name="orientation">
+               <enum>Qt::Horizontal</enum>
+              </property>
+              <property name="sizeHint" stdset="0">
+               <size>
+                <width>0</width>
+                <height>0</height>
+               </size>
+              </property>
+             </spacer>
+            </item>
+            <item>
+             <widget class="QLabel" name="workflowRecentLabel">
+              <property name="text">
+               <string>Earlier runs</string>
+              </property>
+              <property name="role" stdset="0">
+               <string>secondary</string>
+              </property>
+             </widget>
+            </item>
+            <item>
+             <widget class="QComboBox" name="workflowRecentRuns">
+              <property name="toolTip">
+               <string>Show an earlier workflow run here: its steps, Retry and waiting branches</string>
+              </property>
+              <property name="accessibleName">
+               <string>Show an earlier workflow run</string>
+              </property>
+              <property name="maximumSize">
+               <size>
+                <width>360</width>
+                <height>16777215</height>
+               </size>
               </property>
              </widget>
             </item>

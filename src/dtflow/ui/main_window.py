@@ -392,6 +392,13 @@ class MainWindow:
         self.scripts.run_start = self.queue.start_script
         self.workflows.start_workflow = self.queue.start_workflow
         self.workflows.start_created = self.queue.start_created
+        self.workflows.on_layout = self._responsive_workspace
+        # Queues → Open in Workflows (and its Retry routing) for a workflow item, once QueuePage offers the hook.
+        for owner in (self.queue, self.queue_page):
+            hook = getattr(owner, "set_open_workflow_hook", None)
+            if callable(hook):
+                hook(self._open_workflow_run)
+                break
         self.scripts.setup_prepare = self.queue.prepare_script
         self.scripts.run_prepared = self.queue.start_prepared_script
         self.scripts.inventory_source = lambda: self.generation._inventory_snapshot
@@ -659,6 +666,11 @@ class MainWindow:
 
     def _show_workflows(self) -> None:
         self.form.workspaceStack.setCurrentWidget(self.workflows_marker)
+
+    def _open_workflow_run(self, queue_id: str) -> None:
+        """Show a workflow queue's run in Workflows: its steps, Retry and waiting branches."""
+        self._show_workflows()
+        self.workflows.open_run(queue_id)
 
     def _workflow_choices(self) -> dict:
         """The Workflows inspector's checkpoint and LoRA choices, from the in-memory inventory (never blocks)."""
@@ -974,11 +986,17 @@ class MainWindow:
             self.gallery_detail.galleryNavigationSlot.setVisible(images)
             if not images and self._gallery_previous_sizes:
                 shell.workspaceSplitter.setSizes(self._gallery_previous_sizes)
+        # Workflows keeps its inspector (node settings, Retry, Continue/Stop) at every width; its Library toggle folds
+        # the left panels instead, and the brand and navigation then sit in the Workflows header row.
+        workflows = hasattr(self, "workflows") and self.form.workspaceStack.currentWidget() is self.workflows_marker
+        folded = workflows and not self.workflows.library_open(narrow)
+        if hasattr(self, "workflows"):
+            self._place_workflows_chrome(folded, moved_elsewhere=images or logs)
         # Logs and Images use the full-width center workspace, regardless of
         # whether the Images page changed during this navigation.
-        shell.leftRail.setVisible(not images and not logs)
-        shell.rightRail.setVisible(not images and not logs and not narrow)
-        self._place_images_header(images=images, logs=logs, narrow=narrow)
+        shell.leftRail.setVisible(not images and not logs and not folded)
+        shell.rightRail.setVisible(not images and not logs and (workflows or not narrow))
+        self._place_images_header(images=images, logs=logs, narrow=narrow and not workflows)
         if self._logs_form is not None:
             self._logs_form.logsBrandSlot.setVisible(logs)
             self._logs_form.logsNavigationSlot.setVisible(logs)
@@ -990,6 +1008,28 @@ class MainWindow:
         if hasattr(self, "workflows"):
             self.workflows.sync_responsive(narrow)
         self._align_run_control()
+
+    def _place_workflows_chrome(self, folded: bool, *, moved_elsewhere: bool) -> None:
+        """Move the brand and navigation into the Workflows header while its Library is folded, and back after."""
+        shell, page = self.shell, self.workflows.workspace
+        slots = ((page.workflowBrandSlot, shell.brandFrame), (page.workflowNavigationSlot, shell.navigationFrame))
+        if folded:
+            for slot, frame in slots:
+                if frame.parentWidget() is not slot:
+                    width = shell.leftRail.maximumWidth()
+                    if frame is shell.navigationFrame:
+                        width = max(width, frame.sizeHint().width())
+                    slot.setFixedSize(width, max(frame.height(), frame.sizeHint().height()))
+                    slot.layout().addWidget(frame)
+                frame.show()
+            page.workflowShellHeader.show()
+            return
+        page.workflowShellHeader.hide()
+        if not moved_elsewhere and shell.brandFrame.parentWidget() is page.workflowBrandSlot:
+            shell.leftRailLayout.insertWidget(0, shell.brandFrame)
+            shell.leftRailLayout.insertWidget(1, shell.navigationFrame)
+            shell.brandFrame.show()
+            shell.navigationFrame.show()
 
     def _place_images_header(self, *, images, logs, narrow) -> None:
         """One Images action above ordinary inspectors, never in Images or Logs."""

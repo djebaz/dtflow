@@ -2286,6 +2286,57 @@ QWidget#workflowsInspector QPlainTextEdit {
   min-height: ${size.controlContent};
   padding: 2px 6px;
 }
+/* Inspector spin boxes: one stepper segment like the select chevron segment, with drawn up/down arrows. */
+QWidget#workflowsInspector QSpinBox, QWidget#workflowsInspector QDoubleSpinBox {
+  padding-right: 26px;
+}
+QWidget#workflowsInspector QAbstractSpinBox::up-button,
+QWidget#workflowsInspector QAbstractSpinBox::down-button {
+  subcontrol-origin: border;
+  width: 22px;
+  margin: 0;
+  border: 0;
+  border-left: 1px solid ${color.border};
+  background: transparent;
+}
+QWidget#workflowsInspector QAbstractSpinBox::up-button {
+  subcontrol-position: top right;
+  border-top-right-radius: ${size.inputRadius};
+}
+QWidget#workflowsInspector QAbstractSpinBox::down-button {
+  subcontrol-position: bottom right;
+  border-top: 1px solid ${color.border};
+  border-bottom-right-radius: ${size.inputRadius};
+}
+QWidget#workflowsInspector QAbstractSpinBox::up-button:hover,
+QWidget#workflowsInspector QAbstractSpinBox::down-button:hover {
+  background: ${color.surface};
+}
+QWidget#workflowsInspector QAbstractSpinBox::up-arrow {
+  image: url(../images/controls/chevron-up.svg);
+  width: 10px;
+  height: 10px;
+}
+QWidget#workflowsInspector QAbstractSpinBox::down-arrow {
+  image: url(../images/controls/chevron-down.svg);
+  width: 10px;
+  height: 10px;
+}
+QLabel[role="workflowLockNote"] {
+  color: ${color.warning};
+  background: ${color.warningSurface};
+  border: 1px solid ${color.statusWarningBorder};
+  border-radius: ${size.inputRadius};
+  padding: 6px 8px;
+}
+QFrame#workflowNodePicker {
+  background: ${color.surface};
+  border: 1px solid ${color.focus};
+  border-radius: ${size.panelRadius};
+}
+QFrame#workflowNodePicker QLabel {
+  background: transparent;
+}
 QWidget#workflowsWorkspace QPushButton, QWidget#workflowsContext QPushButton,
 QWidget#workflowsInspector QPushButton {
   min-width: 0;
@@ -2348,7 +2399,7 @@ QWidget#dtfNodeContent, QWidget#dtfNodeContent QLabel {
 }
 QLabel#dtfNodeSummary {
   color: ${color.secondary};
-  font-size: ${type.small};
+  font-size: ${type.body};
 }
 QLabel#dtfNodeThumb {
   background: ${color.canvas};
@@ -2356,7 +2407,7 @@ QLabel#dtfNodeThumb {
   border-radius: ${size.inputRadius};
 }
 QLabel#dtfNodeStatus {
-  font-size: ${type.small};
+  font-size: ${type.body};
   font-weight: ${type.weightEmphasis};
   padding: 1px 6px;
   border-radius: ${size.radiusXs};

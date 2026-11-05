@@ -336,6 +336,7 @@
     {"id": "workflows-08-partial-retry", "category": "workflows", "subcategory": "execution", "fixture": "workflows", "stage": "recovery", "level": "m", "path": "workflows/workflows-08-partial-retry.png"},
     {"id": "workflows-09-results", "category": "workflows", "subcategory": "execution", "fixture": "workflows", "stage": "results", "level": "s", "path": "workflows/workflows-09-results.png"},
     {"id": "workflows-10-narrow", "category": "workflows", "subcategory": "authoring", "fixture": "workflows", "stage": "layout", "level": "s", "path": "workflows/workflows-10-narrow.png"},
+    {"id": "workflows-11-library-folded", "category": "workflows", "subcategory": "authoring", "fixture": "workflows", "stage": "layout", "level": "m", "path": "workflows/workflows-11-library-folded.png"},
     {"id": "images-99a-detail-hover-card-empty", "category": "images", "subcategory": "detail", "fixture": "gallery-composition", "stage": "empty", "level": "m", "path": "images-99a-detail-hover-card-empty.png"},
     {"id": "images-53-export-panel-empty-scope", "category": "images", "subcategory": "export", "fixture": "gallery-composition", "stage": "empty", "level": "f", "path": "images-53-export-panel-empty-scope.png"},
     {"id": "images-72-pager-empty", "category": "images", "subcategory": "navigation", "fixture": "gallery-composition", "stage": "empty", "level": "f", "path": "image-navigation/images-72-pager-empty.png"},

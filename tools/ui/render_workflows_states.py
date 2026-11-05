@@ -27,6 +27,7 @@ STATES = (
     "workflows-08-partial-retry",
     "workflows-09-results",
     "workflows-10-narrow",
+    "workflows-11-library-folded",
 )
 OLD_CONTRACT = ROOT / "tools/node_editor_poc/reference_workflow_v1.json"  # a POC-era file the importer refuses
 
@@ -112,20 +113,28 @@ def fixture_runs(images: Path) -> dict[str, dict]:
         submitted=3,
         pauses=[{"node_id": 2, "branch": list(b1), "branch_label": "Generate #1 image 1", "reason": reason}],
     )  # fmt: skip
+    # The executor's wording (services/workflow_item): steps after a failed one on its branch are "stopped", and the
+    # run message counts results and incomplete steps, then names the first problem with its own cause.
+    cause = "The backend refused the inpainting request: checkpoint does not support it."
+    stopped = "Stopped: an earlier step on this branch did not finish."
+    partial_steps = [
+        s(1, b1, "succeeded", output=out["a"]), s(1, b2, "succeeded", output=out["b"]),
+        s(2, b1, "succeeded"), s(2, b2, "succeeded"),
+        s(3, b1, "succeeded", output=out["c"]), s(3, b2, "failed", message=cause),
+        s(4, b1, "succeeded", output=out["d"]), s(4, b2, "stopped", message=stopped),
+        s(5, b1, "succeeded", output=out["d"]), s(5, b2, "stopped", message=stopped),
+    ]  # fmt: skip
+    partial_results = [{"label": "result", "path": out["d"], "branch": list(b1), "node_id": 5}]
+    incomplete = [step for step in partial_steps if step["state"] in ("failed", "unknown", "stopped", "cancelled")]
+    first = next(step for step in partial_steps if step["state"] == "failed")
     partial = run(
         "partial",
-        [
-            s(1, b1, "succeeded", output=out["a"]), s(1, b2, "succeeded", output=out["b"]),
-            s(2, b1, "succeeded"), s(2, b2, "succeeded"),
-            s(3, b1, "succeeded", output=out["c"]),
-            s(3, b2, "failed", message="The backend refused the inpainting request: checkpoint does not support it."),
-            s(4, b1, "succeeded", output=out["d"]), s(4, b2, "skipped"),
-            s(5, b1, "succeeded", output=out["d"]), s(5, b2, "skipped"),
-        ],
+        partial_steps,
         submitted=5,
-        results=[{"label": "result", "path": out["d"], "branch": list(b1), "node_id": 5}],
-        message="1 of 2 branches finished; one step failed.",
-    )  # fmt: skip
+        results=partial_results,
+        message=f"{len(partial_results)} result(s) saved; {len(incomplete)} step(s) failed, stopped or unconfirmed. "
+        f"First problem: {first['title']} ({first['branch_label']}): {first['message']}",
+    )
     done = run(
         "succeeded",
         [
@@ -152,7 +161,7 @@ def _fanout(graph):
 def render_workflows_states(out, *, window_factory, state_names, capture):
     from dtflow.core import workflows as wf
     from dtflow.services import workflow_library as library
-    from dtflow.services.model_provisioning import CatalogueEntry
+    from dtflow.services.model_provisioning import catalogue
     from dtflow.ui.inline_feedback import confirm_action
 
     owner = window_factory()
@@ -160,28 +169,31 @@ def render_workflows_states(out, *, window_factory, state_names, capture):
     state = owner.state_dir
     runs = fixture_runs(state / "outputs")
     reference = json.loads(library.REFERENCE.read_text(encoding="utf-8"))
-    # Choices as the inventory would offer them (fixture names; no provider is contacted).
-    page.choices_source = lambda: {
-        "models": [
-            "PLACEHOLDER_checkpoint_a.ckpt",
-            "PLACEHOLDER_checkpoint_b_inpainting.ckpt",
-            "PLACEHOLDER_checkpoint_c.ckpt",
-        ],
-        "loras": {"PLACEHOLDER_lora_a.safetensors": 0.8, "PLACEHOLDER_lora_b.safetensors": 0.6},
+    # The reference workflow ships PLACEHOLDER_ checkpoints, which block Run until chosen (editing and narrow show
+    # that). Other states choose these fixture checkpoints, as the inventory would list them; no provider is
+    # contacted. plan-summary also shows the warning for a checkpoint the inventory does not list.
+    chosen = {
+        "PLACEHOLDER_checkpoint_a.ckpt": "fixture_base.ckpt",
+        "PLACEHOLDER_checkpoint_b_inpainting.ckpt": "fixture_inpainting.ckpt",
+        "PLACEHOLDER_checkpoint_c.ckpt": "fixture_refiner.ckpt",
     }
-    entries = (
-        CatalogueEntry("segmentation", "YOLO26n person segmentation", "https://example.invalid/seg.onnx", "0" * 64,
-                       6.2, "AGPL-3.0", "https://example.invalid/agpl", "https://example.invalid/seg"),
-        CatalogueEntry("clothes", "Clothes and face parsing", "https://example.invalid/parse.onnx", "1" * 64,
-                       98.0, "MIT", "https://example.invalid/mit", "https://example.invalid/parse"),
-        CatalogueEntry("faces", "Faces detector", "https://example.invalid/faces.onnx", "2" * 64,
-                       1.7, "Apache-2.0", "https://example.invalid/apache", "https://example.invalid/faces"),
-    )  # fmt: skip
+    inventory = {"models": list(chosen.values()), "loras": {"PLACEHOLDER_lora_a.safetensors": 0.8,
+                                                           "PLACEHOLDER_lora_b.safetensors": 0.6}}  # fmt: skip
+    page.choices_source = lambda: inventory
+    entries = catalogue()  # the shipped pinned catalogue: real names, sizes, licences and URLs (nothing downloads)
+    # Earlier runs as Workflows lists them from the queue store (fixture labels; no store is read).
+    recent = [("fixture-queue", "Portrait finishing · 05 Nov 10:02 · Partly done"),
+              ("fixture-earlier", "Portrait finishing · 04 Nov 18:40 · Done")]  # fmt: skip
 
-    def open_reference(name="Portrait finishing", *, fanout=True, saved=True):
+    def open_reference(name="Portrait finishing", *, fanout=True, saved=True, placeholders=False):
         graph = wf.load_workflow(json.loads(json.dumps(reference)), draft=True)
         if fanout:
             _fanout(graph)
+        if not placeholders:
+            for node in graph.nodes:
+                for key, value in node.params.items():
+                    if isinstance(value, str) and value in chosen:
+                        node.params[key] = chosen[value]
         existing = library.library_dir(state) / f"{name}.json"
         path = library.save_workflow(state, name, graph, current=existing) if saved else None
         page.open_graph(graph, path, name)
@@ -191,14 +203,19 @@ def render_workflows_states(out, *, window_factory, state_names, capture):
 
     def reset():
         owner.inline.dismiss()
+        page.hide_node_picker()
         page.queue_id, page.run, page._run_path = None, None, None
         page._pause_shown = None
         page._pause_dismissed.clear()
         page._missing = ()
         page.present_run(None)
+        page._library_open = None  # by width again; the fixture never writes the remembered choice
+        page.show_recent_runs([])
+        owner._responsive_workspace()
 
     def show_run(run):
         page.queue_id, page._run_path = "fixture-queue", page.path
+        page.show_recent_runs(recent)
         page.present_run(run)
         page._poll.stop()  # fixtures only: nothing to poll
         _wait(lambda: not page.loading_images, "run thumbnails")
@@ -222,7 +239,9 @@ def render_workflows_states(out, *, window_factory, state_names, capture):
                 page.refresh_library()
                 _wait(lambda: page.context.workflowLibraryNote.text().startswith("No saved"), "library listing")
             else:
-                open_reference(fanout=not name.endswith("editing"))
+                plan_summary = name.endswith("plan-summary")
+                inventory["models"] = [m for m in chosen.values() if not (plan_summary and "refiner" in m)]
+                open_reference(fanout=not name.endswith("editing"), placeholders=name.endswith(("editing", "narrow")))
                 _wait(lambda: page.context.workflowList.count() > 0, "library listing")
                 QApplication.processEvents()
                 if page.context.workflowList.count() < 2:
@@ -230,7 +249,7 @@ def render_workflows_states(out, *, window_factory, state_names, capture):
                     page.refresh_library()
                 _wait(lambda: page.context.workflowList.count() > 1, "second library entry")
                 select = {"editing": 1, "plan-summary": 5, "missing-models": 2, "branch-paused": 2,
-                          "partial-retry": 3, "narrow": 3}  # fmt: skip
+                          "partial-retry": 3, "narrow": 3, "library-folded": 3}  # fmt: skip
                 node = next((value for key, value in select.items() if name.endswith(key)), 3)
                 page.canvas.select_node(node)
             if name.endswith("import-rejected"):
@@ -266,14 +285,28 @@ def render_workflows_states(out, *, window_factory, state_names, capture):
                 page.canvas.select_node(3)
             elif name.endswith("results"):
                 show_run(runs["done"])
+            elif name.endswith("library-folded"):
+                page._library_open = False  # as after pressing Library (not written to the fixture state)
+                page._sync_library_button()
+                owner._responsive_workspace()
+                show_run(runs["partial"])
             QApplication.processEvents()
-            page.canvas.fit_view()
-            if narrow:
-                page.canvas.center_on(3, reset_zoom=True)
             QTest.qWait(30)
             for _ in range(4):  # nested card/rail layouts settle one level per event turn
                 QApplication.processEvents()
                 QTest.qWait(20)
+            page.canvas.fit_view()  # at the canvas size the settled layout gave it
+            if narrow:
+                page.canvas.center_on(3, reset_zoom=True)
+            if name.endswith("library-folded"):
+                # The add-node picker as a double-click on empty canvas below the nodes opens it.
+                view = page.canvas.view
+                point = view.viewport().rect().center()
+                point.setY(int(view.viewport().height() * 0.78))
+                page.show_node_picker(view.mapToScene(point), point)
+                page._picker.workflowNodePickerSearch.setText("in")
+            QApplication.processEvents()
+            QTest.qWait(20)
             capture(owner.form, out, name)
     finally:
         reset()
