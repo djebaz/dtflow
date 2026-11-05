@@ -54,6 +54,37 @@ LIP_SPEC = (
     "sha256",
     "871c9e209dc67d6be61c73dcc79cb49e638fcf5bbc35a19b4c7429eba0bfc046",
 )
+# Fixed by semantic class, never detection order, score rank or image contents.
+# Covered/exposed classes deliberately get separate hues; unknown stays gray.
+ZONE_COLORS = {
+    "FEMALE_GENITALIA_COVERED": (145, 70, 255),
+    "FACE_FEMALE": (0, 110, 255),
+    "BUTTOCKS_EXPOSED": (255, 140, 0),
+    "FEMALE_BREAST_EXPOSED": (255, 50, 50),
+    "FEMALE_GENITALIA_EXPOSED": (255, 0, 180),
+    "MALE_BREAST_EXPOSED": (255, 225, 0),
+    "ANUS_EXPOSED": (160, 230, 0),
+    "FEET_EXPOSED": (0, 220, 255),
+    "BELLY_COVERED": (150, 95, 35),
+    "FEET_COVERED": (0, 125, 135),
+    "FACE_MALE": (160, 160, 255),
+    "BELLY_EXPOSED": (0, 195, 80),
+    "MALE_GENITALIA_EXPOSED": (255, 145, 200),
+    "ANUS_COVERED": (135, 0, 40),
+    "FEMALE_BREAST_COVERED": (0, 50, 135),
+    "BUTTOCKS_COVERED": (255, 205, 145),
+}
+
+
+def zone_palette(reports):
+    """Same class has the same RGB in every image and in both overlay modes."""
+    palette = {0: (0, 0, 0), UNKNOWN: (128, 128, 128)}
+    for record in reports:
+        # White explicitly marks a future/unrecognized class rather than randomizing it.
+        shade = ZONE_COLORS.get(record["label"].upper(), (240, 240, 240))
+        palette[record["zone_id"]] = shade
+        record["color_rgb"] = list(shade)
+    return palette
 
 
 def edge_checkpoints(detector, model):
@@ -183,7 +214,58 @@ def detect_edges(cv, net, crop):
     return cv.resize(edges, crop.size, interpolation=cv.INTER_LINEAR)
 
 
-def grow_zones(cv, edges, inside, detections, resolution, edge_weight, growth):
+def finish_zones(cv, zones, valid, fixed, smooth, expand):
+    """Simultaneous rounding, then bounded competing expansion through the silhouette.
+
+    This is geometric finishing, not another score pass: expansion may cross a
+    local score barrier within its small radius, but cannot overwrite another zone.
+    Units are pixels on the existing region-growth grid, not source-image pixels.
+    """
+    result = zones.copy()
+    if smooth > 0:
+        best = np.full(zones.shape, 0.5, dtype=np.float32)
+        result.fill(0)
+        # Every mask comes from the same original map; no sequential morphology bias.
+        for zone in np.unique(zones):
+            if zone == 0:
+                continue
+            support = cv.GaussianBlur((zones == zone).astype(np.float32), (0, 0), smooth, borderType=cv.BORDER_CONSTANT)
+            better = valid & ((support > best) | ((support == best) & (zones == zone)))
+            result[better], best[better] = zone, support[better]
+        result[fixed] = zones[fixed]
+    if expand > 0:
+        height, width = valid.shape
+        empty = valid & (result == 0)
+        adjacent = np.zeros_like(valid)
+        for dy, dx in ((-1, 0), (1, 0), (0, -1), (0, 1), (-1, -1), (-1, 1), (1, -1), (1, 1)):
+            ya, yb = max(0, dy), min(height, height + dy)
+            xa, xb = max(0, dx), min(width, width + dx)
+            adjacent[ya:yb, xa:xb] |= empty[ya - dy : yb - dy, xa - dx : xb - dx]
+        distance = np.full(valid.shape, np.inf, dtype=np.float64)
+        distance[result > 0] = 0
+        queue = [
+            (0.0, int(result[y, x]), int(y), int(x)) for y, x in zip(*np.nonzero(adjacent & (result > 0)), strict=True)
+        ]
+        heapq.heapify(queue)
+        while queue:
+            cost, zone, y, x = heapq.heappop(queue)
+            if cost != distance[y, x] or result[y, x] != zone:
+                continue
+            for dy, dx in ((-1, 0), (1, 0), (0, -1), (0, 1), (-1, -1), (-1, 1), (1, -1), (1, 1)):
+                ny, nx = y + dy, x + dx
+                if not (0 <= ny < height and 0 <= nx < width) or not empty[ny, nx]:
+                    continue
+                if dy and dx and (not valid[y, nx] or not valid[ny, x]):
+                    continue
+                candidate = cost + (math.sqrt(2) if dy and dx else 1.0)
+                if candidate <= expand and candidate < distance[ny, nx]:
+                    distance[ny, nx], result[ny, nx] = candidate, zone
+                    heapq.heappush(queue, (candidate, zone, ny, nx))
+    result[~valid] = 0
+    return result
+
+
+def grow_zones(cv, edges, inside, detections, resolution, edge_weight, growth, smooth, expand):
     """Compete from small detector seeds using edge-weighted path lengths only.
 
     No semantic classes or rectangular growth barriers. A per-seed path budget,
@@ -222,14 +304,23 @@ def grow_zones(cv, edges, inside, detections, resolution, edge_weight, growth):
         cost, zone, y, x = heapq.heappop(queue)
         if cost != distance[y, x] or zones[y, x] != zone:
             continue
-        for ny, nx in ((y - 1, x), (y + 1, x), (y, x - 1), (y, x + 1)):
+        for dy, dx in ((-1, 0), (1, 0), (0, -1), (0, 1), (-1, -1), (-1, 1), (1, -1), (1, 1)):
+            ny, nx = y + dy, x + dx
             if not (0 <= ny < h and 0 <= nx < w) or not valid[ny, nx] or fixed[ny, nx]:
                 continue
             strength = max(float(field[y, x]), float(field[ny, nx]))
-            candidate = cost + 1.0 + edge_weight * strength * strength
+            diagonal = bool(dy and dx)
+            if diagonal:
+                # Do not cut a silhouette corner or tunnel between edge-barrier pixels.
+                if not valid[y, nx] or not valid[ny, x] or fixed[y, nx] or fixed[ny, x]:
+                    continue
+                strength = max(strength, float(field[y, nx]), float(field[ny, x]))
+            step = math.sqrt(2) if diagonal else 1.0
+            candidate = cost + step * (1.0 + edge_weight * strength * strength)
             if candidate <= budgets[zone] and candidate < distance[ny, nx]:
                 distance[ny, nx], zones[ny, nx] = candidate, zone
                 heapq.heappush(queue, (candidate, zone, ny, nx))
+    zones = finish_zones(cv, zones, valid, fixed, smooth, expand)
     result = cv.resize(zones, (width, height), interpolation=cv.INTER_NEAREST)
     result[~inside] = 0
     result[inside & (result == 0)] = UNKNOWN
@@ -238,6 +329,112 @@ def grow_zones(cv, edges, inside, detections, resolution, edge_weight, growth):
         if record["status"] == "seeded":
             record["status"] = "assigned" if record["pixels"] else "empty_after_restoration"
     return result, reports
+
+
+def grow_independent_zones(cv, edges, inside, detections, resolution, edge_weight, growth, smooth, expand):
+    """Reuse single-zone growth independently; retain masks on the bounded grid.
+
+    No other zone's seed, boundary or ownership can block a zone in this mode.
+    Full-size masks are used one at a time for counts, never retained as a stack.
+    """
+    height, width = inside.shape
+    scale = min(1.0, resolution / max(height, width))
+    size = (max(1, round(width * scale)), max(1, round(height * scale)))
+    field = cv.resize(edges, size, interpolation=cv.INTER_AREA)
+    valid = cv.resize(inside.astype(np.uint8), size, interpolation=cv.INTER_NEAREST) > 0
+    sx, sy = size[0] / width, size[1] / height
+    layers, reports = [], []
+    coverage = np.zeros(valid.shape, dtype=np.uint16)
+    for zone_id, detection in enumerate(detections, 7):
+        x0, y0, x1, y1 = detection["box_xyxy"]
+        scaled = dict(detection, box_xyxy=[x0 * sx, y0 * sy, x1 * sx, y1 * sy])
+        single, details = grow_zones(cv, field, valid, [scaled], resolution, edge_weight, growth, smooth, expand)
+        mask = single == 7
+        record = dict(details[0], box_xyxy=list(detection["box_xyxy"]), zone_id=zone_id)
+        if "seed_xy" in record:
+            record["seed_xy"] = [round(record["seed_xy"][0] / sx, 2), round(record["seed_xy"][1] / sy, 2)]
+        restored = cv.resize(mask.astype(np.uint8), (width, height), interpolation=cv.INTER_NEAREST) > 0
+        record["pixels"] = int(np.count_nonzero(restored & inside))
+        if record["pixels"]:
+            layers.append((zone_id, mask))
+            coverage += mask.astype(np.uint16)
+        elif record["status"] == "assigned":
+            record["status"] = "empty_after_restoration"
+        reports.append(record)
+    restored_coverage = cv.resize(coverage, (width, height), interpolation=cv.INTER_NEAREST)
+    summary = {
+        "unknown_pixels": int(np.count_nonzero(inside & (restored_coverage == 0))),
+        "overlap_pixels": int(np.count_nonzero(inside & (restored_coverage > 1))),
+    }
+    return layers, reports, summary
+
+
+def save_overlap_preview(cv, source, box, inside, layers, reports, names, destination, finishing, palette):
+    """Average fills without losing mask ownership; outline every independent zone."""
+    x0, y0, x1, y1 = box
+    width, height = x1 - x0, y1 - y0
+    grid_shape = layers[0][1].shape if layers else (1, 1)
+    coverage = np.zeros(grid_shape, dtype=np.float32)
+    colors = np.zeros((*grid_shape, 3), dtype=np.float32)
+    shades = {}
+    for zone_id, mask in layers:
+        shade = palette[zone_id]
+        shades[zone_id] = shade
+        colors[mask] += shade
+        coverage[mask] += 1
+    colors /= np.maximum(coverage, 1)[..., None]
+    colors[coverage == 0] = (128, 128, 128)
+    restored_colors = cv.resize(colors, (width, height), interpolation=cv.INTER_NEAREST)
+    rgb = np.asarray(source).copy()
+    region = rgb[y0:y1, x0:x1]
+    region[inside] = (region[inside] * 0.45 + restored_colors[inside] * 0.55).astype(np.uint8)
+    # Clip contours to the exact source-resolution silhouette as well as the grid.
+    for zone_id, mask in layers:
+        restored = cv.resize(mask.astype(np.uint8), (width, height), interpolation=cv.INTER_NEAREST)
+        restored[~inside] = 0
+        contours, _ = cv.findContours(restored, cv.RETR_LIST, cv.CHAIN_APPROX_SIMPLE)
+        cv.polylines(region, contours, True, shades[zone_id], 2, lineType=cv.LINE_8)
+    # Stroke thickness can protrude beyond the mask; restore all non-person pixels.
+    original = np.asarray(source.crop(box))
+    region[~inside] = original[~inside]
+    font = ImageFont.load_default(size=18)
+    person_pixels = max(1, int(inside.sum()))
+    rows = [
+        (
+            f"{names[r['zone_id']].replace('_', ' ').title()} (zone {r['zone_id']}) - "
+            f"{100 * r['pixels'] / person_pixels:.1f}%",
+            shades[r["zone_id"]],
+        )
+        for r in reports
+        if r["pixels"]
+    ]
+    notes = [
+        "Mixed fills = overlapping zones",
+        "Outlines = individual zones",
+        "Coverage totals may exceed 100%",
+        "Gray: unreached / unknown",
+        "NudeNet names are suggestions",
+    ]
+    if finishing:
+        notes.append("Each zone rounded / expanded")
+    panel_width = max(380, max(font.getbbox(text)[2] for text in [*(text for text, _ in rows), *notes]) + 80)
+    preview = Image.new(
+        "RGB", (source.width + panel_width, max(source.height, 100 + 36 * (len(rows) + len(notes)))), (24, 27, 34)
+    )
+    preview.paste(Image.fromarray(rgb), (0, 0))
+    draw = ImageDraw.Draw(preview)
+    left, top = source.width + 20, 20
+    draw.text((left, top), "Overlapping edge-guided zones", fill="white", font=font)
+    top += 44
+    for text, shade in rows:
+        draw.rectangle((left, top, left + 24, top + 24), fill=shade, outline="white")
+        draw.text((left + 40, top), text, fill="white", font=font)
+        top += 36
+    top += 16
+    for text in notes:
+        draw.text((left, top), text, fill=(175, 180, 190), font=font)
+        top += 36
+    preview.save(destination, quality=95, subsampling=0)
 
 
 def save_score_preview(cv, source, box, inside, scores, destination):
@@ -261,20 +458,42 @@ def save_score_preview(cv, source, box, inside, scores, destination):
     preview.save(destination, quality=95, subsampling=0)
 
 
-def save_outputs(source, box, inside, edges, zones, reports, output, prefix, detector):
+def save_outputs(
+    source, box, inside, edges, zones, reports, output, prefix, detector, finishing=False, overlap_layers=None, cv=None
+):
     x0, y0, x1, y1 = box
     names = {0: "background", UNKNOWN: "unknown"}
     names.update({r["zone_id"]: r["label"].lower() for r in reports})
-    save_preview(
-        source,
-        box,
-        inside,
-        zones,
-        names,
-        output / f"{prefix}_zones_overlay.jpg",
-        "Edge-guided zones",
-        ("NudeNet names are suggestions", "Boundaries follow edge costs", "Gray: unreached / unknown"),
-    )
+    palette = zone_palette(reports)
+    if overlap_layers is not None:
+        save_overlap_preview(
+            cv,
+            source,
+            box,
+            inside,
+            overlap_layers,
+            reports,
+            names,
+            output / f"{prefix}_zones_overlay.jpg",
+            finishing,
+            palette,
+        )
+    else:
+        save_preview(
+            source,
+            box,
+            inside,
+            zones,
+            names,
+            output / f"{prefix}_zones_overlay.jpg",
+            "Edge-guided zones",
+            (
+                "NudeNet names are suggestions",
+                "Rounded / expanded after growth" if finishing else "Boundaries follow edge costs",
+                "Gray: unreached / unknown",
+            ),
+            palette=palette,
+        )
     alpha = np.zeros((source.height, source.width), dtype=np.uint8)
     alpha[y0:y1, x0:x1] = inside.astype(np.uint8) * 255
     cutout = source.convert("RGBA")
@@ -351,6 +570,12 @@ def main(argv=None):
     )
     parser.add_argument("-s", "--parts-confidence", type=float, default=0.25)
     parser.add_argument(
+        "-a",
+        "--overlap",
+        action="store_true",
+        help="Grow and finish every NudeNet zone independently, allowing overlapping masks",
+    )
+    parser.add_argument(
         "-v",
         "--sensitivity",
         type=float,
@@ -358,6 +583,20 @@ def main(argv=None):
         help="LIP-20 score-boundary gain: >1 strengthens faint changes, <1 weakens them (default 1)",
     )
     parser.add_argument("-e", "--edge-weight", type=float, default=12, help="Higher values resist crossing edges more")
+    parser.add_argument(
+        "-u",
+        "--smooth",
+        type=float,
+        default=0,
+        help="Zone rounding Gaussian sigma in growth-grid pixels, 0..12; 0 disables (try 1.5)",
+    )
+    parser.add_argument(
+        "-x",
+        "--expand",
+        type=float,
+        default=0,
+        help="Competing geometric expansion into unknown pixels, growth-grid radius 0..32 (try 3)",
+    )
     parser.add_argument(
         "-g", "--growth", type=float, default=2.5, help="Path budget relative to detection half-diagonal"
     )
@@ -378,6 +617,10 @@ def main(argv=None):
         parser.error("sensitivity must be finite and > 0")
     if args.detector != "lip-20" and args.sensitivity != 1.0:
         parser.error("--sensitivity applies only to --detector lip-20")
+    if not math.isfinite(args.smooth) or not 0 <= args.smooth <= 12:
+        parser.error("smooth must be finite and in [0,12]")
+    if not math.isfinite(args.expand) or not 0 <= args.expand <= 32:
+        parser.error("expand must be finite and in [0,32]")
     if args.threads < 1 or not 64 <= args.resolution <= 1024 or not 0 < args.parts_confidence <= 1:
         parser.error("threads >= 1, resolution in [64,1024], parts-confidence in (0,1] required")
     if (
@@ -448,6 +691,10 @@ def main(argv=None):
                     "resolution": args.resolution,
                     "parts_confidence": args.parts_confidence,
                     "sensitivity": args.sensitivity,
+                    "smooth": args.smooth,
+                    "expand": args.expand,
+                    "overlap": args.overlap,
+                    "finishing_units": "region-growth grid pixels",
                 },
             }
             if people:
@@ -470,11 +717,48 @@ def main(argv=None):
                 _, detections, _ = detect_body_parts(parts_session, crop, args.parts_confidence)
                 detections = [d for d in detections if not d["label"].startswith("ARMPITS_")]
                 tick = time.perf_counter()
-                zones, details = grow_zones(
-                    cv, edges, inside, detections, args.resolution, args.edge_weight, args.growth
-                )
+                overlap_layers = None
+                if args.overlap:
+                    overlap_layers, details, zone_summary = grow_independent_zones(
+                        cv,
+                        edges,
+                        inside,
+                        detections,
+                        args.resolution,
+                        args.edge_weight,
+                        args.growth,
+                        args.smooth,
+                        args.expand,
+                    )
+                    zones = None
+                else:
+                    zones, details = grow_zones(
+                        cv,
+                        edges,
+                        inside,
+                        detections,
+                        args.resolution,
+                        args.edge_weight,
+                        args.growth,
+                        args.smooth,
+                        args.expand,
+                    )
+                    zone_summary = {"unknown_pixels": int(np.count_nonzero(zones == UNKNOWN)), "overlap_pixels": 0}
                 report["growth_seconds"] = time.perf_counter() - tick
-                names = save_outputs(source, box, inside, edges, zones, details, output, prefix, args.detector)
+                names = save_outputs(
+                    source,
+                    box,
+                    inside,
+                    edges,
+                    zones,
+                    details,
+                    output,
+                    prefix,
+                    args.detector,
+                    finishing=bool(args.smooth or args.expand),
+                    overlap_layers=overlap_layers,
+                    cv=cv,
+                )
                 if scores is not None:
                     save_score_preview(cv, source, box, inside, scores, output / f"{prefix}_scores_overlay.jpg")
                 report.update(
@@ -482,7 +766,7 @@ def main(argv=None):
                     label_names=names,
                     detections=details,
                     coordinates="crop-relative, EXIF-oriented pixels",
-                    unknown_pixels=int(np.count_nonzero(zones == UNKNOWN)),
+                    **zone_summary,
                     limitation="Edges include texture/shadows; zones are heuristic, not anatomical segmentation.",
                 )
                 print(

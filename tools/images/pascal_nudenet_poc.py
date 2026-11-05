@@ -218,15 +218,18 @@ def competing_zones(crop, inside, raw, confidence, detections, resolution, min_c
     return result, reports
 
 
-def save_preview(source, box, inside, labels, names, destination, heading, notes):
+def save_preview(source, box, inside, labels, names, destination, heading, notes, palette=None):
     """Render an overlay with its own visible-label legend outside the photograph."""
     x0, y0, x1, y1 = box
     full = np.zeros((source.height, source.width), dtype=np.uint16)
     full[y0:y1, x0:x1] = labels
-    seed = full.astype(np.uint32) * np.uint32(2654435761)
-    color = np.stack(((seed >> 16) & 255, (seed >> 8) & 255, seed & 255), axis=-1).astype(np.uint8)
-    color[full == 0] = 0
-    color[full == UNKNOWN] = (128, 128, 128)
+    seed = np.arange(65536, dtype=np.uint32) * np.uint32(2654435761)
+    color_table = np.stack(((seed >> 16) & 255, (seed >> 8) & 255, seed & 255), axis=-1).astype(np.uint8)
+    color_table[0] = 0
+    color_table[UNKNOWN] = (128, 128, 128)
+    for label, shade in (palette or {}).items():
+        color_table[label] = shade
+    color = color_table[full]
     rgb = np.asarray(source).copy()
     active = full > 0
     rgb[active] = (rgb[active] * 0.45 + color[active] * 0.55).astype(np.uint8)
@@ -244,9 +247,7 @@ def save_preview(source, box, inside, labels, names, destination, heading, notes
         title = names[label].removeprefix("nudenet_").replace("_", " ").title()
         if label >= 7 and label != UNKNOWN:
             title = f"{title} (zone {label})"
-        shade = (
-            (128, 128, 128) if label == UNKNOWN else tuple((label * 2654435761 >> shift) & 255 for shift in (16, 8, 0))
-        )
+        shade = tuple(int(channel) for channel in color_table[label])
         rows.append((f"{title} - {100 * int(count) / max(1, int(inside.sum())):.1f}%", shade))
     text_width = max(font.getbbox(text)[2] for text in [*(text for text, _ in rows), *notes])
     legend_width = max(330, padding * 3 + swatch + text_width)
