@@ -149,6 +149,17 @@ class DTFEditorWidget(NodeEditorWidget):
 class DTFGraphicsNode(QDMGraphicsNode):
     """Library node item with geometry and colours from DTFlow tokens."""
 
+    def paint(self, painter, option, widget=None) -> None:
+        # Upstream paints hover before checking selection. Use its selected path
+        # for selected+hovered nodes, without changing hover event handling.
+        hovered = self.hovered
+        try:
+            if self.isSelected():
+                self.hovered = False
+            super().paint(painter, option, widget)
+        finally:
+            self.hovered = hovered
+
     def initSizes(self) -> None:
         super().initSizes()
         spec = self.node.SPEC
