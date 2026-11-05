@@ -2252,6 +2252,52 @@ QLabel#scriptsEmptyTitle, QLabel[role="scriptsEmptyTitle"] {
   font-weight: ${type.weightEmphasis};
   font-size: ${type.section};
 }
+
+/* Offline Workflows preview: compact controls, existing cards and token roles.
+   These object names are mounted only by the preview fixture, never normal navigation. */
+QLabel#workflowName, QLabel#workflowNodeTitle {
+  color: ${color.title};
+  font-size: ${type.section};
+  font-weight: ${type.weightEmphasis};
+}
+QLabel#workflowPreviewBadge, QLabel#workflowGestureHint,
+QLabel#workflowSelectionCount, QLabel#workflowSummary {
+  color: ${color.secondary};
+  font-size: ${type.small};
+}
+QFrame#workflowCanvasFrame {
+  background: ${color.canvas};
+  border: 1px solid ${color.panelEdge};
+  border-radius: ${size.panelRadius};
+}
+QWidget#workflowsContext QListWidget::item {
+  padding: 4px 6px;
+}
+QWidget#workflowsInspector QComboBox, QWidget#workflowsInspector QLineEdit,
+QWidget#workflowsInspector QSpinBox, QWidget#workflowsInspector QDoubleSpinBox {
+  min-height: ${size.controlContent};
+  padding: 2px 6px;
+}
+QWidget#workflowsWorkspace QPushButton, QWidget#workflowsContext QPushButton,
+QWidget#workflowsInspector QPushButton {
+  min-width: 0;
+  min-height: ${size.controlContent};
+  padding: 3px 8px;
+}
+QFrame#navigationFrame QPushButton#workflowsPreviewNavigation[role="navigation"] {
+  min-width: 0;
+  padding-left: 3px;
+  padding-right: 3px;
+}
+QLabel#workflowBranchStatus[workflowState="warning"] {
+  color: ${color.warning};
+  font-weight: ${type.weightEmphasis};
+}
+QLabel#workflowThumb1, QLabel#workflowThumb2 {
+  background: ${color.canvas};
+  border: 1px solid ${color.sectionBorder};
+  border-radius: ${size.inputRadius};
+}
 QFrame#scriptsHookItem {
   border: 0;
   border-bottom: 1px solid ${color.sectionBorder};

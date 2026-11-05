@@ -4,6 +4,8 @@
 
 ## Owner direction and the distinction this inventory makes
 
+**Maintenance note (2026-11-05):** The original 456-state counts and source pin below are historical. The Workflows/left-rail extension at the end records five new captures and the corresponding selection metadata; do not interpret the pinned counts as the current catalogue total.
+
 Select specific affected presentations, not every screenshot on every page using a shared component. Reuse one representative when rendering really is identical; retain additional screenshots only for a different visual variant, mounting/layout contract or interaction. Category-only selection keeps the fast default unless a level is specified. `render-all` is the explicit exhaustive override and triggers independently. The first implementation slice below preserves these controls.
 
 Two coverage questions must stay separate:
@@ -123,3 +125,19 @@ PR #226 is squash-merged as `00d49dd`; its working renderer is the baseline for 
 - CI and UI render execution at `828cc47`: passed in the linked runs. Independent exhaustive label/fault-path exercises remain unclaimed, not required implementation work for this completed scope.
 
 **Delivery boundary:** the first selection slice changes developer renderer selection metadata/planning and the Action trigger, not application runtime behavior. No unit tests added/run and no screenshots produced. Static checks do not establish Action execution, screenshot equivalence or native acceptance.
+
+## Workflows and left-rail extension — 2026-11-05
+
+The current catalogue has 461 states in 36 category/subcategory groups. This extension adds four Workflows states and one distinct Connection sizing scenario; the earlier inventory remains a pinned historical record.
+
+| State | Level | Distinct coverage |
+| --- | --- | --- |
+| `workflows-01-editing` | f | Library/node palette, accepted canvas and selected-node settings |
+| `workflows-02-running` | m | Two image branches and shared activity bar |
+| `workflows-03-branch-paused` | m | Branch-local Continue/Stop while a sibling continues |
+| `workflows-04-narrow` | s | Compact controls and readable selected-node canvas at 1280×900 |
+| `connection-61-left-rail-fit` | m | Hidden-page width pressure at 1180×790; diagnostics across Generate, Queues and Connection |
+
+`page.workflows` contains all four Workflows captures, with exact file-level mappings for the preview binder/forms/renderer and the actual POC canvas inputs. A Workflows category/worker, fallback ownership rule and Actions manual category option are registered. Existing broad shared-file sampling stays on the approved eight-state shared pack; no object-level selection or exhaustive fallback is introduced. The Connection sizing state is available at medium/all levels or by explicit state selection, not an extra default shared-pack render.
+
+All four Workflows images were produced and visually reviewed under `tmp/ui-workflows-preview/`; they remain mockup evidence pending owner design approval. Connection and Queues captures were additionally authorized to diagnose real left-rail clipping. The synthetic pressure fixture showed stack/page widths of 1,537 px before correction and exact 288/300 px viewport fit afterward, without assertions. The owner confirmed the correction in the native app. No unit tests added/run or private application state accessed. See the [implementation/evidence plan](2026-11-05-workflows-ui-preview.md).
