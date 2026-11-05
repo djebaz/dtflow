@@ -1,18 +1,12 @@
 #!/usr/bin/env python3
-"""Run a local SCHP ATR-18 ONNX folder smoke test with class masks and overlays.
+"""Compare SCHP ATR-18 on DTFlow person crops with shared NudeNet face refinement.
 
-Dependencies: numpy, onnxruntime, Pillow (all already declared by DTFlow).
-No Transformers, PyTorch, huggingface_hub, OpenCV, or DTFlow imports.
+Run from the repository root with its uv-managed environment:
+    uv run python tools/images/schp_atr18_smoke.py --help
 
-The pinned model is downloaded once from Hugging Face with SHA-256 verification.
-The output includes source-aligned class masks, confidence maps, colorful overlays,
-and original-versus-overlay comparisons; files are grouped by output type.
-
-Usage (from the DTFlow repository root):
-    python3 tools/images/schp_atr18_smoke.py --input-dir "C:\\photos" --output-dir "tmp\\schp-smoke"
-
-The same command works with the repository's locked environment using:
-    uv run python3 tools/images/schp_atr18_smoke.py --input-dir "C:\\photos" --output-dir "tmp\\schp-smoke"
+Requires existing local YOLO26 end2end segmentation and NudeNet-style face ONNX
+models. Only the pinned SCHP model may be downloaded. No provider calls.
+Raw and refined outputs are grouped by type and aligned to the oriented source.
 """
 
 from __future__ import annotations
@@ -39,9 +33,24 @@ MODEL_SHA256 = "4420d8db8c1f266967c89485786b01209f6d405f320fc0f87e8ced49392cefb5
 MODEL_BYTES = 69_141_996
 SIDE = 512
 LABELS = (
-    "Background", "Hat", "Hair", "Sunglasses", "Upper-clothes", "Skirt",
-    "Pants", "Dress", "Belt", "Left-shoe", "Right-shoe", "Face",
-    "Left-leg", "Right-leg", "Left-arm", "Right-arm", "Bag", "Scarf",
+    "Background",
+    "Hat",
+    "Hair",
+    "Sunglasses",
+    "Upper-clothes",
+    "Skirt",
+    "Pants",
+    "Dress",
+    "Belt",
+    "Left-shoe",
+    "Right-shoe",
+    "Face",
+    "Left-leg",
+    "Right-leg",
+    "Left-arm",
+    "Right-arm",
+    "Bag",
+    "Scarf",
 )
 # High-contrast qualitative palette. Left/right pairs intentionally differ.
 # Visual-only colors: class IDs are untouched by changes to this palette.
@@ -71,6 +80,8 @@ MEAN = (0.406, 0.456, 0.485)
 STD = (0.225, 0.224, 0.229)
 IMAGE_SUFFIXES = frozenset({".jpg", ".jpeg", ".png", ".webp", ".bmp", ".tif", ".tiff"})
 MAX_IMAGE_PIXELS = 16_000_000
+DISPLAY_LABELS = (*LABELS, "Skin")  # synthetic class 18, never an SCHP prediction
+DISPLAY_COLORS = (*COLORS, (210, 166, 130))
 
 
 def sha256_file(path: Path) -> str:
@@ -156,14 +167,20 @@ def load_session(model_path: Path, threads: int):
 
 
 def prepare_image(source):
-    """Replicate upstream SCHPImageProcessor resize/normalize without torch."""
+    """Fit a person crop into centered white 512-square padding without stretching."""
     import numpy as np
     from PIL import Image
 
-    resized = source.resize((SIDE, SIDE), resample=Image.Resampling.BILINEAR)
-    rgb = np.asarray(resized, dtype=np.float32) / np.float32(255.0)
+    scale = SIDE / max(source.size)
+    width = max(1, min(SIDE, round(source.width * scale)))
+    height = max(1, min(SIDE, round(source.height * scale)))
+    left, top = (SIDE - width) // 2, (SIDE - height) // 2
+    canvas = Image.new("RGB", (SIDE, SIDE), "white")
+    canvas.paste(source.resize((width, height), Image.Resampling.BILINEAR), (left, top))
+    rgb = np.asarray(canvas, dtype=np.float32) / np.float32(255.0)
     rgb = (rgb - np.asarray(MEAN, dtype=np.float32)) / np.asarray(STD, dtype=np.float32)
-    return np.ascontiguousarray(rgb.transpose(2, 0, 1)[None, ...], dtype=np.float32)
+    tensor = np.ascontiguousarray(rgb.transpose(2, 0, 1)[None, ...], dtype=np.float32)
+    return tensor, (left, top, left + width, top + height)
 
 
 def load_rgb(path: Path):
@@ -181,34 +198,163 @@ def load_rgb(path: Path):
     return background.convert("RGB")
 
 
-def classify_logits(logits):
-    """Return argmax class IDs and uncalibrated per-pixel softmax top-class scores."""
+def classify_logits(logits, fit, target_size):
+    """Unpad and bilinearly restore logits before argmax, as in DTFlow SegFormer.
+
+    Accumulate stable softmax one class at a time to avoid an 18-channel
+    source-resolution allocation. Scores remain uncalibrated.
+    """
     import numpy as np
+    from PIL import Image
 
     if logits.shape != (1, len(LABELS), SIDE, SIDE):
         raise RuntimeError(f"Unexpected logits shape: {logits.shape}")
-    scores = np.asarray(logits[0], dtype=np.float32)
-    if not np.isfinite(scores).all():
+    if not np.isfinite(logits).all():
         raise RuntimeError("Model returned non-finite class logits.")
-    labels = np.argmax(scores, axis=0).astype(np.uint8)
-    maximum = np.max(scores, axis=0)
-    # Stable softmax; probability of the top predicted class, not a calibrated
-    # correctness estimate and not a model-level/whole-person detection score.
-    confidence = 1.0 / np.exp(scores - maximum[None, :, :]).sum(axis=0)
-    return labels, confidence.astype(np.float32)
+    left, top, right, bottom = fit
+    width, height = target_size
+    labels = np.zeros((height, width), dtype=np.uint8)
+    maximum = np.full((height, width), -np.inf, dtype=np.float32)
+    denominator = np.zeros((height, width), dtype=np.float32)
+    for idx, plane in enumerate(logits[0]):
+        cropped = plane[top:bottom, left:right].astype(np.float32)
+        score = np.asarray(
+            Image.fromarray(cropped).resize(target_size, Image.Resampling.BILINEAR),
+            dtype=np.float32,
+        )
+        updated = np.maximum(maximum, score)
+        denominator = denominator * np.exp(maximum - updated) + np.exp(score - updated)
+        labels[score > maximum] = idx
+        maximum = updated
+    return labels, (1.0 / denominator).astype(np.float32)
 
 
-def make_visuals(source, labels, confidence, out_dir: Path, stem: str, opacity: float):
+def person_crop_box(box, image_size):
+    """Mirror SegFormer's source-pixel crop and 8% margin, including edge clipping."""
+    width, height = image_size
+    x0, y0, x1, y1 = box
+    mx, my = int((x1 - x0) * 0.08), int((y1 - y0) * 0.08)
+    return max(0, x0 - mx), max(0, y0 - my), min(width, x1 + mx), min(height, y1 + my)
+
+
+def refine_face(labels, inside, box, face_boxes):
+    """Adapt raw SCHP IDs to the shared offset encoding; keep no-detection behavior."""
+    import numpy as np
+
+    from dtflow.services.person_selection import _cap_face
+
+    # The shared helper expects class + 1 inside a person, 0 outside.
+    encoded = np.where(inside, labels + 1, 0).astype(np.uint8)
+    if face_boxes:
+        encoded = np.frombuffer(_cap_face(encoded.tobytes(), box, face_boxes), dtype=np.uint8).reshape(labels.shape)
+    return np.where(encoded > 0, encoded.astype(np.int16) - 1, 0).astype(np.uint8)
+
+
+def segment_person(session, source, mask, box, face_boxes, min_confidence):
+    """Run one SCHP crop, clip to the shared person silhouette and refine face pixels."""
+    import numpy as np
+
+    crop_box = person_crop_box(box, source.size)
+    crop = source.crop(crop_box)
+    tensor, fit = prepare_image(crop)
+    stamp = time.perf_counter()
+    logits = session.run(["logits"], {"pixel_values": tensor})[0]
+    inference_seconds = time.perf_counter() - stamp
+    crop_labels, crop_confidence = classify_logits(logits, fit, crop.size)
+    x0, y0, x1, y1 = box
+    cx0, cy0, _, _ = crop_box
+    region = np.s_[y0 - cy0 : y1 - cy0, x0 - cx0 : x1 - cx0]
+    inside = mask[y0:y1, x0:x1] > 0
+    labels = np.where(inside, crop_labels[region], 0).astype(np.uint8)
+    confidence = np.where(inside, crop_confidence[region], 0).astype(np.float32)
+    filtered = labels.copy()
+    suppressed = (filtered != 0) & (confidence < min_confidence)
+    filtered[suppressed] = 0
+    refined = refine_face(filtered, inside, box, face_boxes)
+
+    shape = (source.height, source.width)
+    raw_full = np.zeros(shape, dtype=np.uint8)
+    refined_full = np.zeros(shape, dtype=np.uint8)
+    confidence_full = np.zeros(shape, dtype=np.float32)
+    raw_full[y0:y1, x0:x1] = labels
+    refined_full[y0:y1, x0:x1] = refined
+    confidence_full[y0:y1, x0:x1] = confidence
+    details = {
+        "person_box": list(box),
+        "crop_box": list(crop_box),
+        "schp_content_box": list(fit),
+        "schp_input_size": [SIDE, SIDE],
+        "padding_color": [255, 255, 255],
+        "logit_restoration": "remove padding, bilinear to source crop, then argmax",
+        "person_pixels": int(inside.sum()),
+        "suppressed_foreground_pixels": int(suppressed.sum()),
+        "face_refinement": "applied" if face_boxes else "unavailable_no_face_detected",
+        "face_pixels_before_refinement": int((filtered == 11).sum()),
+        "face_pixels_after_refinement": int((refined == 11).sum()),
+        "face_pixels_reclassified_as_skin": int(((filtered == 11) & (refined == 18)).sum()),
+        "mean_top_class_confidence_inside_person": float(confidence[inside].mean()),
+        "inference_seconds": inference_seconds,
+    }
+    return raw_full, refined_full, confidence_full, details
+
+
+def create_output_dir(requested: Path) -> Path:
+    """Preserve earlier runs by choosing a numbered sibling if the folder exists."""
+    root = requested.resolve()
+    candidate = root
+    suffix = 2
+    while True:
+        try:
+            candidate.mkdir(parents=True, exist_ok=False)
+            return candidate
+        except FileExistsError:
+            candidate = root.with_name(f"{root.name}_{suffix}")
+            suffix += 1
+
+
+def confidence_colors(confidence, inside):
+    """Map fixed scores 0 / 0.5 / 1 to blue / orange / red; outside is black."""
+    import numpy as np
+
+    score = np.clip(confidence, 0, 1)
+    blue = np.asarray((0, 80, 255), dtype=np.float32)
+    orange = np.asarray((255, 165, 0), dtype=np.float32)
+    red = np.asarray((255, 0, 0), dtype=np.float32)
+    first = blue + (orange - blue) * (score[..., None] * 2)
+    second = orange + (red - orange) * ((score[..., None] - 0.5) * 2)
+    colors = np.where((score <= 0.5)[..., None], first, second)
+    return np.where(inside[..., None], np.rint(colors), 0).astype(np.uint8)
+
+
+def save_confidence(confidence, inside, out_dir: Path, stem: str):
+    """Save a source-aligned RGB heatmap plus a separate fixed-range legend."""
+    import numpy as np
+    from PIL import Image, ImageDraw
+
+    heatmap = Image.fromarray(confidence_colors(confidence, inside))
+    heatmap.save(out_dir / "confidence" / f"{stem}_confidence.png")
+    legend = Image.new("RGB", (360, 64), "white")
+    ramp = np.linspace(0, 1, 320, dtype=np.float32)[None, :]
+    bar = np.repeat(confidence_colors(ramp, np.ones_like(ramp, dtype=bool)), 18, axis=0)
+    legend.paste(Image.fromarray(bar), (20, 8))
+    draw = ImageDraw.Draw(legend)
+    draw.text((20, 30), "0.0 low", fill="black")
+    draw.text((153, 30), "0.5", fill="black")
+    draw.text((284, 30), "1.0 high", fill="black")
+    draw.text((20, 48), "Uncalibrated model score", fill="black")
+    legend.save(out_dir / "confidence" / f"{stem}_scale.png")
+    return heatmap, legend
+
+
+def make_visuals(source, labels, out_dir: Path, stem: str, opacity: float, title: str, confidence_view):
     """Write flat per-type outputs, with one shared stem and matching mask/legend colors."""
     import numpy as np
     from PIL import Image, ImageDraw, ImageFont
 
     # Class labels are in the source grid after optional confidence suppression.
     Image.fromarray(labels.astype(np.uint8)).save(out_dir / "labels" / f"{stem}_labels.png")
-    confidence_gray = np.rint(np.clip(confidence, 0, 1) * 255).astype(np.uint8)
-    Image.fromarray(confidence_gray).save(out_dir / "confidence" / f"{stem}_confidence.png")
 
-    color_lut = np.asarray(COLORS, dtype=np.uint8)
+    color_lut = np.asarray(DISPLAY_COLORS, dtype=np.uint8)
     colored = Image.fromarray(color_lut[labels])
     alpha = Image.fromarray(np.where(labels > 0, round(255 * opacity), 0).astype(np.uint8))
     colored.putalpha(alpha)
@@ -222,45 +368,57 @@ def make_visuals(source, labels, confidence, out_dir: Path, stem: str, opacity: 
         overlay.paste((255, 255, 255), mask=Image.fromarray((edges * 220).astype(np.uint8)))
     overlay.save(out_dir / "overlays" / f"{stem}_overlay.png")
 
-    counts = np.bincount(labels.reshape(-1), minlength=len(LABELS))
-    detected = [idx for idx in range(1, len(LABELS)) if counts[idx] > 0]
+    counts = np.bincount(labels.reshape(-1), minlength=len(DISPLAY_LABELS))
+    detected = [idx for idx in range(1, len(DISPLAY_LABELS)) if counts[idx] > 0]
     for idx in detected:
         binary = Image.fromarray((labels == idx).astype(np.uint8) * 255)
-        binary.save(out_dir / "masks" / f"{stem}_mask_{idx:02d}_{LABELS[idx].lower().replace('-', '_')}.png")
+        binary.save(out_dir / "masks" / f"{stem}_mask_{idx:02d}_{DISPLAY_LABELS[idx].lower().replace('-', '_')}.png")
 
     w, h = source.size
-    legend_width = 250
-    compared = Image.new("RGB", (w * 2 + legend_width, max(h, 56 + len(LABELS) * 26)), "white")
+    legend_width = 380
+    compared = Image.new("RGB", (w * 3 + legend_width, max(h, 84 + len(DISPLAY_LABELS) * 26 + 72)), "white")
     compared.paste(source, (0, 0))
     compared.paste(overlay, (w, 0))
+    heatmap, scale = confidence_view
+    compared.paste(heatmap, (w * 2, 0))
+    compared.paste(scale, (w * 3, 84 + len(DISPLAY_LABELS) * 26))
     draw = ImageDraw.Draw(compared)
     font = ImageFont.load_default()
-    left = w * 2 + 12
+    left = w * 3 + 12
     draw.text((left, 12), "SCHP ATR-18 | class legend", fill=(15, 15, 15), font=font)
+    draw.text((left, 52), title, fill=(75, 75, 75), font=font)
     draw.text((left, 32), f"Overlay opacity: {opacity:.0%}", fill=(75, 75, 75), font=font)
-    for idx, name in enumerate(LABELS):
-        y = 58 + idx * 26
+    for idx, name in enumerate(DISPLAY_LABELS):
+        y = 84 + idx * 26
         if idx == 0:
             draw.rectangle((left, y, left + 14, y + 14), outline=(110, 110, 110))
         else:
-            draw.rectangle((left, y, left + 14, y + 14), fill=COLORS[idx])
+            draw.rectangle((left, y, left + 14, y + 14), fill=DISPLAY_COLORS[idx])
         pct = 100.0 * int(counts[idx]) / labels.size
         draw.text((left + 22, y + 1), f"{idx:02d} {name}: {pct:.1f}%", fill=(20, 20, 20), font=font)
     compared.save(out_dir / "comparisons" / f"{stem}_compare.png")
-    return {LABELS[idx]: round(100.0 * int(counts[idx]) / labels.size, 3) for idx in range(len(LABELS))}
+    return {DISPLAY_LABELS[idx]: round(100.0 * int(counts[idx]) / labels.size, 3) for idx in range(len(DISPLAY_LABELS))}
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     """Build the smoke-test CLI with simple paths and predictable output options."""
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("--input-dir", type=Path, required=True, help="Folder containing images (non-recursive).")
-    parser.add_argument("--output-dir", type=Path, default=Path("tmp/schp-atr18-smoke"), help="Output folder.")
-    parser.add_argument("--model", type=Path, default=Path("tmp/models") / MODEL_NAME, help="Cached INT8 ONNX file.")
-    parser.add_argument("--no-download", action="store_true", help="Require an existing, hash-verified ONNX file.")
-    parser.add_argument("--opacity", type=float, default=0.50, help="Overlay opacity between 0.0 and 1.0 (default 0.50).")
-    parser.add_argument("--threads", type=int, default=4, help="ONNX Runtime CPU inference threads (default 4).")
-    parser.add_argument("--min-confidence", type=float, default=0.0, help="Minimum uncalibrated pixel softmax score, 0.0 to 1.0; default 0.0 (disabled).")
+    parser.add_argument("-i", "--input-dir", type=Path, required=True, help="Folder containing images (non-recursive).")
+    parser.add_argument("-o", "--output-dir", type=Path, default=Path("tmp/schp-atr18-smoke"), help="Output folder; existing folders are preserved using a numbered sibling.")
+    parser.add_argument("-m", "--model", type=Path, default=Path("tmp/models") / MODEL_NAME, help="Cached INT8 ONNX file.")
+    parser.add_argument("-n", "--no-download", action="store_true", help="Require an existing, hash-verified ONNX file.")
+    parser.add_argument("-a", "--opacity", type=float, default=0.50, help="Overlay opacity between 0.0 and 1.0 (default 0.50).")
+    parser.add_argument("-t", "--threads", type=int, default=4, help="ONNX Runtime CPU inference threads (default 4).")
+    parser.add_argument("-c", "--min-confidence", type=float, default=0.0, help="Minimum pixel score for refined outputs only; raw outputs remain untouched.")
+    parser.add_argument("-p", "--person-model", type=Path, required=True, help="Local YOLO26 end2end segmentation ONNX.")
+    parser.add_argument("-f", "--faces-model", type=Path, required=True, help="Local NudeNet-style 320 px FACE_* ONNX.")
+    parser.add_argument("-d", "--confidence", type=float, default=0.25, help="Person detection threshold (default 0.25).")
     args = parser.parse_args(argv)
+    for path in (args.person_model, args.faces_model):
+        if not path.is_file():
+            parser.error(f"Local model file not found: {path}")
+    if not 0.0 <= args.confidence <= 1.0:
+        parser.error("--confidence must be between 0 and 1")
     if not 0.0 <= args.opacity <= 1.0:
         parser.error("--opacity must be between 0 and 1")
     if args.threads < 1:
@@ -273,9 +431,11 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 
 
 def main(argv: list[str] | None = None) -> int:
-    """Download the model once, process all supported stills, and print a summary."""
+    """Run shared person/face detection and one padded SCHP inference per person."""
     import numpy as np
     from PIL import Image
+
+    from dtflow.services import person_selection as selection
 
     args = parse_args(argv)
     files = sorted(p for p in args.input_dir.iterdir() if p.is_file() and p.suffix.lower() in IMAGE_SUFFIXES)
@@ -283,40 +443,62 @@ def main(argv: list[str] | None = None) -> int:
         print(f"No supported images found in {args.input_dir}", file=sys.stderr)
         return 2
 
+    # Reuse the production decoder, model checks, detection thresholds and NMS.
+    # Caller-selected auxiliary models are local only; record their actual digests.
+    person_ref = selection.describe_model(args.person_model)
+    faces_ref = selection.describe_model(args.faces_model)
+    person_session = selection._verified_session(person_ref, selection._segmentation_session)
+    faces_session = selection._verified_session(faces_ref, selection._faces_session)
     model_hash = ensure_model(args.model, allow_download=not args.no_download)
-    t_load = time.perf_counter()
     session = load_session(args.model, args.threads)
-    print(f"CPU ONNX session ready in {time.perf_counter() - t_load:.2f}s; {len(files)} image(s) queued")
-
-    output_root = args.output_dir.resolve()
-    for kind in ("labels", "confidence", "overlays", "masks", "comparisons", "manifests"):
-        (output_root / kind).mkdir(parents=True, exist_ok=True)
+    output_root = create_output_dir(args.output_dir)
+    print(f"CPU sessions ready; {len(files)} image(s) queued; results: {output_root}", flush=True)
+    for kind in ("labels", "confidence", "overlays", "masks", "comparisons", "manifests", "crops", "persons"):
+        (output_root / kind).mkdir()
     summary_rows = []
     fail_count = 0
     for n, path in enumerate(files, start=1):
         stamp = time.perf_counter()
-        # Numbered prefix avoids collisions from files sharing names with different extensions.
         stem = f"{n:04d}_{path.stem}"
         try:
             source = load_rgb(path)
-            tensor = prepare_image(source)
-            inf_start = time.perf_counter()
-            logits = session.run(["logits"], {"pixel_values": tensor})[0]
-            inference_seconds = time.perf_counter() - inf_start
-            small_labels, small_confidence = classify_logits(logits)
-            # Nearest-neighbor restoration keeps labels and confidence aligned on
-            # exactly the same source pixel grid; don't smooth discrete classes.
-            full_labels = np.asarray(
-                Image.fromarray(small_labels).resize(source.size, Image.Resampling.NEAREST), dtype=np.uint8
-            ).copy()
-            full_confidence = np.asarray(
-                Image.fromarray(small_confidence, mode="F").resize(source.size, Image.Resampling.NEAREST),
-                dtype=np.float32,
-            )
-            unfiltered_foreground = full_labels != 0
-            suppressed = unfiltered_foreground & (full_confidence < args.min_confidence)
-            full_labels[suppressed] = 0
-            class_coverages = make_visuals(source, full_labels, full_confidence, output_root, stem, args.opacity)
+            detect_start = time.perf_counter()
+            people = selection._instances(person_session, source, args.confidence)
+            face_boxes = selection._face_boxes(faces_session, source) if people else []
+            detection_seconds = time.perf_counter() - detect_start
+            person_reports = []
+            for index, (score, mask, box) in enumerate(people, start=1):
+                person_stem = f"{stem}_p{index:02d}"
+                raw, refined, confidence, details = segment_person(
+                    session, source, mask, box, face_boxes, args.min_confidence
+                )
+                x0, y0, x1, y1 = box
+                person_mask = np.zeros((source.height, source.width), dtype=np.uint8)
+                person_mask[y0:y1, x0:x1] = np.where(mask[y0:y1, x0:x1] > 0, 255, 0).astype(np.uint8)
+                confidence_view = save_confidence(confidence, person_mask > 0, output_root, person_stem)
+                raw_coverage = make_visuals(
+                    source, raw, output_root, f"{person_stem}_raw", args.opacity, "Raw: person-clipped", confidence_view
+                )
+                refined_title = "Refined: face boxes" if face_boxes else "Unrefined: no face detected"
+                refined_coverage = make_visuals(
+                    source, refined, output_root, f"{person_stem}_refined", args.opacity, refined_title, confidence_view
+                )
+                Image.fromarray(person_mask).save(output_root / "persons" / f"{person_stem}_person.png")
+                crop = source.crop(tuple(details["crop_box"]))
+                crop.save(output_root / "crops" / f"{person_stem}_crop.png")
+                # Save the exact fitted RGB image (before normalization) for geometry inspection.
+                left, top, right, bottom = details["schp_content_box"]
+                fitted = Image.new("RGB", (SIDE, SIDE), "white")
+                fitted.paste(crop.resize((right - left, bottom - top), Image.Resampling.BILINEAR), (left, top))
+                fitted.save(output_root / "crops" / f"{person_stem}_input.png")
+                details.update({
+                    "index": index,
+                    "output_stem": person_stem,
+                    "person_score": score,
+                    "raw_class_coverages_percent_of_source": raw_coverage,
+                    "refined_class_coverages_percent_of_source": refined_coverage,
+                })
+                person_reports.append(details)
             elapsed = time.perf_counter() - stamp
             record = {
                 "image_name": path.name,
@@ -325,28 +507,46 @@ def main(argv: list[str] | None = None) -> int:
                 "height": source.height,
                 "model_url": MODEL_URL,
                 "model_sha256": model_hash,
-                "class_labels": list(LABELS),
-                "min_confidence": args.min_confidence,
-                "confidence_definition": "uncalibrated per-pixel maximum softmax probability",
-                "mean_top_class_confidence": round(float(full_confidence.mean()), 4),
-                "suppressed_foreground_pixels": int(suppressed.sum()),
-                "original_foreground_pixels": int(unfiltered_foreground.sum()),
-                "preprocessing": {"resize": [SIDE, SIDE], "resampling": "bilinear", "mean": MEAN, "std": STD},
-                "inference_seconds": round(inference_seconds, 3),
-                "total_seconds": round(elapsed, 3),
-                "class_coverages_percent": class_coverages,
+                "person_model_sha256": person_ref.sha256,
+                "faces_model_sha256": faces_ref.sha256,
+                "class_labels": list(DISPLAY_LABELS),
+                "synthetic_skin_class_id": 18,
+                "raw_definition": "unfiltered SCHP classification, restored to source grid and clipped to person",
+                "min_confidence_refined_only": args.min_confidence,
+                "confidence_definition": "uncalibrated maximum softmax after source-crop logit restoration; zero outside person",
+                "confidence_palette": {"0.0": [0, 80, 255], "0.5": [255, 165, 0], "1.0": [255, 0, 0], "outside_person": [0, 0, 0]},
+                "person_detection_threshold": args.confidence,
+                "face_detection_threshold": selection.FACES_CONFIDENCE,
+                "face_nms_iou": selection.FACES_IOU,
+                "face_boxes": [list(box) for box in face_boxes],
+                "face_box_expansion": {"sideways": 0.5, "above": 1.0, "below": selection.FACE_BELOW},
+                "preprocessing": {
+                    "person_crop_margin_fraction": 0.08,
+                    "resize": "aspect-preserving, centered white padding to 512x512",
+                    "resampling": "bilinear",
+                    "mean": MEAN,
+                    "std": STD,
+                },
+                "detection_seconds": detection_seconds,
+                "total_seconds": elapsed,
+                "status": "ok" if people else "no_person_detected",
+                "people": person_reports,
             }
             (output_root / "manifests" / f"{stem}_report.json").write_text(
                 json.dumps(record, indent=2, ensure_ascii=True) + "\n", encoding="utf-8"
             )
-            summary_rows.append({"image": path.name, "status": "ok", "inference_s": f"{inference_seconds:.3f}", "total_s": f"{elapsed:.3f}"})
-            print(f"[{n}/{len(files)}] {path.name}: inference {inference_seconds:.2f}s, total {elapsed:.2f}s -> {output_root}", flush=True)
+            summary_rows.append({"image": path.name, "status": record["status"], "people": len(people), "total_s": f"{elapsed:.3f}"})
+            print(f"[{n}/{len(files)}] {path.name}: {len(people)} person(s), {elapsed:.2f}s", flush=True)
         except Exception as exc:
             fail_count += 1
-            summary_rows.append({"image": path.name, "status": "error", "inference_s": "", "total_s": ""})
+            summary_rows.append({"image": path.name, "status": "error", "people": "", "total_s": ""})
+            (output_root / "manifests" / f"{stem}_report.json").write_text(
+                json.dumps({"image_name": path.name, "status": "error", "error": f"{type(exc).__name__}: {exc}"}, indent=2) + "\n",
+                encoding="utf-8",
+            )
             print(f"[{n}/{len(files)}] ERROR {path.name}: {type(exc).__name__}: {exc}", file=sys.stderr, flush=True)
     with (output_root / "manifests" / "summary.csv").open("w", newline="", encoding="utf-8") as stream:
-        writer = csv.DictWriter(stream, fieldnames=("image", "status", "inference_s", "total_s"))
+        writer = csv.DictWriter(stream, fieldnames=("image", "status", "people", "total_s"))
         writer.writeheader()
         writer.writerows(summary_rows)
     print(f"Finished: {len(files) - fail_count}/{len(files)} images; results in {output_root}")
@@ -356,6 +556,6 @@ def main(argv: list[str] | None = None) -> int:
 if __name__ == "__main__":
     try:
         raise SystemExit(main())
-    except (OSError, RuntimeError, urllib.error.URLError) as exc:
+    except (OSError, RuntimeError, ValueError, urllib.error.URLError) as exc:
         print(f"Fatal: {type(exc).__name__}: {exc}", file=sys.stderr)
         raise SystemExit(1) from None
