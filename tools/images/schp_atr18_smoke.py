@@ -340,12 +340,11 @@ def main(argv: list[str] | None = None) -> int:
                 json.dumps(record, indent=2, ensure_ascii=True) + "\n", encoding="utf-8"
             )
             summary_rows.append({"image": path.name, "status": "ok", "inference_s": f"{inference_seconds:.3f}", "total_s": f"{elapsed:.3f}"})
-            print(f"[{n}/{len(files)}] {path.name}: inference {inference_seconds:.2f}s, total {elapsed:.2f}s -> {output_root / stem}", flush=True)
+            print(f"[{n}/{len(files)}] {path.name}: inference {inference_seconds:.2f}s, total {elapsed:.2f}s -> {output_root}", flush=True)
         except Exception as exc:
             fail_count += 1
             summary_rows.append({"image": path.name, "status": "error", "inference_s": "", "total_s": ""})
             print(f"[{n}/{len(files)}] ERROR {path.name}: {type(exc).__name__}: {exc}", file=sys.stderr, flush=True)
-    output_root.mkdir(parents=True, exist_ok=True)
     with (output_root / "manifests" / "summary.csv").open("w", newline="", encoding="utf-8") as stream:
         writer = csv.DictWriter(stream, fieldnames=("image", "status", "inference_s", "total_s"))
         writer.writeheader()
