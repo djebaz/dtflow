@@ -87,6 +87,7 @@ MEAN = (0.406, 0.456, 0.485)
 STD = (0.225, 0.224, 0.229)
 IMAGE_SUFFIXES = frozenset({".jpg", ".jpeg", ".png", ".webp", ".bmp", ".tif", ".tiff"})
 MAX_IMAGE_PIXELS = 16_000_000
+NUDENET_CONFIDENCE = 0.10
 DISPLAY_LABELS = (*LABELS, "Skin")  # synthetic class 18, never an SCHP prediction
 DISPLAY_COLORS = (*COLORS, (255, 0, 255))  # vivid magenta stays visible over natural skin
 
@@ -780,7 +781,7 @@ def main(argv: list[str] | None = None) -> int:
             nudenet_names, body_detections, face_boxes = {}, [], []
             if people:
                 nudenet_names, body_detections, face_boxes = detect_body_parts(
-                    faces_session, source, selection.FACES_CONFIDENCE
+                    faces_session, source, NUDENET_CONFIDENCE
                 )
             pose_matches = {}
             pose_diagnostics = None
@@ -878,12 +879,13 @@ def main(argv: list[str] | None = None) -> int:
                 "body_class_labels": list(body_names) if person_reports else list(DISPLAY_LABELS),
                 "nudenet_class_names": nudenet_names,
                 "body_pixel_score_threshold": args.body_confidence,
+                "nudenet_detection_threshold": NUDENET_CONFIDENCE,
                 "raw_definition": "unfiltered SCHP classification, restored to source grid and clipped to person",
                 "min_confidence_refined_only": args.min_confidence,
                 "confidence_definition": "uncalibrated maximum softmax after source-crop logit restoration; zero outside person",
                 "confidence_palette": {"0.0": [0, 80, 255], "0.5": [255, 165, 0], "1.0": [255, 0, 0], "outside_person": [0, 0, 0]},
                 "person_detection_threshold": args.confidence,
-                "face_detection_threshold": selection.FACES_CONFIDENCE,
+                "face_detection_threshold": NUDENET_CONFIDENCE,
                 "face_nms_iou": selection.FACES_IOU,
                 "face_boxes": [list(box) for box in face_boxes],
                 "face_box_expansion": {"sideways": 0.5, "above": 1.0, "below": selection.FACE_BELOW},
