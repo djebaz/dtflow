@@ -270,22 +270,80 @@ sample-fitted on a handful of images.
 
 ## SCHP ATR-18 folder smoke test (CPU ONNX)
 
-\`schp_atr18_smoke.py\` is a **standalone human-parsing comparison tool**, not production support for SCHP. It uses DTFlow's existing \`numpy\`, \`Pillow\`, and \`onnxruntime\` dependencies; no PyTorch, Transformers, OpenCV, or provider calls. It downloads a pinned INT8 ONNX file on the first run (or uses a SHA-256-verified cached file), and runs local CPU inference on each still image directly. It does **not** call YOLO person detection or crop each subject like DTFlow's current person-selection pipeline.
+`schp_atr18_smoke.py` is a standalone experiment using existing NumPy, Pillow
+and ONNX Runtime dependencies. It detects YOLO26 person instances, runs padded
+SCHP on each crop and detects all NudeNet classes at confidence >= 0.10.
+Optional pose correction remains separate. Missing checkpoints download from
+pinned sources; explicit local paths and `--no-download` remain supported.
 
-From the repository root in PowerShell, replace the input folder:
+```powershell
+uv run python tools/images/schp_atr18_smoke.py -i "C:\Images\Test" --body-only --pose-model
+```
 
-\`\`\`powershell
-uv run python3 tools/images/schp_atr18_smoke.py --input-dir "C:\Images\Test" --output-dir "tmp\schp-smoke"
-\`\`\`
+### Independent body regions
 
-Outputs are grouped by **type**, not image: \`overlays/\` contains the originals with a colored translucent overlay; \`comparisons/\` contains side-by-side originals, overlays, and a class legend; \`masks/\` contains 0/255 grayscale masks per detected class; \`labels/\` contains 8-bit class-ID maps; \`confidence/\` contains grayscale uncalibrated per-pixel top-class softmax scores; \`manifests/\` contains per-image JSON reports and \`summary.csv\`. Matching numbered filename stems keep outputs related without making separate subfolders for every image. Output colors are intentionally distinct between left/right body parts and thin boundaries separate touching classes. Existing source images and model files are never overwritten by segmentation.
+Every NudeNet detection produces its own mask inside its box and the decoded
+person silhouette. Another region never excludes it, even for same-class boxes.
+Within-class detector NMS still applies.
 
-To inspect uncertain regions, try a *separate output directory* with an optional minimum class score:
+Previously a hard SCHP score cutoff removed all non-red pixels, and a single-label
+overlay hid overlapping regions. Boundaries now combine **65% normalized local RGB
+contrast and 35% absolute SCHP score change**, assigned to both endpoints of each
+horizontal/vertical neighboring pair. A one-source-pixel RGB blur reduces texture.
+Display colors, opacity and SCHP class IDs do not affect selection.
 
-\`\`\`powershell
-uv run python3 tools/images/schp_atr18_smoke.py --input-dir "C:\Images\Test" --output-dir "tmp\schp-smoke-70" --min-confidence 0.70
-\`\`\`
+- `-g/--boundary`: edge-barrier strength, default **0.12**. Higher values retain
+  fewer barriers and usually larger regions; lower values can fragment regions.
+- `-b/--body-confidence`: seed score for equal-area ties, default **0.90**.
+  Always select the largest connected component. If several share the largest
+  area, prefer one containing a high-score seed. A smaller confident island
+  cannot displace a larger region. This option is **not a pixel exclusion floor**;
+  low-score pixels can remain inside regions. Reports state whether the selected
+  component contains a high-score seed.
+- `-r/--rounding`: source-pixel radius; default **3** in body-only mode, zero
+  otherwise. Smoothing stays inside the selected component and silhouette.
 
-\`--min-confidence\` defaults to \`0.0\` (no filtering), supports \`0.0\`–\`1.0\`, and changes the **class masks and overlay**, not the underlying ONNX predictions. Pixels whose highest-class softmax score is below the threshold become background in the saved class-ID map; the grayscale confidence map retains their scores so suppression can be inspected. This is **not a calibrated probability of correctness** and a high score does not prove that the body-part classification is right. Raising the threshold may erase legitimate thin details. \`--opacity\` (default \`0.5\`) controls overlay transparency; \`--threads\` (default \`4\`) controls ONNX CPU threads; \`--no-download\` refuses to fetch a missing local model. Reuse of a cached model still verifies its SHA-256.
+The person mask is neither smoothed nor hole-filled. Gaps predicted by YOLO are
+preserved; gaps missed by the model cannot be reconstructed by this change.
+This is a heuristic, not anatomical segmentation or 3D reconstruction: shadows
+and texture can create false edges; weak/open edges can merge regions. Default
+weights and thresholds need owner review on real photos. SCHP scores remain
+uncalibrated and do not measure correctness of NudeNet anatomical labels.
 
-**Owner smoke evidence (2026-11-05):** The earlier standalone script downloaded the checkpoint and generated functioning overlays on Windows. The owner found the segmentation quality uncertain and requested grouped output folders and more distinguishable colors. The new grouping, palette, confidence threshold and confidence image are proposed follow-up changes; their Windows smoke/accuracy/performance have **not** yet been verified. The model's declared MIT license is not a completed provenance/commercial-usage review. Do not run model downloads or inference automatically as routine CI validation.
+### Outputs
+
+Output folders are grouped by type; existing runs are preserved with numbered
+sibling directories. Each image/person has a shared numbered filename stem.
+
+| Output in `overlays/` | Content |
+| --- | --- |
+| `*_body_overlay.png` | Independent regions, averaged overlap colors, every contour and embedded legend |
+| `*_clothes_overlay.png` | Separate SCHP clothing/accessory classes |
+| `*_person_overlay.png` | Raw silhouette over the photo beside its binary mask, including internal gaps |
+| `*_score_overlay.png` | Blended SCHP scores, silhouette outline and NudeNet boxes |
+| `*_score_map.png` | Unblended scores inside the silhouette, with legend |
+| `*_boundary_overlay.png` | Actual combined image/score barriers in cyan |
+
+`--body-only` saves these six images and JSON/CSV reports; it skips binary masks,
+crops, labels and comparisons. It still renders all independent body regions.
+
+Full mode additionally saves `masks/*_body_detection_NNN_LABEL.png`: one source-aligned
+0/255 mask per detection, including empty results. Class-union masks remain for
+convenience. The single-label body map and comparison use the highest NudeNet score
+for compatibility and **cannot encode overlaps**; independent masks are authoritative.
+The body overlay is rendered from those independent masks. Its legend sums detection
+areas, counting overlap more than once. Reports retain mask paths, seed fallback,
+edge settings, selected pixels and overlap counts.
+
+Raw/refined SCHP outputs, confidence maps, crops and optional pose diagnostics remain
+in full mode. `--min-confidence` affects refined SCHP labels only.
+`--opacity` changes visualization only; `--threads` controls SCHP/pose CPU threads.
+
+### Validation boundary
+
+Earlier versions produced working overlays in the owner's Windows runs. This
+revision has synthetic offline checks for image/score boundaries, overlapping
+detections, silhouette holes, rounding, image writes and CLI settings. Real-model
+quality, performance and Windows acceptance remain unverified. No model download,
+model inference, training or billable operation was used for this validation.
+This does not establish model license/provenance clearance or production support.

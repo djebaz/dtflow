@@ -12,7 +12,9 @@ Optionally add -k / --pose-model for conservative arm/leg label correction;
 -q controls joint confidence and -w controls limb-zone width. Pose-corrected
 outputs have a _pose suffix; raw/refined masks and SCHP confidence stay intact.
 All NudeNet classes add _body outputs with independent anatomical masks.
---body-confidence controls the red interior score floor (default 0.90).
+Image contrast and SCHP score changes guide independent body-region boundaries.
+--body-confidence breaks equal-area region ties, never excludes low-score pixels.
+--boundary controls the strength of the combined edge barrier (default 0.12).
 """
 
 from __future__ import annotations
@@ -32,10 +34,7 @@ from pathlib import Path
 # Exact file revision and Git LFS SHA-256 recorded in the upstream model commit.
 MODEL_REVISION = "1ddc548f48cc1435a505e565ff5f56dcfe6017e3"
 MODEL_NAME = "schp-atr-18-int8-static.onnx"
-MODEL_URL = (
-    f"https://huggingface.co/pirocheto/schp-atr-18/resolve/{MODEL_REVISION}/"
-    f"onnx/{MODEL_NAME}"
-)
+MODEL_URL = f"https://huggingface.co/pirocheto/schp-atr-18/resolve/{MODEL_REVISION}/onnx/{MODEL_NAME}"
 MODEL_SHA256 = "4420d8db8c1f266967c89485786b01209f6d405f320fc0f87e8ced49392cefb5"
 MODEL_BYTES = 69_141_996
 SIDE = 512
@@ -62,24 +61,24 @@ LABELS = (
 # High-contrast qualitative palette. Left/right pairs intentionally differ.
 # Visual-only colors: class IDs are untouched by changes to this palette.
 COLORS = (
-    (0, 0, 0),       # 00 Background
-    (255, 67, 54),   # 01 Hat - scarlet
-    (0, 188, 172),   # 02 Hair - turquoise
-    (255, 214, 0),   # 03 Sunglasses - yellow
-    (46, 94, 255),   # 04 Upper-clothes - blue
+    (0, 0, 0),  # 00 Background
+    (255, 67, 54),  # 01 Hat - scarlet
+    (0, 188, 172),  # 02 Hair - turquoise
+    (255, 214, 0),  # 03 Sunglasses - yellow
+    (46, 94, 255),  # 04 Upper-clothes - blue
     (226, 45, 171),  # 05 Skirt - magenta
-    (28, 168, 70),   # 06 Pants - green
+    (28, 168, 70),  # 06 Pants - green
     (255, 127, 24),  # 07 Dress - orange
     (129, 68, 213),  # 08 Belt - violet
-    (0, 128, 204),   # 09 Left-shoe - azure
+    (0, 128, 204),  # 09 Left-shoe - azure
     (255, 91, 145),  # 10 Right-shoe - pink
     (186, 223, 41),  # 11 Face - lime
     (63, 204, 242),  # 12 Left-leg - cyan
-    (219, 50, 27),   # 13 Right-leg - red
-    (153, 132, 255), # 14 Left-arm - lavender
-    (69, 214, 54),   # 15 Right-arm - bright green
-    (139, 80, 30),   # 16 Bag - brown
-    (255, 173, 0),   # 17 Scarf - amber
+    (219, 50, 27),  # 13 Right-leg - red
+    (153, 132, 255),  # 14 Left-arm - lavender
+    (69, 214, 54),  # 15 Right-arm - bright green
+    (139, 80, 30),  # 16 Bag - brown
+    (255, 173, 0),  # 17 Scarf - amber
 )
 # IMPORTANT: This model uses RGB pixels, but its published mean/std follow
 # the BGR-indexed normalization constants used during SCHP training.
@@ -115,7 +114,6 @@ CHECKPOINTS = {
         "93fc5e1d6b7690f33b4e1d60d6e9aec1cea14bdbc361bfae11778969be662078",
     ),
 }
-
 
 
 def sha256_file(path: Path) -> str:
@@ -358,7 +356,12 @@ def detect_body_parts(session, source, threshold):
     detections = []
     for class_id in sorted(names):
         found, _ = decode_parts(
-            output, geometry, source.size, threshold, selection.FACES_IOU, names,
+            output,
+            geometry,
+            source.size,
+            threshold,
+            selection.FACES_IOU,
+            names,
             exclude_ids=[idx for idx in names if idx != class_id],
         )
         detections.extend(found)
@@ -381,16 +384,68 @@ def body_palette(names):
     return tuple(colors)
 
 
-def refine_body_parts(source, labels, person_mask, confidence, detections, names, boundary_confidence, out_dir, stem, *, rounding=0.0, save_diagnostics=True):
-    """Keep the biggest connected confidence region inside each NudeNet box.
+def body_boundary_strength(source, confidence, person_mask):
+    """Combine local RGB contrast and score differences, independently of display colors.
 
-    The score threshold excludes uncertain SCHP pixels; it is an experimental
-    boundary hint, not confidence in the anatomical label supplied by NudeNet.
-    Overlapping masks stay independent. The combined map uses detection score.
+    A light RGB blur reduces pixel texture. Each neighboring pair contributes
+    65% normalized RGB distance and 35% absolute SCHP score difference to both
+    endpoints. Edges outside the person do not influence its interior.
+    """
+    import numpy as np
+    from PIL import ImageFilter
+
+    rgb = np.asarray(source.filter(ImageFilter.GaussianBlur(1.0)), dtype=np.float32) / 255.0
+    inside = person_mask > 0
+    strength = np.zeros(inside.shape, dtype=np.float32)
+    for a, b in ((np.s_[:, :-1], np.s_[:, 1:]), (np.s_[:-1, :], np.s_[1:, :])):
+        contrast = np.sqrt(np.mean((rgb[a] - rgb[b]) ** 2, axis=-1))
+        difference = 0.65 * contrast + 0.35 * np.abs(confidence[a] - confidence[b])
+        difference *= inside[a] & inside[b]
+        np.maximum(strength[a], difference, out=strength[a])
+        np.maximum(strength[b], difference, out=strength[b])
+    return strength
+
+
+def largest_body_region(candidate, confidence, seed_floor):
+    """Keep the largest component; high-score seeds only break equal-area ties."""
+    import numpy as np
+    from person_parts_mask_poc import label_components
+
+    components, count = label_components(candidate)
+    if not count:
+        return np.zeros_like(candidate), False
+    sizes = np.bincount(components.ravel(), minlength=count + 1)
+    sizes[0] = 0
+    largest = np.flatnonzero(sizes == sizes.max())
+    seeded = np.unique(components[candidate & (confidence >= seed_floor)])
+    preferred = largest[np.isin(largest, seeded)]
+    chosen = int(preferred[0] if preferred.size else largest[0])
+    return components == chosen, bool(chosen in seeded)
+
+
+def refine_body_parts(
+    source,
+    labels,
+    person_mask,
+    confidence,
+    detections,
+    names,
+    boundary_confidence,
+    out_dir,
+    stem,
+    *,
+    rounding=0.0,
+    save_diagnostics=True,
+    boundary_threshold=0.12,
+):
+    """Select each box independently using image/score edges; retain overlapping masks.
+
+    The single-label map is only a compatibility projection. Independent cropped
+    masks are authoritative and drive the body overlay, including in body-only mode.
     """
     import math
 
-    from person_parts_mask_poc import label_components, smooth_mask
+    from person_parts_mask_poc import smooth_mask
     import numpy as np
     from PIL import Image, ImageDraw
 
@@ -400,12 +455,14 @@ def refine_body_parts(source, labels, person_mask, confidence, detections, names
     colors = body_palette(names)
     combined = np.zeros(labels.shape, dtype=np.uint8)
     claimed = np.zeros(labels.shape, dtype=bool)
-    boundary = np.zeros(labels.shape, dtype=bool)
+    strength = body_boundary_strength(source, confidence, person_mask)
+    boundary = (person_mask > 0) & (strength >= boundary_threshold)
+    layers = []
     unions = {}
     reports = []
     boxes_view = source.copy() if save_diagnostics else None
     draw = ImageDraw.Draw(boxes_view) if save_diagnostics else None
-    for detection in detections:
+    for detection_index, detection in enumerate(detections, start=1):
         bx0, by0, bx1, by1 = detection["box_xyxy"]
         x0, y0 = max(0, math.floor(bx0)), max(0, math.floor(by0))
         x1, y1 = min(source.width, math.ceil(bx1)), min(source.height, math.ceil(by1))
@@ -414,46 +471,56 @@ def refine_body_parts(source, labels, person_mask, confidence, detections, names
         region = np.s_[y0:y1, x0:x1]
         candidate = person_mask[region] > 0
         name = detection["label"]
-        confident = candidate & (confidence[region] >= boundary_confidence)
-        boundary[region] |= candidate & ~confident
-        # SCHP labels must not split the body layer: use confidence alone.
-        supported = np.zeros(candidate.shape, dtype=bool)
-        components, count = label_components(confident)
-        if count:
-            sizes = np.bincount(components.ravel(), minlength=count + 1)
-            sizes[0] = 0
-            supported = components == int(sizes.argmax())
+        # Neither SCHP classes nor another body mask can exclude this region.
+        allowed = candidate & ~boundary[region]
+        supported, seeded = largest_body_region(allowed, confidence[region], boundary_confidence)
         selected_pixels = int(supported.sum())
         if rounding > 0 and supported.any():
-            supported = smooth_mask(supported, blur_sigma=rounding) & confident
-            # Smoothing cannot bridge the non-red boundary into another core.
-            components, count = label_components(supported)
-            if count:
-                sizes = np.bincount(components.ravel(), minlength=count + 1)
-                sizes[0] = 0
-                supported = components == int(sizes.argmax())
+            # Stay inside the chosen component: never fill a silhouette gap or
+            # expand into another region across an image/score barrier.
+            supported = smooth_mask(supported, blur_sigma=rounding) & supported
+            supported, _ = largest_body_region(supported, confidence[region], boundary_confidence)
         class_id = class_ids[detection["class_id"]]
+        layers.append({"class_id": class_id, "box": (x0, y0, x1, y1), "mask": supported})
+        mask_name = f"{stem}_body_detection_{detection_index:03d}_{name.lower()}.png"
         if save_diagnostics:
             if class_id not in unions:
                 unions[class_id] = np.zeros(labels.shape, dtype=bool)
             unions[class_id][region] |= supported
+            # One source-aligned mask per detection, even for the same class.
+            individual = Image.new("L", source.size)
+            individual.paste(Image.fromarray(supported.astype(np.uint8) * 255), (x0, y0))
+            individual.save(out_dir / "masks" / mask_name)
         take = supported & ~claimed[region]
         combined[region][take] = class_id
         claimed[region][take] = True
-        reports.append({
-            "label": name,
-            "score": detection["score"],
-            "box_xyxy": detection["box_xyxy"],
-            "person_supported_pixels": int(candidate.sum()),
-            "confidence_supported_pixels": int(confident.sum()),
-            "selected_segment_pixels_before_rounding": selected_pixels,
-            "rounded_segment_pixels": int(supported.sum()),
-            "low_confidence_pixels_excluded": int((candidate & ~confident).sum()),
-            "other_segment_pixels_excluded": int((confident & ~supported).sum()),
-        })
+        reports.append(
+            {
+                "label": name,
+                "score": detection["score"],
+                "box_xyxy": detection["box_xyxy"],
+                "person_supported_pixels": int(candidate.sum()),
+                "interior_seed_pixels": int((allowed & (confidence[region] >= boundary_confidence)).sum()),
+                "seed_selection": "largest_component_with_high_score_seed"
+                if seeded
+                else "largest_component_no_high_score_seed",
+                "boundary_supported_pixels": int(allowed.sum()),
+                "selected_segment_pixels_before_rounding": selected_pixels,
+                "rounded_segment_pixels": int(supported.sum()),
+                "boundary_pixels_excluded": int((candidate & boundary[region]).sum()),
+                "other_segment_pixels_excluded": int((allowed & ~supported).sum()),
+                "mask_file": f"masks/{mask_name}" if save_diagnostics else None,
+            }
+        )
         if supported.any() and draw is not None:
             draw.rectangle((x0, y0, x1 - 1, y1 - 1), outline=colors[class_id], width=2)
-            draw.text((x0 + 3, y0 + 3), f"{name} {detection['score']:.2f}", fill=colors[class_id], stroke_width=1, stroke_fill="black")
+            draw.text(
+                (x0 + 3, y0 + 3),
+                f"{name} {detection['score']:.2f}",
+                fill=colors[class_id],
+                stroke_width=1,
+                stroke_fill="black",
+            )
     if save_diagnostics:
         for class_id, mask in unions.items():
             Image.fromarray(mask.astype(np.uint8) * 255).save(
@@ -461,18 +528,30 @@ def refine_body_parts(source, labels, person_mask, confidence, detections, names
             )
         Image.fromarray(boundary.astype(np.uint8) * 255).save(out_dir / "masks" / f"{stem}_body_boundary.png")
         boxes_view.save(out_dir / "persons" / f"{stem}_body_boxes.png")
-    return combined, class_names, colors, {
-        "status": "applied" if claimed.any() else "no_supported_body_parts",
-        "pixel_score_threshold": boundary_confidence,
-        "rounding_radius_source_pixels": rounding,
-        "rounding_preserves_confidence_boundaries": True,
-        "assigned_pixels": int(claimed.sum()),
-        "confidence_definition": "SCHP maximum class score; pixels below the interior floor form boundaries",
-        "independent_masks_preserve_overlaps": True,
-        "segment_selection": "largest connected confidence region inside each NudeNet box, independent of SCHP class",
-        "combined_overlap_rule": "highest NudeNet detection score",
-        "detections": reports,
-    }
+    return (
+        combined,
+        class_names,
+        colors,
+        layers,
+        strength,
+        {
+            "status": "applied" if claimed.any() else "no_supported_body_parts",
+            "interior_seed_score": boundary_confidence,
+            "boundary_strength_threshold": boundary_threshold,
+            "boundary_rgb_weight": 0.65,
+            "boundary_score_weight": 0.35,
+            "boundary_rgb_blur_source_pixels": 1.0,
+            "rounding_radius_source_pixels": rounding,
+            "rounding_preserves_selected_region_and_silhouette": True,
+            "assigned_pixels": int(claimed.sum()),
+            "confidence_definition": "SCHP maximum class score; variations guide edges, high scores guide seeds",
+            "independent_masks_preserve_overlaps": True,
+            "segment_selection": "largest edge-enclosed component; high-score seeds only break equal-area ties; independent of SCHP class",
+            "combined_overlap_rule": "single-label compatibility projection only: highest NudeNet detection score",
+            "overlay_overlap_rule": "average class colors at overlaps, draw every independent contour",
+            "detections": reports,
+        },
+    )
 
 
 def match_pose_people(people, poses):
@@ -567,10 +646,14 @@ def save_pose_overlay(source, matched, kpt_confidence, out_dir: Path, stem: str)
         pose, _ = matched
         points = pose["keypoints"]
         for start, end, color in (
-            (5, 7, (153, 132, 255)), (7, 9, (153, 132, 255)),
-            (6, 8, (69, 214, 54)), (8, 10, (69, 214, 54)),
-            (11, 13, (63, 204, 242)), (13, 15, (63, 204, 242)),
-            (12, 14, (219, 50, 27)), (14, 16, (219, 50, 27)),
+            (5, 7, (153, 132, 255)),
+            (7, 9, (153, 132, 255)),
+            (6, 8, (69, 214, 54)),
+            (8, 10, (69, 214, 54)),
+            (11, 13, (63, 204, 242)),
+            (13, 15, (63, 204, 242)),
+            (12, 14, (219, 50, 27)),
+            (14, 16, (219, 50, 27)),
         ):
             ax, ay, ac = points[start]
             bx, by, bc = points[end]
@@ -632,7 +715,7 @@ def save_confidence(confidence, inside, out_dir: Path, stem: str):
     return heatmap, legend
 
 
-def save_score_overlay(source, confidence, person_mask, detections, out_dir, stem, opacity, body_floor):
+def save_score_overlay(source, confidence, person_mask, detections, out_dir, stem, opacity, body_floor, *, flat=False):
     """Show SCHP scores within the exact YOLO silhouette, with detector boxes."""
     import numpy as np
     from PIL import Image, ImageDraw, ImageFilter
@@ -641,6 +724,8 @@ def save_score_overlay(source, confidence, person_mask, detections, out_dir, ste
     heat = Image.fromarray(confidence_colors(confidence, inside)).convert("RGBA")
     heat.putalpha(Image.fromarray(np.where(inside, round(255 * opacity), 0).astype(np.uint8)))
     overlay = Image.alpha_composite(source.convert("RGBA"), heat).convert("RGB")
+    if flat:
+        overlay = Image.fromarray(confidence_colors(confidence, inside))
     # Outline the actual segmentation mask, including holes, rather than its box.
     silhouette = Image.fromarray(inside.astype(np.uint8) * 255)
     eroded = np.asarray(silhouette.filter(ImageFilter.MinFilter(3))) > 0
@@ -654,8 +739,13 @@ def save_score_overlay(source, confidence, person_mask, detections, out_dir, ste
         if x1 <= x0 or y1 <= y0 or not inside[y0:y1, x0:x1].any():
             continue
         draw.rectangle((x0, y0, x1 - 1, y1 - 1), outline="cyan", width=1)
-        draw.text((x0 + 2, y0 + 2), f"{detection['label']} {detection['score']:.2f}",
-                  fill="cyan", stroke_width=1, stroke_fill="black")
+        draw.text(
+            (x0 + 2, y0 + 2),
+            f"{detection['label']} {detection['score']:.2f}",
+            fill="cyan",
+            stroke_width=1,
+            stroke_fill="black",
+        )
     width, height = source.size
     result = Image.new("RGB", (width + 380, max(height, 250)), "white")
     result.paste(overlay, (0, 0))
@@ -664,18 +754,129 @@ def save_score_overlay(source, confidence, person_mask, detections, out_dir, ste
     draw.text((left, 16), "SCHP confidence | YOLO person mask", fill="black")
     draw.text((left, 42), "White outline: person silhouette", fill="black")
     draw.text((left, 66), "Cyan boxes: NudeNet detections", fill="black")
-    draw.text((left, 90), f"Score overlay opacity: {opacity:.0%}", fill="black")
+    draw.text((left, 90), "Unblended scores" if flat else f"Score overlay opacity: {opacity:.0%}", fill="black")
     ramp = np.linspace(0, 1, 320, dtype=np.float32)[None, :]
     bar = np.repeat(confidence_colors(ramp, np.ones_like(ramp, dtype=bool)), 18, axis=0)
     result.paste(Image.fromarray(bar), (left, 122))
     draw.text((left, 146), "0.0 blue     0.5 orange     >=0.9 red", fill="black")
-    draw.text((left, 172), f"Body interior cutoff: {body_floor:.2f}", fill="black")
+    draw.text((left, 172), f"Preferred interior seed score: {body_floor:.2f}", fill="black")
     draw.text((left, 198), "Uncalibrated maximum SCHP class score", fill="black")
-    draw.text((left, 222), "Outside silhouette: original image", fill="black")
-    result.save(out_dir / "overlays" / f"{stem}_score_overlay.png")
+    draw.text((left, 222), "Outside silhouette: black" if flat else "Outside silhouette: original image", fill="black")
+    suffix = "score_map" if flat else "score_overlay"
+    result.save(out_dir / "overlays" / f"{stem}_{suffix}.png")
 
 
-def make_visuals(source, labels, out_dir: Path, stem: str, opacity: float, title: str, confidence_view, class_names=None, class_colors=None, overlay_only=False):
+def save_person_overlay(source, person_mask, out_dir, stem):
+    """Inspect the unchanged decoded YOLO silhouette, including every background gap."""
+    import numpy as np
+    from PIL import Image, ImageDraw, ImageFilter
+
+    inside = person_mask > 0
+    binary = Image.fromarray(inside.astype(np.uint8) * 255)
+    tint = Image.new("RGBA", source.size, (0, 220, 190))
+    tint.putalpha(binary.point(lambda value: 90 if value else 0))
+    overlay = Image.alpha_composite(source.convert("RGBA"), tint).convert("RGB")
+    edge = inside & ~(np.asarray(binary.filter(ImageFilter.MinFilter(3))) > 0)
+    overlay.paste("white", mask=Image.fromarray(edge.astype(np.uint8) * 255))
+    result = Image.new("RGB", (max(source.width * 2, 640), source.height + 56), "white")
+    result.paste(overlay, (0, 0))
+    result.paste(binary.convert("RGB"), (source.width, 0))
+    draw = ImageDraw.Draw(result)
+    draw.text((8, source.height + 8), "Raw YOLO silhouette | white = person, black = background", fill="black")
+    draw.text(
+        (8, source.height + 30), "No smoothing or hole filling; model-missed gaps remain unresolved", fill="black"
+    )
+    result.save(out_dir / "overlays" / f"{stem}_person_overlay.png")
+
+
+def save_body_overlay(source, layers, class_names, colors, out_dir, stem, opacity):
+    """Render every independent region; overlap never suppresses a region or legend entry."""
+    import numpy as np
+    from PIL import Image, ImageDraw, ImageFilter
+
+    counts = np.zeros((source.height, source.width), dtype=np.uint16)
+    summed = np.zeros((source.height, source.width, 3), dtype=np.float32)
+    class_pixels = {}
+    for layer in layers:
+        x0, y0, x1, y1 = layer["box"]
+        mask, class_id = layer["mask"], layer["class_id"]
+        counts[y0:y1, x0:x1] += mask
+        summed[y0:y1, x0:x1] += mask[..., None] * np.asarray(colors[class_id], dtype=np.float32)
+        if mask.any():
+            class_pixels[class_id] = class_pixels.get(class_id, 0) + int(mask.sum())
+    present = counts > 0
+    rgb = np.asarray(source, dtype=np.float32).copy()
+    rgb[present] = (1 - opacity) * rgb[present] + opacity * summed[present] / counts[present, None]
+    overlay = Image.fromarray(np.rint(rgb).astype(np.uint8))
+    # Draw all contours after fills, even when a lower-score region is wholly
+    # contained in another one. Pad so box-aligned edges are also outlined.
+    for layer in layers:
+        mask = layer["mask"]
+        binary = Image.fromarray(np.pad(mask, 1).astype(np.uint8) * 255)
+        eroded = np.asarray(binary.filter(ImageFilter.MinFilter(3)))[1:-1, 1:-1] > 0
+        contour = Image.fromarray((mask & ~eroded).astype(np.uint8) * 255)
+        overlay.paste(colors[layer["class_id"]], layer["box"][:2], contour)
+    detected = sorted(class_pixels)
+    result = Image.new("RGB", (source.width + 420, max(source.height, 130 + len(detected) * 28)), "white")
+    result.paste(overlay, (0, 0))
+    draw = ImageDraw.Draw(result)
+    left = source.width + 14
+    draw.text((left, 16), "Independent NudeNet body regions", fill="black")
+    draw.text((left, 40), "Overlaps: mixed fill, separate contours", fill="black")
+    draw.text((left, 64), "Area counts include overlapping detections", fill="black")
+    draw.text((left, 88), f"Pixels shared by regions: {int((counts > 1).sum())}", fill="black")
+    for row, class_id in enumerate(detected):
+        y = 120 + row * 28
+        draw.rounded_rectangle((left, y, left + 16, y + 16), radius=4, fill=colors[class_id])
+        name = class_names[class_id].removeprefix("NN_").replace("_", " ").title()
+        draw.text((left + 26, y), f"{name}: {class_pixels[class_id]} px", fill="black")
+    result.save(out_dir / "overlays" / f"{stem}_body_overlay.png")
+    return {
+        "coverage_percent_of_source_counting_overlaps": {
+            class_names[k]: round(100 * v / counts.size, 3) for k, v in class_pixels.items()
+        },
+        "overlapping_pixels": int((counts > 1).sum()),
+        "maximum_regions_per_pixel": int(counts.max()),
+    }
+
+
+def save_boundary_overlay(source, strength, person_mask, threshold, out_dir, stem):
+    """Expose the actual image/score barriers used for region selection."""
+    import numpy as np
+    from PIL import Image, ImageDraw
+
+    edges = (person_mask > 0) & (strength >= threshold)
+    overlay = source.copy()
+    overlay.paste("cyan", mask=Image.fromarray(edges.astype(np.uint8) * 255))
+    result = Image.new("RGB", (source.width + 380, max(source.height, 160)), "white")
+    result.paste(overlay, (0, 0))
+    draw = ImageDraw.Draw(result)
+    left = source.width + 14
+    for row, text in enumerate(
+        (
+            "Cyan: computed region barriers",
+            "65% image contrast + 35% score change",
+            f"Edge strength threshold: {threshold:.3f}",
+            "Photo blur: 1 source pixel",
+            "Heuristic edges; shadows may also appear",
+        )
+    ):
+        draw.text((left, 16 + row * 26), text, fill="black")
+    result.save(out_dir / "overlays" / f"{stem}_boundary_overlay.png")
+
+
+def make_visuals(
+    source,
+    labels,
+    out_dir: Path,
+    stem: str,
+    opacity: float,
+    title: str,
+    confidence_view,
+    class_names=None,
+    class_colors=None,
+    overlay_only=False,
+):
     """Write flat per-type outputs, with one shared stem and matching mask/legend colors."""
     import numpy as np
     from PIL import Image, ImageDraw, ImageFont
@@ -752,24 +953,86 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     """Build the smoke-test CLI with simple paths and predictable output options."""
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("-i", "--input-dir", type=Path, required=True, help="Folder containing images (non-recursive).")
-    parser.add_argument("-o", "--output-dir", type=Path, default=Path("tmp/schp-atr18-smoke"), help="Output folder; existing folders are preserved using a numbered sibling.")
-    parser.add_argument("-m", "--model", type=Path, default=Path("tmp/models") / MODEL_NAME, help="Cached INT8 ONNX file.")
-    parser.add_argument("-n", "--no-download", action="store_true", help="Disable downloads for every checkpoint.")
-    parser.add_argument("-a", "--opacity", type=float, default=0.50, help="Overlay opacity between 0.0 and 1.0 (default 0.50).")
-    parser.add_argument("-t", "--threads", type=int, default=4, help="ONNX Runtime CPU inference threads (default 4).")
-    parser.add_argument("-c", "--min-confidence", type=float, default=0.0, help="Minimum pixel score for refined outputs only; raw outputs remain untouched.")
-    parser.add_argument("-p", "--person-model", type=Path, default=Path("tmp/models/yolo26n-seg.onnx"), help="Person ONNX path; download the default checkpoint if missing.")
-    parser.add_argument("-f", "--faces-model", type=Path, default=Path("tmp/models/320n.onnx"), help="Face ONNX path; download NudeNet 320n if missing.")
-    parser.add_argument("-d", "--confidence", type=float, default=0.25, help="Person detection threshold (default 0.25).")
     parser.add_argument(
-        "-k", "--pose-model", type=Path, nargs="?", const=Path("tmp/models/yolo26n-pose.onnx"),
+        "-o",
+        "--output-dir",
+        type=Path,
+        default=Path("tmp/schp-atr18-smoke"),
+        help="Output folder; existing folders are preserved using a numbered sibling.",
+    )
+    parser.add_argument(
+        "-m", "--model", type=Path, default=Path("tmp/models") / MODEL_NAME, help="Cached INT8 ONNX file."
+    )
+    parser.add_argument("-n", "--no-download", action="store_true", help="Disable downloads for every checkpoint.")
+    parser.add_argument(
+        "-a", "--opacity", type=float, default=0.50, help="Overlay opacity between 0.0 and 1.0 (default 0.50)."
+    )
+    parser.add_argument("-t", "--threads", type=int, default=4, help="ONNX Runtime CPU inference threads (default 4).")
+    parser.add_argument(
+        "-c",
+        "--min-confidence",
+        type=float,
+        default=0.0,
+        help="Minimum pixel score for refined outputs only; raw outputs remain untouched.",
+    )
+    parser.add_argument(
+        "-p",
+        "--person-model",
+        type=Path,
+        default=Path("tmp/models/yolo26n-seg.onnx"),
+        help="Person ONNX path; download the default checkpoint if missing.",
+    )
+    parser.add_argument(
+        "-f",
+        "--faces-model",
+        type=Path,
+        default=Path("tmp/models/320n.onnx"),
+        help="Face ONNX path; download NudeNet 320n if missing.",
+    )
+    parser.add_argument(
+        "-d", "--confidence", type=float, default=0.25, help="Person detection threshold (default 0.25)."
+    )
+    parser.add_argument(
+        "-k",
+        "--pose-model",
+        type=Path,
+        nargs="?",
+        const=Path("tmp/models/yolo26n-pose.onnx"),
         help="Enable pose correction; optional ONNX path, default tmp/models/yolo26n-pose.onnx; download if missing.",
     )
-    parser.add_argument("-q", "--pose-kpt-confidence", type=float, default=0.3, help="Minimum joint score (default 0.3).")
-    parser.add_argument("-w", "--pose-width", type=float, default=0.20, help="Limb-zone half-width / bone length (default 0.20).")
-    parser.add_argument("-b", "--body-confidence", type=float, default=RED_CORE_CONFIDENCE, help="Red interior score floor; lower scores are boundaries (default 0.90, matching the confidence heatmap).")
-    parser.add_argument("-e", "--body-only", action="store_true", help="Save only separate body and clothing overlays with embedded legends, plus reports.")
-    parser.add_argument("-r", "--rounding", type=float, default=None, help="Round body-region contours by this source-pixel radius; default 3 in body-only mode, otherwise 0.")
+    parser.add_argument(
+        "-q", "--pose-kpt-confidence", type=float, default=0.3, help="Minimum joint score (default 0.3)."
+    )
+    parser.add_argument(
+        "-w", "--pose-width", type=float, default=0.20, help="Limb-zone half-width / bone length (default 0.20)."
+    )
+    parser.add_argument(
+        "-b",
+        "--body-confidence",
+        type=float,
+        default=RED_CORE_CONFIDENCE,
+        help="SCHP seed score for equal-area region ties (default 0.90); never excludes lower-score pixels.",
+    )
+    parser.add_argument(
+        "-g",
+        "--boundary",
+        type=float,
+        default=0.12,
+        help="Image/score edge barrier strength (default 0.12); higher values keep fewer barriers.",
+    )
+    parser.add_argument(
+        "-e",
+        "--body-only",
+        action="store_true",
+        help="Save body, clothing, raw silhouette, score and boundary overlays with legends, plus reports; skip binary masks and comparisons.",
+    )
+    parser.add_argument(
+        "-r",
+        "--rounding",
+        type=float,
+        default=None,
+        help="Round body-region contours by this source-pixel radius; default 3 in body-only mode, otherwise 0.",
+    )
     args = parser.parse_args(argv)
     if args.rounding is None:
         args.rounding = 3.0 if args.body_only else 0.0
@@ -777,6 +1040,8 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         parser.error("--rounding must be between 0 and 32 source pixels")
     if not 0.0 <= args.body_confidence <= 1.0:
         parser.error("--body-confidence must be between 0 and 1")
+    if not 0.0 < args.boundary <= 1.0:
+        parser.error("--boundary must be greater than 0 and at most 1")
     if not 0.0 <= args.pose_kpt_confidence <= 1.0:
         parser.error("--pose-kpt-confidence must be between 0 and 1")
     if not 0.0 < args.pose_width <= 1.0:
@@ -796,12 +1061,13 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 
 def main(argv: list[str] | None = None) -> int:
     """Run shared person/face detection and one padded SCHP inference per person."""
+    args = parse_args(argv)
+
     import numpy as np
     from PIL import Image
 
     from dtflow.services import person_selection as selection
 
-    args = parse_args(argv)
     files = sorted(p for p in args.input_dir.iterdir() if p.is_file() and p.suffix.lower() in IMAGE_SUFFIXES)
     if not files:
         print(f"No supported images found in {args.input_dir}", file=sys.stderr)
@@ -829,8 +1095,10 @@ def main(argv: list[str] | None = None) -> int:
     session = load_session(args.model, args.threads)
     output_root = create_output_dir(args.output_dir)
     print(f"CPU sessions ready; {len(files)} image(s) queued; results: {output_root}", flush=True)
-    kinds = ("overlays", "manifests") if args.body_only else (
-        "labels", "confidence", "overlays", "masks", "comparisons", "manifests", "crops", "persons"
+    kinds = (
+        ("overlays", "manifests")
+        if args.body_only
+        else ("labels", "confidence", "overlays", "masks", "comparisons", "manifests", "crops", "persons")
     )
     for kind in kinds:
         (output_root / kind).mkdir()
@@ -855,9 +1123,7 @@ def main(argv: list[str] | None = None) -> int:
                 from yolo_person_zone_mask_poc import letterbox
 
                 pose_tensor, pose_geometry = letterbox(source)
-                pose_output = pose.run(
-                    [pose.get_outputs()[0].name], {pose.get_inputs()[0].name: pose_tensor}
-                )[0]
+                pose_output = pose.run([pose.get_outputs()[0].name], {pose.get_inputs()[0].name: pose_tensor})[0]
                 pose_people, pose_diagnostics = decode_pose(
                     pose_output, pose_layout, pose_geometry, args.confidence, args.pose_kpt_confidence, 0.45
                 )
@@ -874,21 +1140,55 @@ def main(argv: list[str] | None = None) -> int:
                 person_mask = np.zeros((source.height, source.width), dtype=np.uint8)
                 person_mask[y0:y1, x0:x1] = np.where(mask[y0:y1, x0:x1] > 0, 255, 0).astype(np.uint8)
                 save_score_overlay(
-                    source, confidence, person_mask, body_detections, output_root,
-                    person_stem, args.opacity, args.body_confidence
+                    source,
+                    confidence,
+                    person_mask,
+                    body_detections,
+                    output_root,
+                    person_stem,
+                    args.opacity,
+                    args.body_confidence,
                 )
+                save_score_overlay(
+                    source,
+                    confidence,
+                    person_mask,
+                    body_detections,
+                    output_root,
+                    person_stem,
+                    args.opacity,
+                    args.body_confidence,
+                    flat=True,
+                )
+                save_person_overlay(source, person_mask, output_root, person_stem)
                 details["person_cutoff"] = "YOLO instance segmentation silhouette, not detection box"
+                details["person_postprocessing"] = (
+                    "none: preserve decoded background gaps; missed gaps are not reconstructed"
+                )
                 details["score_overlay"] = f"{person_stem}_score_overlay.png"
+                details["score_map"] = f"{person_stem}_score_map.png"
                 confidence_view = None
                 raw_coverage = refined_coverage = None
                 if not args.body_only:
                     confidence_view = save_confidence(confidence, person_mask > 0, output_root, person_stem)
                     raw_coverage = make_visuals(
-                        source, raw, output_root, f"{person_stem}_raw", args.opacity, "Raw: person-clipped", confidence_view
+                        source,
+                        raw,
+                        output_root,
+                        f"{person_stem}_raw",
+                        args.opacity,
+                        "Raw: person-clipped",
+                        confidence_view,
                     )
                     refined_title = "Refined: face boxes" if face_boxes else "Unrefined: no face detected"
                     refined_coverage = make_visuals(
-                        source, refined, output_root, f"{person_stem}_refined", args.opacity, refined_title, confidence_view
+                        source,
+                        refined,
+                        output_root,
+                        f"{person_stem}_refined",
+                        args.opacity,
+                        refined_title,
+                        confidence_view,
                     )
                 if pose is not None:
                     matched = pose_matches.get(index - 1)
@@ -897,34 +1197,65 @@ def main(argv: list[str] | None = None) -> int:
                     )
                     pose_title = (
                         f"Pose: {pose_details['changed_pixels']} corrected pixels"
-                        if pose_details["status"] == "applied" else "Pose unavailable: unchanged"
+                        if pose_details["status"] == "applied"
+                        else "Pose unavailable: unchanged"
                     )
                     if not args.body_only:
                         details["pose_class_coverages_percent_of_source"] = make_visuals(
-                            source, corrected, output_root, f"{person_stem}_pose", args.opacity, pose_title, confidence_view
+                            source,
+                            corrected,
+                            output_root,
+                            f"{person_stem}_pose",
+                            args.opacity,
+                            pose_title,
+                            confidence_view,
                         )
                         Image.fromarray(changed.astype(np.uint8) * 255).save(
                             output_root / "masks" / f"{person_stem}_pose_changed.png"
                         )
                         save_pose_overlay(source, matched, args.pose_kpt_confidence, output_root, person_stem)
                     details["pose_correction"] = pose_details
-                clothing = np.where(
-                    np.isin(raw, (1, 3, 4, 5, 6, 7, 8, 9, 10, 16, 17)), raw, 0
-                ).astype(np.uint8)
+                clothing = np.where(np.isin(raw, (1, 3, 4, 5, 6, 7, 8, 9, 10, 16, 17)), raw, 0).astype(np.uint8)
                 details["clothing_class_coverages_percent_of_source"] = make_visuals(
-                    source, clothing, output_root, f"{person_stem}_clothes", args.opacity,
-                    "SCHP clothing and accessories", confidence_view, overlay_only=args.body_only
+                    source,
+                    clothing,
+                    output_root,
+                    f"{person_stem}_clothes",
+                    args.opacity,
+                    "SCHP clothing and accessories",
+                    confidence_view,
+                    overlay_only=args.body_only,
                 )
-                body, body_names, body_colors, body_details = refine_body_parts(
-                    source, raw, person_mask, confidence, body_detections, nudenet_names,
-                    args.body_confidence, output_root, person_stem,
-                    rounding=args.rounding, save_diagnostics=not args.body_only
+                body, body_names, body_colors, body_layers, boundary_strength, body_details = refine_body_parts(
+                    source,
+                    raw,
+                    person_mask,
+                    confidence,
+                    body_detections,
+                    nudenet_names,
+                    args.body_confidence,
+                    output_root,
+                    person_stem,
+                    rounding=args.rounding,
+                    save_diagnostics=not args.body_only,
+                    boundary_threshold=args.boundary,
                 )
-                details["body_class_coverages_percent_of_source"] = make_visuals(
-                    source, body, output_root, f"{person_stem}_body", args.opacity,
-                    f"NudeNet body | interior score >= {args.body_confidence:.2f}", confidence_view,
-                    class_names=body_names, class_colors=body_colors, overlay_only=args.body_only
+                if not args.body_only:
+                    make_visuals(
+                        source,
+                        body,
+                        output_root,
+                        f"{person_stem}_body",
+                        args.opacity,
+                        "Single-label projection; independent masks are authoritative",
+                        confidence_view,
+                        class_names=body_names,
+                        class_colors=body_colors,
+                    )
+                details["body_overlay"] = save_body_overlay(
+                    source, body_layers, body_names, body_colors, output_root, person_stem, args.opacity
                 )
+                save_boundary_overlay(source, boundary_strength, person_mask, args.boundary, output_root, person_stem)
                 details["body_refinement"] = body_details
                 if not args.body_only:
                     Image.fromarray(person_mask).save(output_root / "persons" / f"{person_stem}_person.png")
@@ -935,13 +1266,15 @@ def main(argv: list[str] | None = None) -> int:
                     fitted = Image.new("RGB", (SIDE, SIDE), "white")
                     fitted.paste(crop.resize((right - left, bottom - top), Image.Resampling.BILINEAR), (left, top))
                     fitted.save(output_root / "crops" / f"{person_stem}_input.png")
-                details.update({
-                    "index": index,
-                    "output_stem": person_stem,
-                    "person_score": score,
-                    "raw_class_coverages_percent_of_source": raw_coverage,
-                    "refined_class_coverages_percent_of_source": refined_coverage,
-                })
+                details.update(
+                    {
+                        "index": index,
+                        "output_stem": person_stem,
+                        "person_score": score,
+                        "raw_class_coverages_percent_of_source": raw_coverage,
+                        "refined_class_coverages_percent_of_source": refined_coverage,
+                    }
+                )
                 person_reports.append(details)
             elapsed = time.perf_counter() - stamp
             record = {
@@ -960,14 +1293,21 @@ def main(argv: list[str] | None = None) -> int:
                 "synthetic_skin_class_id": 18,
                 "body_class_labels": list(body_names) if person_reports else list(DISPLAY_LABELS),
                 "nudenet_class_names": nudenet_names,
-                "body_pixel_score_threshold": args.body_confidence,
+                "body_interior_seed_score": args.body_confidence,
+                "body_boundary_strength_threshold": args.boundary,
                 "body_only": args.body_only,
                 "rounding_radius_source_pixels": args.rounding,
                 "nudenet_detection_threshold": NUDENET_CONFIDENCE,
                 "raw_definition": "unfiltered SCHP classification, restored to source grid and clipped to person",
                 "min_confidence_refined_only": args.min_confidence,
                 "confidence_definition": "uncalibrated maximum softmax after source-crop logit restoration; zero outside person",
-                "confidence_palette": {"0.0": [0, 80, 255], "0.5": [255, 165, 0], str(RED_CORE_CONFIDENCE): [255, 0, 0], "1.0": [255, 0, 0], "outside_person": [0, 0, 0]},
+                "confidence_palette": {
+                    "0.0": [0, 80, 255],
+                    "0.5": [255, 165, 0],
+                    str(RED_CORE_CONFIDENCE): [255, 0, 0],
+                    "1.0": [255, 0, 0],
+                    "outside_person": [0, 0, 0],
+                },
                 "person_detection_threshold": args.confidence,
                 "face_detection_threshold": NUDENET_CONFIDENCE,
                 "face_nms_iou": selection.FACES_IOU,
@@ -988,13 +1328,18 @@ def main(argv: list[str] | None = None) -> int:
             (output_root / "manifests" / f"{stem}_report.json").write_text(
                 json.dumps(record, indent=2, ensure_ascii=True) + "\n", encoding="utf-8"
             )
-            summary_rows.append({"image": path.name, "status": record["status"], "people": len(people), "total_s": f"{elapsed:.3f}"})
+            summary_rows.append(
+                {"image": path.name, "status": record["status"], "people": len(people), "total_s": f"{elapsed:.3f}"}
+            )
             print(f"[{n}/{len(files)}] {path.name}: {len(people)} person(s), {elapsed:.2f}s", flush=True)
         except Exception as exc:
             fail_count += 1
             summary_rows.append({"image": path.name, "status": "error", "people": "", "total_s": ""})
             (output_root / "manifests" / f"{stem}_report.json").write_text(
-                json.dumps({"image_name": path.name, "status": "error", "error": f"{type(exc).__name__}: {exc}"}, indent=2) + "\n",
+                json.dumps(
+                    {"image_name": path.name, "status": "error", "error": f"{type(exc).__name__}: {exc}"}, indent=2
+                )
+                + "\n",
                 encoding="utf-8",
             )
             print(f"[{n}/{len(files)}] ERROR {path.name}: {type(exc).__name__}: {exc}", file=sys.stderr, flush=True)

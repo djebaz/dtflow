@@ -64,3 +64,14 @@ Changes through 5.4.0 are consolidated in [DTFlow 5.4.0](v5.4.0.md). This file t
 
 - PRs: #193, #199, #201, #215, #217, #218, #219, #227, #228, #229.
 - Scope: Version bump 5.4.0 and release-note consolidation; Scripts preview corrections, canonical Designer migration, headless/native queue runtime and full form/Setup integration; bounded parallel scripts with attempts schema 6, ready LoRA binding and lifecycle repairs; portable mixer inventory/preparation preview, independent schema-1 authoring preferences and explicit chunks; isolated node-editor POC with owner-reviewed Windows navigation; offline Workflows workspace mockups, owner-accepted shared left-rail sizing correction and approved Connection/Images utility-navigation relocation. Exact Windows release artifact, provider compatibility and release publication remain separate gates.
+
+## Standalone SCHP experiment follow-up (PR #236)
+
+- Body regions use combined photo contrast and SCHP score changes, with a preferred
+  interior seed instead of a hard red-score cutoff. Independent masks and the body
+  overlay retain overlapping detections, including same-class instances.
+- Add raw silhouette, unblended score and computed-boundary inspection images in
+  full and `--body-only` modes. Preserve model-predicted gaps; no improvement to
+  the person model or recovery of model-missed gaps is claimed.
+- Synthetic offline validation only; real inference and Windows quality/performance
+  acceptance remain pending. See [the tool guide](../../tools/images/README.md#schp-atr-18-folder-smoke-test-cpu-onnx).
