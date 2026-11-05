@@ -113,13 +113,10 @@ def settings_of(request) -> dict[str, Any]:
 
 def _prepare_source(source: str, mask: str | None, grow: int, feather: float):
     """Read the parent's saved final (and mask) and prepare them at the source size (worker thread)."""
-    from PIL import Image
-
-    from dtflow.services.image_preparation import prepare_image_bytes, validate_prepared_inputs
+    from dtflow.services.image_preparation import prepare_image_bytes, source_size, validate_prepared_inputs
 
     data = Path(source).read_bytes()
-    with Image.open(Path(source)) as image:
-        width, height = image.size
+    width, height = source_size(data)
     if not (128 <= width <= 2048 and 128 <= height <= 2048 and width % 64 == 0 and height % 64 == 0):
         raise ValidationError(
             f"The source image is {width}x{height}; image steps need both sides a multiple of 64 within 128..2048."

@@ -346,6 +346,11 @@ def _fit(source: tuple[int, int], target: tuple[int, int]) -> ImageFit:
     )
 
 
+def source_size(encoded: bytes) -> tuple[int, int]:
+    """Oriented (width, height) of an encoded source image, as ``prepare_image_bytes`` sees it."""
+    return _decode(encoded, "Source image").size
+
+
 def _source_rgb(encoded: bytes) -> Image.Image:
     oriented = _decode(encoded, "Source image").convert("RGBA")
     source = Image.new("RGBA", oriented.size, "white")
