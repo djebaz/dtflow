@@ -14,7 +14,7 @@ Changes through 5.4.0 are consolidated in [DTFlow 5.4.0](v5.4.0.md). This file t
 
 ## Added
 
-- Native Workflows mockups: canonical library/canvas/inspector forms, compact token-based controls, accepted canvas reuse and four independent `workflows` render states, including branch-local pause with siblings continuing. Preview only; no workflow admission, provider work or production Workflows tab. Graph dependencies are dev-only. Local Workflows captures were reviewed; no unit tests added/run.
+- Native Workflows mockups: canonical library/canvas/inspector forms, compact token-based controls, accepted canvas reuse and four independent `workflows` render states, including branch-local pause with siblings continuing. Owner approved the mockup design on 2026-11-05. Preview only; no workflow admission, provider work or production Workflows tab. Graph dependencies are dev-only. Local Workflows captures were reviewed; no unit tests added/run.
 
 - Shared utility navigation: Connection's colored power icon moves to the extreme right of the bottom bar with extra-small corners; Images becomes a blue primary-action button above ordinary inspectors (above the centre on narrow windows), absent from Images and Logs. The preview primary row reads Generate, Workflows, Queues; Scripts remains inside Generate.
 

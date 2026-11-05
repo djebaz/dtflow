@@ -32,7 +32,7 @@
 - The 14 Workflows notices are expected offscreen Qt `propagateSizeHints` notices, not provider or save failures. Details and manifests are under `tmp/ui-workflows-preview/`.
 - Owner reported real-app left-panel clipping. Initial four fast Connection fixtures did not reproduce it. A new `connection-61-left-rail-fit` capture injects a synthetic wide hidden page without reading owner state and logs geometry after switching Generate → Queues → Connection, with no layout assertions.
 - Before correction, the stack/page was 1,537 px wide in 288/300 px viewports. The canonical left stack and its pages now ignore horizontal size hints, so hidden inventory/queue content cannot widen them. After correction, viewport/stack/page match at 288 px for Generate/Connection and 300 px for Queues (zero excess). Vertical policies, the 300 px rail, scrolling and queue execution remain unchanged.
-- Reviewed the corrected 1180×790 Connection width-pressure capture and both fast Queues captures (2/2 saved). The owner confirmed the fix works in the native app on 2026-11-05. Workflows mockup approval remains separate.
+- Reviewed the corrected 1180×790 Connection width-pressure capture and both fast Queues captures (2/2 saved). The owner confirmed the fix works in the native app on 2026-11-05. The owner approved the Workflows mockup design on 2026-11-05.
 - No unit tests added or run, no real providers/generation, and no EXE launches. `ruff format` was used as an editing step; no separate test/lint suite was run for this preview phase.
 
 ## Utility-navigation follow-up
@@ -44,4 +44,4 @@
 
 ## Acceptance
 
-Rendered screenshots establish offline layout evidence only. Owner mockup approval, native Windows/DPI and production workflow behavior remain separate. No automated layout assertions or unit tests are added. Static POC parameter choices are illustrative, not a production contract or live inventory.
+The owner approved the Workflows mockup design on 2026-11-05. Rendered screenshots establish offline layout evidence only; native Windows/DPI and production workflow behavior remain separate. No automated layout assertions or unit tests are added. Static POC parameter choices are illustrative, not a production contract or live inventory.
