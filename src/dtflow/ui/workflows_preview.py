@@ -7,14 +7,13 @@ canvas; this module imports no graph library, tools, executor or backend.
 from collections.abc import Callable
 
 from PySide6.QtCore import Qt
-from PySide6.QtGui import QIcon, QPixmap
+from PySide6.QtGui import QPixmap
 from PySide6.QtWidgets import QFrame, QGroupBox, QPushButton, QSizePolicy, QWidget
 
 
 class WorkflowsPreview:
     def __init__(self, owner, canvas: QWidget, fit: Callable, add_node: Callable, thumbnail: QPixmap):
         from dtflow.ui.main_window import FORMS_DIR, load_ui
-        from pathlib import Path
 
         self.owner = owner
         self.thumbnail = thumbnail
@@ -45,16 +44,18 @@ class WorkflowsPreview:
         policy.setHorizontalPolicy(QSizePolicy.Policy.Ignored)
         owner.shell.leftStack.setSizePolicy(policy)
 
-        self.nav = QPushButton(owner.shell.navigationFrame)
-        self.nav.setIcon(QIcon(str(Path(__file__).parents[1] / "resources/images/gallery/waypoints.svg")))
-        self.nav.setFixedWidth(30)
+        self.nav = QPushButton("Workflows", owner.shell.navigationFrame)
         self.nav.setToolTip("Workflows · offline UI preview")
         self.nav.setObjectName("workflowsPreviewNavigation")
         self.nav.setProperty("role", "navigation")
         self.nav.setCheckable(True)
         self.nav.setAccessibleName("Workflows workspace · offline preview")
-        owner.shell.navigationFrame.layout().insertWidget(2, self.nav)
-        for button in owner.shell.navigationFrame.findChildren(QPushButton):
+        owner.shell.navigationFrame.layout().insertWidget(1, self.nav)
+        for button in (
+            *owner.shell.navigationFrame.findChildren(QPushButton),
+            owner.form.connectionNavigationButton,
+            owner.form.imagesNavigationButton,
+        ):
             if button is not self.nav:
                 button.setAutoExclusive(False)
                 button.setChecked(False)

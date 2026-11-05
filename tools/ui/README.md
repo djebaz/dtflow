@@ -113,6 +113,8 @@ This saves only four Workflows captures: editing, running, branch-local pause wi
 
 For the owner-reported left-rail issue, `--category connection -s --state connection-61-left-rail-fit` selects one synthetic wide-hidden-page capture at 1180×790. Its geometry diagnostics cover switches through Generate, Queues and Connection; no layout assertions are made. User state is not read or modified.
 
+Navigation coverage reuses existing states: `workflows-01-editing` shows the full text primary tabs and Images above the inspector; `workflows-04-narrow` crosses the shared breakpoint at 1040 px and shows Images above the centre. `connection-07-connected`, `queues-33-elapsed-eta`, `images-21-snapshot-grid` and `logs-02-mixed-severity` cover the footer Connection icon, activity space and the absence of a redundant Images button in Images/Logs. All are offline layout evidence, not native/DPI acceptance.
+
 ## Interactive Windows gallery performance automation (PR #104, draft)
 
 This test is **not** an offscreen capture. `windows_gallery_benchmark.py` uses optional [pywinauto](https://github.com/pywinauto/pywinauto) to drive a separate, real DTFlow GUI process on an unlocked Windows desktop. It exercises Images Grid/List/Detail, pager chips, scrolling and positive-prompt filter editing and reads the existing `-x` gallery diagnostic logs. It does not generate images.

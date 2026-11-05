@@ -890,7 +890,7 @@ QPushButton#connectionNavigationButton {
   padding: 0;
   background: ${color.input};
   border: 1px solid ${color.border};
-  border-radius: ${size.panelRadius};
+  border-radius: ${size.radiusXs};
 }
 QPushButton#connectionNavigationButton:checked {
   background: ${color.selection};
@@ -917,6 +917,13 @@ QPushButton#connectionNavigationButton[keyboardFocus="true"] {
 QPushButton#connectionNavigationButton:disabled {
   border-color: ${color.border};
   background: ${color.surface};
+}
+/* Shared utility entry above ordinary inspectors, hidden in Images and Logs. */
+QPushButton#imagesNavigationButton {
+  min-height: 34px;
+  max-height: 34px;
+  padding: 0 12px;
+  border-radius: ${size.inputRadius};
 }
 /* Define vertical page tracks too: do not inherit the native checkerboard brush. */
 QScrollBar::add-page:vertical,
@@ -2283,11 +2290,6 @@ QWidget#workflowsInspector QPushButton {
   min-width: 0;
   min-height: ${size.controlContent};
   padding: 3px 8px;
-}
-QFrame#navigationFrame QPushButton#workflowsPreviewNavigation[role="navigation"] {
-  min-width: 0;
-  padding-left: 3px;
-  padding-right: 3px;
 }
 QLabel#workflowBranchStatus[workflowState="warning"] {
   color: ${color.warning};

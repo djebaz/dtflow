@@ -14,7 +14,9 @@ Changes through 5.4.0 are consolidated in [DTFlow 5.4.0](v5.4.0.md). This file t
 
 ## Added
 
-- Native Workflows mockups: canonical library/canvas/inspector forms, compact token-based controls, accepted canvas reuse and four independent `workflows` render states, including branch-local pause with siblings continuing. Preview only; no workflow admission, provider work or production navigation. Graph dependencies are dev-only. Local Workflows captures were reviewed; no unit tests added/run.
+- Native Workflows mockups: canonical library/canvas/inspector forms, compact token-based controls, accepted canvas reuse and four independent `workflows` render states, including branch-local pause with siblings continuing. Preview only; no workflow admission, provider work or production Workflows tab. Graph dependencies are dev-only. Local Workflows captures were reviewed; no unit tests added/run.
+
+- Shared utility navigation: Connection's colored power icon moves to the extreme right of the bottom bar with extra-small corners; Images becomes a blue primary-action button above ordinary inspectors (above the centre on narrow windows), absent from Images and Logs. The preview primary row reads Generate, Workflows, Queues; Scripts remains inside Generate.
 
 - Shared left-rail correction: hidden pages can no longer force Connection, Generate and Queues wider than their fixed scroll viewport. A synthetic width-pressure capture reproduced the issue and shows zero excess width after correction; the owner confirmed the fix in the native app. Rail width, vertical scrolling and execution behavior remain unchanged.
 
@@ -61,4 +63,4 @@ Changes through 5.4.0 are consolidated in [DTFlow 5.4.0](v5.4.0.md). This file t
 ## Release audit
 
 - PRs: #193, #199, #201, #215, #217, #218, #219, #227, #228, #229.
-- Scope: Version bump 5.4.0 and release-note consolidation; Scripts preview corrections, canonical Designer migration, headless/native queue runtime and full form/Setup integration; bounded parallel scripts with attempts schema 6, ready LoRA binding and lifecycle repairs; portable mixer inventory/preparation preview, independent schema-1 authoring preferences and explicit chunks; isolated node-editor POC with owner-reviewed Windows navigation; offline Workflows workspace mockups and owner-accepted shared left-rail sizing correction. Exact Windows release artifact, provider compatibility and release publication remain separate gates.
+- Scope: Version bump 5.4.0 and release-note consolidation; Scripts preview corrections, canonical Designer migration, headless/native queue runtime and full form/Setup integration; bounded parallel scripts with attempts schema 6, ready LoRA binding and lifecycle repairs; portable mixer inventory/preparation preview, independent schema-1 authoring preferences and explicit chunks; isolated node-editor POC with owner-reviewed Windows navigation; offline Workflows workspace mockups, owner-accepted shared left-rail sizing correction and approved Connection/Images utility-navigation relocation. Exact Windows release artifact, provider compatibility and release publication remain separate gates.

@@ -42,7 +42,9 @@ def render_workflows_states(out, *, window_factory, state_names, capture):
         # Markers, not a dispatcher: all status and thumbnails below are fixtures.
         for name in state_names:
             state = "paused" if "paused" in name else "running" if "running" in name else "editing"
-            owner.form.resize(1280 if name.endswith("narrow") else 1600, 900 if name.endswith("narrow") else 1000)
+            # Cross the shared inspector breakpoint and cover the compact Images
+            # utility host as well as the readable, selected-node canvas.
+            owner.form.resize(1040 if name.endswith("narrow") else 1600, 900 if name.endswith("narrow") else 1000)
             preview.workspace.workflowGestureHint.setText(
                 "Drag to pan · Wheel to zoom · F to fit"
                 if name.endswith("narrow")
@@ -77,4 +79,8 @@ def render_workflows_states(out, *, window_factory, state_names, capture):
         owner.form.hide()
         owner.form.deleteLater()
         canvas_owner.deleteLater()
+        # Drain while the Python owners (including prompt highlighters) are
+        # still alive, before a packed worker builds another MainWindow.
+        QApplication.processEvents()
         QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)
+        QApplication.processEvents()
