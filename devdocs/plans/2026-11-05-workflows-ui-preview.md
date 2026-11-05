@@ -23,7 +23,7 @@
 - [x] Render `--category workflows -s` to `tmp/ui-workflows-preview`, inspect all four images and correct visible layout issues.
 - [x] Reproduce the left-rail clipping, fix shared sizing, inspect Connection/Queues outputs and obtain owner native-app confirmation.
 - [x] Update scope/evidence docs.
-- [ ] Open a draft PR.
+- [x] Open draft [PR #229](https://github.com/djebaz/dtflow/pull/229) from `feature/workflows-ui-preview`.
 
 ## Evidence and review
 

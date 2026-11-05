@@ -60,5 +60,5 @@ Changes through 5.4.0 are consolidated in [DTFlow 5.4.0](v5.4.0.md). This file t
 
 ## Release audit
 
-- PRs: #193, #199, #201, #215, #217, #218, #219, #227, #228.
+- PRs: #193, #199, #201, #215, #217, #218, #219, #227, #228, #229.
 - Scope: Version bump 5.4.0 and release-note consolidation; Scripts preview corrections, canonical Designer migration, headless/native queue runtime and full form/Setup integration; bounded parallel scripts with attempts schema 6, ready LoRA binding and lifecycle repairs; portable mixer inventory/preparation preview, independent schema-1 authoring preferences and explicit chunks; isolated node-editor POC with owner-reviewed Windows navigation; offline Workflows workspace mockups and owner-accepted shared left-rail sizing correction. Exact Windows release artifact, provider compatibility and release publication remain separate gates.
