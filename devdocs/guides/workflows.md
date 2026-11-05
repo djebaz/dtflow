@@ -72,3 +72,6 @@ is the V1 specification; the file contract is [architecture/workflows.md](../arc
 - Image steps run at the source image size (multiples of 64 within 128–2048).
 - The fake provider runs text-to-image only, so image steps fail there with a plain message.
 - No automatic retry yet; it will follow the shared cap decided in #220.
+- Detection model licences: YOLO26n is Ultralytics AGPL-3.0, NudeNet 320n is MIT, and the SegFormer B2 clothes model
+  is under NVIDIA's SegFormer licence for research use only. SegFormer is planned to be replaced by a model with a
+  licence that allows normal use; until then the download confirmation shows its research-only licence.
