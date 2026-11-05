@@ -40,7 +40,7 @@
 - Owner correction: Images is absent from Images and Logs, not duplicated into those headers. Use the existing primary blue action style; Connection uses `size.radiusXs` (3 px), not the panel radius.
 - Registered Workflows narrow capture now crosses the actual 1100 px shared breakpoint at 1040 px; no new catalogue IDs or broad fallback expansion.
 - Local navigation captures reviewed: ordinary header placement, compact placement, footer status icon and Images/Logs absence. A packed Workflows/Logs worker initially crashed during teardown; draining queued/deferred Qt events while Python owners remain alive corrected the same packed three-state capture (3/3 saved in 14.7 s). Separate Logs capture also saved successfully.
-- Pushed Actions results remain a separate evidence gate; no unit tests or EXE launches.
+- Pushed Actions results: the render Action for `58927c03` saved all 12 captures. CI then failed only on one stale existing shell assertion that still expected Connection and Images inside the top navigation frame; it now expects Generate/Queues there, Connection in the footer status bar and Images hidden in Logs (`53fbf97`), and CI passed. No new unit tests, no local test runs and no EXE launches.
 
 ## Acceptance
 
