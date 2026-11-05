@@ -72,6 +72,8 @@ def main():
     graph = contract.load_workflow(json.loads(workflow.read_text(encoding="utf-8")))
     if not graph.nodes:
         raise SystemExit(f"{workflow.name} has no nodes.")
+    if args.select is not None and args.select not in {node.id for node in graph.nodes}:
+        raise SystemExit(f"{workflow.name} has no node {args.select}.")
 
     import tempfile
 
