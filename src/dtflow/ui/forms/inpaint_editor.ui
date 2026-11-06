@@ -42,6 +42,7 @@
         <property name="readiness" stdset="0"><string>missing</string></property>
        </widget></item>
       </layout></widget></item></layout></item>
+      <item><widget class="QPushButton" name="downloadModelsButton"><property name="visible"><bool>false</bool></property><property name="text"><string>Download models…</string></property><property name="accessibleName"><string>Download the missing detection models</string></property><property name="toolTip"><string>Download the missing detection models from their publishers after one confirmation that lists each licence. Your own files chosen with Models… are kept.</string></property></widget></item>
       <item><widget class="QLabel" name="peopleStatus"><property name="wordWrap"><bool>true</bool></property><property name="textRole" stdset="0"><string>secondary</string></property></widget></item>
       <item><widget class="QListWidget" name="peopleList"><property name="maximumSize"><size><width>16777215</width><height>64</height></size></property><property name="accessibleName"><string>People found. Activate one to add it to the mask.</string></property></widget></item>
       <item><widget class="QLabel" name="step2Label"><property name="text"><string>2 · Choose parts</string></property><property name="wordWrap"><bool>true</bool></property><property name="textRole" stdset="0"><string>caption</string></property></widget></item>

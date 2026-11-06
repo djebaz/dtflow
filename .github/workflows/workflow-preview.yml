@@ -1,8 +1,8 @@
 name: Workflow preview screenshot
 
-# Loads a workflow JSON (default: the reference test workflow) into the offline Workflows preview,
+# Loads a workflow JSON (default: the bundled reference workflow) into the Workflows workspace, offline,
 # headless, and uploads the window and canvas screenshots as an artifact.
-# tools/ui/capture_workflow_preview.py: strict POC importer, network guard, no executor, providers or secrets.
+# tools/ui/capture_workflow_preview.py: strict load_workflow importer, network guard, no executor, providers or secrets.
 run-name: >-
   Workflow preview · ${{ github.event_name == 'pull_request' && format('PR #{0}', github.event.pull_request.number)
   || inputs.pr != '' && format('PR #{0}', inputs.pr) || format('branch {0}', github.ref_name) }}
@@ -18,14 +18,16 @@ on:
       workflow:
         description: "Workflow JSON path in the repository"
         required: true
-        default: "tools/node_editor_poc/reference_workflow_v1.json"
+        default: "src/dtflow/resources/workflows/reference_workflow_v1.json"
         type: string
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review]
     paths:
-      - 'tools/node_editor_poc/**'
       - 'tools/ui/capture_workflow_preview.py'
-      - 'src/dtflow/ui/workflows_preview.py'
+      - 'src/dtflow/ui/workflows_*.py'
+      - 'src/dtflow/services/workflow_library.py'
+      - 'src/dtflow/core/workflows.py'
+      - 'src/dtflow/resources/workflows/**'
       - 'src/dtflow/ui/forms/workflows_*.ui'
       - 'src/dtflow/resources/styles/**'
       - '.github/workflows/workflow-preview.yml'
@@ -90,13 +92,13 @@ jobs:
           enable-cache: true
           cache-dependency-glob: uv.lock
 
-      # The dev group carries nodeeditor-qtpy and the offline test fixtures (fake vault, network guard).
+      # The dev group carries the offline test fixtures (fake vault, network guard); nodeeditor-qtpy is a runtime dependency.
       - name: Sync environment
         run: uv sync --locked
 
       - name: Load workflow and capture
         env:
-          WORKFLOW_PATH: ${{ inputs.workflow || 'tools/node_editor_poc/reference_workflow_v1.json' }}
+          WORKFLOW_PATH: ${{ inputs.workflow || 'src/dtflow/resources/workflows/reference_workflow_v1.json' }}
         run: |
           case "$WORKFLOW_PATH" in
             /*|*..*) echo "::error::workflow must be a relative repository path without '..'."; exit 1 ;;
@@ -110,9 +112,9 @@ jobs:
           {
             echo "### Workflow preview"
             echo
-            echo "Loaded \`$WORKFLOW_PATH\` into the offline Workflows preview."
+            echo "Loaded \`$WORKFLOW_PATH\` into the Workflows workspace (offline)."
             echo
-            grep -E '^(Saved|Loaded|Draft note)' tmp/workflow-preview.log | sed 's/^/- /'
+            grep -E '^(Saved|Loaded|Plan|Draft note)' tmp/workflow-preview.log | sed 's/^/- /'
             echo
             echo "Screenshots are in the **workflow-preview-${{ steps.target.outputs.short }}** artifact below."
           } >> "$GITHUB_STEP_SUMMARY"

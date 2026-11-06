@@ -58,7 +58,7 @@ def main(argv: list[str] | None = None) -> int:
             sys.executable, "-m", "PyInstaller", "--noconfirm", "--clean", "--onedir" if args.onedir else "--onefile", "--name", "dtflow",
             "--paths", "src", "--copy-metadata", "dtflow", "--collect-data", "drawthings_py",
             "--collect-data", "dtflow", "--copy-metadata", "keyring", "--collect-binaries", "onnxruntime",
-            "--copy-metadata", "quickjs-ng", "--hidden-import", "quickjs", "--hidden-import", "_quickjs", "--hidden-import", "dtflow.scripting.worker",
+            "--copy-metadata", "quickjs-ng", "--copy-metadata", "nodeeditor-qtpy", "--hidden-import", "quickjs", "--hidden-import", "_quickjs", "--hidden-import", "dtflow.scripting.worker",
             "--distpath", str(out),
         ]  # fmt: skip
         if platform.system() == "Windows":

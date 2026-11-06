@@ -44,12 +44,14 @@ from dtflow.persistence.queues import (
 from dtflow.persistence.script_items import is_script_record, script_record, store_source
 from dtflow.persistence.settings import load_cloud_concurrency, save_cloud_concurrency, validate_concurrency
 from dtflow.persistence.store import SQLiteAttempts, StateBusyError, state_is_owned
+from dtflow.persistence.workflow_items import KIND_WORKFLOW, is_workflow_record
 from dtflow.services import session
 from dtflow.services.generation import GenerationService
 from dtflow.services.image_inputs import restore_image_inputs, snapshot_image_inputs
 from dtflow.services.planning import Plan, PlanError, expand_plan
 from dtflow.services.queue import QueueDispatcher
 from dtflow.services.script_item import ScriptItemRunner
+from dtflow.services.workflow_item import WorkflowItemRunner
 
 log = logging.getLogger(__name__)
 
@@ -68,9 +70,18 @@ def expand_items(base: ResolvedGenerationRequest, count: int) -> list[ResolvedGe
 SCRIPT_REFUSED = "A script queue cannot be relaunched, retried or edited as a copy; press Start on the script again."
 
 
+WORKFLOW_REFUSED = (
+    "A workflow run cannot be relaunched or edited as a queue copy; run the workflow again or Retry its failed step."
+)
+
+
 def refuse_script_records(records) -> None:
+    """Script and workflow items are whole runs, never generation requests to copy."""
+    records = tuple(records)
     if any(is_script_record(record) for record in records):
         raise ValidationError(SCRIPT_REFUSED)
+    if any(is_workflow_record(record) for record in records):
+        raise ValidationError(WORKFLOW_REFUSED)
 
 
 async def create_script_queue(
@@ -475,12 +486,25 @@ async def _dispatch_one(store, state, queue_id, policy, saved, out, on_settle, o
             recorded.get("delay", 0.0),
             recorded.get("previews", False),
         )
-        # Staged edits carry their own recorded per-item consent; each distinct checkpoint/operation gets one exact
-        # owner-probe permit for this dispatch. No consent, no permit: such items are refused before any upload.
-        permits = tuple(
-            session.owner_probe_permit(selection, model, operation, evidence)
-            for model, operation, evidence in await store.image_scopes(queue_id)
-        )
+        workflow = queue.get("kind") == KIND_WORKFLOW
+        if workflow:
+            # D2: starting a workflow is the consent for its image nodes; one exact-scope owner probe per distinct
+            # checkpoint/operation. The fake backend has no image operations, so its image steps fail plainly.
+            permits = (
+                tuple(
+                    session.owner_probe_permit(selection, model, operation, evidence)
+                    for model, operation, evidence in await store.workflow_scopes(queue_id)
+                )
+                if selection.name in ("local", "cloud")
+                else ()
+            )
+        else:
+            # Staged edits carry their own recorded per-item consent; each distinct checkpoint/operation gets one exact
+            # owner-probe permit for this dispatch. No consent, no permit: such items are refused before any upload.
+            permits = tuple(
+                session.owner_probe_permit(selection, model, operation, evidence)
+                for model, operation, evidence in await store.image_scopes(queue_id)
+            )
         image_options = (
             {
                 "image_permits": permits,
@@ -516,6 +540,11 @@ async def _dispatch_one(store, state, queue_id, policy, saved, out, on_settle, o
             limits[queue_id] = backend.capabilities.max_concurrency
         if queue.get("kind") == "script":  # a separate runner: a script bug must not enter the generation loop
             return await ScriptItemRunner(store, service, state, on_settle=on_settle).run(queue_id)
+        if workflow:  # likewise separate: one item is a whole graph run
+            scoped = {(permit.model_id, permit.operation): permit for permit in permits}
+            return await WorkflowItemRunner(
+                store, service, state, on_settle=on_settle, permits=scoped, on_event=on_event
+            ).run(queue_id)
         return await QueueDispatcher(store, service, on_settle=on_settle, on_event=on_event).run(queue_id)
     finally:
         if backend is not None:

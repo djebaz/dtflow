@@ -239,6 +239,25 @@
            </widget>
           </item>
           <item>
+           <widget class="QPushButton" name="workflowsNavigationButton">
+            <property name="text">
+             <string>Workflows</string>
+            </property>
+            <property name="checkable">
+             <bool>true</bool>
+            </property>
+            <property name="autoExclusive">
+             <bool>true</bool>
+            </property>
+            <property name="role" stdset="0">
+             <string>navigation</string>
+            </property>
+            <property name="accessibleName">
+             <string>Show workflows workspace</string>
+            </property>
+           </widget>
+          </item>
+          <item>
            <widget class="QPushButton" name="queueNavigationButton">
             <property name="text">
              <string>Queues</string>

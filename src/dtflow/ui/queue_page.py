@@ -168,6 +168,12 @@ CLEAR_TEXT = (
     "Finished and cancelled queues will be removed from this list. Their attempts and saved images are kept. "
     "Paused, running and up-next queues stay."
 )
+# Queues whose single item is a script or workflow run: started again from Scripts or Workflows, not copied here.
+RUN_KINDS = ("script", "workflow")
+RUN_KIND_NOTES = {
+    "script": " (a script queue: press Start on the script)",
+    "workflow": " (a workflow queue: press Run in Workflows)",
+}
 REMOVE_TEXT = "This queue will be removed from the list. Its attempts and saved images are kept."
 POSTED = "Posted. The dispatch owner applies it at its next poll, or at the next Start if nothing is dispatching."
 
@@ -275,6 +281,7 @@ class QueuePage:
         self._list_key: tuple | None = None
         self._output_folder: Path | None = None
         self._images_hook = None  # set_images_hook wires Open in Images to the Images workspace
+        self._open_workflow_hook = None  # set_open_workflow_hook(fn(queue_id)) shows a workflow run in Workflows
         self._run_progress: dict[tuple[str, str], tuple[int, int]] = {}
         self._run_stages: dict[tuple[str, str], str] = {}
         self._run_stage_started: dict[tuple[str, str], float] = {}
@@ -977,8 +984,10 @@ class QueuePage:
             feedback(page).dismiss()  # the queue started or went away: the pending consent no longer applies
         page.removeQueueButton.setEnabled(removable)
         has_items = view is not None and bool(sum(view["summary"].values()))
-        copyable = has_items and view.get("kind") != "script"  # a script run is started again from Scripts
-        scripted = " (a script queue: press Start on the script)" if has_items and not copyable else ""
+        kind = view.get("kind") if view is not None else None
+        # A script or workflow run is started again from its own page, never copied as plain requests.
+        copyable = has_items and kind not in RUN_KINDS
+        scripted = RUN_KIND_NOTES.get(kind, "") if has_items and not copyable else ""
         page.relaunchQueueButton.setEnabled(copyable)
         page.editAsNewQueueButton.setEnabled(copyable)
         page.relaunchQueueButton.setToolTip("Run this queue's requests again." + scripted)
@@ -1041,8 +1050,13 @@ class QueuePage:
         page.uncertaintyBox.setVisible(note is not None)
         if note is not None:
             self._show(page.uncertaintyLabel, *note)
-        scripted = view is not None and view.get("kind") == "script"
-        page.itemRetryButton.setEnabled(row is not None and row.state in RELAUNCH_STATES and not scripted)
+        kind = view.get("kind") if view is not None else None
+        if kind == "workflow":
+            # A workflow item retries its first failed or unconfirmed step with the original settings (#220).
+            page.itemRetryButton.setEnabled(row is not None and self._workflow_retry_target(view) is not None)
+        else:
+            scripted = kind in RUN_KINDS
+            page.itemRetryButton.setEnabled(row is not None and row.state in RELAUNCH_STATES and not scripted)
         if row is None:
             for name in (
                 "itemIdLabel",
@@ -1065,7 +1079,7 @@ class QueuePage:
         page.attemptIdLabel.setText(row.attempt_id[:8] if row.attempt_id else "—")  # the full id is in the tooltip
         page.attemptIdLabel.setToolTip(row.attempt_id or "")
         page.itemBackendLabel.setText(summarize(view).backend if view else "—")
-        page.itemSeedLabel.setText(str(row.seed))
+        page.itemSeedLabel.setText("—" if row.seed is None else str(row.seed))
         page.itemDimensionsLabel.setText(row.dimensions_text)
         page.itemOperationLabel.setText(row.operation_text)
         page.itemOutcomeLabel.setText(row.outcome_line)
@@ -1101,6 +1115,10 @@ class QueuePage:
         row = self.model.row_at(self.page.queueItemsView.currentIndex().row())
         if row is not None and row.outputs and row.outputs[0] == path:
             self._show_item()
+
+    def set_open_workflow_hook(self, hook) -> None:
+        """``hook(queue_id)`` switches to Workflows and follows that workflow queue's run (steps, Retry, pauses)."""
+        self._open_workflow_hook = hook
 
     def set_images_hook(self, hook) -> None:
         """Wire Open in Images: hook(identity) shows that committed output in the Images Detail view."""
@@ -1162,7 +1180,10 @@ class QueuePage:
         self._relaunch_actions(relaunch, queue_id)
         edit = menu.addAction("Edit as new queue…")
         edit.triggered.connect(lambda _=False: self.edit_as_new(queue_id))
-        if (self._views.get(queue_id) or {}).get("kind") == "script":
+        if (self._views.get(queue_id) or {}).get("kind") == "workflow" and self._open_workflow_hook is not None:
+            show = menu.addAction("Open in Workflows")
+            show.triggered.connect(lambda _=False: self._open_workflow_hook(queue_id))
+        if (self._views.get(queue_id) or {}).get("kind") in RUN_KINDS:
             relaunch.setEnabled(False)
             edit.setEnabled(False)
         remove = menu.addAction("Remove queue…")
@@ -1293,7 +1314,7 @@ class QueuePage:
 
     def _last_queue(self) -> str | None:
         """The most recently created queue with items, for the empty state's Relaunch last."""
-        views = [v for v in self._views.values() if sum(v["summary"].values()) and v.get("kind") != "script"]
+        views = [v for v in self._views.values() if sum(v["summary"].values()) and v.get("kind") not in RUN_KINDS]
         return max(views, key=lambda v: (v["created_at_utc"], v["queue_id"]))["queue_id"] if views else None
 
     def relaunch_last(self) -> None:
@@ -1301,8 +1322,71 @@ class QueuePage:
         if queue_id is not None:
             self.relaunch(queue_id)
 
+    @staticmethod
+    def _workflow_retry_target(view: dict | None) -> tuple[int, tuple[int, int]] | None:
+        """(node id, branch) of a workflow run's first failed step, else its first step with no confirmed outcome."""
+        item = next((item for item in (view or {}).get("items", ()) if item.get("workflow")), None)
+        run = (item or {}).get("workflow") or {}
+        steps = run.get("steps") or ()
+        # While the run is live the runner retries a step only once its branch is idle; offer only those steps.
+        busy = {
+            tuple(step.get("branch") or ())
+            for step in steps
+            if run.get("state") == "running" and step.get("state") in ("running", "paused")
+        }
+        for wanted in ("failed", "unknown"):
+            for step in steps:
+                if step.get("state") != wanted:
+                    continue
+                try:
+                    branch = (int(step["branch"][0]), int(step["branch"][1]))
+                    node_id = int(step["node_id"])
+                except (KeyError, TypeError, ValueError, IndexError):
+                    return None
+                generate = step.get("type") == "DTFGenerate"
+                if branch in busy or (generate and any(other[:1] == branch[:1] for other in busy)):
+                    continue
+                return node_id, branch
+        return None
+
+    def _retry_workflow(self, queue_id: str) -> None:
+        target = self._workflow_retry_target(self._views.get(queue_id))
+        if target is None:
+            return
+        node_id, branch = target
+
+        async def work():
+            from dtflow.services.workflow_queue import retry_step
+
+            return await retry_step(self._state, queue_id, node_id, branch)
+
+        def retried(new_id, failure) -> None:
+            if failure is not None:
+                failed = Presentation("error", "Not retried", str(failure))
+                self._message(failed if isinstance(failure, ValidationError) else present_generation_failure(failure))
+                return
+            if new_id == queue_id:
+                self._message(Presentation("ok", "Retry posted", "The running workflow retries that step next."))
+                self.refresh()
+                return
+            self._select_after = new_id
+
+            def started(how, error) -> None:
+                if error is not None:
+                    self._message(Presentation("warning", "Retry saved, paused", str(error)))
+                else:
+                    self._message(Presentation("ok", "Retry started", f"The failed step runs again ({how})."))
+                self.refresh()
+
+            self.start_created(new_id, started)
+
+        self._runner.submit(work(), retried)
+
     def retry_item(self) -> None:
         """Retry item: the selected item again, as a one-item queue with its own new attempt (possibly billable)."""
+        if (self._view() or {}).get("kind") == "workflow" and self._selected is not None:
+            self._retry_workflow(self._selected)
+            return
         row = self.model.row_at(self.page.queueItemsView.currentIndex().row())
         if row is None or self._selected is None or row.state not in RELAUNCH_STATES:
             return
@@ -2125,6 +2209,53 @@ class QueuePage:
             self.refresh()
 
         self._runner.submit(work(), created)
+
+    def start_workflow(self, workflow: dict, name: str, done) -> None:
+        """Workflows Run: one workflow queue on the current connection, started like Scripts' Run Script.
+
+        ``workflow`` is the ``dump_workflow`` document. ``done(result, failure)`` gets ``(queue id, run id, how)``
+        where ``how`` is ``"started"``, ``"up next"`` (behind the queue this window runs) or ``"after generation"``.
+        The run is an ordinary queue, also visible in Queues; creation itself never generates."""
+        if self._runner.closed:
+            done(None, ValidationError("DTFlow is closing; nothing was queued."))
+            return
+        backend_name, endpoint = self._backend()
+        backend = {"name": backend_name, "endpoint": endpoint, "scenario": "success", **self._simulation()}
+
+        async def work():
+            from dtflow.services.workflow_queue import create_workflow_queue
+
+            return await create_workflow_queue(self._state, backend, workflow, name)
+
+        def created(result, failure) -> None:
+            if failure is not None:
+                done(None, failure)
+                return
+            queue_id, run_id = result
+            self.start_created(queue_id, lambda how, error: done(None if error else (queue_id, run_id, how), error))
+
+        self._runner.submit(work(), created)
+
+    def start_created(self, queue_id: str, done) -> None:
+        """Start a just-created paused queue now, up next behind this window's run, or after the generation."""
+        if self._runner.closed:
+            done(None, ValidationError("DTFlow is closing; the queue stays paused."))
+            return
+        if self._activity.generating:
+            self._after_generation.append(queue_id)
+            done("after generation", None)
+        elif self.dispatching_here:
+
+            def ordered(_, failure) -> None:
+                done(None if failure else "up next", failure)
+                self.refresh()
+
+            self._runner.submit(change_queue_order(self._state, queue_id, "enqueue"), ordered)
+            return
+        else:
+            self._dispatch(queue_id, resume_fallback=None)
+            done("started", None)
+        self.refresh()
 
     def _after_generation_ended(self) -> None:
         if self._after_generation and not self._activity.generating and not self._activity.dispatching:
