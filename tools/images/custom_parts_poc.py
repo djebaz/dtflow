@@ -29,6 +29,7 @@ PALETTE = {
     "dick": (255, 65, 170),
     "dick-head": (0, 210, 255),
     "hand": (80, 220, 85),
+    "penis": (255, 65, 170),
 }
 
 
@@ -130,12 +131,14 @@ def predict(session, names, source, task, args):
     proto = output[1][0] if task == "segment" and output[1].ndim == 4 and output[1].shape[0] == 1 else None
     if task == "segment" and proto is None:
         raise RuntimeError("Expected segmentation mask prototypes [1,C,H,W]")
-    channels = 4 + len(names) + (proto.shape[0] if task == "segment" else 1)
+    channels = 4 + len(names) + (proto.shape[0] if task == "segment" else 1 if task == "obb" else 0)
     if raw.shape[1] != channels:
         raise RuntimeError(f"{task}: expected raw [1,{channels},N], got {raw.shape}; use YOLOv8 nms=False export")
     rows = raw[0].T
-    default = args.seg_confidence if task == "segment" else args.obb_confidence
-    overrides = args.seg_class_conf if task == "segment" else args.obb_class_conf
+    default = (
+        args.seg_confidence if task == "segment" else args.obb_confidence if task == "obb" else args.detect_confidence
+    )
+    overrides = args.seg_class_conf if task == "segment" else args.obb_class_conf if task == "obb" else {}
     thresholds = np.array([overrides.get(names[key], default) for key in range(len(names))], dtype=np.float32)
     class_scores = rows[:, 4 : 4 + len(names)]
     eligible = class_scores >= thresholds[None]
@@ -172,6 +175,14 @@ def predict(session, names, source, task, args):
             cv.line(rgb, tuple(ends[0]), tuple(ends[1]), color, 1, cv.LINE_AA, shift=8)
             record.update(polygon_xy=polygon.tolist(), long_axis_degrees=math.degrees(angle) % 180)
             record["label_xy"] = [float(polygon[:, 0].min()), float(polygon[:, 1].min())]
+        elif task == "detect":
+            box = np.concatenate((row[:2] - row[2:4] / 2, row[:2] + row[2:4] / 2)).astype(np.float32)
+            box[[0, 2]] = ((box[[0, 2]] - left) / gain).clip(0, source.width)
+            box[[1, 3]] = ((box[[1, 3]] - top) / gain).clip(0, source.height)
+            cv.rectangle(
+                rgb, tuple(np.rint(box[:2]).astype(int)), tuple(np.rint(box[2:]).astype(int)), color, 2, cv.LINE_AA
+            )
+            record.update(box_xyxy=box.tolist(), label_xy=box[:2].tolist())
         else:
             box = np.concatenate((row[:2] - row[2:4] / 2, row[:2] + row[2:4] / 2)).astype(np.float32)
             box[[0, 2]] = ((box[[0, 2]] - left) / gain).clip(0, source.width)
@@ -337,6 +348,13 @@ def main(argv=None):
     parser.add_argument("-sm", "--seg-model", type=Path, default=Path("tmp/models/best_seg_dick.onnx"))
     parser.add_argument("-om", "--obb-model", type=Path, default=Path("tmp/models/best_obb_dick_lastmile.onnx"))
     parser.add_argument(
+        "-dm",
+        "--detect-model",
+        type=Path,
+        help="Optional extra YOLOv8 detector, e.g. tmp/models/penisV2.onnx; adds overlay and CPU timing",
+    )
+    parser.add_argument("-ds", "--detect-confidence", type=float, help="Optional detector threshold; defaults to -s")
+    parser.add_argument(
         "-s", "--confidence", type=float, default=0.25, help="Fallback threshold for both custom models"
     )
     parser.add_argument("-ss", "--seg-confidence", type=float, help="Segmentation threshold; overrides -s")
@@ -418,8 +436,12 @@ def main(argv=None):
         args.nudenet = True
     args.seg_confidence = args.confidence if args.seg_confidence is None else args.seg_confidence
     args.obb_confidence = args.confidence if args.obb_confidence is None else args.obb_confidence
-    if any(not 0 < value <= 1 for value in (args.seg_confidence, args.obb_confidence, args.nn_confidence)):
-        parser.error("SEG, OBB and NudeNet thresholds must be in (0,1]")
+    args.detect_confidence = args.confidence if args.detect_confidence is None else args.detect_confidence
+    if any(
+        not 0 < value <= 1
+        for value in (args.seg_confidence, args.obb_confidence, args.nn_confidence, args.detect_confidence)
+    ):
+        parser.error("SEG, OBB, detector and NudeNet thresholds must be in (0,1]")
     args.seg_class_conf = class_confidence(args.seg_class_conf, parser)
     args.obb_class_conf = class_confidence(args.obb_class_conf, parser)
     if not math.isfinite(args.context) or not 1 <= args.context <= 6:
@@ -447,7 +469,7 @@ def main(argv=None):
     ):
         parser.error("output-dir must not redirect or contain input-dir")
     previous = list(output.iterdir()) if output.exists() else []
-    pattern = re.compile(r"cpp_\d{4,}_.+_(?:seg|seg_nn|obb|compare|report)\.(?:jpg|json)$")
+    pattern = re.compile(r"cpp_\d{4,}_.+_(?:seg|seg_nn|obb|detect|compare|report)\.(?:jpg|json)$")
     if previous and (
         not args.overwrite
         or any(p.is_symlink() or p.is_junction() or not p.is_file() or not pattern.fullmatch(p.name) for p in previous)
@@ -455,6 +477,9 @@ def main(argv=None):
         parser.error("Output is not empty; -w replaces recognized custom_parts_poc outputs only")
     seg, seg_names, seg_model = load_model(args.seg_model, "segment", args.threads)
     obb, obb_names, obb_model = load_model(args.obb_model, "obb", args.threads)
+    detector, detector_names, detector_model = None, None, None
+    if args.detect_model is not None:
+        detector, detector_names, detector_model = load_model(args.detect_model, "detect", args.threads)
     for label, overrides, names in (("SEG", args.seg_class_conf, seg_names), ("OBB", args.obb_class_conf, obb_names)):
         unknown = set(overrides) - set(names.values())
         if unknown:
@@ -504,6 +529,11 @@ def main(argv=None):
                 title = f"SEG in NN context / {nn_report['inference_seconds']:.2f}s / {len(nn_report['regions'])} crops\nYellow: context crop / white: NudeNet box"
                 panels.append(("seg_nn", frame(nn_overlay, title, seg_names)))
             panels.append(("obb", obb_panel))
+            detector_report = None
+            if detector is not None:
+                detector_overlay, detector_report = predict(detector, detector_names, source, "detect", args)
+                title = f"DETECT {args.detect_model.stem} / {detector_report['inference_seconds']:.2f}s"
+                panels.append(("detect", frame(detector_overlay, title, detector_names)))
             if args.compare:
                 combined = Image.new(
                     "RGB",
@@ -524,10 +554,11 @@ def main(argv=None):
                     "source": path.name,
                     "source_size": source.size,
                     "settings": {k: str(v) if isinstance(v, Path) else v for k, v in vars(args).items()},
-                    "models": {"seg": seg_model, "obb": obb_model, "nudenet": nn_model},
+                    "models": {"seg": seg_model, "obb": obb_model, "nudenet": nn_model, "detect": detector_model},
                     "seg": seg_report,
                     "obb": obb_report,
                     "seg_nn": nn_report,
+                    "detect": detector_report,
                     "seconds": seconds,
                     "notes": [
                         "Full-image RGB inference; aspect-preserving centered letterbox with fill 114",
@@ -549,6 +580,11 @@ def main(argv=None):
                 )
                 + f"{len(obb_report['detections'])} rotated boxes"
                 + (f", {len(nn_report['detections'])} NN-context masks" if nn_report is not None else "")
+                + (
+                    f", extra detector {detector_report['inference_seconds']:.3f}s"
+                    if detector_report is not None
+                    else ""
+                )
                 + f"; {seconds:.2f}s",
                 flush=True,
             )
