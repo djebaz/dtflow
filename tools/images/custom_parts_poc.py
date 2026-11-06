@@ -146,7 +146,7 @@ def suppress(rows, scores, classes, task, threshold, maximum):
     return kept
 
 
-def predict(session, names, source, task, args, *, filter_classes=True, variant_overlays=None):
+def predict(session, names, source, task, args, *, filter_classes=True, variant_overlays=None, mask_sink=None):
     """Optionally fill a six-variant overlay sink, reusing restored logits from this one call."""
     tensor, fit = preprocess(source, session.get_inputs()[0].shape)
     tick = time.perf_counter()
@@ -262,6 +262,8 @@ def predict(session, names, source, task, args, *, filter_classes=True, variant_
                     dict(record, box_xyxy=box.tolist(), pixels=int(candidate.sum()))
                 )
             record.update(box_xyxy=box.tolist(), pixels=int(mask.sum()), label_xy=box[:2].tolist())
+            if mask_sink is not None:
+                mask_sink.append({"class": names[class_id], "score": float(scores[index]), "mask": mask})
         records.append(record)
 
     def labeled(pixels):
@@ -337,7 +339,7 @@ def context_segmentation(session, names, nudenet, source, args):
     return overlay, info
 
 
-def segment_context_regions(session, names, source, args, targets, *, variant_overlays=None):
+def segment_context_regions(session, names, source, args, targets, *, variant_overlays=None, mask_sink=None):
     """Shared crop segmentation; detector boxes are context anchors, not mask clips."""
     crops = []
     for detection in targets:
@@ -381,7 +383,12 @@ def segment_context_regions(session, names, source, args, targets, *, variant_ov
     class_thresholds = {name: args.seg_class_conf.get(name, args.seg_confidence) for name in names.values()}
     for roi_index, box in enumerate(crops, 1):
         local_variants = {} if variant_overlays is not None else None
-        overlay, info = predict(session, names, source.crop(box), "segment", args, variant_overlays=local_variants)
+        local_masks = [] if mask_sink is not None else None
+        overlay, info = predict(
+            session, names, source.crop(box), "segment", args, variant_overlays=local_variants, mask_sink=local_masks
+        )
+        if local_masks is not None:
+            mask_sink.extend(dict(item, offset_xy=list(box[:2]), roi=roi_index) for item in local_masks)
         result.paste(overlay, box[:2])
         if local_variants is not None:
             for key, image in local_variants.items():
@@ -445,12 +452,134 @@ def save_image(image, path, size):
     image.save(path, quality=93)
 
 
+def measure_obb_coverage(detections, masks, source_size, minimum):
+    """Greedy one-to-one same-class mask/OBB matching by raster IoU, in source pixels."""
+    measurements, candidates = [], []
+    width, height = source_size
+    for obb_index, detection in enumerate(detections):
+        polygon = np.asarray(detection["polygon_xy"], dtype=np.float64)
+        low = np.maximum(np.floor(polygon.min(axis=0)).astype(int), 0)
+        high = np.minimum(np.ceil(polygon.max(axis=0)).astype(int) + 1, [width, height])
+        x0, y0 = low
+        x1, y1 = high
+        area = 0
+        if x1 > x0 and y1 > y0:
+            raster = np.zeros((y1 - y0, x1 - x0), dtype=np.uint8)
+            cv.fillPoly(raster, [np.rint((polygon - low) * 256).astype(np.int32)], 1, shift=8)
+            area = int(raster.sum())
+            for mask_index, item in enumerate(masks):
+                if item["class"] != detection["class"]:
+                    continue
+                mask = item["mask"]
+                mx, my = item["offset_xy"]
+                mh, mw = mask.shape
+                ax, ay = max(x0, mx), max(y0, my)
+                bx, by = min(x1, mx + mw), min(y1, my + mh)
+                if bx <= ax or by <= ay:
+                    continue
+                intersection = int(
+                    np.count_nonzero(
+                        mask[ay - my : by - my, ax - mx : bx - mx] & (raster[ay - y0 : by - y0, ax - x0 : bx - x0] != 0)
+                    )
+                )
+                if intersection:
+                    mask_area = int(np.count_nonzero(mask))
+                    iou = intersection / (area + mask_area - intersection)
+                    candidates.append((iou, obb_index, mask_index, intersection, mask_area))
+        measurements.append(
+            {
+                "obb_index": obb_index,
+                "class": detection["class"],
+                "obb_score": detection["score"],
+                "visible_obb_pixels": area,
+                "seg_index": None,
+                "seg_score": None,
+                "intersection_pixels": 0,
+                "coverage": 0.0,
+                "mask_iou": 0.0,
+                "issue": minimum > 0 or not area,
+                "reason": "no_matched_same_class_mask" if area else "obb_outside_image",
+            }
+        )
+    used_obb, used_masks = set(), set()
+    for iou, obb_index, mask_index, intersection, mask_area in sorted(candidates, reverse=True):
+        if obb_index in used_obb or mask_index in used_masks:
+            continue
+        used_obb.add(obb_index)
+        used_masks.add(mask_index)
+        record = measurements[obb_index]
+        coverage = intersection / record["visible_obb_pixels"]
+        record.update(
+            seg_index=mask_index,
+            seg_score=masks[mask_index]["score"],
+            intersection_pixels=intersection,
+            coverage=coverage,
+            mask_iou=iou,
+            seg_pixels=mask_area,
+            spill_fraction=(mask_area - intersection) / mask_area,
+            issue=coverage < minimum,
+            reason="low_coverage" if coverage < minimum else "ok",
+        )
+    return {
+        "minimum_coverage": minimum,
+        "definition": "same-class matched SEG pixels inside visible rasterized OBB / visible rasterized OBB pixels",
+        "matching": "greedy one-to-one by mask/OBB raster IoU; indices reference OBB and context SEG detections",
+        "issues": sum(record["issue"] for record in measurements),
+        "measurements": measurements,
+        "unmatched_seg_indices": [i for i in range(len(masks)) if i not in used_masks],
+    }
+
+
+def draw_coverage_issues(image, detections, coverage):
+    pixels = np.asarray(image).copy()
+    for record in coverage["measurements"]:
+        if record["issue"]:
+            polygon = np.asarray(detections[record["obb_index"]]["polygon_xy"])
+            cv.polylines(pixels, [np.rint(polygon * 256).astype(np.int32)], True, (255, 70, 70), 3, cv.LINE_AA, shift=8)
+    result = Image.fromarray(pixels)
+    draw = ImageDraw.Draw(result)
+    for record in coverage["measurements"]:
+        if record["issue"]:
+            polygon = np.asarray(detections[record["obb_index"]]["polygon_xy"])
+            x, y = polygon.max(axis=0)
+            text = f"LOW SEG {record['class']}: {record['coverage']:.1%} < {coverage['minimum_coverage']:.0%}"
+            x = max(0, min(float(x), result.width - draw.textlength(text) - 2))
+            y = max(0, min(float(y) + 3, result.height - 14))
+            draw.text((x, y), text, fill=(255, 90, 90), stroke_width=2, stroke_fill="black")
+    return result
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("-i", "--input-dir", type=Path, required=True)
     parser.add_argument("-o", "--output-dir", type=Path, default=Path("tmp/custom-parts-poc"))
     parser.add_argument("-sm", "--seg-model", type=Path, default=Path("tmp/models/best_seg_dick.onnx"))
-    parser.add_argument("-om", "--obb-model", type=Path, default=Path("tmp/models/best_obb_dick_lastmile.onnx"))
+    parser.add_argument("-om", "--obb-model", type=Path, help="OBB checkpoint; -bc defaults to the reviewed nano model")
+    parser.add_argument(
+        "-bc",
+        "--obb-context",
+        action="store_true",
+        help="Reviewed OBB -> contextual SEG only; replaces penisV2/NudeNet; crop axes stay aligned with the image",
+    )
+    parser.add_argument(
+        "-so",
+        "--superimpose",
+        action="store_true",
+        help="With -bc: save one overlay per image with contextual SEG masks and OBB outlines together",
+    )
+    parser.add_argument(
+        "-mm",
+        "--mismatches",
+        action="store_true",
+        help="With -bc: flag same-class SEG coverage below -mc, without altering masks",
+    )
+    parser.add_argument(
+        "-mc",
+        "--min-coverage",
+        type=float,
+        default=0.4,
+        help="Minimum matched SEG coverage of visible OBB, fraction 0..1 (default 0.4)",
+    )
     parser.add_argument(
         "-dm",
         "--detect-model",
@@ -485,7 +614,7 @@ def main(argv=None):
         "-sw",
         "--mask-sweep",
         action="store_true",
-        help="With -vc: six-panel -1/0/+1 mask-threshold x box-clip on/off comparison; reuses inference; -cp unnecessary",
+        help="With -vc/-bc: six-panel -1/0/+1 mask-threshold x box-clip on/off comparison; reuses inference; -cp unnecessary",
     )
     parser.add_argument("-os", "--obb-confidence", type=float, help="OBB threshold; overrides -s")
     parser.add_argument(
@@ -563,13 +692,23 @@ def main(argv=None):
         "-w", "--overwrite", action="store_true", help="Replace only recognized custom_parts_poc flat outputs"
     )
     args = parser.parse_args(argv)
+    if not math.isfinite(args.min_coverage) or not 0 <= args.min_coverage <= 1:
+        parser.error("min-coverage must be finite in [0,1]")
+    if args.mismatches and (not args.obb_context or args.mask_sweep):
+        parser.error("-mm requires -bc and is not available with -sw")
     if not math.isfinite(args.mask_threshold) or not -8 <= args.mask_threshold <= 8:
         parser.error("mask-threshold must be finite in [-8,8]")
-    if args.mask_sweep and not args.v2_context:
-        parser.error("-sw requires -vc so unclipped masks stay bounded by detector context crops")
+    if args.obb_context and (args.v2_context or args.nudenet or args.detect_model is not None):
+        parser.error("-bc replaces penisV2/NudeNet; omit -vc, -nn and -dm")
+    if args.superimpose and (not args.obb_context or args.mask_sweep or args.compare):
+        parser.error("-so requires -bc and replaces -cp/-sw output modes")
+    if args.mask_sweep and not (args.v2_context or args.obb_context):
+        parser.error("-sw requires -vc/-bc so unclipped masks stay bounded by context crops")
     if args.mask_sweep and (args.mask_threshold != 0 or args.uncrop):
         parser.error("-sw uses fixed thresholds/clipping; omit -mt and -uc")
-    if args.v2_context:
+    if args.obb_context:
+        args.context_only = True
+    elif args.v2_context:
         if args.nudenet:
             parser.error("-vc replaces NudeNet; omit -nn")
         args.context_only = True
@@ -577,6 +716,12 @@ def main(argv=None):
             args.detect_model = Path("tmp/models/penisV2.onnx")
     elif args.context_only:
         args.nudenet = True
+    if args.obb_model is None:
+        args.obb_model = Path(
+            "tmp/models/yolo26n_obb_duck_reviewed.onnx"
+            if args.obb_context
+            else "tmp/models/best_obb_dick_lastmile.onnx"
+        )
     args.seg_confidence = args.confidence if args.seg_confidence is None else args.seg_confidence
     args.obb_confidence = args.confidence if args.obb_confidence is None else args.obb_confidence
     args.detect_confidence = args.confidence if args.detect_confidence is None else args.detect_confidence
@@ -612,7 +757,9 @@ def main(argv=None):
     ):
         parser.error("output-dir must not redirect or contain input-dir")
     previous = list(output.iterdir()) if output.exists() else []
-    pattern = re.compile(r"cpp_\d{4,}_.+_(?:seg|seg_nn|seg_v2|obb|detect|compare|report)\.(?:jpg|json)$")
+    pattern = re.compile(
+        r"cpp_\d{4,}_.+_(?:seg|seg_nn|seg_v2|seg_obb|overlay|obb|detect|compare|report)\.(?:jpg|json)$"
+    )
     if previous and (
         not args.overwrite
         or any(p.is_symlink() or p.is_junction() or not p.is_file() or not pattern.fullmatch(p.name) for p in previous)
@@ -678,7 +825,9 @@ def main(argv=None):
                 )
             obb_report, obb_panel = None, None
             if obb is not None:
-                obb_overlay, obb_report = predict(obb, obb_names, source, "obb", args)
+                obb_overlay, obb_report = predict(
+                    obb, obb_names, source, "obb", args, filter_classes=not args.obb_context
+                )
                 obb_panel = frame(obb_overlay, f"OBB + long axis / {obb_report['inference_seconds']:.2f}s", obb_names)
             nn_report = None
             if nn_session is not None:
@@ -687,6 +836,82 @@ def main(argv=None):
                 panels.append(("seg_nn", frame(nn_overlay, title, seg_names)))
             if obb_panel is not None:
                 panels.append(("obb", obb_panel))
+            obb_context_report = None
+            if args.obb_context:
+                targets = []
+                for detection in obb_report["detections"]:
+                    if detection["class"] not in {"balls", "dick", "dick-head"}:
+                        continue
+                    polygon = np.asarray(detection["polygon_xy"], dtype=np.float64)
+                    targets.append(
+                        dict(detection, box_xyxy=[*polygon.min(axis=0).tolist(), *polygon.max(axis=0).tolist()])
+                    )
+                variant_overlays = {} if args.mask_sweep else None
+                obb_masks = [] if args.superimpose or args.mismatches else None
+                context_overlay, obb_context_report = segment_context_regions(
+                    seg, seg_names, source, args, targets, variant_overlays=variant_overlays, mask_sink=obb_masks
+                )
+                obb_context_report["context_provider"] = "reviewed_obb"
+                obb_context_report["crop_geometry"] = (
+                    "Expanded axis-aligned polygon bounds; overlapping crops merged; no deskew"
+                )
+                coverage = None
+                if args.mismatches:
+                    coverage = measure_obb_coverage(obb_report["detections"], obb_masks, source.size, args.min_coverage)
+                    obb_context_report["mismatches"] = coverage
+                    context_overlay = draw_coverage_issues(context_overlay, obb_report["detections"], coverage)
+                if args.superimpose:
+                    # Render directly from masks, not by blending two opaque image overlays.
+                    pixels = np.asarray(source).copy()
+                    for item in obb_masks:
+                        x, y = item["offset_xy"]
+                        height, width = item["mask"].shape
+                        paint_mask(
+                            pixels[y : y + height, x : x + width], item["mask"], PALETTE[item["class"]], args.alpha
+                        )
+                    for detection in obb_report["detections"]:
+                        polygon = np.asarray(detection["polygon_xy"])
+                        color = PALETTE[detection["class"]]
+                        points = np.rint(polygon * 256).astype(np.int32)
+                        cv.polylines(pixels, [points], True, (0, 0, 0), 5, cv.LINE_AA, shift=8)
+                        cv.polylines(pixels, [points], True, color, 2, cv.LINE_AA, shift=8)
+                    overlay = Image.fromarray(pixels)
+                    draw = ImageDraw.Draw(overlay)
+                    for detection in obb_report["detections"]:
+                        polygon = np.asarray(detection["polygon_xy"])
+                        x, y = polygon.min(axis=0)
+                        draw.text(
+                            (max(0, x), max(0, y)),
+                            f"OBB {detection['class']} {detection['score']:.2f}",
+                            fill=PALETTE[detection["class"]],
+                            stroke_width=2,
+                            stroke_fill="black",
+                        )
+                    if coverage is not None:
+                        overlay = draw_coverage_issues(overlay, obb_report["detections"], coverage)
+                    panels = [
+                        (
+                            "overlay",
+                            frame(
+                                overlay,
+                                "SEG fill + contours / OBB outlined boxes + scores"
+                                + (
+                                    f"\nRed: SEG coverage < {args.min_coverage:.0%}; {coverage['issues']} issues"
+                                    if coverage is not None
+                                    else ""
+                                ),
+                                seg_names,
+                            ),
+                        )
+                    ]
+                else:
+                    title = f"SEG in OBB context / {obb_context_report['inference_seconds']:.2f}s / {len(obb_context_report['regions'])} crops\nYellow: context / white: OBB enclosing bounds (no deskew)"
+                    panels.append(("seg_obb", frame(context_overlay, title, seg_names)))
+                if args.mask_sweep:
+                    panels = []
+                    for number, (key, threshold, clip) in enumerate(MASK_VARIANTS, 1):
+                        title = f"{number}: logit {threshold:+d} / SEG-box clip {'ON' if clip else 'OFF'}\nOBB context / same inference"
+                        panels.append((key, frame(variant_overlays[key], title, seg_names)))
             detector_report = None
             v2_report = None
             if detector is not None:
@@ -742,6 +967,7 @@ def main(argv=None):
                     "obb": obb_report,
                     "seg_nn": nn_report,
                     "seg_v2": v2_report,
+                    "seg_obb": obb_context_report,
                     "detect": detector_report,
                     "seconds": seconds,
                     "saved_panels": [name for name, _ in panels],
@@ -752,6 +978,7 @@ def main(argv=None):
                         "OBB long axis is undirected, not an anatomical base-to-tip prediction",
                         "Optional NN context is target-centered, with shape recorded in settings; image-edge clipping and overlap merging can alter proportions; SEG masks are not clipped to the NN box",
                         "V2 context mode uses class penis as crop anchors; -c filters SEG classes, not the V2 locator; OBB/NudeNet are not loaded and there is no full-image SEG pass",
+                        "OBB context uses balls/dick/dick-head polygon enclosing bounds, expanded and merged without deskew; -c filters SEG only; -so combines SEG masks and OBB outlines in one overlay",
                     ],
                 }
                 (output / f"{prefix}_report.json").write_text(
@@ -769,6 +996,16 @@ def main(argv=None):
                 + (
                     f", {len(v2_report['detections'])} V2-context masks, SEG {v2_report['inference_seconds']:.3f}s"
                     if v2_report is not None
+                    else ""
+                )
+                + (
+                    f", {len(obb_context_report['detections'])} OBB-context masks, SEG {obb_context_report['inference_seconds']:.3f}s"
+                    if obb_context_report is not None
+                    else ""
+                )
+                + (
+                    f", {obb_context_report['mismatches']['issues']} coverage issues"
+                    if obb_context_report is not None and args.mismatches
                     else ""
                 )
                 + (
