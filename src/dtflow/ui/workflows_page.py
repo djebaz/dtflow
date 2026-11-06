@@ -233,6 +233,13 @@ def download_missing_models(page: QWidget, state: Path, entries, runner, on_done
     )
 
 
+def _same_document(current, saved) -> bool:
+    try:
+        return wf.dump_workflow(current) == wf.dump_workflow(saved)
+    except (wf.WorkflowError, TypeError, ValueError):
+        return False
+
+
 def _run_shape(graph) -> tuple:
     """What a run depends on: node types and settings, and links; positions and view are left out."""
     nodes = tuple(sorted((node.id, node.type, repr(sorted(node.params.items()))) for node in graph.nodes))
@@ -617,7 +624,9 @@ class WorkflowsPage(QObject):
                 self._error("Workflow not saved", failure)
                 return
             self.path, self.name = path, path.stem
-            self.canvas.mark_saved()
+            # Editing stays open during the write: only a canvas that still equals what was written is clean.
+            if self.canvas is not None and _same_document(self.canvas.current_graph(), graph):
+                self.canvas.mark_saved()
             self._changed()
             activity_strip(self.workspace).complete("workflow-save", "Workflow saved", f"{self.name} is saved.")
             self.refresh_library()
