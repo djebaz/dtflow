@@ -36,6 +36,7 @@ _BAR_STATES = {"progress", "success", "stopped"}
 _OPERATION_ICONS = {
     "export": "⇧",
     "asset": "⇧",
+    "models": "⇩",
     "cache": "▤",
     "generation": "✦",
     "queue": "▦",
@@ -222,7 +223,7 @@ class ActivityStrip(QObject):
         model = BarModel(
             kind={"progress": "running"}.get(state, state),
             title=label,
-            count=f"{done}/{total}" if known else "",
+            count=(chosen.property("countText") or f"{done}/{total}") if known else "",
             queued=(chosen.property("queuedCount") or 0) if running else 0,
             stage=stage,
             wide=(chosen.property("wideText") or "") if running and not stopping else "",
@@ -392,6 +393,8 @@ class ActivityStrip(QObject):
                 row.activityDetail.setText(
                     "Cancelling before admission; nothing was submitted."
                     if stop_text == "Cancel before start"
+                    else "Cancelling download; the partial file is removed, completed models stay installed."
+                    if stop_text == "Cancel download"
                     else "Stopping local wait; remote cancellation is not confirmed."
                     if stop_text == "Stop waiting locally"
                     else "Stopping after the current item; completed work remains."
@@ -405,7 +408,8 @@ class ActivityStrip(QObject):
         self._position()
         QTimer.singleShot(0, self, self._position)
 
-    def update(self, key, done, total, *, detail=None, elapsed="", eta="", stage="", wide="", queued=0):
+    def update(self, key, done, total, *, detail=None, elapsed="", eta="", stage="", wide="", queued=0, count=None):
+        """``count`` replaces the default "done / total" text (e.g. transferred MiB when done/total are percent)."""
         if not self._live():
             return
         row = self.rows.get(key)
@@ -416,7 +420,8 @@ class ActivityStrip(QObject):
         if row is not None and row.property("feedbackState") == "progress":
             row.activityProgress.setRange(0, max(1, total) if total else 0)
             row.activityProgress.setValue(done)
-            row.activityCount.setText(f"{done} / {total}" if total else "")
+            row.activityCount.setText(count if count is not None else f"{done} / {total}" if total else "")
+            row.setProperty("countText", count or "")
             if row.activityStopButton.isEnabled() or row.activityStopButton.isHidden():
                 row.activityDetail.setText(
                     detail if detail is not None else f"{done} of {total} processed" if total else "Working…"

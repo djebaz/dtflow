@@ -263,9 +263,12 @@ class ItemRow:
 
     @property
     def operation_text(self) -> str:
-        return {"txt2img": "Text to image", "img2img": "Image to image", "inpaint": "Inpaint"}.get(
-            self.operation, self.operation
-        )
+        return {
+            "txt2img": "Text to image",
+            "img2img": "Image to image",
+            "inpaint": "Inpaint",
+            "workflow": "Workflow run",
+        }.get(self.operation, self.operation)
 
     @property
     def outcome_line(self) -> str:
@@ -433,8 +436,11 @@ def item_rows(view: dict) -> tuple[ItemRow, ...]:
                 item["seed"],
                 tuple(path for path in artifacts if path != metadata),
                 metadata,
-                (failure.get("message") or failure.get("code")) if item.get("script") else failure.get("code"),
-                item.get("operation") or "txt2img",
+                # A script or workflow run keeps its own plain reason (provider wording included), not just a code.
+                (failure.get("message") or failure.get("code"))
+                if item.get("script") or item.get("workflow")
+                else failure.get("code"),
+                "workflow" if item.get("workflow") else item.get("operation") or "txt2img",
                 item.get("strength"),
                 item.get("prompt") or "",
                 item.get("negative_prompt") or "",

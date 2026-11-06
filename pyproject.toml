@@ -17,10 +17,13 @@ dependencies = [
     "grpclib>=0.4.9,<0.5.0",
     "httpx>=0.28.1,<0.29.0",
     "keyring>=25.7.0",
+    "nodeeditor-qtpy==0.8.2",
     "numpy==2.3.5",
     "onnxruntime>=1.20,<2",
+    "orjson==3.13.0",
     "pillow>=12.1,<13",
     "pyside6-essentials>=6.12.0",
+    "qtpy==2.4.3",
     "quickjs-ng>=0.17.0.2",
     "tzdata>=2026.6",
 ]
@@ -30,14 +33,11 @@ dtflow = "dtflow.cli:main"
 
 [dependency-groups]
 dev = [
-    "nodeeditor-qtpy==0.8.2",
-    "orjson==3.13.0",
     "playwright>=1.64.1",
     "pytest",
     "pytest-asyncio>=1.4.0",
     "pytest-qt>=4.5.0",
     "pytest-xdist>=3.8.0",
-    "qtpy==2.4.3",
     "ruff",
 ]
 mask-poc = [

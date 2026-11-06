@@ -1,0 +1,36 @@
+{
+  "schema_version": 1,
+  "note": "Pinned detection-model downloads (D8). DTFlow downloads each file from its publisher on explicit request and never redistributes weights (D7). size_mib is approximate, for display only; the SHA-256 is the integrity check.",
+  "models": [
+    {
+      "role": "segmentation",
+      "name": "YOLO26n person segmentation",
+      "url": "https://github.com/ultralytics/assets/releases/download/v8.4.0/yolo26n-seg.onnx",
+      "sha256": "711e0ef837c677ae4006f65fe503a62a6b0529979f4828ed50b674a7482b7d2e",
+      "size_mib": 10.70,
+      "licence": "Ultralytics AGPL-3.0",
+      "licence_url": "https://github.com/ultralytics/ultralytics/blob/main/LICENSE",
+      "source_url": "https://github.com/ultralytics/assets/releases/tag/v8.4.0"
+    },
+    {
+      "role": "clothes",
+      "name": "SegFormer B2 clothes segmentation",
+      "url": "https://huggingface.co/mattmdjaga/segformer_b2_clothes/resolve/584abc1e1d260e23c0fc627c5217a09b2b461046/onnx/model.onnx",
+      "sha256": "a93a8dac171b5c1fcc53632a8bfc180bfd9759ea69a3e207451bb07f76add54f",
+      "size_mib": 104.94,
+      "licence": "NVIDIA SegFormer licence (research use only)",
+      "licence_url": "https://huggingface.co/mattmdjaga/segformer_b2_clothes",
+      "source_url": "https://huggingface.co/mattmdjaga/segformer_b2_clothes"
+    },
+    {
+      "role": "faces",
+      "name": "NudeNet 320n face detection",
+      "url": "https://huggingface.co/zhangsongbo365/nudenet_onnx/resolve/0ae0d1dc2a9f6ab9573b0de7e07676a3a6e53719/320n.onnx",
+      "sha256": "776773dd37d99aa2ffe63bec9f92a835d82f3e40d627ffb47d9c3455aec600aa",
+      "size_mib": 11.59,
+      "licence": "MIT",
+      "licence_url": "https://huggingface.co/zhangsongbo365/nudenet_onnx",
+      "source_url": "https://huggingface.co/zhangsongbo365/nudenet_onnx"
+    }
+  ]
+}
