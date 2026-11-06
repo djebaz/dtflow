@@ -196,7 +196,7 @@ def planned_phases():
     if wants("scripts"):
         phases.append("scripts window")
     if wants("workflows"):
-        phases.append("workflows preview window")
+        phases.append("workflows workspace")
     return phases
 
 
@@ -1970,6 +1970,46 @@ def render_item_table_states(shell, out, state):
         snap("queues-72-script-parent-summary")
         select(1)
         snap("queues-73-script-step-details")
+        # A workflow run is one queue item: Relaunch and Edit as new stay off (Run is in Workflows); item Retry reruns
+        # its first failed step, and the item keeps the run's own reason (provider wording included).
+        reason = (
+            "1 result(s) saved; 2 step(s) failed, stopped or unconfirmed. First problem: Inpaint face "
+            "(Generate #1 image 2): DT+ refused the request: not enough credits."
+        )
+        # A real workflow row has no single model, seed or sampler (``_workflow_item_fields``): clear the borrowed ones.
+        plain = {key: None for key in items[0] if key not in ("item_id", "position", "state", "artifacts")}
+        plain.update(loras=[], artifacts=[], attempt_id=None)
+        workflow_item = {**items[0], **plain}
+        workflow_item.update(
+            item_id="offline-workflow-item",
+            state="failed",
+            prompt="Workflow: Portrait finishing",
+            failure={"code": "workflow_partial", "message": reason},
+            workflow={
+                "state": "partial",
+                "message": reason,
+                "steps": [{"node_id": 3, "branch": [1, 1], "state": "failed", "title": "Inpaint face"}],
+            },
+        )
+        workflow_view = dict(
+            view,
+            kind="workflow",
+            queue_id="offline-workflow-queue",
+            status="finished",
+            first=dict(view["first"], prompt="Workflow: Portrait finishing", model="", loras=[], operation="txt2img"),
+            varied=None,
+            items=[workflow_item],
+            summary={name: int(name == "failed") for name in counts},
+            cap=1,
+        )
+        queue._selected = workflow_view["queue_id"]
+        queue._read_done(([workflow_view], workflow_view, 2), None)
+        queue._timer.stop()
+        select(0)
+        strip = activity_strip(page)
+        if strip is not None and "queue-message" in strip.rows:
+            strip.finish("queue-message")  # an earlier state's notice is not part of this one
+        snap("queues-74-workflow-queue")
         queue._selected = None
         queue._activity.set(dispatching=False)
         queue._read_done(([], None, 2), None)
@@ -3886,7 +3926,7 @@ def _render_selection(app, args):
     ):
         state = Path(temporary)
         if wants("workflows"):
-            phase("workflows preview window")
+            phase("workflows workspace")
             from render_workflows_states import render_workflows_states
 
             render_workflows_states(

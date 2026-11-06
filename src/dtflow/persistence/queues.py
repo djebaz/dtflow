@@ -1640,10 +1640,24 @@ def _script_view(connection: sqlite3.Connection, request: dict) -> dict[str, Any
     return view
 
 
-def _workflow_view(request: dict) -> dict[str, Any]:
-    """A workflow item's run state plus its name and the stage of the step that is running now (for activity)."""
+def _workflow_view(request: dict, item_state: str | None = None) -> dict[str, Any]:
+    """A workflow item's run state plus its name and the stage of the step that is running now (for activity).
+
+    The item settles without the runner when it never started (Stop or Clear while it waited behind another queue);
+    its stored run then still says pending, so the view reports the item's end instead of a run that never ends."""
     run = request.get("run") if isinstance(request.get("run"), dict) else {}
     view = {**run, "name": request.get("name"), "run_id": request.get("run_id")}
+    if item_state in ("cancelled", "failed", "unknown", "save_failed") and run.get("state") in ("pending", "running"):
+        view["state"] = "cancelled" if item_state == "cancelled" else item_state.replace("save_failed", "failed")
+        view["message"] = "Stopped before it started; nothing was sent." if item_state == "cancelled" else None
+        view["pauses"] = []
+        view["steps"] = [
+            {**step, "state": "cancelled", "stage": None}
+            if isinstance(step, dict) and step.get("state") in ("pending", "running", "paused")
+            else step
+            for step in run.get("steps") or ()
+        ]
+        run = view
     running = [step for step in run.get("steps") or () if isinstance(step, dict) and step.get("state") == "running"]
     current = max(running, key=lambda step: str(step.get("started_at") or ""), default=None)
     view["stage"] = (
@@ -1707,7 +1721,7 @@ def _read(connection: sqlite3.Connection, queue_id: str | None) -> tuple[dict[st
             if not isinstance(request, dict):
                 request = {}
             script = _script_view(connection, request) if is_script_record(request) else None
-            workflow = _workflow_view(request) if is_workflow_record(request) else None
+            workflow = _workflow_view(request, item["state"]) if is_workflow_record(request) else None
             items.append(
                 {
                     "position": item["position"],
