@@ -97,6 +97,8 @@ See the [CLI reference](devdocs/guides/cli.md) for backends, options and example
 
 **Developing DTFlow**
 
+- [Standalone CPU segmentation/OBB experiments](tools/images/segmentation-pocs.md): local image-tool recipes, review-only annotations and verification limits; not desktop model support
+
 - [Development tools](devdocs/guides/development.md), [testing](devdocs/guides/testing.md),
   [Windows builds](devdocs/guides/building.md) and [releasing](devdocs/guides/releasing.md)
 - [Architecture](devdocs/architecture/), including the [runtime layout](devdocs/architecture/runtime-layout.md),
