@@ -17,7 +17,7 @@ from pathlib import Path
 
 import cv2 as cv
 import numpy as np
-from PIL import Image
+from PIL import Image, ImageDraw
 
 from edge_nudenet_poc import NUDENET_SPECS, PERSON_SPECS, nudenet_640_session
 from nudenet_depth_poc import TARGET, boxed, contour_preview, tile
@@ -83,6 +83,21 @@ def context_crop(image, detection, factor):
     return image.crop(box), local, box
 
 
+def expanded_prompt(detection, size, factor):
+    x0, y0, x1, y1 = detection["box_xyxy"]
+    cx, cy = (x0 + x1) / 2, (y0 + y1) / 2
+    rx, ry = (x1 - x0) * factor / 2, (y1 - y0) * factor / 2
+    requested = [cx - rx, cy - ry, cx + rx, cy + ry]
+    clipped = [max(0, requested[0]), max(0, requested[1]), min(size[0], requested[2]), min(size[1], requested[3])]
+    return dict(detection, box_xyxy=clipped), requested != clipped
+
+
+def show_prompt(image, prompt):
+    """Pink remains the original NudeNet box; cyan is the actual SAM box prompt."""
+    ImageDraw.Draw(image).rectangle(tuple(prompt["box_xyxy"]), outline=(0, 235, 255), width=2)
+    return image
+
+
 def segment(session, image, detection):
     """RGB /255, square letterbox, box-corner labels 2/3 and unused labels -1."""
     side = 1024
@@ -143,6 +158,19 @@ def main(argv=None):
     parser.add_argument(
         "-k", "--context", type=float, default=2.5, help="Local crop side relative to target box long side, 1..6"
     )
+    parser.add_argument(
+        "-b",
+        "--box-scale",
+        type=float,
+        default=1,
+        help="SAM prompt width/height factor, 1..4; original NN box stays visible",
+    )
+    parser.add_argument(
+        "-sw",
+        "--box-sweep",
+        action="store_true",
+        help="Whole folder: compare 1.0/1.3/1.6x prompts on identical crops; 3 SAM calls per target",
+    )
     parser.add_argument("-t", "--threads", type=int, default=4)
     parser.add_argument("-ts", "--tile", type=int, default=640)
     parser.add_argument(
@@ -152,7 +180,7 @@ def main(argv=None):
         help="Optionally clip SAM masks to YOLO; off by default to expose SAM's actual boundary",
     )
     parser.add_argument(
-        "-cp", "--compare", action="store_true", help="Reference + all 3 SAM candidates in one 2x2 sheet per target"
+        "-cp", "--compare", action="store_true", help="Show all 3 SAM candidates; with -sw, one prompt-size column each"
     )
     parser.add_argument("-f", "--images-only", action="store_true", help="Skip JSON reports")
     parser.add_argument(
@@ -160,6 +188,12 @@ def main(argv=None):
     )
     parser.add_argument("-d", "--no-download", action="store_true")
     args = parser.parse_args(argv)
+    if not math.isfinite(args.box_scale) or not 1 <= args.box_scale <= 4:
+        parser.error("box-scale must be finite and in [1,4]")
+    if args.box_sweep and args.box_scale != 1:
+        parser.error("-sw uses fixed 1.0/1.3/1.6 scales; omit -b")
+    scales = (1.0, 1.3, 1.6) if args.box_sweep else (args.box_scale,)
+    context_factor = max(args.context, max(scales) * 1.2)
     if not args.input_dir.is_dir():
         parser.error("input-dir must exist")
     if not 0 < args.confidence <= 1 or not 0 < args.person_threshold < 1:
@@ -214,6 +248,10 @@ def main(argv=None):
             raise RuntimeError(f"Output changed before cleanup: {entry.name}")
         entry.unlink()
     print(f"CPU models loaded; EfficientSAM-Ti INT8; {len(files)} images; {TARGET}", flush=True)
+    print(
+        f"SAM box scales: {', '.join(f'{v:g}x' for v in scales)}; {len(scales)} calls per target; fixed context {context_factor:g}x",
+        flush=True,
+    )
     failures = 0
     for image_index, path in enumerate(files, 1):
         prefix = f"nsp_{image_index:04d}_{path.stem[:70]}"
@@ -256,54 +294,76 @@ def main(argv=None):
                 detections = [d for d in found if d["label"] == TARGET]
                 report["person_crop_source_xyxy"] = box
             for target_index, detection in enumerate(detections, 1):
-                roi, local_detection, roi_box = context_crop(crop, detection, args.context)
-                candidates, sam_seconds, preprocessing = segment(sam, roi, local_detection)
-                panels = (
-                    [
-                        tile(
-                            boxed(np.asarray(roi), [local_detection]),
-                            "NudeNet box / detection score",
-                            (0, 0, *roi.size),
-                            args.tile,
-                        )
-                    ]
-                    if args.compare
-                    else []
-                )
+                roi, local_detection, roi_box = context_crop(crop, detection, context_factor)
+                columns = []
                 target_report = {
                     "detection_person_crop_coordinates": detection,
                     "local_crop_person_coordinates": roi_box,
-                    "sam_seconds": sam_seconds,
-                    "preprocessing": preprocessing,
-                    "candidates": [],
+                    "context_factor": context_factor,
+                    "sam_seconds": 0.0,
+                    "prompt_variants": [],
                 }
                 valid = (
                     inside[roi_box[1] : roi_box[3], roi_box[0] : roi_box[2]]
                     if args.clip_person
                     else np.ones((roi.height, roi.width), dtype=bool)
                 )
-                for rank, (mask_index, score, raw_mask) in enumerate(candidates, 1):
-                    mask = raw_mask & valid
-                    target_report["candidates"].append(
-                        {
-                            "rank": rank,
-                            "model_mask_index": mask_index,
-                            "predicted_iou": score,
-                            "raw_pixels": int(raw_mask.sum()),
-                            "pixels": int(mask.sum()),
-                        }
+                for factor in scales:
+                    prompt, clipped = expanded_prompt(local_detection, roi.size, factor)
+                    candidates, sam_seconds, preprocessing = segment(sam, roi, prompt)
+                    variant = {
+                        "box_scale": factor,
+                        "prompt_local_xyxy": prompt["box_xyxy"],
+                        "prompt_clipped": clipped,
+                        "sam_seconds": sam_seconds,
+                        "preprocessing": preprocessing,
+                        "candidates": [],
+                    }
+                    target_report["sam_seconds"] += sam_seconds
+                    panels = []
+                    if args.compare:
+                        reference = show_prompt(boxed(np.asarray(roi), [local_detection]), prompt)
+                        panels.append(tile(reference, f"{factor:g}x: NN pink / SAM cyan", (0, 0, *roi.size), args.tile))
+                    for rank, (mask_index, score, raw_mask) in enumerate(candidates, 1):
+                        mask = raw_mask & valid
+                        variant["candidates"].append(
+                            {
+                                "rank": rank,
+                                "model_mask_index": mask_index,
+                                "predicted_iou": score,
+                                "raw_pixels": int(raw_mask.sum()),
+                                "pixels": int(mask.sum()),
+                            }
+                        )
+                        if args.compare or rank == 1:
+                            preview = show_prompt(
+                                contour_preview(np.asarray(roi), [(7, mask)], valid, [local_detection]), prompt
+                            )
+                            caption = f"{factor:g}x / {rank}: predicted IoU {score:.3f}" + (
+                                " / selected" if rank == 1 else ""
+                            )
+                            panels.append(tile(preview, caption, (0, 0, *roi.size), args.tile))
+                    columns.append(panels)
+                    target_report["prompt_variants"].append(variant)
+                if len(scales) == 1:
+                    # Retain the original single-prompt JSON fields for existing report readers.
+                    target_report.update(preprocessing=variant["preprocessing"], candidates=variant["candidates"])
+                if args.box_sweep:
+                    result = Image.new(
+                        "RGB", (args.tile * len(columns), (args.tile + 52) * len(columns[0])), (22, 22, 26)
                     )
-                    if args.compare or rank == 1:
-                        preview = contour_preview(np.asarray(roi), [(7, mask)], valid, [local_detection])
-                        caption = f"{rank}: predicted IoU {score:.3f}" + (" / selected" if rank == 1 else "")
-                        panels.append(tile(preview, caption, (0, 0, *roi.size), args.tile))
-                if args.compare:
+                    for column, panels in enumerate(columns):
+                        for row, panel in enumerate(panels):
+                            result.paste(panel, (column * args.tile, row * (args.tile + 52)))
+                elif args.compare:
                     result = Image.new("RGB", (args.tile * 2, (args.tile + 52) * 2), (22, 22, 26))
-                    for i, panel in enumerate(panels):
+                    for i, panel in enumerate(columns[0]):
                         result.paste(panel, ((i % 2) * args.tile, (i // 2) * (args.tile + 52)))
                 else:
-                    result = panels[0]
-                filename = f"{prefix}_d{target_index:02d}_{'compare' if args.compare else 'overlay'}.jpg"
+                    result = columns[0][0]
+                filename = (
+                    f"{prefix}_d{target_index:02d}_{'compare' if args.compare or args.box_sweep else 'overlay'}.jpg"
+                )
                 result.save(output / filename, quality=93)
                 target_report["output"] = filename
                 report["targets"].append(target_report)
