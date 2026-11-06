@@ -118,7 +118,7 @@ def suppress(rows, scores, classes, task, threshold, maximum):
     return kept
 
 
-def predict(session, names, source, task, args):
+def predict(session, names, source, task, args, *, filter_classes=True):
     tensor, fit = preprocess(source, session.get_inputs()[0].shape)
     tick = time.perf_counter()
     output = session.run(None, {session.get_inputs()[0].name: tensor})
@@ -142,7 +142,7 @@ def predict(session, names, source, task, args):
     thresholds = np.array([overrides.get(names[key], default) for key in range(len(names))], dtype=np.float32)
     class_scores = rows[:, 4 : 4 + len(names)]
     eligible = class_scores >= thresholds[None]
-    if args.classes:
+    if args.classes and filter_classes:
         eligible &= np.array([names[key] in args.classes for key in range(len(names))])[None]
     # Threshold/filter before argmax: an ineligible class cannot hide an eligible alternative.
     classes = np.where(eligible, class_scores, -1).argmax(axis=1)
@@ -252,6 +252,13 @@ def context_segmentation(session, names, nudenet, source, args):
     )
     targets = [d for d in found if d["label"] == "MALE_GENITALIA_EXPOSED"]
     nn_seconds = time.perf_counter() - tick
+    overlay, info = segment_context_regions(session, names, source, args, targets)
+    info.update(nudenet_seconds=nn_seconds, nudenet_targets=targets, context_provider="nudenet")
+    return overlay, info
+
+
+def segment_context_regions(session, names, source, args, targets):
+    """Shared crop segmentation; detector boxes are context anchors, not mask clips."""
     crops = []
     for detection in targets:
         x0, y0, x1, y1 = detection["box_xyxy"]
@@ -311,8 +318,7 @@ def context_segmentation(session, names, nudenet, source, args):
     return result, {
         "status": "segmented" if crops else "no_target_seg_skipped",
         "inference_seconds": seconds,
-        "nudenet_seconds": nn_seconds,
-        "nudenet_targets": targets,
+        "context_targets": targets,
         "regions": regions,
         "detections": records,
         "class_thresholds": class_thresholds,
@@ -354,6 +360,12 @@ def main(argv=None):
         help="Optional extra YOLOv8 detector, e.g. tmp/models/penisV2.onnx; adds overlay and CPU timing",
     )
     parser.add_argument("-ds", "--detect-confidence", type=float, help="Optional detector threshold; defaults to -s")
+    parser.add_argument(
+        "-vc",
+        "--v2-context",
+        action="store_true",
+        help="Fast penisV2 -> contextual SEG only; defaults -dm to tmp/models/penisV2.onnx; skips NudeNet, OBB and full-image SEG",
+    )
     parser.add_argument(
         "-s", "--confidence", type=float, default=0.25, help="Fallback threshold for both custom models"
     )
@@ -432,7 +444,13 @@ def main(argv=None):
         "-w", "--overwrite", action="store_true", help="Replace only recognized custom_parts_poc flat outputs"
     )
     args = parser.parse_args(argv)
-    if args.context_only:
+    if args.v2_context:
+        if args.nudenet:
+            parser.error("-vc replaces NudeNet; omit -nn")
+        args.context_only = True
+        if args.detect_model is None:
+            args.detect_model = Path("tmp/models/penisV2.onnx")
+    elif args.context_only:
         args.nudenet = True
     args.seg_confidence = args.confidence if args.seg_confidence is None else args.seg_confidence
     args.obb_confidence = args.confidence if args.obb_confidence is None else args.obb_confidence
@@ -469,19 +487,23 @@ def main(argv=None):
     ):
         parser.error("output-dir must not redirect or contain input-dir")
     previous = list(output.iterdir()) if output.exists() else []
-    pattern = re.compile(r"cpp_\d{4,}_.+_(?:seg|seg_nn|obb|detect|compare|report)\.(?:jpg|json)$")
+    pattern = re.compile(r"cpp_\d{4,}_.+_(?:seg|seg_nn|seg_v2|obb|detect|compare|report)\.(?:jpg|json)$")
     if previous and (
         not args.overwrite
         or any(p.is_symlink() or p.is_junction() or not p.is_file() or not pattern.fullmatch(p.name) for p in previous)
     ):
         parser.error("Output is not empty; -w replaces recognized custom_parts_poc outputs only")
     seg, seg_names, seg_model = load_model(args.seg_model, "segment", args.threads)
-    obb, obb_names, obb_model = load_model(args.obb_model, "obb", args.threads)
+    obb, obb_names, obb_model = None, {}, None
+    if not args.v2_context:
+        obb, obb_names, obb_model = load_model(args.obb_model, "obb", args.threads)
     detector, detector_names, detector_model = None, None, None
     if args.detect_model is not None:
         detector, detector_names, detector_model = load_model(args.detect_model, "detect", args.threads)
+    if args.v2_context and "penis" not in detector_names.values():
+        parser.error("-vc requires a detector with class 'penis'")
     for label, overrides, names in (("SEG", args.seg_class_conf, seg_names), ("OBB", args.obb_class_conf, obb_names)):
-        unknown = set(overrides) - set(names.values())
+        unknown = set(overrides) - set(names.values()) if names else set()
         if unknown:
             parser.error(f"{label} model has no classes: {', '.join(sorted(unknown))}")
     nn_session, nn_model = None, None
@@ -505,7 +527,8 @@ def main(argv=None):
             raise RuntimeError(f"Output changed before cleanup: {entry.name}")
         entry.unlink()
     print(
-        f"ONNX Runtime CPU: {len(files)} images; seg {seg_model['input_shape'][2:]}; OBB {obb_model['input_shape'][2:]}",
+        f"ONNX Runtime CPU: {len(files)} images; seg {seg_model['input_shape'][2:]}"
+        + (f"; OBB {obb_model['input_shape'][2:]}" if obb_model else "; fast V2-context mode, OBB/NudeNet skipped"),
         flush=True,
     )
     failures = 0
@@ -521,19 +544,31 @@ def main(argv=None):
                 panels.append(
                     ("seg", frame(seg_overlay, f"SEG masks / {seg_report['inference_seconds']:.2f}s", seg_names))
                 )
-            obb_overlay, obb_report = predict(obb, obb_names, source, "obb", args)
-            obb_panel = frame(obb_overlay, f"OBB + long axis / {obb_report['inference_seconds']:.2f}s", obb_names)
+            obb_report, obb_panel = None, None
+            if obb is not None:
+                obb_overlay, obb_report = predict(obb, obb_names, source, "obb", args)
+                obb_panel = frame(obb_overlay, f"OBB + long axis / {obb_report['inference_seconds']:.2f}s", obb_names)
             nn_report = None
             if nn_session is not None:
                 nn_overlay, nn_report = context_segmentation(seg, seg_names, nn_session, source, args)
                 title = f"SEG in NN context / {nn_report['inference_seconds']:.2f}s / {len(nn_report['regions'])} crops\nYellow: context crop / white: NudeNet box"
                 panels.append(("seg_nn", frame(nn_overlay, title, seg_names)))
-            panels.append(("obb", obb_panel))
+            if obb_panel is not None:
+                panels.append(("obb", obb_panel))
             detector_report = None
+            v2_report = None
             if detector is not None:
-                detector_overlay, detector_report = predict(detector, detector_names, source, "detect", args)
+                detector_overlay, detector_report = predict(
+                    detector, detector_names, source, "detect", args, filter_classes=not args.v2_context
+                )
                 title = f"DETECT {args.detect_model.stem} / {detector_report['inference_seconds']:.2f}s"
                 panels.append(("detect", frame(detector_overlay, title, detector_names)))
+                if args.v2_context:
+                    targets = [d for d in detector_report["detections"] if d["class"] == "penis"]
+                    v2_overlay, v2_report = segment_context_regions(seg, seg_names, source, args, targets)
+                    v2_report["context_provider"] = "penisV2"
+                    title = f"SEG in V2 context / {v2_report['inference_seconds']:.2f}s / {len(v2_report['regions'])} crops\nYellow: context crop / white: detector box"
+                    panels.append(("seg_v2", frame(v2_overlay, title, seg_names)))
             if args.compare:
                 combined = Image.new(
                     "RGB",
@@ -558,6 +593,7 @@ def main(argv=None):
                     "seg": seg_report,
                     "obb": obb_report,
                     "seg_nn": nn_report,
+                    "seg_v2": v2_report,
                     "detect": detector_report,
                     "seconds": seconds,
                     "notes": [
@@ -566,6 +602,7 @@ def main(argv=None):
                         "OBB NMS uses exact polygon IoU, not Ultralytics ProbIoU",
                         "OBB long axis is undirected, not an anatomical base-to-tip prediction",
                         "Optional NN context is target-centered, with shape recorded in settings; image-edge clipping and overlap merging can alter proportions; SEG masks are not clipped to the NN box",
+                        "V2 context mode uses class penis as crop anchors; -c filters SEG classes, not the V2 locator; OBB/NudeNet are not loaded and there is no full-image SEG pass",
                     ],
                 }
                 (output / f"{prefix}_report.json").write_text(
@@ -578,8 +615,13 @@ def main(argv=None):
                     if seg_report is not None
                     else "baseline SEG skipped, "
                 )
-                + f"{len(obb_report['detections'])} rotated boxes"
+                + (f"{len(obb_report['detections'])} rotated boxes" if obb_report is not None else "OBB skipped")
                 + (f", {len(nn_report['detections'])} NN-context masks" if nn_report is not None else "")
+                + (
+                    f", {len(v2_report['detections'])} V2-context masks, SEG {v2_report['inference_seconds']:.3f}s"
+                    if v2_report is not None
+                    else ""
+                )
                 + (
                     f", extra detector {detector_report['inference_seconds']:.3f}s"
                     if detector_report is not None
