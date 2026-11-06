@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Compare custom YOLOv8 segmentation and oriented-box ONNX models on CPU.
+"""Compare custom YOLO segmentation/detection and YOLOv8/YOLO26 OBB ONNX models on CPU.
 
 Flat labeled overlays, optional NudeNet-context segmentation, no SAM/person-mask clipping.
 Export the trusted .pt checkpoints separately; this script never unpickles them.
@@ -80,7 +80,24 @@ def load_model(path, task, threads):
         raise RuntimeError(f"{task}: expected raw YOLOv8 outputs; export with nms=False")
     with path.open("rb") as stream:
         digest = hashlib.file_digest(stream, "sha256").hexdigest()
-    return session, names, {"filename": path.name, "sha256": digest, "input_shape": shape, "classes": names}
+    end2end = str(meta.get("end2end", "false")).lower() == "true"
+    if end2end and task != "obb":
+        raise RuntimeError("This POC currently supports end-to-end outputs only for OBB")
+    if end2end and (len(outputs[0].shape) != 3 or outputs[0].shape[0] != 1 or outputs[0].shape[-1] != 7):
+        raise RuntimeError("End-to-end OBB must output [1,N,7]: cx,cy,w,h,score,class,angle")
+    return (
+        session,
+        names,
+        {
+            "filename": path.name,
+            "sha256": digest,
+            "input_shape": shape,
+            "classes": names,
+            "head": meta.get("head"),
+            "end2end": end2end,
+            "output_layout": "obb_xywh_score_class_angle" if end2end else "raw_channels_first",
+        },
+    )
 
 
 def preprocess(image, shape):
@@ -143,28 +160,50 @@ def predict(session, names, source, task, args, *, filter_classes=True, variant_
     proto = output[1][0] if task == "segment" and output[1].ndim == 4 and output[1].shape[0] == 1 else None
     if task == "segment" and proto is None:
         raise RuntimeError("Expected segmentation mask prototypes [1,C,H,W]")
-    channels = 4 + len(names) + (proto.shape[0] if task == "segment" else 1 if task == "obb" else 0)
-    if raw.shape[1] != channels:
-        raise RuntimeError(f"{task}: expected raw [1,{channels},N], got {raw.shape}; use YOLOv8 nms=False export")
-    rows = raw[0].T
+    end2end = str(session.get_modelmeta().custom_metadata_map.get("end2end", "false")).lower() == "true"
     default = (
         args.seg_confidence if task == "segment" else args.obb_confidence if task == "obb" else args.detect_confidence
     )
     overrides = args.seg_class_conf if task == "segment" else args.obb_class_conf if task == "obb" else {}
     thresholds = np.array([overrides.get(names[key], default) for key in range(len(names))], dtype=np.float32)
-    class_scores = rows[:, 4 : 4 + len(names)]
-    eligible = class_scores >= thresholds[None]
-    if args.classes and filter_classes:
-        eligible &= np.array([names[key] in args.classes for key in range(len(names))])[None]
-    # Threshold/filter before argmax: an ineligible class cannot hide an eligible alternative.
-    classes = np.where(eligible, class_scores, -1).argmax(axis=1)
-    scores = class_scores[np.arange(len(rows)), classes]
-    accepted = eligible.any(axis=1) & (rows[:, 2] > 0) & (rows[:, 3] > 0)
+    if end2end:
+        # OBB uses cx,cy,w,h even in end-to-end mode; ordinary Detect uses xyxy instead.
+        if task != "obb" or raw.shape[2] != 7:
+            raise RuntimeError(f"Unsupported end-to-end {task} output: {raw.shape}")
+        values = raw[0]
+        rounded = np.rint(values[:, 5])
+        if np.any(rounded != values[:, 5]) or np.any(rounded < 0) or np.any(rounded >= len(names)):
+            raise RuntimeError("Invalid end-to-end OBB class indices")
+        classes = rounded.astype(np.int32)
+        scores = values[:, 4]
+        rows = np.concatenate((values[:, :4], values[:, 6:7]), axis=1)
+        accepted = (scores >= thresholds[classes]) & (rows[:, 2] > 0) & (rows[:, 3] > 0)
+        if args.classes and filter_classes:
+            accepted &= np.isin(classes, [key for key, name in names.items() if name in args.classes])
+    else:
+        channels = 4 + len(names) + (proto.shape[0] if task == "segment" else 1 if task == "obb" else 0)
+        if raw.shape[1] != channels:
+            raise RuntimeError(
+                f"{task}: expected raw [1,{channels},N], got {raw.shape}; export a raw head or a supported end-to-end OBB head"
+            )
+        rows = raw[0].T
+        class_scores = rows[:, 4 : 4 + len(names)]
+        eligible = class_scores >= thresholds[None]
+        if args.classes and filter_classes:
+            eligible &= np.array([names[key] in args.classes for key in range(len(names))])[None]
+        # Threshold/filter before argmax: an ineligible class cannot hide an eligible alternative.
+        classes = np.where(eligible, class_scores, -1).argmax(axis=1)
+        scores = class_scores[np.arange(len(rows)), classes]
+        accepted = eligible.any(axis=1) & (rows[:, 2] > 0) & (rows[:, 3] > 0)
     rows, scores, classes = rows[accepted], scores[accepted], classes[accepted]
     candidates = len(rows)
     order = np.argsort(-scores, kind="stable")[:3000]
     rows, scores, classes = rows[order], scores[order], classes[order]
-    kept = suppress(rows, scores, classes, task, args.nms, args.max_det)
+    kept = (
+        list(range(min(len(rows), args.max_det)))
+        if end2end
+        else suppress(rows, scores, classes, task, args.nms, args.max_det)
+    )
     rgb = np.asarray(source).copy()
     variants = MASK_VARIANTS if variant_overlays is not None and task == "segment" else ()
     variant_pixels = {key: rgb.copy() for key, _, _ in variants}
@@ -255,6 +294,8 @@ def predict(session, names, source, task, args, *, filter_classes=True, variant_
         "pre_nms_truncated": candidates > 3000,
         "class_thresholds": {name: float(thresholds[key]) for key, name in names.items()},
         "detections": records,
+        "output_layout": "obb_xywh_score_class_angle" if end2end else "raw_channels_first",
+        "nms_applied": not end2end,
         "mask_threshold": args.mask_threshold if task == "segment" else None,
         "crop_to_seg_box": not args.uncrop if task == "segment" else None,
     }
@@ -465,7 +506,9 @@ def main(argv=None):
         metavar="CLASS=VALUE",
         help="Per-class OBB overrides, e.g. dick-head=0.15 balls=0.3",
     )
-    parser.add_argument("-n", "--nms", type=float, default=0.5)
+    parser.add_argument(
+        "-n", "--nms", type=float, default=0.5, help="Raw-head suppression IoU; not applied to end-to-end OBB outputs"
+    )
     parser.add_argument("-m", "--max-det", type=int, default=50)
     parser.add_argument("-t", "--threads", type=int, default=2)
     parser.add_argument(
@@ -613,6 +656,8 @@ def main(argv=None):
         + (f"; OBB {obb_model['input_shape'][2:]}" if obb_model else "; fast V2-context mode, OBB/NudeNet skipped"),
         flush=True,
     )
+    if obb_model and obb_model["end2end"]:
+        print("OBB: end-to-end head; confidence/class filtering only, -n inactive for OBB", flush=True)
     if args.mask_sweep:
         print(
             "Mask sweep: columns -1 / 0 / +1; rows SEG-box clip ON / OFF; one SEG inference per context crop",
@@ -703,7 +748,7 @@ def main(argv=None):
                     "notes": [
                         "Full-image RGB inference; aspect-preserving centered letterbox with fill 114",
                         "Mask-logit threshold and SEG predicted-box cropping are recorded in settings; sweep variants reuse restored logits and identical detections",
-                        "OBB NMS uses exact polygon IoU, not Ultralytics ProbIoU",
+                        "Raw-head OBB NMS uses exact polygon IoU, not Ultralytics ProbIoU; end-to-end OBB skips NMS",
                         "OBB long axis is undirected, not an anatomical base-to-tip prediction",
                         "Optional NN context is target-centered, with shape recorded in settings; image-edge clipping and overlap merging can alter proportions; SEG masks are not clipped to the NN box",
                         "V2 context mode uses class penis as crop anchors; -c filters SEG classes, not the V2 locator; OBB/NudeNet are not loaded and there is no full-image SEG pass",
