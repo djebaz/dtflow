@@ -18,7 +18,7 @@
       "url": "https://huggingface.co/mattmdjaga/segformer_b2_clothes/resolve/584abc1e1d260e23c0fc627c5217a09b2b461046/onnx/model.onnx",
       "sha256": "a93a8dac171b5c1fcc53632a8bfc180bfd9759ea69a3e207451bb07f76add54f",
       "size_mib": 104.94,
-      "licence": "See the publisher's model card",
+      "licence": "NVIDIA SegFormer licence (research use only)",
       "licence_url": "https://huggingface.co/mattmdjaga/segformer_b2_clothes",
       "source_url": "https://huggingface.co/mattmdjaga/segformer_b2_clothes"
     },
@@ -28,7 +28,7 @@
       "url": "https://huggingface.co/zhangsongbo365/nudenet_onnx/resolve/0ae0d1dc2a9f6ab9573b0de7e07676a3a6e53719/320n.onnx",
       "sha256": "776773dd37d99aa2ffe63bec9f92a835d82f3e40d627ffb47d9c3455aec600aa",
       "size_mib": 11.59,
-      "licence": "See the publisher's model card",
+      "licence": "MIT",
       "licence_url": "https://huggingface.co/zhangsongbo365/nudenet_onnx",
       "source_url": "https://huggingface.co/zhangsongbo365/nudenet_onnx"
     }

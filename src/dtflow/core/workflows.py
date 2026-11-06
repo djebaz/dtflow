@@ -348,7 +348,9 @@ def load_workflow(data: object, *, draft: bool = False) -> Graph:
             raise WorkflowError(f"Workflow '{key}' are not supported by DTFlow workflows.")
     if top.get("config"):
         raise WorkflowError("Workflow 'config' is not supported by DTFlow workflows.")
-    if "definitions" in top.get("extra", {}) or "subgraphs" in top:
+    if not isinstance(top["extra"], dict):
+        raise WorkflowError("extra must be an object.")
+    if "definitions" in top["extra"] or "subgraphs" in top:
         raise WorkflowError("Subgraphs are not supported by DTFlow workflows.")
     extra = _keys(top["extra"], _EXTRA_KEYS, {"dtflow"}, "extra")
     dtflow = _keys(extra["dtflow"], {"schema", "version"}, {"schema", "version"}, "extra.dtflow")
@@ -386,11 +388,11 @@ def load_workflow(data: object, *, draft: bool = False) -> Graph:
         node_id = _int(node["id"], f"{where}.id", 1)
         if node_id in raw_nodes:
             raise WorkflowError(f"Node id {node_id} is used twice.")
-        spec = CATALOG.get(node["type"])
+        spec = CATALOG.get(node["type"]) if isinstance(node["type"], str) else None
         if spec is None:
             raise WorkflowError(f"Node #{node_id} has unsupported type {node['type']!r}.")
         where = f"{spec.title} #{node_id}"
-        if node["mode"] != 0:
+        if type(node["mode"]) is not int or node["mode"] != 0:
             raise WorkflowError(f"{where}: muted or bypassed nodes (mode {node['mode']!r}) are not supported.")
         if node["flags"] not in ({}, {"collapsed": False}, {"collapsed": True}):
             raise WorkflowError(f"{where}: unsupported flags {node['flags']!r}.")
@@ -412,11 +414,12 @@ def load_workflow(data: object, *, draft: bool = False) -> Graph:
         _check_ports(node.get("inputs", []), spec.inputs, f"{where} inputs", is_input=True)
         _check_ports(node.get("outputs", []), spec.outputs, f"{where} outputs", is_input=False)
         raw_nodes[node_id] = node
-        graph.nodes.append(
-            GraphNode(
-                node_id, spec.type, _pair(node["pos"], f"{where} pos"), params, _pair(node["size"], f"{where} size")
-            )
+        graph_node = GraphNode(
+            node_id, spec.type, _pair(node["pos"], f"{where} pos"), params, _pair(node["size"], f"{where} size")
         )
+        if spec.type in GENERATIVE:
+            _check_request(graph_node, draft=draft)
+        graph.nodes.append(graph_node)
 
     link_ids: set[int] = set()
     targets: set[tuple[int, int]] = set()
@@ -430,6 +433,8 @@ def load_workflow(data: object, *, draft: bool = False) -> Graph:
         if link_id in link_ids:
             raise WorkflowError(f"Link id {link_id} is used twice.")
         link_ids.add(link_id)
+        if type(link["origin_id"]) is not int or type(link["target_id"]) is not int:
+            raise WorkflowError(f"Link {link_id} refers to a missing node.")
         origin, target = raw_nodes.get(link["origin_id"]), raw_nodes.get(link["target_id"])
         if origin is None or target is None:
             raise WorkflowError(f"Link {link_id} refers to a missing node.")
@@ -487,6 +492,11 @@ def _check_ports(ports: object, expected: tuple[Port, ...], where: str, *, is_in
             raise WorkflowError(f"{where}[{slot}] localized_name must be {spec.name}.")
         if not is_input and port.get("slot_index", slot) != slot:
             raise WorkflowError(f"{where}[{slot}] slot_index must be {slot}.")
+        if is_input and port.get("link") is not None and type(port["link"]) is not int:
+            raise WorkflowError(f"{where}[{slot}] link must be a link id or null.")
+        links = port.get("links")
+        if not is_input and links is not None and not (isinstance(links, list) and all(type(x) is int for x in links)):
+            raise WorkflowError(f"{where}[{slot}] links must be an array of link ids or null.")
 
 
 def topological_order(graph: Graph) -> list[int]:
@@ -687,6 +697,18 @@ def plan_workflow(graph: Graph) -> WorkflowPlan:
             f"This workflow would submit {total} generations; one run is limited to {MAX_PLANNED_GENERATIONS}."
         )
     return WorkflowPlan(tuple(order), plans, total, analyses, any(n.type == DETECT_FACE for n in graph.nodes))
+
+
+def _check_request(node: GraphNode, *, draft: bool) -> None:
+    """The shared request rules across a node's settings (for example batch size × count ≤ the output maximum), so a
+    file the runner could never submit is rejected at the boundary. Image operations are checked at a nominal size
+    (they run at the source size); a draft may still leave its checkpoint empty."""
+    params = dict(node.params)
+    if draft and not str(params.get("checkpoint") or "").strip():
+        params["checkpoint"] = "draft.ckpt"
+    size = None if node.type == GENERATE else 512
+    probe = GraphNode(node.id, node.type, node.pos, params, node.size)
+    node_request(probe, width=size, height=size)
 
 
 def node_request(

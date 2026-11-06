@@ -196,6 +196,7 @@ def parser() -> argparse.ArgumentParser:
     add_request_options(script)
     add_edit_command(commands)
     add_queue_commands(commands)
+    add_workflow_commands(commands)
     add_asset_commands(commands)
     add_gallery_commands(commands)
     return command
@@ -349,6 +350,76 @@ def add_scenario_option(child: argparse.ArgumentParser) -> None:
     )
 
 
+def add_workflow_commands(commands) -> None:
+    workflow = commands.add_parser("workflow", help=COMMAND_HELP["workflow"], description=COMMAND_HELP["workflow"])
+    actions = workflow.add_subparsers(dest="workflow_command", required=True, metavar="{check,queue}")
+    check = actions.add_parser("check", help="Strictly load and plan a workflow file; never generates.")
+    check.add_argument("file", type=Path, help="Workflow JSON (ComfyUI saved-workflow format, DTFlow contract v1).")
+    queue = actions.add_parser(
+        "queue",
+        help="Save a workflow file as a paused one-item workflow queue; `dtflow queue start QUEUE` runs it.",
+    )
+    queue.add_argument("file", type=Path, help="Workflow JSON (ComfyUI saved-workflow format, DTFlow contract v1).")
+    queue.add_argument("-b", "--backend", choices=BACKENDS, required=True, help="Explicit backend. No fallback.")
+    queue.add_argument("-e", "--endpoint", help="Local Draw Things HOST:PORT.")
+    queue.add_argument("-n", "--name", help="Run name shown in queues (default: the file name).")
+    queue.add_argument(
+        "-d", "--state", type=Path, default=Path(".dtflow"), help="Local execution state directory (default: .dtflow)."
+    )
+
+
+def _read_workflow_file(path: Path):
+    from dtflow.core.workflows import load_workflow, plan_workflow
+
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except OSError as exc:
+        raise ValidationError(f"The workflow file could not be read ({type(exc).__name__}).") from None
+    except (UnicodeDecodeError, ValueError):
+        raise ValidationError("The workflow file is not valid JSON.") from None
+    graph = load_workflow(data)
+    return data, graph, plan_workflow(graph)
+
+
+async def run_workflow(args: argparse.Namespace) -> int:
+    """Offline check, or a paused workflow queue; neither contacts a backend nor generates."""
+    if args.workflow_command == "check":
+        try:
+            _, graph, plan = _read_workflow_file(args.file)
+        except ValidationError as exc:
+            print(json.dumps({"valid": False, "reason": str(exc)}, indent=2))
+            return EXIT_INVALID
+        print(
+            json.dumps(
+                {
+                    "valid": True,
+                    "nodes": len(graph.nodes),
+                    "links": len(graph.links),
+                    "branches": sum(
+                        len(plan.nodes[node.id].branches) for node in graph.nodes if node.type == "DTFGenerate"
+                    ),
+                    "planned_generations": plan.total_generations,
+                    "local_face_detections": plan.local_analyses,
+                    "summary": plan.summary(),
+                },
+                indent=2,
+            )
+        )
+        return EXIT_OK
+    from dtflow.services.workflow_queue import create_workflow_queue
+
+    data, _, plan = _read_workflow_file(args.file)
+    backend = {"name": args.backend, "endpoint": args.endpoint}
+    queue_id, run_id = await create_workflow_queue(args.state, backend, data, args.name or args.file.stem)
+    print(
+        json.dumps(
+            {"queue_id": queue_id, "run_id": run_id, "state": "paused", "planned_generations": plan.total_generations},
+            indent=2,
+        )
+    )
+    return EXIT_OK
+
+
 def add_queue_commands(commands) -> None:
     queue = commands.add_parser("queue", help=COMMAND_HELP["queue"])
     canonical = ("add", "list", "show", "start", "pause", "resume", "cancel", "cap", "relaunch")
@@ -454,6 +525,7 @@ COMMAND_HELP = {
     "assets": "Cloud LoRA assets: prepare (may upload), list, show, reconcile. Local receipts are not remote inventory.",
     "queue": "Durable queues with rolling dispatch: add, list, show, start, pause, resume, cancel, cap, relaunch.",
     "script": "Analyze a Draw Things JavaScript script offline (never runs it), self-check the engine, or --run it.",
+    "workflow": "Check a DTFlow workflow file offline, or save it as a paused workflow queue (never generates).",
 }
 
 
@@ -760,6 +832,8 @@ async def run(args: argparse.Namespace) -> int:
         return await run_gallery(args)
     if args.command == "queue":
         return await run_queue(args)
+    if args.command == "workflow":
+        return await run_workflow(args)
     if args.command == "assets":
         return await run_assets(args)
     # Resolve invalid input before opening state or starting a backend.

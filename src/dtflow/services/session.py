@@ -330,6 +330,34 @@ async def run_generation(
     )
 
 
+def image_operation_request(
+    request: ResolvedGenerationRequest,
+    prepared_inputs: PreparedImageInputs,
+    permit: ImageOperationPermit,
+    *,
+    strength: float,
+    preserve_outside: bool,
+) -> ResolvedGenerationRequest:
+    """The image-operation request built from a txt2img settings base and prepared inputs, with a fresh identity.
+
+    The operation follows the inputs (a mask makes it ``inpaint``); the snapshot names a placeholder attempt that the
+    generation service replaces with the real one. The caller has already checked the permit's scope."""
+    operation = "inpaint" if prepared_inputs.mask is not None else "img2img"
+    snapshot = ImageInputSnapshot.from_prepared(uuid4().hex, prepared_inputs, preserve_outside=preserve_outside)
+    return replace(
+        request,
+        request_id=uuid4().hex,
+        operation=operation,
+        strength=strength,
+        image_inputs=snapshot,
+        resolution_evidence=(
+            *request.resolution_evidence,
+            ("image_permit_evidence", permit.evidence_id),
+            ("image_permit_status", permit.status),
+        ),
+    )
+
+
 def _preparation_event(on_event, request, stage):
     """Report a local preparation milestone before backend events start."""
     if on_event is not None:
@@ -405,18 +433,8 @@ async def generate_image_once(
     permit.validate_scope(
         backend_id, image_endpoint_label(selection), request.model_id, operation, allow_probe=allow_image_probe
     )
-    snapshot = ImageInputSnapshot.from_prepared(uuid4().hex, prepared_inputs, preserve_outside=preserve_outside)
-    request = replace(
-        request,
-        request_id=uuid4().hex,
-        operation=operation,
-        strength=strength,
-        image_inputs=snapshot,
-        resolution_evidence=(
-            *request.resolution_evidence,
-            ("image_permit_evidence", permit.evidence_id),
-            ("image_permit_status", permit.status),
-        ),
+    request = image_operation_request(
+        request, prepared_inputs, permit, strength=strength, preserve_outside=preserve_outside
     )
     _preparation_event(on_event, request, "validating_image_inputs")
     await settle(asyncio.to_thread(validate_prepared_inputs, prepared_inputs))

@@ -100,7 +100,7 @@
          <item>
           <widget class="QLabel" name="workflowNodeTitle">
            <property name="text">
-            <string>Inpaint</string>
+            <string>No node selected</string>
            </property>
            <property name="wordWrap">
             <bool>true</bool>
@@ -110,7 +110,7 @@
          <item>
           <widget class="QLabel" name="workflowNodeMeta">
            <property name="text">
-            <string>Node 3 · IMAGE + MASK → IMAGE</string>
+            <string>Select one node on the canvas.</string>
            </property>
            <property name="wordWrap">
             <bool>true</bool>
@@ -121,8 +121,37 @@
           </widget>
          </item>
          <item>
-          <widget class="QWidget" name="workflowModelControls">
-           <layout class="QVBoxLayout" name="workflowModelControlsLayout">
+          <widget class="QLabel" name="workflowNodeDescription">
+           <property name="text">
+            <string></string>
+           </property>
+           <property name="wordWrap">
+            <bool>true</bool>
+           </property>
+           <property name="role" stdset="0">
+            <string>secondary</string>
+           </property>
+          </widget>
+         </item>
+         <item>
+          <widget class="QLabel" name="workflowRunLockNote">
+           <property name="visible">
+            <bool>false</bool>
+           </property>
+           <property name="text">
+            <string>This workflow is running. Its settings are locked until the run ends; the run keeps the settings it started with.</string>
+           </property>
+           <property name="wordWrap">
+            <bool>true</bool>
+           </property>
+           <property name="role" stdset="0">
+            <string>workflowLockNote</string>
+           </property>
+          </widget>
+         </item>
+         <item>
+          <widget class="QWidget" name="workflowParamsHost">
+           <layout class="QVBoxLayout" name="workflowParamsHostLayout">
             <property name="leftMargin">
              <number>0</number>
             </property>
@@ -138,227 +167,12 @@
             <property name="spacing">
              <number>4</number>
             </property>
-            <item>
-             <widget class="QLabel" name="workflowCheckpointLabel">
-              <property name="text">
-               <string>Checkpoint</string>
-              </property>
-              <property name="wordWrap">
-               <bool>true</bool>
-              </property>
-              <property name="role" stdset="0">
-               <string>secondary</string>
-              </property>
-             </widget>
-            </item>
-            <item>
-             <widget class="QComboBox" name="workflowCheckpoint">
-              <item>
-               <property name="text">
-                <string>Portrait checkpoint · fixture</string>
-               </property>
-              </item>
-              <item>
-               <property name="text">
-                <string>Refine checkpoint · fixture</string>
-               </property>
-              </item>
-             </widget>
-            </item>
-            <item>
-             <widget class="QWidget" name="workflowNumericRow">
-              <layout class="QHBoxLayout" name="workflowNumericRowLayout">
-               <property name="leftMargin">
-                <number>0</number>
-               </property>
-               <property name="topMargin">
-                <number>0</number>
-               </property>
-               <property name="rightMargin">
-                <number>0</number>
-               </property>
-               <property name="bottomMargin">
-                <number>0</number>
-               </property>
-               <property name="spacing">
-                <number>4</number>
-               </property>
-               <item>
-                <widget class="QWidget" name="workflowStepsField">
-                 <layout class="QVBoxLayout" name="workflowStepsFieldLayout">
-                  <property name="leftMargin">
-                   <number>0</number>
-                  </property>
-                  <property name="topMargin">
-                   <number>0</number>
-                  </property>
-                  <property name="rightMargin">
-                   <number>0</number>
-                  </property>
-                  <property name="bottomMargin">
-                   <number>0</number>
-                  </property>
-                  <property name="spacing">
-                   <number>4</number>
-                  </property>
-                  <item>
-                   <widget class="QLabel" name="workflowStepsLabel">
-                    <property name="text">
-                     <string>Steps</string>
-                    </property>
-                    <property name="wordWrap">
-                     <bool>true</bool>
-                    </property>
-                    <property name="role" stdset="0">
-                     <string>secondary</string>
-                    </property>
-                   </widget>
-                  </item>
-                  <item>
-                   <widget class="QSpinBox" name="workflowSteps">
-                    <property name="maximum">
-                     <number>150</number>
-                    </property>
-                    <property name="value">
-                     <number>20</number>
-                    </property>
-                   </widget>
-                  </item>
-                 </layout>
-                </widget>
-               </item>
-               <item>
-                <widget class="QWidget" name="workflowGuidanceField">
-                 <layout class="QVBoxLayout" name="workflowGuidanceFieldLayout">
-                  <property name="leftMargin">
-                   <number>0</number>
-                  </property>
-                  <property name="topMargin">
-                   <number>0</number>
-                  </property>
-                  <property name="rightMargin">
-                   <number>0</number>
-                  </property>
-                  <property name="bottomMargin">
-                   <number>0</number>
-                  </property>
-                  <property name="spacing">
-                   <number>4</number>
-                  </property>
-                  <item>
-                   <widget class="QLabel" name="workflowGuidanceLabel">
-                    <property name="text">
-                     <string>Guidance</string>
-                    </property>
-                    <property name="wordWrap">
-                     <bool>true</bool>
-                    </property>
-                    <property name="role" stdset="0">
-                     <string>secondary</string>
-                    </property>
-                   </widget>
-                  </item>
-                  <item>
-                   <widget class="QDoubleSpinBox" name="workflowGuidance">
-                    <property name="maximum">
-                     <double>50.0</double>
-                    </property>
-                    <property name="value">
-                     <double>4.5</double>
-                    </property>
-                   </widget>
-                  </item>
-                 </layout>
-                </widget>
-               </item>
-              </layout>
-             </widget>
-            </item>
-            <item>
-             <widget class="QLabel" name="workflowPromptLabel">
-              <property name="text">
-               <string>Prompt</string>
-              </property>
-              <property name="wordWrap">
-               <bool>true</bool>
-              </property>
-              <property name="role" stdset="0">
-               <string>secondary</string>
-              </property>
-             </widget>
-            </item>
-            <item>
-             <widget class="QLineEdit" name="workflowPrompt">
-              <property name="text">
-               <string>Natural skin, preserve likeness</string>
-              </property>
-             </widget>
-            </item>
-            <item>
-             <widget class="QLabel" name="workflowStrengthLabel">
-              <property name="text">
-               <string>Strength</string>
-              </property>
-              <property name="wordWrap">
-               <bool>true</bool>
-              </property>
-              <property name="role" stdset="0">
-               <string>secondary</string>
-              </property>
-             </widget>
-            </item>
-            <item>
-             <widget class="QComboBox" name="workflowStrength">
-              <item>
-               <property name="text">
-                <string>0.60</string>
-               </property>
-              </item>
-              <item>
-               <property name="text">
-                <string>0.40</string>
-               </property>
-              </item>
-              <item>
-               <property name="text">
-                <string>0.25</string>
-               </property>
-              </item>
-             </widget>
-            </item>
-            <item>
-             <widget class="QLabel" name="workflowLoraLabel">
-              <property name="text">
-               <string>LoRA</string>
-              </property>
-              <property name="wordWrap">
-               <bool>true</bool>
-              </property>
-              <property name="role" stdset="0">
-               <string>secondary</string>
-              </property>
-             </widget>
-            </item>
-            <item>
-             <widget class="QComboBox" name="workflowLora">
-              <item>
-               <property name="text">
-                <string>None · fixture selector</string>
-               </property>
-              </item>
-              <item>
-               <property name="text">
-                <string>Portrait detail · 0.60</string>
-               </property>
-              </item>
-             </widget>
-            </item>
            </layout>
           </widget>
          </item>
          <item>
-          <widget class="QWidget" name="workflowMaskControls">
-           <layout class="QVBoxLayout" name="workflowMaskControlsLayout">
+          <widget class="QWidget" name="workflowNodeRun">
+           <layout class="QVBoxLayout" name="workflowNodeRunLayout">
             <property name="leftMargin">
              <number>0</number>
             </property>
@@ -374,73 +188,6 @@
             <property name="spacing">
              <number>4</number>
             </property>
-            <item>
-             <widget class="QLabel" name="workflowPersonLabel">
-              <property name="text">
-               <string>Person</string>
-              </property>
-              <property name="wordWrap">
-               <bool>true</bool>
-              </property>
-              <property name="role" stdset="0">
-               <string>secondary</string>
-              </property>
-             </widget>
-            </item>
-            <item>
-             <widget class="QComboBox" name="workflowPerson">
-              <item>
-               <property name="text">
-                <string>Strongest</string>
-               </property>
-              </item>
-              <item>
-               <property name="text">
-                <string>All</string>
-               </property>
-              </item>
-             </widget>
-            </item>
-            <item>
-             <widget class="QLabel" name="workflowMaskLabel">
-              <property name="text">
-               <string>Mask</string>
-              </property>
-              <property name="wordWrap">
-               <bool>true</bool>
-              </property>
-              <property name="role" stdset="0">
-               <string>secondary</string>
-              </property>
-             </widget>
-            </item>
-            <item>
-             <widget class="QComboBox" name="workflowMaskRegion">
-              <item>
-               <property name="text">
-                <string>Face skin only</string>
-               </property>
-              </item>
-              <item>
-               <property name="text">
-                <string>Face skin and hair</string>
-               </property>
-              </item>
-             </widget>
-            </item>
-            <item>
-             <widget class="QLabel" name="workflowFacesRequired">
-              <property name="text">
-               <string>Faces model required.</string>
-              </property>
-              <property name="wordWrap">
-               <bool>true</bool>
-              </property>
-              <property name="role" stdset="0">
-               <string>secondary</string>
-              </property>
-             </widget>
-            </item>
            </layout>
           </widget>
          </item>
@@ -530,9 +277,22 @@
           <number>6</number>
          </property>
          <item>
-          <widget class="QLabel" name="workflowPreflightText">
+          <widget class="QLabel" name="workflowPlanText">
            <property name="text">
-            <string>Image-operation support is probed per node. Unsupported checkpoints fail that node.</string>
+            <string></string>
+           </property>
+           <property name="wordWrap">
+            <bool>true</bool>
+           </property>
+           <property name="workflowState" stdset="0">
+            <string></string>
+           </property>
+          </widget>
+         </item>
+         <item>
+          <widget class="QLabel" name="workflowDiagnostics">
+           <property name="text">
+            <string></string>
            </property>
            <property name="wordWrap">
             <bool>true</bool>
@@ -543,9 +303,9 @@
           </widget>
          </item>
          <item>
-          <widget class="QLabel" name="workflowFixtureNotice">
+          <widget class="QLabel" name="workflowPreflightText">
            <property name="text">
-            <string>Illustrative settings · no provider connected</string>
+            <string>Image-operation support is probed per node on the selected backend; an unsupported checkpoint fails only that node.</string>
            </property>
            <property name="wordWrap">
             <bool>true</bool>
@@ -606,7 +366,7 @@
          <item>
           <widget class="QLabel" name="workflowBranchTitle">
            <property name="text">
-            <string>Branch 01</string>
+            <string>Run branches</string>
            </property>
            <property name="wordWrap">
             <bool>true</bool>
@@ -643,17 +403,20 @@
          <item>
           <widget class="QLabel" name="workflowBranchStatus">
            <property name="text">
-            <string>Ready</string>
+            <string>No run started.</string>
            </property>
            <property name="wordWrap">
             <bool>true</bool>
+           </property>
+           <property name="workflowState" stdset="0">
+            <string></string>
            </property>
           </widget>
          </item>
          <item>
           <widget class="QLabel" name="workflowBranchDetail">
            <property name="text">
-            <string>Runs once for each generated image.</string>
+            <string></string>
            </property>
            <property name="wordWrap">
             <bool>true</bool>
@@ -664,8 +427,8 @@
           </widget>
          </item>
          <item>
-          <widget class="QWidget" name="workflowBranchActions">
-           <layout class="QHBoxLayout" name="workflowBranchActionsLayout">
+          <widget class="QWidget" name="workflowPausesHost">
+           <layout class="QVBoxLayout" name="workflowPausesHostLayout">
             <property name="leftMargin">
              <number>0</number>
             </property>
@@ -679,29 +442,15 @@
              <number>0</number>
             </property>
             <property name="spacing">
-             <number>4</number>
+             <number>6</number>
             </property>
-            <item>
-             <widget class="QPushButton" name="continueBranchButton">
-              <property name="text">
-               <string>Continue branch</string>
-              </property>
-             </widget>
-            </item>
-            <item>
-             <widget class="QPushButton" name="stopBranchButton">
-              <property name="text">
-               <string>Stop branch</string>
-              </property>
-             </widget>
-            </item>
            </layout>
           </widget>
          </item>
          <item>
           <widget class="QLabel" name="workflowSiblingStatus">
            <property name="text">
-            <string>Branch 02 · Ready</string>
+            <string></string>
            </property>
            <property name="wordWrap">
             <bool>true</bool>
