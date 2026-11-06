@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Compare custom YOLOv8 segmentation and oriented-box ONNX models on CPU.
 
-Full-image inference, flat labeled overlays, no NudeNet/SAM/person-mask clipping.
+Flat labeled overlays, optional NudeNet-context segmentation, no SAM/person-mask clipping.
 Export the trusted .pt checkpoints separately; this script never unpickles them.
 """
 
@@ -134,11 +134,17 @@ def predict(session, names, source, task, args):
     if raw.shape[1] != channels:
         raise RuntimeError(f"{task}: expected raw [1,{channels},N], got {raw.shape}; use YOLOv8 nms=False export")
     rows = raw[0].T
-    classes = rows[:, 4 : 4 + len(names)].argmax(axis=1)
-    scores = rows[np.arange(len(rows)), 4 + classes]
-    accepted = (scores >= args.confidence) & (rows[:, 2] > 0) & (rows[:, 3] > 0)
+    default = args.seg_confidence if task == "segment" else args.obb_confidence
+    overrides = args.seg_class_conf if task == "segment" else args.obb_class_conf
+    thresholds = np.array([overrides.get(names[key], default) for key in range(len(names))], dtype=np.float32)
+    class_scores = rows[:, 4 : 4 + len(names)]
+    eligible = class_scores >= thresholds[None]
     if args.classes:
-        accepted &= np.isin(classes, [key for key, name in names.items() if name in args.classes])
+        eligible &= np.array([names[key] in args.classes for key in range(len(names))])[None]
+    # Threshold/filter before argmax: an ineligible class cannot hide an eligible alternative.
+    classes = np.where(eligible, class_scores, -1).argmax(axis=1)
+    scores = class_scores[np.arange(len(rows)), classes]
+    accepted = eligible.any(axis=1) & (rows[:, 2] > 0) & (rows[:, 3] > 0)
     rows, scores, classes = rows[accepted], scores[accepted], classes[accepted]
     candidates = len(rows)
     order = np.argsort(-scores, kind="stable")[:3000]
@@ -201,6 +207,7 @@ def predict(session, names, source, task, args):
         "candidates": candidates,
         "pre_nms_limit": 3000,
         "pre_nms_truncated": candidates > 3000,
+        "class_thresholds": {name: float(thresholds[key]) for key, name in names.items()},
         "detections": records,
     }
     return image, info
@@ -224,6 +231,99 @@ def frame(image, title, names):
     return result
 
 
+def context_segmentation(session, names, nudenet, source, args):
+    """Infer on merged, non-overlapping context crops and restore source coordinates."""
+    from schp_atr18_smoke import detect_body_parts
+
+    tick = time.perf_counter()
+    _, found, _ = detect_body_parts(
+        nudenet, source, args.nn_confidence, input_side=640 if args.nudenet_size == "640m" else 320
+    )
+    targets = [d for d in found if d["label"] == "MALE_GENITALIA_EXPOSED"]
+    nn_seconds = time.perf_counter() - tick
+    crops = []
+    for detection in targets:
+        x0, y0, x1, y1 = detection["box_xyxy"]
+        cx, cy = (x0 + x1) / 2, (y0 + y1) / 2
+        rx, ry = args.context * (x1 - x0) / 2, args.context * (y1 - y0) / 2
+        if args.context_shape == "square":
+            rx = ry = max(rx, ry)
+        box = (
+            max(0, math.floor(cx - rx)),
+            max(0, math.floor(cy - ry)),
+            min(source.width, math.ceil(cx + rx)),
+            min(source.height, math.ceil(cy + ry)),
+        )
+        if box[2] > box[0] and box[3] > box[1]:
+            crops.append(box)
+    # Merging prevents duplicate predictions and one opaque crop paste erasing another.
+    changed = True
+    while changed:
+        changed = False
+        for i in range(len(crops)):
+            for j in range(i + 1, len(crops)):
+                a, b = crops[i], crops[j]
+                if min(a[2], b[2]) > max(a[0], b[0]) and min(a[3], b[3]) > max(a[1], b[1]):
+                    crops[i] = (min(a[0], b[0]), min(a[1], b[1]), max(a[2], b[2]), max(a[3], b[3]))
+                    crops.pop(j)
+                    changed = True
+                    break
+            if changed:
+                break
+    result = source.copy()
+    records, regions = [], []
+    seconds = 0.0
+    class_thresholds = {name: args.seg_class_conf.get(name, args.seg_confidence) for name in names.values()}
+    for roi_index, box in enumerate(crops, 1):
+        overlay, info = predict(session, names, source.crop(box), "segment", args)
+        result.paste(overlay, box[:2])
+        seconds += info["inference_seconds"]
+        for detection in info["detections"]:
+            x0, y0, x1, y1 = detection["box_xyxy"]
+            records.append(
+                dict(detection, box_xyxy=[x0 + box[0], y0 + box[1], x1 + box[0], y1 + box[1]], roi=roi_index)
+            )
+        regions.append(
+            {
+                "source_box_xyxy": box,
+                "inference_seconds": info["inference_seconds"],
+                "preprocessing": info["preprocessing"],
+                "candidates": info["candidates"],
+                "pre_nms_truncated": info["pre_nms_truncated"],
+            }
+        )
+    draw = ImageDraw.Draw(result)
+    for box in crops:
+        draw.rectangle(box, outline=(255, 220, 30), width=2)
+    for detection in targets:
+        draw.rectangle(tuple(detection["box_xyxy"]), outline="white", width=2)
+    return result, {
+        "status": "segmented" if crops else "no_target_seg_skipped",
+        "inference_seconds": seconds,
+        "nudenet_seconds": nn_seconds,
+        "nudenet_targets": targets,
+        "regions": regions,
+        "detections": records,
+        "class_thresholds": class_thresholds,
+        "detection_coordinates": "source image",
+        "roi_merge": "overlapping context boxes merged before inference",
+    }
+
+
+def class_confidence(values, parser):
+    result = {}
+    for value in values:
+        try:
+            name, raw = value.split("=", 1)
+            threshold = float(raw)
+        except ValueError:
+            parser.error(f"Class threshold must be name=value, got {value!r}")
+        if name not in PALETTE or not 0 < threshold <= 1:
+            parser.error(f"Class threshold needs a known class and value in (0,1], got {value!r}")
+        result[name] = threshold
+    return result
+
+
 def save_image(image, path, size):
     if size:
         image.thumbnail((size, size), Image.Resampling.LANCZOS)
@@ -236,10 +336,69 @@ def main(argv=None):
     parser.add_argument("-o", "--output-dir", type=Path, default=Path("tmp/custom-parts-poc"))
     parser.add_argument("-sm", "--seg-model", type=Path, default=Path("tmp/models/best_seg_dick.onnx"))
     parser.add_argument("-om", "--obb-model", type=Path, default=Path("tmp/models/best_obb_dick_lastmile.onnx"))
-    parser.add_argument("-s", "--confidence", type=float, default=0.25)
+    parser.add_argument(
+        "-s", "--confidence", type=float, default=0.25, help="Fallback threshold for both custom models"
+    )
+    parser.add_argument("-ss", "--seg-confidence", type=float, help="Segmentation threshold; overrides -s")
+    parser.add_argument("-os", "--obb-confidence", type=float, help="OBB threshold; overrides -s")
+    parser.add_argument(
+        "-sc",
+        "--seg-class-conf",
+        nargs="+",
+        action="extend",
+        default=[],
+        metavar="CLASS=VALUE",
+        help="Per-class SEG overrides, e.g. dick=0.1 hand=0.5",
+    )
+    parser.add_argument(
+        "-oc",
+        "--obb-class-conf",
+        nargs="+",
+        action="extend",
+        default=[],
+        metavar="CLASS=VALUE",
+        help="Per-class OBB overrides, e.g. dick-head=0.15 balls=0.3",
+    )
     parser.add_argument("-n", "--nms", type=float, default=0.5)
     parser.add_argument("-m", "--max-det", type=int, default=50)
     parser.add_argument("-t", "--threads", type=int, default=2)
+    parser.add_argument(
+        "-nn",
+        "--nudenet",
+        action="store_true",
+        help="Add segmentation inside NudeNet context crops; retain full-image SEG/OBB references",
+    )
+    parser.add_argument("-ns", "--nudenet-size", choices=("320n", "640m"), default="640m")
+    parser.add_argument(
+        "-co",
+        "--context-only",
+        action="store_true",
+        help="Run NN-context SEG + full-image OBB only; implies -nn and skips baseline SEG inference",
+    )
+    parser.add_argument(
+        "-nc",
+        "--nn-confidence",
+        type=float,
+        default=0.25,
+        help="NudeNet target threshold, independent of custom models",
+    )
+    parser.add_argument(
+        "-k",
+        "--context",
+        type=float,
+        default=2.5,
+        help="Context width/height multiplier, 1..6; square mode uses the box long side",
+    )
+    parser.add_argument(
+        "-ks",
+        "--context-shape",
+        choices=("box", "square"),
+        default="box",
+        help="box (default): preserve NN box proportions; square: previous long-side-based context",
+    )
+    parser.add_argument(
+        "-d", "--no-download", action="store_true", help="Forbid downloading the optional NudeNet model"
+    )
     parser.add_argument("-a", "--alpha", type=float, default=0.35)
     parser.add_argument(
         "-c", "--classes", nargs="+", choices=tuple(PALETTE), help="Optional class-name filter; default all"
@@ -248,13 +407,23 @@ def main(argv=None):
         "-r", "--size", type=int, default=2560, help="Saved image maximum long side, 0 keeps native resolution"
     )
     parser.add_argument(
-        "-cp", "--compare", action="store_true", help="One side-by-side image instead of two separate overlays"
+        "-cp", "--compare", action="store_true", help="Side-by-side comparison; -nn adds a middle context-SEG panel"
     )
     parser.add_argument("-f", "--images-only", action="store_true")
     parser.add_argument(
         "-w", "--overwrite", action="store_true", help="Replace only recognized custom_parts_poc flat outputs"
     )
     args = parser.parse_args(argv)
+    if args.context_only:
+        args.nudenet = True
+    args.seg_confidence = args.confidence if args.seg_confidence is None else args.seg_confidence
+    args.obb_confidence = args.confidence if args.obb_confidence is None else args.obb_confidence
+    if any(not 0 < value <= 1 for value in (args.seg_confidence, args.obb_confidence, args.nn_confidence)):
+        parser.error("SEG, OBB and NudeNet thresholds must be in (0,1]")
+    args.seg_class_conf = class_confidence(args.seg_class_conf, parser)
+    args.obb_class_conf = class_confidence(args.obb_class_conf, parser)
+    if not math.isfinite(args.context) or not 1 <= args.context <= 6:
+        parser.error("context must be finite in [1,6]")
     if not args.input_dir.is_dir():
         parser.error("input-dir must exist")
     if (
@@ -278,7 +447,7 @@ def main(argv=None):
     ):
         parser.error("output-dir must not redirect or contain input-dir")
     previous = list(output.iterdir()) if output.exists() else []
-    pattern = re.compile(r"cpp_\d{4,}_.+_(?:seg|obb|compare|report)\.(?:jpg|json)$")
+    pattern = re.compile(r"cpp_\d{4,}_.+_(?:seg|seg_nn|obb|compare|report)\.(?:jpg|json)$")
     if previous and (
         not args.overwrite
         or any(p.is_symlink() or p.is_junction() or not p.is_file() or not pattern.fullmatch(p.name) for p in previous)
@@ -286,6 +455,24 @@ def main(argv=None):
         parser.error("Output is not empty; -w replaces recognized custom_parts_poc outputs only")
     seg, seg_names, seg_model = load_model(args.seg_model, "segment", args.threads)
     obb, obb_names, obb_model = load_model(args.obb_model, "obb", args.threads)
+    for label, overrides, names in (("SEG", args.seg_class_conf, seg_names), ("OBB", args.obb_class_conf, obb_names)):
+        unknown = set(overrides) - set(names.values())
+        if unknown:
+            parser.error(f"{label} model has no classes: {', '.join(sorted(unknown))}")
+    nn_session, nn_model = None, None
+    if args.nudenet:
+        from dtflow.services import person_selection as selection
+        from edge_nudenet_poc import NUDENET_SPECS, nudenet_640_session
+        from pascal_nudenet_poc import verified_checkpoint
+
+        nn_path = Path("tmp/models") / f"nudenet-{args.nudenet_size}.onnx"
+        spec = NUDENET_SPECS[args.nudenet_size]
+        verified_checkpoint(nn_path, spec, not args.no_download)
+        nn_session = selection._verified_session(
+            selection.describe_model(nn_path),
+            nudenet_640_session if args.nudenet_size == "640m" else selection._faces_session,
+        )
+        nn_model = {"filename": nn_path.name, "digest_algorithm": spec[2], "digest": spec[3]}
     cv.setNumThreads(args.threads)
     output.mkdir(parents=True, exist_ok=True)
     for entry in previous:
@@ -302,42 +489,67 @@ def main(argv=None):
         try:
             started = time.perf_counter()
             source = load_rgb(path)
-            seg_overlay, seg_report = predict(seg, seg_names, source, "segment", args)
+            seg_report = None
+            panels = []
+            if not args.context_only:
+                seg_overlay, seg_report = predict(seg, seg_names, source, "segment", args)
+                panels.append(
+                    ("seg", frame(seg_overlay, f"SEG masks / {seg_report['inference_seconds']:.2f}s", seg_names))
+                )
             obb_overlay, obb_report = predict(obb, obb_names, source, "obb", args)
-            seg_panel = frame(seg_overlay, f"SEG masks / {seg_report['inference_seconds']:.2f}s", seg_names)
             obb_panel = frame(obb_overlay, f"OBB + long axis / {obb_report['inference_seconds']:.2f}s", obb_names)
+            nn_report = None
+            if nn_session is not None:
+                nn_overlay, nn_report = context_segmentation(seg, seg_names, nn_session, source, args)
+                title = f"SEG in NN context / {nn_report['inference_seconds']:.2f}s / {len(nn_report['regions'])} crops\nYellow: context crop / white: NudeNet box"
+                panels.append(("seg_nn", frame(nn_overlay, title, seg_names)))
+            panels.append(("obb", obb_panel))
             if args.compare:
                 combined = Image.new(
-                    "RGB", (seg_panel.width + obb_panel.width, max(seg_panel.height, obb_panel.height)), (22, 22, 26)
+                    "RGB",
+                    (sum(panel.width for _, panel in panels), max(panel.height for _, panel in panels)),
+                    (22, 22, 26),
                 )
-                combined.paste(seg_panel, (0, 0))
-                combined.paste(obb_panel, (seg_panel.width, 0))
+                offset = 0
+                for _, panel in panels:
+                    combined.paste(panel, (offset, 0))
+                    offset += panel.width
                 save_image(combined, output / f"{prefix}_compare.jpg", args.size)
             else:
-                save_image(seg_panel, output / f"{prefix}_seg.jpg", args.size)
-                save_image(obb_panel, output / f"{prefix}_obb.jpg", args.size)
+                for name, panel in panels:
+                    save_image(panel, output / f"{prefix}_{name}.jpg", args.size)
             seconds = time.perf_counter() - started
             if not args.images_only:
                 report = {
                     "source": path.name,
                     "source_size": source.size,
                     "settings": {k: str(v) if isinstance(v, Path) else v for k, v in vars(args).items()},
-                    "models": {"seg": seg_model, "obb": obb_model},
+                    "models": {"seg": seg_model, "obb": obb_model, "nudenet": nn_model},
                     "seg": seg_report,
                     "obb": obb_report,
+                    "seg_nn": nn_report,
                     "seconds": seconds,
                     "notes": [
                         "Full-image RGB inference; aspect-preserving centered letterbox with fill 114",
                         "Masks use native-style logits restoration, threshold 0 and predicted-box crop",
                         "OBB NMS uses exact polygon IoU, not Ultralytics ProbIoU",
                         "OBB long axis is undirected, not an anatomical base-to-tip prediction",
+                        "Optional NN context is target-centered, with shape recorded in settings; image-edge clipping and overlap merging can alter proportions; SEG masks are not clipped to the NN box",
                     ],
                 }
                 (output / f"{prefix}_report.json").write_text(
                     json.dumps(report, indent=2) + "\n", encoding="utf-8", newline="\n"
                 )
             print(
-                f"{path.name}: {len(seg_report['detections'])} masks, {len(obb_report['detections'])} rotated boxes; {seconds:.2f}s",
+                f"{path.name}: "
+                + (
+                    f"{len(seg_report['detections'])} full-image masks, "
+                    if seg_report is not None
+                    else "baseline SEG skipped, "
+                )
+                + f"{len(obb_report['detections'])} rotated boxes"
+                + (f", {len(nn_report['detections'])} NN-context masks" if nn_report is not None else "")
+                + f"; {seconds:.2f}s",
                 flush=True,
             )
         except Exception as exc:
