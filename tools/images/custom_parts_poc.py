@@ -568,6 +568,12 @@ def main(argv=None):
         help="With -bc: save one overlay per image with contextual SEG masks and OBB outlines together",
     )
     parser.add_argument(
+        "-sf",
+        "--seg-only",
+        action="store_true",
+        help="One SEG-only overlay per input; full-image SEG by default, OBB-context SEG with -bc; no box guides",
+    )
+    parser.add_argument(
         "-mm",
         "--mismatches",
         action="store_true",
@@ -692,6 +698,10 @@ def main(argv=None):
         "-w", "--overwrite", action="store_true", help="Replace only recognized custom_parts_poc flat outputs"
     )
     args = parser.parse_args(argv)
+    if args.seg_only and (args.superimpose or args.compare or args.mask_sweep):
+        parser.error("-sf replaces -so/-cp/-sw output modes")
+    if args.seg_only and (args.v2_context or args.nudenet or args.context_only or args.detect_model is not None):
+        parser.error("-sf supports full-image SEG or -bc only; omit -vc/-nn/-co/-dm")
     if not math.isfinite(args.min_coverage) or not 0 <= args.min_coverage <= 1:
         parser.error("min-coverage must be finite in [0,1]")
     if args.mismatches and (not args.obb_context or args.mask_sweep):
@@ -767,7 +777,7 @@ def main(argv=None):
         parser.error("Output is not empty; -w replaces recognized custom_parts_poc outputs only")
     seg, seg_names, seg_model = load_model(args.seg_model, "segment", args.threads)
     obb, obb_names, obb_model = None, {}, None
-    if not args.v2_context:
+    if not args.v2_context and not (args.seg_only and not args.obb_context):
         obb, obb_names, obb_model = load_model(args.obb_model, "obb", args.threads)
     detector, detector_names, detector_model = None, None, None
     if args.detect_model is not None:
@@ -800,7 +810,13 @@ def main(argv=None):
         entry.unlink()
     print(
         f"ONNX Runtime CPU: {len(files)} images; seg {seg_model['input_shape'][2:]}"
-        + (f"; OBB {obb_model['input_shape'][2:]}" if obb_model else "; fast V2-context mode, OBB/NudeNet skipped"),
+        + (
+            f"; OBB {obb_model['input_shape'][2:]}"
+            if obb_model
+            else "; fast V2-context mode, OBB/NudeNet skipped"
+            if args.v2_context
+            else "; full-image SEG only, all detectors skipped"
+        ),
         flush=True,
     )
     if obb_model and obb_model["end2end"]:
@@ -847,7 +863,7 @@ def main(argv=None):
                         dict(detection, box_xyxy=[*polygon.min(axis=0).tolist(), *polygon.max(axis=0).tolist()])
                     )
                 variant_overlays = {} if args.mask_sweep else None
-                obb_masks = [] if args.superimpose or args.mismatches else None
+                obb_masks = [] if args.superimpose or args.seg_only or args.mismatches else None
                 context_overlay, obb_context_report = segment_context_regions(
                     seg, seg_names, source, args, targets, variant_overlays=variant_overlays, mask_sink=obb_masks
                 )
@@ -860,7 +876,16 @@ def main(argv=None):
                     coverage = measure_obb_coverage(obb_report["detections"], obb_masks, source.size, args.min_coverage)
                     obb_context_report["mismatches"] = coverage
                     context_overlay = draw_coverage_issues(context_overlay, obb_report["detections"], coverage)
-                if args.superimpose:
+                if args.seg_only:
+                    pixels = np.asarray(source).copy()
+                    for item in obb_masks:
+                        x, y = item["offset_xy"]
+                        height, width = item["mask"].shape
+                        paint_mask(
+                            pixels[y : y + height, x : x + width], item["mask"], PALETTE[item["class"]], args.alpha
+                        )
+                    panels = [("overlay", frame(Image.fromarray(pixels), "SEG masks / OBB context", seg_names))]
+                elif args.superimpose:
                     # Render directly from masks, not by blending two opaque image overlays.
                     pixels = np.asarray(source).copy()
                     for item in obb_masks:
