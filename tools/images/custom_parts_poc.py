@@ -31,6 +31,17 @@ PALETTE = {
     "hand": (80, 220, 85),
     "penis": (255, 65, 170),
 }
+MASK_VARIANTS = tuple(
+    (f"threshold_{threshold:+d}_clip_{int(clip)}", threshold, clip)
+    for clip in (True, False)
+    for threshold in (-1, 0, 1)
+)
+
+
+def paint_mask(rgb, mask, color, alpha):
+    rgb[mask] = ((1 - alpha) * rgb[mask] + alpha * np.array(color)).astype(np.uint8)
+    contours, _ = cv.findContours(mask.astype(np.uint8), cv.RETR_LIST, cv.CHAIN_APPROX_SIMPLE)
+    cv.drawContours(rgb, contours, -1, color, 2, cv.LINE_AA)
 
 
 def load_model(path, task, threads):
@@ -118,7 +129,8 @@ def suppress(rows, scores, classes, task, threshold, maximum):
     return kept
 
 
-def predict(session, names, source, task, args, *, filter_classes=True):
+def predict(session, names, source, task, args, *, filter_classes=True, variant_overlays=None):
+    """Optionally fill a six-variant overlay sink, reusing restored logits from this one call."""
     tensor, fit = preprocess(source, session.get_inputs()[0].shape)
     tick = time.perf_counter()
     output = session.run(None, {session.get_inputs()[0].name: tensor})
@@ -154,6 +166,9 @@ def predict(session, names, source, task, args, *, filter_classes=True):
     rows, scores, classes = rows[order], scores[order], classes[order]
     kept = suppress(rows, scores, classes, task, args.nms, args.max_det)
     rgb = np.asarray(source).copy()
+    variants = MASK_VARIANTS if variant_overlays is not None and task == "segment" else ()
+    variant_pixels = {key: rgb.copy() for key, _, _ in variants}
+    variant_reports = {key: {"mask_threshold": threshold, "crop_to_seg_box": clip, "detections": []} for key, threshold, clip in variants}
     records = []
     gain, (left, top) = fit["gain"], fit["padding_xy"]
     height, width = tensor.shape[2:]
@@ -191,27 +206,34 @@ def predict(session, names, source, task, args, *, filter_classes=True):
             enlarged = cv.resize(logits, (width, height), interpolation=cv.INTER_LINEAR)
             restored = cv.resize(enlarged[top : top + rh, left : left + rw], source.size, interpolation=cv.INTER_LINEAR)
             yy, xx = np.ogrid[: source.height, : source.width]
-            # Native-style mask restoration: crop to the learned detection box after upsampling.
-            mask = (restored > 0) & (xx >= box[0]) & (xx < box[2]) & (yy >= box[1]) & (yy < box[3])
-            rgb[mask] = ((1 - args.alpha) * rgb[mask] + args.alpha * np.array(color)).astype(np.uint8)
-            contours, _ = cv.findContours(mask.astype(np.uint8), cv.RETR_LIST, cv.CHAIN_APPROX_SIMPLE)
-            cv.drawContours(rgb, contours, -1, color, 2, cv.LINE_AA)
+            box_mask = (xx >= box[0]) & (xx < box[2]) & (yy >= box[1]) & (yy < box[3])
+            mask = restored > args.mask_threshold
+            if not args.uncrop:
+                mask &= box_mask
+            paint_mask(rgb, mask, color, args.alpha)
+            for key, threshold, clip in variants:
+                candidate = restored > threshold
+                if clip:
+                    candidate &= box_mask
+                paint_mask(variant_pixels[key], candidate, color, args.alpha)
+                variant_reports[key]["detections"].append(dict(record, box_xyxy=box.tolist(), pixels=int(candidate.sum())))
             record.update(box_xyxy=box.tolist(), pixels=int(mask.sum()), label_xy=box[:2].tolist())
         records.append(record)
-    image = Image.fromarray(rgb)
-    draw = ImageDraw.Draw(image)
-    font = ImageFont.load_default(size=16)
+    def labeled(pixels):
+        image = Image.fromarray(pixels)
+        draw = ImageDraw.Draw(image)
+        font = ImageFont.load_default(size=16)
+        for record in records:
+            x, y = record["label_xy"]
+            x, y = max(0, min(source.width - 120, int(x))), max(0, min(source.height - 20, int(y)))
+            draw.text((x, y), f"{record['class']} {record['score']:.2f}", font=font, fill=PALETTE[record["class"]], stroke_width=2, stroke_fill="black")
+        return image
+
+    image = labeled(rgb)
+    if variant_overlays is not None:
+        variant_overlays.update({key: labeled(pixels) for key, pixels in variant_pixels.items()})
     for record in records:
-        x, y = record.pop("label_xy")
-        x, y = max(0, min(source.width - 120, int(x))), max(0, min(source.height - 20, int(y)))
-        draw.text(
-            (x, y),
-            f"{record['class']} {record['score']:.2f}",
-            font=font,
-            fill=PALETTE[record["class"]],
-            stroke_width=2,
-            stroke_fill="black",
-        )
+        record.pop("label_xy")
     info = {
         "inference_seconds": seconds,
         "preprocessing": fit,
@@ -220,7 +242,11 @@ def predict(session, names, source, task, args, *, filter_classes=True):
         "pre_nms_truncated": candidates > 3000,
         "class_thresholds": {name: float(thresholds[key]) for key, name in names.items()},
         "detections": records,
+        "mask_threshold": args.mask_threshold if task == "segment" else None,
+        "crop_to_seg_box": not args.uncrop if task == "segment" else None,
     }
+    if variants:
+        info["mask_variants"] = variant_reports
     return image, info
 
 
@@ -257,7 +283,7 @@ def context_segmentation(session, names, nudenet, source, args):
     return overlay, info
 
 
-def segment_context_regions(session, names, source, args, targets):
+def segment_context_regions(session, names, source, args, targets, *, variant_overlays=None):
     """Shared crop segmentation; detector boxes are context anchors, not mask clips."""
     crops = []
     for detection in targets:
@@ -289,12 +315,23 @@ def segment_context_regions(session, names, source, args, targets):
             if changed:
                 break
     result = source.copy()
+    variant_reports = {}
+    if variant_overlays is not None:
+        variant_overlays.update({key: source.copy() for key, _, _ in MASK_VARIANTS})
+        variant_reports = {key: {"mask_threshold": threshold, "crop_to_seg_box": clip, "detections": []} for key, threshold, clip in MASK_VARIANTS}
     records, regions = [], []
     seconds = 0.0
     class_thresholds = {name: args.seg_class_conf.get(name, args.seg_confidence) for name in names.values()}
     for roi_index, box in enumerate(crops, 1):
-        overlay, info = predict(session, names, source.crop(box), "segment", args)
+        local_variants = {} if variant_overlays is not None else None
+        overlay, info = predict(session, names, source.crop(box), "segment", args, variant_overlays=local_variants)
         result.paste(overlay, box[:2])
+        if local_variants is not None:
+            for key, image in local_variants.items():
+                variant_overlays[key].paste(image, box[:2])
+                for detection in info["mask_variants"][key]["detections"]:
+                    x0, y0, x1, y1 = detection["box_xyxy"]
+                    variant_reports[key]["detections"].append(dict(detection, box_xyxy=[x0 + box[0], y0 + box[1], x1 + box[0], y1 + box[1]], roi=roi_index))
         seconds += info["inference_seconds"]
         for detection in info["detections"]:
             x0, y0, x1, y1 = detection["box_xyxy"]
@@ -310,11 +347,12 @@ def segment_context_regions(session, names, source, args, targets):
                 "pre_nms_truncated": info["pre_nms_truncated"],
             }
         )
-    draw = ImageDraw.Draw(result)
-    for box in crops:
-        draw.rectangle(box, outline=(255, 220, 30), width=2)
-    for detection in targets:
-        draw.rectangle(tuple(detection["box_xyxy"]), outline="white", width=2)
+    for image in (result, *(variant_overlays.values() if variant_overlays is not None else ())):
+        draw = ImageDraw.Draw(image)
+        for box in crops:
+            draw.rectangle(box, outline=(255, 220, 30), width=2)
+        for detection in targets:
+            draw.rectangle(tuple(detection["box_xyxy"]), outline="white", width=2)
     return result, {
         "status": "segmented" if crops else "no_target_seg_skipped",
         "inference_seconds": seconds,
@@ -324,6 +362,7 @@ def segment_context_regions(session, names, source, args, targets):
         "class_thresholds": class_thresholds,
         "detection_coordinates": "source image",
         "roi_merge": "overlapping context boxes merged before inference",
+        "mask_variants": variant_reports,
     }
 
 
