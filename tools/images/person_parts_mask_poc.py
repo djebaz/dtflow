@@ -210,8 +210,8 @@ def parts_session(data: bytes, threads: int):
     return session, meta, {int(k): str(v) for k, v in names.items()}
 
 
-def preprocess_parts(image):
-    """NudeNet-style: pad bottom/right with black to a square, resize to 320, /255, RGB NCHW."""
+def preprocess_parts(image, *, input_side=PARTS_SIDE):
+    """NudeNet-style: bottom/right black square padding, resize, /255, RGB NCHW."""
     import numpy as np
     from PIL import Image
 
@@ -219,9 +219,9 @@ def preprocess_parts(image):
     side = max(width, height)
     canvas = Image.new("RGB", (side, side), (0, 0, 0))
     canvas.paste(image, (0, 0))
-    small = canvas.resize((PARTS_SIDE, PARTS_SIDE), Image.Resampling.BILINEAR)
+    small = canvas.resize((input_side, input_side), Image.Resampling.BILINEAR)
     tensor = np.ascontiguousarray(np.asarray(small, dtype=np.float32).transpose(2, 0, 1)[None] / 255.0)
-    return tensor, {"square_side": side, "scale": side / PARTS_SIDE, "padding": "bottom/right black to square"}
+    return tensor, {"square_side": side, "scale": side / input_side, "padding": "bottom/right black to square"}
 
 
 def nms(boxes, scores, iou_threshold: float) -> list[int]:
@@ -252,7 +252,7 @@ def decode_parts(output, geometry, size, threshold, iou, names, exclude_ids=()):
         raise ValueError("Unexpected parts output shape")
     if not np.isfinite(output).all():
         raise ValueError("Non-finite parts output")
-    rows = output[0].T  # [N, 4 + classes]; box is center-x, center-y, w, h in 320 px model space
+    rows = output[0].T  # [N, 4 + classes]; center-x, center-y, w, h in model-input pixels
     class_scores = rows[:, 4:].copy()
     if len(exclude_ids):
         # Excluded before argmax and NMS, so they can neither win an anchor nor suppress other parts.
