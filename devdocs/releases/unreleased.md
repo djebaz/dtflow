@@ -60,18 +60,14 @@ Changes through 5.4.0 are consolidated in [DTFlow 5.4.0](v5.4.0.md). This file t
 - Unsupported changed configuration fields and masks fail before generation; empty model identifiers are rejected. Missing/unreadable script paths report their concrete file error.
 - Owner Windows source smoke verified two fake generations and empty-model rejection (2026-11-02). Native UI, Tier B/detection, local/cloud acceptance and packaged execution are not included. No automated tests added or run by owner direction.
 
+## Standalone CPU image experiments (PR #236)
+
+- Add SCHP ATR-18/Pascal/LIP score and boundary inspection, edge-guided overlapping NudeNet zones, depth/normal comparisons and EfficientSAM INT8 prompt/candidate experiments. Person silhouettes retain model-predicted gaps; these are heuristic tools, not anatomical ground truth or new desktop model support.
+- Add custom ONNX CPU SEG/OBB comparison with penisV2 or reviewed-OBB context crops, full-image and SEG-only outputs, combined overlays, independent class thresholds, explicit single-class naming and mask/OBB coverage review. Add trusted OBB conversion, rotation probes and resumable draft OBB annotation; models/datasets stay private and ignored.
+- Preserve the production person-mask default while adding a validated optional probability threshold to its existing helper; experimental NudeNet preprocessing retains its 320px default while allowing an explicit input size.
+- Owner Windows/Colab experiments and explicitly requested small-model local inference provide exploratory evidence, not independent quality/throughput or desktop acceptance. No automated tests added/run during the later iterations or this documentation sync. OpenCV POC dependency reproducibility, model license/provenance and memory limits remain unresolved; an owner-reported large-checkpoint PC crash has no confirmed cause. See [commands, evidence and limits](../../tools/images/segmentation-pocs.md).
+
 ## Release audit
 
-- PRs: #193, #199, #201, #215, #217, #218, #219, #227, #228, #229.
-- Scope: Version bump 5.4.0 and release-note consolidation; Scripts preview corrections, canonical Designer migration, headless/native queue runtime and full form/Setup integration; bounded parallel scripts with attempts schema 6, ready LoRA binding and lifecycle repairs; portable mixer inventory/preparation preview, independent schema-1 authoring preferences and explicit chunks; isolated node-editor POC with owner-reviewed Windows navigation; offline Workflows workspace mockups, owner-accepted shared left-rail sizing correction and approved Connection/Images utility-navigation relocation. Exact Windows release artifact, provider compatibility and release publication remain separate gates.
-
-## Standalone SCHP experiment follow-up (PR #236)
-
-- Body regions use combined photo contrast and SCHP score changes, with a preferred
-  interior seed instead of a hard red-score cutoff. Independent masks and the body
-  overlay retain overlapping detections, including same-class instances.
-- Add raw silhouette, unblended score and computed-boundary inspection images in
-  full and `--body-only` modes. Preserve model-predicted gaps; no improvement to
-  the person model or recovery of model-missed gaps is claimed.
-- Synthetic offline validation only; real inference and Windows quality/performance
-  acceptance remain pending. See [the tool guide](../../tools/images/README.md#schp-atr-18-folder-smoke-test-cpu-onnx).
+- PRs: #193, #199, #201, #215, #217, #218, #219, #227, #228, #229, #236.
+- Scope: Version bump 5.4.0 and release-note consolidation; Scripts preview corrections, canonical Designer migration, headless/native queue runtime and full form/Setup integration; bounded parallel scripts with attempts schema 6, ready LoRA binding and lifecycle repairs; portable mixer inventory/preparation preview, independent schema-1 authoring preferences and explicit chunks; isolated node-editor POC with owner-reviewed Windows navigation; offline Workflows workspace mockups, owner-accepted shared left-rail sizing correction and approved Connection/Images utility-navigation relocation; local DT+ completed-image counter; standalone SCHP/edge/depth/SAM/custom SEG/OBB experiments, review-only labels, export/rotation diagnostics and default-preserving person-mask threshold seam. Exact Windows release artifact, provider compatibility, experimental model/dependency acceptance and release publication remain separate gates.

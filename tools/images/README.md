@@ -1,5 +1,7 @@
 # Pixel-statistics detector PoC
 
+For the later SCHP/edge/depth/SAM/custom SEG and OBB experiments in PR #236, see [CPU segmentation and OBB experiments](segmentation-pocs.md), including current commands, output modes, draft-label resume, dependency gaps and owner-smoke evidence. These are standalone tools, not desktop model support.
+
 `detect_noise.py` is a standalone, offline diagnostic, with the same pixel-statistics service as DTFlow export sorting; it does not own export or job handling. It uses the existing Pillow dependency, no model or network service.
 
 From the repository root in PowerShell:
@@ -341,9 +343,4 @@ in full mode. `--min-confidence` affects refined SCHP labels only.
 
 ### Validation boundary
 
-Earlier versions produced working overlays in the owner's Windows runs. This
-revision has synthetic offline checks for image/score boundaries, overlapping
-detections, silhouette holes, rounding, image writes and CLI settings. Real-model
-quality, performance and Windows acceptance remain unverified. No model download,
-model inference, training or billable operation was used for this validation.
-This does not establish model license/provenance clearance or production support.
+Earlier versions produced working overlays in the owner's Windows runs. The original SCHP follow-up recorded synthetic offline checks for image/score boundaries, overlapping detections, silhouette holes, rounding, image writes and CLI settings, without model inference in those checks. Later PR #236 work includes owner model runs, owner Colab training/exports and explicitly requested small-model local inference; see the [current experiment evidence and limits](segmentation-pocs.md#evidence-and-unresolved-limits--2026-11-06). None establishes independent quantitative accuracy, broad Windows performance, model license/provenance clearance or production support.

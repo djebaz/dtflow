@@ -139,6 +139,8 @@ These instructions apply throughout `dtflow`.
 
 ## Image-operation preparation
 
+- Standalone CPU image experiments under `tools/images/` are documented in [the segmentation/OBB tool guide](tools/images/segmentation-pocs.md). Keep custom checkpoint conversion, draft labeling, local inference evidence and training datasets separate from production model support. Preserve `person_selection._instances`' default `mask_threshold=0.5` behavior; do not promote experimental crop/alias/coverage semantics into app services implicitly. OpenCV-based POC imports do not establish reproducibility from the declared lockfile. Do not run model inference/conversion or training merely for documentation/static validation; explicit owner approval and the selected checkpoint scope still apply.
+
 - Use headless services/image_preparation.py and backend-neutral core/image_inputs.py for source/mask normalization and fitting. Pillow stays out of core and Qt. Run CPU preparation on a worker; no provider or persistence behavior belongs in the pixel service.
 - The current preparation slice is not dispatch support: generic CLI, core requests, queues and wire remain txt2img-only. Follow devdocs/architecture/image-operations.md and the backend-first smart-mask plan before changing request schemas, provider mapping or editor behavior.
 - Owner/maintainer review the image-library boundary with each slice; update the existing import allowlist narrowly, never blanket-allow Pillow/ONNX or copy tools CLI runners into production.

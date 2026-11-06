@@ -44,7 +44,7 @@ def paint_mask(rgb, mask, color, alpha):
     cv.drawContours(rgb, contours, -1, color, 2, cv.LINE_AA)
 
 
-def load_model(path, task, threads):
+def load_model(path, task, threads, *, single_class=None):
     import onnxruntime as ort
 
     if path.suffix.lower() != ".onnx" or not path.is_file():
@@ -74,6 +74,11 @@ def load_model(path, task, threads):
     if meta.get("task") != task or not isinstance(names, dict) or sorted(names) != list(range(len(names))) or not names:
         raise RuntimeError(f"{task}: expected Ultralytics {task} class metadata")
     names = {int(k): str(v) for k, v in names.items()}
+    exported_names = dict(names)
+    if single_class is not None:
+        if task != "segment" or len(names) != 1 or single_class not in PALETTE:
+            raise RuntimeError("Single-class rename requires a one-class SEG model and a known class name")
+        names = {0: single_class}
     if any(name not in PALETTE for name in names.values()):
         raise RuntimeError(f"Unexpected custom classes: {names}")
     if len(outputs) != (2 if task == "segment" else 1) or any(item.type != "tensor(float)" for item in outputs):
@@ -93,6 +98,7 @@ def load_model(path, task, threads):
             "sha256": digest,
             "input_shape": shape,
             "classes": names,
+            "exported_classes": exported_names,
             "head": meta.get("head"),
             "end2end": end2end,
             "output_layout": "obb_xywh_score_class_angle" if end2end else "raw_channels_first",
@@ -554,6 +560,12 @@ def main(argv=None):
     parser.add_argument("-i", "--input-dir", type=Path, required=True)
     parser.add_argument("-o", "--output-dir", type=Path, default=Path("tmp/custom-parts-poc"))
     parser.add_argument("-sm", "--seg-model", type=Path, default=Path("tmp/models/best_seg_dick.onnx"))
+    parser.add_argument(
+        "-sn",
+        "--seg-name",
+        choices=tuple(PALETTE),
+        help="Explicitly rename the class of a single-class SEG model, e.g. -sn penis for exported class item",
+    )
     parser.add_argument("-om", "--obb-model", type=Path, help="OBB checkpoint; -bc defaults to the reviewed nano model")
     parser.add_argument(
         "-bc",
@@ -775,7 +787,7 @@ def main(argv=None):
         or any(p.is_symlink() or p.is_junction() or not p.is_file() or not pattern.fullmatch(p.name) for p in previous)
     ):
         parser.error("Output is not empty; -w replaces recognized custom_parts_poc outputs only")
-    seg, seg_names, seg_model = load_model(args.seg_model, "segment", args.threads)
+    seg, seg_names, seg_model = load_model(args.seg_model, "segment", args.threads, single_class=args.seg_name)
     obb, obb_names, obb_model = None, {}, None
     if not args.v2_context and not (args.seg_only and not args.obb_context):
         obb, obb_names, obb_model = load_model(args.obb_model, "obb", args.threads)
