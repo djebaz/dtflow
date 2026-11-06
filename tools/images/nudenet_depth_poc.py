@@ -15,7 +15,13 @@ import cv2 as cv
 import numpy as np
 from PIL import Image, ImageDraw, ImageFont, ImageOps
 
-from edge_nudenet_poc import NUDENET_SPECS, PERSON_SPECS, fit_box_zones, nudenet_640_session
+from edge_nudenet_poc import (
+    NUDENET_SPECS,
+    PERSON_SPECS,
+    fit_box_zones,
+    grow_independent_zones,
+    nudenet_640_session,
+)
 from pascal_nudenet_poc import verified_checkpoint
 from schp_atr18_smoke import (
     DEPTH_BYTES,
@@ -134,6 +140,122 @@ def contour_preview(rgb, layers, inside, detections):
     return boxed(result, detections)
 
 
+def refine_contours(layers, records, depth_edges, inside, box_scale, area_limit, smooth, edge_weight):
+    """Fit smooth outward displacements of an existing contour, never flood the interior."""
+    refined, details = [], []
+    for zone_id, initial in layers:
+        h, w = initial.shape
+        field = cv.resize(depth_edges, (w, h), interpolation=cv.INTER_AREA)
+        valid = cv.resize(inside.astype(np.uint8), (w, h), interpolation=cv.INTER_NEAREST) > 0
+        record = dict(next(r for r in records if r["zone_id"] == zone_id))
+        x0, y0, x1, y1 = record["box_xyxy"]
+        sx, sy = w / inside.shape[1], h / inside.shape[0]
+        cx, cy = (x0 + x1) * sx / 2, (y0 + y1) * sy / 2
+        rx, ry = max(1, (x1 - x0) * sx / 2), max(1, (y1 - y0) * sy / 2)
+        yy, xx = np.ogrid[:h, :w]
+        # Rounded expanded box bounds the search, while always retaining the starting mask.
+        qx, qy = np.abs((xx - cx) / rx) - 0.7 * box_scale, np.abs((yy - cy) / ry) - 0.7 * box_scale
+        envelope = np.hypot(np.maximum(qx, 0), np.maximum(qy, 0)) + np.minimum(np.maximum(qx, qy), 0)
+        domain = valid & ((envelope <= 0.3 * box_scale) | initial)
+        contours, _ = cv.findContours(initial.astype(np.uint8), cv.RETR_EXTERNAL, cv.CHAIN_APPROX_NONE)
+        if not contours or max(cv.contourArea(c) for c in contours) < 4:
+            refined.append((zone_id, initial.copy()))
+            record.update(refinement_status="retained_small_mask")
+            details.append(record)
+            continue
+        contour = max(contours, key=cv.contourArea)[:, 0].astype(np.float32)
+        closed = np.concatenate((contour, contour[:1]))
+        lengths = np.linalg.norm(np.diff(closed, axis=0), axis=1)
+        cumulative = np.concatenate(([0], np.cumsum(lengths)))
+        count = min(96, max(24, len(contour)))
+        positions = np.linspace(0, cumulative[-1], count, endpoint=False)
+        points = np.stack([np.interp(positions, cumulative, closed[:, axis]) for axis in (0, 1)], axis=-1).astype(
+            np.float32
+        )
+        # Smooth the parameterization, not the mask, before deriving outward normals.
+        for _ in range(2):
+            points = (np.roll(points, 1, axis=0) + 2 * points + np.roll(points, -1, axis=0)) / 4
+        tangent = np.roll(points, -1, axis=0) - np.roll(points, 1, axis=0)
+        signed_area = np.sum(points[:, 0] * np.roll(points[:, 1], -1) - points[:, 1] * np.roll(points[:, 0], -1))
+        normals = np.stack((tangent[:, 1], -tangent[:, 0]), axis=-1) * (1 if signed_area > 0 else -1)
+        normals /= np.maximum(np.linalg.norm(normals, axis=1, keepdims=True), 1e-6)
+        reach = (box_scale - 1) * np.hypot(normals[:, 0] * rx, normals[:, 1] * ry)
+        fractions = np.linspace(0, 1, 33, dtype=np.float32)
+        offsets = reach[:, None] * fractions[None]
+        samples = points[:, None] + normals[:, None] * offsets[..., None]
+        map_x, map_y = samples[..., 0].astype(np.float32), samples[..., 1].astype(np.float32)
+        strength = cv.remap(field, map_x, map_y, cv.INTER_LINEAR, borderMode=cv.BORDER_CONSTANT)
+        allowed = cv.remap(domain.astype(np.uint8), map_x, map_y, cv.INTER_NEAREST, borderMode=cv.BORDER_CONSTANT) > 0
+        # Never jump across a silhouette gap to a remote high-response edge.
+        allowed = np.logical_and.accumulate(allowed, axis=1)
+        allowed[:, 0] = True
+        perimeter = float(cumulative[-1])
+        initial_area = int(np.count_nonzero(initial))
+        # Boundary evidence competes with displacement and estimated added-area costs.
+        attraction = 2 * edge_weight / (edge_weight + 12)
+        unary = -attraction * strength + 0.35 * fractions[None] ** 2 + 0.8 * offsets * perimeter / max(initial_area, 1)
+        unary[~allowed] = np.inf
+        transition = (6 + smooth) * (fractions[:, None] - fractions[None]) ** 2
+        # Exact cyclic DP over all possible first offsets avoids a seam at vertex zero.
+        costs = np.full((33, 33), np.inf, dtype=np.float32)
+        np.fill_diagonal(costs, unary[0])
+        back = np.zeros((count, 33, 33), dtype=np.uint8)
+        for index in range(1, count):
+            options = costs[:, :, None] + transition[None]
+            back[index] = np.argmin(options, axis=1)
+            costs = np.min(options, axis=1) + unary[index][None]
+        first, last = np.unravel_index(int(np.argmin(costs + transition.T)), costs.shape)
+        choices = np.zeros(count, dtype=np.int32)
+        choices[-1] = last
+        for index in range(count - 1, 0, -1):
+            choices[index - 1] = back[index, first, choices[index]]
+        displacement = normals * offsets[np.arange(count), choices, None]
+        # Smoothly varying offsets discourage spikes; the hard area cap provides a final safeguard.
+        for _ in range(2):
+            displacement = (np.roll(displacement, 1, axis=0) + 2 * displacement + np.roll(displacement, -1, axis=0)) / 4
+
+        def raster(amount, base=initial, origin=points, delta=displacement, permitted=domain):
+            result = np.zeros(base.shape, dtype=np.uint8)
+            polygon = np.rint(origin + amount * delta).astype(np.int32)
+            cv.fillPoly(result, [polygon], 1)
+            return base | ((result > 0) & permitted)
+
+        amount = 1.0
+        mask = raster(amount)
+        cap = max(initial_area, math.floor(initial_area * area_limit))
+        if np.count_nonzero(mask) > cap:
+            low, high = 0.0, 1.0
+            # Keep the last accepted mask; do not assume raster area is perfectly monotonic.
+            mask, amount = initial.copy(), 0.0
+            for _ in range(12):
+                middle = (low + high) / 2
+                candidate = raster(middle)
+                if np.count_nonzero(candidate) <= cap:
+                    low, mask, amount = middle, candidate, middle
+                else:
+                    high = middle
+        refined.append((zone_id, mask))
+        restored = (
+            cv.resize(mask.astype(np.uint8), (inside.shape[1], inside.shape[0]), interpolation=cv.INTER_NEAREST) > 0
+        )
+        record.update(
+            start="refine",
+            refinement_status="refined" if np.any(mask & ~initial) else "retained",
+            pixels=int(np.count_nonzero(restored & inside)),
+            initial_grid_pixels=initial_area,
+            refined_grid_pixels=int(np.count_nonzero(mask)),
+            area_ratio=float(np.count_nonzero(mask) / initial_area),
+            area_limit=area_limit,
+            search_box_scale=box_scale,
+            displacement_fraction=amount,
+            evidence="depth_gradient",
+            solver="cyclic_boundary_dp",
+            preserves_initial_mask=True,
+        )
+        details.append(record)
+    return refined, details
+
+
 def tile(image, caption, view, size):
     result = Image.new("RGB", (size, size + 52), (22, 22, 26))
     photo = ImageOps.contain(image.crop(view), (size, size), Image.Resampling.LANCZOS)
@@ -142,12 +264,15 @@ def tile(image, caption, view, size):
     return result
 
 
-def save_panels(panels, crop_size, detections, output, prefix, args):
+def save_panels(panels, crop_size, detections, output, prefix, args, contour_bounds=()):
     if detections:
         x0 = min(d["box_xyxy"][0] for d in detections)
         y0 = min(d["box_xyxy"][1] for d in detections)
         x1 = max(d["box_xyxy"][2] for d in detections)
         y1 = max(d["box_xyxy"][3] for d in detections)
+        # Loose growth may extend well outside the detector box: never hide it in the zoom.
+        for bx0, by0, bx1, by1 in contour_bounds:
+            x0, y0, x1, y1 = min(x0, bx0), min(y0, by0), max(x1, bx1), max(y1, by1)
         margin = 0.6 * max(x1 - x0, y1 - y0)
         view = (
             max(0, math.floor(x0 - margin)),
@@ -186,7 +311,31 @@ def main(argv=None):
     )
     parser.add_argument("-t", "--threads", type=int, default=4)
     parser.add_argument("-e", "--edge-weight", type=float, default=12)
+    parser.add_argument(
+        "-l",
+        "--mode",
+        choices=("box", "depth", "refine"),
+        default="refine",
+        help="refine (default): normal-fine + bounded depth-edge refinement; box/depth: legacy modes; -cp adds comparison candidates",
+    )
+    parser.add_argument(
+        "-g",
+        "--growth",
+        type=float,
+        default=3,
+        help="Depth mode path budget relative to box half-diagonal; larger allows more overflow (default 3)",
+    )
     parser.add_argument("-fp", "--fit-percentile", type=float, default=35)
+    parser.add_argument(
+        "-k", "--box-scale", type=float, default=2, help="Refine search-envelope width/height factor, 1..4 (default 2)"
+    )
+    parser.add_argument(
+        "-ar",
+        "--area",
+        type=float,
+        default=1.8,
+        help="Refine maximum area relative to starting mask, 1..3 (default 1.8)",
+    )
     parser.add_argument("-u", "--smooth", type=float, default=4)
     parser.add_argument(
         "-x",
@@ -199,7 +348,7 @@ def main(argv=None):
         "-cp",
         "--compare",
         action="store_true",
-        help="Save one labeled comparison JPG per image instead of separate overlays",
+        help="Save diagnostic comparison sheet instead of only the selected result overlay",
     )
     parser.add_argument("-ts", "--tile", type=int, default=640, help="Panel size; comparison has up to four columns")
     parser.add_argument(
@@ -207,6 +356,15 @@ def main(argv=None):
     )
     parser.add_argument("-d", "--no-download", action="store_true")
     args = parser.parse_args(argv)
+    if (
+        not math.isfinite(args.box_scale)
+        or not 1 <= args.box_scale <= 4
+        or not math.isfinite(args.area)
+        or not 1 <= args.area <= 3
+    ):
+        parser.error("box-scale must be finite in [1,4] and area in [1,3]")
+    if not math.isfinite(args.growth) or not 0 < args.growth <= 20:
+        parser.error("growth must be finite and in (0,20]")
     if not args.input_dir.is_dir():
         parser.error("input-dir must exist")
     if not 0 < args.confidence <= 1 or not 0 < args.person_threshold < 1:
@@ -268,6 +426,13 @@ def main(argv=None):
             raise RuntimeError(f"Output changed before cleanup: {path.name}")
         path.unlink()
     print(f"CPU models loaded; {len(files)} images; NudeNet {args.nudenet_size}; target {TARGET}", flush=True)
+    if args.mode == "depth":
+        print(f"Depth-gradient growth: g={args.growth:g}; no detector-box boundary; -fp inactive", flush=True)
+    elif args.mode == "refine":
+        print(
+            f"Bounded contour refinement: normal-fine/combined starts, depth-gradient attraction; box scale {args.box_scale:g}, area cap {args.area:g}x; -g inactive",
+            flush=True,
+        )
     failures = 0
     for index, path in enumerate(files, 1):
         prefix = f"ndp_{index:04d}_{path.stem[:70]}"
@@ -307,6 +472,7 @@ def main(argv=None):
             report["detections_crop_coordinates"] = detections
             rgb = np.asarray(crop)
             panels = [("reference", "NN boxes / scores", boxed(rgb, detections))]
+            contour_bounds = []
             if detections:
                 tick = time.perf_counter()
                 z, fit = depth_map(crop, depth)
@@ -322,54 +488,131 @@ def main(argv=None):
                 def full(values, target_size=crop.size):
                     return cv.resize(values, target_size, interpolation=cv.INTER_LINEAR)
 
-                panels.extend(
-                    [
-                        (
-                            "depth",
-                            "Relative depth (display clipped)",
-                            diagnostic(rgb, full(relative), inside, detections),
-                        ),
-                        (
-                            "normals",
-                            "Approx. normals / gain 8",
-                            diagnostic(rgb, full(normals), inside, detections, vector=True),
-                        ),
-                    ]
-                )
-                for name in ("depth_gradient", "normal_fine", "normal_broad", "curvature"):
-                    panels.append(
-                        (
-                            name,
-                            name.replace("_", " ") + " / cool=weak, warm=strong",
-                            diagnostic(rgb, full(fields[name]), inside, detections),
-                        )
+                if args.compare:
+                    panels.extend(
+                        [
+                            (
+                                "depth",
+                                "Relative depth (display clipped)",
+                                diagnostic(rgb, full(relative), inside, detections),
+                            ),
+                            (
+                                "normals",
+                                "Approx. normals / gain 8",
+                                diagnostic(rgb, full(normals), inside, detections, vector=True),
+                            ),
+                        ]
                     )
+                    for name in ("depth_gradient", "normal_fine", "normal_broad", "curvature"):
+                        panels.append(
+                            (
+                                name,
+                                name.replace("_", " ") + " / cool=weak, warm=strong",
+                                diagnostic(rgb, full(fields[name]), inside, detections),
+                            )
+                        )
+                else:
+                    panels = []
                 report["candidates"] = {}
-                for name, field in fields.items():
-                    layers, records, summary = fit_box_zones(
-                        cv,
-                        full(field),
-                        inside,
-                        detections,
-                        args.resolution,
-                        args.edge_weight,
-                        args.smooth,
-                        args.expand,
-                        percentile=args.fit_percentile,
-                    )
-                    panels.append(
-                        (
-                            f"fit_{name}",
-                            f"Fit: {name.replace('_', ' ')} / expand {args.expand:g}",
-                            contour_preview(rgb, layers, inside, detections),
+                candidates = {"depth_gradient": fields["depth_gradient"]} if args.mode == "depth" else fields
+                if args.mode == "refine":
+                    candidates = {name: fields[name] for name in ("normal_fine", "combined")}
+                if not args.compare and args.mode != "depth":
+                    candidates = {"normal_fine": fields["normal_fine"]}
+                for name, field in candidates.items():
+                    if args.mode == "depth":
+                        layers, records, summary = grow_independent_zones(
+                            cv,
+                            full(field),
+                            inside,
+                            detections,
+                            args.resolution,
+                            args.edge_weight,
+                            args.growth,
+                            args.smooth,
+                            args.expand,
                         )
-                    )
+                        caption = f"Depth growth / g {args.growth:g} / expand {args.expand:g}"
+                        for _, mask in layers:
+                            yy, xx = np.nonzero(mask)
+                            if len(xx):
+                                sx, sy = crop.width / mask.shape[1], crop.height / mask.shape[0]
+                                contour_bounds.append(
+                                    (
+                                        float(xx.min() * sx),
+                                        float(yy.min() * sy),
+                                        float((xx.max() + 1) * sx),
+                                        float((yy.max() + 1) * sy),
+                                    )
+                                )
+                    else:
+                        layers, records, summary = fit_box_zones(
+                            cv,
+                            full(field),
+                            inside,
+                            detections,
+                            args.resolution,
+                            args.edge_weight,
+                            args.smooth,
+                            args.expand,
+                            percentile=args.fit_percentile,
+                        )
+                        caption = f"Fit: {name.replace('_', ' ')} / expand {args.expand:g}"
+                    if args.compare or args.mode != "refine":
+                        panels.append(
+                            (
+                                f"fit_{name}",
+                                caption,
+                                contour_preview(rgb, layers, inside, detections),
+                            )
+                        )
                     report["candidates"][name] = {"zones": records, "summary": summary}
-                report["status"] = "compared"
+                    if args.mode == "refine":
+                        refined, refinement_records = refine_contours(
+                            layers,
+                            records,
+                            full(fields["depth_gradient"]),
+                            inside,
+                            args.box_scale,
+                            args.area,
+                            args.smooth,
+                            args.edge_weight,
+                        )
+                        panels.append(
+                            (
+                                f"fit_{name}_refined",
+                                f"Refined: {name.replace('_', ' ')} / depth edges",
+                                contour_preview(rgb, refined, inside, detections),
+                            )
+                        )
+                        report["candidates"][f"{name}_refined"] = {"zones": refinement_records}
+                        for _, mask in refined:
+                            yy, xx = np.nonzero(mask)
+                            if len(xx):
+                                sx, sy = crop.width / mask.shape[1], crop.height / mask.shape[0]
+                                contour_bounds.append(
+                                    (
+                                        float(xx.min() * sx),
+                                        float(yy.min() * sy),
+                                        float((xx.max() + 1) * sx),
+                                        float((yy.max() + 1) * sy),
+                                    )
+                                )
+                report["status"] = "compared" if args.compare else "processed"
+                report["selected_candidate"] = (
+                    "normal_fine_refined"
+                    if args.mode == "refine"
+                    else "depth_gradient"
+                    if args.mode == "depth"
+                    else "normal_fine"
+                )
             else:
                 report["status"] = "no_target" if people else "no_person"
                 panels[0] = ("reference", report["status"] + " / depth skipped", panels[0][2])
-            report["comparison_view_crop_xyxy"] = save_panels(panels, crop.size, detections, output, prefix, args)
+            report["comparison_view_crop_xyxy"] = save_panels(
+                panels, crop.size, detections, output, prefix, args, contour_bounds
+            )
+            report["saved_panels"] = [name for name, _, _ in panels]
             report["seconds"] = time.perf_counter() - started
             (output / f"{prefix}_report.json").write_text(
                 json.dumps(report, indent=2) + "\n", encoding="utf-8", newline="\n"
