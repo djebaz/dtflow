@@ -25,9 +25,11 @@ from dtflow.core.request_records import upgraded_request_record
 from dtflow.core.tasks import settle
 from dtflow.persistence.queues import QUEUE_SCHEMA, QueueMixin, add_kind, add_up_next
 
-# 1: attempts only. 2: queues. 3: request v2. 4: up next. 5: script kind. 6: script child slots.
+# 1: attempts only. 2: queues. 3: request v2. 4: up next. 5: script kind. 6: script child slots. 7: cloud usage.
+# 8: the workflow queue kind (#223): only a new ``queues.kind`` value; no table changes, and an older writer could
+# not read a workflow item, so the upgrade is one-way like every earlier one.
 # A supported older writer open backs up, then migrates/reconciles transactionally.
-SCHEMA_VERSION = 7
+SCHEMA_VERSION = 8
 
 
 # Schema 7: a credential-free, per-attempt attribution of cloud output to an opaque key identity. Completion time is
@@ -139,7 +141,7 @@ class SQLiteAttempts(QueueMixin):
             connection.execute("PRAGMA synchronous=FULL")
             connection.execute("PRAGMA foreign_keys=ON")
             connection.execute("PRAGMA busy_timeout=2000")
-            if version in (1, 2, 3, 4, 5, 6):
+            if version in (1, 2, 3, 4, 5, 6, 7):
                 # A fresh consistent backup for each migration attempt; never rely
                 # on an old/partial backup left by a previously failed upgrade.
                 copy = self.directory / f"attempts.pre-v{SCHEMA_VERSION}-from-v{version}-{uuid4().hex}.sqlite3"

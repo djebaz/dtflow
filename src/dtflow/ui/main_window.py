@@ -29,7 +29,7 @@ from dtflow import startup
 from dtflow.build import display_identity
 from dtflow.composition import BACKENDS, BackendSelection
 from dtflow.core.gallery import GalleryQuery
-from dtflow.core.models import BackendError, ValidationError
+from dtflow.core.models import BackendError, ValidationError, eligible_model_ids
 from dtflow.diagnostics import event as diagnostic_event
 from dtflow.logging_setup import configured_directory, development_mode
 from dtflow.paths import application_state_dir
@@ -274,6 +274,22 @@ class MainWindow:
         )
         self.scripts.mount(self.shell)
         self._scripts_active = False
+        # Workflows is its own workspace; its panels follow Scripts' in the shell stacks (selected by widget).
+        from dtflow.ui.workflows_page import WorkflowsPage
+
+        self.workflows_marker = QWidget()
+        form.workspaceStack.addWidget(self.workflows_marker)
+        self.workflows = WorkflowsPage(
+            load_ui(FORMS_DIR / "workflows_context.ui"),
+            load_ui(FORMS_DIR / "workflows_workspace.ui"),
+            load_ui(FORMS_DIR / "workflows_inspector.ui"),
+            runner=self.runner,
+            state_dir=self.state_dir,
+            choices_source=self._workflow_choices,
+            open_image=self._open_output_in_images,
+        )
+        self.workflows.mount(self.shell)
+        startup.mark("workspace: workflows mounted")
         form.workspaceStack.hide()
         startup.mark("workspace: legacy stack hidden")
         form.rootLayout.addWidget(self.shell)
@@ -292,6 +308,7 @@ class MainWindow:
             "productSubtitleLabel",
             "connectionNavigationButton",
             "generationNavigationButton",
+            "workflowsNavigationButton",
             "queueNavigationButton",
             "imagesNavigationButton",
         ):
@@ -373,6 +390,15 @@ class MainWindow:
             activity=self.activity,
         )
         self.scripts.run_start = self.queue.start_script
+        self.workflows.start_workflow = self.queue.start_workflow
+        self.workflows.start_created = self.queue.start_created
+        self.workflows.on_layout = self._responsive_workspace
+        # Queues → Open in Workflows (and its Retry routing) for a workflow item, once QueuePage offers the hook.
+        for owner in (self.queue, self.queue_page):
+            hook = getattr(owner, "set_open_workflow_hook", None)
+            if callable(hook):
+                hook(self._open_workflow_run)
+                break
         self.scripts.setup_prepare = self.queue.prepare_script
         self.scripts.run_prepared = self.queue.start_prepared_script
         self.scripts.inventory_source = lambda: self.generation._inventory_snapshot
@@ -507,6 +533,7 @@ class MainWindow:
         form.generationNavigationButton.clicked.connect(self._show_generation)
         form.backendCombo.currentTextChanged.connect(lambda _: self.generation.sync_backend())
         form.queueNavigationButton.clicked.connect(self._show_queue)
+        form.workflowsNavigationButton.clicked.connect(self._show_workflows)
         form.imagesNavigationButton.setEnabled(True)
         form.imagesNavigationButton.setToolTip("Browse committed saved outputs")
         form.imagesNavigationButton.setAccessibleName("Show saved Images")
@@ -636,6 +663,21 @@ class MainWindow:
         self.form.workspaceStack.setCurrentWidget(self.queue_page)
         self.queue.refresh()
         self.queue.shown()
+
+    def _show_workflows(self) -> None:
+        self.form.workspaceStack.setCurrentWidget(self.workflows_marker)
+
+    def _open_workflow_run(self, queue_id: str) -> None:
+        """Show a workflow queue's run in Workflows: its steps, Retry and waiting branches."""
+        self._show_workflows()
+        self.workflows.open_run(queue_id)
+
+    def _workflow_choices(self) -> dict:
+        """The Workflows inspector's checkpoint and LoRA choices, from the in-memory inventory (never blocks)."""
+        choices = self.generation.plan_choices()
+        snapshot = self.generation._inventory_snapshot
+        models = list(eligible_model_ids(snapshot)) if snapshot is not None else list(choices.get("models", ()))
+        return {"models": models, "loras": choices.get("loras", {})}
 
     def _open_output_in_images(self, identity: str) -> None:
         """Queues → Open in Images: show this committed output in the Images Detail view."""
@@ -767,6 +809,11 @@ class MainWindow:
             stack.setCurrentIndex(index)
         if index == 1 and self._scripts_active:
             self.scripts.activate()
+        workflows_active = self.form.workspaceStack.currentWidget() is self.workflows_marker
+        if workflows_active:
+            self.workflows.activate()
+        else:
+            self.workflows.set_active(False)
         # Queues owns scrolling in queueList: the shared outer scroll must not
         # create a second wheel/scrollbar over the fixed filter and Clear action.
         queues_active = index == 2
@@ -799,6 +846,10 @@ class MainWindow:
             button.setAutoExclusive(False)
             button.setChecked(not logs_active and index == position)
             button.setAutoExclusive(True)
+        workflows_button = self.form.workflowsNavigationButton
+        workflows_button.setAutoExclusive(False)
+        workflows_button.setChecked(workflows_active)
+        workflows_button.setAutoExclusive(True)
         images_active = self.form.workspaceStack.currentWidget() is self.images_page
         self.grid_index_label.setVisible(images_active and development_mode())
         self.gallery.set_active(images_active)
@@ -870,7 +921,9 @@ class MainWindow:
             # Scripts has long hook identifiers inside a scroll viewport whose
             # horizontal bar is intentionally disabled. Ignore its size hint
             # when active, so it cannot overflow the shared right rail.
-            scripts_inspector = page is self.scripts.right
+            scripts_inspector = page is self.scripts.right or (
+                hasattr(self, "workflows") and page is self.workflows.inspector
+            )
             horizontal = (
                 QSizePolicy.Policy.Ignored if (not shown or scripts_inspector) else QSizePolicy.Policy.Preferred
             )
@@ -933,11 +986,17 @@ class MainWindow:
             self.gallery_detail.galleryNavigationSlot.setVisible(images)
             if not images and self._gallery_previous_sizes:
                 shell.workspaceSplitter.setSizes(self._gallery_previous_sizes)
+        # Workflows keeps its inspector (node settings, Retry, Continue/Stop) at every width; its Library toggle folds
+        # the left panels instead, and the brand and navigation then sit in the Workflows header row.
+        workflows = hasattr(self, "workflows") and self.form.workspaceStack.currentWidget() is self.workflows_marker
+        folded = workflows and not self.workflows.library_open(narrow)
+        if hasattr(self, "workflows"):
+            self._place_workflows_chrome(folded, moved_elsewhere=images or logs)
         # Logs and Images use the full-width center workspace, regardless of
         # whether the Images page changed during this navigation.
-        shell.leftRail.setVisible(not images and not logs)
-        shell.rightRail.setVisible(not images and not logs and not narrow)
-        self._place_images_header(images=images, logs=logs, narrow=narrow)
+        shell.leftRail.setVisible(not images and not logs and not folded)
+        shell.rightRail.setVisible(not images and not logs and (workflows or not narrow))
+        self._place_images_header(images=images, logs=logs, narrow=narrow and not workflows)
         if self._logs_form is not None:
             self._logs_form.logsBrandSlot.setVisible(logs)
             self._logs_form.logsNavigationSlot.setVisible(logs)
@@ -946,7 +1005,31 @@ class MainWindow:
             self.scripts.sync_responsive()
         elif hasattr(self, "scripts"):
             self.scripts.drawer.hide()
+        if hasattr(self, "workflows"):
+            self.workflows.sync_responsive(narrow)
         self._align_run_control()
+
+    def _place_workflows_chrome(self, folded: bool, *, moved_elsewhere: bool) -> None:
+        """Move the brand and navigation into the Workflows header while its Library is folded, and back after."""
+        shell, page = self.shell, self.workflows.workspace
+        slots = ((page.workflowBrandSlot, shell.brandFrame), (page.workflowNavigationSlot, shell.navigationFrame))
+        if folded:
+            for slot, frame in slots:
+                if frame.parentWidget() is not slot:
+                    width = shell.leftRail.maximumWidth()
+                    if frame is shell.navigationFrame:
+                        width = max(width, frame.sizeHint().width())
+                    slot.setFixedSize(width, max(frame.height(), frame.sizeHint().height()))
+                    slot.layout().addWidget(frame)
+                frame.show()
+            page.workflowShellHeader.show()
+            return
+        page.workflowShellHeader.hide()
+        if not moved_elsewhere and shell.brandFrame.parentWidget() is page.workflowBrandSlot:
+            shell.leftRailLayout.insertWidget(0, shell.brandFrame)
+            shell.leftRailLayout.insertWidget(1, shell.navigationFrame)
+            shell.brandFrame.show()
+            shell.navigationFrame.show()
 
     def _place_images_header(self, *, images, logs, narrow) -> None:
         """One Images action above ordinary inspectors, never in Images or Logs."""

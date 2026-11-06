@@ -109,6 +109,7 @@ from dtflow.services.cache_management import CacheCategory  # noqa: E402
 from dtflow.services.credentials import KEY, SavedCredentials, SecureStorageUnavailable  # noqa: E402
 from dtflow.services.gallery import MISSING_ISSUE, item_from_record, load_detail  # noqa: E402
 from dtflow.services.image_recycle import RecyclePlan, RecycleResult, RecycleTarget, RecycleUnavailable  # noqa: E402
+from dtflow.services.model_provisioning import ProvisionProgress, catalogue  # noqa: E402
 from dtflow.services.person_selection import PersonAnalysis, PersonLayers, colored_preview  # noqa: E402
 from dtflow.ui import desktop_open, system_trash  # noqa: E402
 from dtflow.ui import gallery_page as gallery_ui  # noqa: E402
@@ -119,6 +120,7 @@ from dtflow.ui.planning_presenter import queue_edit_from_records  # noqa: E402
 from dtflow.ui.diagnostic_notice import DiagnosticNoticeReceiver  # noqa: E402
 from dtflow.ui.generation_page import GenerationPage  # noqa: E402
 from dtflow.ui.inline_feedback import InlineNotice  # noqa: E402
+from dtflow.ui import model_download  # noqa: E402
 from dtflow.ui.main_window import MainWindow  # noqa: E402
 from dtflow.ui.splash import StartupSplash  # noqa: E402
 from dtflow.ui.system_trash import TRASH_NAME  # noqa: E402
@@ -194,7 +196,7 @@ def planned_phases():
     if wants("scripts"):
         phases.append("scripts window")
     if wants("workflows"):
-        phases.append("workflows preview window")
+        phases.append("workflows workspace")
     return phases
 
 
@@ -1968,6 +1970,46 @@ def render_item_table_states(shell, out, state):
         snap("queues-72-script-parent-summary")
         select(1)
         snap("queues-73-script-step-details")
+        # A workflow run is one queue item: Relaunch and Edit as new stay off (Run is in Workflows); item Retry reruns
+        # its first failed step, and the item keeps the run's own reason (provider wording included).
+        reason = (
+            "1 result(s) saved; 2 step(s) failed, stopped or unconfirmed. First problem: Inpaint face "
+            "(Generate #1 image 2): DT+ refused the request: not enough credits."
+        )
+        # A real workflow row has no single model, seed or sampler (``_workflow_item_fields``): clear the borrowed ones.
+        plain = {key: None for key in items[0] if key not in ("item_id", "position", "state", "artifacts")}
+        plain.update(loras=[], artifacts=[], attempt_id=None)
+        workflow_item = {**items[0], **plain}
+        workflow_item.update(
+            item_id="offline-workflow-item",
+            state="failed",
+            prompt="Workflow: Portrait finishing",
+            failure={"code": "workflow_partial", "message": reason},
+            workflow={
+                "state": "partial",
+                "message": reason,
+                "steps": [{"node_id": 3, "branch": [1, 1], "state": "failed", "title": "Inpaint face"}],
+            },
+        )
+        workflow_view = dict(
+            view,
+            kind="workflow",
+            queue_id="offline-workflow-queue",
+            status="finished",
+            first=dict(view["first"], prompt="Workflow: Portrait finishing", model="", loras=[], operation="txt2img"),
+            varied=None,
+            items=[workflow_item],
+            summary={name: int(name == "failed") for name in counts},
+            cap=1,
+        )
+        queue._selected = workflow_view["queue_id"]
+        queue._read_done(([workflow_view], workflow_view, 2), None)
+        queue._timer.stop()
+        select(0)
+        strip = activity_strip(page)
+        if strip is not None and "queue-message" in strip.rows:
+            strip.finish("queue-message")  # an earlier state's notice is not part of this one
+        snap("queues-74-workflow-queue")
         queue._selected = None
         queue._activity.set(dispatching=False)
         queue._read_done(([], None, 2), None)
@@ -3572,6 +3614,36 @@ def render_inpaint_states(shell, state, capture):
     editor._models_issue = None
     editor._update_models_badge()
     editor._people_status()
+    # #223 model downloads: offer, the one licence confirmation and a presentation-only progress row.
+    # Nothing is downloaded: the confirmation is dismissed and the progress row is a fixture.
+    capture("inpaint-21-models-download-offered")
+    editor.form.downloadModelsButton.click()
+    capture("inpaint-22-models-download-confirmation")
+    shell.inline.dismiss()
+    download_strip = activity_strip(page)
+    entries = catalogue()
+    download_strip.start(
+        model_download.KEY,
+        model_download.TITLE,
+        stop=lambda: None,
+        stop_text="Cancel download",
+        action_text="Cancel",
+    )
+    done, total, detail, count = model_download._progress_detail(
+        ProvisionProgress(
+            "clothes", f"Downloading {entries[1].name}", 55 * 1024 * 1024, round(entries[1].size_mib * 1024 * 1024)
+        ),
+        entries,
+    )
+    download_strip.update(model_download.KEY, done, total, detail=detail, count=count)
+    page.window()._model_download_running = True
+    editor._sync_download()
+    editor._controls()
+    capture("inpaint-23-models-download-progress")
+    page.window()._model_download_running = False
+    download_strip.finish(model_download.KEY)
+    editor._sync_download()
+    editor._controls()
     people = PersonAnalysis(
         width,
         height,
@@ -3854,7 +3926,7 @@ def _render_selection(app, args):
     ):
         state = Path(temporary)
         if wants("workflows"):
-            phase("workflows preview window")
+            phase("workflows workspace")
             from render_workflows_states import render_workflows_states
 
             render_workflows_states(
