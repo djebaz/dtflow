@@ -34,9 +34,11 @@ from dtflow.services.person_selection import (
     part_at,
     person_at,
 )
+from dtflow.services.model_provisioning import missing_entries
 from dtflow.services.session import image_edit_capability, selection_for
 from dtflow.ui.activity_strip import activity_strip
 from dtflow.ui.inline_feedback import confirm_action, feedback
+from dtflow.ui.model_download import LatestRelay, confirm_and_download, is_downloading
 from dtflow.ui.inpaint_canvas import InpaintCanvas
 
 
@@ -121,6 +123,7 @@ class InpaintEditor(QObject):
         self.form.advancedToggle.toggled.connect(self.form.advancedBox.setVisible)
         self.form.selectModeButton.toggled.connect(self._mode)
         self.form.modelsButton.clicked.connect(self.choose_models)
+        self.form.downloadModelsButton.clicked.connect(self.download_models)
         self._models_tooltip = self.form.modelsButton.toolTip()
         self.form.modelsBadge.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
         self.form.modelsBadge.raise_()
@@ -249,6 +252,7 @@ class InpaintEditor(QObject):
             self._badge_timer.start()
         elif not self._model_checking:
             self._badge_timer.stop()
+        self._sync_download()
 
     def _check_models(self):
         """Check saved model read access off Qt; full model verification stays at Find people."""
@@ -400,6 +404,7 @@ class InpaintEditor(QObject):
         self.form.saveMaskButton.setEnabled(available and self._source is not None and self._coverage > 0)
         self.form.findPeopleButton.setEnabled(has_source and self._models.segmentation is not None)
         self.form.modelsButton.setEnabled(available)
+        self.form.downloadModelsButton.setEnabled(available and not is_downloading(self.page))
         self.form.peopleList.setEnabled(has_source and self._analysis is not None)
         can_add = has_source and self._selected_person() is not None and bool(self._layers())
         self.form.addPersonButton.setEnabled(can_add)
@@ -478,8 +483,10 @@ class InpaintEditor(QObject):
 
         self.runner.submit(work(), done)
 
-    def _task(self, title, worker, apply, *, quiet=False):
+    def _task(self, title, worker, apply, *, quiet=False, on_end=None):
         if self.runner.closed or self._loading:
+            if on_end is not None:
+                on_end()
             return
         self._revision += 1
         revision = self._revision
@@ -493,6 +500,8 @@ class InpaintEditor(QObject):
             return await settle(asyncio.to_thread(worker))
 
         def done(value, error):
+            if on_end is not None:
+                on_end()
             if self.runner.closed:
                 return
             self._loading = False
@@ -746,6 +755,11 @@ class InpaintEditor(QObject):
         models = self._models
         if self._analysis is None and self._models_issue:
             text = self._models_issue
+        elif self._analysis is None and models.segmentation is None and self._downloadable():
+            text = (
+                "Press Download models… to install the detection models, or choose your own files (Models…). "
+                "Painting works without them."
+            )
         elif self._analysis is None and models.segmentation is None:
             text = "Choose a YOLO26 segmentation model (Models…) to find people. Painting works without it."
         elif self._analysis is None:
@@ -868,11 +882,68 @@ class InpaintEditor(QObject):
         if self._source is None or self._models.segmentation is None or self._loading:
             return
         source, models = self._source, self._models
-        self._task(
-            "Find people",
-            lambda: analyze_people(source, models.segmentation, models.clothes, models.faces),
-            self._set_analysis,
-        )
+        strip = activity_strip(self.page)
+
+        def stage(text):
+            # Truthful activity text: each stage is reported by the worker as it really starts.
+            if strip is not None:
+                strip.update("inpaint-editor-io", 0, 0, detail=text)
+
+        relay = LatestRelay(stage, self)
+
+        def worker():
+            return analyze_people(source, models.segmentation, models.clothes, models.faces, on_stage=relay)
+
+        self._task("Find people", worker, self._set_analysis, on_end=lambda: (relay.close(), relay.deleteLater()))
+
+    def _downloadable(self):
+        """Catalogue entries for roles that are not configured or whose saved file is unavailable (GUI-side, no I/O)."""
+        if self.controller is None or self._model_checking or self._model_check_error:
+            return ()
+        try:
+            return missing_entries(self._models, self._model_readiness)
+        except ValidationError:
+            return ()
+
+    def _sync_download(self):
+        entries = self._downloadable()
+        button = self.form.downloadModelsButton
+        button.setVisible(bool(entries) or is_downloading(self.page))
+        if self._analysis is None:
+            self._people_status()
+        if entries:
+            button.setToolTip(
+                "Download from the publishers after one confirmation that lists each licence: "
+                + ", ".join(entry.name for entry in entries)
+                + ". Your own files chosen with Models… are kept."
+            )
+
+    def download_models(self):
+        button = self.form.downloadModelsButton
+        if self._commit(button):
+            self._controls()  # the confirmed download is running now
+            return
+        if self._loading or self.controller is None or is_downloading(self.page):
+            return
+        entries = self._downloadable()
+        state = self.controller._state
+
+        def done(models, error):
+            self._controls()
+            if models is None:
+                self._model_check_error = str(error) if error is not None else "Model settings could not be read."
+                self._models_issue = self._model_check_error
+                self._update_models_badge()
+                self._people_status()
+                return
+            # Reload what is recorded now: downloaded roles plus any user-selected file, untouched.
+            self._models = models
+            self._models_issue = None
+            self._set_analysis(None)
+            self._check_models()
+
+        confirm_and_download(self.page, state, entries, self.runner, done, button=button)
+        self._controls()
 
     def _layers(self):
         """Ticked layers, in list order; garment layers are unavailable without the clothes model."""

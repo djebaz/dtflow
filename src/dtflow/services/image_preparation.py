@@ -157,6 +157,13 @@ def save_mask_file(path: Path, mask: ImageContent) -> None:
         raise ValidationError("Mask could not be saved as a new file; existing files are never overwritten.") from exc
 
 
+def mask_png(pixels: bytes, width: int, height: int) -> bytes:
+    """Canonical metadata-free grayscale PNG of a source-grid 0/255 mask buffer."""
+    if len(pixels) != width * height:
+        raise ValidationError("Mask pixels do not match the source size.")
+    return _content(Image.frombytes("L", (width, height), pixels)).encoded
+
+
 def save_mask_pixels_file(path: Path, pixels: bytes, width: int, height: int) -> None:
     """Worker save wrapper for the unadjusted binary editor buffer, not a preview."""
     if mask_coverage(pixels, width, height) == 0:
@@ -293,7 +300,12 @@ def _blend_bytes(pixels, width, height, source_width, source_height, grow, feath
 
 def load_source_file(path: Path) -> ImageContent:
     """Editor-side source snapshot: EXIF-oriented, alpha flattened on white, RGB8; no fitting or resizing."""
-    oriented = _decode(_read(path, "Source image"), "Source image").convert("RGBA")
+    return load_source_bytes(_read(path, "Source image"))
+
+
+def load_source_bytes(encoded: bytes) -> ImageContent:
+    """``load_source_file`` for encoded bytes already in memory (for example a workflow node's IMAGE)."""
+    oriented = _decode(encoded, "Source image").convert("RGBA")
     flat = Image.new("RGBA", oriented.size, "white")
     flat.alpha_composite(oriented)
     validate_source_dimensions(*flat.size)
@@ -332,6 +344,11 @@ def _fit(source: tuple[int, int], target: tuple[int, int]) -> ImageFit:
         fitted_width,
         fitted_height,
     )
+
+
+def source_size(encoded: bytes) -> tuple[int, int]:
+    """Oriented (width, height) of an encoded source image, as ``prepare_image_bytes`` sees it."""
+    return _decode(encoded, "Source image").size
 
 
 def _source_rgb(encoded: bytes) -> Image.Image:
