@@ -182,6 +182,14 @@ def main(argv=None):
     parser.add_argument(
         "-cp", "--compare", action="store_true", help="Show all 3 SAM candidates; with -sw, one prompt-size column each"
     )
+    parser.add_argument(
+        "-mr",
+        "--mask-rank",
+        type=int,
+        choices=(1, 2, 3),
+        default=3,
+        help="Select candidate by descending predicted-IoU rank (default 3); -cp shows all and marks this selection",
+    )
     parser.add_argument("-f", "--images-only", action="store_true", help="Skip JSON reports")
     parser.add_argument(
         "-w", "--overwrite", action="store_true", help="Replace only this POC's recognized flat outputs"
@@ -317,6 +325,7 @@ def main(argv=None):
                         "prompt_clipped": clipped,
                         "sam_seconds": sam_seconds,
                         "preprocessing": preprocessing,
+                        "selected_rank": args.mask_rank,
                         "candidates": [],
                     }
                     target_report["sam_seconds"] += sam_seconds
@@ -329,18 +338,19 @@ def main(argv=None):
                         variant["candidates"].append(
                             {
                                 "rank": rank,
+                                "selected": rank == args.mask_rank,
                                 "model_mask_index": mask_index,
                                 "predicted_iou": score,
                                 "raw_pixels": int(raw_mask.sum()),
                                 "pixels": int(mask.sum()),
                             }
                         )
-                        if args.compare or rank == 1:
+                        if args.compare or rank == args.mask_rank:
                             preview = show_prompt(
                                 contour_preview(np.asarray(roi), [(7, mask)], valid, [local_detection]), prompt
                             )
                             caption = f"{factor:g}x / {rank}: predicted IoU {score:.3f}" + (
-                                " / selected" if rank == 1 else ""
+                                " / selected" if rank == args.mask_rank else ""
                             )
                             panels.append(tile(preview, caption, (0, 0, *roi.size), args.tile))
                     columns.append(panels)
