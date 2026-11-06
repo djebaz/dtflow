@@ -36,7 +36,9 @@ def load_model(path, task, threads):
     import onnxruntime as ort
 
     if path.suffix.lower() != ".onnx" or not path.is_file():
-        raise FileNotFoundError(f"Missing ONNX {task} model: {path}. Export the .pt checkpoint first; PyTorch is not used by this POC.")
+        raise FileNotFoundError(
+            f"Missing ONNX {task} model: {path}. Export the .pt checkpoint first; PyTorch is not used by this POC."
+        )
     options = ort.SessionOptions()
     options.intra_op_num_threads = threads
     options.inter_op_num_threads = 1
@@ -64,14 +66,15 @@ def load_model(path, task, threads):
         raise RuntimeError(f"Unexpected custom classes: {names}")
     if len(outputs) != (2 if task == "segment" else 1) or any(item.type != "tensor(float)" for item in outputs):
         raise RuntimeError(f"{task}: expected raw YOLOv8 outputs; export with nms=False")
-    digest = hashlib.file_digest(path.open("rb"), "sha256").hexdigest()
+    with path.open("rb") as stream:
+        digest = hashlib.file_digest(stream, "sha256").hexdigest()
     return session, names, {"filename": path.name, "sha256": digest, "input_shape": shape, "classes": names}
 
 
 def preprocess(image, shape):
     height, width = shape[2:]
     gain = min(width / image.width, height / image.height)
-    rw, rh = round(image.width * gain), round(image.height * gain)
+    rw, rh = max(1, round(image.width * gain)), max(1, round(image.height * gain))
     left, top = round((width - rw) / 2 - 0.1), round((height - rh) / 2 - 0.1)
     resized = cv.resize(np.asarray(image), (rw, rh), interpolation=cv.INTER_LINEAR)
     canvas = np.full((height, width, 3), 114, dtype=np.uint8)
@@ -184,8 +187,22 @@ def predict(session, names, source, task, args):
     for record in records:
         x, y = record.pop("label_xy")
         x, y = max(0, min(source.width - 120, int(x))), max(0, min(source.height - 20, int(y)))
-        draw.text((x, y), f"{record['class']} {record['score']:.2f}", font=font, fill=PALETTE[record["class"]], stroke_width=2, stroke_fill="black")
-    info = {"inference_seconds": seconds, "preprocessing": fit, "candidates": candidates, "pre_nms_limit": 3000, "pre_nms_truncated": candidates > 3000, "detections": records}
+        draw.text(
+            (x, y),
+            f"{record['class']} {record['score']:.2f}",
+            font=font,
+            fill=PALETTE[record["class"]],
+            stroke_width=2,
+            stroke_fill="black",
+        )
+    info = {
+        "inference_seconds": seconds,
+        "preprocessing": fit,
+        "candidates": candidates,
+        "pre_nms_limit": 3000,
+        "pre_nms_truncated": candidates > 3000,
+        "detections": records,
+    }
     return image, info
 
 
@@ -224,15 +241,28 @@ def main(argv=None):
     parser.add_argument("-m", "--max-det", type=int, default=50)
     parser.add_argument("-t", "--threads", type=int, default=2)
     parser.add_argument("-a", "--alpha", type=float, default=0.35)
-    parser.add_argument("-c", "--classes", nargs="+", choices=tuple(PALETTE), help="Optional class-name filter; default all")
-    parser.add_argument("-r", "--size", type=int, default=2560, help="Saved image maximum long side, 0 keeps native resolution")
-    parser.add_argument("-cp", "--compare", action="store_true", help="One side-by-side image instead of two separate overlays")
+    parser.add_argument(
+        "-c", "--classes", nargs="+", choices=tuple(PALETTE), help="Optional class-name filter; default all"
+    )
+    parser.add_argument(
+        "-r", "--size", type=int, default=2560, help="Saved image maximum long side, 0 keeps native resolution"
+    )
+    parser.add_argument(
+        "-cp", "--compare", action="store_true", help="One side-by-side image instead of two separate overlays"
+    )
     parser.add_argument("-f", "--images-only", action="store_true")
-    parser.add_argument("-w", "--overwrite", action="store_true", help="Replace only recognized custom_parts_poc flat outputs")
+    parser.add_argument(
+        "-w", "--overwrite", action="store_true", help="Replace only recognized custom_parts_poc flat outputs"
+    )
     args = parser.parse_args(argv)
     if not args.input_dir.is_dir():
         parser.error("input-dir must exist")
-    if not 0 < args.confidence <= 1 or not 0 < args.nms < 1 or not math.isfinite(args.alpha) or not 0 <= args.alpha <= 1:
+    if (
+        not 0 < args.confidence <= 1
+        or not 0 < args.nms < 1
+        or not math.isfinite(args.alpha)
+        or not 0 <= args.alpha <= 1
+    ):
         parser.error("confidence (0,1], nms (0,1), alpha [0,1] required")
     if args.threads < 1 or not 1 <= args.max_det <= 200 or (args.size != 0 and args.size < 256):
         parser.error("threads >= 1, max-det 1..200, size 0 or >= 256 required")
@@ -240,11 +270,19 @@ def main(argv=None):
     if not files:
         parser.error("No supported still images")
     output, source_dir = args.output_dir.resolve(), args.input_dir.resolve()
-    if output == source_dir or output in source_dir.parents or args.output_dir.is_symlink() or args.output_dir.is_junction():
+    if (
+        output == source_dir
+        or output in source_dir.parents
+        or args.output_dir.is_symlink()
+        or args.output_dir.is_junction()
+    ):
         parser.error("output-dir must not redirect or contain input-dir")
     previous = list(output.iterdir()) if output.exists() else []
     pattern = re.compile(r"cpp_\d{4,}_.+_(?:seg|obb|compare|report)\.(?:jpg|json)$")
-    if previous and (not args.overwrite or any(p.is_symlink() or p.is_junction() or not p.is_file() or not pattern.fullmatch(p.name) for p in previous)):
+    if previous and (
+        not args.overwrite
+        or any(p.is_symlink() or p.is_junction() or not p.is_file() or not pattern.fullmatch(p.name) for p in previous)
+    ):
         parser.error("Output is not empty; -w replaces recognized custom_parts_poc outputs only")
     seg, seg_names, seg_model = load_model(args.seg_model, "segment", args.threads)
     obb, obb_names, obb_model = load_model(args.obb_model, "obb", args.threads)
@@ -254,7 +292,10 @@ def main(argv=None):
         if entry.is_symlink() or entry.is_junction() or not entry.is_file() or entry.resolve().parent != output:
             raise RuntimeError(f"Output changed before cleanup: {entry.name}")
         entry.unlink()
-    print(f"ONNX Runtime CPU: {len(files)} images; seg {seg_model['input_shape'][2:]}; OBB {obb_model['input_shape'][2:]}", flush=True)
+    print(
+        f"ONNX Runtime CPU: {len(files)} images; seg {seg_model['input_shape'][2:]}; OBB {obb_model['input_shape'][2:]}",
+        flush=True,
+    )
     failures = 0
     for index, path in enumerate(files, 1):
         prefix = f"cpp_{index:04d}_{path.stem[:70]}"
@@ -266,7 +307,9 @@ def main(argv=None):
             seg_panel = frame(seg_overlay, f"SEG masks / {seg_report['inference_seconds']:.2f}s", seg_names)
             obb_panel = frame(obb_overlay, f"OBB + long axis / {obb_report['inference_seconds']:.2f}s", obb_names)
             if args.compare:
-                combined = Image.new("RGB", (seg_panel.width + obb_panel.width, max(seg_panel.height, obb_panel.height)), (22, 22, 26))
+                combined = Image.new(
+                    "RGB", (seg_panel.width + obb_panel.width, max(seg_panel.height, obb_panel.height)), (22, 22, 26)
+                )
                 combined.paste(seg_panel, (0, 0))
                 combined.paste(obb_panel, (seg_panel.width, 0))
                 save_image(combined, output / f"{prefix}_compare.jpg", args.size)
@@ -275,9 +318,28 @@ def main(argv=None):
                 save_image(obb_panel, output / f"{prefix}_obb.jpg", args.size)
             seconds = time.perf_counter() - started
             if not args.images_only:
-                report = {"source": path.name, "source_size": source.size, "settings": {k: str(v) if isinstance(v, Path) else v for k, v in vars(args).items()}, "models": {"seg": seg_model, "obb": obb_model}, "seg": seg_report, "obb": obb_report, "seconds": seconds, "notes": ["Full-image RGB inference; aspect-preserving centered letterbox with fill 114", "Masks use native-style logits restoration, threshold 0 and predicted-box crop", "OBB NMS uses exact polygon IoU, not Ultralytics ProbIoU", "OBB long axis is undirected, not an anatomical base-to-tip prediction"]}
-                (output / f"{prefix}_report.json").write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8", newline="\n")
-            print(f"{path.name}: {len(seg_report['detections'])} masks, {len(obb_report['detections'])} rotated boxes; {seconds:.2f}s", flush=True)
+                report = {
+                    "source": path.name,
+                    "source_size": source.size,
+                    "settings": {k: str(v) if isinstance(v, Path) else v for k, v in vars(args).items()},
+                    "models": {"seg": seg_model, "obb": obb_model},
+                    "seg": seg_report,
+                    "obb": obb_report,
+                    "seconds": seconds,
+                    "notes": [
+                        "Full-image RGB inference; aspect-preserving centered letterbox with fill 114",
+                        "Masks use native-style logits restoration, threshold 0 and predicted-box crop",
+                        "OBB NMS uses exact polygon IoU, not Ultralytics ProbIoU",
+                        "OBB long axis is undirected, not an anatomical base-to-tip prediction",
+                    ],
+                }
+                (output / f"{prefix}_report.json").write_text(
+                    json.dumps(report, indent=2) + "\n", encoding="utf-8", newline="\n"
+                )
+            print(
+                f"{path.name}: {len(seg_report['detections'])} masks, {len(obb_report['detections'])} rotated boxes; {seconds:.2f}s",
+                flush=True,
+            )
         except Exception as exc:
             failures += 1
             print(f"{path.name}: {type(exc).__name__}: {exc}", file=sys.stderr, flush=True)
