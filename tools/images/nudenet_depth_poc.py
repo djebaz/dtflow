@@ -189,6 +189,13 @@ def main(argv=None):
     parser.add_argument("-fp", "--fit-percentile", type=float, default=35)
     parser.add_argument("-u", "--smooth", type=float, default=4)
     parser.add_argument(
+        "-x",
+        "--expand",
+        type=float,
+        default=0,
+        help="Expand fitted zones by 0..32 growth-grid pixels, within person mask; try 2",
+    )
+    parser.add_argument(
         "-cp",
         "--compare",
         action="store_true",
@@ -207,12 +214,13 @@ def main(argv=None):
     if not 64 <= args.resolution <= 1024 or not 256 <= args.tile <= 1024 or args.threads < 1:
         parser.error("resolution 64..1024, tile 256..1024 and threads >= 1 required")
     if (
-        not all(math.isfinite(v) for v in (args.edge_weight, args.fit_percentile, args.smooth))
+        not all(math.isfinite(v) for v in (args.edge_weight, args.fit_percentile, args.smooth, args.expand))
         or args.edge_weight < 0
         or not 0 <= args.fit_percentile <= 100
         or not 0 <= args.smooth <= 12
+        or not 0 <= args.expand <= 32
     ):
-        parser.error("edge-weight >= 0, fit-percentile 0..100 and smooth 0..12 must be finite")
+        parser.error("edge-weight >= 0, fit-percentile 0..100, smooth 0..12 and expand 0..32 must be finite")
     files = sorted(p for p in args.input_dir.iterdir() if p.is_file() and p.suffix.lower() in IMAGE_SUFFIXES)
     if not files:
         parser.error("No supported still images")
@@ -310,7 +318,10 @@ def main(argv=None):
                 if not valid.any():
                     raise RuntimeError("Person mask is empty at geometry resolution")
                 relative, normals, fields = geometry(cv.resize(z, size, interpolation=cv.INTER_AREA), valid)
-                full = lambda a: cv.resize(a, crop.size, interpolation=cv.INTER_LINEAR)
+
+                def full(values, target_size=crop.size):
+                    return cv.resize(values, target_size, interpolation=cv.INTER_LINEAR)
+
                 panels.extend(
                     [
                         (
@@ -343,13 +354,13 @@ def main(argv=None):
                         args.resolution,
                         args.edge_weight,
                         args.smooth,
-                        0,
+                        args.expand,
                         percentile=args.fit_percentile,
                     )
                     panels.append(
                         (
                             f"fit_{name}",
-                            f"Fit: {name.replace('_', ' ')}",
+                            f"Fit: {name.replace('_', ' ')} / expand {args.expand:g}",
                             contour_preview(rgb, layers, inside, detections),
                         )
                     )
