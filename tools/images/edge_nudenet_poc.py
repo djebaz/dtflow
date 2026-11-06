@@ -9,6 +9,7 @@ largest person is processed. Zone names are detector suggestions, not anatomy.
 from __future__ import annotations
 
 import argparse
+import ast
 import heapq
 import json
 import math
@@ -22,6 +23,54 @@ from PIL import Image, ImageDraw, ImageFont
 
 from pascal_nudenet_poc import UNKNOWN, save_preview, verified_checkpoint
 from schp_atr18_smoke import CHECKPOINTS, IMAGE_SUFFIXES, detect_body_parts, load_rgb, person_crop_box, select_people
+
+NUDENET_SPECS = {
+    "320n": CHECKPOINTS["faces"],
+    "640m": (
+        "https://github.com/notAI-tech/NudeNet/releases/download/v3.4-weights/640m.onnx",
+        103_538_690,
+        "sha256",
+        "04fe3d77980780c1f8297dc6d7f942fd5b3abe6942a188f742a85241e4f634eb",
+    ),
+}
+
+
+def nudenet_640_session(data):
+    """Keep the experimental 640m contract separate from the app's 320n loader."""
+    from dtflow.services import person_selection as selection
+
+    session = selection._cpu_session(data)
+    inputs, outputs = session.get_inputs(), session.get_outputs()
+    if len(inputs) != 1 or inputs[0].type not in selection.FLOATS or len(inputs[0].shape) != 4:
+        raise RuntimeError("NudeNet 640m requires one float NCHW RGB input")
+    # The official export has symbolic batch/height/width; static dimensions must agree.
+    if any(
+        isinstance(dim, int) and dim != expected
+        for dim, expected in zip(inputs[0].shape, (1, 3, 640, 640), strict=True)
+    ):
+        raise RuntimeError("NudeNet 640m input must support [1,3,640,640]")
+    meta = session.get_modelmeta().custom_metadata_map
+    try:
+        names = ast.literal_eval(meta.get("names", "{}"))
+    except (ValueError, SyntaxError) as exc:
+        raise RuntimeError("Invalid NudeNet class metadata") from exc
+    if (
+        meta.get("task") != "detect"
+        or not isinstance(names, dict)
+        or sorted(names) != list(range(18))
+        or set(names.values()) != set(ZONE_COLORS) | {"ARMPITS_COVERED", "ARMPITS_EXPOSED"}
+    ):
+        raise RuntimeError("NudeNet 640m requires the 18-class detect export")
+    shape = outputs[0].shape if len(outputs) == 1 else ()
+    if (
+        len(shape) != 3
+        or outputs[0].type not in selection.FLOATS
+        or shape[1] != 22
+        or (isinstance(shape[0], int) and shape[0] != 1)
+    ):
+        raise RuntimeError("NudeNet 640m must output one float [1,22,N] tensor")
+    return session
+
 
 PERSON_SPECS = {
     "n": CHECKPOINTS["person"],
@@ -1427,7 +1476,16 @@ def main(argv=None):
     parser.add_argument(
         "-p", "--person-model", type=Path, help="Override path for the exact pinned --person-size checkpoint"
     )
-    parser.add_argument("-n", "--nudenet-model", type=Path, default=Path("tmp/models/nudenet-320n.onnx"))
+    parser.add_argument(
+        "-ns",
+        "--nudenet-size",
+        choices=("320n", "640m"),
+        default="320n",
+        help="NudeNet checkpoint and input resolution; default 320n; missing checkpoint downloads",
+    )
+    parser.add_argument(
+        "-n", "--nudenet-model", type=Path, help="Override path for the exact pinned --nudenet-size checkpoint"
+    )
     parser.add_argument(
         "-t", "--threads", type=int, default=4, help="Edge inference threads; person/parts use at most 4"
     )
@@ -1584,6 +1642,9 @@ def main(argv=None):
         parser.error("-g/-z are inactive for box-fit; use --sweep or --sweep refined with -l box")
     if args.person_model is None:
         args.person_model = Path("tmp/models") / f"yolo26{args.person_size}-seg-ultralytics-v8.4.0.onnx"
+    if args.nudenet_model is None:
+        args.nudenet_model = Path("tmp/models") / f"nudenet-{args.nudenet_size}.onnx"
+    parts_side = 640 if args.nudenet_size == "640m" else 320
     if args.model is None:
         if args.detector == "dexined":
             filename = "edge_detection_dexined_2024sep.onnx"
@@ -1634,7 +1695,7 @@ def main(argv=None):
     for path, spec in (
         *edge_files,
         (args.person_model, PERSON_SPECS[args.person_size]),
-        (args.nudenet_model, CHECKPOINTS["faces"]),
+        (args.nudenet_model, NUDENET_SPECS[args.nudenet_size]),
     ):
         verified_checkpoint(path, spec, not args.no_download)
     cv.setNumThreads(args.threads)
@@ -1647,7 +1708,10 @@ def main(argv=None):
     people_session = selection._verified_session(
         selection.describe_model(args.person_model), selection._segmentation_session
     )
-    parts_session = selection._verified_session(selection.describe_model(args.nudenet_model), selection._faces_session)
+    parts_session = selection._verified_session(
+        selection.describe_model(args.nudenet_model),
+        nudenet_640_session if parts_side == 640 else selection._faces_session,
+    )
     if any(s.get_providers() != ["CPUExecutionProvider"] for s in (people_session, parts_session)):
         raise RuntimeError("Detectors must use ONNX Runtime CPU only")
     for entry in previous:
@@ -1655,6 +1719,7 @@ def main(argv=None):
             raise RuntimeError(f"Output entry changed before cleanup: {entry.name}")
         entry.unlink()
     print(f"CPU models loaded; removed {len(previous)} prior outputs; {len(files)} images", flush=True)
+    print(f"NudeNet: {args.nudenet_size}, {parts_side}x{parts_side} input, CPU", flush=True)
     if args.start == "box":
         print("Box-fit: width/height-normalized per-zone auto budgets; -g, -z, -k and -y are inactive", flush=True)
     failures = 0
@@ -1678,6 +1743,9 @@ def main(argv=None):
                 "detector_backend": "ONNX Runtime CPU",
                 "person_segmenter": f"yolo26{args.person_size}-seg",
                 "person_checkpoint_sha256": PERSON_SPECS[args.person_size][3],
+                "nudenet_model": args.nudenet_size,
+                "nudenet_checkpoint_digest": NUDENET_SPECS[args.nudenet_size][3],
+                "nudenet_checkpoint_digest_algorithm": NUDENET_SPECS[args.nudenet_size][2],
                 "edge_detector": args.detector,
                 "edge_revision": (
                     REVISION
@@ -1693,6 +1761,8 @@ def main(argv=None):
                     "growth": args.growth,
                     "resolution": args.resolution,
                     "parts_confidence": args.parts_confidence,
+                    "nudenet_size": args.nudenet_size,
+                    "nudenet_input_side": parts_side,
                     "nudenet_boxes": args.boxes,
                     "nudenet_box_alpha": args.box_alpha,
                     "person_mask_threshold": args.person_mask_threshold,
@@ -1747,7 +1817,7 @@ def main(argv=None):
                 else:
                     edges = pidinet_edges(cv, net, crop)
                 report["edge_seconds"] = time.perf_counter() - tick
-                _, detections, _ = detect_body_parts(parts_session, crop, args.parts_confidence)
+                _, detections, _ = detect_body_parts(parts_session, crop, args.parts_confidence, input_side=parts_side)
                 detections = [d for d in detections if not d["label"].startswith("ARMPITS_")]
                 if args.compare:
                     save_comparison(

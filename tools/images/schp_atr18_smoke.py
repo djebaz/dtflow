@@ -342,7 +342,7 @@ def segment_person(session, source, mask, box, face_boxes, min_confidence):
     return raw_full, refined_full, confidence_full, details
 
 
-def detect_body_parts(session, source, threshold):
+def detect_body_parts(session, source, threshold, *, input_side=320):
     """Decode every NudeNet class from one inference; NMS only within each class."""
     import ast
     import numpy as np
@@ -351,7 +351,7 @@ def detect_body_parts(session, source, threshold):
     from person_parts_mask_poc import decode_parts, preprocess_parts
 
     names = {int(k): str(v) for k, v in ast.literal_eval(session.get_modelmeta().custom_metadata_map["names"]).items()}
-    tensor, geometry = preprocess_parts(source)
+    tensor, geometry = preprocess_parts(source, input_side=input_side)
     output = selection._run(session, tensor)[0]
     detections = []
     for class_id in sorted(names):
