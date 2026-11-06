@@ -512,12 +512,15 @@ def contract_zones(cv, edges, inside, detections, resolution, edge_weight, smoot
     )
 
 
-def fit_box_zones(cv, edges, inside, detections, resolution, edge_weight, smooth, expand, percentile=50):
+def fit_box_zones(
+    cv, edges, inside, detections, resolution, edge_weight, smooth, expand, percentile=50, breast_margin=0.05
+):
     """Auto-budget each zone against a rounded width/height-normalized box.
 
     The target box is a soft size prior, not a filled rectangle. Its boundary
-    calibrates the edge-weighted budget; a 35% normalized outer search margin
-    bounds excursions. Finishing still operates separately on the inferred mask.
+    calibrates the edge-weighted budget. The general outer search margin is 35%
+    of box half-size; breasts use their smaller configurable envelope, also after
+    finishing. Other classes retain independent rounding and expansion.
     """
     height, width = inside.shape
     scale = min(1.0, resolution / max(height, width))
@@ -551,7 +554,9 @@ def fit_box_zones(cv, edges, inside, detections, resolution, edge_weight, smooth
         nx, ny = (xx - cx) / rx, (yy - cy) / ry
         qx, qy = np.abs(nx) - 0.7, np.abs(ny) - 0.7
         envelope = np.hypot(np.maximum(qx, 0), np.maximum(qy, 0)) + np.minimum(np.maximum(qx, qy), 0) - 0.3
-        domain = valid & (envelope <= 0.35)
+        breast_zone = "_BREAST_" in detection["label"].upper()
+        margin = breast_margin if breast_zone else 0.35
+        domain = valid & (envelope <= margin)
         core = domain & (nx * nx + ny * ny <= 0.3**2)
         record = dict(detection, zone_id=zone_id, status="rejected_no_person_core", start="box", pixels=0)
         reports.append(record)
@@ -617,6 +622,10 @@ def fit_box_zones(cv, edges, inside, detections, resolution, edge_weight, smooth
         fixed[seed_y, seed_x] = True
         labels = finish_zones(cv, mask.astype(np.uint16) * zone_id, valid, fixed, smooth, expand)
         mask = labels == zone_id
+        if breast_zone:
+            # Keep post-fit rounding/expansion from undoing the breast-specific
+            # envelope. This is rounded-box clipping, not rectangle filling.
+            mask &= domain
         restored = cv.resize(mask.astype(np.uint8), (width, height), interpolation=cv.INTER_NEAREST) > 0
         pixels = int(np.count_nonzero(restored & inside))
         record.update(
@@ -629,7 +638,8 @@ def fit_box_zones(cv, edges, inside, detections, resolution, edge_weight, smooth
             search_domain_pixels=int(np.count_nonzero(domain)),
             budget_solver="early_percentile_dijkstra",
             fit_percentile=percentile,
-            normalized_search_margin=0.35,
+            normalized_search_margin=margin,
+            breast_box_constraint=breast_zone,
             fit_metric="separate box half-width / half-height",
         )
         if pixels:
@@ -788,7 +798,47 @@ def save_score_preview(cv, source, box, inside, scores, destination):
     preview.save(destination, quality=95, subsampling=0)
 
 
-def render_zone_preview(source, box, inside, zones, reports, cv, overlap_layers, finishing, blur, destination=None):
+def draw_nudenet_boxes(preview, source_size, crop_box, reports, palette, box_alpha):
+    """Draw scores only, in source coordinates; never draw over the legend."""
+    width, height = source_size
+    layer = Image.new("RGBA", source_size, (0, 0, 0, 0))
+    draw = ImageDraw.Draw(layer)
+    font = ImageFont.load_default(size=max(14, min(24, height // 60)))
+    offset_x, offset_y = crop_box[:2]
+    for record in reports:
+        x0, y0, x1, y1 = record["box_xyxy"]
+        x0, y0 = max(0, math.floor(x0 + offset_x)), max(0, math.floor(y0 + offset_y))
+        x1, y1 = min(width - 1, math.ceil(x1 + offset_x)), min(height - 1, math.ceil(y1 + offset_y))
+        if x1 <= x0 or y1 <= y0:
+            continue
+        shade = palette[record["zone_id"]]
+        draw.rectangle((x0, y0, x1, y1), outline=(*shade, round(box_alpha * 255)), width=2)
+        text = f"{record['score']:.2f}"
+        bounds = draw.textbbox((0, 0), text, font=font)
+        text_width, text_height = bounds[2] - bounds[0], bounds[3] - bounds[1]
+        left = max(0, min(x0, width - text_width - 6))
+        top = y0 - text_height - 6 if y0 >= text_height + 6 else y0 + 2
+        top = max(0, min(top, height - text_height - 6))
+        draw.rectangle((left, top, left + text_width + 6, top + text_height + 6), fill=(0, 0, 0, 190))
+        draw.text((left + 3 - bounds[0], top + 3 - bounds[1]), text, fill=(255, 255, 255, 255), font=font)
+    base = preview.crop((0, 0, width, height)).convert("RGBA")
+    preview.paste(Image.alpha_composite(base, layer).convert("RGB"), (0, 0))
+
+
+def render_zone_preview(
+    source,
+    box,
+    inside,
+    zones,
+    reports,
+    cv,
+    overlap_layers,
+    finishing,
+    blur,
+    destination=None,
+    boxes=False,
+    box_alpha=0.35,
+):
     """Shared zone renderer; comparison panels stay in memory, with no intermediate files."""
     names = {0: "background", UNKNOWN: "unknown"}
     names.update({r["zone_id"]: r["label"].lower() for r in reports})
@@ -802,7 +852,7 @@ def render_zone_preview(source, box, inside, zones, reports, cv, overlap_layers,
             overlap_layers,
             reports,
             names,
-            destination,
+            None,
             finishing,
             palette,
             blur=blur,
@@ -814,7 +864,7 @@ def render_zone_preview(source, box, inside, zones, reports, cv, overlap_layers,
             inside,
             zones,
             names,
-            destination,
+            None,
             "Edge-guided zones",
             (
                 "NudeNet names are suggestions",
@@ -826,6 +876,10 @@ def render_zone_preview(source, box, inside, zones, reports, cv, overlap_layers,
             contour_blur=blur,
             hide_unknown=True,
         )
+    if boxes:
+        draw_nudenet_boxes(preview, source.size, box, reports, palette, box_alpha)
+    if destination is not None:
+        preview.save(destination, quality=95, subsampling=0)
     return preview, {str(key): name for key, name in names.items()}
 
 
@@ -844,6 +898,8 @@ def save_outputs(
     cv=None,
     overlay_only=False,
     blur=0,
+    boxes=False,
+    box_alpha=0.35,
 ):
     x0, y0, x1, y1 = box
     _, names = render_zone_preview(
@@ -857,6 +913,8 @@ def save_outputs(
         finishing,
         blur,
         output / f"{prefix}_zones_overlay.jpg",
+        boxes=boxes,
+        box_alpha=box_alpha,
     )
     if overlay_only:
         return names
@@ -933,6 +991,7 @@ def compute_zones(cv, edges, inside, detections, args):
                 args.smooth,
                 args.expand,
                 args.fit_percentile,
+                args.breast_margin,
             )
         else:
             layers, details, summary = contract_zones(
@@ -1098,6 +1157,8 @@ def save_sweep(cv, args, source, box, inside, edges, scores, detections, base_re
                 cv=cv,
                 overlay_only=trial.overlay_only,
                 blur=trial.blur,
+                boxes=trial.boxes,
+                box_alpha=trial.box_alpha,
             )
             if scores is not None and not trial.overlay_only:
                 save_score_preview(cv, source, box, inside, scores, output / f"{prefix}_scores_overlay.jpg")
@@ -1264,6 +1325,8 @@ def save_comparison(cv, args, source, box, inside, edges, detections, base_repor
                 layers,
                 bool(trial.smooth or trial.expand),
                 trial.blur,
+                boxes=trial.boxes,
+                box_alpha=trial.box_alpha,
             )
             result = {
                 "name": name,
@@ -1373,11 +1436,31 @@ def main(argv=None):
     )
     parser.add_argument("-s", "--parts-confidence", type=float, default=0.25)
     parser.add_argument(
+        "-nb",
+        "--boxes",
+        action="store_true",
+        help="Draw NudeNet boxes and confidence scores (no class text) on zone overlays and comparison panels",
+    )
+    parser.add_argument(
+        "-ba",
+        "--box-alpha",
+        type=float,
+        default=0.35,
+        help="NudeNet box outline opacity 0..1 (default 0.35); score text stays readable; requires --boxes",
+    )
+    parser.add_argument(
         "-fp",
         "--fit-percentile",
         type=float,
         default=50,
         help="Box-fit boundary-cost percentile for auto budget, 0..100; higher permits more growth (default 50)",
+    )
+    parser.add_argument(
+        "-bm",
+        "--breast-margin",
+        type=float,
+        default=0.05,
+        help="Box-fit breast-only rounded-envelope margin, 0..0.35 of box half-size; default 0.05; 0.35 restores legacy allowance",
     )
     parser.add_argument(
         "-l",
@@ -1487,12 +1570,16 @@ def main(argv=None):
     )
     parser.add_argument("-w", "--overwrite", action="store_true", help="Delete recognized previous POC outputs only")
     args = parser.parse_args(argv)
+    if not math.isfinite(args.box_alpha) or not 0 <= args.box_alpha <= 1:
+        parser.error("box-alpha must be finite and in [0,1]")
     if args.compare and args.sweep:
         parser.error("--compare processes the whole directory and cannot be combined with --sweep")
     if args.compare_size != 0 and args.compare_size < 256:
         parser.error("compare-size must be 0 (native) or at least 256 pixels")
     if not math.isfinite(args.fit_percentile) or not 0 <= args.fit_percentile <= 100:
         parser.error("fit-percentile must be finite and in [0,100]")
+    if not math.isfinite(args.breast_margin) or not 0 <= args.breast_margin <= 0.35:
+        parser.error("breast-margin must be finite and in [0,0.35]")
     if args.start == "box" and args.sweep == "growth":
         parser.error("-g/-z are inactive for box-fit; use --sweep or --sweep refined with -l box")
     if args.person_model is None:
@@ -1606,6 +1693,8 @@ def main(argv=None):
                     "growth": args.growth,
                     "resolution": args.resolution,
                     "parts_confidence": args.parts_confidence,
+                    "nudenet_boxes": args.boxes,
+                    "nudenet_box_alpha": args.box_alpha,
                     "person_mask_threshold": args.person_mask_threshold,
                     "person_size": args.person_size,
                     "repair_person": args.repair_person,
@@ -1622,6 +1711,7 @@ def main(argv=None):
                     "center_only_settings_active": args.start == "center",
                     "box_fit_auto_budget": args.start == "box",
                     "fit_percentile": args.fit_percentile,
+                    "breast_margin": args.breast_margin,
                     "finishing_units": "region-growth grid pixels",
                 },
             }
@@ -1709,6 +1799,8 @@ def main(argv=None):
                     cv=cv,
                     overlay_only=args.overlay_only,
                     blur=args.blur,
+                    boxes=args.boxes,
+                    box_alpha=args.box_alpha,
                 )
                 if scores is not None and not args.overlay_only:
                     save_score_preview(cv, source, box, inside, scores, output / f"{prefix}_scores_overlay.jpg")
