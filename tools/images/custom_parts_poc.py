@@ -168,7 +168,10 @@ def predict(session, names, source, task, args, *, filter_classes=True, variant_
     rgb = np.asarray(source).copy()
     variants = MASK_VARIANTS if variant_overlays is not None and task == "segment" else ()
     variant_pixels = {key: rgb.copy() for key, _, _ in variants}
-    variant_reports = {key: {"mask_threshold": threshold, "crop_to_seg_box": clip, "detections": []} for key, threshold, clip in variants}
+    variant_reports = {
+        key: {"mask_threshold": threshold, "crop_to_seg_box": clip, "detections": []}
+        for key, threshold, clip in variants
+    }
     records = []
     gain, (left, top) = fit["gain"], fit["padding_xy"]
     height, width = tensor.shape[2:]
@@ -216,9 +219,12 @@ def predict(session, names, source, task, args, *, filter_classes=True, variant_
                 if clip:
                     candidate &= box_mask
                 paint_mask(variant_pixels[key], candidate, color, args.alpha)
-                variant_reports[key]["detections"].append(dict(record, box_xyxy=box.tolist(), pixels=int(candidate.sum())))
+                variant_reports[key]["detections"].append(
+                    dict(record, box_xyxy=box.tolist(), pixels=int(candidate.sum()))
+                )
             record.update(box_xyxy=box.tolist(), pixels=int(mask.sum()), label_xy=box[:2].tolist())
         records.append(record)
+
     def labeled(pixels):
         image = Image.fromarray(pixels)
         draw = ImageDraw.Draw(image)
@@ -226,7 +232,14 @@ def predict(session, names, source, task, args, *, filter_classes=True, variant_
         for record in records:
             x, y = record["label_xy"]
             x, y = max(0, min(source.width - 120, int(x))), max(0, min(source.height - 20, int(y)))
-            draw.text((x, y), f"{record['class']} {record['score']:.2f}", font=font, fill=PALETTE[record["class"]], stroke_width=2, stroke_fill="black")
+            draw.text(
+                (x, y),
+                f"{record['class']} {record['score']:.2f}",
+                font=font,
+                fill=PALETTE[record["class"]],
+                stroke_width=2,
+                stroke_fill="black",
+            )
         return image
 
     image = labeled(rgb)
@@ -318,7 +331,10 @@ def segment_context_regions(session, names, source, args, targets, *, variant_ov
     variant_reports = {}
     if variant_overlays is not None:
         variant_overlays.update({key: source.copy() for key, _, _ in MASK_VARIANTS})
-        variant_reports = {key: {"mask_threshold": threshold, "crop_to_seg_box": clip, "detections": []} for key, threshold, clip in MASK_VARIANTS}
+        variant_reports = {
+            key: {"mask_threshold": threshold, "crop_to_seg_box": clip, "detections": []}
+            for key, threshold, clip in MASK_VARIANTS
+        }
     records, regions = [], []
     seconds = 0.0
     class_thresholds = {name: args.seg_class_conf.get(name, args.seg_confidence) for name in names.values()}
@@ -331,7 +347,9 @@ def segment_context_regions(session, names, source, args, targets, *, variant_ov
                 variant_overlays[key].paste(image, box[:2])
                 for detection in info["mask_variants"][key]["detections"]:
                     x0, y0, x1, y1 = detection["box_xyxy"]
-                    variant_reports[key]["detections"].append(dict(detection, box_xyxy=[x0 + box[0], y0 + box[1], x1 + box[0], y1 + box[1]], roi=roi_index))
+                    variant_reports[key]["detections"].append(
+                        dict(detection, box_xyxy=[x0 + box[0], y0 + box[1], x1 + box[0], y1 + box[1]], roi=roi_index)
+                    )
         seconds += info["inference_seconds"]
         for detection in info["detections"]:
             x0, y0, x1, y1 = detection["box_xyxy"]
@@ -409,6 +427,25 @@ def main(argv=None):
         "-s", "--confidence", type=float, default=0.25, help="Fallback threshold for both custom models"
     )
     parser.add_argument("-ss", "--seg-confidence", type=float, help="Segmentation threshold; overrides -s")
+    parser.add_argument(
+        "-mt",
+        "--mask-threshold",
+        type=float,
+        default=0,
+        help="SEG mask-logit threshold, -8..8; lower generally expands masks (default 0)",
+    )
+    parser.add_argument(
+        "-uc",
+        "--uncrop",
+        action="store_true",
+        help="Do not clip SEG masks to their predicted boxes; context crop still bounds them",
+    )
+    parser.add_argument(
+        "-sw",
+        "--mask-sweep",
+        action="store_true",
+        help="With -vc: six-panel -1/0/+1 mask-threshold x box-clip on/off comparison; reuses inference; -cp unnecessary",
+    )
     parser.add_argument("-os", "--obb-confidence", type=float, help="OBB threshold; overrides -s")
     parser.add_argument(
         "-sc",
@@ -483,6 +520,12 @@ def main(argv=None):
         "-w", "--overwrite", action="store_true", help="Replace only recognized custom_parts_poc flat outputs"
     )
     args = parser.parse_args(argv)
+    if not math.isfinite(args.mask_threshold) or not -8 <= args.mask_threshold <= 8:
+        parser.error("mask-threshold must be finite in [-8,8]")
+    if args.mask_sweep and not args.v2_context:
+        parser.error("-sw requires -vc so unclipped masks stay bounded by detector context crops")
+    if args.mask_sweep and (args.mask_threshold != 0 or args.uncrop):
+        parser.error("-sw uses fixed thresholds/clipping; omit -mt and -uc")
     if args.v2_context:
         if args.nudenet:
             parser.error("-vc replaces NudeNet; omit -nn")
@@ -570,6 +613,11 @@ def main(argv=None):
         + (f"; OBB {obb_model['input_shape'][2:]}" if obb_model else "; fast V2-context mode, OBB/NudeNet skipped"),
         flush=True,
     )
+    if args.mask_sweep:
+        print(
+            "Mask sweep: columns -1 / 0 / +1; rows SEG-box clip ON / OFF; one SEG inference per context crop",
+            flush=True,
+        )
     failures = 0
     for index, path in enumerate(files, 1):
         prefix = f"cpp_{index:04d}_{path.stem[:70]}"
@@ -604,11 +652,27 @@ def main(argv=None):
                 panels.append(("detect", frame(detector_overlay, title, detector_names)))
                 if args.v2_context:
                     targets = [d for d in detector_report["detections"] if d["class"] == "penis"]
-                    v2_overlay, v2_report = segment_context_regions(seg, seg_names, source, args, targets)
+                    variant_overlays = {} if args.mask_sweep else None
+                    v2_overlay, v2_report = segment_context_regions(
+                        seg, seg_names, source, args, targets, variant_overlays=variant_overlays
+                    )
                     v2_report["context_provider"] = "penisV2"
                     title = f"SEG in V2 context / {v2_report['inference_seconds']:.2f}s / {len(v2_report['regions'])} crops\nYellow: context crop / white: detector box"
                     panels.append(("seg_v2", frame(v2_overlay, title, seg_names)))
-            if args.compare:
+                    if args.mask_sweep:
+                        panels = []
+                        for number, (key, threshold, clip) in enumerate(MASK_VARIANTS, 1):
+                            title = f"{number}: logit {threshold:+d} / SEG-box clip {'ON' if clip else 'OFF'}\nSame inference / yellow: context / white: V2 box"
+                            if not v2_report["regions"]:
+                                title += " / no target"
+                            panels.append((key, frame(variant_overlays[key], title, seg_names)))
+            if args.mask_sweep:
+                panel_width, panel_height = panels[0][1].size
+                combined = Image.new("RGB", (panel_width * 3, panel_height * 2), (22, 22, 26))
+                for index, (_, panel) in enumerate(panels):
+                    combined.paste(panel, ((index % 3) * panel_width, (index // 3) * panel_height))
+                save_image(combined, output / f"{prefix}_compare.jpg", args.size)
+            elif args.compare:
                 combined = Image.new(
                     "RGB",
                     (sum(panel.width for _, panel in panels), max(panel.height for _, panel in panels)),
@@ -635,9 +699,10 @@ def main(argv=None):
                     "seg_v2": v2_report,
                     "detect": detector_report,
                     "seconds": seconds,
+                    "saved_panels": [name for name, _ in panels],
                     "notes": [
                         "Full-image RGB inference; aspect-preserving centered letterbox with fill 114",
-                        "Masks use native-style logits restoration, threshold 0 and predicted-box crop",
+                        "Mask-logit threshold and SEG predicted-box cropping are recorded in settings; sweep variants reuse restored logits and identical detections",
                         "OBB NMS uses exact polygon IoU, not Ultralytics ProbIoU",
                         "OBB long axis is undirected, not an anatomical base-to-tip prediction",
                         "Optional NN context is target-centered, with shape recorded in settings; image-edge clipping and overlap merging can alter proportions; SEG masks are not clipped to the NN box",
