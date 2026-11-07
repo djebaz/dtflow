@@ -292,9 +292,11 @@ def test_new_queue_selection_resets_filters_and_reads_items_without_idle_polling
     page, queue = window.queue_page, window.queue
     page.createQueueButton.click()
     qtbot.waitUntil(
-        lambda: queue._view() is not None
-        and queue._detail_for(queue._view()) is not None
-        and len(queue._detail_for(queue._view())["items"]) == 1,
+        lambda: (
+            queue._view() is not None
+            and queue._detail_for(queue._view()) is not None
+            and len(queue._detail_for(queue._view())["items"]) == 1
+        ),
         timeout=5000,
     )
     assert page.queueItemsView.model().rowCount() == 0  # no hidden redraw
@@ -303,10 +305,12 @@ def test_new_queue_selection_resets_filters_and_reads_items_without_idle_polling
     page.queueCountSpinBox.setValue(2)
     page.createQueueButton.click()
     qtbot.waitUntil(
-        lambda: queue._selected != first
-        and queue._view() is not None
-        and queue._detail_for(queue._view()) is not None
-        and len(queue._detail_for(queue._view())["items"]) == 2,
+        lambda: (
+            queue._selected != first
+            and queue._view() is not None
+            and queue._detail_for(queue._view()) is not None
+            and len(queue._detail_for(queue._view())["items"]) == 2
+        ),
         timeout=5000,
     )
     assert not page.failedFilterButton.isChecked()
