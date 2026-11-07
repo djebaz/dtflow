@@ -1,6 +1,7 @@
 """Qt-independent connection check and its presentation mapping, shared by the Qt shell and tests."""
 
 import asyncio
+from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import datetime
 
@@ -103,12 +104,34 @@ UNSUPPORTED_NAMES = (
 )
 
 
+def failure_reason(failure) -> str:
+    """The original reason of a failure, provider wording kept: one rule for Generate, Queues, Scripts and Workflows.
+
+    ``failure`` is a ``BackendFailure`` or its stored record (``{"code", "message", "diagnostics", ...}``). Only
+    backend-projected response text (already credential-free) or DTFlow's own sentence is returned; the code is the
+    last resort for records that carry no message. Nothing is inferred (a missing output never reads as "quota").
+    """
+    if isinstance(failure, Mapping):
+        code, message, pairs = failure.get("code"), failure.get("message"), failure.get("diagnostics")
+    else:
+        code, message, pairs = failure.code, failure.message, failure.diagnostics
+    try:
+        details = dict(pairs) if isinstance(pairs, Mapping) else {str(pair[0]): pair[1] for pair in pairs or ()}
+    except (TypeError, IndexError, KeyError):
+        details = {}
+    text = details.get("interpretation_message") or details.get("server_message") or message or code
+    return str(text or "").strip()
+
+
 def _api_explanation(failure) -> str:
-    """Only backend-projected response text enters ordinary UI error presentation."""
+    """Status code and original reason, for the connection check and asset actions."""
     details = dict(failure.diagnostics)
     code = details.get("http_status") or details.get("status") or failure.code
-    message = details.get("interpretation_message") or details.get("server_message") or failure.message
-    return f"{code}: {message}"
+    return f"{code}: {failure_reason(failure)}"
+
+
+def _sentence(text: str) -> str:
+    return text if not text or text.endswith((".", "!", "?")) else text + "."
 
 
 def present_generation_failure(exc: Exception) -> Presentation:
@@ -118,23 +141,23 @@ def present_generation_failure(exc: Exception) -> Presentation:
     if isinstance(exc, BackendError):
         failure = exc.failure
         api = bool(dict(failure.diagnostics).get("transport"))
+        # The original reason, as Queues, Scripts and Workflows show it; codes and attempt ids stay in details/logs.
+        detail = failure_reason(failure)
         if failure.code.startswith("prepared_asset_"):
-            detail = _api_explanation(failure) if api else failure.message
             asset = dict(failure.diagnostics).get("asset")
             if api and asset:
-                detail = f"LoRA {asset} — {detail}"
+                detail = f"LoRA {asset}: {detail}"
             return Presentation(
                 "error",
                 "Prepared asset not validated",
-                f"{detail} Nothing was uploaded or submitted." if api else detail,
+                f"{_sentence(detail)} Nothing was uploaded or submitted." if api else detail,
             )
-        detail = _api_explanation(failure) if api else failure.code
         if failure.remote_outcome == RemoteOutcome.UNKNOWN:
             return Presentation(
                 "warning",
                 "Outcome unknown",
-                f"{detail}. The request may have reached the server and may still complete. "
-                "It is not replayed automatically; inspect the attempt before acting.",
+                f"{_sentence(detail)} The request may have reached the server and may still complete. "
+                "It is not replayed automatically.",
             )
         if failure.code == "unsupported_request" and failure.diagnostics:
             wanted = dict(UNSUPPORTED_NAMES)
@@ -148,11 +171,12 @@ def present_generation_failure(exc: Exception) -> Presentation:
                 "error", "Request rejected", f"This provider does not offer {names}.{hint} Nothing was dispatched."
             )
         if failure.category == ErrorCategory.VALIDATION and not api:
-            codes = "; ".join(f"{name}: {code}" for name, code in failure.diagnostics)
+            # Per-field reasons (e.g. "bad: architecture_mismatch") help; the internal phase stays in details and logs.
+            codes = "; ".join(f"{name}: {code}" for name, code in failure.diagnostics if name != "phase")
             return Presentation(
                 "error",
                 "Request rejected",
-                f"{failure.code}{' (' + codes + ')' if codes else ''}. Nothing was dispatched.",
+                f"{_sentence(detail.rstrip('.') + (' (' + codes + ')' if codes else ''))} Nothing was dispatched.",
             )
         if failure.code == "originals_unavailable":
             return Presentation("error", "Generation not submitted", failure.message)
@@ -162,8 +186,8 @@ def present_generation_failure(exc: Exception) -> Presentation:
             # PERMISSION_DENIED also covers throttling and request validation upstream.
             return Presentation("error", "Provider request failed", detail)
         if failure.category in (ErrorCategory.CREDENTIALS, ErrorCategory.AUTHENTICATION):
-            return Presentation("error", "Credentials problem", failure.code)
-        return Presentation("error", "Generation failed", failure.code)
+            return Presentation("error", "Credentials problem", detail)
+        return Presentation("error", "Generation failed", detail)
     if isinstance(exc, StateBusyError):
         return Presentation(
             "warning", "State is busy", "Another DTFlow process owns the state directory. Nothing was dispatched."
@@ -179,21 +203,19 @@ def present_interruption(evidence) -> Presentation:
     """Wording after a local stop comes from recorded evidence (``session.AttemptEvidence``), never from the click."""
     if evidence is None:
         return Presentation("warning", "Local stop requested", "No attempt had been recorded; nothing was dispatched.")
-    note = f"Attempt {evidence.attempt_id[:8]}."
+    # The attempt id stays in the details box and the logs, not in the status line.
     if evidence.state == "succeeded":
-        return Presentation("ok", "Completed before the stop", f"{note} Output was already saved.")
+        return Presentation("ok", "Completed before the stop", "Output was already saved.")
     if evidence.state == "save_failed":
-        return Presentation(
-            "error", "Local stop requested", f"{note} The server finished but saving did not; inspect the attempt."
-        )
+        return Presentation("error", "Local stop requested", "The server finished but the image was not saved.")
     if evidence.remote_outcome == RemoteOutcome.UNKNOWN or evidence.state == "unknown":
         return Presentation(
             "warning",
             "Local stop requested",
-            f"{note} Outcome unknown: the request may have reached the server and may still complete. "
+            "Outcome unknown: the request may have reached the server and may still complete. "
             "Remote cancellation is not confirmed.",
         )
-    return Presentation("warning", "Local stop requested", f"{note} Stopped before submission; nothing was sent.")
+    return Presentation("warning", "Local stop requested", "Stopped before submission; nothing was sent.")
 
 
 def present_preflight(diagnostics) -> Presentation:

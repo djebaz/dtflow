@@ -1090,7 +1090,9 @@ class QueuePage:
             if row.outputs
             else []
         )
-        detail = ", ".join([*parts, *(["metadata"] if row.metadata else [])]) or (row.failure_code or "—")
+        detail = (
+            ", ".join([*parts, *(["metadata"] if row.metadata else [])]) or "—"
+        )  # the reason is on the Outcome line
         page.itemOutputsLabel.setText(detail)
         page.itemOutputsLabel.setToolTip("\n".join(outputs))
         # The script parent aggregates its children's files; it has no output
