@@ -47,6 +47,7 @@ from dtflow.services.queue_session import (
     read_queue_views,
     relaunch_queue,
     remove_queue,
+    retry_queue_item,
     set_concurrency,
     RELAUNCH_STATES,
 )
@@ -1385,14 +1386,58 @@ class QueuePage:
         self._runner.submit(work(), retried)
 
     def retry_item(self) -> None:
-        """Retry item: the selected item again, as a one-item queue with its own new attempt (possibly billable)."""
+        """Retry item: the selected item reruns in place, same settings and seed, as a new (possibly billable) attempt.
+
+        No new queue is made (#240). The earlier attempt stays recorded (attempts store and queue history); an unknown
+        one stays unknown.
+        """
         if (self._view() or {}).get("kind") == "workflow" and self._selected is not None:
             self._retry_workflow(self._selected)
             return
         row = self.model.row_at(self.page.queueItemsView.currentIndex().row())
         if row is None or self._selected is None or row.state not in RELAUNCH_STATES:
             return
-        self.relaunch(self._selected, positions=(row.position,))
+        queue_id = self._selected
+        unknown = row.state == "unknown"
+        self.page.itemRetryButton.setEnabled(False)  # one click, one retry; the next read re-enables it
+        self._runner.submit(
+            retry_queue_item(self._state, queue_id, row.position),
+            lambda how, failure: self._item_retried(queue_id, how, failure, unknown),
+        )
+
+    def _item_retried(self, queue_id: str, how, failure, unknown: bool = False) -> None:
+        if failure is not None:
+            failed = Presentation("error", "Not retried", str(failure))
+            self._message(failed if isinstance(failure, ValidationError) else present_generation_failure(failure))
+            self.refresh()
+            return
+        note = (
+            " The earlier request may still finish on the server, so this can make a second image." if unknown else ""
+        )
+        if how == "joins":
+            view = self._views.get(queue_id) or {}
+            if view.get("status") == "paused":
+                self._message(Presentation("ok", "Item retried", "It runs when this queue is resumed." + note))
+            else:
+                self._message(Presentation("ok", "Item retried", "It runs again in this queue." + note))
+            self.refresh()
+            return
+        if queue_id == self._dispatching or queue_id in self._overlapping:
+            # This window's dispatcher may still be looping on the queue (its run had just ended): resume it in place,
+            # since putting it up next behind itself would never start it.
+            self._post("resume", queue_id)
+            self._message(Presentation("ok", "Item retried", "It runs again in this queue." + note))
+            return
+
+        def started(where, error) -> None:
+            if error is not None:
+                self._message(Presentation("warning", "Item retried, paused", str(error)))
+            elif where == "started":
+                self._message(Presentation("ok", "Item retried", "It runs again in this queue." + note))
+            else:
+                self._message(Presentation("ok", "Item retried", f"It runs again in this queue ({where})." + note))
+
+        self.start_created(queue_id, started)
 
     def relaunch(
         self,
@@ -1400,7 +1445,6 @@ class QueuePage:
         *,
         new_seeds: bool = False,
         failed_only: bool = False,
-        positions: tuple[int, ...] | None = None,
     ) -> None:
         """A new queue from ``queue_id``'s recorded items: started now, up next behind this window's run, or paused."""
         up_next = self.dispatching_here
@@ -1411,18 +1455,16 @@ class QueuePage:
                 queue_id,
                 new_seeds=new_seeds,
                 failed_only=failed_only,
-                positions=positions,
                 up_next=up_next,
             )
             return new_id, cap, (await read_queue_views(self._state, new_id))[0]["status"]
 
-        retry = positions is not None
-        self._runner.submit(work(), lambda result, failure: self._relaunched(result, failure, retry))
+        self._runner.submit(work(), self._relaunched)
 
-    def _relaunched(self, result, failure, retry: bool) -> None:
-        noun = "Item retried" if retry else "Queue relaunched"
+    def _relaunched(self, result, failure) -> None:
+        noun = "Queue relaunched"
         if failure is not None:
-            failed = Presentation("error", "Not retried" if retry else "Not relaunched", str(failure))
+            failed = Presentation("error", "Not relaunched", str(failure))
             self._message(failed if isinstance(failure, ValidationError) else present_generation_failure(failure))
             return
         queue_id, _, status = result

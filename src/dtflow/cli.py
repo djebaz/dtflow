@@ -510,7 +510,7 @@ def add_queue_commands(commands) -> None:
         type=int,
         action="append",
         metavar="N",
-        help="Only item N (queue position; repeatable). Retry an item this way.",
+        help="Only item N (queue position; repeatable).",
     )
     relaunch.add_argument("-j", "--jobs", type=int, help="Concurrency maximum, 1-10 (default: the original queue's).")
 

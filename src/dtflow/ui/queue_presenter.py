@@ -199,8 +199,8 @@ SEGMENTS = (
     ("running", "accent"),
 )
 UNKNOWN_TEXT = (
-    "No final result was received, so this generation most likely failed. It is not sent again automatically, and it "
-    "does not block other items or queues. Retry item runs it again."
+    "No final result was received, so this generation most likely failed, though the server may still have made it. "
+    "It is not sent again automatically, and it does not block other items or queues. Retry item runs it again."
 )
 OWNERS = ("here", "none")
 
@@ -811,6 +811,12 @@ def outcome_note(row: ItemRow | None) -> tuple[str, str] | None:
     if row is None:
         return None
     if row.state == "unknown":
+        if row.failure_text:
+            # Say why (#240 smoke): e.g. DT+ answering "unknown error processing request" without an image.
+            return (
+                "warning",
+                f'No result: the server answered "{row.failure_text.rstrip(".")}" and sent no image. ' + UNKNOWN_TEXT,
+            )
         return "warning", UNKNOWN_TEXT
     if row.state in ("failed", "save_failed") and row.failure_text:
         return "error", f"{row.state_text.capitalize()}: {row.failure_text}"
@@ -883,6 +889,10 @@ def event_lines(view: dict) -> str:
             elapsed = script.get("elapsed")
             if type(elapsed) in (int, float):
                 summary += f" · {elapsed:.2f}s"
+        elif kind == "item_retried":
+            previous = str(detail.get("previous_state", "failed"))
+            previous = "no result" if previous == "unknown" else previous.replace("_", " ")
+            summary = f"{item_label(detail)} retried (was {previous})"
         elif kind == "item_settled":
             state = str(detail.get("state", "settled"))
             state = "no result" if state == "unknown" else state.replace("_", " ")
