@@ -847,6 +847,10 @@ def event_lines(view: dict) -> str:
             summary = "Started" if script_of(view) is not None else "Queue started"
         elif kind == "backend_submission_possible":
             summary = f"{item_label(detail)} submitted"
+        elif kind == "workflow_warning":
+            summary = (
+                f"Warning · node #{detail.get('node_id')} · {detail.get('branch', '')}: {detail.get('message', '')}"
+            )
         elif kind == "timing_snapshot":
             elapsed = detail.get("elapsed_seconds")
             eta = detail.get("eta_seconds")

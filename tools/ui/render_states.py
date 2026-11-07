@@ -2010,6 +2010,22 @@ def render_item_table_states(shell, out, state):
         if strip is not None and "queue-message" in strip.rows:
             strip.finish("queue-message")  # an earlier state's notice is not part of this one
         snap("queues-74-workflow-queue")
+        warning = "fixture_custom_lora.ckpt: DT+ availability unconfirmed (no prepared receipt). If this is a custom LoRA, use Prepare."
+        workflow_view["events"] = [
+            {
+                "kind": "workflow_warning",
+                "at_utc": "2026-11-07T10:00:00Z",
+                "detail": {
+                    "item_id": "offline-workflow-item",
+                    "node_id": 1,
+                    "branch": "Generate #1 image 1",
+                    "message": warning,
+                },
+            },
+        ]
+        queue._read_done(([workflow_view], workflow_view, 2), None)
+        queue._timer.stop()
+        snap("queues-75-workflow-lora-warning")
         queue._selected = None
         queue._activity.set(dispatching=False)
         queue._read_done(([], None, 2), None)
