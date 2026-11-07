@@ -44,7 +44,12 @@ is the V1 specification; the file contract is [architecture/workflows.md](../arc
   a run with missing models fails before its first submission. Generate's Inpaint editor offers the same
   **Download models…** action.
 - **Progress:** the shared activity bar shows the run; each node shows its state, stage and latest image, with
-  "n/m images" when it has several branches. Stop ends the whole run; images already saved are kept.
+  "n/m images" when it has several branches. Stop (here, in the activity bar or Cancel in Queues) ends the whole run
+  at once: DTFlow stops waiting on running steps instead of letting them finish. A step already sent to the backend
+  ends unknown, because its image may still complete on the server (a DT+ request may still be billed); it is never
+  replayed and Retry sends it again. Steps not yet sent end cancelled. The run settles within a few seconds, even when
+  a step is stuck, so the queue can then be removed. Images already saved are kept. There is no stall timeout: a
+  stuck step waits until you press Stop.
 - **No face detected:** a face-mask node that finds no person, no face box or an empty region pauses only that image
   branch and asks "No face detected. Continue anyway?". Continue skips that branch's inpainting and passes the image on;
   Stop ends that branch. Other branches keep running; an unanswered branch stays paused and submits nothing.

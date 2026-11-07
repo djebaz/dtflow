@@ -1524,7 +1524,10 @@ class WorkflowsPage(QObject):
                 self._error("Stop not requested", failure)
                 return
             activity_strip(self.workspace).complete(
-                "workflow-run", "Workflow · stop requested", "The run stops after the current step.", "stopped"
+                "workflow-run",
+                "Workflow · stop requested",
+                "The run stops now. A step already sent ends unknown: its image may still complete; Retry sends it again.",
+                "stopped",
             )
             self._read_run()
 
