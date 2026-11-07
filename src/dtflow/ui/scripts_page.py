@@ -1168,6 +1168,23 @@ class ScriptsPage:
             )
         }
 
+    @staticmethod
+    def _history_card(title: str, duration: str, detail: str, state: str) -> QFrame:
+        """Create one Script history card, reused when older entries stay unchanged."""
+        card = QFrame()
+        card.setObjectName("scriptsHistoryEntry")
+        body = QVBoxLayout(card)
+        body.setContentsMargins(0, 5, 0, 5)
+        body.setSpacing(3)
+        line = QHBoxLayout()
+        status = _label(title, role="scriptsHistoryStatus", wrap=True)
+        _feedback(status, state)
+        line.addWidget(status, 1)
+        line.addWidget(_label(duration, role="scriptsMuted"))
+        body.addLayout(line)
+        body.addWidget(_label(detail, role="scriptsMuted", wrap=True))
+        return card
+
     def _sync_drawer_data(self):
         """Rebuild dynamic inspector regions only when their contents change.
 
@@ -1227,29 +1244,42 @@ class ScriptsPage:
                 ),
             )
         history_key = tuple(entries)
-        if getattr(self, "_rendered_history_entries", None) != history_key:
+        previous = getattr(self, "_rendered_history_entries", None)
+        if previous != history_key:
+            # A new run normally adds one newest entry; a poll normally changes
+            # only its status. Neither should reconstruct every old Qt card.
+            prepended = previous is not None and len(history_key) == len(previous) + 1 and history_key[1:] == previous
+            head_changed = (
+                previous is not None
+                and bool(history_key)
+                and len(history_key) == len(previous)
+                and history_key[1:] == previous[1:]
+            )
             for history in (self.history, self.drawer_inspector.scriptsHistoryList):
                 rows = history.layout()
-                while rows.count():
-                    widget = rows.takeAt(0).widget()
-                    if widget is not None:
-                        widget.hide()
-                        widget.setParent(None)
-                        widget.deleteLater()
-                for title, duration, detail, state in entries:
-                    card = QFrame()
-                    card.setObjectName("scriptsHistoryEntry")
-                    body = QVBoxLayout(card)
-                    body.setContentsMargins(0, 5, 0, 5)
-                    body.setSpacing(3)
-                    line = QHBoxLayout()
-                    status = _label(title, role="scriptsHistoryStatus", wrap=True)
-                    _feedback(status, state)
-                    line.addWidget(status, 1)
-                    line.addWidget(_label(duration, role="scriptsMuted"))
-                    body.addLayout(line)
-                    body.addWidget(_label(detail, role="scriptsMuted", wrap=True))
-                    rows.addWidget(card)
+                if prepended:
+                    rows.insertWidget(0, self._history_card(*history_key[0]))
+                elif head_changed:
+                    card = rows.itemAt(0).widget()
+                    body = card.layout()
+                    labels = body.itemAt(0).layout()
+                    status = labels.itemAt(0).widget()
+                    title, duration, detail, state = history_key[0]
+                    status.setText(title)
+                    if state != previous[0][3]:
+                        _feedback(status, state)
+                    labels.itemAt(1).widget().setText(duration)
+                    body.itemAt(1).widget().setText(detail)
+                else:
+                    # Reordering or replacing multiple runs remains an exact refresh.
+                    while rows.count():
+                        widget = rows.takeAt(0).widget()
+                        if widget is not None:
+                            widget.hide()
+                            widget.setParent(None)
+                            widget.deleteLater()
+                    for entry in history_key:
+                        rows.addWidget(self._history_card(*entry))
             self._rendered_history_entries = history_key
         self._refresh_library_cues()
 
