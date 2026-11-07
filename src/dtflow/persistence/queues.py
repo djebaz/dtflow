@@ -25,7 +25,7 @@ import sqlite3
 import threading
 from collections.abc import Sequence
 from contextlib import contextmanager
-from dataclasses import asdict
+from dataclasses import asdict, replace
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -973,6 +973,98 @@ def post_control(directory: Path, queue_id: str, action: str, payload: dict[str,
             raise
     finally:
         connection.close()
+
+
+# Items Retry item reruns in place: settled without a saved image.
+RETRY_STATES = ("failed", "unknown", "save_failed", "cancelled")
+
+
+def retry_item(directory: Path, queue_id: str, position: int) -> str:
+    """Retry item in place (#240): the same item reruns its recorded request (same settings and seed) under a new
+    request identity, so its next attempt is new and the earlier attempt stays recorded as it ended (in the attempts
+    store and in the ``item_retried`` queue event; the item itself shows only its latest attempt).
+
+    Safe beside a live dispatch owner. Returns ``"joins"`` when other items of the queue are still pending or running
+    (the queue's own run, or its Start/Resume, picks the item up), else ``"start"``: the queue is set paused and the
+    caller starts it like any paused queue. Nothing is dispatched here.
+    """
+    connection = _shared_connection(directory)
+    try:
+        connection.execute("BEGIN IMMEDIATE")
+        try:
+            queue = connection.execute("SELECT state, kind FROM queues WHERE queue_id=?", (queue_id,)).fetchone()
+            if queue is None:
+                raise QueueError("Unknown queue.")
+            if queue["kind"] != "generation":
+                raise QueueError("Script and workflow items retry from their own page.")
+            item = connection.execute(
+                "SELECT item_id, request_json, state, attempt_id FROM queue_items WHERE queue_id=? AND position=?",
+                (queue_id, position),
+            ).fetchone()
+            if item is None:
+                raise QueueError(f"The queue has no item {position}.")
+            if item["state"] not in RETRY_STATES:
+                raise QueueError("Only a failed, cancelled or no-result item can be retried.")
+            if (
+                queue["state"] == "cancelled"
+                and connection.execute(
+                    "SELECT 1 FROM queue_items WHERE queue_id=? AND state='running' LIMIT 1", (queue_id,)
+                ).fetchone()
+                is not None
+            ):
+                raise QueueError("This queue is still stopping; retry the item once it has stopped.")
+            try:
+                request = request_from_record(json.loads(item["request_json"]))
+            except (ValidationError, TypeError, ValueError):
+                raise QueueError(f"Item {position} has no usable recorded request; nothing was retried.") from None
+            previous = request.request_id
+            request = replace(
+                request,
+                request_id=uuid4().hex,
+                resolution_evidence=(
+                    *(pair for pair in request.resolution_evidence if pair[0] != "retry.of_request"),
+                    ("retry.of_request", previous),
+                ),
+            )
+            now = datetime.now(UTC).isoformat()
+            connection.execute(
+                "UPDATE queue_items SET state='pending', request_json=?, attempt_id=NULL, failure_json=NULL,"
+                " updated_at_utc=? WHERE item_id=?",
+                (json.dumps(asdict(request), allow_nan=False), now, item["item_id"]),
+            )
+            QueueMixin._event(
+                connection,
+                queue_id,
+                "item_retried",
+                now,
+                {
+                    "item_id": item["item_id"],
+                    "position": position,
+                    "previous_state": item["state"],
+                    "previous_attempt_id": item["attempt_id"],
+                    "previous_request_id": previous,
+                },
+            )
+            others = connection.execute(
+                "SELECT 1 FROM queue_items WHERE queue_id=? AND item_id<>? AND state IN ('pending','running') LIMIT 1",
+                (queue_id, item["item_id"]),
+            ).fetchone()
+            if others is not None and queue["state"] in ("running", "paused", "queued"):
+                how = "joins"
+            else:
+                # Its run ended (finished or cancelled): paused again, so Start dispatches it like any paused queue.
+                connection.execute(
+                    "UPDATE queues SET state='paused', up_next=NULL, updated_at_utc=? WHERE queue_id=?",
+                    (now, queue_id),
+                )
+                how = "start"
+            connection.execute("COMMIT")
+        except BaseException:
+            connection.execute("ROLLBACK")
+            raise
+    finally:
+        connection.close()
+    return how
 
 
 def insert_queue(
