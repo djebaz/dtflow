@@ -11,6 +11,7 @@ claims remote cancellation.
 """
 
 import asyncio
+import logging
 from collections.abc import Callable
 from dataclasses import asdict, dataclass, replace
 from html import escape
@@ -538,6 +539,7 @@ class QueuePage:
     def _read_done(self, result, failure, epoch: int | None = None) -> None:
         self._reading = False
         if failure is not None:
+            logging.getLogger(__name__).warning("Queue refresh failed (%s).", type(failure).__name__)
             self._message(present_generation_failure(failure))
             return
         views, self._detail, shared = result
