@@ -85,6 +85,10 @@ PREFS_SCHEMA = "dtflow.workflows.workspace"
 RECENT_RUNS = 20
 
 
+def step_message(step: dict) -> str:
+    return "\n".join(filter(None, (step.get("message"), *step.get("warnings", ()))))
+
+
 def _repolish(widget: QWidget, **properties) -> None:
     for name, value in properties.items():
         widget.setProperty(name, value)
@@ -294,6 +298,9 @@ class WorkflowsPage(QObject):
         self._retry_sig: tuple | None = None
         self._node_run_sig: tuple | None = None
         self._node_run_rows: dict[tuple, tuple[QLabel, QLabel]] = {}
+        self._warning_run_id: str | None = None
+        self._warning_follow_queue_id: str | None = None
+        self._warning_seen: set[tuple[int, str]] = set()
         self._picker = None
         self._picker_at: QPointF | None = None
         self._compact_toolbar = False
@@ -1015,7 +1022,15 @@ class WorkflowsPage(QObject):
         signature = (
             node_id,
             self.queue_id,
-            tuple((tuple(s["branch"]), s["state"] in ("failed", "unknown"), bool(s.get("message"))) for s in steps),
+            tuple(
+                (
+                    tuple(s["branch"]),
+                    s["state"] in ("failed", "unknown"),
+                    bool(s.get("message")),
+                    tuple(s.get("warnings", ())),
+                )
+                for s in steps
+            ),
         )
         if signature == self._node_run_sig:
             for step in steps:
@@ -1023,7 +1038,7 @@ class WorkflowsPage(QObject):
                 if text is not None:
                     text.setText(self._step_text(step))
                 if message is not None:
-                    message.setText(step.get("message") or "")
+                    message.setText(step_message(step))
             return
         self._node_run_sig, self._node_run_rows = signature, {}
         _clear(layout)
@@ -1038,8 +1053,8 @@ class WorkflowsPage(QObject):
             text = _label(self._step_text(step))
             box.addWidget(text)
             message = None
-            if step.get("message"):
-                message = _label(step["message"], "secondary")
+            if step.get("message") or step.get("warnings"):
+                message = _label(step_message(step), "secondary")
                 box.addWidget(message)
             self._node_run_rows[tuple(step["branch"])] = (text, message)
             if step["state"] in ("failed", "unknown") and self.queue_id is not None:
@@ -1119,7 +1134,7 @@ class WorkflowsPage(QObject):
                 self._error("Workflow not started", failure)
                 return
             queue_id, _run_id, how = result
-            self._follow(queue_id, path)
+            self._follow(queue_id, path, fresh=True)
             text = {
                 "started": "Running on the selected backend; progress is in the activity bar.",
                 "up next": "Waits up next behind the running queue and starts by itself.",
@@ -1130,8 +1145,9 @@ class WorkflowsPage(QObject):
 
         self.start_workflow(document, name, done)
 
-    def _follow(self, queue_id: str, path: Path | None) -> None:
+    def _follow(self, queue_id: str, path: Path | None, *, fresh: bool = False) -> None:
         self.queue_id, self._run_path = queue_id, path
+        self._warning_follow_queue_id = queue_id if fresh else None
         self.run = None
         self._pause_shown = None
         self._pause_dismissed.clear()
@@ -1250,6 +1266,7 @@ class WorkflowsPage(QObject):
             self.refresh_recent_runs()
         self._sync_lock()
         self._present_run(run)
+        self._present_warnings(run)
         self._apply_run_to_canvas()
         if self.canvas is not None:
             selected = self.canvas.selected_node_id()
@@ -1257,6 +1274,30 @@ class WorkflowsPage(QObject):
                 self._show_node_run(selected)
         self._sync_pause_overlay()
         self._update_plan()
+
+    def _present_warnings(self, run: dict | None) -> None:
+        run_id = run.get("run_id") if run else None
+        if run_id != self._warning_run_id:
+            self._warning_run_id = run_id
+            self._warning_seen.clear()
+        if not run or not self.workspace.isVisible():
+            return
+        if self._run_live(run):
+            self._warning_follow_queue_id = self.queue_id
+        if self.queue_id is None or self._warning_follow_queue_id != self.queue_id:
+            return  # Historical outcomes retain warnings in outputs/details, without replaying an overlay.
+        fresh = []
+        for step in run.get("steps", ()):
+            for warning in step.get("warnings", ()):
+                key = (step["node_id"], warning)
+                if key not in self._warning_seen:
+                    self._warning_seen.add(key)
+                    fresh.append(f"{step_name(step)}: {warning}")
+        if fresh:
+            text = "\n".join(fresh[:2])
+            if len(fresh) > 2:
+                text += f"\n{len(fresh) - 2} more warning(s) in workflow outputs."
+            InlineNotice.warning(self.workspace, "Workflow LoRA warning", text)
 
     def _present_run(self, run: dict | None) -> None:
         w, i = self.workspace, self.inspector
@@ -1291,6 +1332,13 @@ class WorkflowsPage(QObject):
             if message not in (run.get("message") or ""):
                 text += f": {message}"
             lines.append(text)
+        warnings = {}
+        for step in steps:
+            for warning in step.get("warnings", ()):
+                warnings[(step["node_id"], warning)] = f"Warning · {step_name(step)}: {warning}"
+        lines.extend(list(warnings.values())[:6])
+        if len(warnings) > 6:
+            lines.append(f"{len(warnings) - 6} more node warning(s); select a node for details.")
         w.workflowOutputText.setText("\n".join(lines))
         w.stopWorkflowButton.setVisible(state in LIVE_RUN)
         w.stopWorkflowButton.setEnabled(self.queue_id is not None)
@@ -1519,7 +1567,7 @@ class WorkflowsPage(QObject):
                 self._error("Retry not started", failure)
                 return
             if new_id == queue_id or self.start_created is None:
-                self._follow(queue_id, path)
+                self._follow(queue_id, path, fresh=True)
                 activity_strip(self.workspace).complete("workflow-run", "Workflow · retry", "Retry started.")
                 return
 
@@ -1527,7 +1575,7 @@ class WorkflowsPage(QObject):
                 if error is not None:
                     self._error("Retry not started", error)
                     return
-                self._follow(new_id, path)
+                self._follow(new_id, path, fresh=True)
                 self.refresh_recent_runs()
                 activity_strip(self.workspace).complete(
                     "workflow-run",

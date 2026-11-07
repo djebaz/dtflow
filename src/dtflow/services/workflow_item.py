@@ -249,7 +249,15 @@ class _Execution:
         stamp = _now()
         for key in keys:
             step = self.steps[key]
-            step.update(state="running", stage=None, message=None, started_at=stamp, finished_at=None)
+            step.update(
+                state="running",
+                stage=None,
+                message=None,
+                started_at=stamp,
+                finished_at=None,
+                warnings=[],
+                lora_preflight=[],
+            )
         await self.flush()
 
     async def end(self, keys: list[Key], state: str, message: str | None = None, **fields) -> None:
@@ -615,6 +623,24 @@ class _Execution:
 
             options = {"prepared_inputs": prepared} if prepared is not None else {}
             try:
+                if self.request.backend == "cloud" and request.loras:
+                    # Workflow files carry names/weights only. Bind existing local receipts at dispatch,
+                    # independently of Generate; the generation service still validates their account/scope.
+                    choices = await session.script_asset_choices(self.runner.state, self.request.backend)
+                    selected = {lora.identifier for lora in request.loras}
+                    request = await session.bind_prepared(
+                        self.runner.state,
+                        self.request.backend,
+                        request,
+                        tuple(asset.receipt_id for asset in choices if asset.identifier in selected),
+                    )
+                    while not self.go.is_set() and not self.stopping and not self.halted:
+                        self.set_stage(keys, "Waiting: queue paused")
+                        await self.go.wait()
+                    if self.stopping or self.halted:
+                        self.run["submitted"] -= weight
+                        await self.end(keys, "cancelled", "Stopped before submission; nothing was sent.")
+                        return None
                 outcome = await session.run_generation(
                     self.runner.service, request, on_event=receive, attempt_id=attempt_id, **options
                 )
@@ -648,6 +674,45 @@ class _Execution:
                 )
                 await self.end(keys, "unknown" if remote_unknown else "failed", failure_text(exc))
                 return None
+            if self.request.backend == "cloud":
+                bound = {asset.identifier for asset in outcome.request.prepared_assets}
+                preflight = [
+                    {
+                        "identifier": item.identifier,
+                        "availability": item.availability,
+                        "code": item.code,
+                        "prepared": item.identifier in bound,
+                    }
+                    for item in outcome.diagnostics
+                ]
+                warnings = [
+                    f"{item.identifier}: DT+ availability unconfirmed (no prepared receipt). If this is a custom LoRA, use Prepare."
+                    for item in outcome.diagnostics
+                    if item.code == "availability_unknown" and item.identifier not in bound
+                ]
+                for key in keys:
+                    self.steps[key].update(warnings=list(warnings), lora_preflight=copy.deepcopy(preflight))
+                if warnings:
+                    await self.runner._record(
+                        self.queue_id,
+                        "workflow_warning",
+                        {
+                            "item_id": self.item_id,
+                            "node_id": keys[0][0],
+                            "branch": self.steps[keys[0]]["branch_label"],
+                            "message": " ".join(warnings),
+                        },
+                    )
+                    diagnostic_event(
+                        log,
+                        "workflow.lora_warning",
+                        level=logging.WARNING,
+                        data={
+                            "code": "prepared_receipt_missing",
+                            "count": len(warnings),
+                            "node_type": self.steps[keys[0]]["type"],
+                        },
+                    )
             return outcome
         finally:
             if reserved:

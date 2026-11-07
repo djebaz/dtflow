@@ -37,7 +37,8 @@
       "queues-11-running",
       "queues-60-item-table",
       "queues-38-composer-cross",
-      "queues-74-workflow-queue"
+      "queues-74-workflow-queue",
+      "queues-75-workflow-lora-warning"
     ],
     "page.scripts": [
       "scripts_imported_supported",
@@ -213,7 +214,9 @@
       "workflows-06-running",
       "workflows-07-branch-paused",
       "workflows-10-narrow",
-      "workflows-11-library-folded"
+      "workflows-11-library-folded",
+      "workflows-12-lora-warning",
+      "workflows-13-lora-warning-history"
     ]
   },
   "components": [

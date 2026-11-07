@@ -224,22 +224,23 @@ async def test_pause_resume_cancel_controls_preserve_honest_evidence(state):
     async with Harness(state, backend) as h:
         queue_id = await h.store.create_queue(BACKEND, 2, [item(n) for n in range(6)])
         run = h.run(queue_id)
-        await until(lambda: backend.started == [0, 1])
+        # Backend arrival can reorder during concurrent preparation; durable FIFO is covered by 3B-O1.
+        await until(lambda: sorted(backend.started) == [0, 1])
         post_control(state, queue_id, "pause")  # posted from a separate connection while this process owns dispatch
         await until(lambda: any(e["kind"] == "pause" for e in read_queues(state, queue_id)[0]["events"]))
         backend.release(0)
         await until(lambda: backend.completed == [0])
         await asyncio.sleep(0.05)
-        assert backend.started == [0, 1]  # paused: the released slot was not refilled
+        assert sorted(backend.started) == [0, 1]  # paused: the released slot was not refilled
         backend.release(1)
         await until(lambda: sorted(backend.completed) == [0, 1])
         await asyncio.sleep(0.05)
-        assert backend.started == [0, 1] and not run.done()  # idle but alive, waiting for Resume
+        assert sorted(backend.started) == [0, 1] and not run.done()  # idle but alive, waiting for Resume
         post_control(state, queue_id, "resume")
-        await until(lambda: backend.started == [0, 1, 2, 3])
+        await until(lambda: sorted(backend.started) == [0, 1, 2, 3])
         post_control(state, queue_id, "cancel")
         final = await asyncio.wait_for(run, SETTLE)
-        assert backend.started == [0, 1, 2, 3]  # pending items 5 and 6 were never dispatched
+        assert sorted(backend.started) == [0, 1, 2, 3]  # pending items 5 and 6 were never dispatched
     states = [x["state"] for x in final["items"]]
     assert states == ["succeeded", "succeeded", "unknown", "unknown", "cancelled", "cancelled"]
     assert final["status"] == "cancelled"
