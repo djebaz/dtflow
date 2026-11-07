@@ -27,7 +27,7 @@ slice (the engine, the hook table and the ledger; issues #119 and #113) does and
 
 ## Bounded parallel batches (PR #218)
 
-The optional DTFlow-only `pipeline.runBatch(jobs, maxConcurrent)` hook validates bounded independent requests and returns ordered per-job outcomes. It counts jobs against the existing run ceiling, not a separate parallel-generation allowance. Queue child lanes use attempts schema 6: the parent holds one reservation, the first child reuses it and further children compete with ordinary queues for shared backend capacity. Backend/session types stay outside the JS facade. Per-job configuration/evidence and committed outputs use the existing generation service and attempt ledger; the ScriptRun ordinal allocation is transactional under concurrent linkage.
+The optional DTFlow-only `pipeline.runBatch(jobs, maxConcurrent)` hook validates bounded independent requests and returns ordered per-job outcomes. It counts jobs against the existing run ceiling, not a separate parallel-generation allowance. Queue child lanes (attempts schema 6, an item column since schema 9): the parent holds one reservation, the first child reuses it and further children compete with ordinary queues for shared backend capacity. Backend/session types stay outside the JS facade. Per-job configuration/evidence and committed outputs use the existing generation service and attempt ledger; child linking is serialized on the run, and each link is written before it takes effect.
 
 Since #220 a failed, unknown or not-saved job no longer closes intake; each job keeps its own status. Reservation, child-link and lane-release failures still close intake, which waiting workers recheck after reservation and child-link awaits. Explicit worker ownership, all-results gathering and cancellation-safe draining prevent parent settlement/backend closure before admitted siblings finish, including lane-release failures. No automatic retry or remote cancellation is introduced. Restart clears stale lane bookkeeping under the existing exclusive owner, preserving durable attempts and no-replay semantics. Older database writers refuse schema 6; migration retains the existing pre-upgrade backup policy.
 
@@ -75,19 +75,43 @@ a busy loop, writes `parent_pid`, `outer_launcher_pid` (frozen onefile builds on
 task, and likewise for `outer_launcher_pid`. Ctrl+C stops the run normally. This is a manual check for the owner; it is not run by CI and its result is the
 only evidence that Windows containment, including the order in which a onefile launcher joins the Job Object, works.
 
-## ScriptRun ledger
+## Script run state (kept in the queue item, #243)
 
-`persistence/script_runs.py` keeps `<state>/script_runs.sqlite3`, versioned by `PRAGMA user_version` independently of
-the application. States: running, completed, failed, stopped, interrupted. A run left running by a crash becomes
-interrupted when the store is next opened and is never resumed or replayed. Child attempts are linked in order, before
-submission, and never removed. `run_recorded` (in `runner.py`) ties the ledger to a run: it creates and locks the row
-before the child starts, settles it from the result (completed, failed or stopped) and settles it as failed if anything
-raises; if settlement itself fails, ownership is still released, the original outcome or error is kept and the row is
-recovered as interrupted on the next open; hooks receive `link_child(attempt_id)` to record child attempts before submitting them. Liveness is decided by an OS file lock per run in `script_run_locks/` (`flock` on POSIX,
-`msvcrt.locking` on Windows) taken before the row exists, so a second app instance does not interrupt a run whose lock is
-held and process-id reuse cannot confuse ownership. Only a genuine "lock is held" error counts as held; on a filesystem
-without lock support (some network mounts, WSL1 `/mnt/c`) creating a run fails with a clear error and crashed runs on
-that store stay `running`, listed in `ScriptRunStore.unverified` and logged, instead of being guessed at.
+There is no separate run store. A queued run lives in its script item, as `request_json["run"]` (state, starting
+context, ordered child attempt ids, forms, recorded answers, start and end times), like a workflow run. States: running,
+completed, failed, stopped, interrupted. `scripting/run_state.py` (`ScriptRun`) holds the run in memory and hands every
+change to the dispatch owner (`update_script_run`, one short transaction) *before* it takes effect: a child attempt is
+linked before anything can be submitted, a form is published and its answers recorded before the script sees them. A
+failed write raises and the run stays as it was. `run_recorded` (in `runner.py`) writes the starting state before the
+child starts, settles it from the result (completed, failed or stopped) and settles it as failed if anything raises.
+
+If an owner-side form-answer write fails, the dispatcher requests local script cancellation and waits for the script worker and admitted generation futures before releasing its backend/store; the persistence error still propagates. The existing 60-second write timeout does not guarantee cancellation of the database operation or a known write outcome; a late commit can still require conservative unknown/interrupted recovery. No uncertain work is replayed automatically.
+
+Crash recovery is the queue reconcile, one transaction under the owner lock: a run left running becomes interrupted,
+its open form is closed, and the item takes the outcome its run and children decide (`unknown` while a child has no
+confirmed outcome). Nothing is resumed or replayed. A script item without a run never started and returns to pending.
+
+Forms are answered from any process by posting a `script_answer` (or `script_cancel_form`) queue control; the script
+runner takes it (`take_script_controls`), checks the answers and owned picker inputs again and records them. If the runner refuses an answer (for
+example a picked file changed in between), it notes the reason on the still-open form and Scripts offers the form again
+with that reason. Picker input capabilities are small files under `<state>/script_inputs/<run-id>/`, outside the
+script's own sandbox, bound to the run, form and field. The last answers of each form are remembered in the
+`script_form_answers` table of the attempts database. The recorded answers kept in the run replace inline images
+(`data:` URLs) by their SHA-256 and size, so the item that is rewritten on every step stays small; the script itself
+received the full answers. An open form's fields (which may embed images) are kept only while it is open.
+
+Posting a form answer or cancellation rechecks the exact open form and running item inside the same write transaction that inserts the control. An answer that loses a race with form closure or item settlement is rejected rather than left pending after the dispatcher exits.
+
+Child lanes (`pipeline.runBatch`, shared with workflows) are the item's `lanes_json` column: the attempt ids holding a
+lane. Restart clears them under the owner lock. Scripts Setup keeps its run in memory until Run Script; the dispatcher
+writes it into the item when it adopts the Setup, before generation can be admitted. `dtflow script --run` also creates
+a script queue item; without `--queue` it starts that queue as the dispatch owner and reports from the item.
+
+The script request records an `interactive` input policy. Existing records default to interactive queued behavior; newly created immediate CLI runs explicitly disable interaction, preserving initial/default answers or supplied `--answers` instead of waiting for another process. CLI `--queue` and desktop runs retain interactive forms when no answer file is supplied; desktop Setup requires the interactive policy.
+
+Schema 9 copies each script item's run from the old `<state>/script_runs.sqlite3` (read-only; the file and
+`script_run_locks/` are left in place and no longer used), drops the `script_child_slots` table and moves remembered
+form answers. A ledger that cannot be read marks the affected runs unreadable instead of failing the upgrade.
 
 ## Testing status
 

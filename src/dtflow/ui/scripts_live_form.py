@@ -90,6 +90,7 @@ class LiveScriptForm(ScriptForm):
         super().__init__(parent)
         self.runner = runner
         self.identity = None
+        self.choices: tuple[str, ...] | None = None
         self._values = []
         self._components = []
         self._pickers = []
@@ -117,6 +118,7 @@ class LiveScriptForm(ScriptForm):
     def clear_request(self):
         self._generation += 1
         self.identity = None
+        self.choices: tuple[str, ...] | None = None
         for picker in tuple(self._pickers):
             picker.reject()
         self._pickers.clear()
@@ -134,15 +136,22 @@ class LiveScriptForm(ScriptForm):
         self.identity = (prompt.run_id, prompt.ordinal)
         self.state = state
         self._components = prompt.components
+        # A dtFlow choice form (step Retry): its last field is answered by the page's buttons, not shown here.
+        self.choices = tuple(prompt.choices) if getattr(prompt, "choices", None) else None
         values = result["answers"]
         self._values = copy.deepcopy(initial_answers(prompt.components) if values is None else values)
         validate_answers(self._components, self._values)
         self._thumbnails = result["thumbnails"]
         # Remove the preview form's trailing stretch; real groups follow source order.
         self.layout_.takeAt(self.layout_.count() - 1)
-        self._build(prompt.components, self.layout_, ())
+        self._build(prompt.components[:-1] if self.choices else prompt.components, self.layout_, ())
         self.layout_.addStretch(1)
         self.set_narrow(self.window().width() < 1100)
+
+    def remembered_choice(self) -> int:
+        """Index of the choice to focus (the last answer remembered for this form, else the first)."""
+        value = self._values[-1] if self.choices and self._values else 0
+        return value if type(value) is int and 0 <= value < len(self.choices or ()) else 0
 
     def answers(self) -> list:
         if self.identity is None or self.busy:
