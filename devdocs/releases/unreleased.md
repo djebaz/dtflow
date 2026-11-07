@@ -14,9 +14,9 @@ Changes through 6.0.0 are consolidated in [DTFlow 6.0.0](v6.0.0.md). This file t
 
 ## Validations
 
-☑️ pytest Full passed
-☑️ render_ui passed
-☑️ SmokeTests passed
+☐ pytest Full passed
+☐ render_ui passed
+☐ SmokeTests passed
 
 ## Release audit
 
