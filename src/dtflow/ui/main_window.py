@@ -1243,8 +1243,8 @@ class MainWindow:
         pill.style().polish(pill)
 
     def _usage_activity_changed(self) -> None:
-        if self.form.workspaceStack.currentWidget() is self.form.connectionPage:
-            self.cloud_usage.schedule_refresh()
+        # The bottom-bar counter is global, even when the Connection card is hidden.
+        self.cloud_usage.schedule_refresh()
 
     def _read_summary(self, key, read, apply) -> None:
         """Optional startup reads cannot block painting or replace a newer explicit refresh."""
