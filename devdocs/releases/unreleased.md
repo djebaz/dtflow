@@ -1,6 +1,6 @@
 # Unreleased
 
-Changes through 5.5.6 are consolidated in [DTFlow 5.5.6](v5.5.6.md). This file tracks subsequent changes, not completion of open acceptance issues.
+Changes through 6.0.0 are consolidated in [DTFlow 6.0.0](v6.0.0.md). This file tracks subsequent changes, not completion of open acceptance issues.
 
 ## Highlights
 
