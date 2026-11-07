@@ -1,6 +1,6 @@
 # Current development status
 
-Updated: 2026-11-07 for [6.0.0 preparation](plans/2026-11-07-release-6.0.0.md), from merged main `89cebe0`. [5.5.2](https://github.com/djebaz/dtflow/releases/tag/v5.5.2) is published; 6.0.0 still requires exact-head checks, the Windows build Action and acceptance of its exact executable. Repository source and linked evidence are authoritative; historical checkpoints remain in Git and versioned notes.
+Updated: 2026-11-07 after the [6.0.0 release](https://github.com/djebaz/dtflow/releases/tag/v6.0.0) was published from `eee1a01` (see [release plan](plans/2026-11-07-release-6.0.0.md)). The published GitHub release body is the source of truth for its notes. Repository source and linked evidence are authoritative; historical checkpoints remain in Git and versioned notes.
 
 ## Implemented scope mapped to the initial plan
 
