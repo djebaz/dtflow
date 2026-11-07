@@ -56,8 +56,10 @@ async def test_invalid_selection_never_opens_state(tmp_path):
     "category,code,message,remote_outcome,expected_submissions",
     [
         ("connectivity", "connection_failed", "Connection refused.", "not_started", 2),
+        ("timeout", "timed_out_before_submission", "Timed out.", "not_started", 2),
         ("connectivity", "connection_lost", "Connection lost after dispatch.", "unknown", 1),
         ("authentication", "unauthorized", "Permission denied.", "not_started", 1),
+        ("resource_limit", "quota_exhausted", "Quota exhausted.", "failed", 1),
         ("protocol", "grpc_internal", "unknown error processing request", "unknown", 2),
     ],
 )
@@ -99,7 +101,10 @@ async def test_repeated_transient_failure_stops_after_one_automatic_retry(
         assert len({req.request_id for req in submitted}) == expected_submissions
         if expected_submissions == 2:
             assert dict(submitted[1].resolution_evidence)["retry.automatic_of_request"] == submitted[0].request_id
-        assert len(await store.inspect()) == expected_submissions
+        records = await store.inspect()
+        assert len(records) == expected_submissions
+        assert {row["remote_outcome"] for row in records} == {remote_outcome}
+        assert {row["request"]["seed"] for row in records} == {0}
     finally:
         await backend.aclose()
         await store.aclose()
