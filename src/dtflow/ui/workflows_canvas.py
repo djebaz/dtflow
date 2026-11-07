@@ -211,6 +211,12 @@ class DTFGraphicsView(QDMGraphicsView):
         super().mousePressEvent(event)
 
     def keyPressEvent(self, event) -> None:
+        if event.key() == Qt.Key.Key_Delete and event.modifiers() == Qt.KeyboardModifier.NoModifier:
+            canvas = self.grScene.scene.canvas
+            if canvas is not None:
+                canvas.delete_selected()
+                event.accept()
+                return
         if event.key() == Qt.Key.Key_F and event.modifiers() == Qt.KeyboardModifier.NoModifier:
             canvas = self.grScene.scene.canvas
             if canvas is not None:
