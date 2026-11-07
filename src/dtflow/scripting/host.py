@@ -11,7 +11,8 @@ there. Rules kept here:
 * A step that fails or ends with no confirmed outcome does not block the rest of the run. In a run answered in Scripts
   (a queue item) the run pauses on that step and the person picks Retry (the same request and seed, a new linked
   child; the old step keeps its own outcome) or Continue (the script goes on with an empty canvas). Headless runs hand
-  the error to the script as before. A run allows at most ``max_generations`` manual retries in total; nothing is retried automatically.
+  the error to the script as before. A run allows at most ``max_generations`` manual retries in total; nothing is
+  retried automatically.
 * Configuration fields that DTFlow cannot honour yet fail the affected call when a script *changes* them from the
   baseline it was given. Unchanged inherited fields are allowed. Nothing is silently dropped.
 * Files live in one per-run sandbox directory; ``picturesPath`` and friends point there, never at the real Pictures
