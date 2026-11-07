@@ -196,12 +196,12 @@ async def create_edit_queue(
 ) -> tuple[str, int]:
     """Stage one prepared edit once and persist a paused queue of items that share it.
 
-    Each item records the owner-probe consent for its exact backend, checkpoint and operation; nothing is uploaded or
-    dispatched until Start, and the staged inputs stay durable evidence. Returns (queue id, cap).
+    The scope is checked now so an unsupported backend refuses before anything is staged; nothing is uploaded or
+    dispatched until Start, which is the consent (#244), and the staged inputs stay durable evidence. Returns
+    (queue id, cap).
     """
     operation = "inpaint" if prepared.mask is not None else "img2img"
-    evidence_id = f"queue-{uuid4().hex}"
-    permit = session.owner_probe_permit(selection, base.model_id, operation, evidence_id)
+    permit = session.owner_probe_permit(selection, base.model_id, operation, "queue-scope-check")
     permit.validate_scope(
         permit.backend_id, session.image_endpoint_label(selection), base.model_id, operation, allow_probe=True
     )
@@ -215,11 +215,6 @@ async def create_edit_queue(
         operation=operation,
         strength=strength,
         image_inputs=staged,
-        resolution_evidence=(
-            *base.resolution_evidence,
-            ("image_permit_evidence", evidence_id),
-            ("image_permit_status", permit.status),
-        ),
     )
     items = expand_items(edit, count) if plan is None else expand_plan(edit, plan, receipts=receipts)
     return await create_queue(state, backend, items, cap, up_next=up_next, composer_source=composer_source)
@@ -300,8 +295,8 @@ async def relaunch_queue(
     The source queue, its items and attempts are only read: nothing is replayed, an unknown attempt stays unknown, and
     each new item gets its own identity and, when dispatched, its own attempt (a real and possibly billable
     generation, like Start). ``positions`` takes exactly those items (Retry item), ``failed_only`` the items that
-    settled without a saved image. Staged edit items reuse their recorded inputs and owner-probe consent, which the
-    dispatcher validates again at Start; inputs that are gone refuse the relaunch.
+    settled without a saved image. Staged edit items reuse their recorded inputs; Start is the consent and the
+    dispatcher builds their exact-scope permit then; inputs that are gone refuse the relaunch.
     """
     backend, source_cap, items = await asyncio.to_thread(read_queue_requests, Path(state), queue_id)
     refuse_script_records(record for _, _, record in items)
@@ -499,8 +494,8 @@ async def _dispatch_one(store, state, queue_id, policy, saved, out, on_settle, o
                 else ()
             )
         else:
-            # Staged edits carry their own recorded per-item consent; each distinct checkpoint/operation gets one exact
-            # owner-probe permit for this dispatch. No consent, no permit: such items are refused before any upload.
+            # #244: Start is the consent for staged edits too; each distinct checkpoint/operation gets one exact-scope
+            # owner-probe permit for this dispatch. Items outside those scopes are refused before any upload.
             permits = tuple(
                 session.owner_probe_permit(selection, model, operation, evidence)
                 for model, operation, evidence in await store.image_scopes(queue_id)

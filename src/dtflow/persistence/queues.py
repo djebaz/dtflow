@@ -142,20 +142,15 @@ def add_kind(db: sqlite3.Connection) -> None:
 
 
 def check_queueable(request: ResolvedGenerationRequest) -> None:
-    """Text-to-image, or a staged single-output edit that carries its recorded per-item owner-probe consent."""
+    """Text-to-image, or a staged single-output edit.
+
+    Start is the consent for queued edits (#244), as for workflows: items carry no per-item consent record, and the
+    dispatcher builds the exact-scope owner-probe permit when the queue starts. Older items that still carry
+    ``image_permit_*`` evidence still read and run; their attempts record the dispatch evidence id."""
     if request.operation == "txt2img":
         return
-    evidence = dict(request.resolution_evidence)
-    if (
-        request.image_inputs is None
-        or request.batch_size * request.batch_count != 1
-        or evidence.get("image_permit_status") != "owner_probe"
-        or not evidence.get("image_permit_evidence")
-    ):
-        raise ValidationError(
-            "Queued image operations need staged inputs, one output and recorded owner-probe consent; "
-            "nothing was dispatched."
-        )
+    if request.image_inputs is None or request.batch_size * request.batch_count != 1:
+        raise ValidationError("Queued image operations need staged inputs and one output; nothing was dispatched.")
 
 
 def request_from_record(record: dict[str, Any]) -> ResolvedGenerationRequest:
@@ -779,7 +774,7 @@ class QueueMixin:
         return tuple((model, operation, evidence) for (model, operation), evidence in scopes.items())
 
     async def image_scopes(self, queue_id: str) -> tuple[tuple[str, str, str], ...]:
-        """Distinct (checkpoint, operation, consent evidence id) of the queue's pending image items."""
+        """Distinct (checkpoint, operation, evidence id) of the queue's pending image items; Start is the consent."""
         return await self._run(self._image_scopes, queue_id)
 
     def _image_scopes(self, queue_id: str) -> tuple[tuple[str, str, str], ...]:
@@ -791,8 +786,7 @@ class QueueMixin:
                 record = json.loads(row["request_json"])
                 if record.get("operation") in (None, "txt2img"):
                     continue
-                evidence = {str(k): str(v) for k, v in record["resolution_evidence"]}
-                scopes.setdefault((record["model_id"], record["operation"]), evidence["image_permit_evidence"])
+                scopes.setdefault((str(record["model_id"]), str(record["operation"])), f"queue-{queue_id}")
             except (TypeError, ValueError, KeyError):
                 continue  # claim_next rejects a malformed item without reserving it
         return tuple((model, operation, evidence) for (model, operation), evidence in scopes.items())
