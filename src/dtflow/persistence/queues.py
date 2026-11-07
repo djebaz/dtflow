@@ -146,7 +146,7 @@ def check_queueable(request: ResolvedGenerationRequest) -> None:
 
     Start is the consent for queued edits (#244), as for workflows: items carry no per-item consent record, and the
     dispatcher builds the exact-scope owner-probe permit when the queue starts. Older items that still carry
-    ``image_permit_*`` evidence read and run unchanged."""
+    ``image_permit_*`` evidence still read and run; their attempts record the dispatch evidence id."""
     if request.operation == "txt2img":
         return
     if request.image_inputs is None or request.batch_size * request.batch_count != 1:
