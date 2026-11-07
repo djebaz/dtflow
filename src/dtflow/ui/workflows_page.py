@@ -54,6 +54,15 @@ from dtflow.ui.search_select import SearchableComboBox
 
 log = logging.getLogger(__name__)
 
+
+class _DimensionSpinBox(QSpinBox):
+    """Commit authored dimensions to the nearest 64 pixels, with ties upward."""
+
+    def valueFromText(self, text: str) -> int:
+        value = super().valueFromText(text)
+        return max(self.minimum(), min(self.maximum(), ((value + 32) // 64) * 64))
+
+
 POLL_MS = 1000
 COMPACT_TOOLBAR_PX = 640  # below this canvas-column width the name moves above the buttons and Run shortens
 THUMB = 72
@@ -963,12 +972,15 @@ class WorkflowsPage(QObject):
             layout.addWidget(line)
             layout.addWidget(problem)
         elif param.kind == "int":
-            spin = QSpinBox(host)
+            dimension = param.name in {"width", "height"} and param.step == 64
+            spin = _DimensionSpinBox(host) if dimension else QSpinBox(host)
             spin.setRange(int(param.minimum), int(param.maximum))
             spin.setSingleStep(int(param.step or 1))
             spin.setValue(int(value))
             spin.setAccessibleName(f"{param.label} for node {node_id}")
             spin.setKeyboardTracking(False)
+            if dimension:
+                spin.setToolTip("Multiples of 64 pixels; typed values round to the nearest multiple (ties upward).")
             spin.valueChanged.connect(lambda number: self._set(node_id, param.name, int(number)))
             layout.addWidget(spin)
         elif param.kind == "float":
@@ -1079,6 +1091,8 @@ class WorkflowsPage(QObject):
             return
         if self.canvas is None or self._busy or self.start_workflow is None:
             return
+        for spin in self.inspector.workflowParamsHost.findChildren(_DimensionSpinBox):
+            spin.interpretText()
         graph = self.canvas.current_graph()
         try:
             plan = wf.plan_workflow(graph)

@@ -3971,6 +3971,7 @@ def _render_selection(app, args):
                     no_cache=True,
                 ),
                 state_names=[item.id for item in SELECTION.states if item.category == "workflows"],
+                dimension_example=800,  # Editing fixture shows the committed 832 px width; no layout assertions.
                 capture=save,
             )
         scripts_done = False

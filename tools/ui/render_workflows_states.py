@@ -13,7 +13,7 @@ from pathlib import Path
 from PySide6.QtCore import QCoreApplication, QEvent, QPointF, QRectF, Qt
 from PySide6.QtGui import QColor, QFont, QImage, QLinearGradient, QPainter
 from PySide6.QtTest import QTest
-from PySide6.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication, QSpinBox
 
 ROOT = Path(__file__).resolve().parents[2]
 STATES = (
@@ -160,7 +160,7 @@ def _fanout(graph):
     return graph
 
 
-def render_workflows_states(out, *, window_factory, state_names, capture):
+def render_workflows_states(out, *, window_factory, state_names, capture, dimension_example=None):
     from dtflow.core import workflows as wf
     from dtflow.services import workflow_library as library
     from dtflow.services.model_provisioning import catalogue
@@ -256,6 +256,12 @@ def render_workflows_states(out, *, window_factory, state_names, capture):
                           "partial-retry": 3, "narrow": 3, "library-folded": 3}  # fmt: skip
                 node = next((value for key, value in select.items() if name.endswith(key)), 3)
                 page.canvas.select_node(node)
+                if name.endswith("editing") and dimension_example is not None:
+                    for spin in page.inspector.workflowParamsHost.findChildren(QSpinBox):
+                        if spin.accessibleName() == f"Width for node {node}":
+                            spin.lineEdit().setText(str(dimension_example))
+                            spin.interpretText()
+                            break
             if name.endswith("import-rejected"):
                 try:
                     library.load_file(OLD_CONTRACT)
