@@ -2010,7 +2010,7 @@ def render_item_table_states(shell, out, state):
         if strip is not None and "queue-message" in strip.rows:
             strip.finish("queue-message")  # an earlier state's notice is not part of this one
         snap("queues-74-workflow-queue")
-        warning = "fixture_custom_lora.ckpt: no confirmed prepared receipt; may not apply on DT+. Prepare the custom LoRA explicitly."
+        warning = "fixture_custom_lora.ckpt: DT+ availability unconfirmed (no prepared receipt). If this is a custom LoRA, use Prepare."
         workflow_view["events"] = [
             {
                 "kind": "workflow_warning",

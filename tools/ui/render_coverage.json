@@ -215,7 +215,8 @@
       "workflows-07-branch-paused",
       "workflows-10-narrow",
       "workflows-11-library-folded",
-      "workflows-12-lora-warning"
+      "workflows-12-lora-warning",
+      "workflows-13-lora-warning-history"
     ]
   },
   "components": [

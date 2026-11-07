@@ -299,6 +299,7 @@ class WorkflowsPage(QObject):
         self._node_run_sig: tuple | None = None
         self._node_run_rows: dict[tuple, tuple[QLabel, QLabel]] = {}
         self._warning_run_id: str | None = None
+        self._warning_follow_queue_id: str | None = None
         self._warning_seen: set[tuple[int, str]] = set()
         self._picker = None
         self._picker_at: QPointF | None = None
@@ -1133,7 +1134,7 @@ class WorkflowsPage(QObject):
                 self._error("Workflow not started", failure)
                 return
             queue_id, _run_id, how = result
-            self._follow(queue_id, path)
+            self._follow(queue_id, path, fresh=True)
             text = {
                 "started": "Running on the selected backend; progress is in the activity bar.",
                 "up next": "Waits up next behind the running queue and starts by itself.",
@@ -1144,8 +1145,9 @@ class WorkflowsPage(QObject):
 
         self.start_workflow(document, name, done)
 
-    def _follow(self, queue_id: str, path: Path | None) -> None:
+    def _follow(self, queue_id: str, path: Path | None, *, fresh: bool = False) -> None:
         self.queue_id, self._run_path = queue_id, path
+        self._warning_follow_queue_id = queue_id if fresh else None
         self.run = None
         self._pause_shown = None
         self._pause_dismissed.clear()
@@ -1280,6 +1282,10 @@ class WorkflowsPage(QObject):
             self._warning_seen.clear()
         if not run or not self.workspace.isVisible():
             return
+        if self._run_live(run):
+            self._warning_follow_queue_id = self.queue_id
+        if self.queue_id is None or self._warning_follow_queue_id != self.queue_id:
+            return  # Historical outcomes retain warnings in outputs/details, without replaying an overlay.
         fresh = []
         for step in run.get("steps", ()):
             for warning in step.get("warnings", ()):
@@ -1561,7 +1567,7 @@ class WorkflowsPage(QObject):
                 self._error("Retry not started", failure)
                 return
             if new_id == queue_id or self.start_created is None:
-                self._follow(queue_id, path)
+                self._follow(queue_id, path, fresh=True)
                 activity_strip(self.workspace).complete("workflow-run", "Workflow · retry", "Retry started.")
                 return
 
@@ -1569,7 +1575,7 @@ class WorkflowsPage(QObject):
                 if error is not None:
                     self._error("Retry not started", error)
                     return
-                self._follow(new_id, path)
+                self._follow(new_id, path, fresh=True)
                 self.refresh_recent_runs()
                 activity_strip(self.workspace).complete(
                     "workflow-run",

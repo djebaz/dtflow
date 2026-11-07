@@ -686,7 +686,7 @@ class _Execution:
                     for item in outcome.diagnostics
                 ]
                 warnings = [
-                    f"{item.identifier}: no confirmed prepared receipt; may not apply on DT+. Prepare the custom LoRA explicitly."
+                    f"{item.identifier}: DT+ availability unconfirmed (no prepared receipt). If this is a custom LoRA, use Prepare."
                     for item in outcome.diagnostics
                     if item.code == "availability_unknown" and item.identifier not in bound
                 ]

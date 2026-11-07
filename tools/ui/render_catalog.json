@@ -339,6 +339,7 @@
     {"id": "workflows-10-narrow", "category": "workflows", "subcategory": "authoring", "fixture": "workflows", "stage": "layout", "level": "s", "path": "workflows/workflows-10-narrow.png"},
     {"id": "workflows-11-library-folded", "category": "workflows", "subcategory": "authoring", "fixture": "workflows", "stage": "layout", "level": "m", "path": "workflows/workflows-11-library-folded.png"},
     {"id": "workflows-12-lora-warning", "category": "workflows", "subcategory": "execution", "fixture": "workflows", "stage": "results", "level": "m", "path": "workflows/workflows-12-lora-warning.png"},
+    {"id": "workflows-13-lora-warning-history", "category": "workflows", "subcategory": "execution", "fixture": "workflows", "stage": "results", "level": "m", "path": "workflows/workflows-13-lora-warning-history.png"},
     {"id": "images-99a-detail-hover-card-empty", "category": "images", "subcategory": "detail", "fixture": "gallery-composition", "stage": "empty", "level": "m", "path": "images-99a-detail-hover-card-empty.png"},
     {"id": "images-53-export-panel-empty-scope", "category": "images", "subcategory": "export", "fixture": "gallery-composition", "stage": "empty", "level": "f", "path": "images-53-export-panel-empty-scope.png"},
     {"id": "images-72-pager-empty", "category": "images", "subcategory": "navigation", "fixture": "gallery-composition", "stage": "empty", "level": "f", "path": "image-navigation/images-72-pager-empty.png"},

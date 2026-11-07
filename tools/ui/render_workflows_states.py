@@ -29,6 +29,7 @@ STATES = (
     "workflows-10-narrow",
     "workflows-11-library-folded",
     "workflows-12-lora-warning",
+    "workflows-13-lora-warning-history",
 )
 OLD_CONTRACT = ROOT / "tools/node_editor_poc/reference_workflow_v1.json"  # a POC-era file the importer refuses
 
@@ -206,6 +207,7 @@ def render_workflows_states(out, *, window_factory, state_names, capture):
         owner.inline.dismiss()
         page.hide_node_picker()
         page.queue_id, page.run, page._run_path = None, None, None
+        page._warning_follow_queue_id = None
         page._pause_shown = None
         page._pause_dismissed.clear()
         page._missing = ()
@@ -214,8 +216,9 @@ def render_workflows_states(out, *, window_factory, state_names, capture):
         page.show_recent_runs([])
         owner._responsive_workspace()
 
-    def show_run(run):
+    def show_run(run, *, fresh=False):
         page.queue_id, page._run_path = "fixture-queue", page.path
+        page._warning_follow_queue_id = page.queue_id if fresh else None
         page.show_recent_runs(recent)
         page.present_run(run)
         page._poll.stop()  # fixtures only: nothing to poll
@@ -286,12 +289,12 @@ def render_workflows_states(out, *, window_factory, state_names, capture):
                 page.canvas.select_node(3)
             elif name.endswith("results"):
                 show_run(runs["done"])
-            elif name.endswith("lora-warning"):
-                warning = "fixture_custom_lora.ckpt: no confirmed prepared receipt; may not apply on DT+. Prepare the custom LoRA explicitly."
-                run = runs["done"]
+            elif name.endswith(("lora-warning", "lora-warning-history")):
+                warning = "fixture_custom_lora.ckpt: DT+ availability unconfirmed (no prepared receipt). If this is a custom LoRA, use Prepare."
+                run = {**runs["done"], "steps": [dict(step) for step in runs["done"]["steps"]]}
                 run["steps"][0]["warnings"] = [warning]
                 page.canvas.select_node(1)
-                show_run(run)
+                show_run(run, fresh=name.endswith("lora-warning"))
             elif name.endswith("library-folded"):
                 page._library_open = False  # as after pressing Library (not written to the fixture state)
                 page._sync_library_button()
