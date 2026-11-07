@@ -1007,7 +1007,9 @@ def _shared_connection(directory: Path, *, readonly: bool = False) -> sqlite3.Co
     )
     connection.row_factory = sqlite3.Row
     connection.execute("PRAGMA busy_timeout=2000")
-    supported = (2, 3, 4, SCHEMA_VERSION) if readonly else (SCHEMA_VERSION,)
+    # Browsing must work before the next dispatch owner performs the backed-up migration.
+    # Mutations still require the current schema and never upgrade through this shared reader.
+    supported = tuple(range(2, SCHEMA_VERSION + 1)) if readonly else (SCHEMA_VERSION,)
     if connection.execute("PRAGMA user_version").fetchone()[0] not in supported:
         connection.close()
         raise QueueError(

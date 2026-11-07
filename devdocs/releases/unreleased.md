@@ -12,6 +12,7 @@ Changes through 5.5.0 are consolidated in [DTFlow 5.5.0](v5.5.0.md). This file t
 
 ## Fixed
 
+- Startup queue browsing accepts supported older execution schemas before owner-controlled migration, including schema 8 after the schema 9 upgrade. Queue refresh failures now emit a privacy-safe diagnostic warning as well as the inline notice. Writes still require the current schema; browsing neither migrates state nor resumes work.
 - Script queue integration preserves headless CLI form defaults for immediate `--run` execution. A failed owner-side form-answer write now stops and drains the script worker before backend/store cleanup, and posting form controls atomically rejects forms closed by a racing settlement. Retry/Continue and generation-limit UI preview definitions are included; post-fix runtime and native acceptance remain unverified.
 - The bottom-bar DT+ completed-image counter now schedules its local saved-evidence refresh on activity changes from every workspace, rather than only while Connection is open. No provider polling or generation behavior changes.
 - Workflows bind existing prepared custom DT+ LoRA receipts for Generate, Inpaint and Img2img nodes, independently of ordinary Generate's selection. Previously names/weights reached dispatch without their uploaded-content binding, so the cloud request could omit the custom LoRA metadata. Invalid bound receipts stop the affected node before image submission; check the active account and reconcile or explicitly prepare the asset again. Pause is rechecked after receipt binding. No implicit preparation/upload or replay is added.
@@ -21,5 +22,5 @@ Changes through 5.5.0 are consolidated in [DTFlow 5.5.0](v5.5.0.md). This file t
 
 ## Release audit
 
-- PRs: #238, #246, #253
+- PRs: #238, #246, #253, #255
 - Scope: Workflow-only prepared custom cloud LoRA receipt binding, Pause-after-binding admission, invalid-receipt recovery guidance and retained missing-receipt warning presentation; global bottom-bar DT+ counter refresh; queue-owned script runs and schema 9 migration, headless CLI form policy, worker cleanup and form-control race corrections; offline render definitions for GitHub Actions. No provider uploads or automatic replay.
