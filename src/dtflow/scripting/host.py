@@ -6,9 +6,13 @@ there. Rules kept here:
 
 * A ``generateImage`` call becomes one ``ResolvedGenerationRequest`` through the normal generation path
   (``run_generation``), after its attempt id has been linked in the ScriptRun ledger and before anything is submitted.
-* Stop only stops *waiting*. The in-flight attempt is never cancelled remotely, never retried and stays durable; the
-  caller drains ``pending`` before closing the service.
-* An unresolved outcome blocks further generation in the same run.
+* Stop only stops *waiting*. The in-flight attempt is never cancelled remotely, never retried automatically and stays
+  durable; the caller drains ``pending`` before closing the service.
+* A step that fails or ends with no confirmed outcome does not block the rest of the run. In a run answered in Scripts
+  (a queue item) the run pauses on that step and the person picks Retry (the same request and seed, a new linked
+  child; the old step keeps its own outcome) or Continue (the script goes on with an empty canvas). Headless runs hand
+  the error to the script as before. Each retry counts as one of the
+  run's ``max_generations``; nothing is retried automatically.
 * Configuration fields that DTFlow cannot honour yet fail the affected call when a script *changes* them from the
   baseline it was given. Unchanged inherited fields are allowed. Nothing is silently dropped.
 * Files live in one per-run sandbox directory; ``picturesPath`` and friends point there, never at the real Pictures
@@ -41,6 +45,7 @@ from dtflow.core.models import (
     Sampler,
 )
 from dtflow.core.tasks import settle
+from dtflow.persistence.script_items import RETRY_EVIDENCE
 from dtflow.scripting.models import (
     CONFIGURATION_FIELDS,
     decode_configuration,
@@ -77,6 +82,8 @@ SAMPLER_NUMBERS: dict[int, Sampler] = {
 }
 SAMPLER_IDS = {sampler: number for number, sampler in SAMPLER_NUMBERS.items()}
 
+#: How the Retry form and console name a step that did not complete, by kind.
+HEADLINES = {"failed": "failed", "unknown": "has no confirmed outcome", "not_saved": "was generated but not saved"}
 #: Configuration fields a script may change today (everything else fails the call when changed; see #115).
 SUPPORTED_FIELDS = frozenset({"width", "height", "seed", "steps", "guidanceScale", "model", "sampler", "loras"})
 #: Fields that never count as a change (upstream ``id`` is a host-assigned handle).
@@ -177,6 +184,8 @@ class ScriptHost:
         self.attempt_outputs: dict[str, list[str]] = {}  # every committed attempt's output paths, in order
         self.pending: list[concurrent.futures.Future] = []  # in-flight work to drain before the service closes
         self.attempts: list[str] = []
+        self.steps = 0  # generateImage calls; a retry stays the same step
+        self.retries = 0
         self._blocked: str | None = None
         # Virtual canvas for text-to-image scripts: geometry bookkeeping only, no pixels (layers and masks are #116).
         self._zoom = 1.0
@@ -343,34 +352,98 @@ class ScriptHost:
         request = self._request(args)
         if self.cancel.is_set():
             raise ScriptCancelled()  # Stop landed after the dispatcher's check: nothing is linked or scheduled
-        attempt_id = uuid.uuid4().hex
-        self._link_child(attempt_id)  # recorded before anything can be submitted
         self.generations += 1
-        self.attempts.append(attempt_id)
-        try:
-            outcome = self._await(
-                run_generation(self.service, request, prefix=self.prefix, attempt_id=attempt_id), track=True
+        self.steps += 1
+        step, retry_of = self.steps, None
+        while True:
+            if self.cancel.is_set():
+                raise ScriptCancelled()  # Stop landed while the Retry form closed: nothing more is linked
+            attempt_id = uuid.uuid4().hex
+            self._link_child(attempt_id)  # recorded before anything can be submitted
+            self.attempts.append(attempt_id)
+            try:
+                outcome = self._await(
+                    run_generation(self.service, request, prefix=self.prefix, attempt_id=attempt_id), track=True
+                )
+            except ScriptCancelled:
+                self._blocked = "Stopped; an earlier generation was left to finish on its own."
+                raise
+            except BackendError as exc:
+                remote = exc.failure.remote_outcome
+                kind = (
+                    "failed"
+                    if remote in SAFE_FAILURES
+                    else "not_saved"
+                    if remote == RemoteOutcome.SUCCEEDED
+                    else "unknown"
+                )
+                reason = exc.failure.message or exc.failure.code
+            except Exception as exc:
+                kind, reason = "unknown", str(exc) or type(exc).__name__
+            else:
+                self.last = outcome
+                self._cleared = False  # a new generation fills the canvas again
+                self.attempt_outputs[attempt_id] = [str(path) for path in outcome.output_paths]
+                return
+            if not self._retry_step(step, reason, kind=kind):
+                # Continue: the step keeps its outcome and the script goes on without its image.
+                self.last, self._cleared = None, True
+                self._console(f"Step {step} {HEADLINES[kind]}: {reason}", 1)
+                return
+            retry_of = attempt_id
+            self.retries += 1
+            self.generations += 1  # one limit: a retry counts like any other generation
+            request = replace(
+                request,
+                request_id=uuid.uuid4().hex,
+                resolution_evidence=(
+                    *(pair for pair in request.resolution_evidence if pair[0] != RETRY_EVIDENCE),
+                    (RETRY_EVIDENCE, retry_of),
+                ),
             )
-        except ScriptCancelled:
-            self._blocked = "Stopped; an earlier generation was left to finish on its own."
-            raise
-        except BackendError as exc:
-            if exc.failure.remote_outcome not in SAFE_FAILURES:
-                # unknown outcome, or a paid result whose save failed: never generate again in this run
-                self._blocked = "A previous generation's outcome is unresolved; not generating again."
-            raise RuntimeError(f"{exc.failure.code}: {exc.failure.message}") from exc
-        except Exception as exc:
-            self._blocked = "A previous generation did not finish cleanly; not generating again."
-            raise RuntimeError(f"{type(exc).__name__}: {exc}") from exc
-        self.last = outcome
-        self._cleared = False  # a new generation fills the canvas again
-        self.attempt_outputs[attempt_id] = [str(path) for path in outcome.output_paths]
+
+    def _retry_step(self, step: int, reason: str, *, kind: str) -> bool:
+        """Ask the person whether to retry a step that failed or has no confirmed outcome.
+
+        True: retry with the same settings. False: continue without the step's image. A headless run (no form bridge)
+        raises the step's error to the script instead, which is how the script learns the step did not complete."""
+        if self._ask is None or self._answers is not None:
+            raise RuntimeError(reason)
+        retry_left = self.generations < self.max_generations  # a retry is one of the run's generations
+        headline = f"Step {step} {HEADLINES[kind]}"
+        detail = {
+            "unknown": "It may still finish on the backend, so a retry can make a second image. "
+            "Retry sends the same settings (same seed); the first try keeps its own result.",
+            "not_saved": "The image was generated, so a retry generates (and is charged) again. "
+            "Retry sends the same settings (same seed).",
+            "failed": "Retry sends the same settings (same seed) again.",
+        }[kind]
+        if not retry_left:
+            detail = f"This run reached its generation limit ({self.max_generations}); it cannot retry."
+        # Continue is the default: pressing the button without choosing never sends the step again.
+        options = (
+            ["Continue without this image", "Retry with the same settings"]
+            if retry_left
+            else ["Continue without this image"]
+        )
+        components = [
+            {"type": "plainText", "value": reason},
+            {"type": "plainText", "value": detail},
+            {"type": "segmented", "title": "Next", "options": options, "index": 0},
+        ]
+        answers = self._ask(headline, "Apply", components)
+        self._forms += 1  # the run's form ordinal; script forms resolve their inputs by it
+        if answers is None or self.cancel.is_set():
+            raise ScriptCancelled()
+        validate_answers(components, answers)
+        return retry_left and answers[-1] == 1
 
     def generate_batch(self, jobs: Sequence[Mapping[str, Any]], max_concurrent: int = 1) -> list[dict]:
         """DTFlow-only bounded batch; one immutable request and linked durable attempt per submitted child.
 
         Never writes to the virtual canvas: completion order is not a display/save order.
-        Each result is returned at the original input index. Failed jobs are not retried.
+        Each result is returned at the original input index. A failed or unconfirmed job does not stop the others and is
+        not retried here; the script sees its status.
         """
         self._admit_generation()
         if self._blocked:
@@ -484,6 +557,7 @@ class ScriptHost:
                     # The ScriptRun ledger is independent of the attempts SQLite owner.
                     await asyncio.to_thread(self._link_child, attempt_id)
                     linked = True
+                    self.steps += 1
                     self.attempts.append(attempt_id)
                     # Keep the identity even if another worker closed intake
                     # while the independent ledger writer was linking this job.
@@ -506,20 +580,14 @@ class ScriptHost:
                             "outputPaths": [],
                             "error": exc.failure.code,
                         }
-                        # A definitive provider failure is safe to continue past. Uncertain
-                        # submissions and committed results with failed saving stop intake.
-                        if remote not in SAFE_FAILURES:
-                            intake_open = False
-                            self._blocked = "A batch generation has an unresolved remote outcome; no more jobs."
+                        # A failed or unconfirmed job keeps its own status; the other jobs still run (#220).
                     except Exception as exc:
                         results[index] = {
-                            "status": "failed",
+                            "status": "unknown",
                             "attemptId": attempt_id,
                             "outputPaths": [],
                             "error": type(exc).__name__,
                         }
-                        intake_open = False
-                        self._blocked = "A batch generation did not finish cleanly; no more jobs."
                     else:
                         self.last = outcome
                         self._cleared = False
@@ -532,8 +600,6 @@ class ScriptHost:
                                     self._save_batch_png, destinations[index], outcome.final_image
                                 )
                             except Exception as exc:
-                                intake_open = False
-                                self._blocked = "A batch PNG export failed after generation; no more jobs."
                                 results[index] = {
                                     "status": "save_failed",
                                     "attemptId": attempt_id,

@@ -376,7 +376,7 @@ def _step_rows(item: dict, steps: list) -> list[ItemRow]:
                 failure_reason(step.get("failure") or {}) or None,  # the step's own original reason
                 "txt2img",
                 None,
-                f"Step {step['ordinal']} · " + str(fields.get("prompt") or item.get("prompt") or ""),
+                step_label(step) + " · " + str(fields.get("prompt") or item.get("prompt") or ""),
                 fields.get("negative_prompt") or "",
                 fields.get("model") or item.get("model") or "",
                 tuple((str(name), weight) for name, weight in fields.get("loras") or ()),
@@ -492,11 +492,19 @@ def script_of(view: dict) -> dict | None:
     return next((item["script"] for item in view.get("items", ()) if item.get("script")), None)
 
 
+def step_label(step: dict) -> str:
+    """ "Step 3", or "Step 3 · retry" for a retry of that step (a retry keeps the step number it replaces)."""
+    return f"Step {step.get('step') or step['ordinal']}" + (" · retry" if step.get("retry") else "")
+
+
 def script_steps(script: dict) -> tuple[int, int, int | None]:
-    """(started, committed, expected) steps of a script run; expected is None when it cannot be known statically."""
+    """(started, committed, expected) steps of a script run; expected is None when it cannot be known statically.
+
+    A retried step counts once."""
     children = script.get("children") or ()
-    committed = sum(1 for child in children if child.get("state") == "succeeded")
-    return len(children), committed, script.get("expected_steps") or None
+    started = {child.get("step") or child.get("ordinal") for child in children}
+    committed = {child.get("step") or child.get("ordinal") for child in children if child.get("state") == "succeeded"}
+    return len(started), len(committed), script.get("expected_steps") or None
 
 
 def script_progress(view: dict) -> tuple[int, int] | None:
@@ -514,6 +522,8 @@ def progress_text(summary: QueueSummary, view: dict | None = None) -> str:
         started, committed, expected = script_steps(script)
         failed = script.get("steps_failed") or 0
         tail = f" · {failed} failed" if failed else ""
+        if script.get("waiting_for_input"):  # a script form, or a failed step asking Retry or Continue
+            tail += " · waiting for you in Scripts"
         if expected:
             return f"Progress: {committed}/{expected} steps · {committed} committed{tail}"
         return f"Progress: {started} step{'s' if started != 1 else ''} so far · {committed} committed{tail}"
