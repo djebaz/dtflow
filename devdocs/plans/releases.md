@@ -1,6 +1,6 @@
 # DTFlow release roadmap
 
-**Status (2026-11-07):** Releases through [5.4.0](https://github.com/djebaz/dtflow/releases/tag/v5.4.0) are published. The owner-selected [5.5.0 release](../releases/v5.5.0.md) is being prepared on the merged dependency baseline `30a509c1`: native Scripts/forms/batches, portable mixer, local DT+ counters, Workflows V1 and developer/research tooling. Source presence does not complete provisional roadmap gates. Exact-head checks, the dedicated Windows build-and-draft Action, exact-artifact owner smoke and publication are separate gates; see the [release plan](2026-11-07-release-5.5.0.md) and [release guide](../guides/releasing.md).
+**Status (2026-11-07):** Releases through [5.5.0](https://github.com/djebaz/dtflow/releases/tag/v5.5.0) are published. The owner-selected [5.5.2 release](../releases/v5.5.2.md) is being prepared from merged main `0d3ea967`: bounded retry/manual recovery, queue-owned scripts/schema 9, workflow LoRA/canvas fixes and local-counter/CI maintenance. Source presence does not complete provisional roadmap gates. Exact-head checks, the Windows build-and-draft Action, exact-artifact owner smoke and publication are separate gates; see the [release plan](2026-11-07-release-5.5.2.md) and [release guide](../guides/releasing.md).
 **Audience:** Personal use initially; public distribution is a separate later decision.  
 **References:** [implementation phases](initial.md), [CLI plan](phase-3-cli.md), [TanqueStudio parity](tanquestudio-parity.md), [pending release notes](../releases/unreleased.md).
 
