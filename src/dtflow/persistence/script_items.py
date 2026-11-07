@@ -184,20 +184,47 @@ def read_run_snapshot(directory: Path, run_id: str) -> RunSnapshot | None:
     return RunSnapshot(row[0], row[1], children, row[2], row[3])
 
 
+#: Request evidence naming the attempt a retried step replaces (written by ``ScriptHost``).
+RETRY_EVIDENCE = "script_retry_of"
+
+
+def retry_of(request_json: str | None) -> str | None:
+    """The attempt id a child's request retries, read from its resolution evidence; ``None`` for a first try."""
+    try:
+        evidence = json.loads(request_json or "{}").get("resolution_evidence") or ()
+    except (ValueError, AttributeError):
+        return None
+    return next(
+        (
+            str(pair[1])
+            for pair in evidence
+            if isinstance(pair, (list, tuple)) and len(pair) == 2 and pair[0] == RETRY_EVIDENCE
+        ),
+        None,
+    )
+
+
 def child_states(db: sqlite3.Connection, children: tuple[str, ...]) -> list[str | None]:
-    """The attempt state of each child (``None`` when its attempt row was never created)."""
-    states: list[str | None] = []
+    """The attempt state of each child that decides the item (``None`` when its attempt row was never created).
+
+    A step that was retried is decided by its retry, so the earlier try is left out here; it keeps its own state in
+    the step list."""
+    states: dict[str, str | None] = {}
+    replaced: set[str] = set()
     for attempt_id in children:
-        row = db.execute("SELECT state FROM attempts WHERE attempt_id=?", (attempt_id,)).fetchone()
-        states.append(row[0] if row else None)
-    return states
+        row = db.execute("SELECT state, request_json FROM attempts WHERE attempt_id=?", (attempt_id,)).fetchone()
+        states[attempt_id] = row[0] if row else None
+        earlier = retry_of(row[1]) if row else None
+        if earlier is not None:
+            replaced.add(earlier)
+    return [state for attempt_id, state in states.items() if attempt_id not in replaced]
 
 
 def item_outcome(run: RunSnapshot, states: list[str | None]) -> tuple[str, str | None]:
     """The item state (and failure JSON, if any) a run's state plus its children decide. Never invents success."""
     if run.state == "completed":
         if any(s not in TERMINAL_ATTEMPTS for s in states):  # missing attempts are unresolved too
-            message = "The script completed but a step has no confirmed outcome; check the backend before retrying."
+            message = "The script completed, but a step has no confirmed outcome."
             return "unknown", json.dumps({"code": "script_step_unknown", "message": message})
         return "succeeded", None
     if run.state == "stopped":

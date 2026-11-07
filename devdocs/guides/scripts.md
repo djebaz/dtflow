@@ -47,7 +47,7 @@ Results stay in input order, even when completion order differs. Each reports `s
 
 Adapted chunk jobs may also supply the pair `planId` (64 lowercase hexadecimal SHA-256 characters) and `jobIndex` (integer 1..10000). They become `script_plan`/`script_job` request evidence, not replay/deduplication authority or additional dispatch consent. The mixer guide explains fingerprinting and explicit manual continuation.
 
-Stop closes intake and stops waiting; it does not cancel remote work or permit replay. Unknown outcomes and save failures close intake; waiting workers recheck before generation. Already admitted workers drain before parent settlement/backend closure, including when a lane release fails. Failed releases propagate after draining rather than being retried or silently deleted. Inspect existing attempts before considering another run.
+Stop closes intake and stops waiting; it does not cancel remote work. A failed, unknown or not-saved job keeps its own status and the other jobs still run; the batch never retries a job itself. Already admitted workers drain before parent settlement/backend closure, including when a lane release fails. Failed releases propagate after draining rather than being retried or silently deleted.
 
 ## LoRA readiness
 
@@ -60,3 +60,14 @@ Genuinely missing files still need the existing explicit Prepare workflow. Scrip
 PR #218 upgrades the attempts database to schema 6 for script child reservations, using the existing backup-then-transactional migration. Older writers refuse newer schemas; do not downgrade an active database. Restart clears stale lane reservations without replaying uncertain children. The ScriptRun ledger remains separate. Back up valuable runtime state before upgrading, and never use a database rollback as authorization to resubmit uncertain work.
 
 CI at runtime head `0465f3d` checked out that exact commit and reports 697 passed, 3 skipped; format and lint also passed in [run 41613970580](https://github.com/djebaz/dtflow/actions/runs/41613970580). UI rendering was skipped. This does not establish exhaustive fault coverage, Draw Things fallback acceptance, provider concurrency, Windows/DPI, packaged execution or checkpoint/LoRA compatibility. Those remain owner-controlled gates, separate from squash merge.
+
+## When a step fails
+
+A step that fails, or ends with no confirmed outcome, no longer stops the rest of the run (#220). In a run started from Scripts, the script pauses on that step and Scripts shows the original reason with two choices (Continue is preselected, so pressing Apply without choosing never sends the step again):
+
+- **Retry with the same settings** sends the same request again (same seed). The retry keeps the step number and shows as "Step 3 · retry"; the first try keeps its own outcome, marked retried. Each retry counts as one of the run's generations, so a run never goes past its generation limit; at the limit only Continue is offered.
+- **Continue without this image** lets the script go on with an empty canvas. A step left with no confirmed outcome stays marked unknown, and the queue item ends "outcome unknown" if no retry replaced it. A run that skipped a failed step can still end "succeeded", with "1 failed" in its progress line, as before when a script caught the error.
+
+A step whose image was generated but could not be saved says so; retrying it generates (and is charged) again.
+
+Cancel input stops the script. Queues shows "waiting for you in Scripts" while a run waits for an answer. Runs without the form bridge (the CLI or an answer file) hand the step's error to the script, which can catch it and go on. Retrying a step in a run that already ended is not supported; use Run again.
