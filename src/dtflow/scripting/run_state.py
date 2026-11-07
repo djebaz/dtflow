@@ -46,6 +46,7 @@ class ScriptPrompt:
     confirm: str
     components: list
     state: str
+    refused: dict | None = None  # {"count", "reason"} when the dispatcher refused the last answers sent
 
 
 def now() -> str:
@@ -89,6 +90,7 @@ def open_prompt_of(run_id: str, run: Any) -> ScriptPrompt | None:
                 str(prompt.get("confirm") or ""),
                 list(prompt.get("components") or ()),
                 "open",
+                prompt.get("refused") if isinstance(prompt.get("refused"), dict) else None,
             )
     return None
 
@@ -100,6 +102,21 @@ def interrupted(run: dict[str, Any], at: str) -> dict[str, Any]:
         run["state"], run["finished_at"] = "interrupted", at
         _close_prompts(run, at)
     return run
+
+
+def compact_answers(value: Any) -> Any:
+    """Answers as kept in the stored run: an inline image (a ``data:`` URL) becomes its SHA-256 and size, so the
+    queue item that is rewritten on every step stays small. The script itself received the full answers."""
+    import hashlib
+
+    if isinstance(value, list):
+        return [compact_answers(item) for item in value]
+    if isinstance(value, dict):
+        return {key: compact_answers(item) for key, item in value.items()}
+    if isinstance(value, str) and value.startswith("data:") and len(value) > 256:
+        data = value.encode("utf-8")
+        return {"inline_sha256": hashlib.sha256(data).hexdigest(), "chars": len(data)}
+    return value
 
 
 def _close_prompts(run: dict[str, Any], at: str, ordinal: int | None = None) -> bool:
@@ -183,6 +200,8 @@ class ScriptRun:
         """Durably append one form-answer record (before the script sees the answers). Returns the entry count."""
         from dtflow.scripting.forms import bounded_json
 
+        entry = compact_answers(entry)
+
         def change(run):
             self._require_running(run, "Answers can be recorded")
             run["answers"].append(entry)
@@ -258,6 +277,21 @@ class ScriptRun:
             self._delivered[ordinal] = answers
             return True
 
+    def refuse_answer(self, ordinal: int, reason: str) -> bool:
+        """Note on the open form that the last answers sent were not accepted, so the form can be offered again."""
+        with self._condition:
+            if (prompt := open_prompt_of(self.run_id, self._run)) is None or prompt.ordinal != ordinal:
+                return False
+
+            def change(run):
+                for entry in run["prompts"]:
+                    if entry.get("ordinal") == ordinal and entry.get("state") == "open":
+                        count = (entry.get("refused") or {}).get("count", 0) + 1
+                        entry["refused"] = {"count": count, "reason": reason[:500]}
+
+            self._commit(change)
+            return True
+
     def cancel_prompt(self, ordinal: int) -> bool:
         with self._condition:
             if (prompt := open_prompt_of(self.run_id, self._run)) is None or prompt.ordinal != ordinal:
@@ -275,10 +309,10 @@ class ScriptRun:
         """Block until the form is answered; ``None`` when it was cancelled or Stop was requested."""
         with self._condition:
             while True:
+                if ordinal in self._delivered:  # an answer recorded before Stop is the one the run used
+                    return self._delivered.pop(ordinal)
                 if cancel.is_set():
                     break
-                if ordinal in self._delivered:
-                    return self._delivered.pop(ordinal)
                 prompt = open_prompt_of(self.run_id, self._run)
                 if prompt is None or prompt.ordinal != ordinal:
                     return None

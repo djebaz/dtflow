@@ -5,7 +5,8 @@ Only the run's writer changes it: Setup's in-memory run, or the dispatch owner f
 a form by posting a queue control (``answer_script_prompt``).
 
 A picker input is an owned snapshot made on a worker. Its capability token is a small file in the run's own file area
-(``script_files/<run>/inputs/<token>.json``) bound to the form and field, so any process can register one without
+(``script_inputs/<run>/<token>.json``, outside the script's own sandbox ``script_files/<run>``) bound to the form and
+field, so any process can register one without
 writing the run, and the run's writer checks every token against it before the script sees an answer.
 """
 
@@ -57,7 +58,7 @@ def recalled_answers(state: Path, run_id: str, components: list) -> list | None:
 def _inputs(state: Path, run_id: str) -> Path:
     if len(run_id) != 32 or any(c not in "0123456789abcdef" for c in run_id):
         raise ValidationError("Invalid script run identity.")
-    return Path(os.path.abspath(state)) / "script_files" / run_id / "inputs"
+    return Path(os.path.abspath(state)) / "script_inputs" / run_id  # never inside the script's sandbox
 
 
 def register_prompt_input(state: Path, run_id: str, ordinal: int, field: tuple, kind: str, record: dict) -> str:

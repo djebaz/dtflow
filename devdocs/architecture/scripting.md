@@ -90,9 +90,13 @@ its open form is closed, and the item takes the outcome its run and children dec
 confirmed outcome). Nothing is resumed or replayed. A script item without a run never started and returns to pending.
 
 Forms are answered from any process by posting a `script_answer` (or `script_cancel_form`) queue control; the script
-runner takes it (`take_script_controls`), checks the answers and owned picker inputs again and records them. Picker
-input capabilities are small files under `<state>/script_files/<run-id>/inputs/`, bound to the run, form and field. The
-last answers of each form are remembered in the `script_form_answers` table of the attempts database.
+runner takes it (`take_script_controls`), checks the answers and owned picker inputs again and records them. If the runner refuses an answer (for
+example a picked file changed in between), it notes the reason on the still-open form and Scripts offers the form again
+with that reason. Picker input capabilities are small files under `<state>/script_inputs/<run-id>/`, outside the
+script's own sandbox, bound to the run, form and field. The last answers of each form are remembered in the
+`script_form_answers` table of the attempts database. The recorded answers kept in the run replace inline images
+(`data:` URLs) by their SHA-256 and size, so the item that is rewritten on every step stays small; the script itself
+received the full answers. An open form's fields (which may embed images) are kept only while it is open.
 
 Child lanes (`pipeline.runBatch`, shared with workflows) are the item's `lanes_json` column: the attempt ids holding a
 lane. Restart clears them under the owner lock. Scripts Setup keeps its run in memory until Run Script; the dispatcher

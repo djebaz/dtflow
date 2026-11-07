@@ -789,7 +789,7 @@ def answer_waiting_run(args: argparse.Namespace) -> int:
     except (ValidationError, OSError, ValueError) as exc:
         print(f"Invalid request: {exc}", file=sys.stderr)
         return EXIT_INVALID
-    print(json.dumps({"run_id": args.answer_run, "form": ordinal, "answered": True}))
+    print(json.dumps({"run_id": args.answer_run, "form": ordinal, "answered": True, "sent": True}))
     return EXIT_OK
 
 

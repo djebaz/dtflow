@@ -748,6 +748,13 @@ class QueueMixin:
                 return state
             if is_script_record(record):
                 state, failure_json = self._script_outcome(db, record, failure)
+                # Form answers sent after the run ended have nothing left to answer.
+                db.execute(
+                    f"UPDATE queue_controls SET applied_at_utc=? WHERE applied_at_utc IS NULL"
+                    f" AND action IN ({','.join('?' * len(SCRIPT_ACTIONS))})"
+                    " AND queue_id=(SELECT queue_id FROM queue_items WHERE item_id=?)",
+                    (self._now(), *SCRIPT_ACTIONS, item_id),
+                )
                 db.execute(
                     "UPDATE queue_items SET state=?, failure_json=?, updated_at_utc=? WHERE item_id=?",
                     (state, failure_json, self._now(), item_id),
@@ -1702,6 +1709,7 @@ def _script_view(connection: sqlite3.Connection, request: dict) -> dict[str, Any
                 "title": prompt.title,
                 "confirm": prompt.confirm,
                 "components": prompt.components,
+                "refused": prompt.refused,
             }
     steps: dict[str, dict[str, Any]] = {}  # attempt id -> its child entry
     for ordinal, attempt_id in enumerate(run.children, 1):
@@ -1949,6 +1957,10 @@ def migrate_script_runs(db: sqlite3.Connection, directory: Path) -> None:
                 if ledger is None:
                     raise sqlite3.DatabaseError("ledger unreadable")
                 run = _ledger_run(ledger, str(record.get("run_id")))
+            except sqlite3.OperationalError as exc:
+                if "locked" in str(exc) or "busy" in str(exc):
+                    raise  # transient: the upgrade rolls back and is tried again on the next start
+                run = {"state": "unreadable", "error": "The earlier script run record could not be read."}
             except (sqlite3.Error, TypeError, ValueError):
                 run = {"state": "unreadable", "error": "The earlier script run record could not be read."}
             if run is None:

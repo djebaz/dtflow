@@ -101,6 +101,8 @@ class ScriptItemRunner:
                 await asyncio.to_thread(run.cancel_prompt, ordinal)
             else:
                 await asyncio.to_thread(_record_answer, self.state, run, ordinal, payload.get("answers"))
+        except PersistenceError:
+            raise  # a failed durable write fails the dispatcher, as everywhere else
         except (ValidationError, ValueError, RuntimeError) as exc:
             diagnostic_event(
                 log,
@@ -108,6 +110,9 @@ class ScriptItemRunner:
                 level=logging.WARNING,
                 data={"run_id": run.run_id, "ordinal": ordinal, "reason": type(exc).__name__},
             )
+            if action == "script_answer" and type(ordinal) is int:
+                # The form stays open; Scripts offers it again with this reason instead of waiting forever.
+                await asyncio.to_thread(run.refuse_answer, ordinal, str(exc) or "The answers were not accepted.")
 
     async def _run_item(self, queue_id: str, item_id: str, request: ScriptRequest) -> None:
         await self._record(queue_id, "item_started", {"item_id": item_id, "run_id": request.run_id})
@@ -246,8 +251,9 @@ def _record_answer(state: Path, run: ScriptRun, ordinal: Any, answers: Any) -> N
 def answer_script_prompt(state: Path, run_id: str, answers: list, ordinal: int | None = None) -> int:
     """Answer the run's open form from any process sharing ``state``; returns the form's ordinal.
 
-    The answers are checked against the form here, then posted to the run's queue as a control; the dispatcher checks
-    them again and records them before the script continues. Raises ``ValidationError`` when the run has no open form
+    The answers are checked against the form here, then posted to the run's queue as a control (sent, not yet
+    recorded); the dispatcher checks them again and records them before the script continues, or notes on the form
+    why it refused them. Raises ``ValidationError`` when the run has no open form
     (never started, already answered, or Stopped) or when the answers do not fit the form."""
     found = read_script_run(state, run_id)
     prompt = open_prompt_of(run_id, found[2]) if found is not None and found[1] == "running" else None

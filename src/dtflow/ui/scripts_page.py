@@ -522,6 +522,8 @@ class ScriptsPage:
         self.live_fields.hide()
         self._live_prompt_id = None
         self._live_form_error = False
+        self._live_refused = None  # refusal count of the open form last seen
+        self._live_refusal_note: str | None = None
         self.live_fields.busyChanged.connect(self._live_form_busy)
         self.live_fields.problem.connect(self._live_form_problem)
         self.owner.runner.shutdown_started.connect(self.live_fields.clear_request)
@@ -1689,7 +1691,7 @@ class ScriptsPage:
                 self.designer.waitingInstructions.setText(
                     "Input cancelled; stopping local script waiting."
                     if cancel
-                    else "Answers saved; waiting for the script to continue."
+                    else "Answers sent; waiting for the script to continue."
                 )
                 if not cancel:
                     self.show_view(3)
@@ -1724,6 +1726,8 @@ class ScriptsPage:
             return
         self._live_prompt_id = identity
         self._live_form_error = False
+        refused = prompt.get("refused")
+        self._live_refused = refused.get("count") if isinstance(refused, dict) else None
         self.live_fields.clear_request()
         self.live_fields.hide()
         ui = self.designer
@@ -1784,6 +1788,9 @@ class ScriptsPage:
                     "Cancel input stops this script; it does not cancel submitted remote work."
                 )
             )
+            if self._live_refusal_note:
+                self._live_form_problem(self._live_refusal_note)
+                self._live_refusal_note = None
             self.sync_responsive()
             self._refresh_readiness()
 
@@ -2636,6 +2643,20 @@ class ScriptsPage:
         setting_up = run.get("setup_pending") and key in ("queued", "paused", "running")
         target = 4 if key == "results" else 1 if key == "waiting_input" or setting_up else 3
         prompt = script.get("prompt")
+        refused = (prompt or {}).get("refused")
+        refusals = refused.get("count") if isinstance(refused, dict) else None
+        if (
+            prompt is not None
+            and (script.get("run_id"), prompt["ordinal"]) == self._live_prompt_id
+            and refusals != self._live_refused
+        ):
+            # The script did not take the answers sent: offer the same form again with the reason.
+            self._live_refused = refusals
+            self._live_refusal_note = (
+                f"The script did not accept these answers: {refused.get('reason') or 'no reason given'} "
+                "Check them and send again, or Cancel input."
+            )
+            self._live_prompt_id = None
         new_prompt = prompt is not None and (script.get("run_id"), prompt["ordinal"]) != self._live_prompt_id
         setup_finished = (
             (run.get("setup_pending") or self._live_prompt_id is not None)
