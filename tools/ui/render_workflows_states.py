@@ -28,6 +28,7 @@ STATES = (
     "workflows-09-results",
     "workflows-10-narrow",
     "workflows-11-library-folded",
+    "workflows-12-lora-warning",
 )
 OLD_CONTRACT = ROOT / "tools/node_editor_poc/reference_workflow_v1.json"  # a POC-era file the importer refuses
 
@@ -285,6 +286,12 @@ def render_workflows_states(out, *, window_factory, state_names, capture):
                 page.canvas.select_node(3)
             elif name.endswith("results"):
                 show_run(runs["done"])
+            elif name.endswith("lora-warning"):
+                warning = "fixture_custom_lora.ckpt: no confirmed prepared receipt; may not apply on DT+. Prepare the custom LoRA explicitly."
+                run = runs["done"]
+                run["steps"][0]["warnings"] = [warning]
+                page.canvas.select_node(1)
+                show_run(run)
             elif name.endswith("library-folded"):
                 page._library_open = False  # as after pressing Library (not written to the fixture state)
                 page._sync_library_button()

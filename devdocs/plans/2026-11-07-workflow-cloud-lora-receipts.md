@@ -15,7 +15,7 @@ The owner reports prepared custom DT+ LoRAs work in ordinary Generate and Queues
 
 ## Validation boundary
 
-Owner explicitly requested no added tests and no local test execution; regression tests are not added and existing tests are left to GitHub CI. Only Ruff format/check is run locally before commits. No UI changes/renders, live generation, asset preparation/upload or model inference.
+Owner explicitly requested no added tests and no local test execution; regression tests are not added and existing tests are left to GitHub CI. Only Ruff format/check is run locally before commits. The subsequently requested warning UI has offline fixture definitions; rendering is left to the GitHub Action. No local renders, live generation, asset preparation/upload or model inference.
 
 ## Review follow-up and acceptance
 
@@ -24,4 +24,6 @@ Owner explicitly requested no added tests and no local test execution; regressio
 - L1: document invalid bound-receipt failures and account/reconcile/explicit-Prepare recovery. Existing `failure_text` delegates to the shared `present_generation_failure`, which labels `prepared_asset_*` failures as "Prepared asset not validated" and retains the sanitized cause. No competing failure presenter or new UI state is introduced.
 - L4: honor a Pause observed during receipt binding before calling `run_generation`; Stop/cancel still wakes or cancels the wait and settles without a new attempt.
 - Remove process/validation text from user-facing unreleased notes. Keep Markdown prose unwrapped per configured editing guidance.
-- L2/L5 missing-receipt visibility/step provenance and L3 receipt-pool loading/snapshot policy are deferred follow-ups, not claimed addressed by this PR.
+- L2/L5 follow-up (owner requested): retain bounded per-LoRA preflight availability/code and a prepared boolean on each step, with no receipt IDs/endpoints. Cloud `availability_unknown` without a bound receipt creates an advisory warning, not a claim that all unbound LoRAs are ignored. The warning appears in a deduplicated transient amber overlay, retained workflow output/node details and a durable queue activity event. Default diagnostic logs receive only code/count/node-type data through the shared producer API.
+- L3 receipt-pool loading/snapshot policy and display of positive receipt provenance remain deferred; raw receipt identities are deliberately not exposed in the UI.
+- Add `workflows-12-lora-warning` and `queues-75-workflow-lora-warning` offline preview states to the existing catalogue/component packs. GitHub Actions renders them; no new render assertions or local render execution.
