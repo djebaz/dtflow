@@ -74,6 +74,21 @@ AUTO_RETRY_ALLOWANCE = 0
 # Seconds a cancelled step gets to record its own end after Stop before the run settles without it (#247).
 STOP_GRACE = 5.0
 STOPPED_WAITING = "DTFlow stopped waiting; the image may still complete on the server. Retry sends it again."
+SAVED_WHILE_STOPPING = "The image was received; DTFlow stopped while saving it. Check Images before retrying."
+NOT_SENT = "Stopped before submission; nothing was sent."
+
+
+def stopped_outcome(attempt: str | None) -> tuple[str, str]:
+    """A step's end state and message when Stop cancelled its generation, from its attempt's recorded state."""
+    if attempt in ("possibly_submitted", "unknown", "saving"):
+        return "unknown", STOPPED_WAITING
+    if attempt in ("succeeded", "save_failed"):
+        return "unknown", SAVED_WHILE_STOPPING  # on disk and billed; Retry stays possible but is not suggested
+    if attempt == "failed":
+        return "failed", "Stopped; the backend reported a failure for this step."
+    return "cancelled", NOT_SENT  # no attempt, prepared, cancelled or interrupted before submission
+
+
 STAGE_TEXT = {
     "submission_possible": "Sending request",
     "terminal": "Saving output",
@@ -334,6 +349,7 @@ class _Execution:
                 actions = await self.store.apply_controls(self.queue_id)
                 if "cancel" in actions:
                     await self.stop()
+                    await self.take_controls()  # a Retry or branch answer posted meanwhile is recorded as ignored
                     break
                 if "pause" in actions:
                     self.go.clear()
@@ -406,12 +422,17 @@ class _Execution:
 
     async def finish(self, *, interrupted: bool = False) -> None:
         stamp = _now()
-        sent = {key for keys in self.in_flight.values() for key in keys}
+        abandoned: dict[Key, tuple[str, str]] = {}
+        for attempt_id, keys in list(self.in_flight.items()):
+            # Abandoned at Stop while its generation was out: its attempt says whether anything was sent; never replayed.
+            outcome = stopped_outcome(await settle(self.attempt_state(attempt_id)))
+            abandoned.update({key: outcome for key in keys})
         for step in self.run["steps"]:
             if step["state"] == "running":
-                if (step["node_id"], (step["branch"][0], step["branch"][1])) in sent:
-                    # Abandoned at Stop while its generation was out: no confirmed outcome, never replayed.
-                    step.update(state="unknown", message=STOPPED_WAITING, finished_at=stamp)
+                key = (step["node_id"], (step["branch"][0], step["branch"][1]))
+                if key in abandoned:
+                    state, message = abandoned[key]
+                    step.update(state=state, message=message, finished_at=stamp)
                 else:
                     # A submitted step records its own end (``submit``); still running means nothing was sent.
                     step.update(
@@ -685,20 +706,7 @@ class _Execution:
                 attempt = await settle(self.attempt_state(attempt_id))
                 if attempt is None:
                     self.run["submitted"] -= weight
-                unknown = attempt in ("unknown", "possibly_submitted")
-                await settle(
-                    self.end(
-                        keys,
-                        "unknown" if unknown else "cancelled",
-                        STOPPED_WAITING
-                        if unknown
-                        else (
-                            "Stopped before submission; nothing was sent."
-                            if attempt is None
-                            else "Stopped; no image was saved for this step."
-                        ),
-                    )
-                )
+                await settle(self.end(keys, *stopped_outcome(attempt)))
                 raise
             except PersistenceError:
                 raise
@@ -759,8 +767,8 @@ class _Execution:
             return outcome
         finally:
             self.in_flight.pop(attempt_id, None)
-            if reserved:
-                await settle(self.store.release_script_child(self.queue_id, attempt_id))
+            # Unconditional: a reserve cancelled mid-call may have committed before ``reserved`` was set.
+            await settle(self.store.release_script_child(self.queue_id, attempt_id))
 
     async def attempt_state(self, attempt_id: str) -> str | None:
         try:
