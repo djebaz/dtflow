@@ -1,75 +1,16 @@
 # Unreleased
 
-Changes through 5.4.0 are consolidated in [DTFlow 5.4.0](v5.4.0.md). This file tracks subsequent changes, not completion of open acceptance issues.
+Changes through 5.5.0 are consolidated in [DTFlow 5.5.0](v5.5.0.md). This file tracks subsequent changes, not completion of open acceptance issues.
 
 ## Highlights
 
-- **Native Workflows (#223, PRs #232–#235):** A production **Workflows** tab between Generate and Queues builds, saves, imports and exports workflows in the ComfyUI saved-workflow v1.0 structure (strict all-or-nothing import, DTFlow contract v1 with array `widgets_values`). Nodes: Generate, Detect face mask (`face_skin` / `face_skin_and_hair`, `strongest` / `all`), Inpaint, Img2img refine and Save, each generative node with its own checkpoint and LoRAs. A run is one queue item of the new `workflow` kind (execution state schema 8, one-way): batches fan out per image, image steps use an automatic exact-scope probe, a missing face pauses only that branch (Continue/Stop), failures stop only their branch with per-step Retry, and submissions never exceed the planned total plus Retries. Detection models (YOLO26, SegFormer B2, NudeNet 320n) download on request from pinned publisher URLs with SHA-256 and contract checks, from Workflows and from Generate's Inpaint editor, with truthful activity-bar stages. `dtflow workflow check|queue` cover the CLI. Offline renders, fake-provider plumbing and CI only; real detectors, image operations, local/DT+ runs and Windows/package acceptance remain the owner smoke of #223. See the [Workflows guide](../guides/workflows.md).
-
-- **Local DT+ completed-image counter (#221):** Connection shows a compact card with one count per DT+ API key of final images saved on the selected calendar day, and the bottom bar shows an `active/all` pill (active key's count / all keys' count) on every view. The day is local midnight to midnight in a selectable timezone (one entry per whole GMT offset from -12 to +14 with its current local time and largest city; default Europe/Paris with daylight-saving handling), recomputed locally from saved UTC times. Colors are visual guidance from the owner's working 400/500 assumption (green to 400, amber 401-499, red 500+); the counts are an estimate from saved outputs, not a DT+ balance, confirmed quota or remaining allowance, and nothing blocks generation. Each saved cloud attempt records an opaque key identity (execution state schema 7); older attempts are reported as unattributed. See [Connect](../guides/desktop.md#local-dt-completed-image-counter).
-
-- **Parallel Scripts (PR #218):** Optional DTFlow-only `pipeline.runBatch` runs bounded independent text-to-image jobs with shared queue capacity, durable child attempts and ordered per-job outputs. The portable Krea2 mixer exposes 1..10 requested jobs at once (default 4), with its Draw Things sequential fallback retained. Effective concurrency and model/LoRA support remain backend-dependent; this is not unchanged iOS-script parity or provider entitlement.
-
-- **Scripts forms (PR #217, merged):** Native nested/repeated forms and Inspect > Setup > Run Script preloading without a pre-run queue/provider session, version-specific answer suggestions and owned native picker inputs. `image` retains supplied-image selection semantics; `imageField`/`directory` use pickers, with optional script-authored cropping of owned copies. This does not add canvas pixel/mask generation support.
-
-- **Scripts (PR #215):** The managed version library and parser are connected to the native Scripts page. Explicit Start creates one ordinary queue item with durable child attempts, live status/history and per-step results; Queues shows a script summary and child steps, with the last committed step as its summary thumbnail. Short activity labels and reduced History repainting are included. Geometry-only canvas hooks are available for text-to-image scripts; image pixels, masks, source handoff, complete interactive forms and broad configuration/LoRA-mixer compatibility remain later work. Manual Windows/UI smoke for this PR and exact backend/checkpoint acceptance are not established by the skipped UI-render Action.
-
 ## Added
-
-- Native Workflows mockups (PR #229): canonical library/canvas/inspector forms and token-based controls, approved by the owner on 2026-11-05. Superseded by the production Workflows tab above; `nodeeditor-qtpy` is now a runtime dependency.
-
-- Shared utility navigation: Connection's colored power icon moves to the extreme right of the bottom bar with extra-small corners; Images becomes a blue primary-action button above ordinary inspectors (above the centre on narrow windows), absent from Images and Logs. The preview primary row reads Generate, Workflows, Queues; Scripts remains inside Generate.
-
-- Shared left-rail correction: hidden pages can no longer force Connection, Generate and Queues wider than their fixed scroll viewport. A synthetic width-pressure capture reproduced the issue and shows zero excess width after correction; the owner confirmed the fix in the native app. Rail width, vertical scrolling and execution behavior remain unchanged.
-
-- PR #228: owner-accepted isolated nodeeditor-qtpy canvas POC and Essentials-only packaging baseline under `tools/node_editor_poc/`, with no application runtime integration. The owner closed POC acceptance gaps after reviewing the final Windows one-file EXE. No unit tests added or run. See the [POC evidence and checklist](../../tools/node_editor_poc/README.md).
-
-- PR #228 follow-up: readable port labels, invalid-link drag cleanup, selection-free undo history, stable link IDs, a quieter grid and blue selected/hover/drag borders in the isolated POC. The owner built and reviewed the final Windows one-file EXE, confirmed editing/undo/redo and export, and closed the POC acceptance gaps on 2026-11-05. The exported draft passed the strict importer with preserved IDs. Historical automated timing failure remains undiagnosed, not an owner acceptance blocker; production integration and new benchmark claims are excluded. No unit tests added/run.
-
-- UI render uploads now default to individual images rather than ZIP, including automatic/manual Actions and the uploader CLI. ZIP remains an explicit option; upload concurrency and retry behavior are unchanged.
-
-- Automatic UI render Actions skip draft PRs, including render-label requests, matching CI; marking ready re-evaluates ordinary eligibility. Manual dispatch remains an explicit override.
-
-- Developer UI render selection now uses 30 file-level component rules, small populated page packs and an eight-state shared fallback, with prominent incomplete-coverage warnings instead of automatic exhaustive fallback. The `render-all` label independently triggers exhaustive rendering; summaries separate planned screenshots from fixture setup and list selected packs/states. Automatic sub-file diff analysis is intentionally excluded; owner visual review remains separate. No application generation behavior changes.
-- CI and render Actions combine native path filters with an early check inside each existing job: entirely docs-only PRs allocate no runner, and docs-only follow-up pushes skip expensive steps using the previous-to-current head diff. No separate detector runner jobs remain. Resources, forms, fixtures, mappings and dependency/configuration changes remain eligible. Manual runs and explicit render labels override filtering; the label route reuses the render workflow without a dispatcher runner. Shared cancellation is removed to protect useful running/pending work; follow-up detection still consumes short runner time and is not a fresh validation pass.
-
-- Scripts library cards now have a compact top-right Remove button with two distinct clicks to confirm in place, without a confirmation overlay. Removal affects the selected saved version’s library membership only; queued source bytes, run history and outputs are retained.
-- The 14 px script Remove control has a padded 22 px click target, including while confirming.
-
-- PR #219: portable Krea2 mixer authoring with cached, paged LoRA discovery, explicit readiness/skipped reasons, single Setup form with direct Run Script, versioned source-scoped preferences and deterministic bounded manual chunks. Plan IDs/global indices stay with child request evidence. Missing files are not downloaded/uploaded, unsupported preset fields are not silently mapped, and original Draw Things behavior remains separate. Source only; owner acceptance remains tracked by #216.
 
 ## Changed
 
-- The Images grid position field in the status bar (`101/342`) is a technical benchmark/diagnostic field and now appears only in the explicit `-x/--dev` mode.
-- Images grid selection checkboxes retain their appearance with a 56 × 56 px click target, twice their 28 px housing size. List and Detail controls are unchanged.
-
 ## Fixed
-
-- PR #219 follow-up: remove the mixer preview wizard; keep one Setup form and Run Script. Unknown LoRA metadata is advisory, inspection warnings and footer text are shorter. Parser resource failures are distinguished from source syntax errors; parsing runs on a reserved native stack without changing the pinned parser or execution limits. Source-only changes, not runtime acceptance.
-
-- PR #218 lifecycle follow-up: batch workers recheck closed intake after reservation/linking awaits, and retain/drain all workers before propagating release failures or batch cancellation. Already admitted work is not retried or cancelled remotely. CI at runtime head `0465f3d` reports 697 passed, 3 skipped with format/lint passed ([run](https://github.com/djebaz/dtflow/actions/runs/41613970580)); UI rendering was skipped, and owner/backend/package acceptance remains separate.
-
-- PR #218: cloud scripts automatically bind existing confirmed LoRA receipts independently of Generate's selection, like queue LoRA sets. Setup reads local records only; actual dispatch still checks the active backend/account. Missing files still need explicit Prepare; no implicit downloads or uploads. Owner smoke of the full asset/account matrix remains separate from CI.
-
-- PR #201 independent-review follow-up: offline terminal/review actions, guarded Start/queue/input previews, fixture syntax checks and in-memory version Save, live/unresolved history cues, detached Inpaint source/mask entry and local form/editor/results polish. Native Photos/Files pickers are supported in the target design, with runtime hook integration deferred. No real script execution, parser, persistence or provider calls are connected.
-
-- PR #201 Scripts desktop preview: Designer-owned static views, visible library actions, wrapped form rows, distinct queued/cancelled evidence and Cancel/waiting presentation, selected-script inspection facts, saved-versus-draft status, Find/Replace and inline dirty-draft protection. The labelled Inspector toggle sits at the right edge of the Scripts toolbar with a right-sidebar SVG, not beside the product logo. Inspector drawer and offline source/mask fixtures remain presentation-only; runtime Start/save/history integration is not included.
-
-
-## Scripting (PR #199, merged foundation)
-
-- Added opt-in headless execution for locally supplied Draw Things JavaScript scripts with an explicit fake/local/cloud backend, bounded run generations, durable ScriptRun/child attempt links, headless form answers and per-run sandbox files.
-- Unsupported changed configuration fields and masks fail before generation; empty model identifiers are rejected. Missing/unreadable script paths report their concrete file error.
-- Owner Windows source smoke verified two fake generations and empty-model rejection (2026-11-02). Native UI, Tier B/detection, local/cloud acceptance and packaged execution are not included. No automated tests added or run by owner direction.
-
-## Standalone CPU image experiments (PR #236)
-
-- Add SCHP ATR-18/Pascal/LIP score and boundary inspection, edge-guided overlapping NudeNet zones, depth/normal comparisons and EfficientSAM INT8 prompt/candidate experiments. Person silhouettes retain model-predicted gaps; these are heuristic tools, not anatomical ground truth or new desktop model support.
-- Add custom ONNX CPU SEG/OBB comparison with penisV2 or reviewed-OBB context crops, full-image and SEG-only outputs, combined overlays, independent class thresholds, explicit single-class naming and mask/OBB coverage review. Add trusted OBB conversion, rotation probes and resumable draft OBB annotation; models/datasets stay private and ignored.
-- Preserve the production person-mask default while adding a validated optional probability threshold to its existing helper; experimental NudeNet preprocessing retains its 320px default while allowing an explicit input size.
-- Owner Windows/Colab experiments and explicitly requested small-model local inference provide exploratory evidence, not independent quality/throughput or desktop acceptance. No automated tests added/run during the later iterations or this documentation sync. OpenCV POC dependency reproducibility, model license/provenance and memory limits remain unresolved; an owner-reported large-checkpoint PC crash has no confirmed cause. See [commands, evidence and limits](../../tools/images/segmentation-pocs.md).
 
 ## Release audit
 
-- PRs: #193, #199, #201, #215, #217, #218, #219, #227, #228, #229, #232, #236.
-- Scope: Version bump 5.4.0 and release-note consolidation; Scripts preview corrections, canonical Designer migration, headless/native queue runtime and full form/Setup integration; bounded parallel scripts with attempts schema 6, ready LoRA binding and lifecycle repairs; portable mixer inventory/preparation preview, independent schema-1 authoring preferences and explicit chunks; isolated node-editor POC with owner-reviewed Windows navigation; offline Workflows workspace mockups, owner-accepted shared left-rail sizing correction and approved Connection/Images utility-navigation relocation; native Workflows V1 contract, model provisioning, face-mask service, queue/execution and desktop source from main; local DT+ completed-image counter; standalone SCHP/edge/depth/SAM/custom SEG/OBB experiments, review-only labels, export/rotation diagnostics and default-preserving person-mask threshold seam. Exact Windows release artifact, provider compatibility, experimental model/dependency acceptance and release publication remain separate gates.
+- PRs: #237
+- Scope: Version bump 5.5.0 and release-note consolidation; no subsequent runtime changes recorded.

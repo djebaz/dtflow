@@ -27,6 +27,8 @@ and records every request so each image has an inspectable origin.
   without model inference or network access.
 - **Automation CLI.** The same generation, queue and gallery services are available from the
   command line for scripting and development.
+- **Native workflows.** Build saved graphs of generation, face-mask detection, inpainting and refinement steps, with per-node settings, branch-level progress and explicit retry. See the [Workflows guide](devdocs/guides/workflows.md) for supported nodes and acceptance limits.
+- **Scripts.** Inspect saved JavaScript, fill one Setup form and run through durable queues with linked outputs and optional bounded parallel batches. The [Scripts guide](devdocs/guides/scripts.md) describes the supported hooks and limits.
 
 The [desktop guide](devdocs/guides/desktop.md) and [queues guide](devdocs/guides/queues.md) describe each
 workspace in detail.
@@ -90,6 +92,7 @@ See the [CLI reference](devdocs/guides/cli.md) for backends, options and example
 
 - [Desktop guide](devdocs/guides/desktop.md): connections, generation, images, logs and settings
 - [Queues and batch plans](devdocs/guides/queues.md): queue controls, concurrency and comparisons
+- [Workflows](devdocs/guides/workflows.md): graph authoring, saved files, branch execution and model-download consent
 - [Scripts](devdocs/guides/scripts.md): Inspect > Setup > Run Script, optional bounded parallel batches and LoRA readiness
 - [Portable Krea2 mixer](devdocs/guides/krea2-mixer.md): cached LoRA discovery, single-form Setup, saved settings and explicit chunks
 - [CLI reference](devdocs/guides/cli.md): automation and development interface
