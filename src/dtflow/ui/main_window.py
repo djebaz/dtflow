@@ -1101,9 +1101,12 @@ class MainWindow:
 
     def show(self) -> None:
         apply_native_dark_titlebar(self.form)
+        startup.mark("show: titlebar prepared")
         self.form.show()
+        startup.mark("show: main form shown")
         QTimer.singleShot(0, self._align_run_control)
         apply_native_dark_titlebar(self.form)
+        startup.mark("show: titlebar reapplied")
 
     # -- remembered session -----------------------------------------------------------------------------------------
     def _restore_session(self) -> None:

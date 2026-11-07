@@ -10,6 +10,8 @@ Changes through 5.5.2 are consolidated in [DTFlow 5.5.2](v5.5.2.md). This file t
 
 ## Changed
 
+- Startup Queue Composer chips use a stable preferred size rather than recalculating wrap geometry from their changing width during first show; Qt's height-for-width still handles actual wrapping. Dev diagnostics time slow chip size hints and flow-height calculations, and split the window-show phase into titlebar/form steps for #266.
+
 - Scripts history reuses existing Qt cards when a new run is prepended or its latest status changes, instead of rebuilding every card in two inspector panels. This targets the remaining Script Run GUI stall sampled in `_sync_drawer_data` (#261); rare reorders still perform a complete refresh.
 
 - Queues defers expensive hidden list, table and event-history rendering while Scripts or another workspace is visible, but continues publishing shared run state. Opening Queues renders the latest state immediately. This removes observed unnecessary offscreen UI work during queue dispatch (#261); broader multi-second scheduling stalls still require Windows verification.
