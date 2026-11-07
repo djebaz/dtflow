@@ -22,7 +22,7 @@ QUEUE_RECORDS = 1024
 QUEUE_BYTES = 8 * 1024 * 1024
 MAX_DEPTH = 16
 MAX_NODES = 4096
-INSTRUMENTATION_VERSION = "gallery-jsonl-v1"
+INSTRUMENTATION_VERSION = "activity-scoped-gui-jsonl-v2"
 AGGREGATION_POLICY = "source-64-or-10s-bounded64-legacy1dp-v1"
 SECRET_ENVIRONMENT = ("DRAWTHINGS_API_KEY", "DRAWTHINGS_SHARED_SECRET")
 EVENT_NAME = re.compile(r"^[a-z][a-z0-9_]*(?:\.[a-z][a-z0-9_]*)+$")
@@ -405,7 +405,7 @@ def capture(record: logging.LogRecord, *, reserve=None) -> tuple[dict, int]:
         raise CaptureRejected("unsupported_value")
     # Upstream summary populations can span worker contexts; their GUI flush
     # context must not invent a causal attempt association.
-    attempt = "-" if name == "gallery.source_summary" else ATTEMPT.get()
+    attempt = "-" if name in {"gallery.source_summary", "ui.source_summary"} else ATTEMPT.get()
     if attempt and attempt != "-":
         context["attempt_id"] = budget.value(attempt)
     if context:
@@ -476,6 +476,13 @@ def validate_record(record: dict, *, persisted: bool = True) -> None:
     name = record["event"]
     data = record.get("data", {})
     fields = {
+        "ui.gui_gap": {
+            "elapsed_ms": (int, float),
+            "workspace": (str,),
+            "operation": (str,),
+            "window_active": (bool,),
+            "window_minimized": (bool,),
+        },
         "gallery.gui_gap": {
             "elapsed_ms": (int, float),
             "mode": (str,),
@@ -491,6 +498,8 @@ def validate_record(record: dict, *, persisted: bool = True) -> None:
         },
         "gallery.scroll_intent": {"direction": (str,), "source": (str,), "offset": (int,), "mounted": (int,)},
     }.get(name, {})
+    if name == "ui.gui_gap" and data.get("workspace") == "Images":
+        fields.update(mode=(str,), mounted=(int,), query_busy=(bool,), preparation_busy=(bool,))
     controls = {
         "session.started": {
             "session_id": (str,),

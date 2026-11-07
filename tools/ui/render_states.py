@@ -3778,6 +3778,18 @@ def render_logs_states(shell, capture):
         (record(5, "INFO", "logging.message", "backend"), RecordRef("fixture", 5, 0, 0, 0, 0, "fixture.jsonl")),
     ]
     rows[1][0]["data"] = {"elapsed_ms": 117.4, "sql_cpu_ms": 0.4, "max_ms": 118.6, "mounted": 100, "mode": "grid"}
+    warning_rows = rows[2:4] + [
+        (record(6, "CRITICAL", "logging.message", "app"), RecordRef("fixture", 6, 0, 0, 0, 0, "fixture.jsonl"))
+    ]
+    panel.logsLevelCombo.blockSignals(True)
+    panel.logsLevelCombo.setCurrentIndex(panel.logsLevelCombo.findData("WARNING"))
+    panel.logsLevelCombo.blockSignals(False)
+    shell.logs.model.replace(warning_rows, [row_preview(record) for record, _ref in warning_rows])
+    panel.logsCounter.setText("3 of 6 matching records · complete · page 1 · showing 3")
+    capture("logs-17-warning-and-worse")
+    panel.logsLevelCombo.blockSignals(True)
+    panel.logsLevelCombo.setCurrentIndex(panel.logsLevelCombo.findData(""))
+    panel.logsLevelCombo.blockSignals(False)
     shell.logs.model.replace(
         rows,
         [

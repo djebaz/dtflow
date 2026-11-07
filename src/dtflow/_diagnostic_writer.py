@@ -21,7 +21,7 @@ from dtflow._diagnostic_schema import (
 
 _AGGREGATED = frozenset({"scroll_intent", "gui_gap"})
 _METRICS = frozenset({"elapsed_ms", "wall_ms", "cpu_ms", "items", "count", "samples", "mounted", "offset"})
-_DIMENSIONS = ("direction", "source", "mode", "success")
+_DIMENSIONS = ("direction", "source", "mode", "success", "workspace", "operation", "window_active", "window_minimized")
 
 
 class Admission:
@@ -369,7 +369,7 @@ class DiagnosticListener(logging.handlers.QueueListener):
 
     def _flush_batch(self, key):
         batch = self.batches.pop(key)
-        phase, dimensions, attempt = key
+        namespace, phase, dimensions, attempt = key
         metrics = {}
         for name, values in batch["metrics"].items():
             values.sort()
@@ -386,8 +386,8 @@ class DiagnosticListener(logging.handlers.QueueListener):
             "ts": batch["last"],
             "mono_ns": batch["last_mono"],
             "level": "DEBUG",
-            "component": "dtflow.ui.gallery_perf",
-            "event": "gallery.performance_aggregate",
+            "component": "dtflow.ui.gallery_perf" if namespace == "gallery" else "dtflow.ui.performance",
+            "event": f"{namespace}.performance_aggregate",
             "kind": "aggregate",
             "data": {"phase": phase},
             "agg": {
@@ -404,13 +404,16 @@ class DiagnosticListener(logging.handlers.QueueListener):
 
     def _consume(self, payload):
         if (
-            payload["event"] == "gallery.source_summary"
+            payload["event"] in {"gallery.source_summary", "ui.source_summary"}
             and payload.get("kind") == "aggregate"
             and type(payload.get("data", {}).get("samples")) is int
         ):
             with self.admission.lock:
                 self.admission.counts["source_summary_samples"] += payload["data"]["samples"]
-        phase = payload["event"].removeprefix("gallery.")
+        namespace, _, phase = payload["event"].partition(".")
+        if namespace not in {"gallery", "ui"}:
+            self._write(payload)
+            return
         if payload.get("kind") != "measurement" or phase not in _AGGREGATED:
             self._write(payload)
             return
@@ -435,7 +438,7 @@ class DiagnosticListener(logging.handlers.QueueListener):
         if phase == "scroll_intent" or (phase == "gui_gap" and fields.get("elapsed_ms", 0) >= 100):
             self._write(payload)
         dimensions = tuple((key, fields[key]) for key in _DIMENSIONS if key in fields)
-        key = (phase, dimensions, attempt)
+        key = (namespace, phase, dimensions, attempt)
         if key not in self.batches and len(self.batches) >= 64:
             self._flush_batch(next(iter(self.batches)))
         batch = self.batches.setdefault(
