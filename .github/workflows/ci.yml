@@ -11,6 +11,14 @@ run-name: >-
 on:
   workflow_dispatch:
     inputs:
+      suite:
+        description: "Offline test suite (Full is the manual default)"
+        required: true
+        default: full
+        type: choice
+        options:
+          - fast
+          - full
       sha:
         description: "Commit SHA to check (full or short; wins over pr and branch)"
         required: false
@@ -26,16 +34,15 @@ on:
         required: false
         default: ""
         type: string
-  # push:
-    # branches: [main]
-    # paths: &ci-paths
-      # - '**/*.py'
-      # - 'pyproject.toml'
-      # - 'uv.lock'
-      # - '.python-version'
-      # - 'src/dtflow/**'
-      # - 'tests/**'
-      # - '.github/workflows/ci.yml'
+  push:
+    branches: [main]
+    # Avoid launching the full suite for documentation-only merges.
+    paths-ignore:
+      - '**/*.md'
+      - '**/*.rst'
+      - 'LICENSE*'
+      - 'NOTICE*'
+      - '.github/ISSUE_TEMPLATE/**'
   pull_request:
      types: [opened, synchronize, reopened, ready_for_review]
      # Native filtering allocates no runner for an entirely documentation-only PR.
@@ -65,6 +72,10 @@ jobs:
     env:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}   # job-level token for gh
     steps:
+      - name: Start elapsed-time measurement
+        id: clock
+        run: echo "started=$(date +%s)" >> "$GITHUB_OUTPUT"
+
       - name: Resolve manual target
         id: target
         env:
@@ -118,6 +129,26 @@ jobs:
           else
             echo "run=true" >> "$GITHUB_OUTPUT"
             echo "Change gate unavailable at target; run conservatively." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Select Fast or Full offline suite
+        id: suite
+        if: steps.changes.outputs.run == 'true'
+        env:
+          MANUAL_SUITE: ${{ inputs.suite }}
+        run: |
+          case "$GITHUB_EVENT_NAME" in
+            pull_request) level=fast ;;
+            push) level=full ;;
+            workflow_dispatch) level="${MANUAL_SUITE:-full}" ;;
+            *) echo "Unsupported CI trigger: $GITHUB_EVENT_NAME" >&2; exit 1 ;;
+          esac
+          case "$level" in fast|full) ;; *) echo "Unknown test suite: $level" >&2; exit 1 ;; esac
+          echo "level=$level" >> "$GITHUB_OUTPUT"
+          if [ "$level" = fast ]; then
+            echo "### Fast offline PR tests (selected subset; not Full coverage)" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "### Full offline pytest suite" >> "$GITHUB_STEP_SUMMARY"
           fi
 
       # Shared environment setup (runs once)
@@ -292,18 +323,37 @@ jobs:
         if: steps.changes.outputs.run == 'true' && steps.target.outputs.sha != '' && steps.allow_status.outputs.allowed == 'true'
         env:
           TARGET_SHA: ${{ steps.target.outputs.sha }}
+          TEST_SUITE: ${{ steps.suite.outputs.level }}
         run: |
           gh api "repos/$GITHUB_REPOSITORY/statuses/$TARGET_SHA" \
-            -f state=pending -f context="CI · tests (manual)" -f description="Tests in progress" \
+            -f state=pending -f context="CI · tests (manual)" -f description="$TEST_SUITE tests in progress" \
             -f target_url="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
 
       - name: SQLite version
         if: steps.changes.outputs.run == 'true'
         run: uv run python -c "import sqlite3; print(sqlite3.sqlite_version)"
 
-      - name: Pytest (offline, parallel)
+      - name: Pytest (offline, Fast or Full)
         if: steps.changes.outputs.run == 'true'
-        run: uv run pytest -n auto
+        env:
+          TEST_SUITE: ${{ steps.suite.outputs.level }}
+        shell: bash
+        run: |
+          if [ "$TEST_SUITE" = fast ]; then
+            # Explicit targets only; an empty/invalid fast selection fails the job.
+            mapfile -t targets < <(grep -Ev '^[[:space:]]*(#|$)' tools/ci/fast_tests.txt)
+            if [ "${#targets[@]}" -eq 0 ]; then
+              echo "Fast test selection is empty." >&2
+              exit 1
+            fi
+            printf 'Fast suite: %s selected targets (not the full test suite).\n' "${#targets[@]}"
+            uv run pytest -n auto --durations=0 --durations-min=0 "${targets[@]}"
+          elif [ "$TEST_SUITE" = full ]; then
+            uv run pytest -n auto
+          else
+            echo "Unknown test suite: $TEST_SUITE" >&2
+            exit 1
+          fi
 
       - name: Report tests result
         # always(): otherwise a failed or cancelled run leaves the status pending forever.
@@ -311,12 +361,25 @@ jobs:
         env:
           TARGET_SHA: ${{ steps.target.outputs.sha }}
           JOB_STATUS: ${{ job.status }}
+          TEST_SUITE: ${{ steps.suite.outputs.level }}
         run: |
           case "$JOB_STATUS" in
-            success) state=success; text="Tests passed" ;;
-            cancelled) state=error; text="Tests cancelled" ;;
-            *) state=failure; text="Tests failed" ;;
+            success) state=success; text="$TEST_SUITE tests passed" ;;
+            cancelled) state=error; text="$TEST_SUITE tests cancelled" ;;
+            *) state=failure; text="$TEST_SUITE tests failed" ;;
           esac
           gh api "repos/$GITHUB_REPOSITORY/statuses/$TARGET_SHA" \
             -f state="$state" -f context="CI · tests (manual)" -f description="$text" \
             -f target_url="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+
+      - name: Fast elapsed-time warning (advisory)
+        if: always() && steps.changes.outputs.run == 'true' && steps.suite.outputs.level == 'fast'
+        env:
+          STARTED: ${{ steps.clock.outputs.started }}
+        shell: bash
+        run: |
+          elapsed=$(( $(date +%s) - STARTED ))
+          echo "Fast CI in-job elapsed time: ${elapsed}s (target: under 60s; excludes runner startup/cleanup)." >> "$GITHUB_STEP_SUMMARY"
+          if [ "$elapsed" -ge 60 ]; then
+            echo "::warning title=Fast CI exceeds 60s::Measured ${elapsed}s. This is advisory; tests were not interrupted."
+          fi

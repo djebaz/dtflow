@@ -71,8 +71,14 @@ Each invocation prints and retains `test-runs/<run-id>/`: flat `inventory/local_
 
 ## Continuous integration
 
-[GitHub Actions](../../.github/workflows/ci.yml) runs lock consistency, Ruff lint/format and offline pytest on Ubuntu for pushes to main, non-draft pull requests (including ready-for-review), and manual dispatch, when Python, project metadata, `uv.lock`, `src/dtflow/` or `tests/` files change. Ruff format and lint are non-blocking: findings appear as warning annotations, in the run summary and in one PR comment that each run edits in place (it switches to "all clean" once fixed), and only lock or test failures fail the job. Draft PRs are skipped. A newer push to the same PR cancels its previous run; manual runs are not cancelled.
+[GitHub Actions CI](../../.github/workflows/ci.yml) has two **offline** test levels under one workflow:
 
-Manual dispatch accepts `sha`, `pr` (number or `latest`) and `branch` (empty means the default branch). Precedence is sha > pr > branch; latest selects the highest-numbered open PR. No application credentials or live generation are used. CI does not establish Windows or packaged acceptance.
+- **Fast (automatic PRs):** non-draft pull requests when code or other CI-relevant files change, including ready-for-review and new commits. Runs the explicit test targets in [`tools/ci/fast_tests.txt`](../../tools/ci/fast_tests.txt). This is a focused subset for Generate, shared queue/workflow foundations, retry/persistence safety, models, LoRAs and cloud assets. Scripts-specific tests and most Qt/gallery/tooling tests run in Full. There are not yet dedicated workflow-executor tests in this selection; shared queue and planning tests do **not** establish complete Workflows coverage.
+- **Full (automatic `main` pushes):** every offline pytest test after code-relevant merges to `main`. Documentation-only changes do not allocate an expensive test runner.
+- **Manual dispatch:** choose **Fast** or **Full** (Full is the default), and select the target using `sha`, `pr` (number or `latest`) or `branch`; resolution precedence stays `sha > pr > branch`. Manual runs bypass change filtering.
+
+Both levels check the lockfile, run Ruff format/lint as non-blocking warnings, and run pytest with `-n auto`. Only lock and pytest failures fail the job; a Fast pass is explicitly **not** a Full pass. The shared change gate avoids expensive setup when a PR update is documentation-only. The Fast job also prints all pytest phase durations and emits a **non-blocking warning** when measured in-job elapsed time reaches 60 seconds. The timing excludes runner allocation and teardown and is a budget signal, not an interruption or a billing guarantee. Individual test durations cannot simply be added to predict parallel wall-clock time.
+
+Normal CI has no live provider credentials and must not submit any real local/cloud generation. Live/backend and native Windows/packaged checks remain separately authorized and recorded.
 
 See [development tools](development.md) for probes and [runtime layout](../architecture/runtime-layout.md) for state/evidence separation.
