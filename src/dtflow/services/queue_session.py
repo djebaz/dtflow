@@ -40,6 +40,7 @@ from dtflow.persistence.queues import (
     read_queue_summaries,
     read_queues,
     request_from_record,
+    retry_item,
 )
 from dtflow.persistence.script_items import is_script_record, script_record, store_source
 from dtflow.persistence.settings import load_cloud_concurrency, save_cloud_concurrency, validate_concurrency
@@ -309,6 +310,32 @@ async def relaunch_queue(
         _relaunch_items, Path(state), queue_id, items, new_seeds=new_seeds, failed_only=failed_only, positions=positions
     )
     return await create_queue(state, backend, requests, source_cap if cap is None else cap, up_next=up_next)
+
+
+async def retry_queue_item(state: Path, queue_id: str, position: int) -> str:
+    """Retry item in place (#240): the item reruns its recorded request, same settings and seed, as a new attempt.
+
+    No new queue is created. Staged edit inputs must still exist (checked before anything changes). Returns
+    ``"joins"`` when the queue's own run (or its Start/Resume) picks the item up, ``"start"`` when the queue was set
+    paused and the caller starts it. Nothing is dispatched here; an unknown attempt stays recorded as unknown.
+    """
+    _, _, items = await asyncio.to_thread(read_queue_requests, Path(state), queue_id)
+    record = next((record for at, _, record in items if at == position), None)
+    if record is None:
+        raise ValidationError(f"The queue has no item {position}; nothing was retried.")
+    refuse_script_records((record,))
+    try:
+        request = request_from_record(record)
+    except (ValidationError, TypeError, ValueError):
+        raise ValidationError(f"Item {position} has no usable recorded request; nothing was retried.") from None
+    if request.image_inputs is not None:
+        try:
+            await asyncio.to_thread(restore_image_inputs, Path(state), request.image_inputs)
+        except (ValidationError, OSError):
+            raise ValidationError(
+                f"Item {position}'s staged edit inputs are no longer available; nothing was retried."
+            ) from None
+    return await asyncio.to_thread(retry_item, Path(state), queue_id, position)
 
 
 async def read_queue_records(state: Path, queue_id: str) -> tuple[dict[str, Any], ...]:

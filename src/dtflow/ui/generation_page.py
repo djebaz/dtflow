@@ -21,6 +21,7 @@ from PySide6.QtCore import QSize, Qt, QTimer, QUrl
 from PySide6.QtGui import QDesktopServices, QGuiApplication, QIcon, QPixmap
 from PySide6.QtWidgets import (
     QFileDialog,
+    QHBoxLayout,
     QListWidgetItem,
     QPushButton,
     QWidget,
@@ -294,6 +295,9 @@ class GenerationPage:
         self._submitted_backend: str | None = None
         self._submitted_endpoint: str | None = None  # the running request's snapshot, not the form's current value
         self._run_edit = False
+        # The last submission exactly as sent (request, backend, endpoint, receipts, prefix, simulation, edit), for
+        # Retry: it resends the recorded request with the same seed, never the form's current values (#240).
+        self._last_submission: tuple | None = None
         self._empty_hints = (
             EmptyListHint(page.loraList, "No LoRAs selected\nAdd an adapter to this request."),
             EmptyListHint(page.assetList, "No local receipts\nPrepare a cloud asset to begin."),
@@ -349,6 +353,7 @@ class GenerationPage:
         page.generationBackendCombo.addItems(BACKENDS)
         page.generationBackendCombo.setToolTip("Chosen on the Connection page.")
         page.generateButton.clicked.connect(lambda _=False: self.generate())
+        self.retryButton = self._add_retry_button(page)
         page.refreshInventoryButton.clicked.connect(self.refresh)
         page.saveConfigurationButton.clicked.connect(self.save)
         page.savePresetButton.setEnabled(True)
@@ -414,6 +419,30 @@ class GenerationPage:
         page.inpaintModeButton.toggled.connect(self._sync_activity)
         self._update_compute_units()
         startup.mark("generate: final compute estimate")
+
+    def _add_retry_button(self, page: QWidget) -> QPushButton:
+        """Retry sits beside the result line and shows only after a failed or uncertain generation."""
+        button = QPushButton("Retry", page)
+        button.setObjectName("generationRetryButton")
+        button.setToolTip("Run the last request again with the same settings and seed. A cloud run may use credits.")
+        button.setAccessibleName("Retry the last generation")
+        button.clicked.connect(lambda _=False: self.retry())
+        button.hide()
+        label = page.generationStatusLabel
+        layout = label.parentWidget().layout()
+        index = layout.indexOf(label)
+        if index >= 0:
+            row = QHBoxLayout()
+            row.setContentsMargins(0, 0, 0, 0)
+            layout.takeAt(index)
+            row.addWidget(label, 1)
+            row.addWidget(button, 0, Qt.AlignmentFlag.AlignTop)
+            layout.insertLayout(index, row)
+        return button
+
+    def _offer_retry(self, offered: bool) -> None:
+        self.retryButton.setVisible(offered and self._last_submission is not None)
+        self.retryButton.setEnabled(not (self._busy or self._generating))
 
     def _set_prompt_expanded(self, expanded: bool) -> None:
         """Match prompt height, icon and accessible label to the toggle state."""
@@ -823,6 +852,8 @@ class GenerationPage:
         button = self.page.generateButton
         blocked = self._busy or self._generating
         button.setEnabled(not blocked)
+        if hasattr(self, "retryButton"):
+            self.retryButton.setEnabled(not blocked)
         # The Queue dropdown stays open during a generation: its Add to queue waits behind it (#135).
         self.page.queueGenerateButton.setEnabled(not self._busy)
         if hasattr(self, "inpaint"):
@@ -942,7 +973,6 @@ class GenerationPage:
         self._mark(None)
         note = self._snap_size()
         name, endpoint = self._backend()
-        self._submitted_backend, self._submitted_endpoint = name, endpoint
         try:
             request = build_request(self._values(), backend=name, config_name=self._config_name, random_seed=True)
             request = self._with_reuse_lineage(self._allow_local_bridge_model(request))
@@ -971,8 +1001,53 @@ class GenerationPage:
             self._status(Presentation("error", "Invalid request", "Edit image runs one image at a time."))
             return False
         self._reuse_source_identity = None
+        self._submit(
+            request,
+            name,
+            endpoint,
+            self.lora.receipt_ids(),
+            self.page.triggerPrefixCheck.isChecked(),
+            self.simulation(),
+            edit,
+            note,
+        )
+        return True
+
+    def retry(self) -> bool:
+        """Retry: resend the last request as recorded (same settings, same seed, same provider) under a new identity.
+
+        The form is not read, so edits made since do not leak in. The earlier attempt stays recorded as it ended (an
+        unknown outcome stays unknown); this is a new, possibly billable attempt and runs only on this click.
+        """
+        if self._last_submission is None or self._busy or self._generating:
+            return False
+        request, name, endpoint, asset_ids, prefix, simulation, edit = self._last_submission
+        retried = replace(
+            request,
+            request_id=uuid4().hex,
+            resolution_evidence=(
+                *(pair for pair in request.resolution_evidence if pair[0] != "retry.of_request"),
+                ("retry.of_request", request.request_id),
+            ),
+        )
+        diagnostic_event(log, "generation.retry", level=logging.INFO, data={"backend": name})
+        if self._activity.dispatching:
+            if self.queue_behind is None:
+                return False
+            self._status(Presentation("ok", "Retry queued behind the running queue", "The Queues page reports it."))
+            self.queue_behind(retried, name, endpoint, asset_ids, edit)
+            self._offer_retry(False)
+            return False
+        self._submit(retried, name, endpoint, asset_ids, prefix, simulation, edit, None)
+        return True
+
+    def _submit(self, request, name, endpoint, asset_ids, prefix, simulation, edit, note) -> None:
+        """Send one validated request snapshot; Generate and Retry both end here."""
+        self._submitted_backend, self._submitted_endpoint = name, endpoint
         self._request = request
         self._run_edit = edit is not None
+        self._last_submission = (request, name, endpoint, tuple(asset_ids), prefix, simulation, edit)
+        self._offer_retry(False)
         diagnostic_event(
             log,
             "generation.submitted",
@@ -1020,19 +1095,9 @@ class GenerationPage:
         run = self._generate_edit if edit is not None else self._generate
         extra = (edit,) if edit is not None else ()
         self._future = self._runner.submit(
-            run(
-                name,
-                endpoint,
-                request,
-                self._saved(),
-                self.lora.receipt_ids(),
-                self.page.triggerPrefixCheck.isChecked(),
-                self.simulation(),
-                *extra,
-            ),
+            run(name, endpoint, request, self._saved(), asset_ids, prefix, simulation, *extra),
             self._generated,
         )
-        return True
 
     def _queue_behind(self, edit: EditJob | None) -> None:
         """The window's queue dispatch owns the state lock: hand the request to the Queues page as a one-item queue
@@ -1136,6 +1201,7 @@ class GenerationPage:
             presentation = present_generation_failure(failure)
             self._status(presentation)
             activity_strip(self.page).complete("generation-result", presentation.headline, presentation.detail, "error")
+            self._offer_retry(True)
             if dev_enabled():
                 self._show_failure_details(failure)
             return
@@ -1285,6 +1351,7 @@ class GenerationPage:
         self._sync_generate()
         presentation = present_generation_failure(failure) if failure else present_interruption(evidence)
         self._status(presentation)
+        self._offer_retry(presentation.level != "ok")
         activity_strip(self.page).complete(
             "generation-result",
             presentation.headline,
