@@ -835,9 +835,7 @@ def render_connection_usage_states(shell, out):
     QTest.qWait(100)
     save(form, out, "connection-55-bottom-bar-count-generate")
     # Updated saved-image evidence is also presented while Connection stays hidden.
-    panel._records = records(413, hint="4F8K", ident=panel._active) + records(
-        91, hint="Q2ZM", ident="b" * 32, shift=5
-    )
+    panel._records = records(413, hint="4F8K", ident=panel._active) + records(91, hint="Q2ZM", ident="b" * 32, shift=5)
     panel.render()
     save(form, out, "connection-61-bottom-bar-count-updated-outside-connection")
     form.workspaceStack.setCurrentWidget(form.connectionPage)
