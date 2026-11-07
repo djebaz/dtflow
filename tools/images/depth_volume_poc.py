@@ -28,9 +28,7 @@ def estimate_depth(source, session):
     """Run the existing Depth Anything V2 ONNX model and preserve float precision."""
     side = 518
     rgb = np.asarray(source.resize((side, side), Image.Resampling.BICUBIC), dtype=np.float32) / 255
-    rgb = (rgb - np.array([0.485, 0.456, 0.406], dtype=np.float32)) / np.array(
-        [0.229, 0.224, 0.225], dtype=np.float32
-    )
+    rgb = (rgb - np.array([0.485, 0.456, 0.406], dtype=np.float32)) / np.array([0.229, 0.224, 0.225], dtype=np.float32)
     tensor = np.transpose(rgb, (2, 0, 1))[None].astype(np.float32)
     output = np.asarray(session.run(None, {session.get_inputs()[0].name: tensor})[0]).squeeze()
     if output.ndim != 2 or not np.isfinite(output).all():
@@ -71,7 +69,9 @@ def volume_regions(depth, silhouette, *, resolution=384, edge_threshold=0.30):
     count, components, stats, _ = cv2.connectedComponentsWithStats(free, connectivity=8)
     # Each free-space component is a surface region; barrier pixels stay unlabeled.
     components[~inside] = 0
-    components = cv2.resize(components.astype(np.float32), (width, height), interpolation=cv2.INTER_NEAREST).astype(np.int32)
+    components = cv2.resize(components.astype(np.float32), (width, height), interpolation=cv2.INTER_NEAREST).astype(
+        np.int32
+    )
     components[~silhouette] = 0
     edge_image = cv2.resize((edges * 255).astype(np.uint8), (width, height), interpolation=cv2.INTER_LINEAR)
     edge_image[~silhouette] = 0
@@ -91,7 +91,7 @@ def choose_regions(labels, box, person, *, max_regions=3):
     ids, hits = np.unique(labels[inside_box & person], return_counts=True)
     ranked = []
     box_area = max(1, int(np.count_nonzero(inside_box & person)))
-    for region_id, overlap in zip(ids, hits):
+    for region_id, overlap in zip(ids, hits, strict=True):
         if region_id == 0:
             continue
         region_area = int(np.count_nonzero(labels == region_id))
@@ -161,7 +161,10 @@ def main(argv=None):
             for detection_index, detection in enumerate(detections, 1):
                 box = detection["box_xyxy"]
                 x0, y0, x1, y1 = [int(v) for v in box]
-                if np.count_nonzero(person[max(0,y0):min(source.height,y1), max(0,x0):min(source.width,x1)]) == 0:
+                if (
+                    np.count_nonzero(person[max(0, y0) : min(source.height, y1), max(0, x0) : min(source.width, x1)])
+                    == 0
+                ):
                     continue
                 mask, selected = choose_regions(regions, box, person, max_regions=args.max_regions)
                 if not selected:
@@ -169,8 +172,16 @@ def main(argv=None):
                 name = f"{prefix}_d{detection_index:03d}"
                 Image.fromarray(mask).save(args.output_dir / f"{name}_mask.png")
                 cv2.rectangle(overlay, (x0, y0), (x1, y1), (0, 255, 255), 2)
-                records.append({"person": person_index, "label": detection["label"], "score": float(detection["score"]),
-                                "box": [int(v) for v in box], "mask": f"{name}_mask.png", "regions": selected})
+                records.append(
+                    {
+                        "person": person_index,
+                        "label": detection["label"],
+                        "score": float(detection["score"]),
+                        "box": [int(v) for v in box],
+                        "mask": f"{name}_mask.png",
+                        "regions": selected,
+                    }
+                )
             Image.fromarray(overlay).save(args.output_dir / f"{prefix}_boxes.png")
         (args.output_dir / f"{prefix}_regions.json").write_text(json.dumps(records, indent=2), encoding="utf-8")
         print(f"{path.name}: 1 person, {len(records)} masks -> {args.output_dir}", flush=True)
