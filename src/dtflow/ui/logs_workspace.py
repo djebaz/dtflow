@@ -443,9 +443,10 @@ class LogsWorkspace(QObject):
         self.form.logsDetail.hide()
         self.form.logsAdvanced.hide()
         self.form.logsNotice.hide()
-        self.form.logsLevelCombo.addItem("All", "")
+        self.form.logsLevelCombo.addItem("ALL", "")
         for level in ("DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"):
-            self.form.logsLevelCombo.addItem(level, level)
+            self.form.logsLevelCombo.addItem(f">={level}", level)
+        self.form.logsLevelCombo.setCurrentIndex(self.form.logsLevelCombo.findData("WARNING"))
         self.form.logsComponentCombo.addItem("All", "")
         self.form.logsEventCombo.addItem("All events", "")
         for label, operator in OPERATORS:
@@ -677,7 +678,7 @@ class LogsWorkspace(QObject):
     def _filters(self):
         filters = {
             "search": self.form.logsSearch.text().strip(),
-            "level": self.form.logsLevelCombo.currentData() or "",
+            "min_level": self.form.logsLevelCombo.currentData() or "",
             "component": self.form.logsComponentCombo.currentData() or "",
         }
         event = self.form.logsEventCombo.currentData()
@@ -1437,7 +1438,7 @@ class LogsWorkspace(QObject):
             self.form.logsSortCombo,
         ):
             combo.blockSignals(True)
-            combo.setCurrentIndex(0)
+            combo.setCurrentIndex(combo.findData("WARNING") if combo is self.form.logsLevelCombo else 0)
             combo.blockSignals(False)
         if self.form.logsFollowButton.isChecked():
             self.refresh()

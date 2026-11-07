@@ -13,8 +13,7 @@ from collections import deque
 from dataclasses import asdict, replace
 from datetime import UTC, date, datetime, time, timedelta
 from pathlib import Path, PureWindowsPath
-from threading import Lock
-from time import monotonic, monotonic_ns, thread_time
+from time import monotonic, thread_time
 
 from PySide6.QtCore import (
     QByteArray,
@@ -65,7 +64,7 @@ from dtflow.core.gallery import GalleryItem, GalleryQuery
 from dtflow.core.gallery_selection import MAX_CHECKED_IMAGES, GallerySelection
 from dtflow.core.models import ValidationError
 from dtflow.diagnostics import event as diagnostic_event
-from dtflow.diagnostics import measurement, source_summary
+from dtflow.diagnostics import measurement
 from dtflow.logging_setup import dev_enabled
 from dtflow.persistence import gallery as gallery_storage
 from dtflow.persistence import thumbnail_cache
@@ -86,6 +85,7 @@ from dtflow.services.gallery import (
     query_snapshot,
     resolve_item_read,
 )
+from dtflow.ui.performance import PerfBatchStats
 from dtflow.ui.activity_strip import activity_strip
 from dtflow.ui.button_focus import KeyboardFocusGuard
 from dtflow.ui.desktop_open import open_local_path
@@ -130,7 +130,6 @@ AUTO_REFRESH_MS = 1000  # file-metadata poll only; unchanged polls never rebuild
 PUSH_DEBOUNCE_MS = 250  # coalesce in-process change hints before the metadata check
 LIVE_RECOVERY_INTERVAL_S = 5  # full live reads during snapshot/failure episodes keep their original spacing
 SNAPSHOT_RECOVERY_GRACE_S = 5  # presentation-only stability grace before a recovered live read hides the warning
-SOURCE_SUMMARY_INTERVAL_S = 60  # minimum spacing of gallery.source_summary per phase; samples keep accumulating
 LOOKAHEAD_SCREENS = 3  # loaded beyond the viewport: at least one batch or this many screens
 AUTO_REFRESH_FULL_INTERVAL_S = 30  # a full read periodically guards against missed file metadata changes
 STANDARD_THUMBNAIL_PX = 320
@@ -170,7 +169,7 @@ def _image(
     *,
     item: GalleryItem | None = None,
     cache: bool = False,
-    stats: _PerfBatchStats | None = None,
+    stats: PerfBatchStats | None = None,
 ) -> tuple[QImage | None, str]:
     """Read one original under the shared lease, then decode it outside the lease.
 
@@ -415,62 +414,7 @@ def _date_bounds(text: str) -> tuple[str | None, str | None]:
         ) from exc
 
 
-class _PerfBatchStats:
-    """Bounded, thread-safe timings; emit summaries on the GUI thread only."""
-
-    def __init__(self) -> None:
-        self._lock = Lock()
-        self._pending: dict[str, dict] = {}
-        self._emitted: dict[str, float] = {}
-
-    def observe(
-        self, phase: str, elapsed_ms: float, *, count: int = 1, cpu_ms: float = 0.0, success: bool = True
-    ) -> None:
-        observed_at = datetime.now(UTC).isoformat(timespec="milliseconds").replace("+00:00", "Z")
-        observed_mono = monotonic_ns()
-        with self._lock:
-            stats = self._pending.setdefault(
-                phase,
-                {
-                    "samples": 0,
-                    "items": 0,
-                    "total": 0.0,
-                    "maximum": 0.0,
-                    "cpu": 0.0,
-                    "failures": 0,
-                    "window_start": observed_at,
-                    "window_end": observed_at,
-                },
-            )
-            stats["window_start"] = min(stats["window_start"], observed_at)
-            stats["window_end"] = max(stats["window_end"], observed_at)
-            stats["last_mono_ns"] = max(stats.get("last_mono_ns", 0), observed_mono)
-            stats["samples"] += 1
-            stats["items"] += count
-            stats["total"] += elapsed_ms
-            stats["maximum"] = max(stats["maximum"], elapsed_ms)
-            stats["cpu"] += cpu_ms
-            stats["failures"] += int(not success)
-
-    def flush(self, phase: str | None = None, *, force: bool = False) -> None:
-        """Emit pending summaries, at most once per interval per phase unless forced (close/stop)."""
-        now = monotonic()
-        with self._lock:
-            names = (phase,) if phase is not None else tuple(self._pending)
-            due = [
-                name
-                for name in names
-                if name in self._pending
-                and (force or now - self._emitted.get(name, float("-inf")) >= SOURCE_SUMMARY_INTERVAL_S)
-            ]
-            completed = [(name, self._pending.pop(name)) for name in due]
-            for name in due:
-                self._emitted[name] = now
-        for name, stats in completed:
-            source_summary(log, name, stats)
-
-
-def _timed_thumbnail_image(path: str, max_side: int, state: Path, *, item: GalleryItem, stats: _PerfBatchStats):
+def _timed_thumbnail_image(path: str, max_side: int, state: Path, *, item: GalleryItem, stats: PerfBatchStats):
     """Aggregate worker CPU and elapsed time without changing thumbnail results."""
     wall_started = monotonic()
     cpu_started = thread_time()
@@ -613,8 +557,7 @@ class GalleryPage(QObject):
         self._prepared_entries: dict[str, dict] = {}
         self._prepared_sizes: dict[str, int] = {}
         self._preparation_icons = None
-        self._perf_stats = _PerfBatchStats()
-        self._perf_last_flush = monotonic()
+        self._perf_stats = PerfBatchStats(log)
         self.retirement = GalleryRetirement(self)
         self.preparation = GalleryPreparation(
             self,
@@ -683,10 +626,6 @@ class GalleryPage(QObject):
         self.auto_timer = QTimer(self)
         self.auto_timer.setInterval(AUTO_REFRESH_MS)
         self.auto_timer.timeout.connect(self._auto_refresh_tick)
-        # Development-only event-loop heartbeat. Large gaps are diagnostic
-        # observations, not proof that a particular gallery operation stalled.
-        self._gui_heartbeat = None
-        self._gui_heartbeat_at = monotonic()
         if dev_enabled():
             screen = QApplication.primaryScreen()
             measurement(
@@ -697,11 +636,6 @@ class GalleryPage(QObject):
                 dpr=screen.devicePixelRatio() if screen is not None else 1.0,
                 dpi=screen.logicalDotsPerInch() if screen is not None else 0.0,
             )
-            self._gui_heartbeat = QTimer(self)
-            self._gui_heartbeat.setTimerType(Qt.TimerType.PreciseTimer)
-            self._gui_heartbeat.setInterval(20)
-            self._gui_heartbeat.timeout.connect(self._trace_gui_heartbeat)
-            self._gui_heartbeat.start()
 
         self._setup_filters()
         self._setup_views()
@@ -1512,28 +1446,6 @@ class GalleryPage(QObject):
             self.auto_timer.stop()
             if not enabled:
                 self._auto_signature = None
-
-    @Slot()
-    def _trace_gui_heartbeat(self) -> None:
-        """Report delayed Qt event-loop turns only in explicit development mode."""
-        now = monotonic()
-        gap_ms = (now - self._gui_heartbeat_at) * 1000
-        self._gui_heartbeat_at = now
-        if gap_ms >= 50:
-            self._perf_stats.observe("gui_gaps", gap_ms)
-        if gap_ms >= 100:
-            measurement(
-                log,
-                "gallery.gui_gap",
-                elapsed_ms=gap_ms,
-                mode=self.mode,
-                mounted=len(self.items),
-                query_busy=self._loading or self._adjacent_loading,
-                preparation_busy=self.preparation.active,
-            )
-        if now - self._perf_last_flush >= 2:
-            self._perf_last_flush = now
-            self._perf_stats.flush()
 
     def _auto_refresh_tick(self) -> None:
         """Check for gallery changes without rebuilding unchanged pages on each poll."""

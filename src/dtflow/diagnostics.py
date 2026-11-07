@@ -65,12 +65,12 @@ def measurement(logger: logging.Logger, name: str, **data) -> None:
     event(logger, name, level=logging.DEBUG, data=data, kind="measurement")
 
 
-def source_summary(logger: logging.Logger, phase: str, stats: dict) -> None:
+def source_summary(logger: logging.Logger, phase: str, stats: dict, *, namespace: str = "gallery") -> None:
     """Already-aggregated observations; no invented CPU maximum or p95."""
     count = stats["samples"]
     event(
         logger,
-        "gallery.source_summary",
+        f"{namespace}.source_summary",
         level=logging.DEBUG,
         kind="aggregate",
         source_timestamp=stats["window_end"],

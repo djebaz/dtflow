@@ -129,18 +129,18 @@ def summarize_jsonl(directory: Path) -> dict:
 
     def collect(record, _ref):
         name = record["event"]
-        if name == "gallery.performance_aggregate":
+        if name in {"gallery.performance_aggregate", "ui.performance_aggregate"}:
             phase = record["data"]["phase"]
             aggregated.add(phase)
             for key, stat in record["agg"]["metrics"].items():
                 add(phase, key, int(stat["count"]), stat["max"])
-        elif name == "gallery.source_summary":
+        elif name in {"gallery.source_summary", "ui.source_summary"}:
             data = record["data"]
             phase, count = data["phase"], data["samples"]
             for key in ("wall_total_ms", "wall_avg_ms", "wall_max_ms", "cpu_total_ms"):
                 add(phase, key, count, data[key])
-        elif name.startswith("gallery.") and record.get("kind") == "measurement":
-            raw.append((name.removeprefix("gallery."), record.get("data", {})))
+        elif (name.startswith("gallery.") or name == "ui.gui_gap") and record.get("kind") == "measurement":
+            raw.append((name.partition(".")[2], record.get("data", {})))
 
     status = scan(directory, sessions[0], on_record=collect, on_reset=reset)
     if not status.complete:

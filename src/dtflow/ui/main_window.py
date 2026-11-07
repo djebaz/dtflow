@@ -69,6 +69,7 @@ from dtflow.ui.image_recycle_panel import ImageRecyclePanel
 from dtflow.ui.inline_feedback import InlineFeedback, InlineNotice, confirm_action
 from dtflow.ui.queue_page import QueuePage
 from dtflow.ui.queue_popover import QueuePopover
+from dtflow.ui.performance import GuiHeartbeat
 from dtflow.ui.queue_composer import ValueChips
 from dtflow.ui.queue_widgets import SegmentedBar
 from dtflow.ui.run_control import RunControl
@@ -588,6 +589,14 @@ class MainWindow:
         )
         self.cloud_usage.refresh()  # the bottom bar names the active key on every view from startup
         self.activity.listen(self._usage_activity_changed)
+        self._gui_heartbeat = GuiHeartbeat(
+            form,
+            self.activity,
+            self.progress_strip,
+            self.runner,
+            self._gui_heartbeat_context,
+            self.gallery._perf_stats.flush,
+        )
         self.refresh_custom_loras(background=True)
         self.refresh_presets(background=True)
         self._workspace_changed(0)
@@ -1008,6 +1017,8 @@ class MainWindow:
         if hasattr(self, "workflows"):
             self.workflows.sync_responsive(narrow)
         self._align_run_control()
+        if hasattr(self, "_gui_heartbeat"):
+            self._gui_heartbeat.sync()
 
     def _place_workflows_chrome(self, folded: bool, *, moved_elsewhere: bool) -> None:
         """Move the brand and navigation into the Workflows header while its Library is folded, and back after."""
@@ -1245,6 +1256,45 @@ class MainWindow:
     def _usage_activity_changed(self) -> None:
         # The bottom-bar counter is global, even when the Connection card is hidden.
         self.cloud_usage.schedule_refresh()
+
+    def _gui_heartbeat_context(self) -> dict | None:
+        """Safe presentation context for one shared diagnostic, never execution authority."""
+        if self.runner.closed or self.progress_strip.retired:
+            return None
+        current = self.form.workspaceStack.currentWidget()
+        images = current is self.images_page
+        operations = self.progress_strip.active_operations()
+        if self.activity.generating:
+            operation = "generation"
+        elif self.activity.dispatching:
+            operation = "queue_dispatch"
+        elif operations:
+            operation = ",".join(operations)[:128]
+        elif images and self.form.isVisible() and not self.form.isMinimized():
+            operation = "gallery_browsing"
+        else:
+            return None
+        workspace = {
+            self.images_page: "Images",
+            self.logs_marker: "Logs",
+            self.workflows_marker: "Workflows",
+            self.queue_page: "Queues",
+            self.generation_page: "Scripts" if self._scripts_active else "Generate",
+        }.get(current, "Connection")
+        context = {
+            "workspace": workspace,
+            "operation": operation,
+            "window_active": self.form.isActiveWindow(),
+            "window_minimized": self.form.isMinimized(),
+        }
+        if images:
+            context.update(
+                mode=self.gallery.mode,
+                mounted=len(self.gallery.items),
+                query_busy=self.gallery._loading or self.gallery._adjacent_loading,
+                preparation_busy=self.gallery.preparation.active,
+            )
+        return context
 
     def _read_summary(self, key, read, apply) -> None:
         """Optional startup reads cannot block painting or replace a newer explicit refresh."""

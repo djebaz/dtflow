@@ -341,6 +341,7 @@ def match(
     *,
     search: str = "",
     level: str = "",
+    min_level: str = "",
     component: str = "",
     event: str = "",
     family: str = "",
@@ -352,6 +353,8 @@ def match(
 ) -> bool:
     """Typed AND predicates; never coerce numeric strings or equate booleans/numbers."""
     if level and record["level"] != level:
+        return False
+    if min_level and _LEVELS.index(record["level"]) < _LEVELS.index(min_level):
         return False
     if component and record["component"] != component:
         return False

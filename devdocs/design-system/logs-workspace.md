@@ -4,6 +4,8 @@
 
 ## Final compact row geometry
 
+The severity control uses thresholds, not exact levels: ALL, >=DEBUG, >=INFO, >=WARNING, >=ERROR and >=CRITICAL. Initial opening and explicit Reset select >=WARNING; a deliberate selection survives refresh, Follow and closing/reopening in the same window. The recorded row severity and raw logs remain unchanged. `logs-17-warning-and-worse` is the offline threshold presentation, not native acceptance.
+
 **Severity stripe | Date / Time | Event | Characteristics | Row actions**. Three content columns, a very narrow non-sortable severity strip and a narrow (about 80 px) row-actions column. No separate Source, Level, Value or Summary columns.
 
 - **Severity:** 3–4 px indicator showing the **recorded** level only. DEBUG muted gray, INFO quiet neutral, WARNING amber, ERROR/CRITICAL red. Do not make INFO green or promote a DEBUG stall to WARNING. Tooltips, accessible row names, details and severity filter spell out the level; color is never the sole encoding.

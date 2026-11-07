@@ -4,7 +4,19 @@ import math
 from time import monotonic
 from pathlib import Path
 
-from PySide6.QtCore import QEasingCurve, QEvent, QFile, QIODevice, QObject, QPropertyAnimation, QRect, Qt, QTimer, Slot
+from PySide6.QtCore import (
+    QEasingCurve,
+    QEvent,
+    QFile,
+    QIODevice,
+    QObject,
+    QPropertyAnimation,
+    QRect,
+    Qt,
+    QTimer,
+    Signal,
+    Slot,
+)
 from PySide6.QtGui import QIcon
 from PySide6.QtUiTools import QUiLoader
 from PySide6.QtWidgets import QApplication, QFrame, QGraphicsOpacityEffect, QWidget
@@ -45,6 +57,20 @@ _OPERATION_ICONS = {
 
 
 class ActivityStrip(QObject):
+    operations_changed = Signal()
+
+    def active_operations(self) -> tuple[str, ...]:
+        """Bounded operation categories, never user labels, prompts or execution identities."""
+        return tuple(
+            sorted(
+                {
+                    str(key).split("-", 1)[0][:32]
+                    for key, row in self.rows.items()
+                    if isValid(row) and row.property("feedbackState") == "progress"
+                }
+            )
+        )[:16]
+
     def __init__(self, window):
         super().__init__(window)
         startup.mark("activity strip: QObject initialized")
@@ -405,6 +431,7 @@ class ActivityStrip(QObject):
             row.activityStopButton.clicked.connect(request_stop)
         self.rows[key] = row
         self.form.activityRowsLayout.addWidget(row)
+        self.operations_changed.emit()
         self._position()
         QTimer.singleShot(0, self, self._position)
 
@@ -451,6 +478,7 @@ class ActivityStrip(QObject):
         row.setProperty("startedAt", started)  # unknown when the job ran under another key
         row.setProperty("endedAt", monotonic())
         row.setProperty("feedbackState", state)
+        self.operations_changed.emit()
         row.activitySymbol.setText(
             {"success": "✓", "info": "i", "stopped": "■", "partial": "⚠", "warning": "⚠"}.get(state, "!")
         )
@@ -541,6 +569,8 @@ class ActivityStrip(QObject):
             row.deleteLater()
         if not self._expiry:
             self._notice_timer.stop()
+        if row is not None:
+            self.operations_changed.emit()
         self._position()
 
 
