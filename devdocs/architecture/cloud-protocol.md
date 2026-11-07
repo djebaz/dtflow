@@ -87,7 +87,7 @@ Official S3 can query /billing/stripe/payg, read paygEnabled/paygEligible and en
 
 Official code treats non-200 and decoding failures as failure, without a complete stable structured taxonomy. DTFlow maps verified credential/authentication responses to authentication failure; preserves HTTP/gRPC status separately; and leaves unverified quota/storage/billing reasons generic. Never classify every 403 as quota exhaustion or expose a raw response body. Malformed success is protocol failure. No response means no invented status.
 
-On authentication failure, no generation RPC is submitted. After GenerateImage may have started, timeout/network/cancellation is not proof of rejection or stopped compute. An OK terminal status with empty/invalid output still fails the backend completion contract. No automatic retry of ambiguous generation.
+On authentication failure, no generation RPC is submitted. After GenerateImage may have started, timeout/network/cancellation is not proof of rejection or stopped compute. An OK terminal status with empty/invalid output still fails the backend completion contract. No automatic retry of ambiguous generation, with one owner-approved exception (#241): a terminal `INTERNAL` status with "unknown error processing request" and no image gets the one shared automatic retry after a few seconds.
 
 Production cancellation latency, charging/refunds, throttle semantics, generation token lifetime, broad model/LoRA compatibility and remote recovery remain unverified. Sources expose no generation-job lookup/reattachment. Record independently authorized deployed evidence separately from mocks.
 
