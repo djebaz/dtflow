@@ -1,9 +1,10 @@
 """Bounded source timings and one activity-scoped, window-owned GUI heartbeat."""
 
 import logging
+from functools import wraps
 from datetime import UTC, datetime
 from threading import Lock
-from time import monotonic, monotonic_ns
+from time import monotonic, monotonic_ns, thread_time_ns
 
 from PySide6.QtCore import QEvent, QObject, Qt, QTimer, Slot
 
@@ -12,6 +13,7 @@ from dtflow.logging_setup import dev_enabled
 
 log = logging.getLogger(__name__)
 SOURCE_SUMMARY_INTERVAL_S = 60
+GUI_CALLBACK_SLOW_MS = 50
 
 
 class PerfBatchStats:
@@ -68,6 +70,34 @@ class PerfBatchStats:
                 self._emitted[name] = now
         for name, stats in completed:
             source_summary(self.logger, name, stats, namespace=self.namespace)
+
+
+def profile_slow_gui_callback(name: str):
+    """Report only slow, completed GUI callbacks; never alter their result or exception."""
+
+    def decorate(callback):
+        @wraps(callback)
+        def wrapped(*args, **kwargs):
+            if not dev_enabled():
+                return callback(*args, **kwargs)
+            wall_started = monotonic_ns()
+            cpu_started = thread_time_ns()
+            try:
+                return callback(*args, **kwargs)
+            finally:
+                elapsed_ms = (monotonic_ns() - wall_started) / 1_000_000
+                if elapsed_ms >= GUI_CALLBACK_SLOW_MS:
+                    measurement(
+                        log,
+                        "ui.callback_slow",
+                        callback=name,
+                        elapsed_ms=elapsed_ms,
+                        cpu_ms=(thread_time_ns() - cpu_started) / 1_000_000,
+                    )
+
+        return wrapped
+
+    return decorate
 
 
 class GuiHeartbeat(QObject):

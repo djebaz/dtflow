@@ -69,7 +69,7 @@ from dtflow.ui.image_recycle_panel import ImageRecyclePanel
 from dtflow.ui.inline_feedback import InlineFeedback, InlineNotice, confirm_action
 from dtflow.ui.queue_page import QueuePage
 from dtflow.ui.queue_popover import QueuePopover
-from dtflow.ui.performance import GuiHeartbeat
+from dtflow.ui.performance import GuiHeartbeat, profile_slow_gui_callback
 from dtflow.ui.queue_composer import ValueChips
 from dtflow.ui.queue_widgets import SegmentedBar
 from dtflow.ui.run_control import RunControl
@@ -871,6 +871,7 @@ class MainWindow:
         self.activity.unlisten(self._sync_activity_progress)
         # The window owns the settling timer and stops it during destruction.
 
+    @profile_slow_gui_callback("main.sync_run_control")
     def _sync_run_control(self) -> None:
         if self.progress_strip.retired:
             return
@@ -1058,6 +1059,7 @@ class MainWindow:
         self._images_header.setMaximumWidth(300 if narrow else 16777215)
         self._images_header.show()
 
+    @profile_slow_gui_callback("main.sync_activity_progress")
     def _sync_activity_progress(self):
         if self.progress_strip.retired:
             return

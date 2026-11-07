@@ -34,6 +34,7 @@ from PySide6.QtWidgets import (
 from dtflow.persistence.script_library import MAX_VERSIONS, ScriptLibraryError, ScriptVersion
 from dtflow.services.script_inspection import Inspection, inspect_source
 from dtflow.ui.brand import tinted_icon
+from dtflow.ui.performance import profile_slow_gui_callback
 from dtflow.ui.queue_presenter import step_label
 from dtflow.ui.rail_fit import fit_rail
 from dtflow.ui.scripts_editor import ScriptEditor
@@ -2526,6 +2527,7 @@ class ScriptsPage:
 
         self.owner.runner.submit(asyncio.to_thread(read_setup, self._state_dir(), identity), loaded)
 
+    @profile_slow_gui_callback("scripts.submit_setup")
     def _submit_setup(self):
         if self._removing_sha is not None:
             return
@@ -2557,6 +2559,7 @@ class ScriptsPage:
 
         self.run_prepared(self._setup_id, ordinal, answers, started)
 
+    @profile_slow_gui_callback("scripts.live_started")
     def _live_started(self, result, failure, name: str, short: str, cap: int) -> None:
         self._starting = False
         if failure is not None:
@@ -2622,6 +2625,7 @@ class ScriptsPage:
         self._live_reading = True
         self.owner.runner.submit(read_queue_views(self._state_dir(), run["queue_id"]), self._live_read)
 
+    @profile_slow_gui_callback("scripts.live_read")
     def _live_read(self, result, failure) -> None:
         self._live_reading = False
         if self._live_run is None:
@@ -2669,6 +2673,7 @@ class ScriptsPage:
     def _images(paths) -> list[str]:
         return [p for p in paths if isinstance(p, str) and p.lower().endswith((".png", ".jpg", ".jpeg", ".webp"))]
 
+    @profile_slow_gui_callback("scripts.show_live")
     def _show_live(self, key: str, view: dict | None, *, force_view: bool = False) -> None:
         """Present the polled durable state of the run's one queue item. Reads only; never starts or retries anything."""
         run = self._live_run

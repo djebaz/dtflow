@@ -6,6 +6,8 @@ Changes through 5.5.2 are consolidated in [DTFlow 5.5.2](v5.5.2.md). This file t
 
 ## Added
 
+- Development-only `ui.callback_slow` timings now identify Qt callbacks exceeding 50 ms in Script Run, queue dispatch/presentation and shared run controls, recording wall and current-thread CPU time. This narrows the confirmed Scripts UI stall investigation in #261; it does not itself fix the freeze or change generation behavior.
+
 ## Changed
 
 - Development GUI heartbeat monitoring is application-wide and activity-scoped: visible Images browsing or existing in-window execution/progress work, not idle Logs. Restart resets the baseline; `ui.gui_gap` reports the active workspace/operation instead of stale gallery context. Existing benchmark readers retain historical log support without a duplicate producer. This reduces observation scope/noise, not measured stall duration; #263's actual-stall investigation and #261 remain open.

@@ -54,6 +54,7 @@ from dtflow.services.queue_session import (
 )
 from dtflow.services.session import bind_prepared, load_prepared, selection_for
 from dtflow.ui.activity import Activity, RunState
+from dtflow.ui.performance import profile_slow_gui_callback
 from dtflow.ui.activity_strip import activity_strip
 from dtflow.ui.generation_presenter import FormError
 from dtflow.ui.inline_feedback import confirm_action, feedback
@@ -536,6 +537,7 @@ class QueuePage:
             shared = None  # an unreadable settings file leaves the box as it is; saving reports the reason
         return views, detail, shared
 
+    @profile_slow_gui_callback("queue.read_done")
     def _read_done(self, result, failure, epoch: int | None = None) -> None:
         self._reading = False
         if failure is not None:
@@ -592,6 +594,7 @@ class QueuePage:
             self.refresh()  # selection changed during this read: fetch its items even when idle polling is stopped
 
     # -- rendering -------------------------------------------------------------------------------------------------
+    @profile_slow_gui_callback("queue.render")
     def _render(self) -> None:
         page = self.page
         self._render_list()
@@ -781,6 +784,7 @@ class QueuePage:
                 return active
         return self._view()
 
+    @profile_slow_gui_callback("queue.publish_run_state")
     def _publish_run_state(self) -> None:
         if self._activity.generating:
             self._timing_timer.stop()
@@ -2150,6 +2154,7 @@ class QueuePage:
 
         self._runner.submit(work(), done)
 
+    @profile_slow_gui_callback("queue.start_prepared_script")
     def start_prepared_script(self, run_id, ordinal, answers, done):
         """Run Script is the sole point that creates a queue for a preloaded form."""
         from dtflow.services.script_setup import reserve_setup, release_setup
@@ -2195,6 +2200,7 @@ class QueuePage:
                 release_setup(setup)
                 raise
 
+        @profile_slow_gui_callback("queue.prepared_script_created")
         def created(result, failure):
             if failure is not None:
                 done(None, failure)
@@ -2210,6 +2216,7 @@ class QueuePage:
 
         self._runner.submit(work(), created)
 
+    @profile_slow_gui_callback("queue.start_script")
     def start_script(
         self, source: str, source_name: str, max_generations: int, done, expected_steps: int | None = None
     ) -> None:
@@ -2661,6 +2668,7 @@ class QueuePage:
         self.refresh()
 
     # -- dispatch and controls -------------------------------------------------------------------------------------
+    @profile_slow_gui_callback("queue.backend_event")
     def _queue_backend_event(self, wrapped: _QueueBackendEvent) -> None:
         from dtflow.ui.progress_stages import event_stage
 
@@ -2728,6 +2736,7 @@ class QueuePage:
         # A queue that ran before may still be owned by another process; if so, Resume is posted to it instead.
         self._dispatch(view["queue_id"], resume_fallback=view["queue_id"] if self._started(view) else None)
 
+    @profile_slow_gui_callback("queue.dispatch")
     def _dispatch(self, queue_id: str, *, resume_fallback: str | None) -> None:
         """Make this window the dispatch owner of ``queue_id`` (an explicit Start or Start now)."""
         self._resume_fallback = resume_fallback
