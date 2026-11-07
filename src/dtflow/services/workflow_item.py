@@ -18,8 +18,11 @@ Execution model:
   Retry adds that step's own submission to the allowance; automatic retries add ``AUTO_RETRY_ALLOWANCE``.
 - A remote outcome that is not confirmed (attempt ``unknown``) makes its step ``unknown``: never a failure or a
   success, never replayed. Only an explicit Retry submits that step again (a new request identity).
-- Stop (queue ``cancel``) starts nothing new, closes every open pause and lets in-flight generations finish; the
-  steps that never ran end ``cancelled``. Queue Pause holds new submissions until Resume.
+- Stop (queue ``cancel``) starts nothing new, closes every open pause and stops waiting at once (#247): in-flight
+  waits are cancelled locally, like an app close. A step already sent ends ``unknown`` (never replayed; Retry sends it
+  again), the other running and pending steps end ``cancelled``. A step that has not recorded its end after
+  ``STOP_GRACE`` (a local thread that does not return) is abandoned: its lane is released and the run settles anyway,
+  so the queue can be removed. Queue Pause holds new submissions until Resume.
 - The run state is written after every step transition; stage text (from backend events) at most once per poll.
 """
 
@@ -68,6 +71,9 @@ log = logging.getLogger(__name__)
 # Automatic retries a run may add to its planned submissions. 0 until #220 settles one shared cap for every runner;
 # only an explicit Retry raises the allowance today.
 AUTO_RETRY_ALLOWANCE = 0
+# Seconds a cancelled step gets to record its own end after Stop before the run settles without it (#247).
+STOP_GRACE = 5.0
+STOPPED_WAITING = "DTFlow stopped waiting; the image may still complete on the server. Retry sends it again."
 STAGE_TEXT = {
     "submission_possible": "Sending request",
     "terminal": "Saving output",
@@ -238,10 +244,14 @@ class _Execution:
         self.lanes = max(1, min(limit, 10))
         self.graph = None
         self.plan = None
+        self.in_flight: dict[str, list[Key]] = {}  # attempt id -> steps whose generation may have been sent
+        self.closed = False  # the run settled; a step abandoned at Stop may not write over it
 
     # -- run state -------------------------------------------------------------------------------------------------
 
     async def flush(self) -> None:
+        if self.closed:
+            return
         self.dirty = False
         await self.store.update_workflow_run(self.item_id, self.run)
 
@@ -323,7 +333,8 @@ class _Execution:
             while True:
                 actions = await self.store.apply_controls(self.queue_id)
                 if "cancel" in actions:
-                    self.stop()
+                    await self.stop()
+                    break
                 if "pause" in actions:
                     self.go.clear()
                 if "resume" in actions:
@@ -349,18 +360,33 @@ class _Execution:
             raise
         await self.finish()
 
-    async def cancel_tasks(self) -> None:
+    async def cancel_tasks(self, grace: float | None = None) -> None:
+        """Cancel every live step task and wait for them, or at most ``grace`` seconds."""
         tasks = [task for task in self.tasks.values() if not task.done()]
         for task in tasks:
             task.cancel()
-        if tasks:
+        if not tasks:
+            return
+        if grace is None:
             await asyncio.gather(*tasks, return_exceptions=True)
+            return
+        _, left = await asyncio.wait(tasks, timeout=grace)
+        if left:
+            diagnostic_event(log, "workflow.stop_abandoned", level=logging.WARNING, data={"tasks": len(left)})
+
+    async def abandon(self) -> None:
+        """Stop waiting now: cancel in-flight waits and free the lanes of generations that did not settle in time."""
+        self.stopping = True
+        self.go.set()
+        self.close_pauses()
+        await self.cancel_tasks(STOP_GRACE)
+        for attempt_id in list(self.in_flight):
+            # The step's own ``finally`` releases it again when it ever returns; releasing is idempotent.
+            await settle(self.store.release_script_child(self.queue_id, attempt_id))
 
     async def interrupt(self) -> None:
         """This process stops dispatching: in-flight waits are cancelled and recorded honestly, nothing is replayed."""
-        self.stopping = True
-        self.close_pauses()
-        await self.cancel_tasks()
+        await self.abandon()
         await self.finish(interrupted=True)
 
     def halt(self, message: str) -> None:
@@ -374,18 +400,23 @@ class _Execution:
             if not future.done():
                 future.set_result("cancel")
 
-    def stop(self) -> None:
-        """Queue Stop: nothing new starts; open pauses close; in-flight generations finish and stay recorded."""
-        self.stopping = True
-        self.go.set()
-        self.close_pauses()
+    async def stop(self) -> None:
+        """Queue Stop: nothing new starts, open pauses close and in-flight waits end now (#247); never replayed."""
+        await self.abandon()
 
     async def finish(self, *, interrupted: bool = False) -> None:
         stamp = _now()
+        sent = {key for keys in self.in_flight.values() for key in keys}
         for step in self.run["steps"]:
             if step["state"] == "running":
-                # A submitted step already recorded its own end (``submit``); still running means nothing was sent.
-                step.update(state="cancelled", message="DTFlow stopped before this step was sent.", finished_at=stamp)
+                if (step["node_id"], (step["branch"][0], step["branch"][1])) in sent:
+                    # Abandoned at Stop while its generation was out: no confirmed outcome, never replayed.
+                    step.update(state="unknown", message=STOPPED_WAITING, finished_at=stamp)
+                else:
+                    # A submitted step records its own end (``submit``); still running means nothing was sent.
+                    step.update(
+                        state="cancelled", message="DTFlow stopped before this step was sent.", finished_at=stamp
+                    )
             if step["state"] in ("pending", "paused"):
                 step["state"] = "cancelled" if (self.stopping or interrupted) else "stopped"
                 if self.halted and not self.stopping:
@@ -400,6 +431,10 @@ class _Execution:
             state, message = "failed", self.halted
         elif self.stopping or interrupted:
             state, message = "cancelled", "Stopped before every step ran."
+            if any(step["state"] == "unknown" for step in steps):
+                message += (
+                    " A step already sent has no confirmed outcome: its image may still complete; Retry sends it again."
+                )
         elif results and not incomplete:
             state, message = "succeeded", None
         elif results:
@@ -414,6 +449,7 @@ class _Execution:
             message = f"{message} First problem: {problem[0]}"
         self.run.update(state=state, message=message, finished_at=stamp)
         await settle(self.flush())
+        self.closed = True
         diagnostic_event(
             log,
             "workflow.run_settled",
@@ -641,6 +677,7 @@ class _Execution:
                         self.run["submitted"] -= weight
                         await self.end(keys, "cancelled", "Stopped before submission; nothing was sent.")
                         return None
+                self.in_flight[attempt_id] = keys
                 outcome = await session.run_generation(
                     self.runner.service, request, on_event=receive, attempt_id=attempt_id, **options
                 )
@@ -653,7 +690,13 @@ class _Execution:
                     self.end(
                         keys,
                         "unknown" if unknown else "cancelled",
-                        "DTFlow stopped waiting; the request may still complete." if unknown else None,
+                        STOPPED_WAITING
+                        if unknown
+                        else (
+                            "Stopped before submission; nothing was sent."
+                            if attempt is None
+                            else "Stopped; no image was saved for this step."
+                        ),
                     )
                 )
                 raise
@@ -715,6 +758,7 @@ class _Execution:
                     )
             return outcome
         finally:
+            self.in_flight.pop(attempt_id, None)
             if reserved:
                 await settle(self.store.release_script_child(self.queue_id, attempt_id))
 
