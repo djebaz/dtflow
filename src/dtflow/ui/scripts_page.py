@@ -34,6 +34,7 @@ from PySide6.QtWidgets import (
 from dtflow.persistence.script_library import MAX_VERSIONS, ScriptLibraryError, ScriptVersion
 from dtflow.services.script_inspection import Inspection, inspect_source
 from dtflow.ui.brand import tinted_icon
+from dtflow.ui.queue_presenter import step_label
 from dtflow.ui.rail_fit import fit_rail
 from dtflow.ui.scripts_editor import ScriptEditor
 from dtflow.ui.scripts_form import REFERENCE_FORM, ScriptForm
@@ -110,7 +111,7 @@ RUN_STATUSES = {
         "Saved paused · not dispatched",
         "No generation was submitted. Open Queues to Start this saved item when dispatch is available.",
     ),
-    "cancelled_before_start": ("Cancelled before start", "No provider submission and no charge."),
+    "cancelled_before_start": ("Cancelled before start", "Nothing was sent."),
     "running": (
         "Running",
         "Queue item running · generation 3 submitted as a child step · latest committed result below.",
@@ -119,10 +120,10 @@ RUN_STATUSES = {
         "Waiting for your input",
         "The script is paused. A generation already submitted may still complete.",
     ),
-    "stopped": ("Stopped locally", "Remote work may continue; inspect linked attempts."),
+    "stopped": ("Stopped", "A step already sent may still finish."),
     "failed": ("Failed", "See the retained error details in History."),
-    "interrupted": ("Interrupted", "Do not replay unresolved attempts."),
-    "outcome_unknown": ("Outcome unknown", "A submitted attempt may still complete or be billed."),
+    "interrupted": ("Interrupted", "The run ended before the script finished."),
+    "outcome_unknown": ("Outcome unknown", "A step has no confirmed outcome."),
 }
 
 
@@ -450,7 +451,7 @@ class ScriptsPage:
         self.designer.viewUnresolvedRun.clicked.connect(
             lambda: self.owner.inline.notice(
                 "Run #5 · Outcome unknown",
-                "Offline history inspection: generation 3 was submitted in the example and no result was recorded. It may still complete or be billed. A separate new preview run is not a retry; inspecting this notice does not change its state.",
+                "Offline example: step 3 has no confirmed outcome. In a real run the script pauses on that step so you can Retry it or continue.",
                 "info",
             )
         )
@@ -1187,7 +1188,7 @@ class ScriptsPage:
             if live
             else [
                 ("#4 · Succeeded", "0:41", "Queue item q-0004 · 4 child steps · version 9f3a1c2", "ok"),
-                ("#3 · Stopped locally", "0:19", "Queue item q-0003 · 2 child steps · version 9f3a1c2", "warning"),
+                ("#3 · Stopped", "0:19", "Queue item q-0003 · 2 child steps · version 9f3a1c2", "warning"),
                 ("#2 · Failed", "0:13", "Queue item q-0002 · 21 Oct 22:13 · version b81e07d", "error"),
                 ("#1 · Outcome unknown", "", "Queue item q-0001 · 21 Oct 21:58 · version b81e07d", "warning"),
             ]
@@ -1209,7 +1210,7 @@ class ScriptsPage:
         ):
             entries.insert(
                 0,
-                ("#5 · Outcome unknown", "", "Queue item q-0005 · child step 3 unresolved · may be billed", "warning"),
+                ("#5 · Outcome unknown", "", "Queue item q-0005 · step 3 has no confirmed outcome", "warning"),
             )
         if not live and self._run_state == "results" and self._run_number != 4:
             entries.insert(
@@ -1502,7 +1503,7 @@ class ScriptsPage:
         ui.backToFormButton.setVisible(not live)
         ui.checkQueuesButton.setVisible(unresolved or (self._live_mode() and self._run_state in ("queued", "paused")))
         ui.reviewRunButton.setVisible(not live)
-        ui.reviewRunButton.setText("Review and start again" if unresolved else "Run again…")
+        ui.reviewRunButton.setText("Run again…")
         ui.advancePreviewButton.setVisible(self._reference_mode and self._run_state in ("queued", "running"))
         ui.advancePreviewButton.setText(
             "Preview admission"
@@ -1570,15 +1571,15 @@ class ScriptsPage:
     @staticmethod
     def _footer_for(key):
         return (
-            "Stop script in the activity bar ends local waiting; remote work may still complete. Text-only console · last 500 lines kept."
+            "Stop script is in the activity bar; a step already sent may still finish. Text-only console · last 500 lines kept."
             if key in ("running", "waiting_input")
             else "Waiting for admission. Open Queues to cancel safely before submission."
             if key == "queued"
             else "Saved paused. No generation was submitted; open Queues to Start the item when dispatch is free."
             if key == "paused"
-            else "Cancelled before admission. No submission or charge; the example remains in History."
+            else "Cancelled before admission. Nothing was sent; the example remains in History."
             if key == "cancelled_before_start"
-            else "Unresolved previous work may still complete or be billed. Review starts separate work; it never retries that attempt."
+            else "A step has no confirmed outcome. During a run, the script pauses on such a step so you can Retry it."
             if key in ("interrupted", "outcome_unknown")
             else "Review settings before starting a separate run. Existing results and history are retained."
         )
@@ -1735,7 +1736,7 @@ class ScriptsPage:
         ui.waitingHelp.setText(
             "Cancel Setup discards this preparation. No job has been queued."
             if preparing
-            else "Cancel input stops local script waiting. Already submitted remote work may still complete."
+            else "Cancel input stops the script. A step already sent may still finish."
         )
         _feedback(ui.waitingInstructions, "")
         ui.continueInputButton.setText("Continue")
@@ -1795,8 +1796,8 @@ class ScriptsPage:
             self.owner.queue.select_queue(self._live_run["queue_id"])
             return
         self.owner.inline.notice(
-            "Offline linked attempts",
-            "No real queue or durable attempt exists for this preview. The unresolved example remains in Scripts History.",
+            "Offline preview",
+            "No real queue item exists for this preview. The example run remains in Scripts History.",
             "info",
         )
 
@@ -1868,7 +1869,7 @@ class ScriptsPage:
             strip.complete(
                 key,
                 RUN_STATUSES[state][0],
-                "Inspect the retained status in Scripts History; do not replay unknown work.",
+                "See Scripts History for this run.",
                 "error" if state == "failed" else "warning",
             )
 
@@ -2262,7 +2263,7 @@ class ScriptsPage:
         "succeeded": "committed",
         "failed": "failed",
         "cancelled": "stopped",
-        "save_failed": "saved failed · may be billed",
+        "save_failed": "not saved",
         "unknown": "outcome unknown",
         "interrupted_before_submission": "not submitted",
         None: "recorded, no state yet",
@@ -2695,14 +2696,15 @@ class ScriptsPage:
         lines = [f"Script {run['name']} · version {run['sha']} · one queue item {queue_id[:8]}"]
         for child in children:
             lines.append(
-                f"Child step {child['ordinal']} · attempt {child['attempt_id'][:8]} · "
+                f"{step_label(child)} · "
                 + self._STEP_STATES.get(child["state"], str(child["state"]))
+                + (" · retried" if child.get("retried") else "")
                 + self._seconds((child.get("fields") or {}).get("duration"))
             )
         if script.get("elapsed") is not None:
             lines.append(f"Total {script['elapsed']:.1f} s")
         if script.get("steps_failed"):
-            lines.append(f"{script['steps_failed']} step(s) did not complete; the script itself ran on.")
+            lines.append(f"{script['steps_failed']} step(s) did not complete; the script went on.")
         if key == "queued":
             lines.append("Waiting for admission. Nothing submitted.")
         self.console.setPlainText("\n".join(lines))
@@ -2733,7 +2735,7 @@ class ScriptsPage:
     def _populate_live_results(self, children: list, run: dict) -> None:
         self._clear_results()
         for child in children:
-            number = child["ordinal"]
+            number = child.get("step") or child["ordinal"]
             images = self._images(child["artifacts"])
             card = QFrame()
             card.setObjectName("scriptsStepCard")
@@ -2754,7 +2756,9 @@ class ScriptsPage:
             state = self._STEP_STATES.get(child["state"], str(child["state"]))
             details.addWidget(
                 _label(
-                    f"Step {number} · {state}" + self._seconds((child.get("fields") or {}).get("duration")),
+                    f"{step_label(child)} · {state}"
+                    + (" · retried" if child.get("retried") else "")
+                    + self._seconds((child.get("fields") or {}).get("duration")),
                     role="scriptsStepTitle",
                 )
             )
