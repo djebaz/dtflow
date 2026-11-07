@@ -26,11 +26,12 @@ def _safe_thread_stack(frame) -> str:
             break
         module = frame.f_globals.get("__name__", "")
         parts.append(
-            f"{module}.{frame.f_code.co_name}" if isinstance(module, str) and module.startswith("dtflow.") else "external"
+            f"{module}.{frame.f_code.co_name}"
+            if isinstance(module, str) and module.startswith("dtflow.")
+            else "external"
         )
         frame = frame.f_back
     return " > ".join(parts) if parts else "unavailable"
-
 
 
 class PerfBatchStats:
