@@ -276,7 +276,7 @@ class ItemRow:
         if self.state == "succeeded":
             return "No error recorded" if self.outputs else "Succeeded; no saved image verified"
         if self.state in ("failed", "save_failed"):
-            return self.failure_text or self.state_text.capitalize()
+            return self.state_text.capitalize()  # the reason itself is in the outcome note, shown once
         return {
             "unknown": "No result received",
             "running": "In progress",

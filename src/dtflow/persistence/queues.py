@@ -710,7 +710,11 @@ class QueueMixin:
                 "SELECT attempt_id, state, failure_json FROM attempts WHERE request_id=?", (request_id,)
             ).fetchone()
             if attempt is None:
-                state, attempt_id, failure_json = "failed", None, json.dumps(failure or {"code": "not_submitted"})
+                state, attempt_id, failure_json = (
+                    "failed",
+                    None,
+                    json.dumps(failure or {"code": "not_submitted", "message": "Not submitted; nothing was sent."}),
+                )
             else:
                 state = ATTEMPT_TO_ITEM.get(attempt["state"], "unknown")
                 attempt_id, failure_json = attempt["attempt_id"], attempt["failure_json"]
@@ -724,7 +728,9 @@ class QueueMixin:
         """A script item's end state comes from its run row and children, never from a lone attempt."""
         run = read_run_snapshot(self.directory, record["run_id"])
         if run is None:
-            return "failed", json.dumps(failure or {"code": "script_not_started"})
+            return "failed", json.dumps(
+                failure or {"code": "script_not_started", "message": "The script did not start."}
+            )
         state, failure_json = item_outcome(run, child_states(db, run.children))
         return state, failure_json
 
@@ -848,7 +854,10 @@ def _reconcile_script_item(db: sqlite3.Connection, item, record: dict, now: str,
             if run is not None:
                 state, failure_json = item_outcome(run, child_states(db, run.children))
     except Exception:
-        state, failure_json = "unknown", json.dumps({"code": "script_ledger_unreadable"})
+        state, failure_json = (
+            "unknown",
+            json.dumps({"code": "script_ledger_unreadable", "message": "The script run record could not be read."}),
+        )
     db.execute(
         "UPDATE queue_items SET state=?, failure_json=?, updated_at_utc=? WHERE item_id=?",
         (state, failure_json, now, item["item_id"]),
@@ -867,7 +876,11 @@ def _reconcile_workflow_item(db: sqlite3.Connection, item, record: dict, now: st
             failure_json = json.dumps({"code": "workflow_interrupted", "message": record["run"]["message"]})
         stored = json.dumps(record, allow_nan=False)
     except Exception:
-        state, failure_json, stored = "unknown", json.dumps({"code": "workflow_unreadable"}), item["request_json"]
+        state, failure_json, stored = (
+            "unknown",
+            json.dumps({"code": "workflow_unreadable", "message": "The workflow run record could not be read."}),
+            item["request_json"],
+        )
     db.execute(
         "UPDATE queue_items SET state=?, failure_json=?, request_json=?, updated_at_utc=? WHERE item_id=?",
         (state, failure_json, stored, now, item["item_id"]),

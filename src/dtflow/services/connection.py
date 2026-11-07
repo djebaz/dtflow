@@ -116,7 +116,7 @@ def failure_reason(failure) -> str:
     else:
         code, message, pairs = failure.code, failure.message, failure.diagnostics
     try:
-        details = {str(pair[0]): pair[1] for pair in pairs or ()}
+        details = dict(pairs) if isinstance(pairs, Mapping) else {str(pair[0]): pair[1] for pair in pairs or ()}
     except (TypeError, IndexError, KeyError):
         details = {}
     text = details.get("interpretation_message") or details.get("server_message") or message or code
@@ -131,7 +131,7 @@ def _api_explanation(failure) -> str:
 
 
 def _sentence(text: str) -> str:
-    return text if text.endswith((".", "!", "?")) else text + "."
+    return text if not text or text.endswith((".", "!", "?")) else text + "."
 
 
 def present_generation_failure(exc: Exception) -> Presentation:
@@ -171,12 +171,8 @@ def present_generation_failure(exc: Exception) -> Presentation:
                 "error", "Request rejected", f"This provider does not offer {names}.{hint} Nothing was dispatched."
             )
         if failure.category == ErrorCategory.VALIDATION and not api:
-            codes = "; ".join(f"{name}: {code}" for name, code in failure.diagnostics)
-            return Presentation(
-                "error",
-                "Request rejected",
-                f"{_sentence(detail.rstrip('.') + (' (' + codes + ')' if codes else ''))} Nothing was dispatched.",
-            )
+            # Diagnostic pairs (e.g. "phase: generate") are internal; they stay in the details box and logs.
+            return Presentation("error", "Request rejected", f"{_sentence(detail)} Nothing was dispatched.")
         if failure.code == "originals_unavailable":
             return Presentation("error", "Generation not submitted", failure.message)
         if failure.code == "local_save_unavailable":
