@@ -420,7 +420,8 @@ class ScriptHost:
         }[kind]
         if not retry_left:
             detail = f"This run reached its generation limit ({self.max_generations}); it cannot retry."
-        # Continue is the default: pressing the button without choosing never sends the step again.
+        # Scripts shows one button per option (nothing is sent before a click); the field's value is only the
+        # remembered choice that gets focus. Continue comes first, so a headless default never sends the step again.
         options = (
             ["Continue without this image", "Retry with the same settings"]
             if retry_left
@@ -431,7 +432,7 @@ class ScriptHost:
             {"type": "plainText", "value": detail},
             {"type": "segmented", "title": "Next", "options": options, "index": 0},
         ]
-        answers = self._ask(headline, "Apply", components)
+        answers = self._ask(headline, "Apply", components, choices=options)
         self._forms += 1  # the run's form ordinal; script forms resolve their inputs by it
         if answers is None or self.cancel.is_set():
             raise ScriptCancelled()

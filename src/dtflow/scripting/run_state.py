@@ -47,6 +47,9 @@ class ScriptPrompt:
     components: list
     state: str
     refused: dict | None = None  # {"count", "reason"} when the dispatcher refused the last answers sent
+    # A dtFlow-built form whose last field is a choice: Scripts shows one button per choice (answer = its index)
+    # instead of the field and a confirm button. Script-created forms never have it.
+    choices: tuple[str, ...] | None = None
 
 
 def now() -> str:
@@ -91,6 +94,7 @@ def open_prompt_of(run_id: str, run: Any) -> ScriptPrompt | None:
                 list(prompt.get("components") or ()),
                 "open",
                 prompt.get("refused") if isinstance(prompt.get("refused"), dict) else None,
+                tuple(prompt["choices"]) if isinstance(prompt.get("choices"), list) else None,
             )
     return None
 
@@ -213,7 +217,7 @@ class ScriptRun:
 
         return self._commit(change)
 
-    def publish_prompt(self, title: str, confirm: str, components: list) -> int:
+    def publish_prompt(self, title: str, confirm: str, components: list, choices: list[str] | None = None) -> int:
         """Durably open a form and return its ordinal. Any earlier open form of the run is superseded."""
         from dtflow.scripting.forms import bounded_json, validate_components
 
@@ -241,6 +245,7 @@ class ScriptRun:
                     "state": "open",
                     "created_at": at,
                     "answered_at": None,
+                    **({"choices": list(choices)} if choices else {}),
                 }
             )
             return ordinal
@@ -320,10 +325,17 @@ class ScriptRun:
         self.cancel_prompts()
         return None
 
-    def ask(self, title: str, confirm: str, components: list, cancel: threading.Event | None) -> list | None:
+    def ask(
+        self,
+        title: str,
+        confirm: str,
+        components: list,
+        cancel: threading.Event | None,
+        choices: list[str] | None = None,
+    ) -> list | None:
         if cancel is not None and cancel.is_set():
             return None
-        ordinal = self.publish_prompt(title, confirm, components)
+        ordinal = self.publish_prompt(title, confirm, components, choices)
         return self.wait_for_answer(ordinal, cancel if cancel is not None else threading.Event())
 
     def finish(self, state: str, error: str | None = None) -> bool:

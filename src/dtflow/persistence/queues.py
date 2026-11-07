@@ -1710,6 +1710,7 @@ def _script_view(connection: sqlite3.Connection, request: dict) -> dict[str, Any
                 "confirm": prompt.confirm,
                 "components": prompt.components,
                 "refused": prompt.refused,
+                "choices": list(prompt.choices) if prompt.choices else None,
             }
     steps: dict[str, dict[str, Any]] = {}  # attempt id -> its child entry
     for ordinal, attempt_id in enumerate(run.children, 1):

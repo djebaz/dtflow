@@ -231,7 +231,8 @@ class RunContext:
     console: Callable[[str, int], None]
     cancel: threading.Event
     record_answers: Callable[[dict], int]
-    ask: Callable[[str, str, list], list | None]  # publish a form and wait for its answers (None: cancelled or Stopped)
+    # Publish a form and wait for its answers (None: cancelled or Stopped); ``choices`` marks a dtFlow-built choice form.
+    ask: Callable[..., list | None]
     source_sha256: str = ""
 
 
@@ -280,7 +281,9 @@ def run_recorded(
                         dispatcher.log,
                         dispatcher.cancel,
                         run.append_answers,
-                        lambda title, confirm, components: run.ask(title, confirm, components, cancel),
+                        lambda title, confirm, components, choices=None: run.ask(
+                            title, confirm, components, cancel, choices
+                        ),
                         source_sha256=run.source_sha256,
                     )
                 )
