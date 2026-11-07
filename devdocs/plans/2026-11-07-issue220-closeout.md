@@ -1,0 +1,54 @@
+# Issue #220 — acceptance close-out record (#245)
+
+Updated: 2026-11-07. Source: current `main` after the merged #248–#255 sequence, plus the original acceptance criteria in [#220](https://github.com/djebaz/dtflow/issues/220). This is an evidence map, not a claim that all gates have passed.
+
+## Before / after: friction, simplification, benefit, trade-off
+
+| Before | Implemented simplification | User benefit | Deliberate trade-off and retained protection | Evidence |
+| --- | --- | --- | --- | --- |
+| Generate/Queues hid useful provider failures behind internal codes. | Share the original meaningful error and plain outcome wording. | Understand what went wrong without opening diagnostics. | Remote outcome remains unknown when unconfirmed; provider messages are not invented. | [#248](https://github.com/djebaz/dtflow/pull/248) |
+| Retrying Generate reread the edited form; Queues retried by creating another queue. | Retry the recorded request/seed; Queues retries its item in place. | One action without reconstructing settings or duplicating queues. | Retry may consume credits; old attempt evidence remains. | [#251](https://github.com/djebaz/dtflow/pull/251) |
+| No consistent bounded automatic recovery across runners. | A shared one-retry, five-second policy for definite transient failures, plus the owner-approved narrowly matched DT+ gRPC INTERNAL case. | Recover routine transient errors without a second click. | A bounded duplicate submission is possible; ambiguous remote outcomes and hard refusals are not automatically replayed. | [#254](https://github.com/djebaz/dtflow/pull/254), [retry policy](../../src/dtflow/core/retry_policy.py) |
+| Script step failure or uncertainty blocked continued generation. | In-run Retry or Continue; clear status for skipped/unknown steps. | Resume work without restarting a whole script. | A continued unknown remains unknown; explicit retry counts toward the run limit. | [#252](https://github.com/djebaz/dtflow/pull/252) |
+| Scripts kept a second run database and synchronized it with queue state. | Store the run in the queue item and migrate to execution schema 9. | Fewer recovery mechanisms; a single queue-owned history. | A one-way schema upgrade requires a backup; original results and earlier ledger are preserved. | [#253](https://github.com/djebaz/dtflow/pull/253) |
+| Queued edits required extra per-item consent evidence even after Start. | Treat Start as the user's consent while retaining scoped dispatch preparation. | Less internal paperwork with no extra click. | Explicit backend, account, upload and paid-operation boundaries remain. | [#250](https://github.com/djebaz/dtflow/pull/250) |
+
+## Product acceptance criteria — evidence and remaining gates
+
+1. **Before/after inventory:** the table above covers the six implementation slices. **Evidence recorded**; review wording against actual owner experience before final acceptance.
+2. **Easy Retry with original settings:** [#251](https://github.com/djebaz/dtflow/pull/251) implements Generate/Queues; [#252](https://github.com/djebaz/dtflow/pull/252) implements Scripts; Workflows already had in-place step retry. Issue #220 records owner smoke for #251 and #252. **Implementation and reported owner smoke exist.**
+3. **Bounded repeated transient failures:** [#254](https://github.com/djebaz/dtflow/pull/254) introduces `AUTO_RETRIES = 1` and `AUTO_RETRY_DELAY = 5` shared across Generate, Queues, Scripts and Workflows. The PR reports ad-hoc offline `connect_failed`, INTERNAL and lost-connection checks, but explicitly reports no local pytest run. **Need a consolidated recorded offline acceptance run and evidence of the exhausted cap.**
+4. **Remove/consolidate redundant code and tests:** [#253](https://github.com/djebaz/dtflow/pull/253) removes the 550-line `script_runs.py` and separate ledger; [#250](https://github.com/djebaz/dtflow/pull/250) removes per-item permit requirements. The test-suite redundancy audit by protected behavior is **not yet complete**; retain critical concurrency, ownership, migration and durable-result coverage.
+5. **Provenance retained / retries finite:** [#251](https://github.com/djebaz/dtflow/pull/251) retains prior attempts and original settings, [#253](https://github.com/djebaz/dtflow/pull/253) preserves linked script children, and [#254](https://github.com/djebaz/dtflow/pull/254) bounds automatic retries. **Code/PR evidence exists; final acceptance should also check restart, original outputs and migrations.**
+6. **Updated guidance and architecture:** implementation PRs updated the Queues, Scripts, Workflows and backend contract guides. **Final cross-document consistency check remains**, including stale status/history descriptions and this record.
+7. **Representative offline/backend/Windows acceptance:** PRs report some fake/offline scenarios and selected owner smoke, but these were not all performed against this exact close-out branch. **No Windows, real-backend or packaged-executable checks have been performed as part of #245 here.** Record each separately; do not infer one from the others.
+
+## Test-audit rule
+
+Group tests by meaningful behavior rather than aiming for a target count. For each proposed consolidation, record the overlap, the authoritative remaining test, and the concrete failure it continues to catch. Do not remove tests solely because they share words such as `unknown`, `retry`, or `migration`: layers can own different risks. The **408 test functions** in #245 is a dated issue-body count, not a verified current count.
+
+### Coverage that must survive
+
+- Definite failure vs unknown remote outcome; provider message propagation and suppression of speculative quota diagnoses.
+- Original-request manual Retry, including unchanged seed, in-place queue retry and preserved attempt history.
+- One bounded automatic retry and no auto-retry for remote uncertainty, hard refusal, stop or exhausted script/workflow limits.
+- Ownership/slot accounting, stop and cancellation, concurrency bounds and script form/picker state.
+- Schema 8 → 9 upgrade/backups, interrupted-run reconciliation and old images/metadata still available.
+
+## Acceptance evidence ledger
+
+| Check | Recorded result | Provenance / limitation |
+| --- | --- | --- |
+| #251 Generate/Queues manual Retry | Owner smoke reported passed | [#220](https://github.com/djebaz/dtflow/issues/220); specific backend/artifact not specified here |
+| #252 Scripts Retry/Continue | Owner smoke reported passed | [#220](https://github.com/djebaz/dtflow/issues/220); no new #245 run |
+| #253 schema 9 migration and script run durability | Offline scenarios described in PR; merged | [#253](https://github.com/djebaz/dtflow/pull/253); native upgrade and crash acceptance separate |
+| #254 automatic retry cap | Ad-hoc offline cases reported; PR says local tests not run | [#254](https://github.com/djebaz/dtflow/pull/254); repeated transient failure exhaustion still needs explicit acceptance evidence |
+| #245 test audit, complete offline matrix and native/real checks | **Pending** | Do not mark #220 fully accepted before reviewing this evidence |
+
+## Close-out order
+
+1. Audit existing tests for obsolete mechanisms and actual overlap; change only justified assertions/tests.
+2. Reconcile user guides, architecture and current-status docs with merged behavior.
+3. Record reproducible fake/offline scenarios with their results (including repeated failure at the retry cap), plus precise CI commit/check.
+4. Record any separately authorized Windows/real DT+ owner checks as evidence, or leave explicitly unverified.
+5. Only then tick each supported criterion in [#220](https://github.com/djebaz/dtflow/issues/220) with a link to this record or the owning PR. Close #245 and #220 only after all gates are met.
