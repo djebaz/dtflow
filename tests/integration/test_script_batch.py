@@ -261,8 +261,8 @@ async def test_batch_continues_after_confirmed_backend_failure(tmp_path, monkeyp
 
 
 @pytest.mark.asyncio
-async def test_batch_unknown_outcome_stops_future_submissions(tmp_path, monkeypatch):
-    """Unknown remote results stop intake and leave later jobs explicitly not started."""
+async def test_batch_unknown_outcome_does_not_stop_later_jobs(tmp_path, monkeypatch):
+    """An unknown remote result keeps its own status; later jobs still run (#220)."""
     from dtflow.core.models import BackendError, BackendFailure, ErrorCategory, RemoteOutcome
     from dtflow.scripting import host as host_module
 
@@ -294,11 +294,11 @@ async def test_batch_unknown_outcome_stops_future_submissions(tmp_path, monkeypa
     )
     jobs = [ResolvedGenerationRequest(uuid4().hex, "fixture", "fake-fixture", seed) for seed in (1, 2, 3)]
     results = await host._run_batch(jobs, [None] * len(jobs), 1)
-    assert [r["status"] for r in results] == ["unknown", "not_started", "not_started"]
+    assert [r["status"] for r in results] == ["unknown", "unknown", "unknown"]
     assert results[0]["error"] == "fixture_uncertain"
-    assert submitted == [1]
-    assert len(linked) == 1
-    assert host._blocked is not None
+    assert submitted == [1, 2, 3]
+    assert len(linked) == 3
+    assert host._blocked is None
 
 
 def test_parallel_child_ordinal_allocation_is_atomic(tmp_path):
