@@ -16,7 +16,7 @@ Updated: 2026-11-07 for [5.5.0 preparation](plans/2026-11-07-release-5.5.0.md), 
 
 ## Delivered additions
 
-- **Bottom-bar DT+ counter refresh:** activity-driven local saved-evidence refresh is no longer gated on Connection being visible. The offline preview definition includes an updated count outside Connection; no renders or post-fix tests were run, and native acceptance remains unverified.
+- **PR #246, pending — Bottom-bar DT+ counter refresh:** activity-driven local saved-evidence refresh is no longer gated on Connection being visible. The offline preview definition includes an updated count outside Connection; no renders or post-fix tests were run, and native acceptance remains unverified.
 
 - **PR #238, pending:** Workflows bind existing custom cloud LoRA receipts independently of Generate and honor Pause/Stop after binding. The owner smoke confirms the original LoRA binding fix; later warning presentation is separate: missing-receipt/unknown-availability advisories use a transient overlay, retained workflow output/node warnings and queue activity logs, with privacy-safe diagnostic summaries. Offline warning fixtures are defined for Actions, not locally rendered. No tests added/run locally; CI and native warning-UI acceptance remain separate. [Scoped plan](plans/2026-11-07-workflow-cloud-lora-receipts.md).
 

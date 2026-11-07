@@ -18,5 +18,5 @@ Changes through 5.5.0 are consolidated in [DTFlow 5.5.0](v5.5.0.md). This file t
 
 ## Release audit
 
-- PRs: #238
+- PRs: #238, #246
 - Scope: Workflow-only prepared custom cloud LoRA receipt binding, Pause-after-binding admission, invalid-receipt recovery guidance and retained missing-receipt warning presentation; global bottom-bar DT+ counter refresh; offline render definitions for GitHub Actions. No provider uploads or automatic replay.
