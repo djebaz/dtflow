@@ -24,6 +24,7 @@ from PySide6.QtWidgets import (
 
 from dtflow.core.models import LoRASelection
 from dtflow.ui.lora_selection_editor import edit_lora_selection
+from dtflow.ui.performance import profile_slow_gui_callback
 from dtflow.ui.search_select import choose_searchable
 
 # Offered size choices besides the Generate size; every value is a multiple of 64, and custom WIDTHxHEIGHT is allowed.
@@ -80,6 +81,7 @@ class FlowLayout(QLayout):
     def hasHeightForWidth(self):
         return True
 
+    @profile_slow_gui_callback("composer.flow_height_for_width")
     def heightForWidth(self, width):
         return self._arrange(QRect(0, 0, width, 0), apply=False)
 
@@ -151,9 +153,11 @@ class ValueChips(QWidget):
     def heightForWidth(self, width: int) -> int:
         return self._layout.heightForWidth(width)
 
+    @profile_slow_gui_callback("composer.value_chips_size_hint")
     def sizeHint(self) -> QSize:
-        width = max(self.width(), 240)
-        return QSize(width, self._layout.heightForWidth(width))
+        # A preferred size must not depend on the widget's changing startup width.
+        # Qt uses heightForWidth() to calculate the actual height of wrapped chips.
+        return QSize(240, self._add.sizeHint().height())
 
     # -- configuration ---------------------------------------------------------------------------------------------
     def configure(
