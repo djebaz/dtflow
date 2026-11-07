@@ -215,6 +215,8 @@ def test_model_keeps_order_and_updates_only_the_changed_row_out_of_order(qtbot):
 
 
 def test_unknown_outcome_does_not_block_and_is_never_replayed(window, qtbot, tmp_path):
+    window.form.show()
+    window.form.queueNavigationButton.click()
     state = window.state_dir
     window.runner.submit(
         create_queue(
@@ -238,6 +240,8 @@ def test_unknown_outcome_does_not_block_and_is_never_replayed(window, qtbot, tmp
 
 
 def test_restart_restores_a_reserved_item_as_pending_in_a_paused_queue(window, qtbot):
+    window.form.show()
+    window.form.queueNavigationButton.click()
     from dtflow.persistence.store import SQLiteAttempts
 
     async def crash_then_reopen(state):
@@ -284,20 +288,37 @@ def test_concurrency_threshold_color_and_shared_setting(window, qtbot):
 
 
 def test_new_queue_selection_resets_filters_and_reads_items_without_idle_polling(window, qtbot):
-    """Selection after creation clears queue-scoped filters and loads detail even while the page is hidden."""
-    page = window.queue_page
+    """Selection and detail update while hidden; Queues renders the latest items when opened."""
+    page, queue = window.queue_page, window.queue
     page.createQueueButton.click()
-    qtbot.waitUntil(lambda: page.queueItemsView.model().rowCount() == 1, timeout=5000)
-    first = window.queue._selected
+    qtbot.waitUntil(
+        lambda: (
+            queue._view() is not None
+            and queue._detail_for(queue._view()) is not None
+            and len(queue._detail_for(queue._view())["items"]) == 1
+        ),
+        timeout=5000,
+    )
+    assert page.queueItemsView.model().rowCount() == 0  # no hidden redraw
+    first = queue._selected
     page.failedFilterButton.setChecked(True)
     page.queueCountSpinBox.setValue(2)
     page.createQueueButton.click()
     qtbot.waitUntil(
-        lambda: window.queue._selected != first and page.queueItemsView.model().rowCount() == 2, timeout=5000
+        lambda: (
+            queue._selected != first
+            and queue._view() is not None
+            and queue._detail_for(queue._view()) is not None
+            and len(queue._detail_for(queue._view())["items"]) == 2
+        ),
+        timeout=5000,
     )
     assert not page.failedFilterButton.isChecked()
+    assert not queue._timer.isActive()  # hidden idle Queues does not poll
+    window.form.show()
+    window.form.queueNavigationButton.click()
+    qtbot.waitUntil(lambda: page.queueItemsView.model().rowCount() == 2, timeout=5000)
     assert not any(page.queueItemsView.isRowHidden(row) for row in range(2))
-    assert not window.queue._timer.isActive()
 
 
 def test_queue_timing_reaches_bar_and_tooltip_without_changing_real_progress(window, qtbot, monkeypatch):
@@ -306,6 +327,7 @@ def test_queue_timing_reaches_bar_and_tooltip_without_changing_real_progress(win
     from dtflow.ui.activity_strip import activity_strip
 
     window.show()
+    window.form.queueNavigationButton.click()
     page, queue = window.queue_page, window.queue
     strip = activity_strip(page)
     monkeypatch.setattr(strip, "_bar_rect", lambda: QRect(12, 2, 760, 20))
