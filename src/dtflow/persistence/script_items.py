@@ -1,8 +1,9 @@
 """A script run as one queue item: the stored record, content-addressed source, and the run-state to item-state mapping.
 
 The item's ``request_json`` is a script request record (``kind`` ``script``), not a generation request. It names its run
-(``run_id``) before anything starts; the run's own ledger lives in ``script_runs.sqlite3`` and is only ever *read* here
-(never written), because the two stores are separate files with no shared transaction.
+(``run_id``) before anything starts, and keeps the run itself under ``run`` once it has started (#243): its state, its
+child attempts in call order, its forms and the answers given. Only the dispatch owner writes it
+(``update_script_run``); there is no separate run store.
 """
 
 from __future__ import annotations
@@ -11,7 +12,6 @@ import hashlib
 import json
 import re
 import sqlite3
-from contextlib import closing
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -158,30 +158,21 @@ class RunSnapshot:
     finished_at: str | None = None
 
 
-def read_run_snapshot(directory: Path, run_id: str) -> RunSnapshot | None:
-    """The run row and its ordered children, read-only; ``None`` when no such run exists (it never started)."""
-    path = Path(directory) / "script_runs.sqlite3"
-    if not path.is_file():
+def run_snapshot(run: Any) -> RunSnapshot | None:
+    """The parts of a stored run (``request_json["run"]``) that decide its item; ``None`` when it is not readable."""
+    if not isinstance(run, dict) or not isinstance(run.get("state"), str):
         return None
-    with closing(sqlite3.connect(path.resolve().as_uri() + "?mode=ro", uri=True, timeout=2.0)) as connection:
-        connection.execute("PRAGMA query_only=ON")
-        try:
-            row = connection.execute(
-                "SELECT state, error, created_at, finished_at FROM script_runs WHERE run_id=?", (run_id,)
-            ).fetchone()
-            if row is None:
-                return None
-            children = tuple(
-                r[0]
-                for r in connection.execute(
-                    "SELECT attempt_id FROM script_run_children WHERE run_id=? ORDER BY ordinal", (run_id,)
-                )
-            )
-        except sqlite3.OperationalError as exc:
-            if "no such table" in str(exc):
-                return None
-            raise
-    return RunSnapshot(row[0], row[1], children, row[2], row[3])
+    children = run.get("children") or []
+    if not isinstance(children, list) or not all(isinstance(child, str) for child in children):
+        return None
+    error = run.get("error")
+    return RunSnapshot(
+        run["state"],
+        error if isinstance(error, str) else None,
+        tuple(children),
+        run.get("created_at") if isinstance(run.get("created_at"), str) else None,
+        run.get("finished_at") if isinstance(run.get("finished_at"), str) else None,
+    )
 
 
 #: Request evidence naming the attempt a retried step replaces (written by ``ScriptHost``).

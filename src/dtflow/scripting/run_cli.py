@@ -2,6 +2,10 @@
 
 Running a script can generate (and, on local/cloud backends, spend credits), so it needs ``--run`` and an explicit
 ``--backend``; ``fake`` is the offline fixture. The starting settings come from the same options as ``dtflow generate``.
+
+Without ``--queue`` the run's state lives in memory for the command's lifetime (#243: there is no separate run store);
+each child attempt is still created in the attempt store before it is submitted, and the report lists them. With
+``--queue`` the run is a queue item and keeps its state there.
 """
 
 from __future__ import annotations
@@ -11,13 +15,13 @@ import asyncio
 import json
 import sys
 import threading
+import uuid
 from pathlib import Path
 
 from dtflow.core.models import TimeoutPolicy, ValidationError
-from dtflow.persistence.script_runs import ScriptRunStore
 from dtflow.scripting.engine import MAX_SOURCE_BYTES
 from dtflow.scripting.host import ScriptHost, script_hooks, starting_context
-from dtflow.scripting.runner import check_syntax, run_recorded
+from dtflow.scripting.runner import check_syntax, new_script_run, run_recorded
 from dtflow.services.session import open_session, selection_for
 
 
@@ -69,7 +73,14 @@ async def run_script_file(args: argparse.Namespace, *, exit_ok: int, exit_failed
         )
         print(json.dumps({"queue_id": queue_id, "run_id": run_id, "state": "paused", "items": 1, "cap": 1}))
         return exit_ok
-    store = ScriptRunStore(args.state)
+    run = new_script_run(
+        uuid.uuid4().hex,
+        source,
+        source_name=Path(args.file).name,
+        context_json=json.dumps(
+            starting_context(base, backend=args.backend, max_generations=args.max_generations, answers=answers)
+        ),
+    )
     cancel = threading.Event()
     loop = asyncio.get_running_loop()
     selection = selection_for(args.backend, args.endpoint, args.state)
@@ -88,19 +99,7 @@ async def run_script_file(args: argparse.Namespace, *, exit_ok: int, exit_failed
     async with open_session(
         selection, args.state, output=args.outputs, timeouts=TimeoutPolicy(total=args.timeout)
     ) as service:
-        task = asyncio.ensure_future(
-            asyncio.to_thread(
-                run_recorded,
-                store,
-                source,
-                hooks,
-                source_name=Path(args.file).name,
-                cancel=cancel,
-                context_json=json.dumps(
-                    starting_context(base, backend=args.backend, max_generations=args.max_generations, answers=answers)
-                ),
-            )
-        )
+        task = asyncio.ensure_future(asyncio.to_thread(run_recorded, run, source, hooks, cancel=cancel))
         interrupted = False
         try:
             run_id, result = await asyncio.shield(task)

@@ -8,6 +8,8 @@ Changes through 5.5.0 are consolidated in [DTFlow 5.5.0](v5.5.0.md). This file t
 
 ## Changed
 
+- Scripts keep a run in its queue item (#243, part of #220). The separate `script_runs.sqlite3` run database, its per-run lock files and the `script_child_slots` table are gone; child links, forms and answers are written into the item by the dispatch owner before they take effect, and crash recovery is the one queue reconcile (a running run becomes interrupted, `unknown` while a step is unresolved, never replayed). Form answers from another process (Scripts, `dtflow script --answer-run`) are posted as queue controls and checked again before the script sees them. **One-way upgrade to attempts schema 9**: the existing database is backed up first, each script item's run is copied from the old file (left untouched and no longer written), and older DTFlow versions refuse the upgraded state. `dtflow script --run` without `--queue` now keeps its run in memory for the command.
+
 ## Fixed
 
 - The bottom-bar DT+ completed-image counter now schedules its local saved-evidence refresh on activity changes from every workspace, rather than only while Connection is open. No provider polling or generation behavior changes.

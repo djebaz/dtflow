@@ -5,7 +5,7 @@ Qt GUI thread, never the JavaScript child); work that needs the asyncio service 
 there. Rules kept here:
 
 * A ``generateImage`` call becomes one ``ResolvedGenerationRequest`` through the normal generation path
-  (``run_generation``), after its attempt id has been linked in the ScriptRun ledger and before anything is submitted.
+  (``run_generation``), after its attempt id has been linked in the run (kept in its queue item) and before anything is submitted.
 * Stop only stops *waiting*. The in-flight attempt is never cancelled remotely, never retried automatically and stays
   durable; the caller drains ``pending`` before closing the service.
 * A step that fails or ends with no confirmed outcome does not block the rest of the run. In a run answered in Scripts
@@ -554,13 +554,13 @@ class ScriptHost:
                             return
                     if not intake_open or self.cancel.is_set():
                         return
-                    # The ScriptRun ledger is independent of the attempts SQLite owner.
+                    # Linking writes the run through the state owner; never block the loop on it.
                     await asyncio.to_thread(self._link_child, attempt_id)
                     linked = True
                     self.steps += 1
                     self.attempts.append(attempt_id)
                     # Keep the identity even if another worker closed intake
-                    # while the independent ledger writer was linking this job.
+                    # while the run writer was linking this job.
                     results[index]["attemptId"] = attempt_id
                     if not intake_open or self.cancel.is_set():
                         return
@@ -619,7 +619,7 @@ class ScriptHost:
                     raise
                 except Exception as exc:
                     intake_open = False
-                    self._blocked = "A batch reservation or ledger operation failed; no more jobs."
+                    self._blocked = "A batch reservation or run record failed; no more jobs."
                     results[index] = {
                         "status": "failed",
                         "attemptId": attempt_id if linked else None,

@@ -15,7 +15,6 @@ from pathlib import Path
 
 from dtflow.core.image_inputs import IMAGE_BYTE_LIMIT, ImageInputSnapshot
 from dtflow.core.models import ValidationError
-from dtflow.persistence.script_runs import ScriptRunStore, read_open_prompt, read_recalled_answers
 from dtflow.scripting.forms import (
     MAX_ANSWER_BYTES,
     MAX_IMAGES,
@@ -29,6 +28,7 @@ from dtflow.scripting.forms import (
 )
 from dtflow.services.image_inputs import restore_image_inputs, snapshot_image_inputs
 from dtflow.services.image_preparation import prepare_image_bytes, prepare_script_image_bytes, prepare_script_image_file
+from dtflow.services.script_runs import prompt_input, read_open_prompt, recalled_answers, register_prompt_input
 
 IMAGE_SUFFIXES = frozenset({".png", ".jpg", ".jpeg", ".webp"})
 
@@ -54,7 +54,7 @@ def read_script_form(state: Path, run_id: str, ordinal: int) -> dict | None:
     visit(prompt.components)
     return {
         "prompt": prompt,
-        "answers": read_recalled_answers(state, run_id, prompt.components),
+        "answers": recalled_answers(state, run_id, prompt.components),
         "thumbnails": thumbnails,
     }
 
@@ -126,7 +126,6 @@ def snapshot_picked_inputs(state: Path, run_id: str, ordinal: int, field: tuple,
                     if len(selected) > MAX_IMAGES:
                         raise ValidationError(f"Folder has over {MAX_IMAGES} images; choose a smaller input folder.")
         sources = sorted(selected)
-    store = ScriptRunStore(state)
     records = []
     crops = []
     total = 0
@@ -153,11 +152,11 @@ def snapshot_picked_inputs(state: Path, run_id: str, ordinal: int, field: tuple,
                 stream.flush()
                 os.fsync(stream.fileno())
         record = {"directory": name, "snapshots": [asdict(s) for s, _ in records], "crops": crops}
-        return [store.register_prompt_input(run_id, ordinal, field, kind, record)]
+        return [register_prompt_input(state, run_id, ordinal, field, kind, record)]
     # Refuse an answer that would exceed the existing bridge before enabling Continue.
     bounded_json(["data:image/png;base64," + base64.b64encode(b).decode("ascii") for _, b in records], MAX_ANSWER_BYTES)
     return [
-        store.register_prompt_input(run_id, ordinal, field, kind, {"snapshot": asdict(s), "crop": crop})
+        register_prompt_input(state, run_id, ordinal, field, kind, {"snapshot": asdict(s), "crop": crop})
         for (s, _), crop in zip(records, crops, strict=True)
     ]
 
@@ -190,10 +189,9 @@ def _check_image_multiple(prepared, spec):
 
 def resolve_form_inputs(state: Path, run_id: str, ordinal: int, components: list, answers: list) -> list:
     """Revalidate owned capability provenance and content before any host reply."""
-    store = ScriptRunStore(state)
 
     def origin(path, kind, token):
-        store.prompt_input(run_id, ordinal, path, kind, token)
+        prompt_input(state, run_id, ordinal, path, kind, token)
 
     validate_answers(components, answers, origin=origin)
     answers = crop_inline_form_images(components, answers)
@@ -211,7 +209,7 @@ def resolve_form_inputs(state: Path, run_id: str, ordinal: int, components: list
                     if not input_token(token):
                         resolved.append(token)
                         continue
-                    record = store.prompt_input(run_id, ordinal, here, kind, token)
+                    record = prompt_input(state, run_id, ordinal, here, kind, token)
                     prepared = restore_image_inputs(state, ImageInputSnapshot.from_record(record["snapshot"]))
                     _check_image_multiple(prepared, spec)
                     resolved.append(
@@ -219,7 +217,7 @@ def resolve_form_inputs(state: Path, run_id: str, ordinal: int, components: list
                     )
                 value = resolved
             elif kind == "directory" and value:
-                record = store.prompt_input(run_id, ordinal, here, kind, value)
+                record = prompt_input(state, run_id, ordinal, here, kind, value)
                 target = _owned_directory(state, run_id, record["directory"])
                 for index, snapshot in enumerate(record["snapshots"], 1):
                     prepared = restore_image_inputs(state, ImageInputSnapshot.from_record(snapshot))

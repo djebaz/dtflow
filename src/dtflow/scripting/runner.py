@@ -25,7 +25,7 @@ from typing import Any
 
 from dtflow.diagnostics import event as diagnostic_event
 from dtflow.scripting.containment import contain_child
-from dtflow.persistence.script_runs import ScriptRunStore
+from dtflow.scripting.run_state import Persist, ScriptRun, new_run
 from dtflow.scripting.engine import MAX_CALL_BYTES, ScriptLimits, api_version, shared_script_sha256
 from dtflow.scripting.hooks import HOOKS, UNSUPPORTED
 from dtflow.scripting.worker import main as worker_main
@@ -224,7 +224,7 @@ def run_script(
 
 @dataclass(frozen=True, slots=True)
 class RunContext:
-    """What a hook factory gets from ``run_recorded``: the ledger link, the answers record, the console and the Stop event."""
+    """What a hook factory gets from ``run_recorded``: the run link, the answers record, the console and the Stop event."""
 
     run_id: str
     link_child: Callable[[str], int]
@@ -235,34 +235,40 @@ class RunContext:
     source_sha256: str = ""
 
 
+def new_script_run(
+    run_id: str, source: str, *, source_name: str, context_json: str = "{}", persist: Persist | None = None
+) -> ScriptRun:
+    """A run in its starting state; with ``persist`` every change is written to its queue item first."""
+    return ScriptRun(
+        run_id,
+        new_run(
+            source_name=source_name,
+            source_sha256=hashlib.sha256(source.encode("utf-8")).hexdigest(),
+            api_version=api_version(source),
+            vendored_js_sha256=shared_script_sha256(),
+            context=json.loads(context_json),
+        ),
+        persist,
+    )
+
+
 def run_recorded(
-    store: ScriptRunStore,
+    run: ScriptRun,
     source: str,
     implementations: Mapping[str, Callable[..., Any]]
     | Callable[[RunContext], Mapping[str, Callable[..., Any]]]
     | None = None,
     *,
-    source_name: str,
-    answers_json: str = "[]",
-    context_json: str = "{}",
     limits: ScriptLimits | None = None,
     cancel: threading.Event | None = None,
-    run_id: str | None = None,
 ) -> tuple[str, RunResult]:
-    """Run a script and keep its durable ledger row in step: created (and owned) before the child starts, settled from
-    the result afterwards, and settled as failed if anything raises. Returns ``(run_id, result)``.
+    """Run a script and keep its run state in step: written before the child starts, settled from the result afterwards,
+    and settled as failed if anything raises. Returns ``(run_id, result)``.
 
     ``implementations`` may be a callable taking a ``RunContext``; hooks that submit work call ``link_child`` before
-    submitting so the child attempt is recorded first. A run that was already interrupted is left as it is."""
-    run_id = store.create(
-        source_name=source_name,
-        source_sha256=hashlib.sha256(source.encode("utf-8")).hexdigest(),
-        api_version=api_version(source),
-        vendored_js_sha256=shared_script_sha256(),
-        answers_json=answers_json,
-        context_json=context_json,
-        run_id=run_id,
-    )
+    submitting so the child attempt is recorded first. A run that is no longer running is left as it is."""
+    run_id = run.run_id
+    run.begin()
     state, error = "failed", "Script run ended unexpectedly."
     try:
         hooks = (
@@ -270,12 +276,12 @@ def run_recorded(
                 lambda dispatcher: implementations(
                     RunContext(
                         run_id,
-                        lambda attempt: store.link_child(run_id, attempt),
+                        run.link_child,
                         dispatcher.log,
                         dispatcher.cancel,
-                        lambda entry: store.append_answers(run_id, entry),
-                        lambda title, confirm, components: _ask(store, run_id, title, confirm, components, cancel),
-                        source_sha256=hashlib.sha256(source.encode("utf-8")).hexdigest(),
+                        run.append_answers,
+                        lambda title, confirm, components: run.ask(title, confirm, components, cancel),
+                        source_sha256=run.source_sha256,
                     )
                 )
             )
@@ -290,23 +296,14 @@ def run_recorded(
         raise
     finally:
         try:
-            store.cancel_prompts(run_id)  # a form left open by a stopped or ended run is resolved, never left waiting
+            run.cancel_prompts()  # a form left open by a stopped or ended run is resolved, never left waiting
         except Exception:
             log.exception("Script run %s: open forms could not be resolved.", run_id)
         try:
-            if not store.finish(run_id, state, error):
-                log.warning("Script run %s was no longer running when it finished; its ledger state was kept.", run_id)
-        except Exception:  # never mask the script's own outcome or error; the row stays recoverable as interrupted
-            log.exception(
-                "Script run %s could not be settled in the ledger; it will be recovered as interrupted.", run_id
-            )
-
-
-def _ask(store: ScriptRunStore, run_id: str, title: str, confirm: str, components: list, cancel) -> list | None:
-    if cancel is not None and cancel.is_set():
-        return None
-    ordinal = store.open_prompt(run_id, title, confirm, components)
-    return store.wait_for_answer(run_id, ordinal, cancel if cancel is not None else threading.Event())
+            if not run.finish(state, error):
+                log.warning("Script run %s was no longer running when it finished; its state was kept.", run_id)
+        except Exception:  # never mask the script's own outcome or error; the item reconcile recovers it as interrupted
+            log.exception("Script run %s could not be settled; it will be recovered as interrupted.", run_id)
 
 
 def _linux_contained() -> bool:

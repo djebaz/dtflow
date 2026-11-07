@@ -57,7 +57,7 @@ Genuinely missing files still need the existing explicit Prepare workflow. Scrip
 
 ## State and acceptance
 
-PR #218 upgrades the attempts database to schema 6 for script child reservations, using the existing backup-then-transactional migration. Older writers refuse newer schemas; do not downgrade an active database. Restart clears stale lane reservations without replaying uncertain children. The ScriptRun ledger remains separate. Back up valuable runtime state before upgrading, and never use a database rollback as authorization to resubmit uncertain work.
+PR #218 upgrades the attempts database to schema 6 for script child reservations, using the existing backup-then-transactional migration. Older writers refuse newer schemas; do not downgrade an active database. Restart clears stale lane reservations without replaying uncertain children. Since schema 9 (#243) the run itself is kept in its queue item and the lanes in the item; there is no separate `script_runs.sqlite3` any more (an existing one is copied in once and left untouched). Back up valuable runtime state before upgrading, and never use a database rollback as authorization to resubmit uncertain work.
 
 CI at runtime head `0465f3d` checked out that exact commit and reports 697 passed, 3 skipped; format and lint also passed in [run 41613970580](https://github.com/djebaz/dtflow/actions/runs/41613970580). UI rendering was skipped. This does not establish exhaustive fault coverage, Draw Things fallback acceptance, provider concurrency, Windows/DPI, packaged execution or checkpoint/LoRA compatibility. Those remain owner-controlled gates, separate from squash merge.
 
