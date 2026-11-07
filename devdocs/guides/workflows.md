@@ -17,7 +17,8 @@ is the V1 specification; the file contract is [architecture/workflows.md](../arc
   again. In a small window with the library open, the workflow name moves above the toolbar buttons.
 - **Canvas (centre):** wheel zooms, left-drag pans, Shift-drag selects, F fits, Ctrl+Z/Ctrl+Y undo/redo. Fit never
   zooms out below 75 %, so node text stays readable; a larger workflow then shows from its left end (the wheel zooms
-  further out). Double-click empty canvas, or press Tab, to open a searchable list of node types; Enter or a click adds
+  further out). Select a node and press Delete to remove it and its connections; Ctrl+Z restores the deletion.
+  Double-click empty canvas, or press Tab, to open a searchable list of node types; Enter or a click adds
   the chosen node at that point, Esc closes the list. Only matching IMAGE/MASK ports connect, and connections that
   would make a cycle are refused.
 - **Inspector (right):** the selected node's settings. It stays visible at every window width. Every generative node
