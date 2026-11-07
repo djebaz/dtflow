@@ -1161,6 +1161,9 @@ class GenerationPage:
     def _event(self, event: BackendEvent) -> None:
         if not self._generating:
             return  # a late event after completion never changes the settled view
+        if event.kind == "preparing" and event.stage == "retrying" and self._request is not None:
+            # The one automatic retry (#241) runs under a new request identity; Stop reads that attempt's evidence.
+            self._request = replace(self._request, request_id=event.request_id)
         label = event.stage if event.kind == "progress" else {"preview": "first preview"}.get(event.kind, event.kind)
         if label:
             self._stage_seen.setdefault(label, time.monotonic() - self._stage_started)

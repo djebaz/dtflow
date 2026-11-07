@@ -15,9 +15,12 @@ Execution model:
   ``max_concurrency``. Lanes are released when the generation settles, whatever its outcome.
 - The loop guard counts submitted images (a Generate counts its whole batch, an image step one). A submission that
   would pass the planned total plus the retry allowance is refused, the run stops and ends ``failed``. Each explicit
-  Retry adds that step's own submission to the allowance; automatic retries add ``AUTO_RETRY_ALLOWANCE``.
+  Retry adds that step's own submission to the allowance; the shared automatic retry (``core.retry_policy``,
+  #241) adds ``AUTO_RETRIES`` per planned submission.
 - A remote outcome that is not confirmed (attempt ``unknown``) makes its step ``unknown``: never a failure or a
-  success, never replayed. Only an explicit Retry submits that step again (a new request identity).
+  success, never replayed. Only an explicit Retry submits that step again (a new request identity), except the one
+  case ``auto_retryable`` accepts (DT+ ended the call itself with no image). A definite transient failure gets the
+  same one automatic retry after a short wait, as a new attempt under a new request identity.
 - Stop (queue ``cancel``) starts nothing new, closes every open pause and stops waiting at once (#247): in-flight
   waits are cancelled locally, like an app close. A step already sent ends ``unknown`` (never replayed; Retry sends it
   again), the other running and pending steps end ``cancelled``. A step that has not recorded its end after
@@ -38,6 +41,7 @@ from typing import Any
 from uuid import uuid4
 
 from dtflow.core.models import BackendError, BackendEvent, RemoteOutcome, ValidationError
+from dtflow.core.retry_policy import AUTO_RETRIES, AUTO_RETRY_DELAY, RETRY_STAGE, auto_retry_request, auto_retryable
 from dtflow.core.tasks import settle
 from dtflow.core.workflows import (
     DETECT_FACE,
@@ -68,9 +72,6 @@ from dtflow.services.workflow_queue import (
 
 log = logging.getLogger(__name__)
 
-# Automatic retries a run may add to its planned submissions. 0 until #220 settles one shared cap for every runner;
-# only an explicit Retry raises the allowance today.
-AUTO_RETRY_ALLOWANCE = 0
 # Seconds a cancelled step gets to record its own end after Stop before the run settles without it (#247).
 STOP_GRACE = 5.0
 STOPPED_WAITING = "DTFlow stopped waiting; the image may still complete on the server. Retry sends it again."
@@ -254,7 +255,8 @@ class _Execution:
         self.go = asyncio.Event()
         self.go.set()
         self.dirty = False
-        self.allowance = request.planned + AUTO_RETRY_ALLOWANCE
+        # Each planned submission may get the shared automatic retry (#241): at most planned x 2 before any Retry.
+        self.allowance = request.planned * (1 + AUTO_RETRIES)
         limit = runner.service.backend.capabilities.max_concurrency
         self.lanes = max(1, min(limit, 10))
         self.graph = None
@@ -649,12 +651,12 @@ class _Execution:
             self.run["submitted"] -= weight
             await self.end(keys, "cancelled", "Stopped before submission; nothing was sent.")
             return None
-        attempt_id = uuid4().hex
+        lane = attempt_id = uuid4().hex  # the lane keeps the first attempt's id across an automatic retry
         reserved = False
         try:
             while True:
                 try:
-                    reserved = await self.store.reserve_script_child(self.queue_id, attempt_id, self.lanes, self.lanes)
+                    reserved = await self.store.reserve_script_child(self.queue_id, lane, self.lanes, self.lanes)
                 except QueueError:
                     reserved = False  # paused or settling queue: wait, Stop ends the wait
                 if reserved:
@@ -698,10 +700,32 @@ class _Execution:
                         self.run["submitted"] -= weight
                         await self.end(keys, "cancelled", "Stopped before submission; nothing was sent.")
                         return None
-                self.in_flight[attempt_id] = keys
-                outcome = await session.run_generation(
-                    self.runner.service, request, on_event=receive, attempt_id=attempt_id, **options
-                )
+                auto_left = AUTO_RETRIES
+                while True:
+                    self.in_flight[attempt_id] = keys
+                    try:
+                        outcome = await session.run_generation(
+                            self.runner.service, request, on_event=receive, attempt_id=attempt_id, **options
+                        )
+                        break
+                    except BackendError as exc:
+                        if auto_left <= 0 or not auto_retryable(exc.failure):
+                            raise
+                        first = exc
+                    auto_left -= 1
+                    self.set_stage(keys, RETRY_STAGE)
+                    diagnostic_event(
+                        log,
+                        "workflow.step_auto_retry",
+                        level=logging.WARNING,
+                        data={"attempt_id": attempt_id, "code": first.failure.code},
+                    )
+                    await asyncio.sleep(AUTO_RETRY_DELAY)
+                    if self.stopping or self.halted or self.run["submitted"] + weight > self.allowance:
+                        raise first  # settles the step from the first try's evidence
+                    self.run["submitted"] += weight
+                    self.in_flight.pop(attempt_id, None)
+                    attempt_id, request = uuid4().hex, auto_retry_request(request)
             except asyncio.CancelledError:
                 attempt = await settle(self.attempt_state(attempt_id))
                 if attempt is None:
@@ -768,7 +792,7 @@ class _Execution:
         finally:
             self.in_flight.pop(attempt_id, None)
             # Unconditional: a reserve cancelled mid-call may have committed before ``reserved`` was set.
-            await settle(self.store.release_script_child(self.queue_id, attempt_id))
+            await settle(self.store.release_script_child(self.queue_id, lane))
 
     async def attempt_state(self, attempt_id: str) -> str | None:
         try:

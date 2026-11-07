@@ -4,7 +4,8 @@ One dispatcher owns the state directory (through the store's ownership lock), cl
 and starts the next eligible item the moment a reservation is released: there is no group barrier. Reservations are
 taken durably before an attempt exists. Nothing here replays an attempt; an item that reached the remote boundary and
 came back unknown is settled as ``unknown`` (most likely no result will arrive), releases its reservation and does not
-block other work. No database transaction is held while generating.
+block other work. The one automatic retry (``core.retry_policy``, #241) runs inside the item's reservation as a new
+attempt under a new request identity, recorded on the item before it is sent. No database transaction is held while generating.
 """
 
 import asyncio
@@ -15,6 +16,7 @@ from collections.abc import Callable
 from typing import Any
 
 from dtflow.core.queue_eta import estimate_queue_seconds
+from dtflow.core.retry_policy import AUTO_RETRIES, AUTO_RETRY_DELAY, auto_retry_request, auto_retryable
 from dtflow.core.models import (
     BackendError,
     BackendEvent,
@@ -25,6 +27,7 @@ from dtflow.core.models import (
 )
 from dtflow.core.tasks import settle
 from dtflow.diagnostics import event as diagnostic_event
+from dtflow.persistence.queues import QueueError
 from dtflow.persistence.store import PersistenceError, SQLiteAttempts
 from dtflow.services.generation import GenerationService
 from dtflow.services.image_inputs import restore_image_inputs
@@ -208,7 +211,40 @@ class QueueDispatcher:
                                 request.request_id,
                             )
                         ) from exc
-                saved = await self.service.generate(request, on_event=receive, **options)
+                retries = 0
+                while True:
+                    try:
+                        saved = await self.service.generate(request, on_event=receive, **options)
+                        break
+                    except BackendError as exc:
+                        if retries >= AUTO_RETRIES or not auto_retryable(exc.failure):
+                            raise
+                        retries += 1
+                        retry, first = auto_retry_request(request), exc.failure
+                        try:
+                            # Durable before anything is sent: settlement and restart find the retry's attempt.
+                            await self.store.auto_retry_item(item_id, retry)
+                        except QueueError:
+                            raise exc from None
+                    request = retry
+                    diagnostic_event(
+                        log,
+                        "queue.item_auto_retry",
+                        level=logging.WARNING,
+                        data={"item_id": item_id, "code": first.code, "category": first.category},
+                    )
+                    if self.on_event is not None:
+                        self.on_event(
+                            item_id,
+                            BackendEvent(
+                                request.request_id,
+                                0,
+                                "preparing",
+                                datetime.now(timezone.utc).isoformat(),
+                                stage="retrying",
+                            ),
+                        )
+                    await asyncio.sleep(AUTO_RETRY_DELAY)
             except asyncio.CancelledError:
                 state = await settle(self.store.settle_item(item_id))
                 evidence.put_nowait(("item_settled", {"item_id": item_id, "state": state}, None))

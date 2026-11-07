@@ -36,6 +36,7 @@ from dtflow.core.models import (
     TimeoutPolicy,
     ValidationError,
 )
+from dtflow.core.retry_policy import AUTO_RETRIES, AUTO_RETRY_DELAY, auto_retry_request, auto_retryable
 from dtflow.core.tasks import settle
 from dtflow.diagnostics import event as diagnostic_event
 from dtflow.persistence.assets import AssetRegistry
@@ -287,7 +288,12 @@ async def run_generation(
     prepared_inputs: PreparedImageInputs | None = None,
     attempt_id: str | None = None,
 ) -> GenerationOutcome:
-    """Refresh inventory, optionally apply trigger prefixes, run LoRA preflight, generate and save."""
+    """Refresh inventory, optionally apply trigger prefixes, run LoRA preflight, generate and save.
+
+    A failure that ``auto_retryable`` accepts gets the one automatic retry (#241): after ``AUTO_RETRY_DELAY`` the
+    same request (same settings and seed) is sent again under a new request identity, announced to ``on_event`` as a
+    ``preparing``/``retrying`` event carrying that identity. A caller that names ``attempt_id`` links its attempts
+    itself (Scripts, Workflows) and applies the same rule there, so no retry happens here for it."""
     if request.operation not in service.backend.capabilities.operations:
         raise ValidationError("This backend does not offer the requested operation; inventory/auth was not requested.")
     if request.operation != "txt2img":
@@ -312,7 +318,25 @@ async def run_generation(
     options = {"prepared_inputs": prepared_inputs} if prepared_inputs is not None else {}
     if attempt_id is not None:
         options["attempt_id"] = attempt_id
-    result = await service.generate(request, on_event=on_event, **options)
+    retries = 0
+    while True:
+        try:
+            result = await service.generate(request, on_event=on_event, **options)
+            break
+        except BackendError as exc:
+            if attempt_id is not None or retries >= AUTO_RETRIES or not auto_retryable(exc.failure):
+                raise
+            failure = exc.failure
+        retries += 1
+        request = auto_retry_request(request)
+        diagnostic_event(
+            log,
+            "generation.auto_retry",
+            level=logging.WARNING,
+            data={"code": failure.code, "category": failure.category, "outcome": failure.remote_outcome},
+        )
+        _preparation_event(on_event, request, "retrying")
+        await asyncio.sleep(AUTO_RETRY_DELAY)
     backend_id = service.backend.capabilities.backend_id
     final = next((x.encoded for x in result.backend_result.artifacts if x.designation == Designation.FINAL), None)
     if result.display_image is not None:
