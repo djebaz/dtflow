@@ -1388,7 +1388,8 @@ class QueuePage:
     def retry_item(self) -> None:
         """Retry item: the selected item reruns in place, same settings and seed, as a new (possibly billable) attempt.
 
-        No new queue is made (#240). The earlier attempt stays in the item's history; an unknown one stays unknown.
+        No new queue is made (#240). The earlier attempt stays recorded (attempts store and queue history); an unknown
+        one stays unknown.
         """
         if (self._view() or {}).get("kind") == "workflow" and self._selected is not None:
             self._retry_workflow(self._selected)
@@ -1397,34 +1398,44 @@ class QueuePage:
         if row is None or self._selected is None or row.state not in RELAUNCH_STATES:
             return
         queue_id = self._selected
+        unknown = row.state == "unknown"
         self.page.itemRetryButton.setEnabled(False)  # one click, one retry; the next read re-enables it
         self._runner.submit(
             retry_queue_item(self._state, queue_id, row.position),
-            lambda how, failure: self._item_retried(queue_id, how, failure),
+            lambda how, failure: self._item_retried(queue_id, how, failure, unknown),
         )
 
-    def _item_retried(self, queue_id: str, how, failure) -> None:
+    def _item_retried(self, queue_id: str, how, failure, unknown: bool = False) -> None:
         if failure is not None:
             failed = Presentation("error", "Not retried", str(failure))
             self._message(failed if isinstance(failure, ValidationError) else present_generation_failure(failure))
             self.refresh()
             return
+        note = (
+            " The earlier request may still finish on the server, so this can make a second image." if unknown else ""
+        )
         if how == "joins":
             view = self._views.get(queue_id) or {}
             if view.get("status") == "paused":
-                self._message(Presentation("ok", "Item retried", "It runs when this queue is resumed."))
+                self._message(Presentation("ok", "Item retried", "It runs when this queue is resumed." + note))
             else:
-                self._message(Presentation("ok", "Item retried", "It runs again in this queue."))
+                self._message(Presentation("ok", "Item retried", "It runs again in this queue." + note))
             self.refresh()
+            return
+        if queue_id == self._dispatching or queue_id in self._overlapping:
+            # This window's dispatcher may still be looping on the queue (its run had just ended): resume it in place,
+            # since putting it up next behind itself would never start it.
+            self._post("resume", queue_id)
+            self._message(Presentation("ok", "Item retried", "It runs again in this queue." + note))
             return
 
         def started(where, error) -> None:
             if error is not None:
                 self._message(Presentation("warning", "Item retried, paused", str(error)))
             elif where == "started":
-                self._message(Presentation("ok", "Item retried", "It runs again in this queue."))
+                self._message(Presentation("ok", "Item retried", "It runs again in this queue." + note))
             else:
-                self._message(Presentation("ok", "Item retried", f"It runs again in this queue ({where})."))
+                self._message(Presentation("ok", "Item retried", f"It runs again in this queue ({where})." + note))
 
         self.start_created(queue_id, started)
 

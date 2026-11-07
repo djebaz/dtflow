@@ -986,7 +986,8 @@ RETRY_STATES = ("failed", "unknown", "save_failed", "cancelled")
 
 def retry_item(directory: Path, queue_id: str, position: int) -> str:
     """Retry item in place (#240): the same item reruns its recorded request (same settings and seed) under a new
-    request identity, so its next attempt is new and the earlier attempt stays recorded as it ended.
+    request identity, so its next attempt is new and the earlier attempt stays recorded as it ended (in the attempts
+    store and in the ``item_retried`` queue event; the item itself shows only its latest attempt).
 
     Safe beside a live dispatch owner. Returns ``"joins"`` when other items of the queue are still pending or running
     (the queue's own run, or its Start/Resume, picks the item up), else ``"start"``: the queue is set paused and the
@@ -1009,6 +1010,14 @@ def retry_item(directory: Path, queue_id: str, position: int) -> str:
                 raise QueueError(f"The queue has no item {position}.")
             if item["state"] not in RETRY_STATES:
                 raise QueueError("Only a failed, cancelled or no-result item can be retried.")
+            if (
+                queue["state"] == "cancelled"
+                and connection.execute(
+                    "SELECT 1 FROM queue_items WHERE queue_id=? AND state='running' LIMIT 1", (queue_id,)
+                ).fetchone()
+                is not None
+            ):
+                raise QueueError("This queue is still stopping; retry the item once it has stopped.")
             try:
                 request = request_from_record(json.loads(item["request_json"]))
             except (ValidationError, TypeError, ValueError):
