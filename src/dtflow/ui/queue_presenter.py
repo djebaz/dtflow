@@ -10,7 +10,7 @@ from datetime import datetime
 from pathlib import Path
 
 from dtflow.core.queue_eta import estimate_queue_seconds
-from dtflow.services.connection import local_time
+from dtflow.services.connection import failure_reason, local_time
 from dtflow.services.dynamic_prompts import decode_runs
 
 MIN_ETA_SAMPLES = 1
@@ -200,7 +200,7 @@ SEGMENTS = (
 )
 UNKNOWN_TEXT = (
     "No final result was received, so this generation most likely failed. It is not sent again automatically, and it "
-    "does not block other items or queues. Retry item runs it again as a new attempt."
+    "does not block other items or queues. Retry item runs it again."
 )
 OWNERS = ("here", "none")
 
@@ -238,7 +238,7 @@ class ItemRow:
     seed: int
     outputs: tuple[str, ...]
     metadata: str | None
-    failure_code: str | None
+    failure_text: str | None  # the original reason (provider wording kept); the code only when no message exists
     operation: str = "txt2img"
     strength: float | None = None
     prompt: str = ""
@@ -276,7 +276,7 @@ class ItemRow:
         if self.state == "succeeded":
             return "No error recorded" if self.outputs else "Succeeded; no saved image verified"
         if self.state in ("failed", "save_failed"):
-            return self.failure_code or self.state_text.capitalize()
+            return self.failure_text or self.state_text.capitalize()
         return {
             "unknown": "No result received",
             "running": "In progress",
@@ -373,7 +373,7 @@ def _step_rows(item: dict, steps: list) -> list[ItemRow]:
                 fields.get("seed") if type(fields.get("seed")) is int else (item.get("seed") or 0),
                 tuple(path for path in paths if path != metadata),
                 metadata,
-                None,
+                failure_reason(step.get("failure") or {}) or None,  # the step's own original reason
                 "txt2img",
                 None,
                 f"Step {step['ordinal']} · " + str(fields.get("prompt") or item.get("prompt") or ""),
@@ -436,10 +436,8 @@ def item_rows(view: dict) -> tuple[ItemRow, ...]:
                 item["seed"],
                 tuple(path for path in artifacts if path != metadata),
                 metadata,
-                # A script or workflow run keeps its own plain reason (provider wording included), not just a code.
-                (failure.get("message") or failure.get("code"))
-                if item.get("script") or item.get("workflow")
-                else failure.get("code"),
+                # Every item kind shows its original reason (provider wording included), not just a code.
+                failure_reason(failure) or None,
                 "workflow" if item.get("workflow") else item.get("operation") or "txt2img",
                 item.get("strength"),
                 item.get("prompt") or "",
@@ -804,8 +802,8 @@ def outcome_note(row: ItemRow | None) -> tuple[str, str] | None:
         return None
     if row.state == "unknown":
         return "warning", UNKNOWN_TEXT
-    if row.state in ("failed", "save_failed") and row.failure_code:
-        return "error", f"{row.state_text.capitalize()}: {row.failure_code}"
+    if row.state in ("failed", "save_failed") and row.failure_text:
+        return "error", f"{row.state_text.capitalize()}: {row.failure_text}"
     return None
 
 

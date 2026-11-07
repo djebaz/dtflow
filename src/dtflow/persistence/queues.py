@@ -1622,10 +1622,11 @@ def _script_view(connection: sqlite3.Connection, request: dict) -> dict[str, Any
             }
     for ordinal, attempt_id in enumerate(run.children, 1):
         row = connection.execute(
-            "SELECT state, artifacts_json FROM attempts WHERE attempt_id=?", (attempt_id,)
+            "SELECT state, artifacts_json, failure_json FROM attempts WHERE attempt_id=?", (attempt_id,)
         ).fetchone()
         state = row["state"] if row else None
         artifacts = json.loads(row["artifacts_json"]) if row and row["artifacts_json"] else []
+        failure = json.loads(row["failure_json"]) if row and row["failure_json"] else None
         view["children"].append(
             {
                 "ordinal": ordinal,
@@ -1633,6 +1634,7 @@ def _script_view(connection: sqlite3.Connection, request: dict) -> dict[str, Any
                 "state": state,
                 "artifacts": artifacts,
                 "fields": _step_fields(artifacts),
+                "failure": failure if isinstance(failure, dict) else None,
             }
         )
         if state in TERMINAL_ATTEMPTS and state != "succeeded":
