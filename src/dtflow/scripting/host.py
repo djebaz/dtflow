@@ -11,8 +11,8 @@ there. Rules kept here:
 * A step that fails or ends with no confirmed outcome does not block the rest of the run. In a run answered in Scripts
   (a queue item) the run pauses on that step and the person picks Retry (the same request and seed, a new linked
   child; the old step keeps its own outcome) or Continue (the script goes on with an empty canvas). Headless runs hand
-  the error to the script as before. A run allows at most ``max_generations`` manual retries in total; nothing is
-  retried automatically.
+  the error to the script as before. Each retry counts as one of the
+  run's ``max_generations``; nothing is retried automatically.
 * Configuration fields that DTFlow cannot honour yet fail the affected call when a script *changes* them from the
   baseline it was given. Unchanged inherited fields are allowed. Nothing is silently dropped.
 * Files live in one per-run sandbox directory; ``picturesPath`` and friends point there, never at the real Pictures
@@ -392,6 +392,7 @@ class ScriptHost:
                 return
             retry_of = attempt_id
             self.retries += 1
+            self.generations += 1  # one limit: a retry counts like any other generation
             request = replace(
                 request,
                 request_id=uuid.uuid4().hex,
@@ -408,7 +409,7 @@ class ScriptHost:
         raises the step's error to the script instead, which is how the script learns the step did not complete."""
         if self._ask is None or self._answers is not None:
             raise RuntimeError(reason)
-        retry_left = self.retries < self.max_generations
+        retry_left = self.generations < self.max_generations  # a retry is one of the run's generations
         headline = f"Step {step} {HEADLINES[kind]}"
         detail = {
             "unknown": "It may still finish on the backend, so a retry can make a second image. "
@@ -418,7 +419,7 @@ class ScriptHost:
             "failed": "Retry sends the same settings (same seed) again.",
         }[kind]
         if not retry_left:
-            detail = f"This run used all of its {self.max_generations} retries."
+            detail = f"This run reached its generation limit ({self.max_generations}); it cannot retry."
         # Continue is the default: pressing the button without choosing never sends the step again.
         options = (
             ["Continue without this image", "Retry with the same settings"]
