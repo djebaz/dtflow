@@ -1,9 +1,11 @@
 """Bounded source timings and one activity-scoped, window-owned GUI heartbeat."""
 
 import logging
+import sys
+from functools import wraps
+from threading import Event, Lock, Thread, enumerate as enumerate_threads, get_ident
 from datetime import UTC, datetime
-from threading import Lock
-from time import monotonic, monotonic_ns
+from time import monotonic, monotonic_ns, thread_time_ns
 
 from PySide6.QtCore import QEvent, QObject, Qt, QTimer, Slot
 
@@ -12,6 +14,24 @@ from dtflow.logging_setup import dev_enabled
 
 log = logging.getLogger(__name__)
 SOURCE_SUMMARY_INTERVAL_S = 60
+GUI_CALLBACK_SLOW_MS = 50
+GUI_STALL_SAMPLE_MS = 1000
+
+
+def _safe_thread_stack(frame) -> str:
+    """Retain only DTFlow function names, never stack locals or absolute paths."""
+    parts = []
+    for _ in range(12):
+        if frame is None:
+            break
+        module = frame.f_globals.get("__name__", "")
+        parts.append(
+            f"{module}.{frame.f_code.co_name}"
+            if isinstance(module, str) and module.startswith("dtflow.")
+            else "external"
+        )
+        frame = frame.f_back
+    return " > ".join(parts) if parts else "unavailable"
 
 
 class PerfBatchStats:
@@ -70,6 +90,34 @@ class PerfBatchStats:
             source_summary(self.logger, name, stats, namespace=self.namespace)
 
 
+def profile_slow_gui_callback(name: str):
+    """Report only slow, completed GUI callbacks; never alter their result or exception."""
+
+    def decorate(callback):
+        @wraps(callback)
+        def wrapped(*args, **kwargs):
+            if not dev_enabled():
+                return callback(*args, **kwargs)
+            wall_started = monotonic_ns()
+            cpu_started = thread_time_ns()
+            try:
+                return callback(*args, **kwargs)
+            finally:
+                elapsed_ms = (monotonic_ns() - wall_started) / 1_000_000
+                if elapsed_ms >= GUI_CALLBACK_SLOW_MS:
+                    measurement(
+                        log,
+                        "ui.callback_slow",
+                        callback=name,
+                        elapsed_ms=elapsed_ms,
+                        cpu_ms=(thread_time_ns() - cpu_started) / 1_000_000,
+                    )
+
+        return wrapped
+
+    return decorate
+
+
 class GuiHeartbeat(QObject):
     """Observe only Images browsing or existing in-window work; never control that work."""
 
@@ -83,6 +131,9 @@ class GuiHeartbeat(QObject):
         self._last = monotonic()
         self._last_flush = self._last
         self._stats = PerfBatchStats(log, namespace="ui")
+        self._gui_thread_id = get_ident()
+        self._watch_stop = Event()
+        self._watch_reported = False
         self._timer = QTimer(self)
         self._timer.setTimerType(Qt.TimerType.PreciseTimer)
         self._timer.setInterval(20)
@@ -92,6 +143,32 @@ class GuiHeartbeat(QObject):
         runner.shutdown_started.connect(self.stop)
         window.destroyed.connect(self.stop)
         window.installEventFilter(self)
+        if dev_enabled():
+            # The Qt timer cannot diagnose its own long event-loop starvation.
+            # This passive thread samples safe Python frame names once per stall.
+            Thread(target=self._watch_gui, name="dtflow-gui-watchdog", daemon=True).start()
+
+    def _watch_gui(self) -> None:
+        """Record one sanitized main/runner stack sample per active GUI stall."""
+        while not self._watch_stop.wait(0.25):
+            scope = self._scope  # Qt updates this snapshot; never access Qt objects from this thread.
+            if scope is None or self._watch_reported:
+                continue
+            elapsed_ms = (monotonic() - self._last) * 1000
+            if elapsed_ms < GUI_STALL_SAMPLE_MS:
+                continue
+            self._watch_reported = True
+            frames = sys._current_frames()
+            runner_id = next((thread.ident for thread in enumerate_threads() if thread.name == "dtflow-qt-async"), None)
+            measurement(
+                log,
+                "ui.gui_stall_sample",
+                elapsed_ms=elapsed_ms,
+                workspace=scope[0],
+                operation=scope[1],
+                gui_stack=_safe_thread_stack(frames.get(self._gui_thread_id)),
+                runner_stack=_safe_thread_stack(frames.get(runner_id)),
+            )
 
     def eventFilter(self, watched, event):
         if event.type() in (QEvent.Type.Show, QEvent.Type.Hide, QEvent.Type.WindowStateChange):
@@ -108,6 +185,7 @@ class GuiHeartbeat(QObject):
             self._stats.flush(force=True)
             self._scope = scope
             self._last = self._last_flush = monotonic()
+            self._watch_reported = False
         if context is None:
             self._timer.stop()
         elif not self._timer.isActive():
@@ -125,6 +203,7 @@ class GuiHeartbeat(QObject):
         now = monotonic()
         gap_ms = (now - self._last) * 1000
         self._last = now
+        self._watch_reported = False
         if gap_ms >= 50:
             self._stats.observe("gui_gaps", gap_ms)
         if gap_ms >= 100:
@@ -139,6 +218,7 @@ class GuiHeartbeat(QObject):
         if self._closed:
             return
         self._closed = True
+        self._watch_stop.set()
         self._activity.unlisten(self.sync)
         self._timer.stop()
         self._stats.flush(force=True)
