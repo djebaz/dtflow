@@ -597,6 +597,11 @@ class QueuePage:
     @profile_slow_gui_callback("queue.render")
     def _render(self) -> None:
         page = self.page
+        if not page.queueWorkspace.isVisible():
+            # Scripts/Workflows still need shared run state, not a hidden queue list,
+            # item table and event browser rebuilt on each background refresh.
+            self._sync()
+            return
         self._render_list()
         view = self._view()
         page.queueComposerScroll.setVisible(self._composing)
@@ -1588,11 +1593,11 @@ class QueuePage:
         self._render()
 
     def shown(self) -> None:
-        """Returning to Queues refreshes presentation without replacing the independent draft."""
+        """Render the latest queue state when Queues becomes visible again."""
         self.model.thumbnails.clear()
         self._hover_preview.hide()
+        self._render()
         self.page.queueItemsView.viewport().update()
-        self._show_item()
         if self._composing:
             self._refresh_choices()
             self._invalidate_preview()  # the backend or Inpaint source may have changed without changing the request
