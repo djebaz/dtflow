@@ -44,6 +44,7 @@ DTFlow keeps a local, informational daily count of saved final DT+ images per AP
 - **Counting.** `services/cloud_usage.py` converts the saved UTC times to the selected IANA zone and selects the half-open interval between two consecutive local midnights (23/25-hour DST days included). `persistence/cloud_usage.py` reads succeeded `drawthings-cloud` attempts in a padded UTC window through the read-only gallery reader; schema-6 databases without the table, and attempts saved before schema 7, count as unattributed.
 - **Thresholds.** Green to 400, amber 401-499, red from 500 are owner working-assumption visual guidance, independent per key; the 500/day figure is not a verified provider measurement. The active key is the one the shared credential resolution would select now (environment first), resolved locally.
 - **Preference.** The reset timezone is stored in `usage_preferences.json` (see [runtime layout](runtime-layout.md)).
+- **Refresh.** Shared activity changes schedule a debounced local evidence refresh regardless of the selected workspace, so the global bottom-bar pill does not depend on visiting Connection. This uses the existing read-only saved-attempt reader, not provider polling.
 - **Not established.** The real DT+ reset schedule and quota unit, a provider guarantee that the key format stays stable, Windows/DPI presentation and the count for image-operation outputs beyond what the owner smoke-tested.
 
 ## Acceptance ownership

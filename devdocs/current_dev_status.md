@@ -16,6 +16,8 @@ Updated: 2026-11-07 for [5.5.0 preparation](plans/2026-11-07-release-5.5.0.md), 
 
 ## Delivered additions
 
+- **PR #246, pending — Bottom-bar DT+ counter refresh:** activity-driven local saved-evidence refresh is no longer gated on Connection being visible. The offline preview definition includes an updated count outside Connection; no renders or post-fix tests were run, and native acceptance remains unverified.
+
 - **PR #238, pending:** Workflows bind existing custom cloud LoRA receipts independently of Generate and honor Pause/Stop after binding. The owner smoke confirms the original LoRA binding fix; later warning presentation is separate: missing-receipt/unknown-availability advisories use a transient overlay, retained workflow output/node warnings and queue activity logs, with privacy-safe diagnostic summaries. Offline warning fixtures are defined for Actions, not locally rendered. No tests added/run locally; CI and native warning-UI acceptance remain separate. [Scoped plan](plans/2026-11-07-workflow-cloud-lora-receipts.md).
 
 - **Scripts (#197–#219):** pinned upstream facade, managed library/inspection, native nested/repeated Setup forms and picker inputs, one queue item with linked child attempts, history/results and optional bounded `pipeline.runBatch`. The portable Krea2 mixer uses cached inventory/readiness, source-scoped preferences and manual deterministic chunks. Setup never queues or calls providers; dispatch revalidates assets/account. Virtual canvas pixels/masks, broader sample/configuration support and native/backend/package acceptance are not implied. [Scripts](guides/scripts.md), [architecture](architecture/scripting.md), [mixer](guides/krea2-mixer.md).
