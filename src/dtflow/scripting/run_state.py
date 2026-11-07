@@ -6,8 +6,7 @@ workflow run, ``persistence/workflow_items.py``). ``ScriptRun`` holds it in memo
 submitted, and a form or its answers are durable before the script sees them. A ``persist`` failure raises and leaves
 the run as it was.
 
-Without ``persist`` (Scripts Setup before Run Script, and ``dtflow script --run`` without ``--queue``) the run lives in
-memory only. Setup's run is attached to its queue item when the dispatcher adopts it (``attach``), before generation
+Without ``persist`` (Scripts Setup before Run Script) the run lives in memory only. Setup's run is attached to its queue item when the dispatcher adopts it (``attach``), before generation
 can be admitted.
 
 A run left ``running`` by a crash is turned ``interrupted`` by the queue reconcile, in the same transaction that settles
@@ -29,6 +28,7 @@ MAX_PROMPTS = 128
 MAX_PROMPT_JSON_CHARS = 1_000_000
 MAX_ANSWERS_JSON_CHARS = 6_000_000
 PROMPT_POLL_SECONDS = 0.25
+MAX_CONSOLE_KEPT = 200  # last console messages kept with a finished run
 
 #: ``persist(run, recall)``: write ``run`` durably; ``recall`` is ``(source sha, form sha, answers json)`` or ``None``.
 Persist = Callable[[dict[str, Any], tuple[str, str, str] | None], None]
@@ -338,8 +338,10 @@ class ScriptRun:
         ordinal = self.publish_prompt(title, confirm, components, choices)
         return self.wait_for_answer(ordinal, cancel if cancel is not None else threading.Event())
 
-    def finish(self, state: str, error: str | None = None) -> bool:
-        """Settle a running run; returns False (changing nothing) if it was no longer running."""
+    def finish(self, state: str, error: str | None = None, console: list | None = None) -> bool:
+        """Settle a running run; returns False (changing nothing) if it was no longer running.
+
+        ``console`` (the script's ``(kind, text)`` messages) is kept bounded with the run for its report."""
         if state not in TERMINAL:
             raise ScriptRunError("Unknown terminal script-run state.")
 
@@ -349,6 +351,11 @@ class ScriptRun:
             at = now()
             _close_prompts(run, at)
             run.update(state=state, error=error, finished_at=at)
+            if console:
+                run["console"] = [
+                    {"kind": ("log", "warn", "error")[kind] if kind in (0, 1, 2) else "log", "text": str(text)[:2000]}
+                    for kind, text in console[-MAX_CONSOLE_KEPT:]
+                ]
             return True
 
         with self._condition:

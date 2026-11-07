@@ -100,8 +100,8 @@ received the full answers. An open form's fields (which may embed images) are ke
 
 Child lanes (`pipeline.runBatch`, shared with workflows) are the item's `lanes_json` column: the attempt ids holding a
 lane. Restart clears them under the owner lock. Scripts Setup keeps its run in memory until Run Script; the dispatcher
-writes it into the item when it adopts the Setup, before generation can be admitted. `dtflow script --run` without
-`--queue` keeps its run in memory for the command; its attempts are durable as before.
+writes it into the item when it adopts the Setup, before generation can be admitted. `dtflow script --run` also creates
+a script queue item; without `--queue` it starts that queue as the dispatch owner and reports from the item.
 
 Schema 9 copies each script item's run from the old `<state>/script_runs.sqlite3` (read-only; the file and
 `script_run_locks/` are left in place and no longer used), drops the `script_child_slots` table and moves remembered

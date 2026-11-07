@@ -271,6 +271,7 @@ def run_recorded(
     run_id = run.run_id
     run.begin()
     state, error = "failed", "Script run ended unexpectedly."
+    console: list = []
     try:
         hooks = (
             (
@@ -292,7 +293,7 @@ def run_recorded(
             else implementations
         )
         result = run_script(source, hooks, limits=limits, cancel=cancel)
-        state, error = result.status, result.error
+        state, error, console = result.status, result.error, result.console
         return run_id, result
     except BaseException as exc:
         error = f"Script run failed: {type(exc).__name__}."
@@ -303,7 +304,7 @@ def run_recorded(
         except Exception:
             log.exception("Script run %s: open forms could not be resolved.", run_id)
         try:
-            if not run.finish(state, error):
+            if not run.finish(state, error, console):
                 log.warning("Script run %s was no longer running when it finished; its state was kept.", run_id)
         except Exception:  # never mask the script's own outcome or error; the item reconcile recovers it as interrupted
             log.exception("Script run %s could not be settled; it will be recovered as interrupted.", run_id)
