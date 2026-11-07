@@ -11,8 +11,17 @@ The owner reports prepared custom DT+ LoRAs work in ordinary Generate and Queues
 - At shared workflow dispatch, load the same confirmed local receipt pool used by Scripts/queue authoring and bind only identifiers selected by that node through existing `session.bind_prepared`.
 - Cover Generate, Inpaint and Img2img without adding receipt data to portable workflows or depending on ordinary Generate's selection.
 - Keep generation-service fresh account/backend/receipt validation, weights, checkpoint settings, durable evidence and existing cloud wire mapping authoritative. No new upload/download, provider fallback or replay.
-- Recheck Stop after receipt-loading awaits and settle the reserved child slot through the existing cleanup path without submitting.
+- Recheck Pause and Stop after receipt-loading awaits. Wait for Resume before image submission; cancellation retains the existing attempt/submission accounting and reserved-slot cleanup.
 
 ## Validation boundary
 
-Owner explicitly requested no added tests and no local test execution; regression tests are not added and existing tests are left to GitHub CI. Local validation is limited to syntax, lint/format and diff inspection. No UI changes/renders, live generation, asset preparation/upload or model inference. Real DT+ Generate/Inpaint workflow acceptance remains owner smoke; fixture/CI success cannot establish visual LoRA effect.
+Owner explicitly requested no added tests and no local test execution; regression tests are not added and existing tests are left to GitHub CI. Only Ruff format/check is run locally before commits. No UI changes/renders, live generation, asset preparation/upload or model inference.
+
+## Review follow-up and acceptance
+
+- Owner smoke of the original fix confirmed that workflow LoRAs now apply. This is owner-reported behavior, not agent-executed live generation, and predates the Pause correction below.
+- CI [42380963298](https://github.com/djebaz/dtflow/actions/runs/42380963298) passed lock, Ruff format/lint and offline pytest at `2d29b4dfff42118315ae5f9a96347277996ea1c0`; UI rendering was skipped. Later-head CI remains separate.
+- L1: document invalid bound-receipt failures and account/reconcile/explicit-Prepare recovery. Existing `failure_text` delegates to the shared `present_generation_failure`, which labels `prepared_asset_*` failures as "Prepared asset not validated" and retains the sanitized cause. No competing failure presenter or new UI state is introduced.
+- L4: honor a Pause observed during receipt binding before calling `run_generation`; Stop/cancel still wakes or cancels the wait and settles without a new attempt.
+- Remove process/validation text from user-facing unreleased notes. Keep Markdown prose unwrapped per configured editing guidance.
+- L2/L5 missing-receipt visibility/step provenance and L3 receipt-pool loading/snapshot policy are deferred follow-ups, not claimed addressed by this PR.

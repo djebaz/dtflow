@@ -626,6 +626,9 @@ class _Execution:
                         request,
                         tuple(asset.receipt_id for asset in choices if asset.identifier in selected),
                     )
+                    while not self.go.is_set() and not self.stopping and not self.halted:
+                        self.set_stage(keys, "Waiting: queue paused")
+                        await self.go.wait()
                     if self.stopping or self.halted:
                         self.run["submitted"] -= weight
                         await self.end(keys, "cancelled", "Stopped before submission; nothing was sent.")
