@@ -1,0 +1,23 @@
+# Fast PR smoke: explicit, reviewable pytest targets (no automatic discovery by changed file).
+# Shared generation, bounded retries, queue/workflow foundations, persistence and artifacts.
+# Workflow-specific executor coverage is not represented by dedicated tests today.
+tests/integration/test_session.py
+tests/integration/test_fake_service.py
+tests/integration/test_queue_session.py
+tests/integration/test_queue.py
+tests/unit/test_contract.py
+tests/unit/test_generation_presenter.py
+tests/unit/test_planning.py
+
+# Models, LoRAs, preflight and cloud asset reference handling.
+tests/unit/test_config_preflight.py
+tests/unit/test_checkpoint_metadata.py
+tests/unit/test_lora_inventory_service.py
+tests/unit/test_cloud_lora_assets.py
+tests/unit/test_inventory_cache.py
+tests/unit/test_drawthings_wire.py
+tests/integration/test_cloud_assets_cli.py
+
+# Representative Qt Generate behavior, not the entire UI matrix.
+tests/unit/test_qt_generation.py::test_generate_keeps_the_event_loop_responsive_and_saves_the_final_image
+tests/unit/test_qt_generation.py::test_unknown_outcome_is_not_presented_as_a_plain_failure
