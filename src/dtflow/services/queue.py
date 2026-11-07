@@ -216,6 +216,9 @@ class QueueDispatcher:
             except BackendError as exc:
                 failure = {
                     "code": exc.failure.code,
+                    # The original reason (same shape as the attempts table), so Queues shows what Generate shows.
+                    "message": exc.failure.message,
+                    "diagnostics": [list(pair) for pair in exc.failure.diagnostics],
                     "category": str(exc.failure.category),
                     "submission_stage": str(exc.failure.submission_stage),
                     "remote_outcome": str(exc.failure.remote_outcome),
@@ -232,7 +235,11 @@ class QueueDispatcher:
                 )
                 raise
             except Exception as exc:
-                failure = {"code": "unexpected", "category": type(exc).__name__}
+                failure = {
+                    "code": "unexpected",
+                    "message": "An unexpected error stopped this item; the logs have the details.",
+                    "category": type(exc).__name__,
+                }
 
             state = await settle(self.store.settle_item(item_id, failure))
             detail: dict[str, Any] = {"item_id": item_id, "state": state}
