@@ -6,13 +6,15 @@ there. Rules kept here:
 
 * A ``generateImage`` call becomes one ``ResolvedGenerationRequest`` through the normal generation path
   (``run_generation``), after its attempt id has been linked in the ScriptRun ledger and before anything is submitted.
-* Stop only stops *waiting*. The in-flight attempt is never cancelled remotely, never retried automatically and stays
-  durable; the caller drains ``pending`` before closing the service.
+* Stop only stops *waiting*. The in-flight attempt is never cancelled remotely and stays durable; the caller drains
+  ``pending`` before closing the service.
+* A step or batch job whose failure ``core.retry_policy.auto_retryable`` accepts gets the one shared automatic retry
+  (#241) after a short wait, as a new linked child, when the run still has a generation left.
 * A step that fails or ends with no confirmed outcome does not block the rest of the run. In a run answered in Scripts
   (a queue item) the run pauses on that step and the person picks Retry (the same request and seed, a new linked
   child; the old step keeps its own outcome) or Continue (the script goes on with an empty canvas). Headless runs hand
-  the error to the script as before. Each retry counts as one of the
-  run's ``max_generations``; nothing is retried automatically.
+  the error to the script as before. Each retry, manual or automatic, counts as one of the run's
+  ``max_generations``.
 * Configuration fields that DTFlow cannot honour yet fail the affected call when a script *changes* them from the
   baseline it was given. Unchanged inherited fields are allowed. Nothing is silently dropped.
 * Files live in one per-run sandbox directory; ``picturesPath`` and friends point there, never at the real Pictures
@@ -44,6 +46,7 @@ from dtflow.core.models import (
     ResolvedGenerationRequest,
     Sampler,
 )
+from dtflow.core.retry_policy import AUTO_RETRIES, AUTO_RETRY_DELAY, auto_retry_request, auto_retryable
 from dtflow.core.tasks import settle
 from dtflow.persistence.script_items import RETRY_EVIDENCE
 from dtflow.scripting.models import (
@@ -355,6 +358,7 @@ class ScriptHost:
         self.generations += 1
         self.steps += 1
         step, retry_of = self.steps, None
+        auto_left = AUTO_RETRIES  # the shared automatic retry (#241), per submission
         while True:
             if self.cancel.is_set():
                 raise ScriptCancelled()  # Stop landed while the Retry form closed: nothing more is linked
@@ -378,18 +382,28 @@ class ScriptHost:
                     else "unknown"
                 )
                 reason = exc.failure.message or exc.failure.code
+                automatic = auto_retryable(exc.failure)
             except Exception as exc:
-                kind, reason = "unknown", str(exc) or type(exc).__name__
+                kind, reason, automatic = "unknown", str(exc) or type(exc).__name__, False
             else:
                 self.last = outcome
                 self._cleared = False  # a new generation fills the canvas again
                 self.attempt_outputs[attempt_id] = [str(path) for path in outcome.output_paths]
                 return
-            if not self._retry_step(step, reason, kind=kind):
+            if automatic and auto_left > 0 and self.generations < self.max_generations:
+                # The one automatic retry: no form, counted as one of the run's generations like any retry.
+                auto_left -= 1
+                self._console(f"Step {step} {HEADLINES[kind]}: {reason} Retrying automatically.", 0)
+                if self.cancel.wait(AUTO_RETRY_DELAY):
+                    raise ScriptCancelled()
+                request = auto_retry_request(request)
+            elif not self._retry_step(step, reason, kind=kind):
                 # Continue: the step keeps its outcome and the script goes on without its image.
                 self.last, self._cleared = None, True
                 self._console(f"Step {step} {HEADLINES[kind]}: {reason}", 1)
                 return
+            else:
+                auto_left = AUTO_RETRIES  # a manual Retry is a new submission with its own automatic retry
             retry_of = attempt_id
             self.retries += 1
             self.generations += 1  # one limit: a retry counts like any other generation
@@ -442,8 +456,8 @@ class ScriptHost:
         """DTFlow-only bounded batch; one immutable request and linked durable attempt per submitted child.
 
         Never writes to the virtual canvas: completion order is not a display/save order.
-        Each result is returned at the original input index. A failed or unconfirmed job does not stop the others and is
-        not retried here; the script sees its status.
+        Each result is returned at the original input index. A failed or unconfirmed job does not stop the others; apart
+        from the shared automatic retry (#241) it is not retried here, and the script sees its status.
         """
         self._admit_generation()
         if self._blocked:
@@ -540,13 +554,19 @@ class ScriptHost:
                 index = next_job
                 next_job += 1
                 request = requests[index]
-                attempt_id = uuid.uuid4().hex
+                lane = attempt_id = uuid.uuid4().hex  # the lane keeps the first child's id across a retry
                 acquired = False
+
+                def relinked(new_id: str, index: int = index) -> None:
+                    nonlocal attempt_id
+                    attempt_id = new_id
+                    results[index]["attemptId"] = new_id
+
                 linked = False
                 try:
                     if self.reserve_child is not None:
                         while intake_open and not self.cancel.is_set():
-                            acquired = await self.reserve_child(attempt_id, concurrency)
+                            acquired = await self.reserve_child(lane, concurrency)
                             if acquired:
                                 break
                             await asyncio.sleep(POLL_SECONDS)
@@ -565,7 +585,7 @@ class ScriptHost:
                     if not intake_open or self.cancel.is_set():
                         return
                     try:
-                        outcome = await run_generation(self.service, request, prefix=self.prefix, attempt_id=attempt_id)
+                        outcome = await self._generate_child(request, attempt_id, relinked)
                     except BackendError as exc:
                         remote = exc.failure.remote_outcome
                         results[index] = {
@@ -629,7 +649,7 @@ class ScriptHost:
                 finally:
                     if acquired and self.release_child is not None:
                         try:
-                            await settle(self.release_child(attempt_id))
+                            await settle(self.release_child(lane))
                         except BaseException:
                             intake_open = False
                             self._blocked = "A batch slot could not be released; no more jobs."
@@ -651,6 +671,45 @@ class ScriptHost:
             if isinstance(outcome, BaseException):
                 raise outcome
         return results
+
+    async def _generate_child(
+        self, request: ResolvedGenerationRequest, attempt_id: str, relinked: Callable[[str], None]
+    ) -> GenerationOutcome:
+        """One batch job's generation with the shared automatic retry (#241): a retry is a new child, linked before it
+        is sent, counted as one of the run's generations. Stop during the wait raises the first try's failure."""
+        auto_left = AUTO_RETRIES
+        while True:
+            try:
+                return await run_generation(self.service, request, prefix=self.prefix, attempt_id=attempt_id)
+            except BackendError as exc:
+                if not (
+                    auto_left > 0
+                    and auto_retryable(exc.failure)
+                    and self.generations < self.max_generations
+                    and not self.cancel.is_set()
+                ):
+                    raise
+                first = exc
+            auto_left -= 1
+            self.generations += 1
+            self.retries += 1
+            deadline = asyncio.get_running_loop().time() + AUTO_RETRY_DELAY
+            while asyncio.get_running_loop().time() < deadline:
+                if self.cancel.is_set():
+                    raise first
+                await asyncio.sleep(POLL_SECONDS)
+            retried = auto_retry_request(request)
+            request = replace(
+                retried,
+                resolution_evidence=(
+                    *(pair for pair in retried.resolution_evidence if pair[0] != RETRY_EVIDENCE),
+                    (RETRY_EVIDENCE, attempt_id),
+                ),
+            )
+            attempt_id = uuid.uuid4().hex
+            await asyncio.to_thread(self._link_child, attempt_id)
+            self.attempts.append(attempt_id)
+            relinked(attempt_id)
 
     # -- catalogue lookups ----------------------------------------------------------------------------------------
 

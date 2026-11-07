@@ -892,7 +892,8 @@ def event_lines(view: dict) -> str:
         elif kind == "item_retried":
             previous = str(detail.get("previous_state", "failed"))
             previous = "no result" if previous == "unknown" else previous.replace("_", " ")
-            summary = f"{item_label(detail)} retried (was {previous})"
+            how = "retried automatically" if detail.get("automatic") is True else "retried"
+            summary = f"{item_label(detail)} {how} (was {previous})"
         elif kind == "item_settled":
             state = str(detail.get("state", "settled"))
             state = "no result" if state == "unknown" else state.replace("_", " ")

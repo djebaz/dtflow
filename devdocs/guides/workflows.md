@@ -57,7 +57,15 @@ is the V1 specification; the file contract is [architecture/workflows.md](../arc
   original settings, then its downstream branch (after the run ended, Retry starts a new workflow queue seeded with that
   branch's saved images). Retry is in the Run panel under the canvas, in the selected node's inspector, and in Queues
   on the workflow item (it retries the first failed, then unknown, step). An unknown remote outcome is shown as unknown
-  and never replayed. A run never submits more than its planned total plus explicit Retries.
+  and never replayed.
+- **Automatic retry (#241):** before a step is marked failed, it gets one automatic retry a few seconds later, with
+  the same settings and seed, when the first try definitely made nothing: a connection, timeout or protocol failure
+  where nothing was started or the backend reported the failure, or the Draw Things+ case where the server ended the
+  call itself with "unknown error processing request" and no image. The node shows "Retrying automatically" while it
+  waits; Stop during the wait sends nothing more. Every other unknown outcome, credentials, quota, validation and
+  rejections are never retried automatically. The rule is shared with Generate, Queues and Scripts
+  (`src/dtflow/core/retry_policy.py`). A run never submits more than twice its planned total (one automatic retry
+  per planned submission) plus explicit Retries.
 - **Earlier runs:** the Run panel's **Earlier runs** list shows recent workflow runs; choosing one follows it again
   (steps, Retry, waiting branches), also after a restart. Queues → Open in Workflows does the same for a workflow
   item. The run's own workflow is put on the canvas unless that workflow is already open, or the open one has unsaved
@@ -78,7 +86,6 @@ is the V1 specification; the file contract is [architecture/workflows.md](../arc
   workflows do not import. No ComfyUI frontend release has been pinned or round-trip tested yet.
 - Image steps run at the source image size (multiples of 64 within 128–2048).
 - The fake provider runs text-to-image only, so image steps fail there with a plain message.
-- No automatic retry yet; it will follow the shared cap decided in #220.
 - Detection model licences: YOLO26n is Ultralytics AGPL-3.0, NudeNet 320n is MIT, and the SegFormer B2 clothes model
   is under NVIDIA's SegFormer licence for research use only. SegFormer is planned to be replaced by a model with a
   licence that allows normal use; until then the download confirmation shows its research-only licence.

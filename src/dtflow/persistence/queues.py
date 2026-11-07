@@ -675,6 +675,40 @@ class QueueMixin:
         with self._txn() as db:
             db.execute("DELETE FROM script_child_slots WHERE queue_id=? AND attempt_id=?", (queue_id, attempt_id))
 
+    async def auto_retry_item(self, item_id: str, request: ResolvedGenerationRequest) -> None:
+        """Before the one automatic retry (#241): a running item takes the retry's new request identity, durably,
+        before anything is sent, so settlement and restart reconciliation find the retry's attempt. The earlier
+        attempt stays recorded as it ended and an ``item_retried`` event (``automatic``) names it."""
+        await self._run(self._auto_retry_item, item_id, json.dumps(asdict(request), allow_nan=False))
+
+    def _auto_retry_item(self, item_id: str, encoded: str) -> None:
+        with self._txn() as db:
+            item = db.execute(
+                "SELECT queue_id, position, request_json, state FROM queue_items WHERE item_id=?", (item_id,)
+            ).fetchone()
+            if item is None or item["state"] != "running":
+                raise QueueError("The item no longer holds its reservation; nothing was retried.")
+            previous = json.loads(item["request_json"])["request_id"]
+            attempt = db.execute("SELECT attempt_id, state FROM attempts WHERE request_id=?", (previous,)).fetchone()
+            now = self._now()
+            db.execute(
+                "UPDATE queue_items SET request_json=?, updated_at_utc=? WHERE item_id=?", (encoded, now, item_id)
+            )
+            self._event(
+                db,
+                item["queue_id"],
+                "item_retried",
+                now,
+                {
+                    "item_id": item_id,
+                    "position": item["position"],
+                    "previous_state": ATTEMPT_TO_ITEM.get(attempt["state"], "unknown") if attempt else "failed",
+                    "previous_attempt_id": attempt["attempt_id"] if attempt else None,
+                    "previous_request_id": previous,
+                    "automatic": True,
+                },
+            )
+
     async def settle_item(self, item_id: str, failure: dict[str, Any] | None = None) -> str:
         """Record an item's end state from its attempt; without an attempt it was definitely never submitted."""
         return await self._run(self._settle_item, item_id, failure)

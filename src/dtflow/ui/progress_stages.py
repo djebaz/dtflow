@@ -6,6 +6,7 @@ from dtflow.core.models import BackendEvent
 def event_stage(event: BackendEvent) -> str:
     if event.kind == "preparing":
         return {
+            "retrying": "Retrying automatically in a few seconds",
             "binding_assets": "Checking prepared asset references",
             "opening_session": "Opening connection",
             "session_ready": "Connection ready",
