@@ -443,6 +443,7 @@ class LogsWorkspace(QObject):
         self.form.logsDetail.hide()
         self.form.logsAdvanced.hide()
         self.form.logsNotice.hide()
+        self.form.logsLevelCombo.addItem("Warning and worse", "WARNING+")
         self.form.logsLevelCombo.addItem("All", "")
         for level in ("DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"):
             self.form.logsLevelCombo.addItem(level, level)
@@ -675,11 +676,14 @@ class LogsWorkspace(QObject):
             raise ValueError(f"Invalid sort: {exc}") from exc
 
     def _filters(self):
+        severity = self.form.logsLevelCombo.currentData() or ""
         filters = {
             "search": self.form.logsSearch.text().strip(),
-            "level": self.form.logsLevelCombo.currentData() or "",
+            "level": "" if severity == "WARNING+" else severity,
             "component": self.form.logsComponentCombo.currentData() or "",
         }
+        if severity == "WARNING+":
+            filters["min_level"] = "WARNING"
         event = self.form.logsEventCombo.currentData()
         if isinstance(event, str) and event.endswith(".*"):
             filters["family"] = event[:-2]
