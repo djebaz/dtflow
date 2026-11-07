@@ -1,7 +1,7 @@
 """Window-owned script preparation, without a queue, backend session or generation.
 
-The bounded JS child parks on its first durable form. Run Script later queues the
-same run and the ordinary dispatcher adopts it before releasing its first answer.
+The bounded JS child parks on its first form. The run lives in memory here until Run Script queues it; the ordinary
+dispatcher then adopts it, writes it into its queue item (#243) and only then releases its first answer.
 Lost preparations fail closed; they are never reconstructed or replayed.
 """
 
@@ -17,10 +17,9 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
 from dtflow.core.models import ValidationError
-from dtflow.persistence.script_items import read_run_snapshot
-from dtflow.persistence.script_runs import ScriptRunStore, read_open_prompt
 from dtflow.scripting.host import ScriptHost, starting_context
-from dtflow.scripting.runner import run_recorded
+from dtflow.scripting.run_state import Persist, ScriptRun
+from dtflow.scripting.runner import new_script_run, run_recorded
 from dtflow.services.session import script_asset_choices
 
 
@@ -55,6 +54,7 @@ class ScriptSetup:
     hosts: list = field(default_factory=list)
     task: object = None
     queued: bool = False
+    run: ScriptRun | None = None
 
 
 _lock = threading.Lock()
@@ -64,6 +64,13 @@ _closed_owners: set[object] = set()
 
 def _key(state: Path, run_id: str):
     return os.path.normcase(os.path.abspath(state)), run_id
+
+
+def live_setup_run(state: Path, run_id: str) -> ScriptRun | None:
+    """The in-memory run of a Setup still being prepared in this process (not yet adopted by its queue item)."""
+    with _lock:
+        setup = _setups.get(_key(state, run_id))
+    return setup.run if setup is not None else None
 
 
 def find_setup(state: Path, run_id: str) -> ScriptSetup:
@@ -101,6 +108,12 @@ async def prepare_script(
         asyncio.get_running_loop(),
         owner,
     )
+    setup.run = new_script_run(
+        setup.run_id,
+        source,
+        source_name=source_name,
+        context_json=json.dumps(starting_context(base, backend=backend["name"], max_generations=cap, answers=None)),
+    )
     with _lock:
         if owner in _closed_owners:
             raise ValidationError("The Setup window has closed.")
@@ -128,15 +141,7 @@ async def prepare_script(
         return host.hooks()
 
     def run():
-        return run_recorded(
-            ScriptRunStore(state),
-            source,
-            hooks,
-            source_name=source_name,
-            cancel=setup.cancel,
-            run_id=setup.run_id,
-            context_json=json.dumps(starting_context(base, backend=backend["name"], max_generations=cap, answers=None)),
-        )
+        return run_recorded(setup.run, source, hooks, cancel=setup.cancel)
 
     async def supervise():
         try:
@@ -157,12 +162,12 @@ async def prepare_script(
 
 def read_setup(state: Path, run_id: str) -> dict:
     setup = find_setup(state, run_id)
-    run = read_run_snapshot(state, run_id)
-    if run is None and setup.finished.is_set():
+    run = setup.run.snapshot()
+    if setup.finished.is_set() and setup.problem is not None and run["state"] == "running":
         raise ValidationError(setup.problem or "Setup ended before it could publish its form.")
-    if run is not None and run.state not in ("running", "completed"):
-        raise ValidationError(run.error or "Setup was stopped.")
-    prompt = read_open_prompt(state, run_id)
+    if run["state"] not in ("running", "completed"):
+        raise ValidationError(run["error"] or "Setup was stopped.")
+    prompt = setup.run.open_prompt()
     if prompt is not None:
         return {
             "ready": True,
@@ -173,7 +178,7 @@ def read_setup(state: Path, run_id: str) -> dict:
                 "components": prompt.components,
             },
         }
-    if run is not None and run.state == "completed":
+    if run["state"] == "completed":
         return {"ready": True, "prompt": None}
     return {"ready": False, "prompt": None}
 
@@ -224,9 +229,18 @@ def close_setups(state: Path, owner: object) -> None:
 
 
 def adopt_setup(
-    state: Path, request, service, loop, *, reserve_child=None, release_child=None, available_assets=()
+    state: Path,
+    request,
+    service,
+    loop,
+    *,
+    persist: Persist,
+    reserve_child=None,
+    release_child=None,
+    available_assets=(),
 ) -> ScriptSetup:
-    """Called only after the ordinary dispatcher claims the queue item."""
+    """Called only after the ordinary dispatcher claims the queue item, on a worker thread (never on ``loop``): the
+    run is written into the item before Run Script's admission gate opens."""
     setup = find_setup(state, request.run_id)
     if (
         not setup.queued
@@ -237,6 +251,7 @@ def adopt_setup(
         or setup.cap != request.max_generations
     ):
         raise ValidationError("The queued script does not match its owned preparation; it was not replayed.")
+    setup.run.attach(persist)  # durable from here on, before any generation can be admitted
     for host in setup.hosts:
         # Attach capacity accounting before releasing Run Script's admission gate.
         host.reserve_child, host.release_child = reserve_child, release_child

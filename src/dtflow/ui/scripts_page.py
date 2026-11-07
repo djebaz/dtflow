@@ -522,6 +522,9 @@ class ScriptsPage:
         self.live_fields.hide()
         self._live_prompt_id = None
         self._live_form_error = False
+        self._live_refused = None  # refusal count of the open form last seen
+        self._choice_buttons: list[QPushButton] = []  # one per choice of a dtFlow choice form (step Retry)
+        self._live_refusal_note: str | None = None
         self.live_fields.busyChanged.connect(self._live_form_busy)
         self.live_fields.problem.connect(self._live_form_problem)
         self.owner.runner.shutdown_started.connect(self.live_fields.clear_request)
@@ -1459,6 +1462,8 @@ class ScriptsPage:
         self.start.setText(caption)
         self.start.setAccessibleName(caption)
         self.start.setEnabled(bool(ready) and self._removing_sha is None)
+        # A step Retry form is answered by its own buttons beside Cancel input, not by the footer action.
+        self.start.setVisible(view <= 2 and not (self._live_mode() and self.live_fields.choices))
         self.start.setToolTip(
             "Prepare the actual script form in Setup. Generation stays blocked until Run Script."
             if view == 0
@@ -1631,13 +1636,42 @@ class ScriptsPage:
         if self._live_mode() and (self._run_state == "waiting_input" or self._setup_id is not None):
             self.designer.continueInputButton.setEnabled(not busy and self.live_fields.identity is not None)
             self.designer.cancelInputButton.setEnabled(not self.live_fields.submitting)
+            for button in self._choice_buttons:
+                button.setEnabled(not busy and not self.live_fields.submitting)
             self._refresh_readiness()
+
+    def _sync_choice_buttons(self):
+        """A dtFlow choice form (step Retry) gets one button per choice beside Cancel input; nothing is sent before a
+        click. The remembered last choice only gets focus (Enter)."""
+        for button in self._choice_buttons:
+            button.setParent(None)
+            button.deleteLater()
+        self._choice_buttons = []
+        choices = self.live_fields.choices if self.live_fields.identity is not None else None
+        cancel = self.designer.cancelInputButton
+        layout = cancel.parentWidget().layout() if cancel.parentWidget() is not None else None
+        if not choices or layout is None:
+            return
+        at = layout.indexOf(cancel)
+        focus = self.live_fields.remembered_choice()
+        # Right to left before Cancel input: the first choice ends up nearest to it.
+        for index, label in reversed(list(enumerate(choices))):
+            button = QPushButton(label)
+            button.setObjectName(f"scriptsChoiceButton{index}")
+            button.setAccessibleName(label)
+            button.setAutoDefault(True)
+            button.setDefault(index == focus)
+            button.clicked.connect(lambda _checked=False, choice=index: self._answer_input(choice=choice))
+            layout.insertWidget(at + 1 if at >= 0 else layout.count(), button)
+            self._choice_buttons.append(button)
+        self._choice_buttons.reverse()
+        self._choice_buttons[focus].setFocus()
 
     def _live_form_problem(self, message):
         self.designer.waitingInstructions.setText(message)
         _feedback(self.designer.waitingInstructions, "error")
 
-    def _answer_input(self, *, cancel=False):
+    def _answer_input(self, *, cancel=False, choice: int | None = None):
         if not self._live_mode():
             self._continue_preview(cancel=cancel)
             return
@@ -1664,14 +1698,20 @@ class ScriptsPage:
             return
         from dtflow.services.script_item import answer_script_prompt, cancel_script_prompt
 
+        if not cancel and self.live_fields.choices and choice is None:
+            return  # a choice form is answered only by one of its buttons
         try:
             answers = None if cancel else self.live_fields.answers()
+            if answers is not None and choice is not None:
+                answers[-1] = choice
         except ValueError as exc:
             self._live_form_problem(str(exc))
             return
         self.live_fields.set_submitting(True)
         self.designer.continueInputButton.setEnabled(False)
         self.designer.cancelInputButton.setEnabled(False)
+        for button in self._choice_buttons:
+            button.setEnabled(False)
         state = self._state_dir()
         run_id, ordinal = identity
 
@@ -1684,12 +1724,14 @@ class ScriptsPage:
                 self.live_fields.set_submitting(False)
                 self._live_form_problem(str(failure))
                 self.designer.cancelInputButton.setEnabled(True)
+                for button in self._choice_buttons:
+                    button.setEnabled(True)
             else:
                 # Keep consent disabled until polling observes another ordinal or settlement.
                 self.designer.waitingInstructions.setText(
                     "Input cancelled; stopping local script waiting."
                     if cancel
-                    else "Answers saved; waiting for the script to continue."
+                    else "Answers sent; waiting for the script to continue."
                 )
                 if not cancel:
                     self.show_view(3)
@@ -1708,6 +1750,7 @@ class ScriptsPage:
             if self._live_prompt_id is not None:
                 self._live_prompt_id = None
                 self.live_fields.clear_request()
+                self._sync_choice_buttons()
             self.live_fields.hide()
             self.waiting_form.hide()
             if key == "running":
@@ -1724,7 +1767,10 @@ class ScriptsPage:
             return
         self._live_prompt_id = identity
         self._live_form_error = False
+        refused = prompt.get("refused")
+        self._live_refused = refused.get("count") if isinstance(refused, dict) else None
         self.live_fields.clear_request()
+        self._sync_choice_buttons()
         self.live_fields.hide()
         ui = self.designer
         ui.waitingFormTitle.setTextFormat(Qt.TextFormat.PlainText)
@@ -1757,6 +1803,7 @@ class ScriptsPage:
                 self.live_fields.set_request(self._state_dir(), result)
             except Exception as exc:
                 self.live_fields.clear_request()
+                self._sync_choice_buttons()
                 self._live_form_error = True
                 self._live_form_problem(f"Cannot show this form: {exc}. Cancel input or retry.")
                 ui.continueInputButton.setText("Retry form")
@@ -1764,6 +1811,7 @@ class ScriptsPage:
                 self._refresh_readiness()
                 return
             self.live_fields.show()
+            self._sync_choice_buttons()
             confirm = result["prompt"].confirm or "Continue"
             ui.continueInputButton.setText(
                 ui.continueInputButton.fontMetrics().elidedText(confirm, Qt.TextElideMode.ElideRight, 160)
@@ -1784,6 +1832,9 @@ class ScriptsPage:
                     "Cancel input stops this script; it does not cancel submitted remote work."
                 )
             )
+            if self._live_refusal_note:
+                self._live_form_problem(self._live_refusal_note)
+                self._live_refusal_note = None
             self.sync_responsive()
             self._refresh_readiness()
 
@@ -2421,6 +2472,7 @@ class ScriptsPage:
         self._starting = False
         self._live_prompt_id = None
         self.live_fields.clear_request()
+        self._sync_choice_buttons()
         self.waiting_form.hide()
 
     def _setup_prepared(self, result, failure, token):
@@ -2636,6 +2688,20 @@ class ScriptsPage:
         setting_up = run.get("setup_pending") and key in ("queued", "paused", "running")
         target = 4 if key == "results" else 1 if key == "waiting_input" or setting_up else 3
         prompt = script.get("prompt")
+        refused = (prompt or {}).get("refused")
+        refusals = refused.get("count") if isinstance(refused, dict) else None
+        if (
+            prompt is not None
+            and (script.get("run_id"), prompt["ordinal"]) == self._live_prompt_id
+            and refusals != self._live_refused
+        ):
+            # The script did not take the answers sent: offer the same form again with the reason.
+            self._live_refused = refusals
+            self._live_refusal_note = (
+                f"The script did not accept these answers: {refused.get('reason') or 'no reason given'} "
+                "Check them and send again, or Cancel input."
+            )
+            self._live_prompt_id = None
         new_prompt = prompt is not None and (script.get("run_id"), prompt["ordinal"]) != self._live_prompt_id
         setup_finished = (
             (run.get("setup_pending") or self._live_prompt_id is not None)

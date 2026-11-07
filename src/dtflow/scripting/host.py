@@ -5,7 +5,7 @@ Qt GUI thread, never the JavaScript child); work that needs the asyncio service 
 there. Rules kept here:
 
 * A ``generateImage`` call becomes one ``ResolvedGenerationRequest`` through the normal generation path
-  (``run_generation``), after its attempt id has been linked in the ScriptRun ledger and before anything is submitted.
+  (``run_generation``), after its attempt id has been linked in the run (kept in its queue item) and before anything is submitted.
 * Stop only stops *waiting*. The in-flight attempt is never cancelled remotely and stays durable; the caller drains
   ``pending`` before closing the service.
 * A step or batch job whose failure ``core.retry_policy.auto_retryable`` accepts gets the one shared automatic retry
@@ -434,7 +434,8 @@ class ScriptHost:
         }[kind]
         if not retry_left:
             detail = f"This run reached its generation limit ({self.max_generations}); it cannot retry."
-        # Continue is the default: pressing the button without choosing never sends the step again.
+        # Scripts shows one button per option (nothing is sent before a click); the field's value is only the
+        # remembered choice that gets focus. Continue comes first, so a headless default never sends the step again.
         options = (
             ["Continue without this image", "Retry with the same settings"]
             if retry_left
@@ -445,7 +446,7 @@ class ScriptHost:
             {"type": "plainText", "value": detail},
             {"type": "segmented", "title": "Next", "options": options, "index": 0},
         ]
-        answers = self._ask(headline, "Apply", components)
+        answers = self._ask(headline, "Apply", components, choices=options)
         self._forms += 1  # the run's form ordinal; script forms resolve their inputs by it
         if answers is None or self.cancel.is_set():
             raise ScriptCancelled()
@@ -574,13 +575,13 @@ class ScriptHost:
                             return
                     if not intake_open or self.cancel.is_set():
                         return
-                    # The ScriptRun ledger is independent of the attempts SQLite owner.
+                    # Linking writes the run through the state owner; never block the loop on it.
                     await asyncio.to_thread(self._link_child, attempt_id)
                     linked = True
                     self.steps += 1
                     self.attempts.append(attempt_id)
                     # Keep the identity even if another worker closed intake
-                    # while the independent ledger writer was linking this job.
+                    # while the run writer was linking this job.
                     results[index]["attemptId"] = attempt_id
                     if not intake_open or self.cancel.is_set():
                         return
@@ -639,7 +640,7 @@ class ScriptHost:
                     raise
                 except Exception as exc:
                     intake_open = False
-                    self._blocked = "A batch reservation or ledger operation failed; no more jobs."
+                    self._blocked = "A batch reservation or run record failed; no more jobs."
                     results[index] = {
                         "status": "failed",
                         "attemptId": attempt_id if linked else None,

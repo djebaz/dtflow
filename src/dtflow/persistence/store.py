@@ -23,13 +23,16 @@ from dtflow.core.models import (
 )
 from dtflow.core.request_records import upgraded_request_record
 from dtflow.core.tasks import settle
-from dtflow.persistence.queues import QUEUE_SCHEMA, QueueMixin, add_kind, add_up_next
+from dtflow.persistence.queues import QUEUE_SCHEMA, QueueMixin, add_kind, add_lanes, add_up_next, migrate_script_runs
 
 # 1: attempts only. 2: queues. 3: request v2. 4: up next. 5: script kind. 6: script child slots. 7: cloud usage.
 # 8: the workflow queue kind (#223): only a new ``queues.kind`` value; no table changes, and an older writer could
 # not read a workflow item, so the upgrade is one-way like every earlier one.
+# 9 (#243): a script run lives in its queue item (``request_json["run"]``); child lanes are the item's ``lanes_json``
+# (the ``script_child_slots`` table is dropped); remembered form answers move to ``script_form_answers``. Runs of the
+# old ``script_runs.sqlite3`` are copied into their items once; that file is left untouched and no longer written.
 # A supported older writer open backs up, then migrates/reconciles transactionally.
-SCHEMA_VERSION = 8
+SCHEMA_VERSION = 9
 
 
 # Schema 7: a credential-free, per-attempt attribution of cloud output to an opaque key identity. Completion time is
@@ -141,7 +144,7 @@ class SQLiteAttempts(QueueMixin):
             connection.execute("PRAGMA synchronous=FULL")
             connection.execute("PRAGMA foreign_keys=ON")
             connection.execute("PRAGMA busy_timeout=2000")
-            if version in (1, 2, 3, 4, 5, 6, 7):
+            if version in (1, 2, 3, 4, 5, 6, 7, 8):
                 # A fresh consistent backup for each migration attempt; never rely
                 # on an old/partial backup left by a previously failed upgrade.
                 copy = self.directory / f"attempts.pre-v{SCHEMA_VERSION}-from-v{version}-{uuid4().hex}.sqlite3"
@@ -168,9 +171,12 @@ class SQLiteAttempts(QueueMixin):
                     connection.execute(statement)
                 add_up_next(connection)
                 add_kind(connection)
+                add_lanes(connection)
                 connection.execute(CLOUD_USAGE_SCHEMA)
                 if version in (1, 2):
                     self._migrate_requests(connection)
+                if 0 < version < 9:
+                    migrate_script_runs(connection, self.directory)
                 connection.execute(f"PRAGMA user_version={SCHEMA_VERSION}")
                 # Ownership lock ensures we are not reconciling another live dispatcher.
                 now = self._now()
@@ -192,7 +198,7 @@ class SQLiteAttempts(QueueMixin):
                 self.reconcile(connection, now, self.directory)
                 # A recovered owner never replays previously submitted script children.
                 # No earlier process can still own this DB under owner.lock.
-                connection.execute("DELETE FROM script_child_slots")
+                connection.execute("UPDATE queue_items SET lanes_json=NULL WHERE lanes_json IS NOT NULL")
                 connection.execute("COMMIT")
             except BaseException:
                 connection.execute("ROLLBACK")

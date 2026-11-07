@@ -74,12 +74,54 @@ STATES = (
     "scripts_editor_parser_limit",
     "scripts_editor_parser_limit_narrow",
     "scripts_inspect_dtflow_helpers",
+    "scripts_step_retry",
+    "scripts_step_retry_narrow",
+    "scripts_step_retry_limit",
 )
 
 
 def _shared_overlay(window, state: str) -> None:
     """Use the presenter's real offline interaction path, not a competing render-only model."""
     window.scripts._present_activity()
+
+
+def _prepare_step_retry(window, *, capped: bool) -> None:
+    """Present the production form/buttons from synthetic data, without starting a script, queue or worker read."""
+    from unittest.mock import patch
+
+    from dtflow.scripting.run_state import ScriptPrompt
+
+    page = window.scripts
+    choices = ["Continue without this image"]
+    if not capped:
+        choices.append("Retry with the same settings")
+    detail = (
+        "This run reached its generation limit (4); it cannot retry."
+        if capped
+        else "Retry sends the same settings (same seed) again."
+    )
+    components = [
+        {"type": "plainText", "value": "The previous image step failed. Offline fixture; no work was submitted."},
+        {"type": "plainText", "value": detail},
+        {"type": "segmented", "title": "Next", "options": choices, "index": 0},
+    ]
+    prompt = ScriptPrompt("a" * 32, 1, "Image step failed", "Apply", components, "open", choices=tuple(choices))
+    page._live, page._reference_mode = True, False
+    page._run_state = "waiting_input"
+    page._live_run = {"setup_pending": False}
+    page._setup_id = None
+    page._live_prompt_id = None
+    page.show_view(1)
+
+    def deliver(coroutine, callback):
+        coroutine.close()
+        callback({"prompt": prompt, "answers": None, "thumbnails": {}}, None)
+
+    with patch.object(window.runner, "submit", side_effect=deliver):
+        page._sync_live_prompt(
+            "waiting_input",
+            {"run_id": prompt.run_id, "prompt": {"ordinal": 1, "title": prompt.title, "components": components}},
+        )
 
 
 def _prepare_inpaint_entry(window):
@@ -145,6 +187,7 @@ def render_scripts_states(
                 "scripts_mixer_setup_narrow",
                 "scripts_library_remove_narrow",
                 "scripts_editor_parser_limit_narrow",
+                "scripts_step_retry_narrow",
             )
             window.form.resize(800, 680) if narrow else window.form.resize(1600, 1000)
             window._show_scripts()
@@ -183,6 +226,9 @@ def render_scripts_states(
                 "scripts_editor_parser_limit": "scripts_editor_syntax_error",
                 "scripts_editor_parser_limit_narrow": "scripts_editor_syntax_error",
                 "scripts_inspect_dtflow_helpers": "scripts_imported_supported",
+                "scripts_step_retry": "scripts_form_default",
+                "scripts_step_retry_narrow": "scripts_form_default",
+                "scripts_step_retry_limit": "scripts_form_default",
             }.get(state, state)
             if state in (
                 "scripts_queued",
@@ -191,8 +237,13 @@ def render_scripts_states(
                 "scripts_cancelled_before_start",
             ):
                 base = "scripts_form_default"
+            window.scripts._live_prompt_id = None
+            window.scripts.live_fields.clear_request()
+            window.scripts._sync_choice_buttons()
             window.scripts.preview(base)
-            if state == "scripts_setup_loading":
+            if state in ("scripts_step_retry", "scripts_step_retry_narrow", "scripts_step_retry_limit"):
+                _prepare_step_retry(window, capped=state == "scripts_step_retry_limit")
+            elif state == "scripts_setup_loading":
                 window.scripts.show_view(1)
                 window.scripts.form.hide()
                 window.scripts.form_note.setText("Preloading Setup from Inspect. No queue item exists.")

@@ -11,6 +11,7 @@ claims remote cancellation.
 """
 
 import asyncio
+import logging
 from collections.abc import Callable
 from dataclasses import asdict, dataclass, replace
 from html import escape
@@ -538,6 +539,7 @@ class QueuePage:
     def _read_done(self, result, failure, epoch: int | None = None) -> None:
         self._reading = False
         if failure is not None:
+            logging.getLogger(__name__).warning("Queue refresh failed (%s).", type(failure).__name__)
             self._message(present_generation_failure(failure))
             return
         views, self._detail, shared = result
@@ -2152,7 +2154,7 @@ class QueuePage:
         """Run Script is the sole point that creates a queue for a preloaded form."""
         from dtflow.services.script_setup import reserve_setup, release_setup
         from dtflow.services.script_form_inputs import resolve_form_inputs
-        from dtflow.persistence.script_runs import read_open_prompt
+        from dtflow.services.script_runs import read_open_prompt
 
         if self.dispatching_here or self._activity.generating or self._runner.closed:
             done(None, ValidationError("Finish the active generation or queue before Run Script."))

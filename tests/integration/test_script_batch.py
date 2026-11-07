@@ -102,7 +102,11 @@ async def test_child_slot_recovery_discards_stale_lanes_not_history(tmp_path):
     try:
         assert (
             await recovered._run(
-                lambda: recovered._db().execute("SELECT COUNT(*) FROM script_child_slots").fetchone()[0]
+                lambda: (
+                    recovered._db()
+                    .execute("SELECT COUNT(*) FROM queue_items WHERE lanes_json IS NOT NULL")
+                    .fetchone()[0]
+                )
             )
             == 0
         )
@@ -305,14 +309,15 @@ def test_parallel_child_ordinal_allocation_is_atomic(tmp_path):
     """Concurrent workers must not reuse an ordinal or lose an attempt identity."""
     from concurrent.futures import ThreadPoolExecutor
 
-    from dtflow.persistence.script_runs import ScriptRunStore
+    from dtflow.scripting.run_state import ScriptRun, new_run
 
-    ledger = ScriptRunStore(tmp_path / "state")
-    run_id = ledger.create(
-        source_name="parallel-fixture.js",
-        source_sha256="0" * 64,
-        api_version="1.0",
-        vendored_js_sha256="0" * 64,
+    written = []
+    run = ScriptRun(
+        uuid4().hex,
+        new_run(
+            source_name="parallel-fixture.js", source_sha256="0" * 64, api_version="1.0", vendored_js_sha256="0" * 64
+        ),
+        lambda state, recall: written.append(list(state["children"])),
     )
     attempt_ids = [uuid4().hex for _ in range(16)]
     barrier = threading.Barrier(4)
@@ -321,15 +326,12 @@ def test_parallel_child_ordinal_allocation_is_atomic(tmp_path):
         index, attempt_id = index_and_id
         if index < 4:
             barrier.wait(timeout=5)
-        return ledger.link_child(run_id, attempt_id)
+        return run.link_child(attempt_id)
 
-    try:
-        with ThreadPoolExecutor(max_workers=4) as pool:
-            ordinals = list(pool.map(link, enumerate(attempt_ids)))
-        assert sorted(ordinals) == list(range(1, len(attempt_ids) + 1))
-        snapshot = ledger.get(run_id)
-        assert snapshot is not None
-        assert len(snapshot.children) == len(attempt_ids)
-        assert set(snapshot.children) == set(attempt_ids)
-    finally:
-        ledger.finish(run_id, "completed")
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        ordinals = list(pool.map(link, enumerate(attempt_ids)))
+    assert sorted(ordinals) == list(range(1, len(attempt_ids) + 1))
+    assert len(run.children) == len(attempt_ids)
+    assert set(run.children) == set(attempt_ids)
+    assert written[-1] == list(run.children)  # each link was written before it took effect
+    run.finish("completed")

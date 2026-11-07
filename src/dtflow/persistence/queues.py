@@ -38,7 +38,6 @@ from dtflow.core.models import (
     ValidationError,
 )
 from dtflow.core.request_records import request_from_record as decode_request
-from dtflow.persistence.script_runs import read_open_prompt
 from dtflow.persistence.script_items import (
     KIND_SCRIPT,
     TERMINAL_ATTEMPTS,
@@ -46,9 +45,11 @@ from dtflow.persistence.script_items import (
     retry_of,
     is_script_record,
     item_outcome,
-    read_run_snapshot,
+    run_snapshot,
     script_request_from_record,
 )
+from dtflow.scripting.run_state import interrupted as interrupted_script_run
+from dtflow.scripting.run_state import open_prompt_of
 from dtflow.persistence.workflow_items import (
     KIND_WORKFLOW,
     interrupted_run,
@@ -64,6 +65,9 @@ ACTIONS = ("pause", "resume", "cancel", "cap")
 # Workflow queues only (#223): answered by the workflow runner, which takes them with their payloads
 # (``take_workflow_controls``); ``apply_controls`` leaves them pending for it.
 WORKFLOW_ACTIONS = ("workflow_branch", "workflow_retry")
+# Script queues only (#243): a form answer or cancel from any process, taken by the script runner
+# (``take_script_controls``), which records it in the run kept in the item.
+SCRIPT_ACTIONS = ("script_answer", "script_cancel_form")
 BRANCH_DECISIONS = ("continue", "stop")
 MAX_ITEMS = MAX_QUEUE_ITEMS
 
@@ -112,12 +116,16 @@ QUEUE_SCHEMA = (
         detail_json TEXT NOT NULL DEFAULT '{}'
     )""",
     "CREATE INDEX IF NOT EXISTS queue_events_by_queue_kind ON queue_events (queue_id, kind)",
-    """CREATE TABLE IF NOT EXISTS script_child_slots (
-        attempt_id TEXT PRIMARY KEY,
-        queue_id TEXT NOT NULL REFERENCES queues(queue_id)
+    # Schema 9 (#243): the last answers of each script form, offered again on the next run of the same script.
+    """CREATE TABLE IF NOT EXISTS script_form_answers (
+        source_sha256 TEXT NOT NULL,
+        form_sha256 TEXT NOT NULL,
+        answers_json TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        PRIMARY KEY (source_sha256, form_sha256)
     )""",
-    "CREATE INDEX IF NOT EXISTS script_child_slots_by_queue ON script_child_slots (queue_id)",
 )
+MAX_RECALLED_FORMS = 128
 
 # An attempt's final state decides its item's state; an item never invents an outcome the attempt does not have.
 ATTEMPT_TO_ITEM = {
@@ -140,6 +148,14 @@ def add_kind(db: sqlite3.Connection) -> None:
     """Schema 5 migration step: the queue kind (``generation`` or ``script``) on a queues table from schema 2 to 4."""
     if "kind" not in {row[1] for row in db.execute("PRAGMA table_info(queues)")}:
         db.execute("ALTER TABLE queues ADD COLUMN kind TEXT NOT NULL DEFAULT 'generation'")
+
+
+def add_lanes(db: sqlite3.Connection) -> None:
+    """Schema 9 migration step: the child lanes a script or workflow item holds (``lanes_json``, a list of attempt
+    ids, NULL when none) replace the ``script_child_slots`` table."""
+    if "lanes_json" not in {row[1] for row in db.execute("PRAGMA table_info(queue_items)")}:
+        db.execute("ALTER TABLE queue_items ADD COLUMN lanes_json TEXT")
+    db.execute("DROP TABLE IF EXISTS script_child_slots")
 
 
 def check_queueable(request: ResolvedGenerationRequest) -> None:
@@ -377,6 +393,8 @@ class QueueMixin:
                 action, payload = control["action"], json.loads(control["payload_json"])
                 if action in WORKFLOW_ACTIONS and queue["kind"] == KIND_WORKFLOW:
                     continue  # left pending for the workflow runner (take_workflow_controls)
+                if action in SCRIPT_ACTIONS and queue["kind"] == KIND_SCRIPT:
+                    continue  # left pending for the script runner (take_script_controls)
                 if action == "pause" and state == "running":
                     state = "paused"
                 elif action == "resume" and state == "paused":
@@ -429,6 +447,29 @@ class QueueMixin:
                 payload = json.loads(control["payload_json"])
                 taken.append((control["action"], payload))
                 self._event(db, queue_id, control["action"], now, payload)
+                db.execute(
+                    "UPDATE queue_controls SET applied_at_utc=? WHERE control_id=?", (now, control["control_id"])
+                )
+        return tuple(taken)
+
+    async def take_script_controls(self, queue_id: str) -> tuple[tuple[str, dict[str, Any]], ...]:
+        """Consume a script queue's pending form answers and cancels, in order, with their payloads."""
+        return await self._run(self._take_script_controls, queue_id)
+
+    def _take_script_controls(self, queue_id: str) -> tuple[tuple[str, dict[str, Any]], ...]:
+        taken: list[tuple[str, dict[str, Any]]] = []
+        marks = ",".join("?" * len(SCRIPT_ACTIONS))
+        with self._txn() as db:
+            now = self._now()
+            for control in db.execute(
+                f"SELECT * FROM queue_controls WHERE queue_id=? AND applied_at_utc IS NULL AND action IN ({marks})"
+                " ORDER BY control_id",
+                (queue_id, *SCRIPT_ACTIONS),
+            ).fetchall():
+                payload = json.loads(control["payload_json"])
+                taken.append((control["action"], payload))
+                # The answers themselves stay out of the event log; the run records them.
+                self._event(db, queue_id, control["action"], now, {"ordinal": payload.get("ordinal")})
                 db.execute(
                     "UPDATE queue_controls SET applied_at_utc=? WHERE control_id=?", (now, control["control_id"])
                 )
@@ -618,7 +659,7 @@ class QueueMixin:
 
     @staticmethod
     def _reserved(db: sqlite3.Connection, key: str) -> int:
-        """Shared reservations: ordinary queue items plus each running script's active child slots.
+        """Shared reservations: ordinary queue items plus each script or workflow item's active child lanes.
 
         A script parent already occupies one reservation. Its first child uses that reservation;
         every additional active child consumes one more, transactionally visible to all queues."""
@@ -628,8 +669,9 @@ class QueueMixin:
             (key,),
         ).fetchone()[0]
         children = db.execute(
-            """SELECT COUNT(*) AS total, COUNT(DISTINCT s.queue_id) AS parents
-            FROM script_child_slots s JOIN queues q ON q.queue_id=s.queue_id WHERE q.backend_key=?""",
+            """SELECT COALESCE(SUM(json_array_length(i.lanes_json)), 0) AS total, COUNT(*) AS parents
+            FROM queue_items i JOIN queues q USING (queue_id)
+            WHERE q.backend_key=? AND i.lanes_json IS NOT NULL""",
             (key,),
         ).fetchone()
         return parents + children["total"] - children["parents"]
@@ -640,7 +682,7 @@ class QueueMixin:
         """Atomically claim a script child lane without bypassing normal queue reservations.
 
         False means the lane is busy; the caller may poll, but must stop polling on Stop.
-        Child work is never submitted before the caller also links its attempt to the ScriptRun."""
+        Child work is never submitted before the caller also links its attempt to the run."""
         return await self._run(self._reserve_script_child, queue_id, attempt_id, max_concurrent, backend_limit)
 
     def _reserve_script_child(self, queue_id: str, attempt_id: str, max_concurrent: int, backend_limit: int) -> bool:
@@ -653,18 +695,21 @@ class QueueMixin:
             # A workflow run (#223) shares the script child lanes: its first submission uses the item's reservation.
             if queue is None or queue["kind"] not in (KIND_SCRIPT, KIND_WORKFLOW) or queue["state"] != "running":
                 raise QueueError("The script queue is not running; no child generation was submitted.")
-            if (
-                db.execute("SELECT 1 FROM queue_items WHERE queue_id=? AND state='running'", (queue_id,)).fetchone()
-                is None
-            ):
+            item = db.execute(
+                "SELECT item_id, lanes_json FROM queue_items WHERE queue_id=? AND state='running'", (queue_id,)
+            ).fetchone()
+            if item is None:
                 raise QueueError("The script item no longer holds its reservation.")
-            active = db.execute("SELECT COUNT(*) FROM script_child_slots WHERE queue_id=?", (queue_id,)).fetchone()[0]
+            lanes = json.loads(item["lanes_json"]) if item["lanes_json"] else []
+            active = len(lanes)
             # The first child uses the parent reservation; further children need a free global lane.
             if active >= min(max_concurrent, backend_limit) or (
                 active > 0 and self._reserved(db, queue["backend_key"]) >= backend_limit
             ):
                 return False
-            db.execute("INSERT INTO script_child_slots (attempt_id, queue_id) VALUES (?,?)", (attempt_id, queue_id))
+            if attempt_id not in lanes:
+                lanes.append(attempt_id)
+            db.execute("UPDATE queue_items SET lanes_json=? WHERE item_id=?", (json.dumps(lanes), item["item_id"]))
             return True
 
     async def release_script_child(self, queue_id: str, attempt_id: str) -> None:
@@ -673,7 +718,14 @@ class QueueMixin:
 
     def _release_script_child(self, queue_id: str, attempt_id: str) -> None:
         with self._txn() as db:
-            db.execute("DELETE FROM script_child_slots WHERE queue_id=? AND attempt_id=?", (queue_id, attempt_id))
+            for item in db.execute(
+                "SELECT item_id, lanes_json FROM queue_items WHERE queue_id=? AND lanes_json IS NOT NULL", (queue_id,)
+            ).fetchall():
+                lanes = [lane for lane in json.loads(item["lanes_json"]) if lane != attempt_id]
+                db.execute(
+                    "UPDATE queue_items SET lanes_json=? WHERE item_id=?",
+                    (json.dumps(lanes) if lanes else None, item["item_id"]),
+                )
 
     async def auto_retry_item(self, item_id: str, request: ResolvedGenerationRequest) -> None:
         """Before the one automatic retry (#241): a running item takes the retry's new request identity, durably,
@@ -730,6 +782,13 @@ class QueueMixin:
                 return state
             if is_script_record(record):
                 state, failure_json = self._script_outcome(db, record, failure)
+                # Form answers sent after the run ended have nothing left to answer.
+                db.execute(
+                    f"UPDATE queue_controls SET applied_at_utc=? WHERE applied_at_utc IS NULL"
+                    f" AND action IN ({','.join('?' * len(SCRIPT_ACTIONS))})"
+                    " AND queue_id=(SELECT queue_id FROM queue_items WHERE item_id=?)",
+                    (self._now(), *SCRIPT_ACTIONS, item_id),
+                )
                 db.execute(
                     "UPDATE queue_items SET state=?, failure_json=?, updated_at_utc=? WHERE item_id=?",
                     (state, failure_json, self._now(), item_id),
@@ -755,14 +814,49 @@ class QueueMixin:
         return state
 
     def _script_outcome(self, db: sqlite3.Connection, record: dict, failure) -> tuple[str, str | None]:
-        """A script item's end state comes from its run row and children, never from a lone attempt."""
-        run = read_run_snapshot(self.directory, record["run_id"])
+        """A script item's end state comes from its run and children, never from a lone attempt."""
+        run = run_snapshot(record.get("run"))
         if run is None:
             return "failed", json.dumps(
                 failure or {"code": "script_not_started", "message": "The script did not start."}
             )
         state, failure_json = item_outcome(run, child_states(db, run.children))
         return state, failure_json
+
+    async def update_script_run(
+        self, item_id: str, run: dict[str, Any], recall: tuple[str, str, str] | None = None
+    ) -> None:
+        """Replace a reserved script item's run state in one short transaction (dispatch owner only).
+
+        ``recall`` (source sha, form sha, answers json) keeps a form's last answers for the next run of the script,
+        in the same transaction. The state is encoded on the caller's loop, so later changes never race the write."""
+        encoded = json.dumps(run, allow_nan=False)
+        await self._run(self._update_script_run, item_id, encoded, recall)
+
+    def _update_script_run(self, item_id: str, encoded: str, recall) -> None:
+        with self._txn() as db:
+            item = db.execute("SELECT request_json, state FROM queue_items WHERE item_id=?", (item_id,)).fetchone()
+            if item is None:
+                raise QueueError("Unknown queue item.")
+            record = json.loads(item["request_json"])
+            if not is_script_record(record) or item["state"] != "running":
+                raise QueueError("Only a running script item's run state can change.")
+            record["run"] = json.loads(encoded)
+            db.execute(
+                "UPDATE queue_items SET request_json=? WHERE item_id=?", (json.dumps(record, allow_nan=False), item_id)
+            )
+            if recall is not None:
+                db.execute(
+                    "INSERT INTO script_form_answers VALUES (?, ?, ?, ?)"
+                    " ON CONFLICT(source_sha256, form_sha256) DO UPDATE SET"
+                    " answers_json=excluded.answers_json, updated_at=excluded.updated_at",
+                    (*recall, self._now()),
+                )
+                db.execute(
+                    "DELETE FROM script_form_answers WHERE rowid NOT IN"
+                    f" (SELECT rowid FROM script_form_answers ORDER BY updated_at DESC, rowid DESC"
+                    f" LIMIT {MAX_RECALLED_FORMS})"
+                )
 
     async def update_workflow_run(self, item_id: str, run: dict[str, Any]) -> None:
         """Replace a reserved workflow item's run state in one short transaction (dispatch owner only).
@@ -846,7 +940,7 @@ class QueueMixin:
                 _reconcile_workflow_item(db, item, record, now)
                 continue
             if is_script_record(record):
-                _reconcile_script_item(db, item, record, now, directory)
+                _reconcile_script_item(db, item, record, now)
                 continue
             request_id = record["request_id"]
             attempt = db.execute(
@@ -872,24 +966,27 @@ class QueueMixin:
         _release_queued(db, now, "restart")
 
 
-def _reconcile_script_item(db: sqlite3.Connection, item, record: dict, now: str, directory: Path | None) -> None:
-    """A reserved script item takes its run's end state. A run is never resumed; a missing run row means it never
-    started, so the item returns to pending; an unreadable ledger leaves it ``unknown``."""
-    state, failure_json = "pending", None
+def _reconcile_script_item(db: sqlite3.Connection, item, record: dict, now: str) -> None:
+    """A reserved script item takes its run's end state, in the reconcile transaction. A run is never resumed: one left
+    running becomes interrupted. No run in the item means it never started, so the item returns to pending; a run
+    that cannot be read leaves the item ``unknown``."""
+    state, failure_json, stored = "pending", None, item["request_json"]
     try:
-        if directory is not None:
-            _recover_runs(directory)
-            run = read_run_snapshot(directory, record["run_id"])
-            if run is not None:
-                state, failure_json = item_outcome(run, child_states(db, run.children))
+        if record.get("run") is not None:
+            run = run_snapshot(record["run"])
+            if run is None or run.state not in ("running", "completed", "failed", "stopped", "interrupted"):
+                raise ValueError("unreadable script run")
+            record["run"] = interrupted_script_run(record["run"], now)
+            state, failure_json = item_outcome(run_snapshot(record["run"]), child_states(db, run.children))
+            stored = json.dumps(record, allow_nan=False)
     except Exception:
         state, failure_json = (
             "unknown",
-            json.dumps({"code": "script_ledger_unreadable", "message": "The script run record could not be read."}),
+            json.dumps({"code": "script_run_unreadable", "message": "The script run record could not be read."}),
         )
     db.execute(
-        "UPDATE queue_items SET state=?, failure_json=?, updated_at_utc=? WHERE item_id=?",
-        (state, failure_json, now, item["item_id"]),
+        "UPDATE queue_items SET state=?, failure_json=?, request_json=?, updated_at_utc=? WHERE item_id=?",
+        (state, failure_json, stored, now, item["item_id"]),
     )
     QueueMixin._event(db, item["queue_id"], "reconciled", now, {"item_id": item["item_id"]})
 
@@ -915,14 +1012,6 @@ def _reconcile_workflow_item(db: sqlite3.Connection, item, record: dict, now: st
         (state, failure_json, stored, now, item["item_id"]),
     )
     QueueMixin._event(db, item["queue_id"], "reconciled", now, {"item_id": item["item_id"]})
-
-
-def _recover_runs(directory: Path) -> None:
-    """Opening the run store turns runs left ``running`` by a crash (free ownership lock) into ``interrupted``."""
-    from dtflow.persistence.script_runs import ScriptRunStore
-
-    if (Path(directory) / "script_runs.sqlite3").is_file():
-        ScriptRunStore(directory)
 
 
 def _release_queued(db: sqlite3.Connection, now: str, reason: str) -> int:
@@ -952,7 +1041,9 @@ def _shared_connection(directory: Path, *, readonly: bool = False) -> sqlite3.Co
     )
     connection.row_factory = sqlite3.Row
     connection.execute("PRAGMA busy_timeout=2000")
-    supported = (2, 3, 4, SCHEMA_VERSION) if readonly else (SCHEMA_VERSION,)
+    # Browsing must work before the next dispatch owner performs the backed-up migration.
+    # Mutations still require the current schema and never upgrade through this shared reader.
+    supported = tuple(range(2, SCHEMA_VERSION + 1)) if readonly else (SCHEMA_VERSION,)
     if connection.execute("PRAGMA user_version").fetchone()[0] not in supported:
         connection.close()
         raise QueueError(
@@ -968,7 +1059,7 @@ def post_control(directory: Path, queue_id: str, action: str, payload: dict[str,
 
     A queue waiting up next holds no reservation, so Pause (leave the order) and Cancel apply to it at once instead.
     """
-    if action not in ACTIONS and action not in WORKFLOW_ACTIONS:
+    if action not in ACTIONS and action not in WORKFLOW_ACTIONS and action not in SCRIPT_ACTIONS:
         raise QueueError("Unknown queue action.")
     payload = payload or {}
     if action == "cap" and not (type(payload.get("cap")) is int and 1 <= payload["cap"] <= MAX_QUEUE_CONCURRENCY):
@@ -984,6 +1075,12 @@ def post_control(directory: Path, queue_id: str, action: str, payload: dict[str,
         ):
             raise QueueError("A workflow control needs a node id, a branch and (for a decision) continue or stop.")
         payload = {key: list(value) if key == "branch" else value for key, value in payload.items()}
+    if action in SCRIPT_ACTIONS and not (
+        type(payload.get("ordinal")) is int
+        and payload["ordinal"] > 0
+        and (action != "script_answer" or isinstance(payload.get("answers"), list))
+    ):
+        raise QueueError("A script form control needs the form's number and, for an answer, the answers.")
     connection = _shared_connection(directory)
     try:
         connection.execute("BEGIN IMMEDIATE")
@@ -993,6 +1090,18 @@ def post_control(directory: Path, queue_id: str, action: str, payload: dict[str,
                 raise QueueError("Unknown queue.")
             if action in WORKFLOW_ACTIONS and row["kind"] != KIND_WORKFLOW:
                 raise QueueError("Branch decisions and step Retry apply to workflow queues only.")
+            if action in SCRIPT_ACTIONS and row["kind"] != KIND_SCRIPT:
+                raise QueueError("This script run is not waiting for input.")
+            if action in SCRIPT_ACTIONS:
+                # Recheck under the same write transaction as the insert: a caller may have read the form just
+                # before settlement closed it and cleared its controls. Never leave a late answer pending forever.
+                item = connection.execute(
+                    "SELECT request_json FROM queue_items WHERE queue_id=? AND state='running'", (queue_id,)
+                ).fetchone()
+                record = json.loads(item["request_json"]) if item is not None else None
+                prompt = open_prompt_of(record.get("run_id"), record.get("run")) if is_script_record(record) else None
+                if prompt is None or prompt.ordinal != payload["ordinal"]:
+                    raise QueueError("This form was already answered or closed.")
             if row["state"] == "queued" and action in ("pause", "cancel"):
                 _leave_up_next(connection, queue_id, datetime.now(UTC).isoformat(), cancel=action == "cancel")
                 connection.execute("COMMIT")
@@ -1283,7 +1392,8 @@ def _removable(connection: sqlite3.Connection, where: str, params: Sequence[Any]
                 AND (q.state IN ('paused','cancelled') OR NOT EXISTS (
                     SELECT 1 FROM queue_items i WHERE i.queue_id=q.queue_id AND i.state IN ('pending','running')))
                 AND NOT EXISTS (SELECT 1 FROM queue_items i WHERE i.queue_id=q.queue_id AND i.state='running')
-                AND NOT EXISTS (SELECT 1 FROM script_child_slots s WHERE s.queue_id=q.queue_id)""",
+                AND NOT EXISTS (
+                    SELECT 1 FROM queue_items i WHERE i.queue_id=q.queue_id AND i.lanes_json IS NOT NULL)""",
             tuple(params),
         )
         if row["queue_id"] not in keep
@@ -1291,7 +1401,7 @@ def _removable(connection: sqlite3.Connection, where: str, params: Sequence[Any]
 
 
 def _delete(connection: sqlite3.Connection, queue_ids: Sequence[str]) -> None:
-    for table in ("script_child_slots", "queue_controls", "queue_events", "queue_items", "queues"):
+    for table in ("queue_controls", "queue_events", "queue_items", "queues"):
         connection.executemany(f"DELETE FROM {table} WHERE queue_id=?", [(queue_id,) for queue_id in queue_ids])
 
 
@@ -1510,7 +1620,7 @@ def read_queue_summaries(directory: Path, *, described: Sequence[str] = ()) -> t
             request = request if isinstance(request, dict) else {}
             script_name = request.get("source_name") if is_script_record(request) else None
             workflow_name = request.get("name") if is_workflow_record(request) else None
-            queue["script_elapsed"] = _script_queue_elapsed(directory, request) if script_name is not None else None
+            queue["script_elapsed"] = _script_queue_elapsed(request) if script_name is not None else None
             queue["first"] = {
                 "prompt": f"Script: {script_name}"
                 if isinstance(script_name, str)
@@ -1664,24 +1774,10 @@ def _script_item_fields(request: dict, script: dict[str, Any]) -> dict[str, Any]
     }
 
 
-_FINISHED_ELAPSED: dict[str, float | None] = {}  # run id -> wall seconds of a finished run (it never changes)
-
-
-def _script_queue_elapsed(directory: Path, request: dict) -> float | None:
-    """Wall seconds of a script queue's run for the list; finished runs are read once."""
-    run_id = str(request.get("run_id"))
-    if run_id in _FINISHED_ELAPSED:
-        return _FINISHED_ELAPSED[run_id]
-    try:
-        run = read_run_snapshot(Path(directory), run_id)
-    except Exception:
-        return None
-    if run is None:
-        return None
-    seconds = _elapsed(run.created_at, run.finished_at)
-    if run.finished_at is not None:
-        _FINISHED_ELAPSED[run_id] = seconds
-    return seconds
+def _script_queue_elapsed(request: dict) -> float | None:
+    """Wall seconds of a script queue's run for the list, from the run kept in its item."""
+    run = request.get("run")
+    return _elapsed(run.get("created_at"), run.get("finished_at")) if isinstance(run, dict) else None
 
 
 def _elapsed(start: str | None, end: str | None) -> float | None:
@@ -1719,7 +1815,6 @@ def _script_view(connection: sqlite3.Connection, request: dict) -> dict[str, Any
 
     ``steps_failed`` is derived from the children (a script may swallow a failed generation and still complete).
     """
-    path = connection.execute("PRAGMA database_list").fetchone()["file"]
     view: dict[str, Any] = {
         "name": request.get("source_name"),
         "expected_steps": request.get("expected_steps") if type(request.get("expected_steps")) is int else None,
@@ -1733,17 +1828,16 @@ def _script_view(connection: sqlite3.Connection, request: dict) -> dict[str, Any
         "waiting_for_input": False,
         "prompt": None,
     }
-    try:
-        run = read_run_snapshot(Path(path).parent, str(request.get("run_id")))
-    except Exception:
-        return view | {"run_state": "unreadable"}
-    if run is None:
+    if request.get("run") is None:
         return view
+    run = run_snapshot(request.get("run"))
+    if run is None:
+        return view | {"run_state": "unreadable"}
     view["run_state"], view["error"] = run.state, run.error
     view["elapsed"] = _elapsed(run.created_at, run.finished_at)
     if run.state == "running":  # an open form keeps the item running; the view only flags it (no new item state)
         try:
-            prompt = read_open_prompt(Path(path).parent, str(request.get("run_id")))
+            prompt = open_prompt_of(str(request.get("run_id")), request.get("run"))
         except Exception:
             prompt = None
         if prompt is not None:
@@ -1753,6 +1847,8 @@ def _script_view(connection: sqlite3.Connection, request: dict) -> dict[str, Any
                 "title": prompt.title,
                 "confirm": prompt.confirm,
                 "components": prompt.components,
+                "refused": prompt.refused,
+                "choices": list(prompt.choices) if prompt.choices else None,
             }
     steps: dict[str, dict[str, Any]] = {}  # attempt id -> its child entry
     for ordinal, attempt_id in enumerate(run.children, 1):
@@ -1914,3 +2010,148 @@ def _read(connection: sqlite3.Connection, queue_id: str | None) -> tuple[dict[st
             ]
         queues.append(queue)
     return tuple(queues)
+
+
+def read_script_run(directory: Path, run_id: str) -> tuple[str, str, dict[str, Any] | None] | None:
+    """``(queue id, item state, run)`` of the script item that names ``run_id``, read-only; ``None`` when no item does.
+
+    The run is ``None`` while the item has not started it."""
+    if not isinstance(run_id, str) or len(run_id) != 32 or any(c not in "0123456789abcdef" for c in run_id):
+        return None
+    if not (Path(directory) / "attempts.sqlite3").is_file():
+        return None
+    connection = _shared_connection(directory, readonly=True)
+    try:
+        for row in connection.execute(
+            """SELECT i.queue_id, i.state, i.request_json FROM queue_items i JOIN queues q USING (queue_id)
+            WHERE q.kind=? AND instr(i.request_json, ?) > 0""",
+            (KIND_SCRIPT, run_id),
+        ):
+            try:
+                record = json.loads(row["request_json"])
+            except (TypeError, ValueError):
+                continue
+            if is_script_record(record) and record.get("run_id") == run_id:
+                run = record.get("run")
+                return row["queue_id"], row["state"], run if isinstance(run, dict) else None
+    finally:
+        connection.close()
+    return None
+
+
+def read_recalled_answers(directory: Path, source_sha256: str, components: list) -> list | None:
+    """The last answers given to this exact form of this exact script, read-only; ``None`` when there are none."""
+    from dtflow.scripting.forms import form_key, validate_answers
+
+    if not source_sha256 or not (Path(directory) / "attempts.sqlite3").is_file():
+        return None
+    connection = _shared_connection(directory, readonly=True)
+    try:
+        row = connection.execute(
+            "SELECT answers_json FROM script_form_answers WHERE source_sha256=? AND form_sha256=?",
+            (source_sha256, form_key(components)),
+        ).fetchone()
+    except sqlite3.OperationalError:
+        return None  # an older state without the table
+    finally:
+        connection.close()
+    if row is None:
+        return None
+    answers = json.loads(row["answers_json"])
+    validate_answers(components, answers)
+    return answers
+
+
+def migrate_script_runs(db: sqlite3.Connection, directory: Path) -> None:
+    """Schema 9 (#243), inside the migration transaction: copy each script item's run from the old separate ledger
+    ``script_runs.sqlite3`` into the item (``request_json["run"]``), plus the remembered form answers.
+
+    The old file is only read, never changed or deleted. A run the ledger does not have stays absent (it never
+    started); a ledger that cannot be read marks each script item's run unreadable instead of failing the upgrade,
+    so the items still load and a running one reconciles to ``unknown``. Open forms are not carried over: a run
+    still marked running is interrupted by the reconcile that follows."""
+    items = db.execute(
+        """SELECT i.item_id, i.request_json FROM queue_items i JOIN queues q USING (queue_id)
+        WHERE q.kind=? ORDER BY i.item_id""",
+        (KIND_SCRIPT,),
+    ).fetchall()
+    path = Path(directory) / "script_runs.sqlite3"
+    if not items or not path.is_file():
+        return
+    ledger = None
+    try:
+        ledger = sqlite3.connect(path.resolve().as_uri() + "?mode=ro", uri=True, timeout=2.0)
+        ledger.execute("PRAGMA query_only=ON")
+    except sqlite3.Error:
+        ledger = None
+    try:
+        for item in items:
+            try:
+                record = json.loads(item["request_json"])
+            except (TypeError, ValueError):
+                continue
+            if not is_script_record(record) or record.get("run") is not None:
+                continue
+            try:
+                if ledger is None:
+                    raise sqlite3.DatabaseError("ledger unreadable")
+                run = _ledger_run(ledger, str(record.get("run_id")))
+            except sqlite3.OperationalError as exc:
+                if "locked" in str(exc) or "busy" in str(exc):
+                    raise  # transient: the upgrade rolls back and is tried again on the next start
+                run = {"state": "unreadable", "error": "The earlier script run record could not be read."}
+            except (sqlite3.Error, TypeError, ValueError):
+                run = {"state": "unreadable", "error": "The earlier script run record could not be read."}
+            if run is None:
+                continue
+            record["run"] = interrupted_script_run(run, datetime.now(UTC).isoformat())  # nothing old is still live
+            db.execute(
+                "UPDATE queue_items SET request_json=? WHERE item_id=?",
+                (json.dumps(record, allow_nan=False), item["item_id"]),
+            )
+        if ledger is not None:
+            try:
+                db.executemany(
+                    "INSERT OR IGNORE INTO script_form_answers VALUES (?, ?, ?, ?)",
+                    ledger.execute(
+                        "SELECT source_sha256, form_sha256, answers_json, updated_at FROM script_form_answers"
+                        f" ORDER BY updated_at DESC LIMIT {MAX_RECALLED_FORMS}"
+                    ).fetchall(),
+                )
+            except sqlite3.Error:
+                pass  # remembered answers are only suggestions
+    finally:
+        if ledger is not None:
+            ledger.close()
+
+
+def _ledger_run(ledger: sqlite3.Connection, run_id: str) -> dict[str, Any] | None:
+    row = ledger.execute(
+        "SELECT state, source_name, source_sha256, api_version, vendored_js_sha256, answers_json, context_json,"
+        " created_at, finished_at, error FROM script_runs WHERE run_id=?",
+        (run_id,),
+    ).fetchone()
+    if row is None:
+        return None
+    answers = json.loads(row[5] or "[]")
+    context = json.loads(row[6] or "{}")
+    return {
+        "state": row[0],
+        "source_name": row[1],
+        "source_sha256": row[2],
+        "api_version": row[3],
+        "vendored_js_sha256": row[4],
+        "context": context if isinstance(context, dict) else {},
+        "created_at": row[7],
+        "finished_at": row[8],
+        "error": row[9],
+        "children": [
+            r[0]
+            for r in ledger.execute(
+                "SELECT attempt_id FROM script_run_children WHERE run_id=? ORDER BY ordinal", (run_id,)
+            )
+        ],
+        "answers": answers if isinstance(answers, list) else [],
+        "prompts": [],
+        "imported": True,  # copied from script_runs.sqlite3 by the schema 9 upgrade
+    }
