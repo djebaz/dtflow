@@ -17,15 +17,30 @@ Updated: 2026-11-07. Source: current `main` after the merged #248–#255 sequenc
 
 1. **Before/after inventory:** the table above covers the six implementation slices. **Evidence recorded**; review wording against actual owner experience before final acceptance.
 2. **Easy Retry with original settings:** [#251](https://github.com/djebaz/dtflow/pull/251) implements Generate/Queues; [#252](https://github.com/djebaz/dtflow/pull/252) implements Scripts; Workflows already had in-place step retry. Issue #220 records owner smoke for #251 and #252. **Implementation and reported owner smoke exist.**
-3. **Bounded repeated transient failures:** [#254](https://github.com/djebaz/dtflow/pull/254) introduces `AUTO_RETRIES = 1` and `AUTO_RETRY_DELAY = 5` shared across Generate, Queues, Scripts and Workflows. The PR reports ad-hoc offline `connect_failed`, INTERNAL and lost-connection checks, but explicitly reports no local pytest run. **Need a consolidated recorded offline acceptance run and evidence of the exhausted cap.**
-4. **Remove/consolidate redundant code and tests:** [#253](https://github.com/djebaz/dtflow/pull/253) removes the 550-line `script_runs.py` and separate ledger; [#250](https://github.com/djebaz/dtflow/pull/250) removes per-item permit requirements. The test-suite redundancy audit by protected behavior is **not yet complete**; retain critical concurrency, ownership, migration and durable-result coverage.
+3. **Bounded repeated transient failures:** [#254](https://github.com/djebaz/dtflow/pull/254) introduces `AUTO_RETRIES = 1` and `AUTO_RETRY_DELAY = 5` shared across Generate, Queues, Scripts and Workflows. The PR reports ad-hoc offline `connect_failed`, INTERNAL and lost-connection checks, but explicitly reports no local pytest run. A focused regression test for repeated transient failure, unknown connection loss, authentication refusal and the approved INTERNAL exception has been added to `tests/integration/test_session.py`. **Execution on a relevant CI run and the broader runner matrix remain to be recorded.**
+4. **Remove/consolidate redundant code and tests:** [#253](https://github.com/djebaz/dtflow/pull/253) removes the 550-line `script_runs.py` and separate ledger; [#250](https://github.com/djebaz/dtflow/pull/250) removes per-item permit requirements. The test-module inventory and focused overlap audit below are recorded. No removal is justified solely by overlapping names: session, provider, queue and Qt tests exercise distinct failures. The missing repeated-failure cap check is now covered by a focused offline regression test in this PR, pending execution.
 5. **Provenance retained / retries finite:** [#251](https://github.com/djebaz/dtflow/pull/251) retains prior attempts and original settings, [#253](https://github.com/djebaz/dtflow/pull/253) preserves linked script children, and [#254](https://github.com/djebaz/dtflow/pull/254) bounds automatic retries. **Code/PR evidence exists; final acceptance should also check restart, original outputs and migrations.**
-6. **Updated guidance and architecture:** implementation PRs updated the Queues, Scripts, Workflows and backend contract guides. **Final cross-document consistency check remains**, including stale status/history descriptions and this record.
+6. **Updated guidance and architecture:** implementation PRs updated the Queues, Scripts, Workflows and backend contract guides. This PR reconciles stale `current_dev_status.md` schema and PR status, the scripting architecture's removed ledger/form statements, and a historical backend-contract limitation. Queues, Scripts and Workflows guides already describe the bounded policy. Further acceptance evidence is separate from documentation consistency.
 7. **Representative offline/backend/Windows acceptance:** PRs report some fake/offline scenarios and selected owner smoke, but these were not all performed against this exact close-out branch. **No Windows, real-backend or packaged-executable checks have been performed as part of #245 here.** Record each separately; do not infer one from the others.
 
-## Test-audit rule
+## Test audit by behavior protected
 
-Group tests by meaningful behavior rather than aiming for a target count. For each proposed consolidation, record the overlap, the authoritative remaining test, and the concrete failure it continues to catch. Do not remove tests solely because they share words such as `unknown`, `retry`, or `migration`: layers can own different risks. The **408 test functions** in #245 is a dated issue-body count, not a verified current count.
+On 2026-11-07, the current `main` test tree was inventoried: **53 test modules** (`38` unit, `15` integration), plus shared `tests/conftest.py`. Top-level test names and references to retired state machinery were inspected in each module; relevant test bodies were reviewed in the generation, queue, scripts, crash, cloud and Qt suites. This is a focused source audit, **not a pytest collection/execution result**. The **408 test functions** in #245 is a dated issue-body count, not a revalidated count of test cases after parametrization.
+
+| Candidate overlap or obsolete mechanism | Audit decision | Meaningful protection kept |
+| --- | --- | --- |
+| `test_fake_service.py` success/failure vs `test_session.py` success/busy | **Keep both:** service and durable output evidence vs session ownership/lifetime | Durable writes, unknown outcomes, and releasing the lock between operations |
+| `test_queue.py` vs `test_queue_session.py` vs `test_qt_queue.py` | **Keep:** scheduler/SQLite state vs session composition vs real Qt actions | FIFO, bounded admission, active-owner exclusion, restart reconciliation and truthful UI |
+| `test_queue_presenter.py` vs Qt queue outcome checks | **Keep:** wording/data projection vs Qt command dispatch and row identity | An unknown item is not silently displayed as confirmed failure or replayed |
+| `test_script_batch.py` child slots/restart | **Keep updated schema-9 checks:** uses `lanes_json` and `ScriptRun` rather than removed `script_child_slots` and the separate run store | Atomic child linking and bounded cross-queue slot accounting |
+| `test_cloud_assets.py` upload non-retry vs shared generation auto-retry | **Keep:** uploads intentionally have a separate consent and uncertainty boundary | No hidden repeat upload after uncertain transfer |
+| `test_drawthings_cloud.py` backend non-retry vs shared generation retry | **Keep:** adapter does not own the session's retry loop | Provider adapter remains single-attempt and reports the original error |
+| Legacy `script_runs.sqlite3` and `script_child_slots` test assertions | **No obsolete assertions found** in the inventoried test modules; #253 updated its affected tests | No test removed merely for a smaller number |
+| New automatic retry cap (#241) | **Add one focused test** in `test_session.py` with the real service/store and a scripted offline backend | Repeated transient failures stop after two submissions; unknown/hard refusal do not retry; original seed and link evidence preserved |
+
+**Remaining evidence gap:** no dedicated automated v8-with-legacy-script-ledger → v9 migration test was found in the inventoried suite. #253 records ad-hoc migration and recovery scenarios, while the existing `test_queue.py` tests an older schema upgrade/rollback. An owner-controlled upgrade of a real historical state and final Windows acceptance remain unverified. Do not substitute an unrelated migration test for this gate.
+
+Group tests by meaningful behavior rather than aiming for a target count. Remove or consolidate only demonstrated duplicate assertions with an explicitly retained risk test. Across the reviewed #220-relevant suites, the superficially similar checks exercise different layers; no additional deletion is justified now.
 
 ### Coverage that must survive
 
@@ -42,13 +57,14 @@ Group tests by meaningful behavior rather than aiming for a target count. For ea
 | #251 Generate/Queues manual Retry | Owner smoke reported passed | [#220](https://github.com/djebaz/dtflow/issues/220); specific backend/artifact not specified here |
 | #252 Scripts Retry/Continue | Owner smoke reported passed | [#220](https://github.com/djebaz/dtflow/issues/220); no new #245 run |
 | #253 schema 9 migration and script run durability | Offline scenarios described in PR; merged | [#253](https://github.com/djebaz/dtflow/pull/253); native upgrade and crash acceptance separate |
-| #254 automatic retry cap | Ad-hoc offline cases reported; PR says local tests not run | [#254](https://github.com/djebaz/dtflow/pull/254); repeated transient failure exhaustion still needs explicit acceptance evidence |
-| #245 test audit, complete offline matrix and native/real checks | **Pending** | Do not mark #220 fully accepted before reviewing this evidence |
+| #254 automatic retry cap | Ad-hoc offline cases reported; focused regression added in #256, not yet validated | [#254](https://github.com/djebaz/dtflow/pull/254); `tests/integration/test_session.py` now asserts the cap under repeated offline errors |
+| #256 CI on `e956208e` | Workflow completed successfully but **pytest, Ruff and environment setup were skipped** by the change gate | [GitHub Actions run 42396999415](https://github.com/djebaz/dtflow/actions/runs/42396999415); not a new validation pass |
+| #245 test audit, complete offline matrix and native/real checks | **Partially recorded; acceptance pending** | Further relevant-head CI, native migration, real DT+ and packaged validation still separate |
 
 ## Close-out order
 
-1. Audit existing tests for obsolete mechanisms and actual overlap; change only justified assertions/tests.
-2. Reconcile user guides, architecture and current-status docs with merged behavior.
-3. Record reproducible fake/offline scenarios with their results (including repeated failure at the retry cap), plus precise CI commit/check.
+1. **Done (source audit):** inventory existing tests for obsolete mechanisms and actual overlap; retain distinct regression protections and add the missing retry-cap scenario.
+2. **Done (documentation review):** reconcile stale scripting/status/backend-contract statements with merged behavior, without claiming unperformed runtime acceptance.
+3. **Pending:** record executed fake/offline results (including exhausted retries) and an exact-head CI run that actually executes pytest; a workflow conclusion of success with pytest skipped does not count.
 4. Record any separately authorized Windows/real DT+ owner checks as evidence, or leave explicitly unverified.
 5. Only then tick each supported criterion in [#220](https://github.com/djebaz/dtflow/issues/220) with a link to this record or the owning PR. Close #245 and #220 only after all gates are met.
