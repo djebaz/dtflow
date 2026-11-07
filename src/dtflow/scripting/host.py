@@ -82,6 +82,8 @@ SAMPLER_NUMBERS: dict[int, Sampler] = {
 }
 SAMPLER_IDS = {sampler: number for number, sampler in SAMPLER_NUMBERS.items()}
 
+#: How the Retry form and console name a step that did not complete, by kind.
+HEADLINES = {"failed": "failed", "unknown": "has no confirmed outcome", "not_saved": "was generated but not saved"}
 #: Configuration fields a script may change today (everything else fails the call when changed; see #115).
 SUPPORTED_FIELDS = frozenset({"width", "height", "seed", "steps", "guidanceScale", "model", "sampler", "loras"})
 #: Fields that never count as a change (upstream ``id`` is a host-assigned handle).
@@ -354,6 +356,8 @@ class ScriptHost:
         self.steps += 1
         step, retry_of = self.steps, None
         while True:
+            if self.cancel.is_set():
+                raise ScriptCancelled()  # Stop landed while the Retry form closed: nothing more is linked
             attempt_id = uuid.uuid4().hex
             self._link_child(attempt_id)  # recorded before anything can be submitted
             self.attempts.append(attempt_id)
@@ -365,19 +369,26 @@ class ScriptHost:
                 self._blocked = "Stopped; an earlier generation was left to finish on its own."
                 raise
             except BackendError as exc:
-                unknown = exc.failure.remote_outcome not in SAFE_FAILURES
+                remote = exc.failure.remote_outcome
+                kind = (
+                    "failed"
+                    if remote in SAFE_FAILURES
+                    else "not_saved"
+                    if remote == RemoteOutcome.SUCCEEDED
+                    else "unknown"
+                )
                 reason = exc.failure.message or exc.failure.code
             except Exception as exc:
-                unknown, reason = True, str(exc) or type(exc).__name__
+                kind, reason = "unknown", str(exc) or type(exc).__name__
             else:
                 self.last = outcome
                 self._cleared = False  # a new generation fills the canvas again
                 self.attempt_outputs[attempt_id] = [str(path) for path in outcome.output_paths]
                 return
-            if not self._retry_step(step, reason, unknown=unknown):
+            if not self._retry_step(step, reason, kind=kind):
                 # Continue: the step keeps its outcome and the script goes on without its image.
                 self.last, self._cleared = None, True
-                self._console(f"Step {step} {'has no confirmed outcome' if unknown else 'failed'}: {reason}", 1)
+                self._console(f"Step {step} {HEADLINES[kind]}: {reason}", 1)
                 return
             retry_of = attempt_id
             self.retries += 1
@@ -390,7 +401,7 @@ class ScriptHost:
                 ),
             )
 
-    def _retry_step(self, step: int, reason: str, *, unknown: bool) -> bool:
+    def _retry_step(self, step: int, reason: str, *, kind: str) -> bool:
         """Ask the person whether to retry a step that failed or has no confirmed outcome.
 
         True: retry with the same settings. False: continue without the step's image. A headless run (no form bridge)
@@ -398,16 +409,19 @@ class ScriptHost:
         if self._ask is None or self._answers is not None:
             raise RuntimeError(reason)
         retry_left = self.retries < self.max_generations
-        headline = f"Step {step} has no confirmed outcome" if unknown else f"Step {step} failed"
-        detail = (
-            "It may still finish on the backend. Retry sends the same settings again; the first try keeps its own result."
-            if unknown
-            else "Retry sends the same settings (same seed) again."
-        )
+        headline = f"Step {step} {HEADLINES[kind]}"
+        detail = {
+            "unknown": "It may still finish on the backend, so a retry can make a second image. "
+            "Retry sends the same settings (same seed); the first try keeps its own result.",
+            "not_saved": "The image was generated, so a retry generates (and is charged) again. "
+            "Retry sends the same settings (same seed).",
+            "failed": "Retry sends the same settings (same seed) again.",
+        }[kind]
         if not retry_left:
             detail = f"This run used all of its {self.max_generations} retries."
+        # Continue is the default: pressing the button without choosing never sends the step again.
         options = (
-            ["Retry with the same settings", "Continue without this image"]
+            ["Continue without this image", "Retry with the same settings"]
             if retry_left
             else ["Continue without this image"]
         )
@@ -416,12 +430,12 @@ class ScriptHost:
             {"type": "plainText", "value": detail},
             {"type": "segmented", "title": "Next", "options": options, "index": 0},
         ]
-        answers = self._ask(headline, "Continue", components)
+        answers = self._ask(headline, "Apply", components)
         self._forms += 1  # the run's form ordinal; script forms resolve their inputs by it
         if answers is None or self.cancel.is_set():
             raise ScriptCancelled()
         validate_answers(components, answers)
-        return retry_left and answers[-1] == 0
+        return retry_left and answers[-1] == 1
 
     def generate_batch(self, jobs: Sequence[Mapping[str, Any]], max_concurrent: int = 1) -> list[dict]:
         """DTFlow-only bounded batch; one immutable request and linked durable attempt per submitted child.

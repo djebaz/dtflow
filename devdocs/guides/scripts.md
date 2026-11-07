@@ -63,9 +63,11 @@ CI at runtime head `0465f3d` checked out that exact commit and reports 697 passe
 
 ## When a step fails
 
-A step that fails, or ends with no confirmed outcome, no longer stops the rest of the run (#220). In a run started from Scripts, the script pauses on that step and Scripts shows the original reason with two choices:
+A step that fails, or ends with no confirmed outcome, no longer stops the rest of the run (#220). In a run started from Scripts, the script pauses on that step and Scripts shows the original reason with two choices (Continue is preselected, so pressing Apply without choosing never sends the step again):
 
 - **Retry with the same settings** sends the same request again (same seed). The retry keeps the step number and shows as "Step 3 · retry"; the first try keeps its own outcome, marked retried. A run allows as many retries as its generation cap.
-- **Continue without this image** lets the script go on with an empty canvas. A step left with no confirmed outcome stays marked unknown, and the queue item ends "outcome unknown" if no retry replaced it.
+- **Continue without this image** lets the script go on with an empty canvas. A step left with no confirmed outcome stays marked unknown, and the queue item ends "outcome unknown" if no retry replaced it. A run that skipped a failed step can still end "succeeded", with "1 failed" in its progress line, as before when a script caught the error.
+
+A step whose image was generated but could not be saved says so; retrying it generates (and is charged) again.
 
 Cancel input stops the script. Queues shows "waiting for you in Scripts" while a run waits for an answer. Runs without the form bridge (the CLI or an answer file) hand the step's error to the script, which can catch it and go on. Retrying a step in a run that already ended is not supported; use Run again.
