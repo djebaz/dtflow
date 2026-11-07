@@ -171,8 +171,13 @@ def present_generation_failure(exc: Exception) -> Presentation:
                 "error", "Request rejected", f"This provider does not offer {names}.{hint} Nothing was dispatched."
             )
         if failure.category == ErrorCategory.VALIDATION and not api:
-            # Diagnostic pairs (e.g. "phase: generate") are internal; they stay in the details box and logs.
-            return Presentation("error", "Request rejected", f"{_sentence(detail)} Nothing was dispatched.")
+            # Per-field reasons (e.g. "bad: architecture_mismatch") help; the internal phase stays in details and logs.
+            codes = "; ".join(f"{name}: {code}" for name, code in failure.diagnostics if name != "phase")
+            return Presentation(
+                "error",
+                "Request rejected",
+                f"{_sentence(detail.rstrip('.') + (' (' + codes + ')' if codes else ''))} Nothing was dispatched.",
+            )
         if failure.code == "originals_unavailable":
             return Presentation("error", "Generation not submitted", failure.message)
         if failure.code == "local_save_unavailable":
