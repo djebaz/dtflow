@@ -50,10 +50,16 @@ def analyze_grid_trial(logs: Path, actions: list[dict]) -> dict:
             gaps.clear()
 
         def collect(record, _ref):
-            if record["event"] != "gallery.gui_gap" or record.get("kind") != "measurement":
+            if record["event"] not in {"gallery.gui_gap", "ui.gui_gap"} or record.get("kind") != "measurement":
                 return
             data = record["data"]
-            if str(data["mode"]).lower() != "grid" or data["mounted"] <= 0 or data["elapsed_ms"] < _THRESHOLD_MS:
+            if record["event"] == "ui.gui_gap" and data.get("workspace") != "Images":
+                return
+            if (
+                str(data.get("mode", "")).lower() != "grid"
+                or data.get("mounted", 0) <= 0
+                or data["elapsed_ms"] < _THRESHOLD_MS
+            ):
                 return
             timestamp = datetime.fromisoformat(record["ts"].replace("Z", "+00:00"))
             if any(start <= timestamp <= end for start, end in intervals):

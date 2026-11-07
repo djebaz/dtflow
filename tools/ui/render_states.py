@@ -3782,7 +3782,7 @@ def render_logs_states(shell, capture):
         (record(6, "CRITICAL", "logging.message", "app"), RecordRef("fixture", 6, 0, 0, 0, 0, "fixture.jsonl"))
     ]
     panel.logsLevelCombo.blockSignals(True)
-    panel.logsLevelCombo.setCurrentIndex(panel.logsLevelCombo.findData("WARNING+"))
+    panel.logsLevelCombo.setCurrentIndex(panel.logsLevelCombo.findData("WARNING"))
     panel.logsLevelCombo.blockSignals(False)
     shell.logs.model.replace(warning_rows, [row_preview(record) for record, _ref in warning_rows])
     panel.logsCounter.setText("3 of 6 matching records · complete · page 1 · showing 3")

@@ -317,7 +317,7 @@ Error bodies are capped at 8 KiB, with 2,048-character text projections and expl
 
 The Logs button at the right of the status bar opens the Logs workspace in place of the current page; the same button, the close button or Escape returns to the previous page without stopping running work. Escape first dismisses an active inline notice or confirmation, then the details panel, then More filters, before closing Logs.
 
-Logs initially selects **Warning and worse**, including WARNING, ERROR and CRITICAL. Choose All or an exact severity to inspect lower-level records. A deliberate selection survives refresh, Follow and closing/reopening Logs in the same window; Reset filters and sort restores Warning and worse. This query default does not change what the application records or the raw files.
+Logs initially selects **>=WARNING**, including WARNING, ERROR and CRITICAL. Severity choices are ALL, >=DEBUG, >=INFO, >=WARNING, >=ERROR and >=CRITICAL; each threshold includes more severe records. A deliberate selection survives refresh, Follow and closing/reopening Logs in the same window; Reset filters and sort restores >=WARNING. This query default does not change what the application records or the raw files.
 
 Logs reuses the shared brand, Queue/Run controls and navigation styling. Navigation has a separate row below the brand, with Logs filters underneath so they do not overlap at smaller window sizes.
 
