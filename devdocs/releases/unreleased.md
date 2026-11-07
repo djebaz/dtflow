@@ -20,6 +20,8 @@ Changes through 5.5.2 are consolidated in [DTFlow 5.5.2](v5.5.2.md). This file t
 
 ## Fixed
 
+- Workflow Generate width/height editors commit typed sizes to the nearest 64-pixel multiple (ties upward) on focus loss or before Run; arrow steps remain 64 pixels. Imported invalid values retain strict validation.
+
 ## Release audit
 
 - PRs: #264

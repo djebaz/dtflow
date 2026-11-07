@@ -33,6 +33,8 @@ is the V1 specification; the file contract is [architecture/workflows.md](../arc
 
 ## Running
 
+When editing Generate width/height, arrows step by 64 pixels. Typed values snap to the nearest multiple of 64 on focus loss or before Run (ties upward: 800 becomes 832), within the existing bounds. Imported/saved invalid values remain read-only with their validation reason; they are not silently rewritten.
+
 - **Run** uses the current connection (local, DT+ Cloud or the fake provider). It creates one queue item of kind
   `workflow` and starts it like any queue; while another queue or generation runs it waits its turn. Image steps need
   no extra confirmation: each Inpaint/Img2img node probes its exact checkpoint, and an unsupported checkpoint just fails
