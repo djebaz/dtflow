@@ -16,6 +16,8 @@ Updated: 2026-11-07 for [5.5.0 preparation](plans/2026-11-07-release-5.5.0.md), 
 
 ## Delivered additions
 
+- **PR #253, pending — queue-owned script runs:** replaces the separate run ledger with queue-item run state and schema 9 migration. Review follow-up preserves immediate CLI headless forms, drains the script worker after owner-write failure and atomically rejects late form controls. Retry/Continue preview definitions are added but not rendered; no tests were created or run in the follow-up. The existing 60-second persistence-timeout ambiguity remains documented; owner migration/runtime smoke remains required.
+
 - **PR #246, pending — Bottom-bar DT+ counter refresh:** activity-driven local saved-evidence refresh is no longer gated on Connection being visible. The offline preview definition includes an updated count outside Connection; no renders or post-fix tests were run, and native acceptance remains unverified.
 
 - **PR #238, pending:** Workflows bind existing custom cloud LoRA receipts independently of Generate and honor Pause/Stop after binding. The owner smoke confirms the original LoRA binding fix; later warning presentation is separate: missing-receipt/unknown-availability advisories use a transient overlay, retained workflow output/node warnings and queue activity logs, with privacy-safe diagnostic summaries. Offline warning fixtures are defined for Actions, not locally rendered. No tests added/run locally; CI and native warning-UI acceptance remain separate. [Scoped plan](plans/2026-11-07-workflow-cloud-lora-receipts.md).

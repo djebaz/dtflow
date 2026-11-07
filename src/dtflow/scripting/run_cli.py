@@ -2,6 +2,10 @@
 
 Running a script can generate (and, on local/cloud backends, spend credits), so it needs ``--run`` and an explicit
 ``--backend``; ``fake`` is the offline fixture. The starting settings come from the same options as ``dtflow generate``.
+
+Every run is a script queue item (#243), like a run started from Scripts: ``--queue`` saves it paused for a later
+``dtflow queue start``; without it this command starts it as the dispatch owner, waits for it to end and prints the
+report read from the item and its child attempts.
 """
 
 from __future__ import annotations
@@ -10,15 +14,12 @@ import argparse
 import asyncio
 import json
 import sys
-import threading
 from pathlib import Path
 
 from dtflow.core.models import TimeoutPolicy, ValidationError
-from dtflow.persistence.script_runs import ScriptRunStore
+from dtflow.persistence.store import StateBusyError
 from dtflow.scripting.engine import MAX_SOURCE_BYTES
-from dtflow.scripting.host import ScriptHost, script_hooks, starting_context
-from dtflow.scripting.runner import check_syntax, run_recorded
-from dtflow.services.session import open_session, selection_for
+from dtflow.scripting.runner import check_syntax
 
 
 def read_answers(path: Path | None) -> list[list] | None:
@@ -54,83 +55,69 @@ async def run_script_file(args: argparse.Namespace, *, exit_ok: int, exit_failed
         return exit_invalid
     answers = read_answers(args.answers)
     base = await bind_assets(args, resolve_generation(args))
-    if getattr(args, "queue", False):
-        from dtflow.services.queue_session import create_script_queue  # lazy: services import this package
+    from dtflow.services.queue_session import create_script_queue, dispatch_queue  # lazy: services import this package
 
-        backend = {"name": args.backend, "endpoint": args.endpoint, "scenario": "success"}
-        queue_id, run_id = await create_script_queue(
-            Path(args.state),
-            backend,
-            source,
-            Path(args.file).name,
-            base,
-            max_generations=args.max_generations,
-            answers=answers,
-        )
-        print(json.dumps({"queue_id": queue_id, "run_id": run_id, "state": "paused", "items": 1, "cap": 1}))
-        return exit_ok
-    store = ScriptRunStore(args.state)
-    cancel = threading.Event()
-    loop = asyncio.get_running_loop()
-    selection = selection_for(args.backend, args.endpoint, args.state)
-    hosts: list[ScriptHost] = []
-
-    hooks = script_hooks(
-        lambda: service,
-        base=base,
-        loop=loop,
-        state=Path(args.state),
+    backend = {"name": args.backend, "endpoint": args.endpoint, "scenario": "success"}
+    queue_id, run_id = await create_script_queue(
+        Path(args.state),
+        backend,
+        source,
+        Path(args.file).name,
+        base,
         max_generations=args.max_generations,
         answers=answers,
-        hosts=hosts,
+        interactive=bool(getattr(args, "queue", False)),
     )
-
-    async with open_session(
-        selection, args.state, output=args.outputs, timeouts=TimeoutPolicy(total=args.timeout)
-    ) as service:
-        task = asyncio.ensure_future(
-            asyncio.to_thread(
-                run_recorded,
-                store,
-                source,
-                hooks,
-                source_name=Path(args.file).name,
-                cancel=cancel,
-                context_json=json.dumps(
-                    starting_context(base, backend=args.backend, max_generations=args.max_generations, answers=answers)
-                ),
-            )
+    if getattr(args, "queue", False):
+        print(json.dumps({"queue_id": queue_id, "run_id": run_id, "state": "paused", "items": 1, "cap": 1}))
+        return exit_ok
+    # Like every other path (#243): the run is a script queue item, started here and reported when it ends.
+    interrupted = False
+    try:
+        await dispatch_queue(
+            Path(args.state),
+            queue_id,
+            timeouts=TimeoutPolicy(total=args.timeout),
+            out=args.outputs,
+            auto_play=False,
         )
-        interrupted = False
-        try:
-            run_id, result = await asyncio.shield(task)
-        except asyncio.CancelledError:
-            interrupted = True
-            cancel.set()  # stop waiting; in-flight attempts are left to finish and stay durable
-            run_id, result = await task
-        finally:
-            pending = [future for host in hosts for future in host.pending]
-            drain = asyncio.gather(*(asyncio.wrap_future(future) for future in pending), return_exceptions=True)
-            while not drain.done():  # in-flight attempts finish (or hit their deadline) before the service closes
-                try:
-                    await asyncio.shield(drain)
-                except asyncio.CancelledError:
-                    continue
-    host = hosts[0] if hosts else None
-    report = {
-        "run_id": run_id,
-        "status": result.status,
-        "error": result.error,
-        "attempts": list(host.attempts) if host else [],
-        "outputs": list(host.last.output_paths) if host and host.last else [],
-        "attempt_outputs": (
-            [{"attempt_id": attempt, "outputs": paths} for attempt, paths in host.attempt_outputs.items()]
-            if host
-            else []
-        ),
-        "console": [{"kind": ("log", "warn", "error")[kind], "text": text} for kind, text in result.console],
-    }
+    except StateBusyError:
+        print(
+            f"Invalid request: another DTFlow process owns this state; the script was saved paused as queue {queue_id}.",
+            file=sys.stderr,
+        )
+        return exit_invalid
+    except asyncio.CancelledError:
+        interrupted = True  # Stop: waiting ended; in-flight attempts finished or stay durable, never replayed
+    report = await asyncio.to_thread(script_report, Path(args.state), queue_id, run_id)
     print(json.dumps(report, indent=2))
     if interrupted:
         raise asyncio.CancelledError
-    return {"completed": exit_ok, "stopped": 130}.get(result.status, exit_failed)
+    return {"completed": exit_ok, "stopped": 130}.get(report["status"], exit_failed)
+
+
+def script_report(state: Path, queue_id: str, run_id: str) -> dict:
+    """The JSON report of a script run, read from its queue item and its child attempts."""
+    from dtflow.persistence.queues import read_queues, read_script_run
+
+    found = read_script_run(state, run_id)
+    run = (found[2] if found is not None else None) or {}
+    queue = next(iter(read_queues(state, queue_id)), {})
+    item = next(iter(queue.get("items") or ()), {})
+    children = (item.get("script") or {}).get("children") or []
+
+    def images(child):
+        return [str(path) for path in child.get("artifacts") or () if not str(path).endswith("metadata.json")]
+
+    committed = [child for child in children if child.get("state") == "succeeded"]
+    return {
+        "queue_id": queue_id,
+        "run_id": run_id,
+        "status": run.get("state") or "failed",
+        "item_state": item.get("state"),
+        "error": run.get("error"),
+        "attempts": [child["attempt_id"] for child in children],
+        "outputs": images(committed[-1]) if committed else [],
+        "attempt_outputs": [{"attempt_id": child["attempt_id"], "outputs": images(child)} for child in committed],
+        "console": list(run.get("console") or ()),
+    }
