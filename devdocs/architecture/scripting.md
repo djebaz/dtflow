@@ -85,6 +85,8 @@ linked before anything can be submitted, a form is published and its answers rec
 failed write raises and the run stays as it was. `run_recorded` (in `runner.py`) writes the starting state before the
 child starts, settles it from the result (completed, failed or stopped) and settles it as failed if anything raises.
 
+If an owner-side form-answer write fails, the dispatcher requests local script cancellation and waits for the script worker and admitted generation futures before releasing its backend/store; the persistence error still propagates. The existing 60-second write timeout does not guarantee cancellation of the database operation or a known write outcome; a late commit can still require conservative unknown/interrupted recovery. No uncertain work is replayed automatically.
+
 Crash recovery is the queue reconcile, one transaction under the owner lock: a run left running becomes interrupted,
 its open form is closed, and the item takes the outcome its run and children decide (`unknown` while a child has no
 confirmed outcome). Nothing is resumed or replayed. A script item without a run never started and returns to pending.
@@ -98,10 +100,14 @@ script's own sandbox, bound to the run, form and field. The last answers of each
 (`data:` URLs) by their SHA-256 and size, so the item that is rewritten on every step stays small; the script itself
 received the full answers. An open form's fields (which may embed images) are kept only while it is open.
 
+Posting a form answer or cancellation rechecks the exact open form and running item inside the same write transaction that inserts the control. An answer that loses a race with form closure or item settlement is rejected rather than left pending after the dispatcher exits.
+
 Child lanes (`pipeline.runBatch`, shared with workflows) are the item's `lanes_json` column: the attempt ids holding a
 lane. Restart clears them under the owner lock. Scripts Setup keeps its run in memory until Run Script; the dispatcher
 writes it into the item when it adopts the Setup, before generation can be admitted. `dtflow script --run` also creates
 a script queue item; without `--queue` it starts that queue as the dispatch owner and reports from the item.
+
+The script request records an `interactive` input policy. Existing records default to interactive queued behavior; newly created immediate CLI runs explicitly disable interaction, preserving initial/default answers or supplied `--answers` instead of waiting for another process. CLI `--queue` and desktop runs retain interactive forms when no answer file is supplied; desktop Setup requires the interactive policy.
 
 Schema 9 copies each script item's run from the old `<state>/script_runs.sqlite3` (read-only; the file and
 `script_run_locks/` are left in place and no longer used), drops the `script_child_slots` table and moves remembered

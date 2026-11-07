@@ -118,6 +118,8 @@ Script-set fields are currently limited to width, height, seed, steps, guidanceS
 
 Every run is a one-item script queue, as in Scripts and Queues (#243). With `--queue` it is saved paused for `dtflow queue start`; without it the command starts that queue itself (it must be able to own the state directory; otherwise it is left paused and the command says so) and waits for it to end. The JSON report then includes `queue_id`, `run_id`, the run status, the item state, ordered child attempt IDs, `outputs` (the latest committed attempt's output paths), `attempt_outputs` (an ordered `{attempt_id, outputs}` entry for every committed attempt) and the last 200 console messages kept with the run. The run also shows in Queues. Stop interrupts waiting, not remote generation; an unresolved outcome must not be replayed. Do not interpret a failed script as evidence that a submitted attempt was cancelled. The fixtures are for manual smoke evidence, not automatic test execution.
 
+Immediate `--run` execution retains headless form handling even though its run is stored in a queue item. `--queue` retains interactive queued behavior when no answer file is supplied; routing through a queue does not silently turn an immediate headless command into a wait for external answers.
+
 ## Exit codes
 
 `0` success; `2` invalid input, config, preflight or missing credentials (nothing was dispatched); `3` backend rejection or failure with a known outcome; `4` unknown remote outcome (never replayed); `5` local state, output or deadline failure; `130` local interruption. Nonzero results print one JSON error line on stderr.

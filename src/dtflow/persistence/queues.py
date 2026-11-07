@@ -1056,6 +1056,16 @@ def post_control(directory: Path, queue_id: str, action: str, payload: dict[str,
                 raise QueueError("Branch decisions and step Retry apply to workflow queues only.")
             if action in SCRIPT_ACTIONS and row["kind"] != KIND_SCRIPT:
                 raise QueueError("This script run is not waiting for input.")
+            if action in SCRIPT_ACTIONS:
+                # Recheck under the same write transaction as the insert: a caller may have read the form just
+                # before settlement closed it and cleared its controls. Never leave a late answer pending forever.
+                item = connection.execute(
+                    "SELECT request_json FROM queue_items WHERE queue_id=? AND state='running'", (queue_id,)
+                ).fetchone()
+                record = json.loads(item["request_json"]) if item is not None else None
+                prompt = open_prompt_of(record.get("run_id"), record.get("run")) if is_script_record(record) else None
+                if prompt is None or prompt.ordinal != payload["ordinal"]:
+                    raise QueueError("This form was already answered or closed.")
             if row["state"] == "queued" and action in ("pause", "cancel"):
                 _leave_up_next(connection, queue_id, datetime.now(UTC).isoformat(), cancel=action == "cancel")
                 connection.execute("COMMIT")

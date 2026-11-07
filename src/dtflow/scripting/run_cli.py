@@ -66,6 +66,7 @@ async def run_script_file(args: argparse.Namespace, *, exit_ok: int, exit_failed
         base,
         max_generations=args.max_generations,
         answers=answers,
+        interactive=bool(getattr(args, "queue", False)),
     )
     if getattr(args, "queue", False):
         print(json.dumps({"queue_id": queue_id, "run_id": run_id, "state": "paused", "items": 1, "cap": 1}))

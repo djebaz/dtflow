@@ -121,6 +121,7 @@ class ScriptItemRunner:
         failure: dict[str, Any] | None = None
         interrupted = False
         run: ScriptRun | None = None
+        task: asyncio.Future | None = None
         try:
             try:
                 source = load_source(self.state, request.source_sha256)
@@ -143,7 +144,7 @@ class ScriptItemRunner:
                     max_generations=request.max_generations,
                     answers=request.answers,
                     hosts=hosts,
-                    interactive=request.answers is None,  # no answer file: forms wait for the person
+                    interactive=request.interactive and request.answers is None,
                     require_start=request.require_start,
                     reserve_child=reserve_child,
                     release_child=release_child,
@@ -213,6 +214,15 @@ class ScriptItemRunner:
                 except Exception as exc:
                     failure = {"code": "script_run_failed", "category": type(exc).__name__}
         finally:
+            if task is not None:
+                if not task.done():
+                    cancel.set()  # a failed owner write must not leave a form or JS worker waiting unattended
+                stopped = asyncio.gather(task, return_exceptions=True)
+                while not stopped.done():
+                    try:
+                        await asyncio.shield(stopped)
+                    except asyncio.CancelledError:
+                        interrupted = True
             pending = [future for host in hosts for future in host.pending]
             if pending:
                 drain = asyncio.gather(*(asyncio.wrap_future(future) for future in pending), return_exceptions=True)

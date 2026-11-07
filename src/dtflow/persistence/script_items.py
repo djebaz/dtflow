@@ -37,6 +37,7 @@ class ScriptRequest:
     prepared: bool = False
     setup_ordinal: int | None = None
     setup_answers: list | None = None
+    interactive: bool = True  # ordinary queued/desktop runs wait; immediate CLI runs use headless defaults
 
 
 def is_script_record(record: Any) -> bool:
@@ -57,6 +58,7 @@ def script_record(
     prepared: bool = False,
     setup_ordinal: int | None = None,
     setup_answers: list | None = None,
+    interactive: bool = True,
 ) -> dict[str, Any]:
     return {
         "kind": KIND_SCRIPT,
@@ -69,6 +71,7 @@ def script_record(
         "prepared": prepared,
         "setup_ordinal": setup_ordinal,
         "setup_answers": setup_answers,
+        "interactive": interactive,
         "start": {"backend": backend, "max_generations": max_generations, "base": base},
     }
 
@@ -82,6 +85,7 @@ def script_request_from_record(record: Any) -> ScriptRequest:
     answers = record.get("answers")
     require_start = record.get("require_start", False)
     prepared = record.get("prepared", False)
+    interactive = record.get("interactive", True)
     ordinal, setup_answers = record.get("setup_ordinal"), record.get("setup_answers")
     if not (
         isinstance(start, dict)
@@ -92,6 +96,8 @@ def script_request_from_record(record: Any) -> ScriptRequest:
         and re.fullmatch(r"[0-9a-f]{64}", sha) is not None
         and (answers is None or isinstance(answers, list))
         and type(require_start) is bool
+        and type(interactive) is bool
+        and (not require_start or interactive)
         and (not require_start or answers is None)
         and type(prepared) is bool
         and (not prepared or require_start)
@@ -117,6 +123,7 @@ def script_request_from_record(record: Any) -> ScriptRequest:
         prepared,
         ordinal,
         setup_answers,
+        interactive,
     )
 
 
