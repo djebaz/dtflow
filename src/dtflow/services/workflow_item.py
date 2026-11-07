@@ -615,6 +615,21 @@ class _Execution:
 
             options = {"prepared_inputs": prepared} if prepared is not None else {}
             try:
+                if self.request.backend == "cloud" and request.loras:
+                    # Workflow files carry names/weights only. Bind existing local receipts at dispatch,
+                    # independently of Generate; the generation service still validates their account/scope.
+                    choices = await session.script_asset_choices(self.runner.state, self.request.backend)
+                    selected = {lora.identifier for lora in request.loras}
+                    request = await session.bind_prepared(
+                        self.runner.state,
+                        self.request.backend,
+                        request,
+                        tuple(asset.receipt_id for asset in choices if asset.identifier in selected),
+                    )
+                    if self.stopping or self.halted:
+                        self.run["submitted"] -= weight
+                        await self.end(keys, "cancelled", "Stopped before submission; nothing was sent.")
+                        return None
                 outcome = await session.run_generation(
                     self.runner.service, request, on_event=receive, attempt_id=attempt_id, **options
                 )

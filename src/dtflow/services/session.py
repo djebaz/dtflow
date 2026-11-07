@@ -205,7 +205,7 @@ async def bind_prepared(
 
 
 async def script_asset_choices(state: Path, backend_name: str) -> tuple[PreparedAsset, ...]:
-    """The queue composer's confirmed receipt pool, independent of Generate's selected LoRAs.
+    """Confirmed receipt pool for queues, scripts and workflows, independent of Generate's selected LoRAs.
 
     Local reads only. Actual dispatch still validates each selected receipt against
     the active backend/account; a confirmed historical record is not live consent.
