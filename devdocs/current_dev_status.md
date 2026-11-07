@@ -1,6 +1,6 @@
 # Current development status
 
-Updated: 2026-11-07 for [5.5.2 preparation](plans/2026-11-07-release-5.5.2.md), from merged main `0d3ea967` including #259's Workflow canvas Delete shortcut. [5.5.0](https://github.com/djebaz/dtflow/releases/tag/v5.5.0) is published; 5.5.2 still requires exact-head checks, the Windows build Action and acceptance of its exact executable. Repository source and linked evidence are authoritative; historical checkpoints remain in Git and versioned notes.
+Updated: 2026-11-07 for [5.5.6 preparation](plans/2026-11-07-release-5.5.6.md), from merged main `95a2c096`. [5.5.2](https://github.com/djebaz/dtflow/releases/tag/v5.5.2) is published; 5.5.6 still requires exact-head checks, the Windows build Action and acceptance of its exact executable. Repository source and linked evidence are authoritative; historical checkpoints remain in Git and versioned notes.
 
 ## Implemented scope mapped to the initial plan
 
