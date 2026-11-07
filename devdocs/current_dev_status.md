@@ -1,6 +1,6 @@
 # Current development status
 
-Updated: 2026-11-07 for [5.5.0 preparation](plans/2026-11-07-release-5.5.0.md), based on merged main `30a509c1` after dependency PR #200. [5.4.0](https://github.com/djebaz/dtflow/releases/tag/v5.4.0) is published; 5.5.0 is not yet an accepted Windows release. Repository source and linked evidence are authoritative; historical checkpoints remain in Git and versioned notes.
+Updated: 2026-11-07 for [5.5.0 preparation](plans/2026-11-07-release-5.5.0.md), with the #220 implementation through merged PR #254 (`839fec5a`) and startup follow-up #255 (`44c608c8`). [5.4.0](https://github.com/djebaz/dtflow/releases/tag/v5.4.0) is published; 5.5.0 is not yet an accepted Windows release. Repository source and linked evidence are authoritative; historical checkpoints remain in Git and versioned notes.
 
 ## Implemented scope mapped to the initial plan
 
@@ -16,7 +16,7 @@ Updated: 2026-11-07 for [5.5.0 preparation](plans/2026-11-07-release-5.5.0.md), 
 
 ## Delivered additions
 
-- **PR #253, pending — queue-owned script runs:** replaces the separate run ledger with queue-item run state and schema 9 migration. Review follow-up preserves immediate CLI headless forms, drains the script worker after owner-write failure and atomically rejects late form controls. Retry/Continue preview definitions are added but not rendered; no tests were created or run in the follow-up. The existing 60-second persistence-timeout ambiguity remains documented; owner migration/runtime smoke remains required.
+- **#220 reliability simplification (PRs #248, #250–#254, merged):** Generate/Queues show meaningful failure reasons and offer manual Retry with the recorded settings; Scripts offers Retry/Continue for failed steps; a single bounded automatic retry policy is shared across Generate, Queues, Scripts and Workflows. Queued edit Start supplies consent without redundant per-item evidence. Script runs now live in their queue items, not `script_runs.sqlite3`. PR #255 additionally permits read-only queue browsing of supported older schemas before owner-controlled migration. The close-out acceptance audit is [#245](https://github.com/djebaz/dtflow/issues/245); owner migration/runtime smoke and consolidated offline evidence remain separate. Review follow-up retains headless CLI form behavior and rejects late controls; Retry/Continue preview definitions were added but not locally rendered. A possible late database commit after the 60-second write timeout remains a known uncertainty.
 
 - **PR #246, pending — Bottom-bar DT+ counter refresh:** activity-driven local saved-evidence refresh is no longer gated on Connection being visible. The offline preview definition includes an updated count outside Connection; no renders or post-fix tests were run, and native acceptance remains unverified.
 
@@ -38,7 +38,7 @@ Updated: 2026-11-07 for [5.5.0 preparation](plans/2026-11-07-release-5.5.0.md), 
 
 ## Upgrade, evidence and operational limits
 
-- Execution schema is **8**. Existing supported-schema migration backs up before transactional changes; older builds reject newer state. Back up full state and outputs before upgrading or restoring a pre-upgrade copy. Queue templates remain version 1; script preferences are separate private authoring state, never resume authority.
-- No simultaneous Windows/WSL SQLite writers. Read aliases/snapshots never authorize mutations. Unknown remote or local-save outcomes are never silently replayed; repeating generation may consume credits.
+- Execution schema is **9** after PR #253. Upgrade from schema 8 makes a backup before transactional changes and imports the historical script-run ledger into queue items; the old `script_runs.sqlite3` is left untouched. Older builds reject the newer schema, and pre-upgrade queue browsing is read-only (PR #255). Back up full state and outputs before upgrading or restoring a pre-upgrade copy. Queue templates remain version 1; script preferences are separate private authoring state, never resume authority.
+- No simultaneous Windows/WSL SQLite writers. Read aliases/snapshots never authorize mutations. Ambiguous remote or local-save outcomes are not automatically replayed. The narrowly matched DT+ gRPC INTERNAL no-image case is eligible for one bounded automatic retry by owner decision in #241; explicit manual Retry may submit another possibly billable request.
 - Owner-confirmed older-CPU ONNX selection compatibility remains historical evidence, not proof of compatibility for updated dependencies or the final executable. Broad model-quality claims remain unsupported.
 - Release preparation uses offline/static checks and exact-head CI only. No new model download, inference, upload or provider call is needed. The dedicated build Action must produce a clean identity-matched EXE/checksum/manifest; owner smoke and explicit publication approval remain required under [releasing](guides/releasing.md).
