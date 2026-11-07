@@ -49,3 +49,57 @@ async def test_invalid_selection_never_opens_state(tmp_path):
     with pytest.raises(ValidationError):
         await generate_once(BackendSelection("local"), tmp_path / "state", request())
     assert not (tmp_path / "state").exists()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "category,code,message,remote_outcome,expected_submissions",
+    [
+        ("connectivity", "connection_failed", "Connection refused.", "not_started", 2),
+        ("connectivity", "connection_lost", "Connection lost after dispatch.", "unknown", 1),
+        ("authentication", "unauthorized", "Permission denied.", "not_started", 1),
+        ("protocol", "grpc_internal", "unknown error processing request", "unknown", 2),
+    ],
+)
+async def test_repeated_transient_failure_stops_after_one_automatic_retry(
+    tmp_path, monkeypatch, category, code, message, remote_outcome, expected_submissions
+):
+    """Offline acceptance: the retry cap and non-retryable outcomes protect against runaway submissions."""
+    from dtflow.backends.fake import FakeBackend
+    from dtflow.core.models import BackendError, BackendFailure, ErrorCategory, RemoteOutcome
+    from dtflow.services import session
+    from dtflow.services.generation import GenerationService
+
+    # Skip only the delay; exercise the real shared session, service, attempts and retry policy.
+    monkeypatch.setattr(session, "AUTO_RETRY_DELAY", 0)
+    submitted = []
+
+    class AlwaysFails(FakeBackend):
+        async def generate(self, req, *, on_event):
+            submitted.append(req)
+            raise BackendError(
+                BackendFailure(
+                    ErrorCategory(category),
+                    code,
+                    message,
+                    req.request_id,
+                    remote_outcome=RemoteOutcome(remote_outcome),
+                )
+            )
+
+    backend, store = AlwaysFails(), SQLiteAttempts(tmp_path)
+    await store.open()
+    await backend.open()
+    try:
+        with pytest.raises(BackendError):
+            await session.run_generation(GenerationService(backend, store, tmp_path / "outputs"), request("original"))
+
+        assert len(submitted) == expected_submissions
+        assert [req.seed for req in submitted] == [0] * expected_submissions
+        assert len({req.request_id for req in submitted}) == expected_submissions
+        if expected_submissions == 2:
+            assert dict(submitted[1].resolution_evidence)["retry.automatic_of_request"] == submitted[0].request_id
+        assert len(await store.inspect()) == expected_submissions
+    finally:
+        await backend.aclose()
+        await store.aclose()
