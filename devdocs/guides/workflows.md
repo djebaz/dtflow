@@ -26,7 +26,7 @@ is the V1 specification; the file contract is [architecture/workflows.md](../arc
   imported file) is shown read-only with its reason, never clamped. While this workflow's run is live its settings are
   read-only: the run keeps the settings it started with.
 - Before running, the inspector shows what is missing or the plan, for example "Ready: 6 generations and 2 local face
-  detections". Batches fan out: each Generate image is its own branch and every downstream node runs once per branch.
+  detections". Batches fan out: each Generate image is its own branch and every downstream node runs once per branch. Batch size × batch count only sets how many images a Generate makes (2 × 1 and 1 × 2 are the same): each image is sent as its own single-image request with seed = the node's seed + the image's index (image 1 uses the node's seed; the sum wraps at 4294967295).
 - **Checkpoints:** the reference workflow's `PLACEHOLDER_…` checkpoints block Run with "Choose a checkpoint for
   <node>". A checkpoint the model list already loaded on Generate does not contain only warns (Run stays available);
   no backend is contacted for this check.
@@ -57,7 +57,7 @@ When editing Generate width/height, arrows step by 64 pixels. Typed values snap 
   branch and asks "No face detected. Continue anyway?". Continue skips that branch's inpainting and passes the image on;
   Stop ends that branch. Other branches keep running; an unanswered branch stays paused and submits nothing.
 - **Failures:** a failed or unknown step stops only its own branch; the run ends partial. Retry reruns the step with its
-  original settings, then its downstream branch (after the run ended, Retry starts a new workflow queue seeded with that
+  original settings (a Generate image reruns alone, with the seed it first used; its sibling images are kept), then its downstream branch (after the run ended, Retry starts a new workflow queue seeded with that
   branch's saved images). Retry is in the Run panel under the canvas, in the selected node's inspector, and in Queues
   on the workflow item (it retries the first failed, then unknown, step). An unknown remote outcome is shown as unknown
   and never replayed.
