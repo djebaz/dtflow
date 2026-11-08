@@ -2064,11 +2064,19 @@ class QueuePage:
             self._preview_timer.start()
 
     def _shortcut_button(self):
-        """Ctrl+Enter in the composer: Start now, or Add to queue while a queue runs (Start now is then disabled, so at
-        most one is ever enabled). Save paused is never a shortcut target."""
+        """Choose an active Start action, never Save paused, Pause or Resume."""
         page = self.page
-        buttons = (page.startQueueButton, page.addQueueButton)
-        return next((button for button in buttons if self._composing and button.isEnabled()), None)
+        if self._composing:
+            buttons = (page.startQueueButton, page.addQueueButton)
+            return next((button for button in buttons if button.isEnabled()), None)
+        view = self._view()
+        action = primary_action(
+            view,
+            self._controls_for(view),
+            started=self._started(view),
+            owned=bool(view and self._owns(view["queue_id"])),
+        )
+        return page.queuePrimaryButton if action is not None and action.text in ("Start", "Start next") else None
 
     # -- creation --------------------------------------------------------------------------------------------------
     def create(self, action: str = "save", *, count: int | None = None, quick: bool = False) -> None:
