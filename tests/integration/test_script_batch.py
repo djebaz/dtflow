@@ -146,7 +146,7 @@ async def test_batch_workers_overlap_and_return_in_input_order(tmp_path, monkeyp
     async def release_child(attempt_id: str) -> None:
         slots.remove(attempt_id)
 
-    async def fake_generation(service, request, *, prefix=False, attempt_id):
+    async def fake_generation(service, request, *, prefix=False, attempt_id, layout=None):
         nonlocal active, peak
         assert attempt_id in linked
         active += 1
@@ -223,7 +223,7 @@ async def test_batch_continues_after_confirmed_backend_failure(tmp_path, monkeyp
     linked = []
     submitted = []
 
-    async def fake_generation(service, request, *, prefix=False, attempt_id):
+    async def fake_generation(service, request, *, prefix=False, attempt_id, layout=None):
         assert attempt_id in linked
         submitted.append(request.seed)
         if request.seed == 1:
@@ -274,7 +274,7 @@ async def test_batch_unknown_outcome_does_not_stop_later_jobs(tmp_path, monkeypa
     linked = []
     submitted = []
 
-    async def fake_generation(service, request, *, prefix=False, attempt_id):
+    async def fake_generation(service, request, *, prefix=False, attempt_id, layout=None):
         assert attempt_id in linked
         submitted.append(request.seed)
         raise BackendError(
