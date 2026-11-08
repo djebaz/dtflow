@@ -38,13 +38,14 @@ def _geometric_mask(source, models: PersonModels, *, method: str, person: str, e
     from dtflow.services.face_geometry import geometric_face_pixels  # lazy: keeps NumPy off the startup path
 
     # Defensive only: the run's model preflight already requires these roles before any submission.
-    if models.faces is None or (method == "balanced" and models.segmentation is None):
-        needed = "NudeNet faces and YOLO person segmentation" if method == "balanced" else "NudeNet faces"
+    balanced = method == "balanced"
+    if models.faces is None or (balanced and models.segmentation is None):
+        needed = "NudeNet faces and YOLO person segmentation" if balanced else "NudeNet faces"
         raise ValidationError(f"{method.title()} face detection needs {needed}; download the required models.")
     pixels, reason, people, faces = geometric_face_pixels(
         source,
         models.faces,
-        models.segmentation if method == "balanced" else None,
+        models.segmentation if balanced else None,
         method=method,
         person=person,
         expansion=expansion,
