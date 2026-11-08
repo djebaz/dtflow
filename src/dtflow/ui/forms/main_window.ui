@@ -526,6 +526,7 @@
            </item>
            <item>
             <widget class="QGroupBox" name="rememberedFoldersBox">
+             <property name="sizePolicy"><sizepolicy hsizetype="Preferred" vsizetype="Maximum"/></property>
              <property name="title"><string /></property>
              <property name="role" stdset="0"><string>sectionCard</string></property>
              <property name="accessibleName"><string>Remembered folders</string></property>
@@ -576,16 +577,23 @@
                      <property name="sizeHint"><size><width>20</width><height>0</height></size></property>
                     </spacer>
                    </item>
-                   <item><widget class="QPushButton" name="forgetFolderButton"><property name="text"><string>Forget selected</string></property></widget></item>
+                   <item><widget class="QPushButton" name="forgetFolderButton"><property name="toolTip"><string>Forget the selected folder</string></property><property name="text"><string>Forget</string></property></widget></item>
                    <item><widget class="QPushButton" name="forgetAllFoldersButton"><property name="text"><string>Forget all</string></property></widget></item>
                   </layout>
                  </item>
                  <item>
                   <widget class="QListWidget" name="rememberedFoldersList">
                    <property name="accessibleName"><string>Remembered folders</string></property>
+                   <property name="sizePolicy"><sizepolicy hsizetype="Expanding" vsizetype="Maximum"/></property>
                    <property name="maximumHeight"><number>96</number></property>
                    <property name="textElideMode"><enum>Qt::ElideMiddle</enum></property>
                   </widget>
+                 </item>
+                 <item>
+                  <spacer name="rememberedFoldersBottomSpacer">
+                   <property name="orientation"><enum>Qt::Vertical</enum></property>
+                   <property name="sizeHint"><size><width>0</width><height>0</height></size></property>
+                  </spacer>
                  </item>
                 </layout>
                </widget>
