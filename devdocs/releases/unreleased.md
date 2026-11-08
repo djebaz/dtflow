@@ -9,6 +9,7 @@ Changes through 6.0.0 are consolidated in [DTFlow 6.0.0](v6.0.0.md). This file t
 - Workflows: a global concurrency and an optional per-node concurrency (steps running at the same time), saved in the workflow file and edited in the Workflows inspector. Defaults for DT+, local and segmentation nodes are set in the Connection tab (#286, #287). Smoke-tested by the owner on a real backend; the local default of 2 lanes is the owner's choice and not otherwise verified.
 
 - Workflows: Inpaint and Img2img nodes can make several images from each incoming image (1 to 4, "Outputs per image" in the inspector). Each output is its own request with its own seed (node seed + output number), downstream nodes run once per output, and Queues labels them like `image 1.2`. Smoke-tested by the owner on a real backend (#276, #290).
+- Workflows: the plan shows the total generations and the saved images separately before Run, and a run over 256 generations in total (all steps count) is refused while it is planned, before anything is submitted. The Queues list, header and progress bar count a workflow run's images instead of one item. Smoke-tested by the owner (#278, #292).
 
 ## Changed
 
