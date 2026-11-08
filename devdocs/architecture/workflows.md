@@ -20,7 +20,8 @@ and stock ComfyUI workflows do not import into DTFlow.
   run together; missing means the backend default (DT+ 10, local 2).
 - A node has `id`, `type`, `pos`, `size`, `flags` (`{}` or `collapsed`), `order`, `mode` (0 only), `properties`
   (`{}` or `{"Node name for S&R": type}`, plus an optional `"DTFlow concurrency"` integer 1..10, #286, and on Inpaint and Img2img nodes only an optional
-  `"DTFlow outputs"` integer 1..4, #276), `inputs`/`outputs` exactly as the catalogue lists them and
+  `"DTFlow outputs"` integer 1..4, #276, and on Detect face mask only `"DTFlow mask method"`
+  (`fast` | `balanced`) and `"DTFlow face expansion"` (1.0–2.5 in 0.1 steps)), `inputs`/`outputs` exactly as the catalogue lists them and
   `widgets_values` as an **array** in the fixed order below (D1). Custom `title`/`color`/`bgcolor` are rejected.
 - Links are v1.0 objects; `type` must equal both ports' type; each input has at most one link; both ends must
   reference the link. Array (0.4) links and reroute `parentId` are rejected.
@@ -79,9 +80,26 @@ Ports are typed `IMAGE` or `MASK`. Parameter order is the `widgets_values` order
 - Every generative node owns its own checkpoint, LoRAs, prompts and sampling settings; there is no workflow-wide model.
 - Image operations run at the **source image size**. Inpainting hands on the source-sized composite when
   `preserve_outside` is on, so a following refine node receives the generate node's dimensions.
-- `DTFDetectFaceMask` requires the segmentation, clothes and faces models (D4). `face_skin` is the selected person's
-  SegFormer `Face` pixels (constrained by face boxes); `face_skin_and_hair` adds `Hair`. `strongest` is the highest
-  segmentation score; `all` unions every person.
+- **Detect face mask (#299):** its two positional `widgets_values` stay unchanged for full V1 file compatibility.
+  A missing `DTFlow mask method` property preserves the old **Precise — Face skin** or
+  **Precise — Face skin + hair** selection from `mask_region`, including person targeting. New editor/library
+  nodes write `DTFlow mask method = balanced` and `DTFlow face expansion = 1.6`. Only `fast` and `balanced`
+  are valid property values; switching back to Precise clears the method property and writes the corresponding
+  legacy mask region. The expansion property exists only with a geometric method, scales both bounding-box
+  dimensions (not area), and is 1.0–2.5 in 0.1 steps. No file or schema version bump is needed.
+- **Fast:** NudeNet 320n face boxes only, ellipses centred on the boxes; `strongest` selects the
+  highest-confidence NudeNet face, `all` unions all face ellipses. **Balanced:** NudeNet boxes plus
+  YOLO26n-seg masks. Intersect each expanded ellipse with the matching person's silhouette,
+  keep its face-anchored connected region, fill enclosed holes and union selected faces. For Balanced and
+  both Precise modes, `strongest` means the highest-scoring YOLO person and `all` means all selected
+  people. Precise still uses SegFormer B2 Face pixels (and optional Hair), constrained by face boxes.
+  All modes produce the same source-sized binary PNG mask; no-face/no-region keeps the existing branch pause.
+- **Required model union:** Fast → faces; Balanced → faces + segmentation; Precise → faces +
+  segmentation + clothes. Workspace download consent and runner integrity preflight take the union
+  required by all Detect nodes before the first generation. SegFormer remains research-only and is
+  not required or loaded for Fast/Balanced.
+- The Detect node controls its geometric **face-box expansion** only. `DTFInpaint` continues to own
+  **Mask grow**, **Mask feather** and **Keep outside mask** as independent downstream operations.
 - `DTFSaveImage` marks its image as a workflow result. Every step's image is already a saved DTFlow output.
 
 ## Graph and fan-out (D3)
