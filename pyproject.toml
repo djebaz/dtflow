@@ -61,8 +61,16 @@ line-length = 120
 target-version = "py313"
 
 [tool.ruff.lint]
-select = ["E", "F", "B"]
+select = ["E", "F", "B", "TID251"]
 ignore = ["E501"]
+
+[tool.ruff.lint.flake8-tidy-imports.banned-api]
+"PySide6.QtWidgets.QFileDialog".msg = "Import QFileDialog from dtflow.ui.file_dialogs so the selector remembers its folder (#312)."
+
+[tool.ruff.lint.per-file-ignores]
+"src/dtflow/ui/file_dialogs.py" = ["TID251"]
+"tools/**" = ["TID251"]
+"tests/**" = ["TID251"]
 
 [tool.ruff.format]
 quote-style = "double"

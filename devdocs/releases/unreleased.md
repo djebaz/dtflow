@@ -11,6 +11,8 @@ Changes through 6.1.0 are consolidated in [DTFlow 6.1.0](v6.1.0.md). This file t
 
 ## Changed
 
+- Every file and folder picker now opens at the folder it was last used in, remembered separately per picker and per runtime (Windows/WSL), in `settings.json`. Import/export pairs (presets, workflows, generation configuration, masks) and script input pickers share one folder each. A new picker needs no code beyond importing `QFileDialog` from `dtflow.ui.file_dialogs`. Connection has a Remembered folders list with Forget buttons. The Prepare picker's folder moves into the same memory ([#312](https://github.com/djebaz/dtflow/issues/312)).
+
 - DT+ keys: the key selected in the app (saved in Windows Credential Manager) now wins over `DRAWTHINGS_API_KEY`; several keys can be saved, named and switched, and the environment key can be selected explicitly. The Connection card shows which key is active and whether the environment variable is also set. The CLI still reads the environment only.
 - Daily generation stats list every available key (even at zero) under one consistent name; no key is shown as unidentified.
 

@@ -18,7 +18,6 @@ from PySide6.QtGui import QFont, QImage, QPixmap
 from PySide6.QtWidgets import (
     QButtonGroup,
     QComboBox,
-    QFileDialog,
     QFrame,
     QHBoxLayout,
     QLabel,
@@ -31,6 +30,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from dtflow.ui.file_dialogs import QFileDialog
 from dtflow.persistence.script_library import MAX_VERSIONS, ScriptLibraryError, ScriptVersion
 from dtflow.services.script_inspection import Inspection, inspect_source
 from dtflow.ui.brand import tinted_icon
