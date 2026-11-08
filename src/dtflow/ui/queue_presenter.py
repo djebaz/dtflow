@@ -432,6 +432,8 @@ def _workflow_rows(item: dict, run: dict) -> list[ItemRow]:
 
     Hook for #281 follow-ups: lineage labels and nested-branch counts come from the same step records."""
     rows = []
+    # Images a Save node kept are the run's final ones; matched by saved path, so no record changes.
+    finals = {r["path"] for r in run.get("results") or () if isinstance(r, dict) and isinstance(r.get("path"), str)}
     for number, step in enumerate(run.get("steps") or (), 1):
         if not isinstance(step, dict) or step.get("type") not in _WORKFLOW_IMAGE_TYPES:
             continue
@@ -443,6 +445,8 @@ def _workflow_rows(item: dict, run: dict) -> list[ItemRow]:
         )
         branch = step.get("branch") or [0, 0]
         label = f"{step.get('title') or step.get('type')} · {step.get('branch_label') or ''}".rstrip(" ·")
+        if output and output in finals:
+            label += " · final"
         operation = settings.get("operation")
         rows.append(
             ItemRow(
