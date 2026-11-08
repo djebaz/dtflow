@@ -202,7 +202,11 @@ class _EscapeLeavesFocus(QObject):
                 event.accept()
                 return True
             if not event.isAutoRepeat():
-                toggle_image_focus(self.page)
+                slideshow = getattr(self.page, "_slideshow", None)
+                if slideshow is not None and slideshow.active:
+                    slideshow.stop()
+                else:
+                    toggle_image_focus(self.page)
             return True
         return False
 

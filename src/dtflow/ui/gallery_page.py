@@ -91,6 +91,7 @@ from dtflow.ui.activity_strip import activity_strip
 from dtflow.ui.button_focus import KeyboardFocusGuard
 from dtflow.ui.desktop_open import open_local_path
 from dtflow.ui.gallery_hover_card import GalleryHoverCard
+from dtflow.ui.gallery_slideshow import GallerySlideshow
 from dtflow.ui.gallery_detail_preview import (
     ASSETS,
     CoverPainter,
@@ -494,6 +495,7 @@ class GalleryPage(QObject):
         self._query_generation = 0
         self._query_started = 0.0
         self._image_generation = 0
+        self._image_pending = False
         self._detail_generation = 0
         self._presented_item: GalleryItem | None = None
         self._thumb_generation = 0
@@ -572,6 +574,7 @@ class GalleryPage(QObject):
         self.surface_painter.pixmap = QPixmap()
         self.surface = self._widget("galleryImageSurface", QLabel)
         self.hover_card = GalleryHoverCard(self.surface)
+        self.slideshow = GallerySlideshow(self)
         self._widget("galleryFixtureOverlay").hide()
 
         self.stack = self._widget("galleryContentStack")
@@ -1419,6 +1422,7 @@ class GalleryPage(QObject):
         first_activation = active and not self._active and not self.items
         self._active = active
         if not active:
+            self.slideshow.stop()
             self._cancel_open_output()
         self._sync_canvas_loading()
         self._sync_snapshot_warning()
@@ -1584,6 +1588,7 @@ class GalleryPage(QObject):
         """Enable Live + Follow and return to the newest matching image in the current view."""
         if self.runner.closed:
             return
+        self.slideshow.stop()
         with QSignalBlocker(self.sort):
             self.sort.setCurrentText("Newest first")
         already_following = self._live_mode == 2
@@ -3363,6 +3368,7 @@ class GalleryPage(QObject):
             self.surface.update()
             self._image_generation += 1
             image_generation = self._image_generation
+            self._image_pending = True
 
             async def read_image():
                 return await asyncio.to_thread(_image, item.path, 0, self.state_dir, item=item)
@@ -3383,6 +3389,8 @@ class GalleryPage(QObject):
     def _image_done(self, generation: int, identity: str, result, error) -> None:
         if generation != self._image_generation or identity != self.selected_id:
             return
+        self._image_pending = False
+        self.slideshow.image_ready()
         if error is not None or not result or result[0] is None:
             if error is not None:
                 diagnostic_event(
@@ -3519,6 +3527,32 @@ class GalleryPage(QObject):
             self._regenerate_callback(self._request(item), item.identity)
 
     def step(self, delta: int) -> None:
+        if self.slideshow.active:
+            self.slideshow.navigate(delta)
+            return
+        self._step_detail(delta)
+
+    def slideshow_step(self, delta: int) -> None:
+        """Loop through the filtered result using the ordinary bounded paging path."""
+        if not self.items:
+            return
+        index = next((i for i, item in enumerate(self.items) if item.identity == self.selected_id), 0)
+        if delta > 0 and index == len(self.items) - 1 and self.offset + len(self.items) >= self.total:
+            if self.offset:
+                self._pending_page_selection = "first"
+                self._jump_to_page(1)
+            else:
+                self.select(self.items[0].identity, open_detail=False)
+        elif delta < 0 and index == 0 and self.offset == 0:
+            if len(self.items) < self.total:
+                self._pending_page_selection = "last"
+                self._jump_to_page(math.ceil(self.total / PAGE_SIZE))
+            else:
+                self.select(self.items[-1].identity, open_detail=False)
+        else:
+            self._step_detail(delta)
+
+    def _step_detail(self, delta: int) -> None:
         if not self.items:
             return
         try:
@@ -3616,6 +3650,8 @@ class GalleryPage(QObject):
         self._submit_query(query, anchor=self._open_request, target_count=PAGE_SIZE, trigger="open-output")
 
     def show_view(self, mode: str, *, persist: bool = True) -> None:
+        if mode != "Detail" and self.slideshow.active:
+            self.slideshow.stop()
         if mode not in self.modes:
             return
         if mode != self.mode:
@@ -4248,6 +4284,7 @@ class GalleryPage(QObject):
         return next((item for item in self.items if item.identity == self.selected_id), None)
 
     def _clear_detail(self) -> None:
+        self._image_pending = False
         self._presented_item = None
         self.hover_card.set_item(None)
         self._image_generation += 1

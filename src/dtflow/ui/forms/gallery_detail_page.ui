@@ -883,6 +883,26 @@
        </widget>
       </item>
       <item>
+       <widget class="QPushButton" name="gallerySlideshowButton">
+        <property name="text"><string>Slideshow</string></property>
+        <property name="checkable"><bool>true</bool></property>
+        <property name="toolTip"><string>Fullscreen slideshow · F2 to enter or leave · loops through filtered images</string></property>
+        <property name="accessibleName"><string>Toggle fullscreen slideshow</string></property>
+       </widget>
+      </item>
+      <item>
+       <widget class="QDoubleSpinBox" name="gallerySlideshowInterval">
+        <property name="minimum"><double>0.500000000000000</double></property>
+        <property name="maximum"><double>8.000000000000000</double></property>
+        <property name="singleStep"><double>0.500000000000000</double></property>
+        <property name="decimals"><number>1</number></property>
+        <property name="value"><double>3.000000000000000</double></property>
+        <property name="suffix"><string> s</string></property>
+        <property name="toolTip"><string>Slideshow seconds per image (0.5–8)</string></property>
+        <property name="accessibleName"><string>Slideshow seconds per image</string></property>
+       </widget>
+      </item>
+      <item>
        <widget class="QWidget" name="galleryPagerChips">
         <property name="accessibleName"><string>Jump to image batch</string></property>
         <property name="sizePolicy">
@@ -3213,6 +3233,16 @@ No generation or saved output</string>
              </widget>
             </item>
            </layout>
+          </widget>
+         </item>
+         <item>
+          <widget class="QScrollArea" name="gallerySlideshowInfoScroll">
+           <property name="visible"><bool>false</bool></property>
+           <property name="minimumSize"><size><width>240</width><height>0</height></size></property>
+           <property name="maximumSize"><size><width>360</width><height>16777215</height></size></property>
+           <property name="horizontalScrollBarPolicy"><enum>Qt::ScrollBarAlwaysOff</enum></property>
+           <property name="accessibleName"><string>Slideshow image information</string></property>
+           <widget class="QWidget" name="gallerySlideshowInfoHost"/>
           </widget>
          </item>
          <item>

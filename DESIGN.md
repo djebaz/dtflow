@@ -143,6 +143,10 @@ spacing:
 
 The shared Images entry above ordinary right inspectors is navigation, never a primary run action. Preserve its existing responsive placement and visibility rules. Use selection/selectionBorder/selectionText at rest, selectionHover/focus on hover and selectionPressed when pressed, with the standard button radius, body type and weight 600. Keep the full-width 36 px target and reuse the existing image SVG at 14 px, tinted to selectionText. Keyboard focus uses the shared keyboard-only guard. The web reference uses a 6 px content gap, selection/focus shadow rings and 120 ms transitions; native Qt uses its standard centered icon/text spacing and token-backed thicker borders for rings, with immediate state changes (QSS has no CSS box-shadow/transition support). Do not change the shared SVG stroke or other buttons to implement this link. Native Windows/DPI and visual acceptance remain separate from source review.
 
+## Detail slideshow
+
+The checkable Slideshow entry and 0.5–8 second rate editor follow the buffered count in the canonical gallery form. The floating controls are canonical in `gallery_slideshow.ui`; use a 35%-opaque control group at rest and full opacity on hover/keyboard focus. Only that group's wheel changes the rate. During playback, the right-hand carousel is hidden and the same info card is docked into a canonical scrollable rail, showing its prompt/LoRA content in secondary grey without an independent metadata reader; exit restores the carousel. Explicit slideshow entry owns native fullscreen and temporarily uses optimized Detail; exit restores both independently. Ordinary optimization still never changes native window state. F2 enters/leaves, Left/Right navigate, and transient presentation/timers remain window-owned. This is source-reviewed, not visually accepted.
+
 ## Overview
 
 DTFlow is a compact, image-first native desktop workspace. The generated image gets the largest flexible region; the controls that create and inspect it remain nearby. The interface uses charcoal surfaces, one blue action language, restrained corners and precise state text. It is a Qt Widgets application, not a web skin.

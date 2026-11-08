@@ -110,6 +110,8 @@ class GalleryHoverCard(QFrame):
         self.hide_timer.setInterval(LEAVE_GRACE_MS)
         self.hide_timer.timeout.connect(self._hide_if_left)
         self._item: GalleryItem | None = None
+        self._pinned = False
+        self._dock = None
         self._dirty = False
         self._watcher = _SurfaceWatcher(self)
         surface.installEventFilter(self._watcher)
@@ -129,8 +131,43 @@ class GalleryHoverCard(QFrame):
         self.dismiss()
         self._item = item
         self._dirty = item is not None
-        self.button.setVisible(item is not None)
+        self.button.setVisible(item is not None and not self._pinned)
         self._place_button()
+        if self._pinned:
+            self._show_pinned()
+
+    def set_pinned(self, pinned: bool) -> None:
+        """Reuse the info card's content as the slideshow's persistent grey overlay."""
+        self._pinned = pinned
+        self.setProperty("slideshow", pinned)
+        self.style().unpolish(self)
+        self.style().polish(self)
+        self.dismiss()
+        self.button.setVisible(not pinned and self._item is not None)
+        if pinned:
+            self._show_pinned()
+
+    def set_dock(self, scroll) -> None:
+        """Mount the same info content in the slideshow's right rail, then restore its surface parent."""
+        if self._dock is not None:
+            self._dock.viewport().removeEventFilter(self._watcher)
+            self._dock.takeWidget()
+        self._dock = scroll
+        if scroll is None:
+            self.setParent(self.surface)
+        else:
+            scroll.setWidget(self)
+            scroll.viewport().installEventFilter(self._watcher)
+        self.set_pinned(scroll is not None)
+
+    def _show_pinned(self) -> None:
+        if self._item is None:
+            return
+        if self._dirty:
+            self._populate()
+        self.reposition()
+        self.show()
+        self.raise_()
 
     def _populate(self) -> None:
         item = self._item
@@ -174,6 +211,8 @@ class GalleryHoverCard(QFrame):
             self.show_timer.start()
 
     def begin_leave(self) -> None:
+        if self._pinned:
+            return
         self.show_timer.stop()
         if self.isVisible():
             self.hide_timer.start()
@@ -197,6 +236,16 @@ class GalleryHoverCard(QFrame):
     def reposition(self) -> None:
         """Anchor under the info button at the image's top right; the prompt grows to show everything."""
         self._place_button()
+        if self._dock is not None:
+            width = max(1, self._dock.viewport().width())
+            self.setFixedWidth(width)
+            margins = self.layout().contentsMargins()
+            document = self.prompt.document()
+            document.setTextWidth(max(1, width - margins.left() - margins.right() - 4))
+            self.prompt.setFixedHeight(int(document.size().height() + 2 * document.documentMargin()) + 8)
+            self.layout().activate()
+            self.setFixedHeight(self.layout().sizeHint().height())
+            return  # the right rail scrolls long information; no image-overlay coordinates
         left, top = EDGE_MARGIN, EDGE_MARGIN + BUTTON_SIDE + TOOLBAR_GAP
         right = self.surface.rect().right() - EDGE_MARGIN
         bottom = self._bottom_limit()
@@ -251,6 +300,8 @@ class GalleryHoverCard(QFrame):
         self.raise_()
 
     def _hide_if_left(self) -> None:
+        if self._pinned:
+            return
         if not self._is_over(self) and not self._is_over(self.button):
             self.dismiss()
 
@@ -259,7 +310,8 @@ class GalleryHoverCard(QFrame):
         super().enterEvent(event)
 
     def leaveEvent(self, event):
-        self.hide_timer.start()
+        if not self._pinned:
+            self.hide_timer.start()
         super().leaveEvent(event)
 
     def mousePressEvent(self, event):
@@ -285,7 +337,9 @@ class _SurfaceWatcher(QObject):
             elif kind == QEvent.Type.Leave:
                 self.card.begin_leave()
             return False
-        if kind in (QEvent.Type.MouseButtonPress, QEvent.Type.Wheel, QEvent.Type.Hide):
+        if kind == QEvent.Type.Show and self.card._pinned:
+            self.card._show_pinned()
+        elif kind in (QEvent.Type.MouseButtonPress, QEvent.Type.Wheel, QEvent.Type.Hide) and not self.card._pinned:
             self.card.dismiss()
         elif kind == QEvent.Type.Resize:
             self.card.reposition() if self.card.isVisible() else self.card._place_button()

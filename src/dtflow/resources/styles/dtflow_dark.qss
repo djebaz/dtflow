@@ -2090,6 +2090,25 @@ QFrame[role="galleryHoverCard"] QTextEdit {
   border: 0;
   border-radius: 6px;
 }
+QFrame[role="galleryHoverCard"][slideshow="true"] {
+  background: ${color.editorScrim};
+  border-color: ${color.secondary};
+}
+QFrame[role="galleryHoverCard"][slideshow="true"] QLabel,
+QFrame[role="galleryHoverCard"][slideshow="true"] QTextEdit {
+  background: transparent;
+  color: ${color.secondary};
+}
+QFrame#gallerySlideshowControls {
+  background: ${color.surface};
+  border: 1px solid ${color.border};
+  border-radius: ${size.radius};
+}
+QPushButton#gallerySlideshowButton:checked {
+  background: ${color.selection};
+  border-color: ${color.selectionBorder};
+  color: ${color.selectionText};
+}
 
 QPushButton[role="galleryInfo"] {
   background: ${color.canvas};
