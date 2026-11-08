@@ -1965,6 +1965,11 @@ QFrame#galleryPagerBar {
   border: 1px solid ${color.sectionBorder};
   border-radius: ${size.panelRadius};
 }
+QFrame#galleryPagerBar[slideshow="true"] {
+  background: ${color.editorScrim};
+  border-color: transparent;
+  border-radius: 0;
+}
 QFrame#galleryPagerBar QLabel#galleryPagerRange {
   color: ${color.text};
   font-size: 13px;

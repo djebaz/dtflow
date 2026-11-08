@@ -22,6 +22,15 @@
     <property name="toolTip"><string>Seconds per image · mouse wheel over controls to adjust</string></property>
    </widget></item>
    <item><widget class="QPushButton" name="slideshowNext"><property name="text"><string>→</string></property><property name="accessibleName"><string>Next image</string></property><property name="toolTip"><string>Next image · Right arrow</string></property></widget></item>
+   <item><widget class="QSlider" name="slideshowPosition">
+    <property name="orientation"><enum>Qt::Horizontal</enum></property>
+    <property name="minimum"><number>1</number></property><property name="maximum"><number>1</number></property>
+    <property name="minimumSize"><size><width>140</width><height>0</height></size></property>
+    <property name="tracking"><bool>false</bool></property>
+    <property name="accessibleName"><string>Slideshow photo number</string></property>
+    <property name="toolTip"><string>Seek to photo number in the current filtered sort; release to jump. Wheel moves one photo.</string></property>
+   </widget></item>
+   <item><widget class="QLabel" name="slideshowPositionLabel"><property name="text"><string>0 / 0</string></property><property name="minimumSize"><size><width>110</width><height>0</height></size></property></widget></item>
    <item><widget class="QPushButton" name="slideshowLeave"><property name="text"><string>Leave · F2</string></property><property name="accessibleName"><string>Leave slideshow</string></property></widget></item>
   </layout>
  </widget>

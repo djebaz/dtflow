@@ -496,6 +496,7 @@ class GalleryPage(QObject):
         self._query_started = 0.0
         self._image_generation = 0
         self._image_pending = False
+        self._slideshow_position: int | None = None
         self._detail_generation = 0
         self._presented_item: GalleryItem | None = None
         self._thumb_generation = 0
@@ -2288,6 +2289,16 @@ class GalleryPage(QObject):
 
     def _sync_pager(self, *, loading: bool = False) -> None:
         """Use the viewport's first visible image, not the fetched window offset."""
+        if self._slideshow_position is not None and self._slideshow_position >= self.total:
+            self._slideshow_position = None
+            if self.total:
+                self.slideshow_seek(self.total)
+        if self._slideshow_position is not None and not self._loading and self._pending_page_jump is None:
+            target = self._slideshow_position
+            if self.offset <= target < self.offset + len(self.items):
+                self._slideshow_position = None
+                self.select(self.items[target - self.offset].identity, open_detail=False)
+        self.slideshow.sync_position()
         self._sync_live_text()
         first, last = self._visible_range()
         self.grid_position_changed.emit(first if self.mode == "Grid" else 0, self.total)
@@ -3551,6 +3562,22 @@ class GalleryPage(QObject):
                 self.select(self.items[-1].identity, open_detail=False)
         else:
             self._step_detail(delta)
+
+    def slideshow_seek(self, number: int) -> None:
+        """Seek a filtered ordinal through the existing latest-busy-jump/bounded-query path."""
+        if not self.slideshow.active or self.runner.closed or not self.total:
+            return
+        target = min(max(1, number), self.total) - 1
+        if self._slideshow_position == target:
+            return
+        self._slideshow_position = target
+        if not self._loading and not self._adjacent_loading and self.offset <= target < self.offset + len(self.items):
+            self._slideshow_position = None
+            identity = self.items[target - self.offset].identity
+            if identity != self.selected_id:
+                self.select(identity, open_detail=False)
+        else:
+            self._jump_to_page(target // PAGE_SIZE + 1)
 
     def _step_detail(self, delta: int) -> None:
         if not self.items:
