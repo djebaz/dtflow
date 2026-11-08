@@ -10,6 +10,7 @@ Changes through 6.0.0 are consolidated in [DTFlow 6.0.0](v6.0.0.md). This file t
 
 - Workflows: Inpaint and Img2img nodes can make several images from each incoming image (1 to 4, "Outputs per image" in the inspector). Each output is its own request with its own seed (node seed + output number), downstream nodes run once per output, and Queues labels them like `image 1.2`. Smoke-tested by the owner on a real backend (#276, #290).
 - Workflows: the plan shows the total generations and the saved images separately before Run, and a run over 256 generations in total (all steps count) is refused while it is planned, before anything is submitted. The Queues list, header and progress bar count a workflow run's images instead of one item. Smoke-tested by the owner (#278, #292).
+- Queues: selecting an image row of a workflow run and pressing Retry reruns exactly that image's step with its original settings, plus the branches split from it. Sibling images and their saved results stay as they are. The run's summary row still retries its first failed step. Smoke-tested by the owner (#277, #294).
 
 ## Changed
 
