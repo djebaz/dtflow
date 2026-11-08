@@ -161,7 +161,7 @@ These instructions apply throughout `dtflow`.
 - Do not run expensive or potentially billable training/inference merely to validate syntax, configuration, or application plumbing.
 - Never expose credentials, tokens, authorization headers, or sensitive payloads in logs.
 - Direct DT+ cloud model descriptions (`override.models`) and LoRA `version` strings follow [cloud integration](devdocs/architecture/cloud-integration.md#model-descriptions-for-unlisted-checkpoints): exact-file descriptions only, derived entries marked as derived, and never a family-wide guess.
-- Shared cloud credential resolution selects `DRAWTHINGS_API_KEY` when present, otherwise the saved Windows credential. Empty/invalid selected credentials fail clearly; never silently switch sources after validation or authentication failure.
+- Shared cloud credential resolution selects the active saved Windows credential first (several keys can be saved and switched in the app), otherwise `DRAWTHINGS_API_KEY`; the person can explicitly select the environment key instead. The CLI is environment only. Empty/invalid selected credentials fail clearly; never silently switch sources after validation or authentication failure. See `devdocs/guides/credentials.md`.
 
 ## Validation and tests
 

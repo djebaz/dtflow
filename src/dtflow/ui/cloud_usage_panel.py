@@ -48,12 +48,15 @@ class CloudUsagePanel(QObject):
         state_dir: Path,
         *,
         active_credential: Callable[[], Awaitable[tuple[str, str | None] | None]] | None = None,
+        key_directory: Callable[[], dict[str, str]] | None = None,
         on_active: Callable[[str | None, int, str, str], None] | None = None,
         clock: Callable[[], datetime] = lambda: datetime.now(UTC),
     ):
         super().__init__(form)
         self.form, self.runner, self.state_dir = form, runner, Path(state_dir)
         self._active_credential, self._on_active, self._clock = active_credential, on_active, clock
+        self._key_directory = key_directory
+        self._directory: dict[str, str] = {}
         self._records: tuple[UsageRecord, ...] = ()
         self._active: str | None = None
         self.active_label: str | None = None
@@ -102,7 +105,13 @@ class CloudUsagePanel(QObject):
                     active = await self._active_credential()
                 except Exception:
                     active = None
-            return records, active
+            directory = {}
+            if self._key_directory is not None:
+                try:
+                    directory = await asyncio.to_thread(self._key_directory)
+                except Exception:
+                    directory = {}
+            return records, active, directory
 
         self.runner.submit(read(), lambda result, failure: self._read(token, result, failure))
 
@@ -113,14 +122,13 @@ class CloudUsagePanel(QObject):
             log.warning("Local DT+ usage could not be read: %s", type(failure).__name__)
             self._error = True
         else:
-            self._records, identity = result
+            self._records, identity, self._directory = result
             self._active = identity[0] if identity else None
             self.active_label = (
                 None
                 if identity is None
-                else f"Key {identity[1]}\u2022\u2022\u2022\u2022"
-                if identity[1]
-                else "Key (unidentified)"
+                else self._directory.get(identity[0])
+                or (f"Key {identity[1]}\u2022\u2022\u2022\u2022" if identity[1] else f"Key {identity[0][:4].upper()}")
             )
             self._error, self._loaded = False, True
         self.render()
@@ -152,7 +160,9 @@ class CloudUsagePanel(QObject):
         form = self.form
         self._refresh_clock_labels()
         zone = zone_or_default(self.zone_name)
-        counts = self.counts = count_day(self._records, self._clock(), zone, active_credential=self._active)
+        counts = self.counts = count_day(
+            self._records, self._clock(), zone, active_credential=self._active, directory=self._directory
+        )
         start = counts.start.astimezone(zone)
         if self._on_active is not None:
             mine = next((key for key in counts.keys if key.active), None)
@@ -176,8 +186,7 @@ class CloudUsagePanel(QObject):
         form.usageEmptyLabel.setVisible(not counts.keys)
         if counts.unattributed:
             form.usageUnattributedLabel.setText(
-                f"{counts.unattributed} more saved before key tracking began; they cannot be attributed to a key "
-                "and are not counted above."
+                f"{counts.unattributed} more were saved before key tracking began, so they belong to none of the keys above."
             )
         form.usageUnattributedLabel.setVisible(bool(counts.unattributed))
 

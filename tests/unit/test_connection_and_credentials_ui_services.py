@@ -13,12 +13,13 @@ from dtflow.services.credentials import SavedCredentials, SecureStorageUnavailab
 async def test_saved_key_round_trip_precedence_status_and_no_plaintext_fallback():
     vault = Vault()
     saved = SavedCredentials(vault)
-    assert credential_status({}, saved) == {"selected": "none", "saved": "absent"}
+    status = credential_status({}, saved)
+    assert (status["selected"], status["saved"]) == ("none", "absent")
     saved.save("  private-key  ")
     assert (await saved.get()).secret == "private-key"
     assert "private-key" not in repr(await saved.get())
     assert credential_status({}, saved)["selected"] == "saved"
-    assert credential_status({"DRAWTHINGS_API_KEY": ""}, saved) == {"selected": "environment", "saved": "not consulted"}
+    assert credential_status({"DRAWTHINGS_API_KEY": "env"}, saved)["selected"] == "saved"  # the saved key wins
     with pytest.raises(BackendError) as empty:
         saved.save("   ")
     assert empty.value.failure.code == "empty_saved_key"
