@@ -53,8 +53,10 @@ from dtflow.core.workflows import (
     MASK,
     SAVE,
     load_workflow,
+    node_limit,
     node_request,
     plan_workflow,
+    workflow_limit,
 )
 from dtflow.diagnostics import event as diagnostic_event
 from dtflow.persistence.queues import QueueError
@@ -265,6 +267,8 @@ class _Execution:
         self.lanes = max(1, min(limit, 10))
         self.graph = None
         self.plan = None
+        self.slots: dict[int, asyncio.Semaphore] = {}  # per node: steps of that node running together
+        self.total = asyncio.Semaphore(10)  # all steps together (the global limit); set from the workflow at run start
         self.in_flight: dict[str, list[Key]] = {}  # attempt id -> steps whose generation may have been sent
         self.closed = False  # the run settled; a step abandoned at Stop may not write over it
 
@@ -312,6 +316,26 @@ class _Execution:
                 self.steps[key]["stage"] = text
                 self.dirty = True
 
+    async def set_limits(self) -> None:
+        """Global limit, lanes and per-node slots (#286): the workflow's own values, else the app defaults."""
+        from dtflow.persistence.settings import SettingsError, load_workflow_defaults
+
+        try:
+            defaults = await asyncio.to_thread(load_workflow_defaults, self.runner.state)
+        except SettingsError:
+            defaults = None  # an unreadable settings file never blocks a run: the built-in defaults apply
+        backend = self.runner.service.backend
+        limit = workflow_limit(self.graph, self.request.backend, defaults)
+        widen = getattr(backend, "set_concurrency", None)
+        if widen is not None:
+            widen(limit)  # a Draw Things session runs as many generations together as this run asks for
+        self.lanes = max(1, min(limit, backend.capabilities.max_concurrency, 10))
+        self.total = asyncio.Semaphore(limit)  # every running step, local or generative, takes one
+        self.slots = {
+            node.id: asyncio.Semaphore(node_limit(self.graph, node, self.request.backend, defaults))
+            for node in self.graph.nodes
+        }
+
     def node_ids(self, branch: Branch) -> list[int]:
         """The non-Generate nodes of one branch in this run, in topological order."""
         return [
@@ -329,6 +353,7 @@ class _Execution:
         try:
             self.graph = load_workflow(self.request.workflow)
             self.plan = plan_workflow(self.graph)
+            await self.set_limits()
             if any(key[0] not in self.plan.nodes for key in self.steps):
                 raise ValidationError("The stored run does not match its workflow.")
             if self.plan.needs_face_models:
@@ -596,12 +621,13 @@ class _Execution:
         key = (node_id, branch)
         node_type = self.graph.node(node_id).type
         try:
-            if node_type == DETECT_FACE:
-                await self.detect(node_id, branch, inputs)
-            elif node_type in IMAGE_OPERATIONS:
-                await self.image_step(node_id, branch, inputs)
-            elif node_type == SAVE:
-                await self.save(node_id, branch, inputs)
+            async with self.slots[node_id], self.total:  # this node's limit, then the global one
+                if node_type == DETECT_FACE:
+                    await self.detect(node_id, branch, inputs)
+                elif node_type in IMAGE_OPERATIONS:
+                    await self.image_step(node_id, branch, inputs)
+                elif node_type == SAVE:
+                    await self.save(node_id, branch, inputs)
         except (asyncio.CancelledError, PersistenceError):
             raise
         except Exception as exc:  # a local defect fails this step only; siblings continue
@@ -821,23 +847,26 @@ class _Execution:
         # Deterministic, so Retry reuses the seed of the first try. Computed rather than read back from the step: a run
         # stored before #275 holds the node seed on every output, which would make a retried output a duplicate.
         seed = branch_seed(int(node.params["seed"]), branch[1])
-        await self.begin([key])
-        try:
-            request = node_request(node, request_id=uuid4().hex, evidence=self.evidence(branch), seed=seed, single=True)
-        except ValidationError as exc:
-            await self.end([key], "failed", str(exc))
-            outcome = None
-        else:
-            self.steps[key]["settings"] = settings_of(request)
-            outcome = await self.submit([key], request, 1)
-        if outcome is not None:
-            settings = settings_of(outcome.request)
-            if outcome.output_paths:
-                path = outcome.output_paths[0]
-                self.values[key] = {"output": path}
-                await self.end([key], "succeeded", output=path, settings=settings)
+        async with self.slots[node_id], self.total:  # node limit, then global; not held while the branch walks on
+            await self.begin([key])
+            try:
+                request = node_request(
+                    node, request_id=uuid4().hex, evidence=self.evidence(branch), seed=seed, single=True
+                )
+            except ValidationError as exc:
+                await self.end([key], "failed", str(exc))
+                outcome = None
             else:
-                await self.end([key], "failed", "The backend returned no image.", settings=settings)
+                self.steps[key]["settings"] = settings_of(request)
+                outcome = await self.submit([key], request, 1)
+            if outcome is not None:
+                settings = settings_of(outcome.request)
+                if outcome.output_paths:
+                    path = outcome.output_paths[0]
+                    self.values[key] = {"output": path}
+                    await self.end([key], "succeeded", output=path, settings=settings)
+                else:
+                    await self.end([key], "failed", "The backend returned no image.", settings=settings)
         await self.walk(branch)  # a branch without an image marks its steps stopped and submits nothing
 
     async def detect(self, node_id: int, branch: Branch, inputs: dict[str, Any]) -> None:

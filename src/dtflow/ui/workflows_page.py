@@ -848,6 +848,8 @@ class WorkflowsPage(QObject):
             i.workflowNodeMeta.setText("Select one node on the canvas to edit its settings.")
             i.workflowNodeDescription.setText("")
             w.workflowSelectionCount.setText("" if count == 0 else f"{count} nodes selected")
+            if self.canvas is not None and self.name and count == 0:
+                self._add_concurrency(i.workflowParamsHost.layout(), None, (self.choices_source() or {}).get("backend"))
             return
         node = self.canvas.node(node_id)
         spec = node.SPEC
@@ -866,7 +868,63 @@ class WorkflowsPage(QObject):
         choices = self.choices_source() or {}
         for param in spec.params:
             self._add_param(layout, node_id, param, params.get(param.name), choices)
+        self._add_concurrency(layout, node_id, choices.get("backend"))
         self._sync_lock()
+
+    def _add_concurrency(self, layout, node_id: int | None, backend: str | None = None) -> None:
+        """The global concurrency (no node selected) or one node's (#286); 0 shows the default and is not saved."""
+        from dtflow.persistence.settings import SettingsError, WORKFLOW_DEFAULTS, load_workflow_defaults
+
+        host = self.inspector.workflowParamsHost
+        node = self.canvas.node(node_id) if node_id is not None else None
+        value = (node.concurrency if node is not None else self.canvas.concurrency) or 0
+        try:
+            defaults = load_workflow_defaults(self.state)
+        except SettingsError:
+            defaults = dict(WORKFLOW_DEFAULTS)
+        spin = QSpinBox(host)
+        spin.setRange(0, wf.MAX_CONCURRENCY)
+        if node is None:
+            label = _label("Global concurrency", "workflowParamLabel")
+            spin.setSpecialValueText(
+                f"Default ({wf.workflow_limit(wf.Graph(concurrency=None), backend or 'local', defaults)})"
+            )
+            tip = (
+                "The most steps of this workflow that run at the same time, all nodes together. "
+                "Default: set in the Connection tab. Saved in the workflow file."
+            )
+            spin.setAccessibleName("Global concurrency")
+        else:
+            label = _label("Concurrency", "workflowParamLabel")
+            overall = wf.workflow_limit(wf.Graph(concurrency=self.canvas.concurrency), backend or "local", defaults)
+            shown = min(defaults["segmentation"], overall) if node.SPEC.type in wf.SEGMENTATION else overall
+            spin.setSpecialValueText(f"Default ({shown})")
+            tip = (
+                "The most steps of this node that run at the same time, never above the global concurrency. "
+                "Default: the global value (segmentation nodes: set in the Connection tab). Saved in the workflow file."
+            )
+            spin.setAccessibleName(f"Concurrency for node {node_id}")
+        layout.addWidget(label)
+        spin.setValue(value)
+        label.setToolTip(tip)
+        spin.setToolTip(tip)
+
+        def changed(number: int) -> None:
+            chosen = number or None
+            if node_id is None:
+                self.canvas.set_concurrency(chosen)
+            else:
+                self.canvas.set_node_concurrency(node_id, chosen)
+
+        spin.valueChanged.connect(changed)
+        layout.addWidget(spin)
+
+    def backend_changed(self) -> None:
+        """The connection mode changed: the "Default (N)" shown in the inspector follows it."""
+        if self.canvas is not None:
+            self._inspected = None
+            node_id = self.canvas.selected_node_id()
+            self._show_node(node_id, 0 if node_id is None else 1)
 
     def _run_on_canvas(self) -> bool:
         """The followed run belongs to the workflow on the canvas (its steps paint there and in the inspector)."""

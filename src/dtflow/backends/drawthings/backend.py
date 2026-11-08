@@ -31,6 +31,7 @@ from dtflow.core.image_inputs import ImageInputSnapshot, PreparedImageInputs
 from dtflow.core.image_operations import ImageOperationPermit
 from dtflow.core.model_profiles import exact_model_description_digest, exact_model_spec, fallback_spec
 from dtflow.core.models import (
+    MAX_QUEUE_CONCURRENCY,
     BackendError,
     BackendEvent,
     Capabilities,
@@ -118,6 +119,17 @@ class DrawThingsBackend:
         self._image_permits, self._image_specs = self.validate_image_permits(
             endpoint, image_permits, image_inputs_loader, allow_image_probe
         )
+
+    def set_concurrency(self, value: int) -> None:
+        """Set how many generations this session may run together (a workflow run chooses its own, #286).
+
+        Only while nothing is in flight; the lane limit is the client policy, the provider's own limits still apply."""
+        if type(value) is not int or not 1 <= value <= MAX_QUEUE_CONCURRENCY:
+            raise ValidationError(f"Concurrency must be in 1..{MAX_QUEUE_CONCURRENCY}.")
+        if self._active:
+            raise ValidationError("Concurrency cannot change while a generation is running.")
+        self.max_concurrency = value
+        self._lane = asyncio.Semaphore(value)
 
     @classmethod
     def validate_image_permits(cls, endpoint, image_permits, image_inputs_loader, allow_image_probe):
