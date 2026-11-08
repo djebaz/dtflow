@@ -32,7 +32,7 @@ is the V1 specification; the file contract is [architecture/workflows.md](../arc
   line of `NAME.txt` (one entry per line, `#` comments) from the `wildcards` folder of the state directory. Select the
   node, set **Wildcard prompt** to *Random sample* (and how many prompts) or *Every combination*; **Show wildcards
   folder** opens the folder, and the preview lists a few draws with the varied parts highlighted. On Generate the
-  prompt count is the number of images (it replaces batch size × count); on Inpaint and Img2img each incoming image
+  prompt count is the number of images (it replaces batch size × count; image `i` still uses the node seed + `i`); on Inpaint and Img2img each incoming image
   makes that many images (up to 16, replacing *Outputs per image*), each incoming image with its own random draw. The
   draws are seeded, so the same workflow and seed give the same prompts, and Retry reuses them even if a list changed
   afterwards: creating the run stores a copy of the lists it uses. The images count against the 256 generation limit

@@ -68,12 +68,28 @@ def _fail(node: GraphNode, exc: PlanError) -> ValidationError:
     return ValidationError(f"{node.label}: {exc}")
 
 
+_DRAWS: dict[tuple, tuple[tuple[str, dp.Runs], ...]] = {}  # recent draws: planning asks again on every edit
+_DRAWS_MAX = 64
+
+
 def draw(node: GraphNode, snapshot: Snapshot | None, key: str = "") -> tuple[tuple[str, dp.Runs], ...]:
     """The node's prompts with their variation runs: ``prompt_count`` random distinct ones, or every combination.
 
     ``key`` names the incoming image (its Generate node and branch number), so each image's random draw is its own."""
     template = str(node.params["prompt"])
     lists = _lists(snapshot)
+    memo = (
+        template,
+        node.prompt_mode,
+        node.prompt_count,
+        node.id,
+        int(node.params["seed"]),
+        key,
+        tuple(sorted(lists.items())),
+    )
+    found = _DRAWS.get(memo)
+    if found is not None:
+        return found
     try:
         if node.prompt_mode == "all":
             total = dp.count(dp.parse(template), dp.Lists(lists))
@@ -92,6 +108,9 @@ def draw(node: GraphNode, snapshot: Snapshot | None, key: str = "") -> tuple[tup
         raise _fail(node, exc) from exc
     if not drawn:
         raise ValidationError(f"{node.label}: the prompt resolves to nothing; keep some text outside the choices.")
+    if len(_DRAWS) >= _DRAWS_MAX:
+        _DRAWS.pop(next(iter(_DRAWS)))  # oldest first
+    _DRAWS[memo] = drawn
     return drawn
 
 

@@ -607,7 +607,7 @@ class WorkflowCanvas(QObject):
                     wf.copy_params(node.params),
                     (float(node.grNode.width), float(node.grNode.height)),
                     concurrency=node.concurrency,
-                    outputs=node.image_outputs,
+                    outputs=1 if node.prompt_mode is not None else node.image_outputs,  # the file excludes both
                     prompt_mode=node.prompt_mode,
                     prompt_count=node.prompt_count,
                     face=node.face,
@@ -696,8 +696,6 @@ class WorkflowCanvas(QObject):
         if node is None:
             return
         node.prompt_mode, node.prompt_count = mode, count
-        if mode is not None:
-            node.image_outputs = 1  # a wildcard prompt replaces outputs per image (#317)
         node.content.refresh()
         self.scene.history.storeHistory("Edit wildcard prompt", setModified=True, merge_key=f"prompt-mode:{node_id}")
 

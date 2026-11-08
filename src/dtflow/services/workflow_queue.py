@@ -187,6 +187,7 @@ async def create_workflow_queue(
     *,
     up_next: bool = False,
     wildcards_dir: Path | None = None,
+    wildcards: dict[str, Any] | None | str = "read",
 ) -> tuple[str, str]:
     """Validate (``load_workflow`` + ``plan_workflow``) and persist one paused workflow queue (one item, cap 1).
 
@@ -197,7 +198,12 @@ async def create_workflow_queue(
         raise ValidationError("Give the workflow run a name.")
     graph = load_workflow(workflow)
     # The wildcard lists are read once, here, and stored with the run so planning, execution and Retry agree (#317).
-    snapshot = await asyncio.to_thread(read_snapshot, graph, wildcards_dir or Path(state) / "wildcards")
+    # A caller that already read the lists (the CLI, which printed the plan from them) passes that snapshot.
+    snapshot = (
+        await asyncio.to_thread(read_snapshot, graph, wildcards_dir or Path(state) / "wildcards")
+        if isinstance(wildcards, str)
+        else wildcards
+    )
     plan = plan_workflow(graph, prompt_counts(graph, snapshot))
     scope = run_scope(graph, plan)
     run_id = uuid4().hex
