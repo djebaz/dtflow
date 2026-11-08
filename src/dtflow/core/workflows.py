@@ -21,6 +21,7 @@ Rules (audit 10.7/10.8, owner decisions D1-D8):
 from __future__ import annotations
 
 import math
+from collections.abc import Mapping
 import uuid
 from dataclasses import dataclass, field
 from typing import Any
@@ -43,6 +44,10 @@ DEFAULT_CONCURRENCY = {"cloud": 10, "local": 2, "fake": 4, "segmentation": 2}
 PROP_CONCURRENCY = "DTFlow concurrency"  # optional node property; a missing value means the default
 PROP_OUTPUTS = "DTFlow outputs"  # optional Inpaint/Img2img node property: images made per incoming image (#276)
 MAX_OUTPUTS = 4  # most outputs per incoming image of one Inpaint/Img2img node
+PROP_PROMPT_MODE = "DTFlow prompt mode"  # optional generative-node property: "sample" or "all" (#317); absent = literal
+PROP_PROMPT_COUNT = "DTFlow prompt count"  # optional with "sample": how many random prompts the node draws (#317)
+PROMPT_MODES = ("sample", "all")
+MAX_PROMPT_COUNT = 16  # most prompts one node draws per incoming image (the wide branch form, #317)
 LORA_WEIGHT_RANGE = (0.0, 3.0)  # the LoRA editor's range; imported values outside it are rejected, never clamped
 MASK_REGIONS = ("face_skin", "face_skin_and_hair")
 GEOMETRIC_FACE_METHODS = ("fast", "balanced")  # the methods stored as a node property; the rest are legacy mask regions
@@ -308,6 +313,8 @@ class GraphNode:
     size: tuple[float, float] = (240.0, 160.0)
     concurrency: int | None = None  # steps of this node running together (#286); None = the workflow's limit
     outputs: int = 1  # Inpaint/Img2img only: images made per incoming image (#276); the file omits the default 1
+    prompt_mode: str | None = None  # "sample" / "all": the prompt is a dynamic-prompt template (#317); None = literal
+    prompt_count: int | None = None  # "sample" only: prompts drawn per incoming image (Generate: its image count)
     face: FaceOptions = FaceOptions()  # Detect face mask only
 
     @property
@@ -540,6 +547,29 @@ def _outputs(value: object, label: str) -> int:
     return value
 
 
+def _prompt_settings(properties: dict, node_type: str, outputs: int, where: str) -> tuple[str | None, int | None]:
+    """The optional wildcard-prompt properties (#317): ``(mode, count)``; absent mode means a literal prompt."""
+    mode = properties.get(PROP_PROMPT_MODE)
+    count = properties.get(PROP_PROMPT_COUNT)
+    if mode is None:
+        if PROP_PROMPT_COUNT in properties:
+            raise WorkflowError(f"{where}: {PROP_PROMPT_COUNT} needs {PROP_PROMPT_MODE}.")
+        return None, None
+    if node_type not in GENERATIVE:
+        raise WorkflowError(f"{where}: {PROP_PROMPT_MODE} applies to Generate, Inpaint and Img2img nodes only.")
+    if mode not in PROMPT_MODES:
+        raise WorkflowError(f"{where}: {PROP_PROMPT_MODE} must be one of {', '.join(PROMPT_MODES)}.")
+    if outputs != 1:
+        raise WorkflowError(f"{where}: a wildcard prompt replaces the outputs per image; leave {PROP_OUTPUTS} unset.")
+    if mode == "all":
+        if count is not None:
+            raise WorkflowError(f"{where}: {PROP_PROMPT_COUNT} is for the sample mode; 'all' makes every combination.")
+        return mode, None
+    if type(count) is not int or not 1 <= count <= MAX_PROMPT_COUNT:
+        raise WorkflowError(f"{where}: {PROP_PROMPT_COUNT} must be an integer from 1 to {MAX_PROMPT_COUNT}.")
+    return mode, count
+
+
 def workflow_limit(graph: Graph, backend: str, defaults: dict[str, int] | None = None) -> int:
     """Global limit: steps of one run that may be in flight together; the workflow's own, else the default."""
     if graph.concurrency is not None:
@@ -641,7 +671,15 @@ def load_workflow(data: object, *, draft: bool = False) -> Graph:
             raise WorkflowError(f"{where}: unsupported flags {node['flags']!r}.")
         properties = _keys(
             node["properties"],
-            {"Node name for S&R", PROP_CONCURRENCY, PROP_OUTPUTS, PROP_FACE_METHOD, PROP_FACE_EXPANSION},
+            {
+                "Node name for S&R",
+                PROP_CONCURRENCY,
+                PROP_OUTPUTS,
+                PROP_PROMPT_MODE,
+                PROP_PROMPT_COUNT,
+                PROP_FACE_METHOD,
+                PROP_FACE_EXPANSION,
+            },
             set(),
             f"{where} properties",
         )
@@ -651,6 +689,7 @@ def load_workflow(data: object, *, draft: bool = False) -> Graph:
         if PROP_OUTPUTS in properties and spec.type not in IMAGE_OPERATIONS:
             raise WorkflowError(f"{where}: {PROP_OUTPUTS} applies to Inpaint and Img2img nodes only.")
         nd_outputs = _outputs(properties.get(PROP_OUTPUTS), f"{where}: {PROP_OUTPUTS}")
+        prompt_mode, prompt_count = _prompt_settings(properties, spec.type, nd_outputs, where)
         face = _load_face_options(properties, spec.type, where)
         for key in ("title", "color", "bgcolor"):
             if key in node:
@@ -676,6 +715,8 @@ def load_workflow(data: object, *, draft: bool = False) -> Graph:
             _pair(node["size"], f"{where} size"),
             concurrency=nd_concurrency,
             outputs=nd_outputs,
+            prompt_mode=prompt_mode,
+            prompt_count=prompt_count,
             face=face,
         )
         if spec.type in GENERATIVE:
@@ -843,6 +884,10 @@ def dump_workflow(graph: Graph) -> dict:
             entry["properties"][PROP_CONCURRENCY] = node.concurrency
         if node.outputs != 1:
             entry["properties"][PROP_OUTPUTS] = _outputs(node.outputs, f"{node.label}: {PROP_OUTPUTS}")
+        if node.prompt_mode is not None:
+            entry["properties"][PROP_PROMPT_MODE] = node.prompt_mode
+            if node.prompt_count is not None:
+                entry["properties"][PROP_PROMPT_COUNT] = node.prompt_count
         if node.type == DETECT_FACE:
             _dump_face_options(node, entry["properties"])
         entry["widgets_values"] = [_copy(node.params[param.name]) for param in spec.params]
@@ -902,11 +947,37 @@ OUTPUT_RADIX = MAX_OUTPUTS + 1
 MAX_SPLIT_NODES = 16  # multiplying nodes a workflow may hold once its branches are node-qualified
 QUALIFIED_RADIX = MAX_SPLIT_NODES * MAX_OUTPUTS + 1
 
+# Wide form (#317): a node that makes up to MAX_WIDE_OUTPUTS images per incoming image (wildcard prompts) does not fit
+# the digits above. Such a workflow is planned with the same two forms at a wider radix, kept in a disjoint integer
+# range so no earlier record changes meaning: plain wide is ``WIDE_BASE + path`` (radix WIDE_OUTPUT_RADIX) and
+# node-qualified wide is ``-1 - (WIDE_BASE + path)`` (radix WIDE_QUALIFIED_RADIX). The form is read from the integer's
+# range, never from a stored flag. Generate images keep their plain index; the first split converts it, and parent_branch
+# converts back. WIDE_BASE exceeds every legacy value (at most 8 multiplying levels inside the 256 generation limit),
+# and a path that would pass WIDE_LIMIT (SQLite integers are 64 bit) is refused.
+MAX_WIDE_OUTPUTS = 16
+WIDE_OUTPUT_RADIX = MAX_WIDE_OUTPUTS + 1
+WIDE_QUALIFIED_RADIX = MAX_SPLIT_NODES * MAX_WIDE_OUTPUTS + 1
+WIDE_BASE = 2**60
+WIDE_LIMIT = 2**62
+
+
+def _form(index: int) -> tuple[bool, bool, int, int, int]:
+    """(qualified, wide, per-slot output limit, radix, path value) of a branch integer."""
+    qualified = index < 0
+    value = -1 - index if qualified else index
+    wide = value >= WIDE_BASE
+    if wide:
+        value -= WIDE_BASE
+    if qualified:
+        limit, radix = (MAX_WIDE_OUTPUTS, WIDE_QUALIFIED_RADIX) if wide else (MAX_OUTPUTS, QUALIFIED_RADIX)
+    else:
+        limit, radix = (MAX_WIDE_OUTPUTS, WIDE_OUTPUT_RADIX) if wide else (MAX_OUTPUTS, OUTPUT_RADIX)
+    return qualified, wide, limit, radix, value
+
 
 def _path(index: int) -> tuple[int, list[int]]:
     """(Generate image index, raw digits from the first multiplying node to the last)."""
-    qualified = index < 0
-    value, radix = (-1 - index, QUALIFIED_RADIX) if qualified else (index, OUTPUT_RADIX)
+    _, _, _, radix, value = _form(index)
     root, rest = value % ROOT_RADIX, value // ROOT_RADIX
     digits = []
     while rest:
@@ -917,24 +988,44 @@ def _path(index: int) -> tuple[int, list[int]]:
 
 def _output_number(index: int, digit: int) -> int:
     """The 1-based output number a digit of this branch integer stands for."""
-    return (digit - 1) % MAX_OUTPUTS + 1 if index < 0 else digit
+    qualified, _, limit, _, _ = _form(index)
+    return (digit - 1) % limit + 1 if qualified else digit
 
 
-def child_branch(parent: Branch, output: int, slot: int | None = None) -> Branch:
+def _encode(qualified: bool, wide: bool, value: int) -> int:
+    if wide:
+        value += WIDE_BASE
+        if value >= WIDE_LIMIT:
+            raise ValueError("The workflow splits images into too many branches to number them.")
+    return -1 - value if qualified else value
+
+
+def child_branch(parent: Branch, output: int, slot: int | None = None, wide: bool = False) -> Branch:
     """The branch of output number ``output`` (0-based) of the node that splits ``parent``.
 
     ``slot`` is the splitting node's rank among the workflow's multiplying nodes; given, the child is node-qualified
-    (#302). A node-qualified workflow qualifies every split, so a legacy child of a qualified parent is refused."""
+    (#302). A node-qualified workflow qualifies every split, so a legacy child of a qualified parent is refused.
+    ``wide`` selects the wide form (#317) for a first split; a deeper split always follows its parent's form."""
     _, digits = _path(parent[1])
+    qualified, parent_wide, _, radix, value = _form(parent[1])
+    if digits:
+        if wide and not parent_wide:
+            raise ValueError("A legacy branch cannot be split in the wide form.")
+        wide = parent_wide
     if slot is None:
-        if parent[1] < 0:
+        if qualified:
             raise ValueError("A node-qualified branch can only be split with a node slot.")
-        return (parent[0], parent[1] + (output + 1) * ROOT_RADIX * OUTPUT_RADIX ** len(digits))
-    if parent[1] >= 0 and digits:
-        raise ValueError("A legacy branch cannot be split with a node slot.")
-    value = -1 - parent[1] if parent[1] < 0 else parent[1]
-    digit = slot * MAX_OUTPUTS + output + 1
-    return (parent[0], -1 - (value + digit * ROOT_RADIX * QUALIFIED_RADIX ** len(digits)))
+        radix = WIDE_OUTPUT_RADIX if wide else OUTPUT_RADIX
+        digit = output + 1
+    else:
+        if not qualified and digits:
+            raise ValueError("A legacy branch cannot be split with a node slot.")
+        limit = MAX_WIDE_OUTPUTS if wide else MAX_OUTPUTS
+        radix = WIDE_QUALIFIED_RADIX if wide else QUALIFIED_RADIX
+        digit = slot * limit + output + 1
+    if output >= (MAX_WIDE_OUTPUTS if wide else MAX_OUTPUTS):
+        raise ValueError("A node makes too many outputs per image.")
+    return (parent[0], _encode(slot is not None, wide, value + digit * ROOT_RADIX * radix ** len(digits)))
 
 
 def parent_branch(branch: Branch) -> Branch | None:
@@ -942,10 +1033,11 @@ def parent_branch(branch: Branch) -> Branch | None:
     _, digits = _path(branch[1])
     if not digits:
         return None
-    if branch[1] < 0:
-        value = -1 - branch[1] - digits[-1] * ROOT_RADIX * QUALIFIED_RADIX ** (len(digits) - 1)
-        return (branch[0], -1 - value if len(digits) > 1 else value)
-    return (branch[0], branch[1] - digits[-1] * ROOT_RADIX * OUTPUT_RADIX ** (len(digits) - 1))
+    qualified, wide, _, radix, value = _form(branch[1])
+    value -= digits[-1] * ROOT_RADIX * radix ** (len(digits) - 1)
+    if len(digits) == 1:
+        return (branch[0], value)  # back to the plain Generate index, whatever form the split used
+    return (branch[0], _encode(qualified, wide, value))
 
 
 def output_index(branch: Branch) -> int:
@@ -1013,11 +1105,39 @@ class WorkflowPlan:
         return text
 
 
-def generate_outputs(node: GraphNode) -> int:
-    return int(node.params["batch_size"]) * int(node.params["batch_count"])
+def generate_outputs(node: GraphNode, prompt_counts: Mapping[int, int] | None = None) -> int:
+    """Images a Generate node makes: its batch product, or the prompt count of a wildcard mode (#317)."""
+    return prompt_branches(node, prompt_counts) or int(node.params["batch_size"]) * int(node.params["batch_count"])
 
 
-def plan_workflow(graph: Graph) -> WorkflowPlan:
+def prompt_branches(node: GraphNode, prompt_counts: Mapping[int, int] | None = None) -> int:
+    """Prompts a wildcard node draws per incoming image; 0 when its prompt is literal.
+
+    ``sample`` knows its count; ``all`` is the number of combinations, which only the wildcard lists can tell, so the
+    caller supplies it (``prompt_counts``, node id -> combinations) and planning refuses a missing or too large one."""
+    if node.prompt_mode is None:
+        return 0
+    if node.prompt_mode == "sample":
+        return int(node.prompt_count or 1)
+    found = (prompt_counts or {}).get(node.id)
+    if found is None:
+        raise WorkflowError(
+            f"{node.label}: the number of prompt combinations is not known yet (read the wildcard lists)."
+        )
+    if not 1 <= found <= MAX_PROMPT_COUNT:
+        raise WorkflowError(
+            f"{node.label}: the prompt makes {found} combinations; one node can make 1 to {MAX_PROMPT_COUNT}. "
+            "Use the random sample mode or simplify the prompt."
+        )
+    return found
+
+
+def fan_out(node: GraphNode, prompt_counts: Mapping[int, int] | None = None) -> int:
+    """Outputs per incoming image of an Inpaint/Img2img node: its prompt count, else its outputs setting."""
+    return prompt_branches(node, prompt_counts) or node.outputs
+
+
+def plan_workflow(graph: Graph, prompt_counts: Mapping[int, int] | None = None) -> WorkflowPlan:
     """Validate the graph for running and compute per-node branches and the planned generation total.
 
     Requires every input connected, a checkpoint on every generative node, at least one Save node, same-branch
@@ -1025,16 +1145,16 @@ def plan_workflow(graph: Graph) -> WorkflowPlan:
     WorkflowError naming the node.
     """
     try:
-        return _plan(graph, qualified=False)
+        return _plan(graph, prompt_counts, qualified=False)
     except _ParallelSplit:  # unrelated multiplying nodes share images: plan again with node-qualified branches (#302)
-        return _plan(graph, qualified=True)
+        return _plan(graph, prompt_counts, qualified=True)
 
 
 class _ParallelSplit(Exception):
     """Internal: two unrelated multiplying nodes split the same images, so plain branch paths would be ambiguous."""
 
 
-def _plan(graph: Graph, *, qualified: bool) -> WorkflowPlan:
+def _plan(graph: Graph, prompt_counts: Mapping[int, int] | None, *, qualified: bool) -> WorkflowPlan:
     if not graph.nodes:
         raise WorkflowError("The workflow is empty.")
     order = topological_order(graph)
@@ -1044,13 +1164,14 @@ def _plan(graph: Graph, *, qualified: bool) -> WorkflowPlan:
     splitters: list[int] = []  # nodes with several outputs per image planned so far
     slots: dict[int, int] = {}
     if qualified:  # the rank of each multiplying node by node id is the node part of its children's identity
-        multiplying = sorted(n.id for n in graph.nodes if n.type in IMAGE_OPERATIONS and n.outputs > 1)
+        multiplying = sorted(n.id for n in graph.nodes if n.type in IMAGE_OPERATIONS and fan_out(n, prompt_counts) > 1)
         if len(multiplying) > MAX_SPLIT_NODES:
             raise WorkflowError(
                 f"A workflow with parallel multi-output nodes can hold at most {MAX_SPLIT_NODES} Inpaint or "
                 "Img2Img nodes with several outputs."
             )
         slots = {node_id: rank for rank, node_id in enumerate(multiplying)}
+    wide = any(n.type in IMAGE_OPERATIONS and fan_out(n, prompt_counts) > MAX_OUTPUTS for n in graph.nodes)
     total = analyses = 0
     for node_id in order:
         node = graph.node(node_id)
@@ -1061,8 +1182,9 @@ def _plan(graph: Graph, *, qualified: bool) -> WorkflowPlan:
             _face_settings(node)
         if node.type == GENERATE:
             node_request(node, Sampler(node.params["sampler"]))  # range/semantic checks through request validation
-            _check_bound(total, generate_outputs(node), node)
-            branches = tuple((node.id, index) for index in range(generate_outputs(node)))
+            images = generate_outputs(node, prompt_counts)
+            _check_bound(total, images, node)
+            branches = tuple((node.id, index) for index in range(images))
         elif node.type in STATIC_SOURCES:
             branches = ((node.id, 0),)  # one file is one image (#316)
             inputs = []
@@ -1084,12 +1206,16 @@ def _plan(graph: Graph, *, qualified: bool) -> WorkflowPlan:
                 )
             if node.type in IMAGE_OPERATIONS:
                 node_request(node, Sampler(node.params["sampler"]), width=1024, height=1024)
-                if node.outputs > 1:  # each incoming image becomes ``outputs`` branches (#276)
-                    _check_bound(total, len(branches) * node.outputs, node)  # before the branches are built
+                outputs = fan_out(node, prompt_counts)
+                if outputs > 1:  # each incoming image becomes ``outputs`` branches (#276, #317)
+                    _check_bound(total, len(branches) * outputs, node)  # before the branches are built
                     split_slot = slots[node.id] if qualified else None
-                    branches = tuple(
-                        child_branch(parent, k, split_slot) for parent in branches for k in range(node.outputs)
-                    )
+                    try:
+                        branches = tuple(
+                            child_branch(parent, k, split_slot, wide) for parent in branches for k in range(outputs)
+                        )
+                    except ValueError as exc:
+                        raise WorkflowError(f"{node.label}: {exc}") from exc
                     if not qualified:
                         _check_split_lineage(graph, plans, splitters, node, branches)
                     splitters.append(node.id)
@@ -1153,11 +1279,12 @@ def node_request(
     evidence: tuple[tuple[str, str], ...] = (),
     seed: int | None = None,
     single: bool = False,
+    prompt: str | None = None,
 ) -> ResolvedGenerationRequest:
     """The txt2img settings base of a generative node, validated by ``ResolvedGenerationRequest``.
 
     Image operations pass the source image's size as ``width``/``height``; the image-operation entry then attaches
-    the prepared inputs and switches the operation. ``seed`` overrides the node's seed; ``single`` makes one image
+    the prepared inputs and switches the operation. ``seed`` overrides the node's seed; ``prompt`` the node's prompt (the resolved wildcard prompt, #317); ``single`` makes one image
     (batch size 1 x count 1), the request of one Generate output (#275). Raises WorkflowError naming the node.
     """
     params = node.params
@@ -1166,7 +1293,7 @@ def node_request(
     try:
         return ResolvedGenerationRequest(
             request_id or uuid4().hex,
-            str(params["prompt"]),
+            str(params["prompt"]) if prompt is None else prompt,
             str(params["checkpoint"]),
             int(params["seed"]) if seed is None else seed,
             negative_prompt=str(params["negative_prompt"]),

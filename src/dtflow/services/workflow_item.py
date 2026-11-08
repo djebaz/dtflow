@@ -62,6 +62,7 @@ from dtflow.core.workflows import (
     SOURCES,
     STATIC_SOURCES,
     face_model_roles,
+    fan_out,
     is_descendant,
     load_workflow,
     node_limit,
@@ -79,6 +80,7 @@ from dtflow.persistence.store import PersistenceError, SQLiteAttempts
 from dtflow.persistence.workflow_items import BAD_STEP_STATES, WorkflowRequest
 from dtflow.services import session
 from dtflow.services.generation import GenerationService
+from dtflow.services.workflow_prompts import prompt_counts, resolve as resolve_prompt
 from dtflow.services.workflow_queue import (
     BRANCH_CONTROL,
     RETRY_CONTROL,
@@ -366,6 +368,7 @@ class _Execution:
         self.lanes = max(1, min(limit, 10))
         self.graph = None
         self.plan = None
+        self.prompt_counts: dict[int, int] = {}
         self.slots: dict[int, asyncio.Semaphore] = {}  # per node: steps of that node running together
         self.total = asyncio.Semaphore(10)  # all steps together (the global limit); set from the workflow at run start
         self.in_flight: dict[str, list[Key]] = {}  # attempt id -> steps whose generation may have been sent
@@ -451,7 +454,8 @@ class _Execution:
         diagnostic_event(log, "workflow.run_started", level=logging.INFO, data={"planned": self.request.planned})
         try:
             self.graph = load_workflow(self.request.workflow)
-            self.plan = plan_workflow(self.graph)
+            self.prompt_counts = prompt_counts(self.graph, self.request.wildcards)
+            self.plan = plan_workflow(self.graph, self.prompt_counts)
             await self.set_limits()
             if any(key[0] not in self.plan.nodes for key in self.steps):
                 raise ValidationError("The stored run does not match its workflow.")
@@ -973,6 +977,12 @@ class _Execution:
 
     # -- node kinds ------------------------------------------------------------------------------------------------
 
+    def wildcard_prompt(self, node, branch: Branch) -> tuple[str | None, tuple[tuple[str, str], ...]]:
+        """The resolved prompt and its evidence for a wildcard node (#317); a literal prompt returns (None, ())."""
+        if node.prompt_mode is None:
+            return None, ()
+        return resolve_prompt(node, self.request.wildcards, branch, self.prompt_counts)
+
     async def generate(self, node_id: int) -> None:
         """Start one single-image request per planned output (#275); each continues down its own branch."""
         keys = sorted((key for key in self.steps if key[0] == node_id), key=lambda key: key[1])
@@ -1000,8 +1010,14 @@ class _Execution:
         async with self.slots[node_id], self.total:  # node limit, then global; not held while the branch walks on
             await self.begin([key])
             try:
+                prompt, evidence = self.wildcard_prompt(node, branch)
                 request = node_request(
-                    node, request_id=uuid4().hex, evidence=self.evidence(branch), seed=seed, single=True
+                    node,
+                    request_id=uuid4().hex,
+                    evidence=self.evidence(branch) + evidence,
+                    seed=seed,
+                    single=True,
+                    prompt=prompt,
                 )
             except ValidationError as exc:
                 await self.end([key], "failed", str(exc))
@@ -1227,8 +1243,15 @@ class _Execution:
             if resized is not None:
                 self.set_stage([key], f"Fitting {resized[0]}x{resized[1]} into {width}x{height}")
             # Several outputs per incoming image each get their own seed (node seed + output number); Retry reuses it.
-            seed = branch_seed(int(node.params["seed"]), output_index(branch)) if node.outputs > 1 else None
-            request = node_request(node, width=width, height=height, evidence=self.evidence(branch), seed=seed)
+            seed = (
+                branch_seed(int(node.params["seed"]), output_index(branch))
+                if fan_out(node, self.prompt_counts) > 1
+                else None
+            )
+            prompt, evidence = self.wildcard_prompt(node, branch)
+            request = node_request(
+                node, width=width, height=height, evidence=self.evidence(branch) + evidence, seed=seed, prompt=prompt
+            )
             request = session.image_operation_request(
                 request,
                 prepared,

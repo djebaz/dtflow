@@ -58,6 +58,34 @@ of a Retry seed (an ancestor branch; missing means the retried branch). Retry of
 branches split from it; for a Generate output that is the one image and what it feeds, also after the run has ended
 (sibling outputs are never resubmitted, and the new run plans only the generations in that scope).
 
+**Wildcard prompts (#317).** Generate, Inpaint and Img2img nodes may treat their prompt as a dynamic-prompt template
+(`{a|b}`, `{2$$a|b|c}`, `__name__`, the Queues syntax). The optional node properties `"DTFlow prompt mode"` (`"sample"` or
+`"all"`) and `"DTFlow prompt count"` (1..16, `"sample"` only) are additive like `DTFlow outputs`: absent means the
+prompt is literal, the file omits them, `widgets_values` and the contract version are unchanged, and any other node type
+rejects them. A wildcard node excludes `DTFlow outputs` (its prompt count replaces it). `sample` draws that many
+distinct prompts per incoming image; `all` makes every combination, a number only the wildcard lists know, so
+`plan_workflow(graph, prompt_counts)` takes it (node id -> combinations) and refuses a missing count or one above 16.
+On Inpaint/Img2img the prompt count is the node's outputs per image (more than 4 uses the wide branch form below); on
+Generate it is the image count and replaces batch size x count. The planned total counts them against the 256 limit
+before any branch is built.
+
+*Wildcard lists and Retry (#317).* Creating a run reads the lists its wildcard nodes reach from the shared folder
+(`STATE/wildcards`, `NAME.txt`, one entry per line) once and stores them in the run record as `"wildcards": {"lists",
+"sources"}` (entries and each file's SHA-256). Planning, execution and every Retry read that snapshot, never the folder,
+so editing a list later cannot change a Retry. The draw is seeded by node id, node seed and the incoming image, so it
+does not depend on finish order: Generate image `i` takes entry `i` of the node's one draw; an Inpaint/Img2img output
+takes its output number from a draw of its own incoming image. The step's request carries the resolved prompt and the
+evidence `prompt.variation_runs` (highlights), `plan.prompt_template`, `plan.prompt_mode` and `plan.wildcard.<name>`
+(SHA-256). A missing list, bad syntax, or a sample larger than the prompt's variants is refused at creation, naming the
+node and the wildcard, never the prompt text.
+
+*Wide branches (#317).* A node that makes more than 4 images per incoming image (wildcard prompts, up to 16) does not fit
+the radix-5 digits. The wide form keeps the same two layouts at a wider radix in a disjoint integer range: plain wide is
+`2^60 + path` (digit = output number, radix 17) and node-qualified wide is `-1 - (2^60 + path)` (digit = `slot * 16 +
+output + 1`, radix 257). The form is read from the integer's range, so every stored branch, label, seed and Retry record
+keeps its meaning; Generate images keep their plain index and the first split converts it (and `parent_branch` converts
+back). A path that would reach `2^62` is refused. Nothing uses the wide form until a node can make more than 4 outputs.
+
 *Parallel multiplying nodes (#302).* A plain branch path names no node, so two unrelated Inpaint/Img2img nodes that
 both make several outputs from the same images would produce identical child branches. When `plan_workflow` meets that
 shape it plans the workflow again with **node-qualified** branches: the integer is stored negative (`-1 - path`) and each
