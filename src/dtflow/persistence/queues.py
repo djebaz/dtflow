@@ -37,6 +37,7 @@ from dtflow.core.models import (
     ResolvedGenerationRequest,
     ValidationError,
 )
+from dtflow.core.output_layout import is_metadata_name
 from dtflow.core.request_records import request_from_record as decode_request
 from dtflow.persistence.script_items import (
     KIND_SCRIPT,
@@ -1772,7 +1773,7 @@ def _script_item_fields(request: dict, script: dict[str, Any]) -> dict[str, Any]
         artifacts += [
             path
             for path in child["artifacts"]
-            if index == 0 or not str(path).replace("\\", "/").endswith("/metadata.json")
+            if index == 0 or not is_metadata_name(str(path).replace("\\", "/").rsplit("/", 1)[-1])
         ]
     return {
         **_item_request_fields(base),
@@ -1801,7 +1802,7 @@ def _elapsed(start: str | None, end: str | None) -> float | None:
 
 def _step_fields(artifacts: list) -> dict[str, Any]:
     """What one step actually asked for, from its attempt's saved metadata (empty when absent or unreadable)."""
-    path = next((p for p in artifacts if isinstance(p, str) and Path(p).name == "metadata.json"), None)
+    path = next((p for p in artifacts if isinstance(p, str) and is_metadata_name(Path(p).name)), None)
     if path is None:
         return {}
     try:

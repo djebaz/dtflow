@@ -360,6 +360,7 @@ def delete_managed(state: Path, target) -> None:
             dict(
                 state=str(Path(state).absolute()),
                 identity=target.identity,
+                rel=f"{Path(target.path).parent.name}/{Path(target.path).name}",
                 kind=target.kind,
                 size=target.size,
                 mtime_ns=target.mtime_ns,
@@ -378,6 +379,7 @@ def delete_managed(state: Path, target) -> None:
             action="delete",
             state=native_state,
             identity=target.identity,
+            rel=f"{Path(target.path).parent.name}/{Path(target.path).name}",
             kind=target.kind,
             size=target.size,
             mtime_ns=target.mtime_ns,
@@ -414,17 +416,30 @@ def _delete(request):
         if identity is None or not state.is_absolute() or str(state).startswith("\\\\"):
             raise ValueError("Invalid managed original")
         kind = request.get("kind", "final")
-        if kind == "final":
-            name = f"final-{int(identity[2]) + 1}.png"
-        elif kind == "raw" and identity[2] == "0":
-            name = "raw-1.png"  # provider evidence exists only for the single output of an image operation
-        else:
-            raise ValueError("Invalid managed original kind")
-        path = state / "outputs" / identity[1] / name
+        if kind not in ("final", "raw") or (kind == "raw" and identity[2] != "0"):
+            raise ValueError("Invalid managed original kind")  # provider evidence exists only for output 1
+        # The run folder and file name come from the request but are proven against the identity here, so the
+        # name must be exactly this attempt's file; nothing is ever deleted by a pattern that merely looks similar.
+        folder, _, name = str(request.get("rel") or f"{identity[1]}/").partition("/")
+        ordinal = int(identity[2]) + 1
+        if not name:  # Layout before issue #296: outputs/<attempt id>/final-N.png | raw-1.png
+            name = f"final-{ordinal}.png" if kind == "final" else "raw-1.png"
+        legacy = folder == identity[1] and name == (f"final-{ordinal}.png" if kind == "final" else "raw-1.png")
+        match = re.fullmatch(r"([a-z0-9][a-z0-9-]{0,62})-" + identity[1] + r"-(raw-)?([1-9][0-9]*)\.png", name)
+        current = (
+            match is not None
+            and bool(match[2]) == (kind == "raw")
+            and int(match[3]) == (1 if kind == "raw" else ordinal)
+            and re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,79}", folder) is not None
+        )
+        if not (legacy or current):
+            raise ValueError("Invalid managed original name")
+        sidecar = "metadata.json" if legacy else f"{match[1]}-{identity[1]}.json"
+        path = state / "outputs" / folder / name
         for component in (path, *path.parents):
             if component.is_symlink() or os.path.isjunction(component):
                 raise ValueError("Redirected original")
-        if not (path.parent / "metadata.json").is_file():
+        if not (path.parent / sidecar).is_file():
             raise ValueError("Missing metadata")
         kernel = ctypes.WinDLL("kernel32", use_last_error=True)
         create = kernel.CreateFileW

@@ -36,6 +36,7 @@ from dtflow.core.models import (
     TimeoutPolicy,
     ValidationError,
 )
+from dtflow.core.output_layout import OutputLayout
 from dtflow.core.retry_policy import AUTO_RETRIES, AUTO_RETRY_DELAY, auto_retry_request, auto_retryable
 from dtflow.core.tasks import settle
 from dtflow.diagnostics import event as diagnostic_event
@@ -287,6 +288,7 @@ async def run_generation(
     on_event: EventSink | None = None,
     prepared_inputs: PreparedImageInputs | None = None,
     attempt_id: str | None = None,
+    layout: OutputLayout | None = None,
 ) -> GenerationOutcome:
     """Refresh inventory, optionally apply trigger prefixes, run LoRA preflight, generate and save.
 
@@ -318,6 +320,8 @@ async def run_generation(
     options = {"prepared_inputs": prepared_inputs} if prepared_inputs is not None else {}
     if attempt_id is not None:
         options["attempt_id"] = attempt_id
+    if layout is not None:
+        options["layout"] = layout
     retries = 0
     while True:
         try:

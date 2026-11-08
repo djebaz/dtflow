@@ -18,7 +18,6 @@ import asyncio
 import json
 import logging
 import os
-import re
 from datetime import datetime
 from collections.abc import Callable
 from pathlib import Path
@@ -46,6 +45,7 @@ from PySide6.QtWidgets import (
 )
 
 from dtflow.core import workflows as wf
+from dtflow.core.output_layout import identity_from_path
 from dtflow.core.models import LoRASelection, ValidationError
 from dtflow.services import workflow_library as library
 from dtflow.ui.activity_strip import activity_strip
@@ -87,7 +87,6 @@ CHOICE_LABELS = {
     "strongest": "Strongest person",
     "all": "All people",
 }
-_FINAL = re.compile(r"final-(\d+)\.png$", re.IGNORECASE)
 PLACEHOLDER = "PLACEHOLDER_"  # checkpoint ids of the reference workflow that must be replaced before a run
 PREFS = Path("workflows") / "workspace.json"  # per-user Workflows layout choices (not cache, not run state)
 PREFS_SCHEMA = "dtflow.workflows.workspace"
@@ -138,9 +137,8 @@ def step_name(step: dict) -> str:
 
 
 def output_identity(path: str) -> str | None:
-    """Images identity ``<attempt id>:<index>`` of a saved ``outputs/<attempt id>/final-N.png``, else None."""
-    match = _FINAL.search(Path(path).name)
-    return f"{Path(path).parent.name}:{int(match.group(1)) - 1}" if match else None
+    """Images identity ``<attempt id>:<index>`` of a saved managed final image (either layout), else None."""
+    return identity_from_path(path)
 
 
 def _read_images(paths: tuple[str, ...], size: int) -> dict[str, QImage]:

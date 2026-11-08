@@ -15,6 +15,7 @@ from datetime import datetime, timezone
 from collections.abc import Callable
 from typing import Any
 
+from dtflow.core.output_layout import OutputLayout, group_name, prompt_label
 from dtflow.core.queue_eta import estimate_queue_seconds
 from dtflow.core.retry_policy import AUTO_RETRIES, AUTO_RETRY_DELAY, auto_retry_request, auto_retryable
 from dtflow.core.models import (
@@ -211,10 +212,11 @@ class QueueDispatcher:
                                 request.request_id,
                             )
                         ) from exc
+                layout = OutputLayout(group_name("queue", item_id), prompt_label(request.prompt))
                 retries = 0
                 while True:
                     try:
-                        saved = await self.service.generate(request, on_event=receive, **options)
+                        saved = await self.service.generate(request, on_event=receive, layout=layout, **options)
                         break
                     except BackendError as exc:
                         if retries >= AUTO_RETRIES or not auto_retryable(exc.failure):

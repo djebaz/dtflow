@@ -46,6 +46,7 @@ from dtflow.core.models import (
     ResolvedGenerationRequest,
     Sampler,
 )
+from dtflow.core.output_layout import OutputLayout, group_name, prompt_label
 from dtflow.core.retry_policy import AUTO_RETRIES, AUTO_RETRY_DELAY, auto_retry_request, auto_retryable
 from dtflow.core.tasks import settle
 from dtflow.persistence.script_items import RETRY_EVIDENCE
@@ -180,6 +181,7 @@ class ScriptHost:
         self._script_inventory = None
         self._preferences_allowed = False
         self.run_id = run_id
+        self._group = group_name("script", run_id or uuid.uuid4().hex)
         self._forms = 0
         self.baseline = normalize_configuration(decode_configuration(baseline_configuration(base)).values)
         self.generations = 0
@@ -228,6 +230,10 @@ class ScriptHost:
         }
 
     # -- waiting on the service loop ------------------------------------------------------------------------------
+
+    def _layout(self, request: ResolvedGenerationRequest) -> OutputLayout:
+        """All of this run's outputs share one folder; files are labeled from the prompt (issue #296)."""
+        return OutputLayout(self._group, prompt_label(request.prompt))
 
     def _await(self, coroutine, *, track: bool = False):
         """Run ``coroutine`` on the service loop and wait. Stop abandons the wait but never cancels the work."""
@@ -367,7 +373,10 @@ class ScriptHost:
             self.attempts.append(attempt_id)
             try:
                 outcome = self._await(
-                    run_generation(self.service, request, prefix=self.prefix, attempt_id=attempt_id), track=True
+                    run_generation(
+                        self.service, request, prefix=self.prefix, attempt_id=attempt_id, layout=self._layout(request)
+                    ),
+                    track=True,
                 )
             except ScriptCancelled:
                 self._blocked = "Stopped; an earlier generation was left to finish on its own."
@@ -681,7 +690,9 @@ class ScriptHost:
         auto_left = AUTO_RETRIES
         while True:
             try:
-                return await run_generation(self.service, request, prefix=self.prefix, attempt_id=attempt_id)
+                return await run_generation(
+                    self.service, request, prefix=self.prefix, attempt_id=attempt_id, layout=self._layout(request)
+                )
             except BackendError as exc:
                 if not (
                     auto_left > 0

@@ -10,6 +10,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 
+from dtflow.core.output_layout import identity_from_path, is_metadata_name
 from dtflow.core.queue_eta import estimate_queue_seconds
 from dtflow.services.connection import failure_reason, local_time
 from dtflow.services.dynamic_prompts import decode_runs
@@ -355,7 +356,7 @@ def _step_rows(item: dict, steps: list) -> list[ItemRow]:
     rows = []
     for step in steps:
         paths = [path for path in step["artifacts"] if isinstance(path, str)]
-        metadata = next((path for path in paths if Path(path).name == "metadata.json"), None)
+        metadata = next((path for path in paths if is_metadata_name(Path(path).name)), None)
         identity = next(
             (
                 f"{step['attempt_id']}:{index}"
@@ -408,7 +409,6 @@ _WORKFLOW_STEP_STATES = {
     "cancelled": "cancelled",
 }
 _LIVE_STATES = ("pending", "running")
-_MANAGED_OUTPUT = re.compile(r"[/\\]([a-f0-9]{32})[/\\]final-([1-9][0-9]*)\.png\Z")
 
 
 def _seconds_between(start, end) -> float | None:
@@ -419,12 +419,12 @@ def _seconds_between(start, end) -> float | None:
 
 
 def _managed_identity(path: object) -> str | None:
-    """The gallery identity of a managed final image (``outputs/<attempt>/final-N.png``), else None.
+    """The gallery identity of a managed final image (``outputs/<run folder>/<name>-<attempt>-N.png`` or the legacy
+    ``outputs/<attempt>/final-N.png``), else None.
 
     Inferred from the path only; the thumbnail provider re-checks it against the gallery record, so a wrong guess
     shows an unavailable tile and never another image."""
-    match = _MANAGED_OUTPUT.search(path) if isinstance(path, str) else None
-    return f"{match.group(1)}:{int(match.group(2)) - 1}" if match else None
+    return identity_from_path(path)
 
 
 def _workflow_rows(item: dict, run: dict) -> list[ItemRow]:
@@ -568,7 +568,7 @@ def item_rows(view: dict) -> tuple[ItemRow, ...]:
         # attempts. Without it a failed script with successful children is
         # indistinguishable from a successful run in the Queues inspector.
         artifacts = [path for path in item["artifacts"] if isinstance(path, str)]
-        metadata = next((path for path in artifacts if Path(path).name == "metadata.json"), None)
+        metadata = next((path for path in artifacts if is_metadata_name(Path(path).name)), None)
         failure = item.get("failure") or {}
         script_preview = None
         if item.get("script"):

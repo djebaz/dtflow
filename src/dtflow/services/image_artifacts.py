@@ -10,13 +10,14 @@ from dataclasses import replace
 from pathlib import Path
 
 from dtflow.core.image_inputs import ImageInputSnapshot, PreparedImageInputs
+from dtflow.core.output_layout import OutputLayout, final_name, raw_name, sidecar_name
 from dtflow.core.models import GenerationResult, ResolvedGenerationRequest, ResourceLimits
 from dtflow.core.png import validate_png
 from dtflow.services.artifacts import (
     artifact_record,
     atomic_write,
     generation_metadata,
-    sync_directory,
+    run_directory,
     validate_result,
 )
 from dtflow.services.image_preparation import ALGORITHM, composite_image
@@ -30,6 +31,7 @@ def save_image_artifacts(
     build_identity: dict[str, str],
     limits: ResourceLimits,
     prepared: PreparedImageInputs,
+    layout: OutputLayout | None = None,
 ) -> tuple[tuple[str, ...], str, bytes]:
     """Keep untouched raw PNG; optionally composite, then atomically save metadata.
 
@@ -47,12 +49,13 @@ def save_image_artifacts(
     validate_result(result, request, limits)
     if len(result.artifacts) != 1:
         raise ValueError("Image-operation saving requires exactly one raw result.")
-    output.mkdir(parents=True, exist_ok=True)
-    directory = output / attempt_id
-    directory.mkdir(exist_ok=False)
-    sync_directory(output)
+    directory, prefix = run_directory(output, attempt_id, request, layout)
     raw = result.artifacts[0]
-    raw_path = directory / "raw-1.png"
+    raw_path = directory / raw_name(prefix, attempt_id)
+    final_path = directory / final_name(prefix, attempt_id, 0)
+    metadata_path = directory / sidecar_name(prefix, attempt_id)
+    if any(path.exists() for path in (raw_path, final_path, metadata_path)):
+        raise FileExistsError("Managed output already exists for this attempt.")
     atomic_write(raw_path, raw.encoded)
     # The application-owned final (including an unchanged raw copy) is distinct
     # from provider evidence. Retain the provider identity only on the raw record.
@@ -71,7 +74,6 @@ def save_image_artifacts(
         )
     if len(raw.encoded) + len(final.encoded) > limits.final_bytes:
         raise ValueError("Retained raw/final output exceeds the aggregate encoded byte limit.")
-    final_path = directory / "final-1.png"
     atomic_write(final_path, final.encoded)
     paths = (str(final_path.resolve()),)
     metadata = generation_metadata(attempt_id, request, result, build_identity, [artifact_record(paths[0], final)])
@@ -97,6 +99,5 @@ def save_image_artifacts(
         "raw_artifacts": [raw_record],
         "final_sha256": hashlib.sha256(final.encoded).hexdigest(),
     }
-    metadata_path = directory / "metadata.json"
     atomic_write(metadata_path, (json.dumps(metadata, indent=2, allow_nan=False) + "\n").encode("utf-8"))
     return paths, str(metadata_path.resolve()), final.encoded
