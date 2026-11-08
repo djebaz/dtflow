@@ -9,6 +9,7 @@ import re
 import stat
 from pathlib import Path
 
+from dtflow.core.output_layout import companion_names
 from dtflow.services.artifact_paths import ArtifactReadPaths, foreign_windows_path
 from dtflow.services.managed_original_provenance import (
     ensure_unredirected_path,
@@ -29,14 +30,18 @@ def _managed_candidate(state: Path, row: dict, *, require_files: bool = True) ->
         or identity != f"{attempt}:{ordinal}"
     ):
         raise OSError("Recorded output identity is inconsistent.")
-    tail = ("outputs", attempt)
-    if not matches_managed_state(state, row["path"], (*tail, f"final-{ordinal + 1}.png")) or not matches_managed_state(
-        state, row["metadata_path"], (*tail, "metadata.json")
+    recorded = row["path"].replace("\\", "/").rsplit("/", 2) if isinstance(row["path"], str) else []
+    names = companion_names(recorded[-2], recorded[-1], attempt, ordinal) if len(recorded) >= 2 else None
+    if names is None:
+        raise OSError("Recorded output is not a managed final image.")
+    tail = ("outputs", recorded[-2])
+    if not matches_managed_state(state, row["path"], (*tail, recorded[-1])) or not matches_managed_state(
+        state, row["metadata_path"], (*tail, names[0])
     ):
         raise OSError("Recorded output is not under this shared Windows state.")
     root = state.absolute()
-    image = root.joinpath(*tail, f"final-{ordinal + 1}.png")
-    sidecar = root.joinpath(*tail, "metadata.json")
+    image = root.joinpath(*tail, recorded[-1])
+    sidecar = root.joinpath(*tail, names[0])
     try:
         ensure_unredirected_path(root)
         for component in (root / "outputs", image.parent, image, sidecar):

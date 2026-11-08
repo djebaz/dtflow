@@ -16,6 +16,7 @@ import json
 import sys
 from pathlib import Path
 
+from dtflow.core.output_layout import is_metadata_name
 from dtflow.core.models import TimeoutPolicy, ValidationError
 from dtflow.persistence.store import StateBusyError
 from dtflow.scripting.engine import MAX_SOURCE_BYTES
@@ -107,7 +108,7 @@ def script_report(state: Path, queue_id: str, run_id: str) -> dict:
     children = (item.get("script") or {}).get("children") or []
 
     def images(child):
-        return [str(path) for path in child.get("artifacts") or () if not str(path).endswith("metadata.json")]
+        return [str(path) for path in child.get("artifacts") or () if not is_metadata_name(Path(str(path)).name)]
 
     committed = [child for child in children if child.get("state") == "succeeded"]
     return {

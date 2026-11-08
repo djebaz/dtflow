@@ -46,6 +46,7 @@ from dtflow.core.models import (
     ResolvedGenerationRequest,
     Sampler,
 )
+from dtflow.core.output_layout import OutputLayout, group_name, prompt_label
 from dtflow.core.retry_policy import AUTO_RETRIES, AUTO_RETRY_DELAY, auto_retry_request, auto_retryable
 from dtflow.core.tasks import settle
 from dtflow.persistence.script_items import RETRY_EVIDENCE
@@ -159,6 +160,7 @@ class ScriptHost:
         release_child: Callable[[str], Awaitable[None]] | None = None,
         available_assets: tuple[PreparedAsset, ...] = (),
         source_sha256: str = "",
+        output_group: str | None = None,
     ) -> None:
         if base.operation != "txt2img" or base.image_inputs is not None:
             raise ValueError("Scripts start from text-to-image settings only.")
@@ -180,6 +182,7 @@ class ScriptHost:
         self._script_inventory = None
         self._preferences_allowed = False
         self.run_id = run_id
+        self._group = output_group or group_name("script", run_id or uuid.uuid4().hex)
         self._forms = 0
         self.baseline = normalize_configuration(decode_configuration(baseline_configuration(base)).values)
         self.generations = 0
@@ -228,6 +231,10 @@ class ScriptHost:
         }
 
     # -- waiting on the service loop ------------------------------------------------------------------------------
+
+    def _layout(self, request: ResolvedGenerationRequest) -> OutputLayout:
+        """All of this run's outputs share one folder; files are labeled from the prompt (issue #296)."""
+        return OutputLayout(self._group, prompt_label(request.prompt))
 
     def _await(self, coroutine, *, track: bool = False):
         """Run ``coroutine`` on the service loop and wait. Stop abandons the wait but never cancels the work."""
@@ -367,7 +374,10 @@ class ScriptHost:
             self.attempts.append(attempt_id)
             try:
                 outcome = self._await(
-                    run_generation(self.service, request, prefix=self.prefix, attempt_id=attempt_id), track=True
+                    run_generation(
+                        self.service, request, prefix=self.prefix, attempt_id=attempt_id, layout=self._layout(request)
+                    ),
+                    track=True,
                 )
             except ScriptCancelled:
                 self._blocked = "Stopped; an earlier generation was left to finish on its own."
@@ -681,7 +691,9 @@ class ScriptHost:
         auto_left = AUTO_RETRIES
         while True:
             try:
-                return await run_generation(self.service, request, prefix=self.prefix, attempt_id=attempt_id)
+                return await run_generation(
+                    self.service, request, prefix=self.prefix, attempt_id=attempt_id, layout=self._layout(request)
+                )
             except BackendError as exc:
                 if not (
                     auto_left > 0
@@ -1022,6 +1034,7 @@ def script_hooks(
     reserve_child: Callable[[str, int], Awaitable[bool]] | None = None,
     release_child: Callable[[str], Awaitable[None]] | None = None,
     available_assets: tuple[PreparedAsset, ...] = (),
+    output_group: str | None = None,
 ) -> Callable[[Any], dict[str, Callable[..., Any]]]:
     """The hook factory ``run_recorded`` takes, shared by the CLI and the queue item so both run the same host.
 
@@ -1046,6 +1059,7 @@ def script_hooks(
             reserve_child=reserve_child,
             release_child=release_child,
             available_assets=available_assets,
+            output_group=output_group,
             source_sha256=getattr(context, "source_sha256", ""),
         )
         hosts.append(host)

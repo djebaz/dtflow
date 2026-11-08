@@ -21,6 +21,7 @@ from dtflow.core.gallery import GalleryQuery
 from dtflow.diagnostics import event as diagnostic_event
 from dtflow.persistence import gallery as gallery_storage
 from dtflow.persistence import image_recycle as ledger
+from dtflow.core.output_layout import companion_names, output_key, raw_of_first_final
 from dtflow.persistence import thumbnail_cache, windows_original
 from dtflow.persistence.original_io import (
     OriginalImagesUnavailableError,
@@ -132,8 +133,16 @@ def _managed_key(path: str) -> str:
     suffix: false ineligibility is safer than missing a Windows/Linux alias.
     """
     normalized = posixpath.normpath(path.replace("\\", "/")).casefold()
-    match = re.search(r"(?:^|/)(outputs/[0-9a-f]{32}/final-[1-9][0-9]*\.png)$", normalized)
-    return match[1] if match else normalized
+    match = output_key(normalized)
+    return f"outputs/{match[1]}/{match[2]}" if match else normalized
+
+
+def _recorded_tail(recorded: object) -> tuple[str, str] | None:
+    """The run folder and file name a recorded path ends with (either separator), else None."""
+    if not isinstance(recorded, str):
+        return None
+    parts = recorded.replace("\\", "/").rsplit("/", 2)
+    return (parts[-2], parts[-1]) if len(parts) >= 2 else None
 
 
 def _raw_companion(
@@ -144,7 +153,10 @@ def _raw_companion(
     Only the canonical sibling of the final is considered, never a directory scan, and an undeclared file
     named raw-1.png is ignored. A declared file must be plain, single-link and named by the sidecar.
     """
-    raw = expected.parent / "raw-1.png"
+    raw_file = raw_of_first_final(expected.name, str(record["attempt_id"]))
+    if raw_file is None:
+        return None
+    raw = expected.parent / raw_file
     try:
         attrs = raw.lstat()
     except FileNotFoundError:
@@ -191,21 +203,26 @@ def _regular_managed_file(
     if not _ATTEMPT_ID.fullmatch(attempt) or ordinal < 0:
         return None
     root = Path(state).resolve() / "outputs"
-    expected = root / attempt / f"final-{ordinal + 1}.png"
-    metadata = root / attempt / "metadata.json"
+    tail_parts = _recorded_tail(record.get("path"))
+    names = companion_names(*tail_parts, attempt, ordinal) if tail_parts else None
+    if names is None:
+        return None
+    folder, image_name = tail_parts
+    expected = root / folder / image_name
+    metadata = root / folder / names[0]
     # A foreign spelling is never a filesystem path to delete directly.
     # Derive the sole eligible native target from saved state and DB identity,
     # rather than authorizing deletion through resolve_output_read().
     foreign_posix = os.name == "nt" and isinstance(record.get("path"), str) and record["path"].startswith("/")
     windows_wsl_alias = foreign_posix and record["path"].startswith("/mnt/")
     if foreign_posix:
-        tail = ("outputs", attempt)
+        tail = ("outputs", folder)
         if (
             not windows_wsl_alias
             or record.get("identity") != f"{attempt}:{ordinal}"
             or Path(state).absolute() != Path(state).resolve()
-            or not matches_managed_state(state, record["path"], (*tail, f"final-{ordinal + 1}.png"))
-            or not matches_managed_state(state, record["metadata_path"], (*tail, "metadata.json"))
+            or not matches_managed_state(state, record["path"], (*tail, image_name))
+            or not matches_managed_state(state, record["metadata_path"], (*tail, names[0]))
         ):
             return None
     paths = paths or ArtifactReadPaths()
@@ -319,10 +336,14 @@ def _content_verified(target: RecycleTarget) -> bool:
                 raise OSError("Raw output does not match its declared digest.")
 
     elif _is_wsl_alias(target.recorded_path):
-        row = {"attempt_id": target.identity.partition(":")[0], "path": target.recorded_path}
+        attempt, _, ordinal = target.identity.partition(":")
+        row = {"attempt_id": attempt, "path": target.recorded_path}
+        names = companion_names(source.parent.name, source.name, attempt, int(ordinal)) if ordinal.isdigit() else None
+        if names is None:
+            return False
 
         def check() -> None:
-            verify_managed_sidecar(source, source.parent / "metadata.json", row)
+            verify_managed_sidecar(source, source.parent / names[0], row)
 
     else:
         return True
@@ -364,15 +385,19 @@ def _confirmed_absent_final(
             return None
     except OSError:
         return None
-    image = root / "outputs" / attempt / f"final-{ordinal + 1}.png"
-    sidecar = image.parent / "metadata.json"
     recorded, metadata = record.get("path"), record.get("metadata_path")
     if not isinstance(recorded, str) or not isinstance(metadata, str):
         return None
+    tail_parts = _recorded_tail(recorded)
+    names = companion_names(*tail_parts, attempt, ordinal) if tail_parts else None
+    if names is None:
+        return None
+    image = root / "outputs" / tail_parts[0] / tail_parts[1]
+    sidecar = image.parent / names[0]
     if _is_wsl_alias(recorded):
-        tail = ("outputs", attempt)
+        tail = ("outputs", tail_parts[0])
         if not matches_managed_state(root, recorded, (*tail, image.name)) or not matches_managed_state(
-            root, metadata, (*tail, "metadata.json")
+            root, metadata, (*tail, names[0])
         ):
             return None
     else:

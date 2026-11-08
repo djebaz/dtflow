@@ -238,6 +238,7 @@ def adopt_setup(
     reserve_child=None,
     release_child=None,
     available_assets=(),
+    output_group: str | None = None,
 ) -> ScriptSetup:
     """Called only after the ordinary dispatcher claims the queue item, on a worker thread (never on ``loop``): the
     run is written into the item before Run Script's admission gate opens."""
@@ -256,6 +257,8 @@ def adopt_setup(
         # Attach capacity accounting before releasing Run Script's admission gate.
         host.reserve_child, host.release_child = reserve_child, release_child
         host.available_assets = available_assets
+        if output_group:
+            host._group = output_group  # the queue's output folder (issue #296)
         host.service = service  # No generation hook can have returned from its initial prompt before this adoption.
     setup.admitted.set()
     with _lock:

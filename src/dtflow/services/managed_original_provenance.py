@@ -11,6 +11,8 @@ import re
 import stat
 from pathlib import Path
 
+from dtflow.core.output_layout import raw_of_first_final
+
 _MAX_METADATA_BYTES = 1024 * 1024
 # Display-only memo of digests already proven in this process, keyed by file
 # fingerprint. Removal and export never consult it; they always re-hash.
@@ -59,12 +61,15 @@ def declared_raw_artifact(sidecar: Path, row: dict) -> tuple[str, str] | None:
     None means the attempt declares no raw output at all. A declaration that is malformed, names another file
     or belongs to another attempt raises OSError, so a file is never owned by its name alone.
     """
-    suffix = "final-1.png"
     try:
         recorded_final = row["path"]
-        if not isinstance(recorded_final, str) or not recorded_final.endswith(suffix):
+        if not isinstance(recorded_final, str):
             raise ValueError
-        recorded_raw = recorded_final[: -len(suffix)] + "raw-1.png"
+        separator = max(recorded_final.rfind("/"), recorded_final.rfind("\\"))
+        raw_file = raw_of_first_final(recorded_final[separator + 1 :], row["attempt_id"])
+        if raw_file is None:
+            raise ValueError
+        recorded_raw = recorded_final[: separator + 1] + raw_file
         with sidecar.open("rb") as stream:
             data = stream.read(_MAX_METADATA_BYTES + 1)
         if len(data) > _MAX_METADATA_BYTES:
