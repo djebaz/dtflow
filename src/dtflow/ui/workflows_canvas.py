@@ -21,6 +21,8 @@ from PySide6.QtCore import QEvent, QObject, QPoint, QPointF, Qt, QTimer
 from PySide6.QtGui import QBrush, QColor, QFont, QPen, QPixmap
 from PySide6.QtWidgets import QGraphicsSimpleTextItem, QGraphicsView, QLabel, QSizePolicy, QVBoxLayout, QWidget
 
+from shiboken6 import delete as _delete_native, isValid as _is_valid
+
 from nodeeditor.node_content_widget import QDMNodeContentWidget
 from nodeeditor.node_edge import EDGE_TYPE_BEZIER, Edge
 from nodeeditor.node_edge_dragging import EdgeDragging
@@ -34,6 +36,7 @@ from nodeeditor.node_scene_history import SceneHistory
 from nodeeditor.node_socket import LEFT_TOP, RIGHT_TOP
 
 from dtflow.core import workflows as wf
+from dtflow.ui.app_filters import app_filters_suspended
 from dtflow.ui.theme import load_tokens
 
 SOCKET_TYPES = {wf.IMAGE: 0, wf.MASK: 1}
@@ -374,6 +377,15 @@ class DTFNode(Node):
     GraphicsNode_class = DTFGraphicsNode
     NodeContent_class = DTFNodeContent
     SPEC: wf.NodeSpec
+
+    def remove(self) -> None:
+        # #308: destroy the graphics item (and its embedded proxy widget) here, with the application-wide Python
+        # filters off, instead of whenever Python drops the last reference, which can be mid-event-dispatch.
+        gr_node = self.grNode
+        with app_filters_suspended():
+            super().remove()
+            if gr_node is not None and _is_valid(gr_node):
+                _delete_native(gr_node)
 
     def __init__(self, scene, comfy_id: int = 0):
         self.comfy_id = comfy_id
