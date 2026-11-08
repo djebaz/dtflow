@@ -821,13 +821,17 @@ def render_connection_usage_states(shell, out):
     environ = shell._environ
     from dtflow.services.cloud_usage import key_identity
 
-    def active_key(text, expected, count=0, others=0):
+    # Earlier Connection states leave a saved key, which now takes precedence over the environment.
+    shell._saved.remove()  # injected in-memory vault only; these states exercise environment keys
+
+    def active_key(text, count=0, others=0):
         environ.clear()
         if text:
             environ[KEY] = text
-        panel.active_label = "?"  # wait for this refresh, not a stale result
+        expected = key_identity(text)[0] if text else None
+        panel._active = "pending"  # wait for this refresh, not a stale result or an obsolete display name
         panel.refresh()
-        wait_for(lambda: panel.active_label == expected)
+        wait_for(lambda: panel._active == expected)
         if text:
             ident, hint = key_identity(text)
             panel._records = records(count, hint=hint, ident=ident) + records(
@@ -838,7 +842,7 @@ def render_connection_usage_states(shell, out):
         panel.render()
 
     zone("Europe/Paris")
-    active_key("dk_4F8Kabcdefghijklmnopqrstu", "Key 4F8K\u2022\u2022\u2022\u2022", 412, 91)
+    active_key("dk_4F8Kabcdefghijklmnopqrstu", 412, 91)
     snap("connection-54-bottom-bar-count-amber")
     form.workspaceStack.setCurrentWidget(shell.generation_page)
     QTest.qWait(100)
@@ -848,17 +852,16 @@ def render_connection_usage_states(shell, out):
     panel.render()
     save(form, out, "connection-61-bottom-bar-count-updated-outside-connection")
     form.workspaceStack.setCurrentWidget(form.connectionPage)
-    active_key("dk_4F8Kabcdefghijklmnopqrstu", "Key 4F8K\u2022\u2022\u2022\u2022", 12, 30)
+    active_key("dk_4F8Kabcdefghijklmnopqrstu", 12, 30)
     snap("connection-56-bottom-bar-count-green")
-    active_key("dk_4F8Kabcdefghijklmnopqrstu", "Key 4F8K\u2022\u2022\u2022\u2022", 503, 40)
+    active_key("dk_4F8Kabcdefghijklmnopqrstu", 503, 40)
     snap("connection-57-bottom-bar-count-red")
     zone("Etc/GMT+10")  # the same records fall on the previous local day: the counter recomputes at once
     snap("connection-58-bottom-bar-count-other-timezone")
     zone("Europe/Paris")
-    active_key("offline-key-with-unknown-format", "Key 7F3A", 7, 3)
+    active_key("offline-key-with-unknown-format", 7, 3)
     snap("connection-59-bottom-bar-count-unidentified-key")
-    shell._saved.remove()  # the injected in-memory vault only
-    active_key(None, None, 0, 3)
+    active_key(None, 0, 3)
     snap("connection-60-bottom-bar-no-key")
     environ.clear()
     # Later fixtures share this window when packed into one process; do not leave synthetic usage behind.
@@ -3111,6 +3114,16 @@ def render_mapped_gallery_states(app, state, out):
     async def detail(_state, _identity):
         return load_detail(item)
 
+    decode_original = gallery_ui._image
+
+    def fixture_image(path, max_side, state=None, *, item=None, **options):
+        # This is a synthetic mapping presentation, not a cross-runtime provenance/lease check.
+        # Decode the known local fixture through the real image reader instead of asking the
+        # managed-original path to authorize this invented Windows record.
+        if path != stored:
+            raise ValueError("Unexpected source in the mapped-image fixture")
+        return decode_original(str(root / "saved.png"), max_side, state, **options)
+
     with (
         patch.object(artifact_paths, "foreign_windows_path", foreign),
         patch("dtflow.services.gallery.foreign_windows_path", foreign),
@@ -3119,6 +3132,7 @@ def render_mapped_gallery_states(app, state, out):
         patch.object(gallery_ui, "query_outputs", query),
         patch.object(gallery_ui, "filter_choices", choices),
         patch.object(gallery_ui, "inspect_output", detail),
+        patch.object(gallery_ui, "_image", fixture_image),
     ):
         item = item_from_record(record, paths)
         shell = MainWindow(saved=SavedCredentials(Vault()), environ={}, state_dir=state / "mapped-state")
@@ -3139,8 +3153,9 @@ def render_mapped_gallery_states(app, state, out):
                 report(target)
             shell.gallery.show_view("Detail", persist=False)
             shell.gallery.select(item.identity)
-            # This wait timed out (8s) on the owner Windows PC; a shorter wait renders the same current state.
-            wait_for(lambda: not shell.gallery.surface_painter.pixmap.isNull(), timeout=2)
+            wait_for(lambda: not shell.gallery.surface_painter.pixmap.isNull())
+            if shell.gallery.surface_painter.pixmap.isNull():
+                raise RuntimeError("Synthetic mapped-image fixture did not decode")
             QTest.qWait(150)
             save(shell.form, out, "images-102-buffered-detail-decoded")
             # Display only: mapped Edit eligibility never reads the fixture or calls a provider.
