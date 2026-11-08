@@ -197,6 +197,14 @@ CATALOG: dict[str, NodeSpec] = {
 }
 
 
+@dataclass(frozen=True, slots=True)
+class FaceOptions:
+    """Detect face mask options kept outside ``widgets_values`` (#299): the file stores them as node properties."""
+
+    method: str | None = None  # None means the legacy precise mask_region
+    expansion: float = FACE_EXPANSION_DEFAULT
+
+
 @dataclass
 class GraphNode:
     id: int
@@ -206,8 +214,7 @@ class GraphNode:
     size: tuple[float, float] = (240.0, 160.0)
     concurrency: int | None = None  # steps of this node running together (#286); None = the workflow's limit
     outputs: int = 1  # Inpaint/Img2img only: images made per incoming image (#276); the file omits the default 1
-    face_mask_method: str | None = None  # None means the legacy precise mask_region
-    face_expansion: float = FACE_EXPANSION_DEFAULT
+    face: FaceOptions = FaceOptions()  # Detect face mask only
 
     @property
     def spec(self) -> NodeSpec:
@@ -365,14 +372,14 @@ def validate_face_expansion(value: object, label: str) -> float:
 
 def face_method(node: GraphNode) -> str:
     """The visible method: a missing property preserves the old precise mask region."""
-    return node.face_mask_method or str(node.params["mask_region"])
+    return node.face.method or str(node.params["mask_region"])
 
 
 def _face_settings(node: GraphNode) -> None:
-    if node.face_mask_method is not None and node.face_mask_method not in GEOMETRIC_FACE_METHODS:
+    if node.face.method is not None and node.face.method not in GEOMETRIC_FACE_METHODS:
         raise WorkflowError(f"{node.label}: unsupported face mask method.")
     if node.type == DETECT_FACE:
-        validate_face_expansion(node.face_expansion, f"{node.label}: Face box expansion")
+        validate_face_expansion(node.face.expansion, f"{node.label}: Face box expansion")
 
 
 def face_model_roles(graph: Graph) -> tuple[str, ...]:
@@ -384,9 +391,36 @@ def face_model_roles(graph: Graph) -> tuple[str, ...]:
     return tuple(role for role in FACE_ROLE_ORDER if role in roles)
 
 
-def default_face_method(node_type: str) -> str | None:
-    """New Detect nodes start Balanced; older or imported files keep their legacy precise region (None)."""
-    return "balanced" if node_type == DETECT_FACE else None
+def default_face_options(node_type: str) -> FaceOptions:
+    """New Detect nodes start Balanced; older or imported files keep their legacy precise region (no method)."""
+    return FaceOptions("balanced") if node_type == DETECT_FACE else FaceOptions()
+
+
+def _load_face_options(properties: dict, node_type: str, where: str) -> FaceOptions:
+    """Read the optional Detect-only properties; absent means the legacy precise method."""
+    if node_type != DETECT_FACE:
+        if PROP_FACE_METHOD in properties or PROP_FACE_EXPANSION in properties:
+            raise WorkflowError(f"{where}: face mask properties apply to Detect face mask only.")
+        return FaceOptions()
+    method = properties.get(PROP_FACE_METHOD)
+    if method is not None and method not in GEOMETRIC_FACE_METHODS:
+        raise WorkflowError(f"{where}: unsupported mask method {method!r}.")
+    if PROP_FACE_EXPANSION in properties and method is None:
+        raise WorkflowError(f"{where}: Face box expansion requires Fast or Balanced.")
+    expansion = validate_face_expansion(
+        properties.get(PROP_FACE_EXPANSION, FACE_EXPANSION_DEFAULT), f"{where}: Face box expansion"
+    )
+    return FaceOptions(method, expansion)
+
+
+def _dump_face_options(node: GraphNode, properties: dict) -> None:
+    """Write the Detect-only properties; the legacy precise method writes none."""
+    _face_settings(node)
+    if node.face.method is not None:
+        properties[PROP_FACE_METHOD] = node.face.method
+        properties[PROP_FACE_EXPANSION] = validate_face_expansion(
+            node.face.expansion, f"{node.label}: Face box expansion"
+        )
 
 
 def _outputs(value: object, label: str) -> int:
@@ -509,16 +543,7 @@ def load_workflow(data: object, *, draft: bool = False) -> Graph:
         if PROP_OUTPUTS in properties and spec.type not in IMAGE_OPERATIONS:
             raise WorkflowError(f"{where}: {PROP_OUTPUTS} applies to Inpaint and Img2img nodes only.")
         nd_outputs = _outputs(properties.get(PROP_OUTPUTS), f"{where}: {PROP_OUTPUTS}")
-        if spec.type != DETECT_FACE and (PROP_FACE_METHOD in properties or PROP_FACE_EXPANSION in properties):
-            raise WorkflowError(f"{where}: face mask properties apply to Detect face mask only.")
-        face_mask_method = properties.get(PROP_FACE_METHOD)
-        if face_mask_method is not None and face_mask_method not in GEOMETRIC_FACE_METHODS:
-            raise WorkflowError(f"{where}: unsupported mask method {face_mask_method!r}.")
-        if PROP_FACE_EXPANSION in properties and face_mask_method is None:
-            raise WorkflowError(f"{where}: Face box expansion requires Fast or Balanced.")
-        expansion = validate_face_expansion(
-            properties.get(PROP_FACE_EXPANSION, FACE_EXPANSION_DEFAULT), f"{where}: Face box expansion"
-        )
+        face = _load_face_options(properties, spec.type, where)
         for key in ("title", "color", "bgcolor"):
             if key in node:
                 raise WorkflowError(f"{where}: custom '{key}' is not supported by DTFlow workflows.")
@@ -543,8 +568,7 @@ def load_workflow(data: object, *, draft: bool = False) -> Graph:
             _pair(node["size"], f"{where} size"),
             concurrency=nd_concurrency,
             outputs=nd_outputs,
-            face_mask_method=face_mask_method,
-            face_expansion=expansion,
+            face=face,
         )
         if spec.type in GENERATIVE:
             _check_request(graph_node, draft=draft)
@@ -712,12 +736,7 @@ def dump_workflow(graph: Graph) -> dict:
         if node.outputs != 1:
             entry["properties"][PROP_OUTPUTS] = _outputs(node.outputs, f"{node.label}: {PROP_OUTPUTS}")
         if node.type == DETECT_FACE:
-            _face_settings(node)
-            if node.face_mask_method is not None:
-                entry["properties"][PROP_FACE_METHOD] = node.face_mask_method
-                entry["properties"][PROP_FACE_EXPANSION] = validate_face_expansion(
-                    node.face_expansion, f"{node.label}: Face box expansion"
-                )
+            _dump_face_options(node, entry["properties"])
         entry["widgets_values"] = [_copy(node.params[param.name]) for param in spec.params]
         nodes.append(entry)
     extra: dict = {"dtflow": {"schema": SCHEMA, "version": CONTRACT_VERSION}}
@@ -976,17 +995,16 @@ def summary(
     node_type: str,
     params: dict[str, object],
     outputs: int = 1,
-    *,
-    face_mask_method: str | None = None,
-    face_expansion: float = FACE_EXPANSION_DEFAULT,
+    face: FaceOptions | None = None,
 ) -> str:
     """Short on-node text so the canvas shows configuration without opening the inspector."""
     if node_type == DETECT_FACE:
-        method = face_mask_method or params["mask_region"]
+        face = face or FaceOptions()
+        method = face.method or params["mask_region"]
         if method in GEOMETRIC_FACE_METHODS:
             name = "Fast ellipse" if method == "fast" else "Balanced ellipse"
             target = "face" if method == "fast" else "person"
-            return f"{name} ×{face_expansion:g} · {target}: {params['person']}"
+            return f"{name} ×{face.expansion:g} · {target}: {params['person']}"
         region = "face skin + hair" if method == "face_skin_and_hair" else "face skin"
         return f"{region} · person: {params['person']}"
     if node_type == SAVE:
@@ -1016,7 +1034,7 @@ def new_node(graph: Graph, node_type: str, pos: tuple[float, float]) -> GraphNod
         node_type,
         (float(pos[0]), float(pos[1])),
         spec.defaults(),
-        face_mask_method=default_face_method(node_type),
+        face=default_face_options(node_type),
     )
     graph.nodes.append(node)
     return node

@@ -14,7 +14,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from uuid import uuid4
 
-from dtflow.core.workflows import Graph, WorkflowError, default_face_method, dump_workflow, load_workflow
+from dtflow.core.workflows import Graph, WorkflowError, default_face_options, dump_workflow, load_workflow
 from dtflow.services.artifacts import atomic_write
 
 LIBRARY_DIR = Path("workflows") / "library"
@@ -144,7 +144,7 @@ def create_from_reference(state: Path, name: str = "New workflow") -> tuple[Path
     graph = load_workflow(json.loads(REFERENCE.read_text(encoding="utf-8")), draft=True)
     # New authoring defaults to Balanced; imported/older V1 files remain precise.
     for node in graph.nodes:
-        node.face_mask_method = default_face_method(node.type)
+        node.face = default_face_options(node.type)
     graph.workflow_id = str(uuid4())
     return save_workflow(state, unique_name(state, name), graph), graph
 

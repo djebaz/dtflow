@@ -265,8 +265,7 @@ def _run_shape(graph) -> tuple:
                 node.id,
                 node.type,
                 repr(sorted(node.params.items())),
-                node.face_mask_method,
-                node.face_expansion,
+                node.face,
             )
             for node in graph.nodes
         )
@@ -902,7 +901,7 @@ class WorkflowsPage(QObject):
     def _add_face_params(self, layout, node_id: int, node, params: dict) -> None:
         """Detect face mask: the single method selector replaces ``mask_region``; ``person`` follows it."""
         self._add_face_method(layout, node_id, node)
-        self._add_face_person(layout, node_id, params["person"], node.face_mask_method == "fast")
+        self._add_face_person(layout, node_id, params["person"], node.face.method == "fast")
 
     def _add_face_method(self, layout, node_id: int, node) -> None:
         """One method control replaces the old two-way mask region picker."""
@@ -916,7 +915,7 @@ class WorkflowsPage(QObject):
         )
         for choice in wf.FACE_METHODS:
             selector.addItem(MASK_METHOD_LABELS[choice], choice)
-        method = node.face_mask_method or node.params["mask_region"]
+        method = node.face.method or node.params["mask_region"]
         selector.setCurrentIndex(wf.FACE_METHODS.index(method))
         selector.currentIndexChanged.connect(lambda index: self._set_face_method(node_id, wf.FACE_METHODS[index]))
         layout.addWidget(selector)
@@ -926,7 +925,7 @@ class WorkflowsPage(QObject):
             spin.setDecimals(1)
             spin.setRange(wf.FACE_EXPANSION_MIN, wf.FACE_EXPANSION_MAX)
             spin.setSingleStep(0.1)
-            spin.setValue(node.face_expansion)
+            spin.setValue(node.face.expansion)
             spin.setSuffix("×")
             spin.setAccessibleName(f"Face box expansion for node {node_id}")
             spin.setToolTip(

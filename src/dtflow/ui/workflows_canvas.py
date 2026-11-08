@@ -12,6 +12,7 @@ import os
 import re
 from collections import OrderedDict
 from collections.abc import Callable
+from dataclasses import replace
 from functools import cache
 
 os.environ.setdefault("QT_API", "pyside6")  # qtpy: the only binding DTFlow ships
@@ -316,8 +317,7 @@ class DTFNodeContent(QDMNodeContentWidget):
                 self.node.SPEC.type,
                 self.node.params,
                 self.node.image_outputs,
-                face_mask_method=self.node.face_mask_method,
-                face_expansion=self.node.face_expansion,
+                face=self.node.face,
             )
         )
 
@@ -354,8 +354,7 @@ class DTFNodeContent(QDMNodeContentWidget):
                 ("params", wf.copy_params(self.node.params)),
                 ("concurrency", self.node.concurrency),
                 ("outputs", self.node.image_outputs),
-                ("face_mask_method", self.node.face_mask_method),
-                ("face_expansion", self.node.face_expansion),
+                ("face", {"method": self.node.face.method, "expansion": self.node.face.expansion}),
             ]
         )
 
@@ -364,8 +363,8 @@ class DTFNodeContent(QDMNodeContentWidget):
         self.node.params = wf.copy_params(data["params"])
         self.node.concurrency = data.get("concurrency")
         self.node.image_outputs = data.get("outputs", 1)
-        self.node.face_mask_method = data.get("face_mask_method")
-        self.node.face_expansion = data.get("face_expansion", wf.FACE_EXPANSION_DEFAULT)
+        face = data.get("face") or {}
+        self.node.face = wf.FaceOptions(face.get("method"), face.get("expansion", wf.FACE_EXPANSION_DEFAULT))
         self.node.grNode.title = f"{self.node.SPEC.title} #{self.node.comfy_id}"
         self.refresh()
         return True
@@ -381,8 +380,7 @@ class DTFNode(Node):
         self.params = self.SPEC.defaults()
         self.concurrency: int | None = None  # steps of this node running together; None = the default (#286)
         self.image_outputs = 1  # Inpaint/Img2img: images made per incoming image (#276)
-        self.face_mask_method = wf.default_face_method(self.SPEC.type)
-        self.face_expansion = wf.FACE_EXPANSION_DEFAULT
+        self.face = wf.default_face_options(self.SPEC.type)
         super().__init__(
             scene,
             f"{self.SPEC.title} #{comfy_id}",
@@ -538,8 +536,7 @@ class WorkflowCanvas(QObject):
                 node.params = wf.copy_params(item.params)
                 node.concurrency = item.concurrency
                 node.image_outputs = item.outputs
-                node.face_mask_method = item.face_mask_method
-                node.face_expansion = item.face_expansion
+                node.face = item.face
                 node.setPos(*item.pos)
                 node.content.refresh()
                 nodes[item.id] = node
@@ -580,8 +577,7 @@ class WorkflowCanvas(QObject):
                     (float(node.grNode.width), float(node.grNode.height)),
                     concurrency=node.concurrency,
                     outputs=node.image_outputs,
-                    face_mask_method=node.face_mask_method,
-                    face_expansion=node.face_expansion,
+                    face=node.face,
                 )
             )
         for edge in self.scene.edges:
@@ -633,9 +629,9 @@ class WorkflowCanvas(QObject):
             return  # the inspector only offers valid methods; like set_node_param, anything else is dropped
         if method in wf.MASK_REGIONS:
             node.params["mask_region"] = method
-            node.face_mask_method = None
+            node.face = replace(node.face, method=None)
         else:
-            node.face_mask_method = method
+            node.face = replace(node.face, method=method)
         node.content.refresh()
         self.scene.history.storeHistory("Edit mask method", setModified=True)
 
@@ -643,7 +639,7 @@ class WorkflowCanvas(QObject):
         node = self.node(node_id)
         if node is None or node.SPEC.type != wf.DETECT_FACE:
             return
-        node.face_expansion = wf.validate_face_expansion(value, "Face box expansion")
+        node.face = replace(node.face, expansion=wf.validate_face_expansion(value, "Face box expansion"))
         node.content.refresh()
         self.scene.history.storeHistory("Edit face expansion", setModified=True, merge_key=f"face_expansion:{node_id}")
 

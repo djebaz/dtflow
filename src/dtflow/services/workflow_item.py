@@ -926,8 +926,8 @@ class _Execution:
                     models,
                     mask_region=str(node.params["mask_region"]),
                     person=str(node.params["person"]),
-                    method=node.face_mask_method,
-                    expansion=node.face_expansion,
+                    method=node.face.method,
+                    expansion=node.face.expansion,
                     on_stage=on_stage,
                 )
             )
