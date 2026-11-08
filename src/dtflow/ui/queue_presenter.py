@@ -511,7 +511,9 @@ def workflow_stage(run: dict) -> str:
         return "Workflow running"
     images = f"{saved} image{'s' if saved != 1 else ''} saved"
     if current is not None:
-        return f"step {current}/{total} running · {images}"
+        step = workflow_steps(run)[current - 1]
+        name = " ".join(str(part) for part in (step.get("title"), step.get("branch_label")) if part)
+        return f"step {current}/{total}" + (f" {name}" if name else "") + f" running · {images}"
     return f"{settled}/{total} steps · {images}"
 
 
