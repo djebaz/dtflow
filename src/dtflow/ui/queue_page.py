@@ -1363,6 +1363,8 @@ class QueuePage:
     @staticmethod
     def _workflow_retry_target(view: dict | None) -> tuple[int, tuple[int, int]] | None:
         """(node id, branch) of a workflow run's first failed step, else its first step with no confirmed outcome."""
+        from dtflow.core.workflows import is_descendant
+
         item = next((item for item in (view or {}).get("items", ()) if item.get("workflow")), None)
         run = (item or {}).get("workflow") or {}
         steps = run.get("steps") or ()
@@ -1382,7 +1384,9 @@ class QueuePage:
                 except (KeyError, TypeError, ValueError, IndexError):
                     return None
                 generate = step.get("type") == "DTFGenerate"
-                if branch in busy or (generate and any(other[:1] == branch[:1] for other in busy)):
+                if any(is_descendant(other, branch) for other in busy) or (
+                    generate and any(other[:1] == branch[:1] for other in busy)
+                ):
                     continue
                 return node_id, branch
         return None

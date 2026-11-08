@@ -868,8 +868,28 @@ class WorkflowsPage(QObject):
         choices = self.choices_source() or {}
         for param in spec.params:
             self._add_param(layout, node_id, param, params.get(param.name), choices)
+        if spec.type in wf.IMAGE_OPERATIONS:
+            self._add_outputs(layout, node_id, node.image_outputs)
         self._add_concurrency(layout, node_id, choices.get("backend"))
         self._sync_lock()
+
+    def _add_outputs(self, layout, node_id: int, value: int) -> None:
+        """Images made per incoming image (#276); 1 is the default and is not written to the file."""
+        label = _label("Outputs per image", "workflowParamLabel")
+        spin = QSpinBox(self.inspector.workflowParamsHost)
+        spin.setRange(1, wf.MAX_OUTPUTS)
+        spin.setValue(value)
+        tip = (
+            "How many images this node makes from each incoming image; each is its own request with its own seed "
+            "(node seed + output number). Every downstream node then runs once per output. "
+            "The planned total is limited to " + str(wf.MAX_PLANNED_GENERATIONS) + " generations per run."
+        )
+        label.setToolTip(tip)
+        spin.setToolTip(tip)
+        spin.setAccessibleName(f"Outputs per image for node {node_id}")
+        spin.valueChanged.connect(lambda number: self.canvas.set_node_outputs(node_id, number))
+        layout.addWidget(label)
+        layout.addWidget(spin)
 
     def _add_concurrency(self, layout, node_id: int | None, backend: str | None = None) -> None:
         """The global concurrency (no node selected) or one node's (#286); 0 shows the default and is not saved."""

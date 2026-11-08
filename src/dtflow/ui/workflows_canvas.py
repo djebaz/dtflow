@@ -311,7 +311,7 @@ class DTFNodeContent(QDMNodeContentWidget):
         box.addStretch(1)
 
     def refresh(self) -> None:
-        self.summary.setText(wf.summary(self.node.SPEC.type, self.node.params))
+        self.summary.setText(wf.summary(self.node.SPEC.type, self.node.params, self.node.image_outputs))
 
     def set_status(self, state: str | None, text: str = "", tooltip: str = "") -> None:
         self.status.setVisible(bool(state))
@@ -345,6 +345,7 @@ class DTFNodeContent(QDMNodeContentWidget):
                 ("comfy_id", self.node.comfy_id),
                 ("params", wf.copy_params(self.node.params)),
                 ("concurrency", self.node.concurrency),
+                ("outputs", self.node.image_outputs),
             ]
         )
 
@@ -352,6 +353,7 @@ class DTFNodeContent(QDMNodeContentWidget):
         self.node.comfy_id = data["comfy_id"]
         self.node.params = wf.copy_params(data["params"])
         self.node.concurrency = data.get("concurrency")
+        self.node.image_outputs = data.get("outputs", 1)
         self.node.grNode.title = f"{self.node.SPEC.title} #{self.node.comfy_id}"
         self.refresh()
         return True
@@ -366,6 +368,7 @@ class DTFNode(Node):
         self.comfy_id = comfy_id
         self.params = self.SPEC.defaults()
         self.concurrency: int | None = None  # steps of this node running together; None = the default (#286)
+        self.image_outputs = 1  # Inpaint/Img2img: images made per incoming image (#276)
         super().__init__(
             scene,
             f"{self.SPEC.title} #{comfy_id}",
@@ -520,6 +523,7 @@ class WorkflowCanvas(QObject):
                 node = NODE_CLASSES[item.type](self.scene, item.id)
                 node.params = wf.copy_params(item.params)
                 node.concurrency = item.concurrency
+                node.image_outputs = item.outputs
                 node.setPos(*item.pos)
                 node.content.refresh()
                 nodes[item.id] = node
@@ -559,6 +563,7 @@ class WorkflowCanvas(QObject):
                     wf.copy_params(node.params),
                     (float(node.grNode.width), float(node.grNode.height)),
                     node.concurrency,
+                    node.image_outputs,
                 )
             )
         for edge in self.scene.edges:
@@ -609,6 +614,14 @@ class WorkflowCanvas(QObject):
             return
         node.concurrency = value
         self.scene.history.storeHistory("Edit concurrency", setModified=True, merge_key=f"concurrency:{node_id}")
+
+    def set_node_outputs(self, node_id: int, value: int) -> None:
+        node = self.node(node_id)
+        if node is None:
+            return
+        node.image_outputs = value
+        node.content.refresh()
+        self.scene.history.storeHistory("Edit outputs", setModified=True, merge_key=f"outputs:{node_id}")
 
     def set_concurrency(self, value: int | None) -> None:
         """The workflow's own limit; saved with the file, not part of undo."""
