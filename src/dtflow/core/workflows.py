@@ -41,6 +41,8 @@ MAX_CONCURRENCY = 10  # most steps of one workflow, or of one node, that run tog
 # nodes (Detect face today; later segmentation nodes share it).
 DEFAULT_CONCURRENCY = {"cloud": 10, "local": 2, "fake": 4, "segmentation": 2}
 PROP_CONCURRENCY = "DTFlow concurrency"  # optional node property; a missing value means the default
+PROP_OUTPUTS = "DTFlow outputs"  # optional Inpaint/Img2img node property: images made per incoming image (#276)
+MAX_OUTPUTS = 4  # most outputs per incoming image of one Inpaint/Img2img node
 LORA_WEIGHT_RANGE = (0.0, 3.0)  # the LoRA editor's range; imported values outside it are rejected, never clamped
 MASK_REGIONS = ("face_skin", "face_skin_and_hair")
 PERSON_CHOICES = ("strongest", "all")
@@ -187,6 +189,7 @@ class GraphNode:
     params: dict[str, object]
     size: tuple[float, float] = (240.0, 160.0)
     concurrency: int | None = None  # steps of this node running together (#286); None = the workflow's limit
+    outputs: int = 1  # Inpaint/Img2img only: images made per incoming image (#276); the file omits the default 1
 
     @property
     def spec(self) -> NodeSpec:
@@ -333,6 +336,15 @@ def _concurrency(value: object, label: str) -> int | None:
     return value
 
 
+def _outputs(value: object, label: str) -> int:
+    """An optional output count per incoming image: absent means 1; otherwise an integer 1..MAX_OUTPUTS."""
+    if value is None:
+        return 1
+    if type(value) is not int or not 1 <= value <= MAX_OUTPUTS:
+        raise WorkflowError(f"{label} must be an integer from 1 to {MAX_OUTPUTS}.")
+    return value
+
+
 def workflow_limit(graph: Graph, backend: str, defaults: dict[str, int] | None = None) -> int:
     """Global limit: steps of one run that may be in flight together; the workflow's own, else the default."""
     if graph.concurrency is not None:
@@ -432,10 +444,15 @@ def load_workflow(data: object, *, draft: bool = False) -> Graph:
             raise WorkflowError(f"{where}: muted or bypassed nodes (mode {node['mode']!r}) are not supported.")
         if node["flags"] not in ({}, {"collapsed": False}, {"collapsed": True}):
             raise WorkflowError(f"{where}: unsupported flags {node['flags']!r}.")
-        properties = _keys(node["properties"], {"Node name for S&R", PROP_CONCURRENCY}, set(), f"{where} properties")
+        properties = _keys(
+            node["properties"], {"Node name for S&R", PROP_CONCURRENCY, PROP_OUTPUTS}, set(), f"{where} properties"
+        )
         if properties.get("Node name for S&R", spec.type) != spec.type:
             raise WorkflowError(f"{where}: unsupported properties.")
         nd_concurrency = _concurrency(properties.get(PROP_CONCURRENCY), f"{where}: {PROP_CONCURRENCY}")
+        if PROP_OUTPUTS in properties and spec.type not in IMAGE_OPERATIONS:
+            raise WorkflowError(f"{where}: {PROP_OUTPUTS} applies to Inpaint and Img2img nodes only.")
+        nd_outputs = _outputs(properties.get(PROP_OUTPUTS), f"{where}: {PROP_OUTPUTS}")
         for key in ("title", "color", "bgcolor"):
             if key in node:
                 raise WorkflowError(f"{where}: custom '{key}' is not supported by DTFlow workflows.")
@@ -459,6 +476,7 @@ def load_workflow(data: object, *, draft: bool = False) -> Graph:
             params,
             _pair(node["size"], f"{where} size"),
             nd_concurrency,
+            nd_outputs,
         )
         if spec.type in GENERATIVE:
             _check_request(graph_node, draft=draft)
@@ -623,6 +641,8 @@ def dump_workflow(graph: Graph) -> dict:
         entry["properties"] = {"Node name for S&R": node.type}
         if node.concurrency is not None:
             entry["properties"][PROP_CONCURRENCY] = node.concurrency
+        if node.outputs != 1:
+            entry["properties"][PROP_OUTPUTS] = _outputs(node.outputs, f"{node.label}: {PROP_OUTPUTS}")
         entry["widgets_values"] = [_copy(node.params[param.name]) for param in spec.params]
         nodes.append(entry)
     extra: dict = {"dtflow": {"schema": SCHEMA, "version": CONTRACT_VERSION}}
@@ -662,11 +682,69 @@ def dump_workflow(graph: Graph) -> dict:
 
 # --- fan-out plan (D3) -------------------------------------------------------------------------------------------
 
-Branch = tuple[int, int]  # (originating DTFGenerate node id, image index within its batch)
+Branch = tuple[int, int]  # (originating DTFGenerate node id, encoded image index; see below)
+
+# An Inpaint/Img2img node with ``outputs`` > 1 splits each incoming branch into that many child branches (#276). The
+# stored branch stays a (node id, integer) pair: the integer is a mixed-radix path. Digit 0 is the Generate image
+# index (0..ROOT_RADIX-1); each further digit is the 1-based output number chosen by one multiplying node on the way
+# (1..MAX_OUTPUTS, radix OUTPUT_RADIX). A child never collides with a root branch or a sibling at another depth, and a
+# workflow without multiplying nodes keeps the plain index of every earlier run.
+ROOT_RADIX = 16  # Generate makes at most batch_size x batch_count = 16 images
+OUTPUT_RADIX = MAX_OUTPUTS + 1
+
+
+def _path(index: int) -> tuple[int, list[int]]:
+    """(Generate image index, output numbers from the first multiplying node to the last)."""
+    root, rest = index % ROOT_RADIX, index // ROOT_RADIX
+    outputs = []
+    while rest:
+        outputs.append(rest % OUTPUT_RADIX)
+        rest //= OUTPUT_RADIX
+    return root, outputs
+
+
+def child_branch(parent: Branch, output: int) -> Branch:
+    """The branch of output number ``output`` (0-based) of the node that splits ``parent``."""
+    _, outputs = _path(parent[1])
+    return (parent[0], parent[1] + (output + 1) * ROOT_RADIX * OUTPUT_RADIX ** len(outputs))
+
+
+def parent_branch(branch: Branch) -> Branch | None:
+    """The branch this one was split from, or None for a Generate image."""
+    _, outputs = _path(branch[1])
+    if not outputs:
+        return None
+    return (branch[0], branch[1] - outputs[-1] * ROOT_RADIX * OUTPUT_RADIX ** (len(outputs) - 1))
+
+
+def output_index(branch: Branch) -> int:
+    """0-based output number of the last multiplying node on this branch (0 for a Generate image)."""
+    _, outputs = _path(branch[1])
+    return outputs[-1] - 1 if outputs else 0
+
+
+def is_descendant(branch: Branch, ancestor: Branch) -> bool:
+    """True for ``ancestor`` itself and every branch split (at any depth) from it."""
+    current: Branch | None = branch
+    while current is not None:
+        if current == ancestor:
+            return True
+        current = parent_branch(current)
+    return False
+
+
+def source_branch(plan: WorkflowPlan, node_id: int, branch: Branch) -> Branch | None:
+    """The branch of ``node_id`` (an ancestor) that ``branch`` descends from: ``branch`` itself or the nearest parent."""
+    known = plan.nodes[node_id].branches
+    current: Branch | None = branch
+    while current is not None and current not in known:
+        current = parent_branch(current)
+    return current
 
 
 def branch_label(branch: Branch) -> str:
-    return f"Generate #{branch[0]} image {branch[1] + 1}"
+    root, outputs = _path(branch[1])
+    return f"Generate #{branch[0]} image {root + 1}" + "".join(f".{number}" for number in outputs)
 
 
 @dataclass(frozen=True)
@@ -734,6 +812,8 @@ def plan_workflow(graph: Graph) -> WorkflowPlan:
                 )
             if node.type in IMAGE_OPERATIONS:
                 node_request(node, Sampler(node.params["sampler"]), width=1024, height=1024)
+                if node.outputs > 1:  # each incoming image becomes ``outputs`` branches (#276)
+                    branches = tuple(child_branch(parent, k) for parent in branches for k in range(node.outputs))
         generations = len(branches) if node.type in GENERATIVE else 0
         if node.type == DETECT_FACE:
             analyses += len(branches)
@@ -801,7 +881,7 @@ def node_request(
         raise WorkflowError(f"{node.label}: settings are incomplete.") from exc
 
 
-def summary(node_type: str, params: dict[str, object]) -> str:
+def summary(node_type: str, params: dict[str, object], outputs: int = 1) -> str:
     """Short on-node text so the canvas shows configuration without opening the inspector."""
     if node_type == DETECT_FACE:
         region = "face skin + hair" if params["mask_region"] == "face_skin_and_hair" else "face skin"
@@ -814,6 +894,8 @@ def summary(node_type: str, params: dict[str, object]) -> str:
     detail = f"{params['steps']} steps · cfg {float(params['guidance']):g}"
     if "strength" in params:
         detail += f" · str {float(params['strength']):.2f}"
+    if outputs > 1:
+        detail += f" · ×{outputs} per image"
     if node_type == GENERATE:
         count = int(params["batch_size"]) * int(params["batch_count"])
         detail = f"{params['width']}×{params['height']} · " + detail + (f" · ×{count}" if count > 1 else "")

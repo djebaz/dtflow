@@ -19,7 +19,8 @@ and stock ComfyUI workflows do not import into DTFlow.
   interpreted. `extra.dtflow.concurrency` is optional (#286): an integer 1..10, the most steps of the workflow that
   run together; missing means the backend default (DT+ 10, local 2).
 - A node has `id`, `type`, `pos`, `size`, `flags` (`{}` or `collapsed`), `order`, `mode` (0 only), `properties`
-  (`{}` or `{"Node name for S&R": type}`, plus an optional `"DTFlow concurrency"` integer 1..10, #286), `inputs`/`outputs` exactly as the catalogue lists them and
+  (`{}` or `{"Node name for S&R": type}`, plus an optional `"DTFlow concurrency"` integer 1..10, #286, and on Inpaint and Img2img nodes only an optional
+  `"DTFlow outputs"` integer 1..4, #276), `inputs`/`outputs` exactly as the catalogue lists them and
   `widgets_values` as an **array** in the fixed order below (D1). Custom `title`/`color`/`bgcolor` are rejected.
 - Links are v1.0 objects; `type` must equal both ports' type; each input has at most one link; both ends must
   reference the link. Array (0.4) links and reroute `parentId` are rejected.
@@ -35,6 +36,22 @@ selected: Global concurrency; a node: that node) and saved with the file; "Defau
 Seeds, the loop guard and Retry do not depend on the order outputs finish in. The Queues Concurrency control of a
 workflow queue is not used. Whether the local Draw Things app handles two lanes at once is unverified, and DT+ may reject
 many parallel jobs (INTERNAL "unknown error processing request").
+
+**Outputs per image (#276).** An Inpaint or Img2img node may make several images from each incoming image. The count is
+the optional node property `"DTFlow outputs"` (integer 1..4); a missing property means 1, so every existing V1 file
+loads and runs unchanged, and the file omits it when it is 1. It is not part of `widgets_values`, the contract version
+stays 1, and it is rejected on any other node type. Each output is its own single request with seed = node seed + output
+number (0-based, wrapped at the seed limit); Retry reuses it. Every downstream node runs once per output, and converging
+inputs still must come from the same branches. The planned total counts all generations of all stages against the
+256 limit before anything is submitted.
+
+*Branch identity.* The stored branch stays a `[Generate node id, integer]` pair, so run records, controls and Retry
+seeds keep their shape. The integer is a mixed-radix path: digit 0 (radix 16) is the Generate image index, each further
+digit (radix 5) is the 1-based output number of one multiplying node, so a child never collides with a Generate image or a
+sibling at another depth, and a workflow without multiplying nodes keeps plain indexes. The label reads
+`Generate #1 image 2.3` (image 2, output 3). The only additive record change is an optional `"branch"` on the values
+of a Retry seed (an ancestor branch; missing means the retried branch). Retry of a step reruns that branch and the
+branches split from it; lineage-aware partial results and scoped Retry beyond this are #277.
 
 Import is all-or-nothing: the first problem rejects the whole file with one reason. Nothing is repaired, dropped,
 renamed or guessed. Values outside a range are rejected, never clamped. A ComfyUI frontend release has **not** been

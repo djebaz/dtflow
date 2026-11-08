@@ -532,7 +532,7 @@ def _workflow_image_lines(run: dict) -> list[str]:
     lines = []
     for number, step in enumerate(steps, 1):
         name = str(step.get("title") or step.get("type") or "Step")
-        image = re.search(r"image (\d+)\Z", str(step.get("branch_label") or ""))
+        image = re.search(r"image (\d+(?:\.\d+)*)\Z", str(step.get("branch_label") or ""))
         if several and image:
             name += f" i{image.group(1)}"
         state = _WORKFLOW_STEP_STATES.get(step.get("state"), "running")
