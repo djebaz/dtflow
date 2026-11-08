@@ -32,9 +32,15 @@ The mode produces several prompts for the same source, so it uses the branching 
   `DTFlow outputs` exclude each other on a node (a wildcard node's K replaces the outputs count).
 - **Generate:** image k (of `batch_size * batch_count`) uses prompt k. Random sample draws one prompt per image;
   Every combination sets the image count to the number of combinations.
-- **Ceilings:** K is limited by the existing branch encoding (Generate image index radix 16, ops radix 5). Raising the
-  op limit would change the stored branch encoding and is a separate decision; the first version keeps the ceilings
-  and refuses a larger K before the run with a clear message.
+- **Ceilings (D, 2026-11-08):** one Inpaint/Img2img node may make up to 16 prompts per incoming image (Generate keeps
+  its 16 images). A larger K is refused before the run with a clear message. `DTFlow outputs` itself stays 1..4.
+- **Wide branch encoding:** 16 outputs do not fit the current digits (plain radix 5, node-qualified radix 65). Rule: an
+  integer keeps its present meaning wherever it is decoded today, so every stored run, label, seed and file is
+  unchanged. A workflow whose plan needs more than 4 outputs on a node is planned with a third, **wide** form kept in
+  a disjoint integer range (offset above the largest old value, digits radix 17; a node-qualified variant for parallel
+  splitters with radix `slots * 16 + 1`). `child_branch`, `parent_branch` and the label decoder get the form from the
+  integer's range, never from a stored flag. This lands as its own PR before the executor work (step 2a), since it
+  touches branch identity, Retry scope and result keys.
 - **Plan counts:** K enters the planned generations before branches are built (#278), against the 256 limit. Counting
   "all" never expands the combinations: `dynamic_prompts.count` gives the total first.
 
@@ -73,6 +79,7 @@ Node inspector: mode select (Off / Every combination / Random sample), count fie
 ## Steps
 
 1. This plan and the contract text in `devdocs/architecture/workflows.md`.
+2a. Wide branch encoding for up to 16 outputs on one node (`core/workflows.py`), old encodings untouched.
 2. Core: properties, validation, planning counts (`core/workflows.py`).
 3. Executor: resolve in `_produce` and the image-operation step, stored prompt, evidence (`services/workflow_item.py`).
 4. UI: inspector, preview with highlights, Connection folder setting.
