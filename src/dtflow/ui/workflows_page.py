@@ -50,6 +50,7 @@ from dtflow.core.models import LoRASelection, ValidationError
 from dtflow.services import workflow_library as library
 from dtflow.ui.activity_strip import activity_strip
 from dtflow.ui.inline_feedback import InlineNotice, confirm_action, edit_text, feedback
+from dtflow.ui.prompt_tags import style_prompt_tags
 from dtflow.ui.search_select import SearchableComboBox
 
 log = logging.getLogger(__name__)
@@ -1208,6 +1209,10 @@ class WorkflowsPage(QObject):
             edit.setMaximumHeight(72)
             edit.setTabChangesFocus(True)
             edit.textChanged.connect(lambda: self._set(node_id, param.name, edit.toPlainText()))
+            node = self.canvas.node(node_id)
+            if param.name == "prompt" and node is not None and node.prompt_mode is not None:
+                # Wildcard prompt (#317): tag {a|b} groups and __lists__ like the Queues composer does.
+                edit.prompt_tags = style_prompt_tags(edit)
             layout.addWidget(edit)
         elif param.kind == "string":
             line = QLineEdit(str(value), host)
