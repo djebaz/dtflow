@@ -5,6 +5,7 @@ display data. The vocabularies below are the only ones the Queues page uses, so 
 """
 
 import math
+import re
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -393,6 +394,84 @@ def _step_rows(item: dict, steps: list) -> list[ItemRow]:
     return rows
 
 
+_WORKFLOW_IMAGE_TYPES = ("DTFGenerate", "DTFInpaint", "DTFImg2Img")
+_WORKFLOW_STEP_STATES = {
+    "pending": "pending",
+    "running": "running",
+    "paused": "running",
+    "succeeded": "succeeded",
+    "failed": "failed",
+    "unknown": "unknown",
+    "skipped": "cancelled",
+    "stopped": "cancelled",
+    "cancelled": "cancelled",
+}
+_MANAGED_OUTPUT = re.compile(r"[/\\]([a-f0-9]{32})[/\\]final-([1-9][0-9]*)\.png\Z")
+
+
+def _seconds_between(start, end) -> float | None:
+    try:
+        return max(0.0, (datetime.fromisoformat(end) - datetime.fromisoformat(start)).total_seconds())
+    except (TypeError, ValueError):
+        return None
+
+
+def _managed_identity(path: object) -> str | None:
+    """The gallery identity of a managed final image (``outputs/<attempt>/final-N.png``), else None.
+
+    Inferred from the path only; the thumbnail provider re-checks it against the gallery record, so a wrong guess
+    shows an unavailable tile and never another image."""
+    match = _MANAGED_OUTPUT.search(path) if isinstance(path, str) else None
+    return f"{match.group(1)}:{int(match.group(2)) - 1}" if match else None
+
+
+def _workflow_rows(item: dict, run: dict) -> list[ItemRow]:
+    """One row per image a workflow run makes (each Generate output and each image-operation branch), projected from
+    the run's own steps under the workflow summary row; no second store and no extra counting.
+
+    Hook for #281 follow-ups: lineage labels and nested-branch counts come from the same step records."""
+    rows = []
+    for number, step in enumerate(run.get("steps") or (), 1):
+        if not isinstance(step, dict) or step.get("type") not in _WORKFLOW_IMAGE_TYPES:
+            continue
+        settings = step.get("settings") or {}
+        output = step.get("output") if isinstance(step.get("output"), str) else None
+        size = str(settings.get("size") or "").split("x")
+        width, height = (
+            (int(part) for part in size) if len(size) == 2 and all(p.isdigit() for p in size) else (None, None)
+        )
+        branch = step.get("branch") or [0, 0]
+        label = f"{step.get('title') or step.get('type')} · {step.get('branch_label') or ''}".rstrip(" ·")
+        operation = settings.get("operation")
+        rows.append(
+            ItemRow(
+                f"wf:{step.get('node_id')}.{branch[0]}.{branch[1]}:{item['item_id']}",
+                number,
+                _WORKFLOW_STEP_STATES.get(step.get("state"), "running"),
+                None,
+                settings["seed"] if type(settings.get("seed")) is int else 0,
+                (output,) if output else (),
+                None,
+                step.get("message") if step.get("state") in ("failed", "unknown") else None,
+                operation if operation in ("txt2img", "img2img", "inpaint") else "txt2img",
+                settings.get("strength"),
+                f"{label} · {settings.get('prompt') or ''}" if settings.get("prompt") else label,
+                settings.get("negative_prompt") or "",
+                settings.get("checkpoint") or "",
+                tuple((str(name), weight) for name, weight in settings.get("loras") or ()),
+                settings.get("steps"),
+                settings.get("guidance"),
+                settings.get("sampler") or "",
+                _seconds_between(step.get("started_at"), step.get("finished_at")),
+                width,
+                height,
+                _managed_identity(output),
+                (),
+            )
+        )
+    return rows
+
+
 def item_rows(view: dict) -> tuple[ItemRow, ...]:
     rows = []
     for item in view["items"]:
@@ -459,6 +538,8 @@ def item_rows(view: dict) -> tuple[ItemRow, ...]:
         )
         if steps:
             rows.extend(_step_rows(item, steps))
+        if item.get("workflow"):
+            rows.extend(_workflow_rows(item, item["workflow"]))
     return tuple(rows)
 
 
