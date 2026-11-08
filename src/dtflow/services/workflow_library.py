@@ -142,6 +142,10 @@ def save_workflow(state: Path, name: str, graph: Graph, *, current: Path | None 
 def create_from_reference(state: Path, name: str = "New workflow") -> tuple[Path, Graph]:
     """A new library workflow that starts as a copy of the bundled reference fixture (fresh workflow id)."""
     graph = load_workflow(json.loads(REFERENCE.read_text(encoding="utf-8")), draft=True)
+    # New authoring defaults to Balanced; imported/older V1 files remain precise.
+    for node in graph.nodes:
+        if node.type == "DTFDetectFaceMask":
+            node.face_mask_method = "balanced"
     graph.workflow_id = str(uuid4())
     return save_workflow(state, unique_name(state, name), graph), graph
 
