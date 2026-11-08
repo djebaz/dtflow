@@ -597,6 +597,9 @@ class MainWindow:
         self._images_live_shortcut = QShortcut(QKeySequence("F5"), self.form)
         self._images_live_shortcut.setAutoRepeat(False)
         self._images_live_shortcut.activated.connect(self._open_live_images)
+        self._cycle_workspace_shortcut = QShortcut(QKeySequence("Ctrl+Tab"), self.form)
+        self._cycle_workspace_shortcut.setAutoRepeat(False)
+        self._cycle_workspace_shortcut.activated.connect(self._cycle_workspace)
         diagnostic_event(
             log,
             "app.window_ready",
@@ -722,6 +725,20 @@ class MainWindow:
         snapshot = self.generation._inventory_snapshot
         models = list(eligible_model_ids(snapshot)) if snapshot is not None else list(choices.get("models", ()))
         return {"models": models, "loras": choices.get("loras", {}), "backend": self.form.backendCombo.currentText()}
+
+    def _cycle_workspace(self) -> None:
+        """Cycle the ordinary workspaces without changing gallery follow or admitting work."""
+        if self.runner.closed:
+            return
+        current = self.form.workspaceStack.currentWidget()
+        if current is self.generation_page:
+            self._show_workflows()
+        elif current is self.workflows_marker:
+            self._show_queue()
+        elif current is self.queue_page:
+            self.form.workspaceStack.setCurrentWidget(self.images_page)
+        else:  # Images wraps to Generate; Connection and Logs enter the cycle there too.
+            self._show_generation()
 
     def _open_live_images(self) -> None:
         """F5 opens Images with Live and Follow enabled, without submitting work."""

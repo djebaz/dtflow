@@ -7,6 +7,7 @@ Changes through 6.2.0 are consolidated in [DTFlow 6.2.0](v6.2.0.md); its publish
 ## Added
 
 - F5 opens Images from any workspace and enables Live + Follow with newest-first sorting, returning to the newest matching image without changing filters or the selected view. Repeating F5 resumes following; it never submits generation or starts a queue.
+- Ctrl+Tab cycles Generate → Workflows → Queues → Images → Generate, entering at Generate from Connection or Logs without changing Images Live/Follow settings or submitting work.
 
 ## Changed
 
@@ -20,4 +21,4 @@ Changes through 6.2.0 are consolidated in [DTFlow 6.2.0](v6.2.0.md); its publish
 ## Release audit
 
 - PRs: #321, #322
-- Scope: Repair offline render fixtures/catalogue, restyle the shared Images navigation link and add F5 navigation with Live + Follow.
+- Scope: Repair offline render fixtures/catalogue, restyle the shared Images navigation link and add F5 Live + Follow and Ctrl+Tab workspace navigation.
