@@ -56,6 +56,7 @@ When editing Generate width/height, arrows step by 64 pixels. Typed values snap 
 - **No face detected:** a face-mask node that finds no person, no face box or an empty region pauses only that image
   branch and asks "No face detected. Continue anyway?". Continue skips that branch's inpainting and passes the image on;
   Stop ends that branch. Other branches keep running; an unanswered branch stays paused and submits nothing.
+- **Concurrency:** in the inspector, with no node selected, Global concurrency sets how many steps of the workflow run at the same time, all nodes together; each node has its own Concurrency, which can only lower its share. The field shows "Default (...)" until you set a number, and the defaults (DT+ 10, local 2, segmentation nodes such as Detect face 2) are set in the Connection tab under Workflow concurrency defaults. Values you set are saved in the workflow file. DT+ may fail some jobs when many run together; the one automatic retry applies.
 - **Failures:** a failed or unknown step stops only its own branch; the run ends partial. Retry reruns the step with its
   original settings, then its downstream branch (after the run ended, Retry starts a new workflow queue seeded with that
   branch's saved images). Retry is in the Run panel under the canvas, in the selected node's inspector, and in Queues

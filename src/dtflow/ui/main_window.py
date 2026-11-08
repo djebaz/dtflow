@@ -61,6 +61,7 @@ from dtflow.ui.activity_strip import ActivityStrip
 from dtflow.ui.brand import connection_icon, status_dot
 from dtflow.ui.button_focus import KeyboardFocusGuard
 from dtflow.ui.cloud_usage_panel import CloudUsagePanel
+from dtflow.ui.workflow_defaults_panel import WorkflowDefaultsPanel
 from dtflow.ui.gallery_page import GalleryPage
 from dtflow.ui.generation_page import GenerationPage
 from dtflow.ui.image_export_panel import ImageExportPanel
@@ -533,6 +534,7 @@ class MainWindow:
         )
         form.generationNavigationButton.clicked.connect(self._show_generation)
         form.backendCombo.currentTextChanged.connect(lambda _: self.generation.sync_backend())
+        form.backendCombo.currentTextChanged.connect(lambda _: self.workflows.backend_changed())
         form.queueNavigationButton.clicked.connect(self._show_queue)
         form.workflowsNavigationButton.clicked.connect(self._show_workflows)
         form.imagesNavigationButton.setEnabled(True)
@@ -587,6 +589,7 @@ class MainWindow:
             active_credential=self._active_credential_id,
             on_active=self._show_active_key,
         )
+        self.workflow_defaults = WorkflowDefaultsPanel(form, self.runner, self.state_dir)
         self.cloud_usage.refresh()  # the bottom bar names the active key on every view from startup
         self.activity.listen(self._usage_activity_changed)
         self._gui_heartbeat = GuiHeartbeat(
@@ -686,7 +689,7 @@ class MainWindow:
         choices = self.generation.plan_choices()
         snapshot = self.generation._inventory_snapshot
         models = list(eligible_model_ids(snapshot)) if snapshot is not None else list(choices.get("models", ()))
-        return {"models": models, "loras": choices.get("loras", {})}
+        return {"models": models, "loras": choices.get("loras", {}), "backend": self.form.backendCombo.currentText()}
 
     def _open_output_in_images(self, identity: str) -> None:
         """Queues → Open in Images: show this committed output in the Images Detail view."""
