@@ -1,13 +1,13 @@
 """Bounded read-only artifact discovery; never own, migrate or reconcile execution state."""
 
 import json
-import re
 import sqlite3
 import time
 from collections.abc import Callable
 from contextlib import contextmanager, nullcontext
 from pathlib import Path
 
+from dtflow.core.output_layout import output_key, parse_final
 from dtflow.core.gallery import SIZE_CLASSES, GalleryQuery
 from dtflow.persistence.image_recycle import attach_read_only
 from dtflow.persistence.store import SCHEMA_VERSION, PersistenceError, patched_sqlite
@@ -16,15 +16,19 @@ from dtflow.persistence.store import SCHEMA_VERSION, PersistenceError, patched_s
 # These references include non-default --out locations. Failed/orphaned files are not discovery sources.
 MAX_EXPORT_AVAILABILITY_BATCH = 128
 MAX_RECYCLE_PREFLIGHT_BATCH = 128
-_MANAGED_OUTPUT_KEY = re.compile(r"outputs/([a-f0-9]{32})/final-[1-9][0-9]*\.png\Z")
 
 
 def _candidate_attempts(keys: tuple[str, ...]) -> tuple[str, ...] | None:
     """Give SQLite a necessary attempt substring filter, not ownership authority."""
-    matches = tuple(_MANAGED_OUTPUT_KEY.fullmatch(key) for key in keys)
-    if not matches or any(match is None for match in matches):
-        return None
-    return tuple(dict.fromkeys(match[1] for match in matches if match is not None))
+    attempts = []
+    for key in keys:
+        match = output_key(key)
+        parsed = parse_final(match[2]) if match else None
+        if parsed is None:
+            return None
+        # Legacy names the attempt by folder, current names carry it in the file name.
+        attempts.append(parsed[0] or match[1])
+    return tuple(dict.fromkeys(attempts)) if attempts else None
 
 
 BASE = """

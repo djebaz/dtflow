@@ -15,11 +15,15 @@ Changes through 6.0.0 are consolidated in [DTFlow 6.0.0](v6.0.0.md). This file t
 
 ## Changed
 
+- Saved images use readable names in one folder per queue: `outputs/queue-<queue id>/<label>-s<seed>-<attempt id>-1.png` with a matching `<label>-s<seed>-<attempt id>.json` sidecar (label = prompt excerpt, or node and branch in a workflow). Images saved earlier keep their `outputs/<attempt id>/final-1.png` paths and still work in Images, Queues, Export and Trash/Delete; nothing is renamed. See [output layout](../architecture/output-layout.md). Smoke-tested by the owner (#296, #297).
+
 - Generate has one **Images** total. Above 1, Generate image creates a queue of single-image items (seed, seed + 1, ...) so every picture has its own Queues row with thumbnail, seed, status and Retry; behind running work it is added up next. The Queues composer readouts say "N images, N requests". Inpaint ignores the control (#279, #289). Smoke-tested by the owner.
 
 ## Fixed
 
 ## Upgrade and compatibility
+
+- No stored record changes for the new output layout: attempt records, gallery identity and recycle records are unchanged. Output folders written by this version are not understood as managed originals by an older app version (Trash/Delete refuses them).
 
 - Workflow files gain optional `extra.dtflow.concurrency` and a node property `"DTFlow concurrency"`; files without them load unchanged. Inpaint and Img2img nodes gain an optional node property `"DTFlow outputs"` (1..4, missing = 1); older app versions reject a file that sets it. `settings.json` gains optional `workflow_cloud`, `workflow_local` and `workflow_segmentation`; an older app version that rewrites `settings.json` drops them.
 

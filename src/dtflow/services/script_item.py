@@ -24,6 +24,7 @@ from dtflow.diagnostics import event as diagnostic_event
 from dtflow.persistence.queues import QueueError, post_control, read_script_run
 from dtflow.persistence.script_items import ScriptRequest, load_source
 from dtflow.persistence.store import PersistenceError, SQLiteAttempts
+from dtflow.core.output_layout import group_name
 from dtflow.scripting.host import ScriptHost, script_hooks, starting_context, validate_answers
 from dtflow.scripting.run_state import ScriptRun, open_prompt_of
 from dtflow.scripting.runner import new_script_run, run_recorded
@@ -149,6 +150,7 @@ class ScriptItemRunner:
                     reserve_child=reserve_child,
                     release_child=release_child,
                     available_assets=available_assets,
+                    output_group=group_name("queue", queue_id),
                 )
                 persist = self._persist(item_id, loop)
                 if request.prepared:
@@ -163,6 +165,7 @@ class ScriptItemRunner:
                         persist=persist,
                         reserve_child=reserve_child,
                         release_child=release_child,
+                        output_group=group_name("queue", queue_id),
                         available_assets=available_assets,
                     )
                     hosts, cancel, task, run = setup.hosts, setup.cancel, setup.task, setup.run

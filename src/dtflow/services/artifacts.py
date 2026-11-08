@@ -3,10 +3,12 @@
 import json
 import os
 from dataclasses import asdict
+from datetime import UTC, datetime
 from pathlib import Path
 from uuid import uuid4
 
 from dtflow.core.models import Designation, GenerationResult, ResolvedGenerationRequest, ResourceLimits
+from dtflow.core.output_layout import FOLDER, OutputLayout, file_prefix, final_name, group_name, sidecar_name
 from dtflow.core.png import validate_png
 
 
@@ -54,6 +56,26 @@ def atomic_write(path: Path, data: bytes) -> None:
         temporary.unlink(missing_ok=True)
 
 
+def run_directory(
+    output: Path, attempt_id: str, request: ResolvedGenerationRequest, layout: OutputLayout | None
+) -> tuple[Path, str]:
+    """Create (or reuse) the run folder and return it with this attempt's readable file-name prefix.
+
+    Without a caller-supplied layout (a one-off generation) the attempt gets its own timestamped ``single`` folder.
+    Files carry the attempt id, so two attempts can share a folder and never collide.
+    """
+    layout = layout or OutputLayout(group_name("single", attempt_id, datetime.now(UTC)), "image")
+    if not FOLDER.fullmatch(layout.group):
+        raise ValueError("Output folder name is not allowed.")
+    output.mkdir(parents=True, exist_ok=True)
+    directory = output / layout.group
+    created = not directory.exists()
+    directory.mkdir(exist_ok=True)
+    if created:
+        sync_directory(output)
+    return directory, file_prefix(layout.label, request.seed)
+
+
 def save_artifacts(
     output: Path,
     attempt_id: str,
@@ -61,17 +83,18 @@ def save_artifacts(
     result: GenerationResult,
     build_identity: dict[str, str],
     limits: ResourceLimits,
+    layout: OutputLayout | None = None,
 ) -> tuple[tuple[str, ...], str]:
     if request.operation != "txt2img":
         raise ValueError("Image-operation output saving requires dedicated raw/final evidence handling.")
     validate_result(result, request, limits)
-    output.mkdir(parents=True, exist_ok=True)
-    directory = output / attempt_id
-    directory.mkdir(exist_ok=False)
-    sync_directory(output)
+    directory, prefix = run_directory(output, attempt_id, request, layout)
+    sidecar = directory / sidecar_name(prefix, attempt_id)
+    targets = [directory / final_name(prefix, attempt_id, index) for index in range(len(result.artifacts))]
+    if sidecar.exists() or any(path.exists() for path in targets):
+        raise FileExistsError("Managed output already exists for this attempt.")
     paths = []
-    for index, artifact in enumerate(result.artifacts, 1):
-        path = directory / f"final-{index}.png"
+    for path, artifact in zip(targets, result.artifacts, strict=True):
         atomic_write(path, artifact.encoded)
         paths.append(str(path.resolve()))
     metadata = generation_metadata(
@@ -81,7 +104,7 @@ def save_artifacts(
         build_identity,
         [artifact_record(path, artifact) for path, artifact in zip(paths, result.artifacts, strict=True)],
     )
-    metadata_path = directory / "metadata.json"
+    metadata_path = sidecar
     atomic_write(metadata_path, (json.dumps(metadata, indent=2, allow_nan=False) + "\n").encode("utf-8"))
     return tuple(paths), str(metadata_path.resolve())
 

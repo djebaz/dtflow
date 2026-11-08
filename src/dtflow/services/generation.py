@@ -36,6 +36,7 @@ from dtflow.persistence.original_io import (
     original_images_lock,
     require_originals_ready,
 )
+from dtflow.core.output_layout import OutputLayout
 from dtflow.services.artifacts import save_artifacts, validate_result
 from dtflow.services.assets import AssetValidator
 from dtflow.services.budget import BufferBudget
@@ -140,8 +141,11 @@ class GenerationService:
         on_event: EventSink | None = None,
         prepared_inputs: PreparedImageInputs | None = None,
         attempt_id: str | None = None,
+        layout: OutputLayout | None = None,
     ) -> SavedGeneration:
-        """``attempt_id`` lets a caller that records the attempt elsewhere first (script runs) name it up front."""
+        """``attempt_id`` lets a caller that records the attempt elsewhere first (script runs) name it up front.
+
+        ``layout`` names the run folder and file-name label the outputs are saved under (issue #296)."""
 
         def preparation(stage: str) -> None:
             if on_event is not None:
@@ -339,11 +343,19 @@ class GenerationService:
                     # used by export and Recycle Bin; no provider code runs here.
                     # A paid result waits longer than ordinary leases before save_failed.
                     with original_images_lock(getattr(self.store, "directory", self.output.parent), timeout=30):
+                        extra = {"layout": layout} if layout is not None else {}
                         if image_operation:
                             return save_image_artifacts(
-                                self.output, attempt_id, request, result, identity(), caps.limits, prepared_inputs
+                                self.output,
+                                attempt_id,
+                                request,
+                                result,
+                                identity(),
+                                caps.limits,
+                                prepared_inputs,
+                                **extra,
                             )
-                        return self.saver(self.output, attempt_id, request, result, identity(), caps.limits)
+                        return self.saver(self.output, attempt_id, request, result, identity(), caps.limits, **extra)
 
                 saved = await settle(asyncio.to_thread(commit_originals))
                 paths, metadata = saved[:2]

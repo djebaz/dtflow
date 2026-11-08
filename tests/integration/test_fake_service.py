@@ -187,7 +187,7 @@ async def test_output_write_failure_preserves_remote_success_and_saved_evidence(
         assert exc.value.failure.category == ErrorCategory.PERSISTENCE
         row = (await store.inspect())[0]
         assert row["state"] == "save_failed" and row["remote_outcome"] == "succeeded"
-        assert list((state / "outputs" / row["attempt_id"]).glob("*.png"))
+        assert list((state / "outputs").glob(f"*/*{row['attempt_id']}*.png"))
     finally:
         await backend.aclose()
         await store.aclose()

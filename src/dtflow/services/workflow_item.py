@@ -42,6 +42,7 @@ from typing import Any
 from uuid import uuid4
 
 from dtflow.core.models import SEED_LIMIT, BackendError, BackendEvent, RemoteOutcome, ValidationError
+from dtflow.core.output_layout import OutputLayout, group_name, slug
 from dtflow.core.retry_policy import AUTO_RETRIES, AUTO_RETRY_DELAY, RETRY_STAGE, auto_retry_request, auto_retryable
 from dtflow.core.tasks import settle
 from dtflow.core.workflows import (
@@ -738,7 +739,12 @@ class _Execution:
                     self.in_flight[attempt_id] = keys
                     try:
                         outcome = await session.run_generation(
-                            self.runner.service, request, on_event=receive, attempt_id=attempt_id, **options
+                            self.runner.service,
+                            request,
+                            on_event=receive,
+                            attempt_id=attempt_id,
+                            layout=self.layout(keys),
+                            **options,
                         )
                         break
                     except BackendError as exc:
@@ -826,6 +832,12 @@ class _Execution:
             self.in_flight.pop(attempt_id, None)
             # Unconditional: a reserve cancelled mid-call may have committed before ``reserved`` was set.
             await settle(self.store.release_script_child(self.queue_id, lane))
+
+    def layout(self, keys: list[Key]) -> OutputLayout:
+        """The run's folder and a readable file label naming the node and branch (issue #296)."""
+        step = self.steps[keys[0]]
+        label = f"{step.get('title') or 'step'} {step.get('branch_label') or ''}"
+        return OutputLayout(group_name("queue", self.queue_id), slug(label))
 
     async def attempt_state(self, attempt_id: str) -> str | None:
         try:
