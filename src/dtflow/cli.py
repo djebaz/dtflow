@@ -368,7 +368,7 @@ def add_workflow_commands(commands) -> None:
     )
 
 
-def _read_workflow_file(path: Path):
+def _read_workflow_file(path: Path, folder: Path | None = None):
     from dtflow.core.workflows import load_workflow, plan_workflow
 
     try:
@@ -378,14 +378,16 @@ def _read_workflow_file(path: Path):
     except (UnicodeDecodeError, ValueError):
         raise ValidationError("The workflow file is not valid JSON.") from None
     graph = load_workflow(data)
-    return data, graph, plan_workflow(graph)
+    from dtflow.services.workflow_prompts import prompt_counts, read_snapshot
+
+    return data, graph, plan_workflow(graph, prompt_counts(graph, read_snapshot(graph, folder)))
 
 
 async def run_workflow(args: argparse.Namespace) -> int:
     """Offline check, or a paused workflow queue; neither contacts a backend nor generates."""
     if args.workflow_command == "check":
         try:
-            _, graph, plan = _read_workflow_file(args.file)
+            _, graph, plan = _read_workflow_file(args.file, args.state / "wildcards")
         except ValidationError as exc:
             print(json.dumps({"valid": False, "reason": str(exc)}, indent=2))
             return EXIT_INVALID
@@ -408,7 +410,7 @@ async def run_workflow(args: argparse.Namespace) -> int:
         return EXIT_OK
     from dtflow.services.workflow_queue import create_workflow_queue
 
-    data, _, plan = _read_workflow_file(args.file)
+    data, _, plan = _read_workflow_file(args.file, args.state / "wildcards")
     backend = {"name": args.backend, "endpoint": args.endpoint}
     queue_id, run_id = await create_workflow_queue(args.state, backend, data, args.name or args.file.stem)
     print(

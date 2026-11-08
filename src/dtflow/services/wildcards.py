@@ -16,6 +16,7 @@ from dtflow.services.planning import Plan, PromptVariation
 MAX_FILE_BYTES = 1_000_000
 MAX_ENTRIES = 10_000
 _NAME = re.compile(r"__([A-Za-z0-9]+(?:[_\-][A-Za-z0-9]+)*)__")
+NAME_PATTERN = _NAME  # public alias: workflows find the lists a prompt names
 
 
 _READ_CACHE: dict[Path, tuple[tuple[int, int], tuple[tuple[str, ...], str]]] = {}  # path -> (mtime_ns, size), result

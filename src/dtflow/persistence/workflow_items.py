@@ -3,7 +3,8 @@
 The item's ``request_json`` is a workflow record (``kind`` ``workflow``), not a generation request::
 
     {"kind": "workflow", "run_id": str, "name": str, "workflow": <dump_workflow dict>, "backend": str,
-     "planned": int, "run": <run state>, "seed": {...} (optional, Retry after the run ended)}
+     "planned": int, "run": <run state>, "seed": {...} (optional, Retry after the run ended),
+     "wildcards": {"lists": {name: [entry]}, "sources": {name: sha256}} (optional, wildcard prompts #317)}
 
 The run state (shape in ``services/workflow_queue``) lives inside the record; only the dispatch owner rewrites it, one
 short transaction per update (``QueueMixin.update_workflow_run``). There is no separate run store.
@@ -46,6 +47,7 @@ class WorkflowRequest:
     planned: int
     run: dict[str, Any]
     seed: dict[str, Any] | None = None
+    wildcards: dict[str, Any] | None = None  # snapshot of the wildcard lists the run was planned with (#317)
 
 
 def now() -> str:
@@ -65,6 +67,7 @@ def workflow_record(
     planned: int,
     run: dict[str, Any],
     seed: dict[str, Any] | None = None,
+    wildcards: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     record = {
         "kind": KIND_WORKFLOW,
@@ -77,6 +80,8 @@ def workflow_record(
     }
     if seed is not None:
         record["seed"] = seed
+    if wildcards is not None:
+        record["wildcards"] = wildcards
     return record
 
 
@@ -98,6 +103,19 @@ def _check_run(run: Any) -> bool:
             and step.get("state") in STEP_STATES
             for step in run["steps"]
         )
+    )
+
+
+def _check_wildcards(value: Any) -> bool:
+    return value is None or (
+        isinstance(value, dict)
+        and isinstance(value.get("lists"), dict)
+        and isinstance(value.get("sources"), dict)
+        and all(
+            isinstance(name, str) and isinstance(entries, list) and all(isinstance(e, str) for e in entries)
+            for name, entries in value["lists"].items()
+        )
+        and all(isinstance(name, str) and isinstance(sha, str) for name, sha in value["sources"].items())
     )
 
 
@@ -125,6 +143,7 @@ def workflow_request_from_record(record: Any) -> WorkflowRequest:
         raise ValidationError("Stored item is not a workflow run.")
     run_id, name, workflow = record.get("run_id"), record.get("name"), record.get("workflow")
     backend, planned, run, seed = record.get("backend"), record.get("planned"), record.get("run"), record.get("seed")
+    wildcards = record.get("wildcards")
     if not (
         isinstance(run_id, str)
         and re.fullmatch(r"[0-9a-f]{32}", run_id) is not None
@@ -135,9 +154,10 @@ def workflow_request_from_record(record: Any) -> WorkflowRequest:
         and 0 <= planned <= MAX_PLANNED
         and _check_run(run)
         and _check_seed(seed)
+        and _check_wildcards(wildcards)
     ):
         raise ValidationError("Stored workflow run is malformed.")
-    return WorkflowRequest(run_id, name, workflow, backend, planned, run, seed)
+    return WorkflowRequest(run_id, name, workflow, backend, planned, run, seed, wildcards)
 
 
 def item_outcome(run: Any) -> tuple[str, str | None]:

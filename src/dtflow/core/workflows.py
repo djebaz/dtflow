@@ -1156,11 +1156,12 @@ def node_request(
     evidence: tuple[tuple[str, str], ...] = (),
     seed: int | None = None,
     single: bool = False,
+    prompt: str | None = None,
 ) -> ResolvedGenerationRequest:
     """The txt2img settings base of a generative node, validated by ``ResolvedGenerationRequest``.
 
     Image operations pass the source image's size as ``width``/``height``; the image-operation entry then attaches
-    the prepared inputs and switches the operation. ``seed`` overrides the node's seed; ``single`` makes one image
+    the prepared inputs and switches the operation. ``seed`` overrides the node's seed; ``prompt`` the node's prompt (the resolved wildcard prompt, #317); ``single`` makes one image
     (batch size 1 x count 1), the request of one Generate output (#275). Raises WorkflowError naming the node.
     """
     params = node.params
@@ -1169,7 +1170,7 @@ def node_request(
     try:
         return ResolvedGenerationRequest(
             request_id or uuid4().hex,
-            str(params["prompt"]),
+            str(params["prompt"]) if prompt is None else prompt,
             str(params["checkpoint"]),
             int(params["seed"]) if seed is None else seed,
             negative_prompt=str(params["negative_prompt"]),
