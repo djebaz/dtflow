@@ -54,7 +54,17 @@ digit (radix 5) is the 1-based output number of one multiplying node, so a child
 sibling at another depth, and a workflow without multiplying nodes keeps plain indexes. The label reads
 `Generate #1 image 2.3` (image 2, output 3). The only additive record change is an optional `"branch"` on the values
 of a Retry seed (an ancestor branch; missing means the retried branch). Retry of a step reruns that branch and the
-branches split from it. In Queues, Retry acts on the selected workflow image row (a failed or unknown step whose branch is idle); the run's summary row retries its first failed step (#277).
+branches split from it; for a Generate output that is the one image and what it feeds, also after the run has ended
+(sibling outputs are never resubmitted, and the new run plans only the generations in that scope).
+
+A branch names no node, so two unrelated Inpaint/Img2img nodes that both make several outputs from the same images
+would produce identical child branches (shared scheduling, outputs paired across nodes). `plan_workflow` refuses that
+combination with a clear reason; a multiplying node placed after another one has a longer path and stays valid. No stored
+record changes.
+
+In Queues a step that "Continue without a mask" passed through (Inpaint skipped, source forwarded) is a succeeded image
+row labelled "passed through, no mask" in the rows, counts, filter chips and log; only the original image row is marked
+final. A row's operation comes from its node type, and a seed that was never resolved shows as unknown, not 0. In Queues, Retry acts on the selected workflow image row (a failed or unknown step whose branch is idle); the run's summary row retries its first failed step (#277).
 
 Import is all-or-nothing: the first problem rejects the whole file with one reason. Nothing is repaired, dropped,
 renamed or guessed. Values outside a range are rejected, never clamped. A ComfyUI frontend release has **not** been
