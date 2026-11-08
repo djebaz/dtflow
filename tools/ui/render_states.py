@@ -707,7 +707,15 @@ def render_connection_management(shell, out):
             shell.start_startup_check()
         snap("connection-41-startup-check-and-loading")
         pending[-1](None, None)
-        shell._credentials_read({"selected": "none", "saved": "absent"}, None)
+        shell._credentials_read(
+            {
+                "selected": "none",
+                "saved": "absent",
+                "keys": (),
+                "environment": {"present": False, "credential_id": None, "hint": None},
+            },
+            None,
+        )
         shell._presets_read(0, None)
         shell._custom_loras_read(0, None)
         snap("connection-42-startup-unconfigured")
