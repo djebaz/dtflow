@@ -794,11 +794,37 @@ OUTPUT_RADIX = MAX_OUTPUTS + 1
 MAX_SPLIT_NODES = 16  # multiplying nodes a workflow may hold once its branches are node-qualified
 QUALIFIED_RADIX = MAX_SPLIT_NODES * MAX_OUTPUTS + 1
 
+# Wide form (#317): a node that makes up to MAX_WIDE_OUTPUTS images per incoming image (wildcard prompts) does not fit
+# the digits above. Such a workflow is planned with the same two forms at a wider radix, kept in a disjoint integer
+# range so no earlier record changes meaning: plain wide is ``WIDE_BASE + path`` (radix WIDE_OUTPUT_RADIX) and
+# node-qualified wide is ``-1 - (WIDE_BASE + path)`` (radix WIDE_QUALIFIED_RADIX). The form is read from the integer's
+# range, never from a stored flag. Generate images keep their plain index; the first split converts it, and parent_branch
+# converts back. WIDE_BASE exceeds every legacy value (at most 8 multiplying levels inside the 256 generation limit),
+# and a path that would pass WIDE_LIMIT (SQLite integers are 64 bit) is refused.
+MAX_WIDE_OUTPUTS = 16
+WIDE_OUTPUT_RADIX = MAX_WIDE_OUTPUTS + 1
+WIDE_QUALIFIED_RADIX = MAX_SPLIT_NODES * MAX_WIDE_OUTPUTS + 1
+WIDE_BASE = 2**60
+WIDE_LIMIT = 2**62
+
+
+def _form(index: int) -> tuple[bool, bool, int, int, int]:
+    """(qualified, wide, per-slot output limit, radix, path value) of a branch integer."""
+    qualified = index < 0
+    value = -1 - index if qualified else index
+    wide = value >= WIDE_BASE
+    if wide:
+        value -= WIDE_BASE
+    if qualified:
+        limit, radix = (MAX_WIDE_OUTPUTS, WIDE_QUALIFIED_RADIX) if wide else (MAX_OUTPUTS, QUALIFIED_RADIX)
+    else:
+        limit, radix = (MAX_WIDE_OUTPUTS, WIDE_OUTPUT_RADIX) if wide else (MAX_OUTPUTS, OUTPUT_RADIX)
+    return qualified, wide, limit, radix, value
+
 
 def _path(index: int) -> tuple[int, list[int]]:
     """(Generate image index, raw digits from the first multiplying node to the last)."""
-    qualified = index < 0
-    value, radix = (-1 - index, QUALIFIED_RADIX) if qualified else (index, OUTPUT_RADIX)
+    _, _, _, radix, value = _form(index)
     root, rest = value % ROOT_RADIX, value // ROOT_RADIX
     digits = []
     while rest:
@@ -809,24 +835,44 @@ def _path(index: int) -> tuple[int, list[int]]:
 
 def _output_number(index: int, digit: int) -> int:
     """The 1-based output number a digit of this branch integer stands for."""
-    return (digit - 1) % MAX_OUTPUTS + 1 if index < 0 else digit
+    qualified, _, limit, _, _ = _form(index)
+    return (digit - 1) % limit + 1 if qualified else digit
 
 
-def child_branch(parent: Branch, output: int, slot: int | None = None) -> Branch:
+def _encode(qualified: bool, wide: bool, value: int) -> int:
+    if wide:
+        value += WIDE_BASE
+        if value >= WIDE_LIMIT:
+            raise ValueError("The workflow splits images into too many branches to number them.")
+    return -1 - value if qualified else value
+
+
+def child_branch(parent: Branch, output: int, slot: int | None = None, wide: bool = False) -> Branch:
     """The branch of output number ``output`` (0-based) of the node that splits ``parent``.
 
     ``slot`` is the splitting node's rank among the workflow's multiplying nodes; given, the child is node-qualified
-    (#302). A node-qualified workflow qualifies every split, so a legacy child of a qualified parent is refused."""
+    (#302). A node-qualified workflow qualifies every split, so a legacy child of a qualified parent is refused.
+    ``wide`` selects the wide form (#317) for a first split; a deeper split always follows its parent's form."""
     _, digits = _path(parent[1])
+    qualified, parent_wide, _, radix, value = _form(parent[1])
+    if digits:
+        if wide and not parent_wide:
+            raise ValueError("A legacy branch cannot be split in the wide form.")
+        wide = parent_wide
     if slot is None:
-        if parent[1] < 0:
+        if qualified:
             raise ValueError("A node-qualified branch can only be split with a node slot.")
-        return (parent[0], parent[1] + (output + 1) * ROOT_RADIX * OUTPUT_RADIX ** len(digits))
-    if parent[1] >= 0 and digits:
-        raise ValueError("A legacy branch cannot be split with a node slot.")
-    value = -1 - parent[1] if parent[1] < 0 else parent[1]
-    digit = slot * MAX_OUTPUTS + output + 1
-    return (parent[0], -1 - (value + digit * ROOT_RADIX * QUALIFIED_RADIX ** len(digits)))
+        radix = WIDE_OUTPUT_RADIX if wide else OUTPUT_RADIX
+        digit = output + 1
+    else:
+        if not qualified and digits:
+            raise ValueError("A legacy branch cannot be split with a node slot.")
+        limit = MAX_WIDE_OUTPUTS if wide else MAX_OUTPUTS
+        radix = WIDE_QUALIFIED_RADIX if wide else QUALIFIED_RADIX
+        digit = slot * limit + output + 1
+    if output >= (MAX_WIDE_OUTPUTS if wide else MAX_OUTPUTS):
+        raise ValueError("A node makes too many outputs per image.")
+    return (parent[0], _encode(slot is not None, wide, value + digit * ROOT_RADIX * radix ** len(digits)))
 
 
 def parent_branch(branch: Branch) -> Branch | None:
@@ -834,10 +880,11 @@ def parent_branch(branch: Branch) -> Branch | None:
     _, digits = _path(branch[1])
     if not digits:
         return None
-    if branch[1] < 0:
-        value = -1 - branch[1] - digits[-1] * ROOT_RADIX * QUALIFIED_RADIX ** (len(digits) - 1)
-        return (branch[0], -1 - value if len(digits) > 1 else value)
-    return (branch[0], branch[1] - digits[-1] * ROOT_RADIX * OUTPUT_RADIX ** (len(digits) - 1))
+    qualified, wide, _, radix, value = _form(branch[1])
+    value -= digits[-1] * ROOT_RADIX * radix ** (len(digits) - 1)
+    if len(digits) == 1:
+        return (branch[0], value)  # back to the plain Generate index, whatever form the split used
+    return (branch[0], _encode(qualified, wide, value))
 
 
 def output_index(branch: Branch) -> int:

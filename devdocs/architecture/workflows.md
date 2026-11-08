@@ -58,6 +58,13 @@ of a Retry seed (an ancestor branch; missing means the retried branch). Retry of
 branches split from it; for a Generate output that is the one image and what it feeds, also after the run has ended
 (sibling outputs are never resubmitted, and the new run plans only the generations in that scope).
 
+*Wide branches (#317).* A node that makes more than 4 images per incoming image (wildcard prompts, up to 16) does not fit
+the radix-5 digits. The wide form keeps the same two layouts at a wider radix in a disjoint integer range: plain wide is
+`2^60 + path` (digit = output number, radix 17) and node-qualified wide is `-1 - (2^60 + path)` (digit = `slot * 16 +
+output + 1`, radix 257). The form is read from the integer's range, so every stored branch, label, seed and Retry record
+keeps its meaning; Generate images keep their plain index and the first split converts it (and `parent_branch` converts
+back). A path that would reach `2^62` is refused. Nothing uses the wide form until a node can make more than 4 outputs.
+
 *Parallel multiplying nodes (#302).* A plain branch path names no node, so two unrelated Inpaint/Img2img nodes that
 both make several outputs from the same images would produce identical child branches. When `plan_workflow` meets that
 shape it plans the workflow again with **node-qualified** branches: the integer is stored negative (`-1 - path`) and each
