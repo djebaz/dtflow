@@ -81,12 +81,12 @@ def save_cloud_concurrency(state: Path, value: int) -> Path:
 
 
 # Workflow concurrency defaults (#286), used when a workflow file or node does not set its own.
-WORKFLOW_DEFAULT_KEYS = {"cloud": "workflow_cloud", "local": "workflow_local", "detect": "workflow_detect"}
-WORKFLOW_DEFAULTS = {"cloud": 10, "local": 2, "detect": 2}
+WORKFLOW_DEFAULT_KEYS = {"cloud": "workflow_cloud", "local": "workflow_local", "segmentation": "workflow_segmentation"}
+WORKFLOW_DEFAULTS = {"cloud": 10, "local": 2, "segmentation": 2}
 
 
 def load_workflow_defaults(state: Path) -> dict[str, int]:
-    """The workflow concurrency defaults (DT+, local, Detect face); a missing value is the built-in one."""
+    """The workflow concurrency defaults (DT+, local, local segmentation nodes); a missing value is the built-in one."""
     document = _read(state)
     return {
         name: validate_concurrency(document.get(key, WORKFLOW_DEFAULTS[name]))

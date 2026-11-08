@@ -37,8 +37,9 @@ PORT_TYPES = (IMAGE, MASK)
 MAX_NODES = 200  # practical bound on one file, not a chain-length limit
 MAX_PLANNED_GENERATIONS = 256  # practical bound on one run's submissions after fan-out
 MAX_CONCURRENCY = 10  # most steps of one workflow, or of one node, that run together (#286)
-# Built-in defaults; the app settings (Connection tab) replace them: DT+, local, fake backend, Detect face node.
-DEFAULT_CONCURRENCY = {"cloud": 10, "local": 2, "fake": 4, "detect": 2}
+# Built-in defaults; the app settings (Connection tab) replace them: DT+, local, fake backend, and local segmentation
+# nodes (Detect face today; later segmentation nodes share it).
+DEFAULT_CONCURRENCY = {"cloud": 10, "local": 2, "fake": 4, "segmentation": 2}
 PROP_CONCURRENCY = "DTFlow concurrency"  # optional node property; a missing value means the default
 LORA_WEIGHT_RANGE = (0.0, 3.0)  # the LoRA editor's range; imported values outside it are rejected, never clamped
 MASK_REGIONS = ("face_skin", "face_skin_and_hair")
@@ -51,6 +52,7 @@ INPAINT = "DTFInpaint"
 IMG2IMG = "DTFImg2Img"
 SAVE = "DTFSaveImage"
 GENERATIVE = (GENERATE, INPAINT, IMG2IMG)
+SEGMENTATION = (DETECT_FACE,)  # local segmentation/detection nodes; they share one default concurrency
 IMAGE_OPERATIONS = {INPAINT: "inpaint", IMG2IMG: "img2img"}
 
 
@@ -339,10 +341,10 @@ def workflow_limit(graph: Graph, backend: str, defaults: dict[str, int] | None =
 
 
 def node_limit(graph: Graph, node: GraphNode, backend: str, defaults: dict[str, int] | None = None) -> int:
-    """Steps of one node that may run together, never above the global limit; Detect has its own default."""
+    """Steps of one node that may run together, never above the global limit; segmentation nodes have their own default."""
     own = node.concurrency
-    if own is None and node.type == DETECT_FACE:
-        own = {**DEFAULT_CONCURRENCY, **(defaults or {})}["detect"]
+    if own is None and node.type in SEGMENTATION:
+        own = {**DEFAULT_CONCURRENCY, **(defaults or {})}["segmentation"]
     limit = workflow_limit(graph, backend, defaults)
     return max(1, min(own if own is not None else limit, limit))
 

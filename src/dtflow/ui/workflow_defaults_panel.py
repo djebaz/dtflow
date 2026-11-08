@@ -30,7 +30,7 @@ class WorkflowDefaultsPanel(QObject):
         self._spins = {
             "cloud": form.workflowCloudSpin,
             "local": form.workflowLocalSpin,
-            "detect": form.workflowDetectSpin,
+            "segmentation": form.workflowSegmentationSpin,
         }
         try:
             values = load_workflow_defaults(self.state_dir)

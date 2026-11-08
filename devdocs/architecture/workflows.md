@@ -26,10 +26,10 @@ and stock ComfyUI workflows do not import into DTFlow.
 
 **Concurrency (#286).** The *global concurrency* is the most steps of a run that are in flight together, all nodes and
 kinds counted (generations, Detect face, image operations, saves). It is the workflow's `concurrency`, else the default
-from the app settings (`<state>/settings.json`: `workflow_cloud` 10, `workflow_local` 2, `workflow_detect` 2, edited in
+from the app settings (`<state>/settings.json`: `workflow_cloud` 10, `workflow_local` 2, `workflow_segmentation` 2, edited in
 the Connection tab; the code constants in `core/workflows.py` are only the first-run values). A Draw Things session is
 widened to that many lanes for the run, so Queues' saved DT+ maximum does not apply to workflows. A node's own
-`DTFlow concurrency` can only lower its share (Detect face defaults to the Detect setting, other nodes to the global
+`DTFlow concurrency` can only lower its share (segmentation nodes (Detect face today) default to the segmentation setting, other nodes to the global
 value); a step takes its node slot and then one global slot. Both are edited in the Workflows inspector (no node
 selected: Global concurrency; a node: that node) and saved with the file; "Default (...)" shows the current default.
 Seeds, the loop guard and Retry do not depend on the order outputs finish in. The Queues Concurrency control of a

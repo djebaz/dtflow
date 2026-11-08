@@ -895,11 +895,11 @@ class WorkflowsPage(QObject):
         else:
             label = _label("Concurrency", "workflowParamLabel")
             spin.setSpecialValueText(
-                f"Default ({defaults['detect']})" if node.SPEC.type == wf.DETECT_FACE else "Default (global)"
+                f"Default ({defaults['segmentation']})" if node.SPEC.type in wf.SEGMENTATION else "Default (global)"
             )
             tip = (
                 "The most steps of this node that run at the same time, never above the global concurrency. "
-                "Default: the global value (Detect face: set in the Connection tab). Saved in the workflow file."
+                "Default: the global value (segmentation nodes: set in the Connection tab). Saved in the workflow file."
             )
             spin.setAccessibleName(f"Concurrency for node {node_id}")
         layout.addWidget(label)
