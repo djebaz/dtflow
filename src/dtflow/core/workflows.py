@@ -14,6 +14,7 @@ Rules (audit 10.7/10.8, owner decisions D1-D8):
   module adds only graph checks: types, cycles, one link per input and same-branch pairing (D3).
 - Fan-out (D3): only ``DTFGenerate`` produces several images (``batch_size * batch_count``). Every downstream node runs
   once per image ("branch"); converging inputs must come from the same branches, never a cross product.
+  Each output is its own single-image request with seed = node seed + output index (wrapped at the seed limit, #275).
   ``plan_workflow`` returns the total number of generations the run will submit, the base of the runtime loop guard.
 """
 
@@ -719,11 +720,14 @@ def node_request(
     height: int | None = None,
     request_id: str | None = None,
     evidence: tuple[tuple[str, str], ...] = (),
+    seed: int | None = None,
+    single: bool = False,
 ) -> ResolvedGenerationRequest:
     """The txt2img settings base of a generative node, validated by ``ResolvedGenerationRequest``.
 
     Image operations pass the source image's size as ``width``/``height``; the image-operation entry then attaches
-    the prepared inputs and switches the operation. Raises WorkflowError naming the node.
+    the prepared inputs and switches the operation. ``seed`` overrides the node's seed; ``single`` makes one image
+    (batch size 1 x count 1), the request of one Generate output (#275). Raises WorkflowError naming the node.
     """
     params = node.params
     if node.type not in GENERATIVE:
@@ -733,15 +737,15 @@ def node_request(
             request_id or uuid4().hex,
             str(params["prompt"]),
             str(params["checkpoint"]),
-            int(params["seed"]),
+            int(params["seed"]) if seed is None else seed,
             negative_prompt=str(params["negative_prompt"]),
             width_px=int(params["width"]) if width is None else width,
             height_px=int(params["height"]) if height is None else height,
             steps=int(params["steps"]),
             guidance=float(params["guidance"]),
             sampler_id=sampler or Sampler(params["sampler"]),
-            batch_size=int(params.get("batch_size", 1)),
-            batch_count=int(params.get("batch_count", 1)),
+            batch_size=1 if single else int(params.get("batch_size", 1)),
+            batch_count=1 if single else int(params.get("batch_count", 1)),
             loras=tuple(LoRASelection(name, float(weight)) for name, weight in params["loras"]),
             resolution_evidence=(("source", "workflow"), ("workflow_node", str(node.id)), *evidence),
         )
