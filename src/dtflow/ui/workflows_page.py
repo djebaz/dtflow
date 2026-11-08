@@ -869,7 +869,7 @@ class WorkflowsPage(QObject):
         for param in spec.params:
             self._add_param(layout, node_id, param, params.get(param.name), choices)
         if spec.type in wf.IMAGE_OPERATIONS:
-            self._add_outputs(layout, node_id, node.outputs)
+            self._add_outputs(layout, node_id, node.image_outputs)
         self._add_concurrency(layout, node_id, choices.get("backend"))
         self._sync_lock()
 
