@@ -104,7 +104,7 @@ def run_scope(graph: Graph, plan: WorkflowPlan, seed: dict[str, Any] | None = No
 
 
 def planned_submissions(graph: Graph, scope: list[tuple[int, Branch]]) -> int:
-    """Images the scope submits: a Generate once for its whole batch, an image operation once per branch."""
+    """Images the scope submits: a Generate once per output, an image operation once per branch."""
     total, generates = 0, set()
     for node_id, _ in scope:
         node = graph.node(node_id)

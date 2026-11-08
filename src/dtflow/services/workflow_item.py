@@ -7,13 +7,14 @@ pauses only its branch. A submission counter stops the run past the planned tota
 
 Execution model:
 
-- One task per Generate node; once its images are saved, one task per branch (image) walks that branch's nodes in
-  topological order. A paused, failed or unknown branch never blocks its siblings; a failed or unknown step stops only
-  the steps that depend on it (they become ``stopped``).
+- A Generate node starts one task per planned output (#275): each is its own single-image request with seed = node
+  seed + output index (wrapped at the seed limit); once its image is saved the same task walks that branch's nodes in
+  topological order. Retry of a Generate output reruns that output only, with its recorded seed. A paused, failed or unknown branch never blocks its siblings; a failed or
+  unknown step stops only the steps that depend on it (they become ``stopped``).
 - Concurrent submissions share the script child lanes (``reserve_script_child``): the item's own reservation carries
   the first submission and each further concurrent one needs a free lane on the backend, bounded by the backend's
   ``max_concurrency``. Lanes are released when the generation settles, whatever its outcome.
-- The loop guard counts submitted images (a Generate counts its whole batch, an image step one). A submission that
+- The loop guard counts submitted images (every Generate output and image step counts one). A submission that
   would pass the planned total plus the retry allowance is refused, the run stops and ends ``failed``. Each explicit
   Retry adds that step's own submission to the allowance; the shared automatic retry (``core.retry_policy``,
   #241) adds ``AUTO_RETRIES`` per planned submission.
@@ -40,7 +41,7 @@ from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
-from dtflow.core.models import BackendError, BackendEvent, RemoteOutcome, ValidationError
+from dtflow.core.models import SEED_LIMIT, BackendError, BackendEvent, RemoteOutcome, ValidationError
 from dtflow.core.retry_policy import AUTO_RETRIES, AUTO_RETRY_DELAY, RETRY_STAGE, auto_retry_request, auto_retryable
 from dtflow.core.tasks import settle
 from dtflow.core.workflows import (
@@ -51,7 +52,6 @@ from dtflow.core.workflows import (
     INPAINT,
     MASK,
     SAVE,
-    generate_outputs,
     load_workflow,
     node_request,
     plan_workflow,
@@ -67,7 +67,6 @@ from dtflow.services.workflow_queue import (
     RETRY_CONTROL,
     RETRYABLE,
     descendants,
-    planned_submissions,
 )
 
 log = logging.getLogger(__name__)
@@ -130,6 +129,11 @@ def first_problem(steps: list[dict[str, Any]]) -> tuple[str, str] | None:
             if step.get("state") == wanted and step.get("message"):
                 return f"{step.get('title')} ({step.get('branch_label')}): {step['message']}", step["message"]
     return None
+
+
+def branch_seed(base: int, index: int) -> int:
+    """Seed of Generate output ``index``: the node's seed plus the index, wrapped within 0..SEED_LIMIT."""
+    return (base + index) % (SEED_LIMIT + 1)
 
 
 def settings_of(request) -> dict[str, Any]:
@@ -507,31 +511,15 @@ class _Execution:
             return False
         node_id, branch = key
         node = self.graph.node(node_id)
-        if node.type == GENERATE:
-            busy = any(
-                not task.done()
-                for (kind, ident), task in self.tasks.items()
-                if (kind == "generate" and ident == node_id) or (kind == "branch" and ident[0] == node_id)
-            )
-            if busy:
-                return False
-            # The whole Generate scope reruns: a new batch replaces every branch, so no branch keeps steps made from
-            # an image the new batch does not contain. Earlier saved images stay in Images.
-            reset = [k for k in self.steps if k[1][0] == node_id]
-            # Every reset step may submit again (its earlier submission is spent), so the guard grows by all of them.
-            weight = planned_submissions(self.graph, reset)
-            # The run card lists only results made from the new batch; the earlier images stay in Images.
-            self.run["results"] = [item for item in self.run["results"] if int(item["branch"][0]) != node_id]
-        else:
-            task = self.tasks.get(("branch", branch))
-            if task is not None and not task.done():
-                return False
-            wanted = descendants(self.graph, node_id) | {node_id}
-            reset = [k for k in self.steps if k[1] == branch and k[0] in wanted]
-            weight = 1 if node.type in GENERATIVE else 0  # Detect/Save submit nothing; downstream is in the plan
-        whole = node.type == GENERATE
+        task = self.tasks.get(("branch", branch))
+        if task is not None and not task.done():
+            return False
+        # Only this output's branch reruns (a Generate output included); sibling outputs keep their results.
+        wanted = descendants(self.graph, node_id) | {node_id}
+        reset = [k for k in self.steps if k[1] == branch and k[0] in wanted]
+        weight = 1 if node.type in GENERATIVE else 0  # Detect/Save submit nothing; downstream is in the plan
         for other in reset:
-            if whole or self.steps[other]["state"] in BAD_STEP_STATES or other == key:
+            if self.steps[other]["state"] in BAD_STEP_STATES or other == key:
                 self.steps[other].update(
                     state="pending", stage=None, message=None, output=None, mask=None, started_at=None, finished_at=None
                 )
@@ -542,7 +530,7 @@ class _Execution:
         await self.flush()
         diagnostic_event(log, "workflow.step_retry", level=logging.INFO, data={"node_type": node.type})
         if node.type == GENERATE:
-            self.spawn(("generate", node_id), self.generate(node_id))
+            self.spawn(("branch", branch), self.produce(key))
         else:
             self.spawn(("branch", branch), self.walk(branch))
         return True
@@ -810,35 +798,40 @@ class _Execution:
     # -- node kinds ------------------------------------------------------------------------------------------------
 
     async def generate(self, node_id: int) -> None:
-        node = self.graph.node(node_id)
+        """Start one single-image request per planned output (#275); each continues down its own branch."""
         keys = sorted((key for key in self.steps if key[0] == node_id), key=lambda key: key[1])
-        branches = [key[1] for key in keys]
-        await self.begin(keys)
+        for key in keys:
+            self.spawn(("branch", key[1]), self.produce(key))
+
+    async def produce(self, key: Key) -> None:
+        """One Generate output as its own request: batch size 1 x count 1 and its own seed (base seed + output index,
+        wrapped at the seed limit). A failure or unknown outcome stays on this output; its siblings are unaffected."""
+        node_id, branch = key
+        node = self.graph.node(node_id)
+        recorded = self.steps[key].get("settings") or {}
+        seed = recorded.get("seed")  # Retry reuses the seed this output was first submitted with
+        if seed is None:
+            seed = branch_seed(int(node.params["seed"]), branch[1])
+        await self.begin([key])
         try:
-            request = node_request(node, request_id=uuid4().hex, evidence=self.evidence())
+            request = node_request(
+                node, request_id=uuid4().hex, evidence=self.evidence(branch), seed=int(seed), single=True
+            )
         except ValidationError as exc:
-            await self.end(keys, "failed", str(exc))
+            await self.end([key], "failed", str(exc))
             outcome = None
         else:
-            for key in keys:
-                self.steps[key]["settings"] = settings_of(request)
-            outcome = await self.submit(keys, request, generate_outputs(node))
+            self.steps[key]["settings"] = settings_of(request)
+            outcome = await self.submit([key], request, 1)
         if outcome is not None:
-            paths = list(outcome.output_paths)
             settings = settings_of(outcome.request)
-            for key in keys:
-                index = key[1][1]
-                if index < len(paths):
-                    self.values[key] = {"output": paths[index]}
-                    await self.end([key], "succeeded", output=paths[index], settings=settings)
-                else:
-                    message = f"The backend returned {len(paths)} of {generate_outputs(node)} planned images."
-                    await self.end([key], "failed", message, settings=settings)
-        for branch in branches:
-            if (node_id, branch) in self.values:
-                self.spawn(("branch", branch), self.walk(branch))
+            if outcome.output_paths:
+                path = outcome.output_paths[0]
+                self.values[key] = {"output": path}
+                await self.end([key], "succeeded", output=path, settings=settings)
             else:
-                await self.walk(branch)  # marks the branch's steps stopped (no input), submits nothing
+                await self.end([key], "failed", "The backend returned no image.", settings=settings)
+        await self.walk(branch)  # a branch without an image marks its steps stopped and submits nothing
 
     async def detect(self, node_id: int, branch: Branch, inputs: dict[str, Any]) -> None:
         from dtflow.persistence.person_models import load_person_models
