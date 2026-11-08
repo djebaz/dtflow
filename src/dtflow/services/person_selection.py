@@ -658,9 +658,10 @@ def _face_ellipse(box: tuple[float, float, float, float], size: tuple[int, int],
 def _matching_person(box, people):
     """Prefer a face-centred person silhouette, then maximum face-box overlap.
 
-    Ignore a person whose silhouette does not overlap the *original* face box.
-    A low-overlap background person must not win merely because its expanded
-    ellipse happens to intersect part of that person.
+    Prioritize actual face pixels, but do not require a minimum percentage:
+    YOLO can miss part of the head while segmenting the same person's body.
+    Its detection bounding box may associate the face when the silhouette
+    covers only the expanded ellipse. The final mask is always pixel-clipped.
     """
     x0, y0, x1, y1 = box
     cx, cy = (x0 + x1) / 2, (y0 + y1) / 2
@@ -673,11 +674,13 @@ def _matching_person(box, people):
             continue
         count = int(np.count_nonzero(mask[top:bottom, left:right]))
         area = (right - left) * (bottom - top)
-        if count < max(1, int(area * 0.1)):
+        bx0, by0, bx1, by1 = _person_box
+        box_contains = int(bx0 <= cx < bx1 and by0 <= cy < by1)
+        if count == 0 and not box_contains:
             continue
         px, py = int(cx), int(cy)
         contains = int(0 <= px < width and 0 <= py < height and mask[py, px] > 0)
-        key = (contains, count / area, float(score))
+        key = (contains, count / area, box_contains, float(score))
         if preferred is None or key > preferred[0]:
             preferred = (key, mask)
     return None if preferred is None else preferred[1]
@@ -686,23 +689,28 @@ def _matching_person(box, people):
 def _connected_face_region(candidate: np.ndarray, face_box, crop: tuple[int, int, int, int]) -> np.ndarray:
     """Keep the face-anchored 4-connected region; discard islands and fill enclosed holes.
 
-    Select the nearest intersecting pixel inside the *original* face box when the
-    centre is outside the silhouette. If no face-box pixel survives, omit the face.
+    Anchor inside the original face box when possible. If YOLO clipped the
+    whole face but retains adjacent silhouette pixels inside the expanded
+    ellipse, start from the nearest surviving pixel instead of discarding it.
     Work only in the expanded ellipse's crop, not the entire source image.
     """
     left, top, right, bottom = crop
     fx0, fy0, fx1, fy1 = face_box
     x0, y0 = max(left, int(fx0)), max(top, int(fy0))
     x1, y1 = min(right, int(np.ceil(fx1))), min(bottom, int(np.ceil(fy1)))
-    if x1 <= x0 or y1 <= y0:
-        return np.zeros(candidate.shape, dtype=bool)
     local = candidate[y0 - top : y1 - top, x0 - left : x1 - left]
     ys, xs = np.nonzero(local)
+    origin_x, origin_y = x0 - left, y0 - top
+    if not len(xs):
+        ys, xs = np.nonzero(candidate)
+        origin_x = origin_y = 0
     if not len(xs):
         return np.zeros(candidate.shape, dtype=bool)
     cx, cy = (fx0 + fx1) / 2, (fy0 + fy1) / 2
-    closest = int(np.argmin((xs + x0 - cx) ** 2 + (ys + y0 - cy) ** 2))
-    seed = (int(xs[closest] + x0 - left), int(ys[closest] + y0 - top))
+    xs = xs + origin_x
+    ys = ys + origin_y
+    closest = int(np.argmin((xs + left - cx) ** 2 + (ys + top - cy) ** 2))
+    seed = (int(xs[closest]), int(ys[closest]))
     flood = Image.fromarray(candidate.astype(np.uint8) * 255)
     ImageDraw.floodfill(flood, seed, 128)
     connected = np.asarray(flood) == 128
@@ -757,7 +765,12 @@ def geometric_face_pixels(
             region = _connected_face_region(section & (target[y0:y1, x0:x1] > 0), box, crop)
         result[y0:y1, x0:x1] |= region
     if not result.any():
-        return None, "Face region is empty", len(people), len(boxes)
+        reason = (
+            "Detected face does not overlap the selected person's silhouette"
+            if method == "balanced"
+            else "Face region is empty"
+        )
+        return None, reason, len(people), len(boxes)
     pixels = (result.astype(np.uint8) * 255).tobytes()
     return pixels, None, len(people), len(boxes)
 
