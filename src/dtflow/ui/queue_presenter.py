@@ -406,6 +406,7 @@ _WORKFLOW_STEP_STATES = {
     "stopped": "cancelled",
     "cancelled": "cancelled",
 }
+_LIVE_STATES = ("pending", "running")
 _MANAGED_OUTPUT = re.compile(r"[/\\]([a-f0-9]{32})[/\\]final-([1-9][0-9]*)\.png\Z")
 
 
@@ -470,6 +471,66 @@ def _workflow_rows(item: dict, run: dict) -> list[ItemRow]:
             )
         )
     return rows
+
+
+def workflow_of(view: dict | None) -> dict | None:
+    """The workflow run of a queue whose item is a workflow run, else None."""
+    for item in (view or {}).get("items", ()):
+        if isinstance(item.get("workflow"), dict):
+            return item["workflow"]
+    return None
+
+
+def workflow_images(run: dict) -> list[dict]:
+    """The image steps of a workflow run (each Generate output, each Inpaint/Img2Img branch), in run order."""
+    return [
+        step for step in run.get("steps") or () if isinstance(step, dict) and step.get("type") in _WORKFLOW_IMAGE_TYPES
+    ]
+
+
+def workflow_progress(run: dict) -> tuple[int, int, int, int | None]:
+    """(settled, saved, total, running image number) over a workflow run's images; total 0 when it has none yet."""
+    images = workflow_images(run)
+    settled = sum(1 for step in images if _WORKFLOW_STEP_STATES.get(step.get("state"), "running") not in _LIVE_STATES)
+    saved = sum(1 for step in images if step.get("state") == "succeeded")
+    current = next(
+        (n for n, step in enumerate(images, 1) if _WORKFLOW_STEP_STATES.get(step.get("state")) == "running"), None
+    )
+    return settled, saved, len(images), current
+
+
+def workflow_stage(run: dict) -> str:
+    """Bottom-bar stage of a workflow run: ``image 2/5 running · 1 saved``."""
+    settled, saved, total, current = workflow_progress(run)
+    if not total:
+        return "Workflow running"
+    if current is not None:
+        return f"image {current}/{total} running · {saved} saved"
+    return f"{saved}/{total} images saved" + (f" · {settled - saved} not saved" if settled > saved else "")
+
+
+def _workflow_image_lines(run: dict) -> list[str]:
+    """One indented log line per image state change, like the script step lines (snapshot, durations when known)."""
+    images = workflow_images(run)
+    lines = []
+    blank = " " * 8
+    for number, step in enumerate(images, 1):
+        progress = f"{number}/{len(images)}"
+        label = step.get("branch_label") or step.get("title") or ""
+        label = f" · {label}" if label else ""
+        state = _WORKFLOW_STEP_STATES.get(step.get("state"), "running")
+        if state == "pending":
+            lines.append(f"{blank}  {progress} pending{label}")
+            continue
+        lines.append(f"{blank}  {progress} start{label}")
+        duration = _seconds_between(step.get("started_at"), step.get("finished_at"))
+        tail = f" · {duration:.2f}s" if duration is not None else ""
+        if state == "succeeded":
+            lines.append(f"{blank}  {progress} saved{tail}")
+        elif state in ("failed", "unknown", "cancelled"):
+            short = {"failed": "fail", "unknown": "unknown", "cancelled": "stopped"}[state]
+            lines.append(f"{blank}  {progress} {short}{tail}")
+    return lines
 
 
 def item_rows(view: dict) -> tuple[ItemRow, ...]:
@@ -597,6 +658,15 @@ def script_progress(view: dict) -> tuple[int, int] | None:
     return (committed, expected) if expected else None
 
 
+def workflow_bar(view: dict) -> tuple[int, int] | None:
+    """(settled, total) images for the progress bar of a workflow queue that already lists its images."""
+    run = workflow_of(view)
+    if run is None:
+        return None
+    settled, _, total, _ = workflow_progress(run)
+    return (settled, total) if total else None
+
+
 def progress_text(summary: QueueSummary, view: dict | None = None) -> str:
     script = script_of(view) if view else None
     if script is not None:
@@ -608,6 +678,10 @@ def progress_text(summary: QueueSummary, view: dict | None = None) -> str:
         if expected:
             return f"Progress: {committed}/{expected} steps · {committed} committed{tail}"
         return f"Progress: {started} step{'s' if started != 1 else ''} so far · {committed} committed{tail}"
+    run = workflow_of(view) if view else None
+    if run is not None and workflow_images(run):
+        settled, saved, total, _ = workflow_progress(run)
+        return f"Progress: {settled}/{total} images · {saved} saved"
     return f"Progress: {summary.settled}/{summary.total} · {summary.succeeded} succeeded"
 
 
@@ -914,6 +988,7 @@ def event_lines(view: dict) -> str:
     hidden = {"item_started", "backend_preparing", "backend_artifact_received", "backend_terminal", "composer_source"}
     lines = []
     script_steps_shown = False
+    workflow_images_shown = False
 
     def item_label(detail: dict) -> str:
         item_id = detail.get("item_id")
@@ -1003,6 +1078,10 @@ def event_lines(view: dict) -> str:
             # ledger is a snapshot and belongs in the presentation only once.
             lines.extend(_step_lines(script_of(view)))
             script_steps_shown = True
+        if kind == "started" and workflow_of(view) is not None and not workflow_images_shown:
+            # Per-image states are a snapshot of the run's own steps; show them once, under the first start.
+            lines.extend(_workflow_image_lines(workflow_of(view)))
+            workflow_images_shown = True
 
     return "\n".join(lines)
 
