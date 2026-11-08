@@ -118,6 +118,8 @@ class QueueItemDelegate(QStyledItemDelegate):
             painter.setPen(text)
             painter.drawText(rect, Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter, row.duration_text)
         painter.restore()
+        if row.is_final:
+            self._final_outline(painter, option.rect, column, index.model().columnCount())
 
     @classmethod
     def _prompt(cls, painter, rect, row, font, color) -> None:
@@ -154,6 +156,22 @@ class QueueItemDelegate(QStyledItemDelegate):
                 Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter,
                 line,
             )
+
+    @staticmethod
+    def _final_outline(painter, cell, column, columns) -> None:
+        """A subtle accent outline around the whole row, drawn per cell, for the images a Save node kept."""
+        color = QColor(_TOKENS["color.accent"])
+        color.setAlpha(150)
+        painter.save()
+        painter.setPen(color)
+        rect = cell.adjusted(0, 0, -1, -1)
+        painter.drawLine(rect.topLeft(), rect.topRight())
+        painter.drawLine(rect.bottomLeft(), rect.bottomRight())
+        if column == 0:
+            painter.drawLine(rect.topLeft(), rect.bottomLeft())
+        if column == columns - 1:
+            painter.drawLine(rect.topRight(), rect.bottomRight())
+        painter.restore()
 
     @staticmethod
     def _thumb(painter, rect, row, secondary, provider) -> None:
