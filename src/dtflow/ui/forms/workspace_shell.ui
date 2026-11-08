@@ -290,7 +290,7 @@
          <property name="horizontalScrollBarPolicy">
           <enum>Qt::ScrollBarAlwaysOff</enum>
          </property>
-         <widget class="QStackedWidget" name="leftStack">
+         <widget class="CurrentPageStack" name="leftStack">
           <property name="sizePolicy">
            <sizepolicy hsizetype="Ignored" vsizetype="Preferred">
             <horstretch>0</horstretch>
@@ -477,7 +477,7 @@
          <property name="horizontalScrollBarPolicy">
           <enum>Qt::ScrollBarAlwaysOff</enum>
          </property>
-         <widget class="QStackedWidget" name="rightStack" />
+         <widget class="CurrentPageStack" name="rightStack" />
         </widget>
        </item>
       </layout>
@@ -582,6 +582,12 @@
    <class>RunControl</class>
    <extends>QAbstractButton</extends>
    <header>dtflow.ui.run_control</header>
+  </customwidget>
+ <customwidget>
+   <class>CurrentPageStack</class>
+   <extends>QStackedWidget</extends>
+   <header>dtflow.ui.current_page_stack</header>
+   <container>1</container>
   </customwidget>
  </customwidgets>
 </ui>

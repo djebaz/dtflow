@@ -64,6 +64,7 @@ from dtflow.ui.activity import Activity
 from dtflow.ui.activity_strip import ActivityStrip, activity_strip
 from dtflow.ui.brand import connection_icon, status_dot
 from dtflow.ui.button_focus import KeyboardFocusGuard
+from dtflow.ui.current_page_stack import CurrentPageStack
 from dtflow.ui.cloud_usage_panel import CloudUsagePanel
 from dtflow.ui.workflow_defaults_panel import WorkflowDefaultsPanel
 from dtflow.ui.gallery_page import GalleryPage
@@ -113,7 +114,15 @@ def _form_loader() -> QUiLoader:
     loader = getattr(application, "_dtflow_form_loader", None)
     if loader is None:
         loader = QUiLoader(application)
-        for widget_type in (ImagePreview, SearchableComboBox, RunControl, SegmentedBar, ValueChips, ScriptRemoveButton):
+        for widget_type in (
+            ImagePreview,
+            SearchableComboBox,
+            RunControl,
+            SegmentedBar,
+            ValueChips,
+            ScriptRemoveButton,
+            CurrentPageStack,
+        ):
             loader.registerCustomWidget(widget_type)
         application._dtflow_form_loader = loader
     return loader

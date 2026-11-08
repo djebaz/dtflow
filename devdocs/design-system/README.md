@@ -115,6 +115,7 @@ DTFlow's components are Qt Widgets styled through:
 
 - **Text inputs**: input surface, hover-lighter borders, visible focus, readable placeholders, disabled treatment, `invalid` state support
 - **Lists/tables**: selection navy, explicit empty states, scrollable for long content
+- **Side panels (rails)**: a rail scrolls vertically only when its own shown page overflows; the height of another tab's panel never adds a scrollbar. In Qt this is `CurrentPageStack` (`dtflow.ui.current_page_stack`) for the shell's left and right stacks; a mockup should size each rail from its own content.
 
 ### Image preview
 
