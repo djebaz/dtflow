@@ -1361,6 +1361,7 @@ class GalleryPage(QObject):
 
     def _restore_preferences(self) -> None:
         document = load_viewer(self.state_dir)
+        self.slideshow.restore_preferences(document)
         query_doc = document.get("query", {})
         try:
             stored_query = GalleryQuery(**query_doc)
@@ -1934,6 +1935,9 @@ class GalleryPage(QObject):
     def _query_done(self, generation: int, anchor: str | None, result, error) -> None:
         if generation != self._query_generation:
             return
+        if self.slideshow.scrubbing:
+            self.slideshow.deferred_query = (False, (generation, anchor, result, error))
+            return
         if dev_enabled():
             elapsed_ms = (monotonic() - self._query_started) * 1000
             measurement(
@@ -1955,6 +1959,9 @@ class GalleryPage(QObject):
 
     def _apply_query_done(self, generation: int, anchor: str | None, result, error) -> None:
         if generation != self._query_generation:
+            return
+        if self.slideshow.scrubbing:
+            self.slideshow.deferred_query = (True, (generation, anchor, result, error))
             return
         opening = anchor is not None and anchor == self._open_request and generation == self._open_generation
         self._loading = False
@@ -2220,6 +2227,8 @@ class GalleryPage(QObject):
             return
         if self._pending_page_jump is None or not self._active:
             return
+        if self.slideshow.scrubbing:
+            return  # the final interaction target resumes the coalesced jump on release
         if (
             self._loading
             or self._adjacent_loading
@@ -2238,7 +2247,8 @@ class GalleryPage(QObject):
         if not (1 <= page_number <= math.ceil(self.total / PAGE_SIZE)):
             return
         if (
-            self._loading
+            self.slideshow.scrubbing
+            or self._loading
             or self._adjacent_loading
             or self._suppress_batch_scroll
             or self.reflow_timer.isActive()
@@ -3137,6 +3147,8 @@ class GalleryPage(QObject):
         self._pump_thumbnails()
 
     def _pump_thumbnails(self) -> None:
+        if self.slideshow.scrubbing:
+            return
         while self._thumb_active < THUMBNAIL_CONCURRENCY and self._thumb_waiting:
             generation, identity, path = self._thumb_waiting.popleft()
             if self._thumb_versions.get(identity) != generation:
@@ -3298,7 +3310,11 @@ class GalleryPage(QObject):
     _REGENERATE_TIP = "Create a fresh generation attempt from these recorded settings after confirmation."
 
     def _present_item(self, item: GalleryItem) -> None:
+        if self.slideshow.scrubbing:
+            return  # retain the displayed photo while the gesture previews only an ordinal
         position = self.offset + self.items.index(item) + 1
+        if self.slideshow.active and not self.slideshow.wants_position(position):
+            return  # a queued seek does not decode intermediate page selections
         self._widget("galleryPositionOverlay", QLabel).setText(f"{position} / {self.total}")
         previous = self._presented_item
         if previous == item:
@@ -3400,7 +3416,14 @@ class GalleryPage(QObject):
     def _image_done(self, generation: int, identity: str, result, error) -> None:
         if generation != self._image_generation or identity != self.selected_id:
             return
+        if self.slideshow.scrubbing:
+            self.slideshow.deferred_image = (generation, identity, result, error)
+            return
         self._image_pending = False
+        if self.slideshow.active:
+            index = next((i for i, item in enumerate(self.items) if item.identity == identity), -1)
+            if not self.slideshow.wants_position(self.offset + index + 1):
+                return  # discard an old in-flight display result while waiting for the final seek target
         self.slideshow.image_ready()
         if error is not None or not result or result[0] is None:
             if error is not None:
@@ -3428,6 +3451,11 @@ class GalleryPage(QObject):
         self.surface.update()
 
     def _retry_detail_image(self, generation: int, identity: str) -> None:
+        if self.runner.closed:
+            return
+        if self.slideshow.scrubbing:
+            self.slideshow.deferred_retry = (generation, identity)
+            return
         if generation != self._image_generation or identity != self.selected_id:
             return
         item = self._selected()
@@ -3574,7 +3602,7 @@ class GalleryPage(QObject):
         if not self._loading and not self._adjacent_loading and self.offset <= target < self.offset + len(self.items):
             self._slideshow_position = None
             identity = self.items[target - self.offset].identity
-            if identity != self.selected_id:
+            if identity != self.selected_id or self._presented_item != self.items[target - self.offset]:
                 self.select(identity, open_detail=False)
         else:
             self._jump_to_page(target // PAGE_SIZE + 1)
@@ -4374,6 +4402,7 @@ class GalleryPage(QObject):
             },
             "view": self.mode,
             "thumbnail_scale_percents": dict(self._thumbnail_percents),
+            "slideshow": self.slideshow.preferences(),
             "selected": self.selected_id,
             "auto_refresh": self._live_mode >= 1,
             "follow": self._live_mode == 2,
