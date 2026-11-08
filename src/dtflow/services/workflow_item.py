@@ -53,6 +53,7 @@ from dtflow.core.workflows import (
     INPAINT,
     MASK,
     SAVE,
+    face_model_roles,
     is_descendant,
     load_workflow,
     node_limit,
@@ -363,9 +364,10 @@ class _Execution:
                 raise ValidationError("The stored run does not match its workflow.")
             if self.plan.needs_face_models:
                 # Required local detectors are checked before any (possibly billable) submission; never downloaded here.
-                from dtflow.services.model_provisioning import WORKFLOW_FACE_ROLES, missing_models
+                from dtflow.services.model_provisioning import missing_models
 
-                missing = await asyncio.to_thread(missing_models, self.runner.state, WORKFLOW_FACE_ROLES)
+                roles = face_model_roles(self.graph)
+                missing = await asyncio.to_thread(missing_models, self.runner.state, roles)
                 if missing:
                     names = ", ".join(entry.name for entry in missing)
                     raise ValidationError(f"Detection models are missing ({names}). Download them in Workflows first.")
@@ -374,7 +376,7 @@ class _Execution:
                 from dtflow.services.person_selection import verify_model_hashes
 
                 models = await asyncio.to_thread(load_person_models, self.runner.state)
-                await asyncio.to_thread(verify_model_hashes, models, WORKFLOW_FACE_ROLES)
+                await asyncio.to_thread(verify_model_hashes, models, roles)
         except ValidationError as exc:
             self.halt(f"The workflow cannot run: {exc}")
             await self.finish()
@@ -924,6 +926,8 @@ class _Execution:
                     models,
                     mask_region=str(node.params["mask_region"]),
                     person=str(node.params["person"]),
+                    method=node.face.method,
+                    expansion=node.face.expansion,
                     on_stage=on_stage,
                 )
             )

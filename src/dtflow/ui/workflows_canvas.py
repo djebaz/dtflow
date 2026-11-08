@@ -12,6 +12,7 @@ import os
 import re
 from collections import OrderedDict
 from collections.abc import Callable
+from dataclasses import replace
 from functools import cache
 
 os.environ.setdefault("QT_API", "pyside6")  # qtpy: the only binding DTFlow ships
@@ -311,7 +312,14 @@ class DTFNodeContent(QDMNodeContentWidget):
         box.addStretch(1)
 
     def refresh(self) -> None:
-        self.summary.setText(wf.summary(self.node.SPEC.type, self.node.params, self.node.image_outputs))
+        self.summary.setText(
+            wf.summary(
+                self.node.SPEC.type,
+                self.node.params,
+                self.node.image_outputs,
+                face=self.node.face,
+            )
+        )
 
     def set_status(self, state: str | None, text: str = "", tooltip: str = "") -> None:
         self.status.setVisible(bool(state))
@@ -346,6 +354,7 @@ class DTFNodeContent(QDMNodeContentWidget):
                 ("params", wf.copy_params(self.node.params)),
                 ("concurrency", self.node.concurrency),
                 ("outputs", self.node.image_outputs),
+                ("face", {"method": self.node.face.method, "expansion": self.node.face.expansion}),
             ]
         )
 
@@ -354,6 +363,8 @@ class DTFNodeContent(QDMNodeContentWidget):
         self.node.params = wf.copy_params(data["params"])
         self.node.concurrency = data.get("concurrency")
         self.node.image_outputs = data.get("outputs", 1)
+        face = data.get("face") or {}
+        self.node.face = wf.FaceOptions(face.get("method"), face.get("expansion", wf.FACE_EXPANSION_DEFAULT))
         self.node.grNode.title = f"{self.node.SPEC.title} #{self.node.comfy_id}"
         self.refresh()
         return True
@@ -369,6 +380,7 @@ class DTFNode(Node):
         self.params = self.SPEC.defaults()
         self.concurrency: int | None = None  # steps of this node running together; None = the default (#286)
         self.image_outputs = 1  # Inpaint/Img2img: images made per incoming image (#276)
+        self.face = wf.default_face_options(self.SPEC.type)
         super().__init__(
             scene,
             f"{self.SPEC.title} #{comfy_id}",
@@ -524,6 +536,7 @@ class WorkflowCanvas(QObject):
                 node.params = wf.copy_params(item.params)
                 node.concurrency = item.concurrency
                 node.image_outputs = item.outputs
+                node.face = item.face
                 node.setPos(*item.pos)
                 node.content.refresh()
                 nodes[item.id] = node
@@ -562,8 +575,9 @@ class WorkflowCanvas(QObject):
                     (pos.x(), pos.y()),
                     wf.copy_params(node.params),
                     (float(node.grNode.width), float(node.grNode.height)),
-                    node.concurrency,
-                    node.image_outputs,
+                    concurrency=node.concurrency,
+                    outputs=node.image_outputs,
+                    face=node.face,
                 )
             )
         for edge in self.scene.edges:
@@ -607,6 +621,27 @@ class WorkflowCanvas(QObject):
         node.content.refresh()
         # Typing bursts in one field coalesce into one undo step.
         self.scene.history.storeHistory(f"Edit {name}", setModified=True, merge_key=f"param:{node_id}:{name}")
+
+    def set_node_face_method(self, node_id: int, method: str) -> None:
+        """Switch the Detect node's single visible choice without changing legacy file fields."""
+        node = self.node(node_id)
+        if node is None or node.SPEC.type != wf.DETECT_FACE or method not in wf.FACE_METHODS:
+            return  # the inspector only offers valid methods; like set_node_param, anything else is dropped
+        if method in wf.MASK_REGIONS:
+            node.params["mask_region"] = method
+            node.face = replace(node.face, method=None)
+        else:
+            node.face = replace(node.face, method=method)
+        node.content.refresh()
+        self.scene.history.storeHistory("Edit mask method", setModified=True)
+
+    def set_node_face_expansion(self, node_id: int, value: float) -> None:
+        node = self.node(node_id)
+        if node is None or node.SPEC.type != wf.DETECT_FACE:
+            return
+        node.face = replace(node.face, expansion=wf.validate_face_expansion(value, "Face box expansion"))
+        node.content.refresh()
+        self.scene.history.storeHistory("Edit face expansion", setModified=True, merge_key=f"face_expansion:{node_id}")
 
     def set_node_concurrency(self, node_id: int, value: int | None) -> None:
         node = self.node(node_id)

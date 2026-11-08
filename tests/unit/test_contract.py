@@ -88,8 +88,9 @@ def test_core_and_services_have_no_provider_or_presentation_imports():
                 "image_quality.py",
                 "image_preparation.py",
                 "person_selection.py",
+                "face_geometry.py",
             )
-            allow_numpy = directory == "services" and path.name == "person_selection.py"
+            allow_numpy = directory == "services" and path.name in ("person_selection.py", "face_geometry.py")
             assert not forbidden_imports(
                 path.read_text(), f"dtflow.{directory}", allow_pillow=allow_pillow, allow_numpy=allow_numpy
             ), path
@@ -109,8 +110,9 @@ def test_only_the_draw_things_integration_imports_provider_libraries():
             ("services", "image_quality.py"),
             ("services", "image_preparation.py"),
             ("services", "person_selection.py"),
+            ("services", "face_geometry.py"),
         )
-        allow_numpy = relative.parts == ("services", "person_selection.py")
+        allow_numpy = relative.parts in (("services", "person_selection.py"), ("services", "face_geometry.py"))
         assert not forbidden_imports(
             path.read_text(), package, backends=False, allow_pillow=allow_pillow, allow_numpy=allow_numpy
         ), path
