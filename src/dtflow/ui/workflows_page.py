@@ -978,6 +978,7 @@ class WorkflowsPage(QObject):
         """Wildcard prompts (#317): the prompt is a template (``{a|b}``, ``__list__``); each image gets its own."""
         host = self.inspector.workflowParamsHost
         self._prompt_preview_label = None  # set below only when this build shows a preview
+        self._preview_open = getattr(self, "_preview_open", False)  # the section stays as the user left it
         label = _label("Wildcard prompt", "workflowParamLabel")
         selector = QComboBox(host)
         selector.setAccessibleName(f"Wildcard prompt for node {node_id}")
@@ -1034,7 +1035,23 @@ class WorkflowsPage(QObject):
         folder.setToolTip("Lists are plain NAME.txt files, one entry per line. Edit them in your file manager.")
         folder.clicked.connect(self._show_wildcards_folder)
         layout.addWidget(folder)
+        # The example prompts sit in a collapsible section (closed by default) so a long list never crowds the panel.
+        toggle = QPushButton(host)
+        toggle.setCheckable(True)
+        toggle.setFlat(True)
+        toggle.setChecked(self._preview_open)
+        toggle.setAccessibleName(f"Example prompts for node {node_id}")
         preview = self._prompt_preview(node)
+        preview.setVisible(self._preview_open)
+
+        def toggled(checked: bool) -> None:
+            self._preview_open = checked
+            preview.setVisible(checked)
+            toggle.setText(("▾ " if checked else "▸ ") + "Example prompts")
+
+        toggle.toggled.connect(toggled)
+        toggled(self._preview_open)
+        layout.addWidget(toggle)
         layout.addWidget(preview)
         self._prompt_preview_label = preview
 
@@ -1091,7 +1108,7 @@ class WorkflowsPage(QObject):
         else:
             shown = drawn[:5]
             more = f"<br>… {len(drawn)} in all" if len(drawn) > len(shown) else ""
-            text = "Example prompts<br>" + "<br>".join(tagged_html(t, runs) for t, runs in shown) + more
+            text = "<br>".join(tagged_html(t, runs) for t, runs in shown) + more
         if preview.text() != text:
             preview.setText(text)
 
