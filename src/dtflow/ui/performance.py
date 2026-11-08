@@ -1,5 +1,6 @@
 """Bounded source timings and one activity-scoped, window-owned GUI heartbeat."""
 
+import asyncio
 import logging
 import sys
 from functools import wraps
@@ -11,6 +12,7 @@ from PySide6.QtCore import QEvent, QObject, Qt, QTimer, Slot
 
 from dtflow.diagnostics import measurement, source_summary
 from dtflow.logging_setup import dev_enabled
+from dtflow.memory_diagnostics import enabled as memory_enabled, observe as memory_observe
 
 log = logging.getLogger(__name__)
 SOURCE_SUMMARY_INTERVAL_S = 60
@@ -126,6 +128,8 @@ class GuiHeartbeat(QObject):
         self._activity = activity
         self._context = context
         self._flush_gallery = flush_gallery
+        self._runner = runner
+        self._progress_strip = progress_strip
         self._closed = False
         self._scope = None
         self._last = monotonic()
@@ -138,6 +142,12 @@ class GuiHeartbeat(QObject):
         self._timer.setTimerType(Qt.TimerType.PreciseTimer)
         self._timer.setInterval(20)
         self._timer.timeout.connect(self._tick)
+        self._execution_active = activity.generating or activity.dispatching
+        self._memory_idle_since = None
+        self._memory_pending = False
+        self._memory_timer = QTimer(self)
+        self._memory_timer.setInterval(5000)
+        self._memory_timer.timeout.connect(self._sample_idle_memory)
         activity.listen(self.sync)
         progress_strip.operations_changed.connect(self.sync)
         runner.shutdown_started.connect(self.stop)
@@ -179,6 +189,14 @@ class GuiHeartbeat(QObject):
     def sync(self) -> None:
         if self._closed:
             return
+        active = self._activity.generating or self._activity.dispatching
+        if not memory_enabled(log) or active:
+            self._memory_idle_since = None
+            self._memory_timer.stop()
+        elif self._execution_active:
+            self._memory_idle_since = monotonic()
+            self._memory_timer.start()
+        self._execution_active = active
         context = self._context() if dev_enabled() else None
         scope = (context["workspace"], context["operation"]) if context else None
         if scope != self._scope:
@@ -191,6 +209,39 @@ class GuiHeartbeat(QObject):
         elif not self._timer.isActive():
             self._last = self._last_flush = monotonic()
             self._timer.start()
+
+    @Slot()
+    def _sample_idle_memory(self) -> None:
+        """At most a minute of post-execution checkpoints; native reads stay off Qt."""
+        if self._closed or self._runner.closed or self._memory_idle_since is None:
+            self._memory_timer.stop()
+            return
+        elapsed_ms = (monotonic() - self._memory_idle_since) * 1000
+        # Timer delivery can be late: this is a bounded observation window, not a guaranteed sample count.
+        if elapsed_ms > 60_000:
+            self._memory_timer.stop()
+            return
+        if self._memory_pending:
+            return
+        self._memory_pending = True
+
+        self._runner.submit(
+            asyncio.to_thread(
+                memory_observe,
+                log,
+                "ui.memory",
+                stage="after_execution",
+                since_exclusive_idle_ms=elapsed_ms,
+                exclusive_idle_at_request=True,
+                other_operations_at_request=len(self._progress_strip.active_operations()),
+            ),
+            self._idle_memory_done,
+        )
+
+    @Slot(object, object)
+    def _idle_memory_done(self, _result, _failure) -> None:
+        if not self._closed:
+            self._memory_pending = False
 
     @Slot()
     def _tick(self) -> None:
@@ -221,4 +272,5 @@ class GuiHeartbeat(QObject):
         self._watch_stop.set()
         self._activity.unlisten(self.sync)
         self._timer.stop()
+        self._memory_timer.stop()
         self._stats.flush(force=True)

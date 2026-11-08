@@ -25,6 +25,7 @@ from dtflow.core.models import (
     SavedGeneration,
     SubmissionStage,
     TimeoutPolicy,
+    ValidationError,
 )
 from dtflow.core.storage import AttemptStore
 from dtflow.core.tasks import settle
@@ -83,12 +84,16 @@ class GenerationService:
         budget: BufferBudget | None = None,
         assets: AssetValidator | None = None,
         input_state: Path | None = None,
+        preview_images: bool = True,
     ):
         self.assets = assets
         self.backend, self.store, self.output = backend, store, Path(output)
         self.timeouts = timeouts or TimeoutPolicy()
         self.saver = saver
         self.input_state = Path(input_state) if input_state is not None else None
+        if type(preview_images) is not bool:
+            raise ValidationError("Preview image policy must be a boolean.")
+        self.preview_images = preview_images
         self.budget = budget or BufferBudget(backend.capabilities.limits.buffer_budget)
         # Serialize validation/saving while admitted backend requests may overlap.
         self._buffers = asyncio.Semaphore(1)
@@ -281,6 +286,8 @@ class GenerationService:
             if event.request_id != request.request_id or event.sequence <= last_sequence:
                 raise ValueError("Backend event identity/order is invalid.")
             last_sequence = event.sequence
+            if event.kind == "preview" and not self.preview_images:
+                return  # no unused image retention or forwarding, including injected/non-Draw-Things adapters
             if event.artifact and len(event.artifact.encoded) > caps.limits.artifact_bytes:
                 raise ValueError("Event artifact exceeds the limit.")
             if event.kind == "submission_possible" and backend_submitted_at is None:
