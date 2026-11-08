@@ -5,7 +5,7 @@ import logging
 import os
 from pathlib import Path
 
-from PySide6.QtCore import QEvent, QFile, QIODevice, QObject, QSize, Qt, QTimer, Slot
+from PySide6.QtCore import QEvent, QFile, QIODevice, QObject, QSignalBlocker, QSize, Qt, QTimer, Slot
 from PySide6.QtGui import QFontMetrics, QIcon, QKeySequence, QShortcut
 from PySide6.QtUiTools import QUiLoader
 from PySide6.QtWidgets import (
@@ -48,6 +48,8 @@ from dtflow.services.catalogue import Catalogue, import_user_loras
 from dtflow.services.connection import Presentation, check_connection, present_failure, present_status
 from dtflow.services.cloud_usage import key_identity
 from dtflow.services.credentials import (
+    ENVIRONMENT,
+    INDEX_FILE,
     EnvironmentCredentials,
     OptionalSavedCredentials,
     SavedCredentials,
@@ -216,6 +218,7 @@ class MainWindow:
         self._wheel_guard = WheelGuard(self.form)
         self.runner.shutdown_started.connect(self._shutdown_guard.stop_timers)
         self.state_dir = Path(state_dir) if state_dir is not None else application_state_dir()
+        self._saved.attach(self.state_dir / INDEX_FILE)
         self._busy = False
         self.activity = Activity()
         form = self.form
@@ -516,6 +519,7 @@ class MainWindow:
         form.checkButton.clicked.connect(self.check)
         form.saveKeyButton.clicked.connect(self.save_key)
         form.removeKeyButton.clicked.connect(self.remove_key)
+        form.keySelectCombo.currentIndexChanged.connect(self.key_selected)
         form.importCustomLorasButton.clicked.connect(self.import_custom_loras)
         form.clearCustomLorasButton.clicked.connect(self.clear_custom_loras)
         form.importPresetsButton.clicked.connect(self.import_presets)
@@ -588,6 +592,7 @@ class MainWindow:
             self.runner,
             self.state_dir,
             active_credential=self._active_credential_id,
+            key_directory=self._key_directory,
             on_active=self._show_active_key,
         )
         self.workflow_defaults = WorkflowDefaultsPanel(form, self.runner, self.state_dir)
@@ -1247,6 +1252,20 @@ class MainWindow:
             return None
         return key_identity(credential.secret)
 
+    def _key_directory(self) -> dict[str, str]:
+        """Display name of every key available now, by opaque identity; read off the GUI thread."""
+        try:
+            status = credential_status(self._environ, self._saved)
+        except Exception:
+            return {}
+        names = {key.credential_id: key.name for key in status["keys"]}
+        env = status["environment"]
+        if env["credential_id"] and env["credential_id"] not in names:
+            names[env["credential_id"]] = (
+                f"Environment key {env['hint']}\u2022\u2022\u2022\u2022" if env["hint"] else "Environment key"
+            )
+        return names
+
     def _show_active_key(self, label: str | None, count: int, total: int, level: str, zone: str) -> None:
         """Bottom-bar pill ``active/all``: today's local completed images for the active key and for all keys."""
         pill = self.usage_pill
@@ -1330,25 +1349,79 @@ class MainWindow:
             )
             return
         self.form.keyEdit.clear()
+        self.form.keyNameEdit.clear()
         self._credentials_read(credential_status(self._environ, self._saved), None)
         if getattr(self, "cloud_usage", None) is not None:
             self.cloud_usage.schedule_refresh()  # the active-key mark follows a saved or removed key
 
     def _credentials_read(self, status, error) -> None:
+        form = self.form
         if error is not None:
-            self.form.credentialStatusLabel.setText(
-                "Credential availability could not be read; check again or enter a key."
-            )
+            form.credentialStatusLabel.setText("Credential availability could not be read; check again or enter a key.")
             return
-        text = {
-            "environment": "Using DRAWTHINGS_API_KEY from the environment; a saved key is not consulted.",
-            "saved": "Using the key saved in Windows Credential Manager.",
-            "none": "No API key available."
-            + (" Secure storage is unavailable here." if status["saved"] == "unavailable" else ""),
-        }[status["selected"]]
-        self.form.credentialStatusLabel.setText(text)
-        # Remove is offered only when there may be a saved key to remove (the environment hides that answer).
-        self.form.removeKeyButton.setEnabled(status["saved"] in ("present", "not consulted"))
+        env = status["environment"]
+        selected = status["selected"]
+        combo = form.keySelectCombo
+        with QSignalBlocker(combo):
+            combo.clear()
+            for key in status["keys"]:
+                combo.addItem(f"{key.name} \u00b7 saved", key.id)
+                if selected == "saved" and key.active:
+                    combo.setCurrentIndex(combo.count() - 1)
+            if env["present"]:
+                hint = f" {env['hint']}\u2022\u2022\u2022\u2022" if env["hint"] else ""
+                combo.addItem(f"Environment key{hint} \u00b7 DRAWTHINGS_API_KEY", ENVIRONMENT)
+                if selected == "environment":
+                    combo.setCurrentIndex(combo.count() - 1)
+        combo.setEnabled(combo.count() > 1)
+        combo.setVisible(combo.count() > 0)
+        form.keySelectLabel.setVisible(combo.count() > 0)
+        active = next((key for key in status["keys"] if key.active), None)
+        if selected == "saved" and active is not None:
+            text = f"Using {active.name}, saved in Windows Credential Manager."
+            if env["present"]:
+                text += " DRAWTHINGS_API_KEY is also set but is not used; select it above to use it."
+        elif selected == "environment":
+            hint = f" ({env['hint']}\u2022\u2022\u2022\u2022)" if env["hint"] else ""
+            text = f"Using DRAWTHINGS_API_KEY from the environment{hint}."
+            if status["keys"]:
+                text += " Saved keys are not used while it is selected."
+        else:
+            text = "No API key available." + (
+                " Secure storage is unavailable here." if status["saved"] == "unavailable" else ""
+            )
+        form.credentialStatusLabel.setText(text)
+        # Remove acts on the selected saved key only; the environment key is removed by unsetting the variable.
+        removable = selected == "saved" and active is not None
+        form.removeKeyButton.setEnabled(removable)
+        form.removeKeyButton.setToolTip(
+            "Remove the selected saved key."
+            if removable
+            else "An environment key cannot be removed here: unset DRAWTHINGS_API_KEY and restart."
+            if selected == "environment"
+            else "No saved key to remove."
+        )
+
+    def key_selected(self, _index: int = -1) -> None:
+        choice = self.form.keySelectCombo.currentData()
+        if choice is None:
+            return
+        try:
+            self._saved.select(choice)
+        except (BackendError, ValidationError, SecureStorageUnavailable) as exc:
+            code = exc.failure.code if isinstance(exc, BackendError) else str(exc)
+            self.form.credentialStatusLabel.setText(f"Key not switched: {code}")
+            self.refresh_credentials()
+            return
+        diagnostic_event(
+            log,
+            "app.api_key_switched",
+            level=logging.INFO,
+            data={"to": "environment" if choice == ENVIRONMENT else "saved"},
+        )
+        self.refresh_credentials()
+        self._selection_changed()
+        self.generation.credentials_changed()
 
     @staticmethod
     def _human_bytes(value: int) -> str:
@@ -1709,7 +1782,7 @@ class MainWindow:
 
     def save_key(self) -> None:
         try:
-            self._saved.save(self.form.keyEdit.text())
+            self._saved.save(self.form.keyEdit.text(), self.form.keyNameEdit.text())
         except (BackendError, ValidationError, SecureStorageUnavailable) as exc:
             code = exc.failure.code if isinstance(exc, BackendError) else str(exc)
             diagnostic_event(
@@ -1722,6 +1795,7 @@ class MainWindow:
             )
             self.form.credentialStatusLabel.setText(f"Key not saved: {code}")
             self.form.keyEdit.clear()
+            self.form.keyNameEdit.clear()
             return
         diagnostic_event(
             log,
@@ -1737,9 +1811,12 @@ class MainWindow:
         if self.inline.commit(self.form.removeKeyButton):
             return
 
+        key_id = self.form.keySelectCombo.currentData()
+        name = (self.form.keySelectCombo.currentText() or "the saved key").split(" \u00b7 ")[0]
+
         def proceed():
             try:
-                self._saved.remove()
+                self._saved.remove(key_id)
             except BackendError as exc:
                 diagnostic_event(
                     log,
@@ -1765,8 +1842,7 @@ class MainWindow:
             self.form,
             self.form.removeKeyButton,
             "Remove saved key",
-            "Remove the DT+ API key saved in Windows Credential Manager? Cloud checks and generations will need a key "
-            "again.",
+            f"Remove {name} from Windows Credential Manager? Other saved keys and the environment key are not touched.",
             proceed,
         )
 

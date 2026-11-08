@@ -847,7 +847,7 @@ def render_connection_usage_states(shell, out):
     zone("Etc/GMT+10")  # the same records fall on the previous local day: the counter recomputes at once
     snap("connection-58-bottom-bar-count-other-timezone")
     zone("Europe/Paris")
-    active_key("offline-key-with-unknown-format", "Key (unidentified)", 7, 3)
+    active_key("offline-key-with-unknown-format", "Key 7F3A", 7, 3)
     snap("connection-59-bottom-bar-count-unidentified-key")
     shell._saved.remove()  # the injected in-memory vault only
     active_key(None, None, 0, 3)

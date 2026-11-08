@@ -110,7 +110,7 @@ class DayCounts:
     start: datetime
     end: datetime
     keys: tuple[KeyCount, ...]
-    unattributed: int  # saved before key attribution existed or without a resolvable key
+    unattributed: int  # saved before key tracking began; they belong to no known key
 
 
 def level_for(count: int) -> str:
@@ -118,10 +118,21 @@ def level_for(count: int) -> str:
 
 
 def count_day(
-    records: tuple[UsageRecord, ...], now: datetime, zone: ZoneInfo, *, active_credential: str | None = None
+    records: tuple[UsageRecord, ...],
+    now: datetime,
+    zone: ZoneInfo,
+    *,
+    active_credential: str | None = None,
+    directory: dict[str, str] | None = None,
 ) -> DayCounts:
+    """Per-key counts for one local day.
+
+    ``directory`` maps the opaque identity of every key currently available (saved or environment) to its display
+    name, so each of them has a row even at zero and a renamed key keeps one consistent label.
+    """
+    directory = directory or {}
     start, end = day_bounds(now, zone)
-    totals: dict[str, int] = {}
+    totals: dict[str, int] = {cid: 0 for cid in directory}
     hints: dict[str, str | None] = {}
     unattributed = 0
     for record in sorted(records, key=lambda r: r.saved_at):
@@ -132,16 +143,17 @@ def count_day(
             continue
         totals[record.credential_id] = totals.get(record.credential_id, 0) + record.outputs
         hints.setdefault(record.credential_id, record.hint)
-    labels = key_labels(hints)
+    labels = key_labels({cid: hints.get(cid) for cid in totals if cid not in directory})
+    labels.update({cid: directory[cid] for cid in totals if cid in directory})
     keys = tuple(
         KeyCount(cid, labels[cid], totals[cid], cid == active_credential, level_for(totals[cid]))
-        for cid in sorted(totals, key=lambda c: (c != active_credential, -totals[c], c))
+        for cid in sorted(totals, key=lambda c: (c != active_credential, -totals[c], labels[c], c))
     )
     return DayCounts(start, end, keys, unattributed)
 
 
 def key_labels(hints: dict[str, str | None]) -> dict[str, str]:
-    """``Key 4F8K••••`` rows; shared hints and hint-less keys get a harmless ordinal, never more key characters."""
+    """``Key 4F8K••••`` rows; shared hints get an ordinal and hint-less keys four characters of their one-way digest."""
     shared: dict[str, int] = {}
     for hint in hints.values():
         if hint:
@@ -151,10 +163,9 @@ def key_labels(hints: dict[str, str | None]) -> dict[str, str]:
     for cid in sorted(hints):
         hint = hints[cid]
         seen[hint] = seen.get(hint, 0) + 1
-        ordinal = seen[hint]
         if hint:
-            base = f"Key {hint}••••"
-            labels[cid] = base if shared[hint] == 1 else f"{base} ({ordinal})"
+            base = f"Key {hint}\u2022\u2022\u2022\u2022"
+            labels[cid] = base if shared[hint] == 1 else f"{base} ({seen[hint]})"
         else:
-            labels[cid] = f"Key (unidentified {ordinal})"
+            labels[cid] = f"Key {cid[:4].upper()}"
     return labels
