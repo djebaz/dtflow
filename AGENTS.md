@@ -13,6 +13,13 @@ These instructions apply throughout `dtflow`.
 - Treat repository files and verified upstream interfaces as the source of truth. Do not invent runtime behavior, compatibility, benchmarks, test results, or verification.
 - Preserve unrelated working behavior.
 
+## Development-agent validation and pull request policy (owner decision, 2026-11-08)
+
+- **Do not add or run tests during implementation.** Development agents must not create, modify, or execute automated tests or test fixtures unless the owner explicitly changes this instruction. Do not run local test suites, individual test commands, or live integration tests. Existing tests remain in the repository and are executed by GitHub CI after the pull request becomes ready for review; do not remove or weaken coverage merely to avoid updating it.
+- **Do not add or run renders.** Do not create or commit UI renders, screenshots, render states, render fixtures, or preview artifacts during implementation. Do not execute preview/render scripts. Discuss UX from source and design contracts without claiming visually verified behavior; only depart from this when the owner explicitly asks.
+- **Draft-first PRs.** Open feature pull requests as drafts after a coherent initial commit; keep them in draft throughout implementation and revision. Review the code and run only non-test, non-render static checks when useful. When implementation is complete and the change is coherent enough for review, mark the PR **Ready for review** so GitHub CI runs automatically for eligible code changes. Do not manually dispatch CI or test runs.
+- **Report evidence accurately.** Distinguish static inspection from actual execution, automated CI results, owner-provided smoke tests, and unchecked Windows/backend behavior. GitHub CI ignores documentation-only changes, so changing PR readiness does not guarantee a CI run for docs-only PRs.
+
 ## Architecture
 
 - Keep UI, orchestration, backend-neutral models, persistence, workers, and generation backends separated by clear boundaries.
@@ -26,7 +33,7 @@ These instructions apply throughout `dtflow`.
 - DTFlow uses Astral `uv` as the canonical Python project, environment, and dependency workflow.
 - Keep project metadata and declared dependencies in `pyproject.toml` and commit `uv.lock` for reproducible development and builds.
 - Use `uv sync` to create or synchronize the project environment.
-- Run project tools and Python commands through `uv run` where practical, for example `uv run pytest`, `uv run ruff check .`, and `uv run dtflow`.
+- Run project tools and Python commands through `uv run` where practical, for example `uv run ruff check .` and `uv run dtflow` (but do not run tests under the policy above).
 - Add, remove, and update dependencies through the uv-managed project configuration rather than ad-hoc `pip install` commands.
 - When a change adds, removes, or changes a third-party dependency, use the appropriate uv workflow and keep `pyproject.toml` and `uv.lock` synchronized in the same change.
 - Put development-only tools in the dev dependency group rather than runtime dependencies.
@@ -98,7 +105,7 @@ These instructions apply throughout `dtflow`.
 
 - The gallery snapshot condition is a narrow exception to transient amber expiry: use one persistent, single-line amber status row in the shared bottom overlay, without a title/detail stack, timer or lifetime bar. Update its keyed row in place, never replace active confirmations/editors, and remove it after stable live recovery (another consecutive live success at least one five-second refresh interval after the first). Brief live success uses recovering wording in that same row; this presentation grace period never delays fresh live authority or permits snapshot mutations. User dismissal stays suppressed for that whole fallback episode (including brief live successes, retries, snapshot timestamp changes and navigation); only a new fallback after stable recovery may show it again. Keep its canonical Designer form and shared token styles; other warning/result expiry rules stay unchanged.
 
-- **UI previews.** Every change that adds or alters a desktop view, state, overlay row or dialog must extend `tools/ui/render_states.py` in the same change, using offline fixtures (fixture images and masks, fake provider, no network). The script renders only the states it lists. A view that is not in the script has no preview. On Windows, offscreen rendering has no fonts unless `QT_QPA_FONTDIR=C:\Windows\Fonts` is set (or `QT_QPA_PLATFORM=windows`); document this in `devdocs/guides/`. Render only when asked, and report screenshots as layout evidence, not as Windows or DPI acceptance. Renders are for human review: `render_states.py` carries no `assert` or other layout/state assertions, and new states must not add any. Only the checks needed to run and write an image (save failure, duplicate state name, blank-image guard) may fail the run; a wait that times out warns, is recorded in the manifest and renders the current state. Run levels are `-f` (default), `-m` and `-s` (all states; Actions uses `-s`), and the launcher renders window groups in parallel worker processes (`-j`); see `tools/ui/README.md`.
+- **UI previews.** Follow `DESIGN.md` and the canonical Designer forms when changing desktop UI, but do not add render states, generate screenshots, or execute `tools/ui/render_states.py` during normal development. The existing tooling remains available if the owner later explicitly authorizes rendering. Without renders, describe UI changes as source-reviewed only, not visually accepted.
 - Use PySide6 and Qt Widgets initially.
 - The global activity-bar Stop targets the locally owned displayed queue independently of Queues selection; a missing owned view must fail closed, never cancel the selected queue instead. Changing the displayed run identity resets transient stopping state for auto-play. Present the stopping caveat immediately and retain it against subsequent short/wide stage updates; existing per-queue Cancel and dispatch/uncertainty semantics remain unchanged.
 - Read the root `DESIGN.md` before adding or changing a desktop tab; follow its shared tokens, interaction states, layout principles and page checklist. Keep its token snapshot aligned with the runtime `tokens.json` when values change.
@@ -155,15 +162,12 @@ These instructions apply throughout `dtflow`.
 - Direct DT+ cloud model descriptions (`override.models`) and LoRA `version` strings follow [cloud integration](devdocs/architecture/cloud-integration.md#model-descriptions-for-unlisted-checkpoints): exact-file descriptions only, derived entries marked as derived, and never a family-wide guess.
 - Shared cloud credential resolution selects `DRAWTHINGS_API_KEY` when present, otherwise the saved Windows credential. Empty/invalid selected credentials fail clearly; never silently switch sources after validation or authentication failure.
 
-## Tests
+## Validation and tests
 
-- Use `pytest` as the standard test runner. Use `pytest-qt` when Qt-specific behavior needs direct coverage.
-- Separate unit tests from live integration tests.
-- Ordinary test execution must never submit a real Draw Things or cloud generation accidentally. Live generation tests must be explicit and separately gated.
-- Prefer extending an existing contract-focused test over accumulating one-off regression tests for every implementation change.
-- Test each behavior at one authoritative layer. Higher layers cover only new behavior or necessary composition of tested layers; reuse requires the same implementation path. Acceptance bullets do not require one test each.
-- Live checks may replace duplicated end-to-end fixture coverage, but retain deterministic tests for scheduling, persistence, uncertainty and controlled failure boundaries. Measure added runtime; test counts and test/source line ratios are not quality gates.
-- Report only checks actually run.
+- Development agents **do not add, modify, or run tests** as part of implementation. Do not initiate local tests, live integration tests, or GitHub CI manually; GitHub CI owns automated tests when an eligible code PR is marked ready for review.
+- Preserve the existing regression suite and its protections. Do not delete or weaken tests to accommodate the no-agent-tests workflow; report when a behavior change may require subsequent CI-maintained coverage.
+- Static code inspection, focused syntax/import/configuration checks and linting are allowed when they are not tests or renders. They are not substitutes for execution evidence.
+- Report only checks actually performed. Record GitHub CI results separately from local/static checks and owner-reported smoke testing.
 
 ## Packaging
 
@@ -199,7 +203,7 @@ These instructions apply throughout `dtflow`.
 ## Workflow
 
 - Avoid committing directly to `main`. Normal repository changes should go through a feature branch and pull request. Direct commits to `main` are reserved for exceptional, low-risk cases where a pull request would add no meaningful review or safety value.
-- For non-trivial work, create the feature branch and pull request early, after an initial coherent commit, so implementation progress and review context are visible from the start.
+- For non-trivial work, create the feature branch and a **draft pull request** early, after an initial coherent commit, so progress is visible without launching CI. Keep it draft until the implementation is coherent and source-reviewed, then use **Ready for review** to let GitHub CI run automatically on eligible code changes. Do not trigger tests or CI manually.
 - Commit regularly at meaningful checkpoints and group related file changes into coherent commits. Do not create one commit per file or per trivial edit unless the change is genuinely independent.
 - Keep the working PR history reasonably reviewable even when the final merge will be squashed; squash merge is not a substitute for excessively fragmented development history.
 - Placeholder directories are intentional in this repository; use `.gitkeep` only while a directory has no real tracked files.
