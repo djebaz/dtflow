@@ -1993,7 +1993,31 @@ def render_item_table_states(shell, out, state):
             workflow={
                 "state": "partial",
                 "message": reason,
-                "steps": [{"node_id": 3, "branch": [1, 1], "state": "failed", "title": "Inpaint face"}],
+                "steps": [
+                    {
+                        "node_id": 1,
+                        "type": "DTFGenerate",
+                        "title": "Generate",
+                        "branch": [1, index],
+                        "branch_label": f"image {index + 1}",
+                        "state": state,
+                        "settings": {"prompt": "portrait, soft light", "size": "512x512", "seed": 100 + index},
+                        "started_at": "2026-11-07T10:00:00+00:00",
+                        "finished_at": "2026-11-07T10:00:08+00:00" if state == "succeeded" else None,
+                    }
+                    for index, state in enumerate(("succeeded", "succeeded", "unknown"))
+                ]
+                + [
+                    {
+                        "node_id": 3,
+                        "type": "DTFInpaint",
+                        "title": "Inpaint face",
+                        "branch": [1, 1],
+                        "branch_label": "image 2",
+                        "state": "failed",
+                        "message": "DT+ refused the request: not enough credits.",
+                    }
+                ],
             },
         )
         workflow_view = dict(
