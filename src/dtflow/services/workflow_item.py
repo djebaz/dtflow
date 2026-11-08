@@ -52,10 +52,14 @@ from dtflow.core.workflows import (
     INPAINT,
     MASK,
     SAVE,
+    is_descendant,
     load_workflow,
     node_limit,
     node_request,
+    output_index,
+    parent_branch,
     plan_workflow,
+    source_branch,
     workflow_limit,
 )
 from dtflow.diagnostics import event as diagnostic_event
@@ -536,12 +540,16 @@ class _Execution:
             return False
         node_id, branch = key
         node = self.graph.node(node_id)
-        task = self.tasks.get(("branch", branch))
-        if task is not None and not task.done():
+        if any(
+            not task.done() and is_descendant(other, branch)
+            for (kind, other), task in self.tasks.items()
+            if kind == "branch"
+        ):
             return False
-        # Only this output's branch reruns (a Generate output included); sibling outputs keep their results.
+        # Only this output's branch and the branches split from it rerun (a Generate output included); sibling
+        # outputs keep their results.
         wanted = descendants(self.graph, node_id) | {node_id}
-        reset = [k for k in self.steps if k[1] == branch and k[0] in wanted]
+        reset = [k for k in self.steps if is_descendant(k[1], branch) and k[0] in wanted]
         weight = 1 if node.type in GENERATIVE else 0  # Detect/Save submit nothing; downstream is in the plan
         for other in reset:
             if self.steps[other]["state"] in BAD_STEP_STATES or other == key:
@@ -570,7 +578,9 @@ class _Execution:
         if seed is not None and self.graph.node(int(seed["node_id"])).type != GENERATE:
             branch = (int(seed["branch"][0]), int(seed["branch"][1]))
             for value in seed["values"]:
-                self.values[(int(value["node_id"]), branch)] = {
+                # A value may sit on an ancestor branch of the retried step (an earlier multiplying node, #276).
+                own = tuple(value.get("branch") or branch)
+                self.values[(int(value["node_id"]), (int(own[0]), int(own[1])))] = {
                     "output": value.get("output"),
                     "mask": value.get("mask"),
                     "no_target": bool(value.get("no_target")),
@@ -587,7 +597,8 @@ class _Execution:
         found: dict[str, Any] = {}
         for slot, port in enumerate(node.spec.inputs):
             link = self.graph.input_link(node_id, slot)
-            value = self.values.get((link.origin_id, branch)) if link is not None else None
+            source = source_branch(self.plan, link.origin_id, branch) if link is not None else None
+            value = self.values.get((link.origin_id, source)) if source is not None else None
             if value is None:
                 return None
             if port.type == MASK:
@@ -616,6 +627,14 @@ class _Execution:
                 await self.end([key], "stopped", "Stopped: an earlier step on this branch did not finish.")
                 continue
             await self.step(node_id, branch, inputs)
+        # Branches split from this one by an Inpaint/Img2img with several outputs (#276) continue as their own tasks.
+        for child in self.children(branch):
+            task = self.tasks.get(("branch", child))
+            if task is None or task.done():
+                self.spawn(("branch", child), self.walk(child))
+
+    def children(self, branch: Branch) -> list[Branch]:
+        return sorted({key[1] for key in self.steps if parent_branch(key[1]) == branch})
 
     async def step(self, node_id: int, branch: Branch, inputs: dict[str, Any]) -> None:
         key = (node_id, branch)
@@ -981,7 +1000,9 @@ class _Execution:
                     float(node.params.get("feather", 0.0)),
                 )
             )
-            request = node_request(node, width=width, height=height, evidence=self.evidence(branch))
+            # Several outputs per incoming image each get their own seed (node seed + output number); Retry reuses it.
+            seed = branch_seed(int(node.params["seed"]), output_index(branch)) if node.outputs > 1 else None
+            request = node_request(node, width=width, height=height, evidence=self.evidence(branch), seed=seed)
             request = session.image_operation_request(
                 request,
                 prepared,

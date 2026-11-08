@@ -43,8 +43,10 @@ from dtflow.core.workflows import (
     branch_label,
     dump_workflow,
     generate_outputs,
+    is_descendant,
     load_workflow,
     plan_workflow,
+    source_branch,
 )
 from dtflow.persistence.queues import (
     BRANCH_DECISIONS,
@@ -93,14 +95,22 @@ def run_scope(graph: Graph, plan: WorkflowPlan, seed: dict[str, Any] | None = No
     """The (node, branch) steps a run executes, in topological then branch order.
 
     Without a seed: every node for every branch it runs on. With a Retry seed: the seed's node and its downstream
-    nodes on the seed's branch only; a Generate seed reruns that Generate and every branch it produces."""
+    nodes on the seed's branch (and branches split from it) only; a Generate seed reruns that Generate and every
+    branch it produces."""
     if seed is None:
         return [(node_id, branch) for node_id in plan.order for branch in plan.nodes[node_id].branches]
     start, branch = int(seed["node_id"]), (int(seed["branch"][0]), int(seed["branch"][1]))
     if graph.node(start).type == GENERATE:
         return [(node_id, item) for node_id in plan.order for item in plan.nodes[node_id].branches if item[0] == start]
     wanted = descendants(graph, start) | {start}
-    return [(node_id, branch) for node_id in plan.order if node_id in wanted and branch in plan.nodes[node_id].branches]
+    # The step itself and, below it, every branch split from this one by a multiplying node (#276).
+    return [
+        (node_id, item)
+        for node_id in plan.order
+        if node_id in wanted
+        for item in plan.nodes[node_id].branches
+        if is_descendant(item, branch)
+    ]
 
 
 def planned_submissions(graph: Graph, scope: list[tuple[int, Branch]]) -> int:
@@ -270,13 +280,19 @@ def _step(run: dict[str, Any], node_id: int, branch: Branch) -> dict[str, Any] |
 
 
 def _seed_values(
-    graph: Graph, run: dict[str, Any], start: int, branch: Branch, inherited: dict[str, Any] | None = None
+    graph: Graph,
+    plan: WorkflowPlan,
+    run: dict[str, Any],
+    start: int,
+    branch: Branch,
+    inherited: dict[str, Any] | None = None,
 ) -> list[dict[str, Any]]:
     """The saved inputs a Retry run starts from: every recorded output and mask on that branch that the retried scope
     (the step and everything downstream of it) reads from outside itself, including converging parallel paths.
 
     Every such input must still exist on disk; a face mask skipped by "Continue anyway" passes on as no mask. A Retry
-    run's own steps cover only its scope, so its ``inherited`` seed (same branch) supplies the inputs from before it."""
+    run's own steps cover only its scope, so its ``inherited`` seed supplies the inputs from before it. Each value
+    sits on the branch its node ran on: the retried branch, or the ancestor it was split from (#276)."""
     if graph.node(start).type == GENERATE:
         return []
     scope = descendants(graph, start) | {start}
@@ -285,15 +301,21 @@ def _seed_values(
         outside |= ancestors(graph, node_id)
     outside -= scope
     earlier = {}
-    if isinstance(inherited, dict) and tuple(inherited.get("branch") or ()) == branch:
-        earlier = {value["node_id"]: value for value in inherited.get("values") or () if isinstance(value, dict)}
+    if isinstance(inherited, dict) and inherited.get("branch"):
+        home = tuple(inherited["branch"])
+        for value in inherited.get("values") or ():
+            if isinstance(value, dict):
+                earlier[(value["node_id"], tuple(value.get("branch") or home))] = value
     values = []
     for node_id in sorted(outside):
-        step = _step(run, node_id, branch)
-        if step is None and node_id in earlier:
-            values.append(dict(earlier[node_id]))
+        origin = source_branch(plan, node_id, branch)
+        if origin is None:
+            continue
+        step = _step(run, node_id, origin)
+        if step is None and (node_id, origin) in earlier:
+            values.append({**earlier[(node_id, origin)], "branch": list(origin)})
         elif step is not None:
-            value = {"node_id": node_id, "output": step.get("output"), "mask": step.get("mask")}
+            value = {"node_id": node_id, "branch": list(origin), "output": step.get("output"), "mask": step.get("mask")}
             if step.get("type") == DETECT_FACE and step.get("state") == "skipped":
                 value["no_target"] = True
             values.append(value)
@@ -344,7 +366,7 @@ async def retry_step(state: Path, queue_id: str, node_id: int, branch: tuple[int
     seed = {
         "node_id": node_id,
         "branch": list(branch),
-        "values": _seed_values(graph, run, node_id, branch, record.get("seed")),
+        "values": _seed_values(graph, plan, run, node_id, branch, record.get("seed")),
     }
     scope = run_scope(graph, plan, seed)
     run_id = uuid4().hex
