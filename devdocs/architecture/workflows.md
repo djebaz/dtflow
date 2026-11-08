@@ -71,6 +71,9 @@ Ports are typed `IMAGE` or `MASK`. Parameter order is the `widgets_values` order
 - Only `DTFGenerate` produces several images (`batch_size × batch_count`). Each image is a **branch**
   (`Generate #N image i`); every downstream node runs once per branch. Converging inputs (Inpaint's image and mask)
   must come from the same branches; images from different Generate nodes are never paired.
+- A Generate output is its own single-image request (batch 1 × count 1) with seed = node seed + output index, wrapped
+  within 0..4294967295 (#275). Outputs run concurrently within the backend's lane limit; a failure stays on its
+  output and Retry reruns that output alone with the same seed.
 - `plan_workflow` validates a graph for running (all inputs connected, checkpoints chosen, a Save node present,
   settings valid) and returns the planned generation total shown before the run. That total plus the retry allowance
   is the runtime submission guard.
