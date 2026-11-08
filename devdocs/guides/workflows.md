@@ -41,11 +41,23 @@ When editing Generate width/height, arrows step by 64 pixels. Typed values snap 
   that node with the backend's reason. Cloud generations may use credits.
 - **Custom cloud LoRAs:** each Generate, Inpaint and Img2img node binds its selected LoRAs to existing confirmed local preparation receipts at dispatch, independently of Generate's current LoRA selection. Prepare missing custom files explicitly through the existing asset controls; running a workflow never uploads them. Dispatch still validates the active cloud account and receipt availability. A bound receipt that is no longer valid or belongs to a different backend scope fails that node before image submission rather than silently dropping the LoRA. Check the active account and use the existing asset reconciliation or explicit Prepare action to recover; DTFlow does not re-upload or retry automatically. Workflow files store identifiers and weights, not private receipts.
 - **LoRA warnings:** when a completed cloud step's preflight could not confirm a selected LoRA's availability and it has no bound preparation receipt, a small amber overlay reports "DT+ availability unconfirmed" and suggests Prepare only if this is a custom LoRA. The warning stays in workflow outputs and the node's run details, and in the Queues right-panel activity log after the overlay expires. Overlays appear while following live or newly started runs, including their completion; opening a historical finished run keeps the retained warnings without replaying the overlay. These are advisories, not proof that a LoRA was ignored or is custom; built-in cloud LoRAs do not require a custom receipt, and Echo may not list them. Warnings never change saved outcomes, automatically prepare assets or retry generation. Diagnostic logs record only the warning code/count and node type, not private receipt identifiers or LoRA names.
-- **Detection models:** the face-mask node needs the person segmentation, clothes and faces models. If any is missing,
-  Run first shows one confirmation listing each model and its licence, then downloads them from the publisher's pinned
-  URL, checks their SHA-256 and ONNX contract and records them like a chosen model. Nothing is downloaded during a run;
-  a run with missing models fails before its first submission. Generate's Inpaint editor offers the same
-  **Download models…** action.
+- **Face-mask method (#299):** the existing Detect face mask node has one selector: **Fast — Face ellipse**
+  (NudeNet only), **Balanced — Person-clipped ellipse** (NudeNet + YOLO person segmentation),
+  **Precise — Face skin** or **Precise — Face skin + hair** (existing NudeNet + YOLO + SegFormer).
+  New nodes and new library workflows select Balanced by default; saved older workflows retain their
+  original precise selection. Fast and Balanced show **Face box expansion** (default 1.6×, range
+  1.0–2.5×), scaling the detected face box before drawing an ellipse. Balanced intersects each ellipse
+  with its matching person's silhouette, retains the face-connected component and fills enclosed holes.
+  **Face** selects Strongest/All NudeNet faces in Fast; **Person** selects Strongest/All YOLO people
+  in the other methods. These methods make the same `MASK` output for Inpaint.
+- **Mask finishing:** expansion belongs to Detect face mask, while **Mask grow**, **Mask feather**,
+  and **Keep outside mask** remain in the downstream **Inpaint** node. They are not applied at detection.
+- **Detection model downloads:** each workflow needs only the model roles selected by its Detect
+  nodes: Fast → NudeNet; Balanced → NudeNet + YOLO; Precise → NudeNet + YOLO + SegFormer. If any
+  required model is missing, Run shows one confirmation with the necessary downloads and licences;
+  checks their pinned SHA-256 and ONNX contract and records them. Nothing downloads mid-run; runner
+  preflight verifies required roles before any image generation. Generate's Inpaint editor still has
+  its separate **Download models…** action.
 - **Progress:** the shared activity bar shows the run; each node shows its state, stage and latest image, with
   "n/m images" when it has several branches. Stop (here, in the activity bar or Cancel in Queues) ends the whole run
   at once: DTFlow stops waiting on running steps instead of letting them finish. A step already sent to the backend

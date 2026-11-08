@@ -3,6 +3,9 @@ SegFormer clothes model, from owner-selected local ONNX files (no downloads, no 
 
 Run every function here on a worker. Suggestions can be wrong; the editor lets the user refine in Paint.
 Masks are cropped to each person's source-pixel box to bound memory.
+
+``analyze_face_geometry`` is the faces-only entry point for the workflow face masks (NudeNet boxes, optional YOLO
+people, never SegFormer); the mask geometry built on it lives in ``face_geometry``.
 """
 
 import ast
@@ -615,6 +618,32 @@ def _clothes_layers(session, image: Image.Image, mask, box):
     classes = np.zeros(mask.shape, dtype=np.uint8)
     classes[cy0:cy1, cx0:cx1][inside] = argmax[inside] + 1
     return classes[y0:y1, x0:x1].tobytes()
+
+
+def analyze_face_geometry(
+    source: ImageContent,
+    faces: ModelRef,
+    segmentation: ModelRef | None = None,
+    *,
+    on_stage: Callable[[str], None] | None = None,
+):
+    """Detect NudeNet face boxes, optionally with YOLO person masks; never load SegFormer.
+
+    Face boxes are ordered by NudeNet confidence (the existing NMS order). Person instances
+    retain the same source-sized silhouettes and score ordering used by analyze_people.
+    Run this CPU work on a worker, not the UI thread.
+    """
+    stage = on_stage or (lambda _name: None)
+    image = Image.open(io.BytesIO(source.encoded)).convert("RGB")
+    stage("Loading model")
+    face_session = _verified_session(faces, _faces_session)
+    stage("Detecting faces")
+    boxes = _face_boxes(face_session, image)
+    if segmentation is None or not boxes:
+        return boxes, []
+    seg_session = _verified_session(segmentation, _segmentation_session)
+    stage("Detecting people")
+    return boxes, _instances(seg_session, image, 0.25)
 
 
 def analyze_people(

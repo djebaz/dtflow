@@ -1,9 +1,9 @@
-"""Headless face mask for workflows and (later) the #117 script hooks: one function over ``analyze_people``.
+"""Headless source-sized face masks for workflows.
 
-D4: segmentation, clothes (SegFormer) and faces (NudeNet 320n) models are all required. No person, zero face boxes or
-an empty chosen-region mask each return a "no target" result (the workflow pauses that branch). D5: ``person`` is
-``strongest`` (highest YOLO score) or ``all`` (union of every person's region). The mask is source-sized 0/255 PNG,
-ready for ``prepare_image_bytes(mask_bytes=...)``.
+Fast uses NudeNet boxes only; Balanced clips their ellipses to a YOLO person
+silhouette and keeps one filled, face-anchored connected surface per face.
+Legacy Precise modes retain their existing SegFormer face/hair implementation.
+The downstream Inpaint step still owns mask grow and feather.
 """
 
 from __future__ import annotations
@@ -12,20 +12,47 @@ from collections.abc import Callable
 from dataclasses import dataclass
 
 from dtflow.core.models import ValidationError
+from dtflow.core.workflows import (
+    FACE_EXPANSION_DEFAULT,
+    GEOMETRIC_FACE_METHODS,
+    PERSON_CHOICES,
+    validate_face_expansion,
+)
 from dtflow.persistence.person_models import PersonModels
 from dtflow.services.image_preparation import load_source_bytes, mask_png
 from dtflow.services.person_selection import analyze_people, apply_selection
 
-MASK_REGIONS = {"face_skin": frozenset({"face"}), "face_skin_and_hair": frozenset({"face", "hair"})}
-PERSON_CHOICES = ("strongest", "all")
+MASK_REGION_LAYERS = {"face_skin": frozenset({"face"}), "face_skin_and_hair": frozenset({"face", "hair"})}
 
 
 @dataclass(frozen=True, slots=True)
 class FaceMaskResult:
-    mask_png: bytes | None  # source-sized 0/255 grayscale PNG; None when there is no target
-    reason: str | None  # None on success, else "No person detected" | "No face detected" | "Face region is empty"
-    people: int  # people found by segmentation
-    faces: int  # face boxes found by the faces model
+    mask_png: bytes | None  # source-sized 0/255 PNG, None when the branch has no target
+    reason: str | None
+    people: int
+    faces: int
+
+
+def _geometric_mask(source, models: PersonModels, *, method: str, person: str, expansion: float, stage):
+    """Build the selected geometric mask from the shared CPU image-analysis service."""
+    from dtflow.services.face_geometry import geometric_face_pixels  # lazy: keeps NumPy off the startup path
+
+    # Defensive only: the run's model preflight already requires these roles before any submission.
+    if models.faces is None or (method == "balanced" and models.segmentation is None):
+        needed = "NudeNet faces and YOLO person segmentation" if method == "balanced" else "NudeNet faces"
+        raise ValidationError(f"{method.title()} face detection needs {needed}; download the required models.")
+    pixels, reason, people, faces = geometric_face_pixels(
+        source,
+        models.faces,
+        models.segmentation if method == "balanced" else None,
+        method=method,
+        person=person,
+        expansion=expansion,
+        on_stage=stage,
+    )
+    if pixels is None:
+        return FaceMaskResult(None, reason, people, faces)
+    return FaceMaskResult(mask_png(pixels, source.width, source.height), None, people, faces)
 
 
 def detect_face_mask(
@@ -34,22 +61,27 @@ def detect_face_mask(
     *,
     mask_region: str = "face_skin",
     person: str = "strongest",
+    method: str | None = None,
+    expansion: float = FACE_EXPANSION_DEFAULT,
     on_stage: Callable[[str], None] | None = None,
 ) -> FaceMaskResult:
-    """Blocking CPU work (call from a worker). ``on_stage`` receives "Loading model", "Detecting people",
-    "Analysing clothing", "Detecting faces", "Preparing masks" as each really starts. Raises ``ValidationError``
-    when a required model is missing or fails its check."""
-    layers = MASK_REGIONS.get(mask_region)
-    if layers is None:
+    """Blocking CPU analysis; None method preserves the existing precise mask semantics."""
+    if mask_region not in MASK_REGION_LAYERS:
         raise ValidationError("Mask region must be face_skin or face_skin_and_hair.")
     if person not in PERSON_CHOICES:
         raise ValidationError("Person must be strongest or all.")
-    if models.segmentation is None or models.clothes is None or models.faces is None:
-        raise ValidationError(
-            "Face detection needs the segmentation, clothes and faces models; download them before running."
-        )
+    if method is not None and method not in GEOMETRIC_FACE_METHODS:
+        raise ValidationError("Mask method must be Fast, Balanced or an existing precise region.")
     stage = on_stage or (lambda _name: None)
     source = load_source_bytes(source_png)
+    if method is not None:
+        factor = validate_face_expansion(expansion, "Face box expansion")
+        return _geometric_mask(source, models, method=method, person=person, expansion=factor, stage=stage)
+
+    if models.segmentation is None or models.clothes is None or models.faces is None:
+        raise ValidationError(
+            "Precise face detection needs the segmentation, clothes and faces models; download them before running."
+        )
     analysis = analyze_people(source, models.segmentation, models.clothes, models.faces, on_stage=stage)
     faces = analysis.faces or 0
     if not analysis.people:
@@ -60,7 +92,7 @@ def detect_face_mask(
     chosen = analysis.people[:1] if person == "strongest" else analysis.people
     mask = bytes(analysis.width * analysis.height)
     for target in chosen:
-        mask = apply_selection(mask, analysis, target, layers, remove=False)
+        mask = apply_selection(mask, analysis, target, MASK_REGION_LAYERS[mask_region], remove=False)
     if not mask.strip(b"\0"):
         return FaceMaskResult(None, "Face region is empty", len(analysis.people), faces)
     return FaceMaskResult(mask_png(mask, analysis.width, analysis.height), None, len(analysis.people), faces)
