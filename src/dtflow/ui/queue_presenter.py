@@ -488,36 +488,43 @@ def workflow_images(run: dict) -> list[dict]:
     ]
 
 
+def workflow_steps(run: dict) -> list[dict]:
+    """Every step of a workflow run (Generate, Detect face / mask, Inpaint, Img2Img, Save), in run order."""
+    return [step for step in run.get("steps") or () if isinstance(step, dict)]
+
+
 def workflow_progress(run: dict) -> tuple[int, int, int, int | None]:
-    """(settled, saved, total, running image number) over a workflow run's images; total 0 when it has none yet."""
-    images = workflow_images(run)
-    settled = sum(1 for step in images if _WORKFLOW_STEP_STATES.get(step.get("state"), "running") not in _LIVE_STATES)
-    saved = sum(1 for step in images if step.get("state") == "succeeded")
+    """(settled, saved images, total, running step number) over all steps of a workflow run; total 0 when none."""
+    steps = workflow_steps(run)
+    settled = sum(1 for step in steps if _WORKFLOW_STEP_STATES.get(step.get("state"), "running") not in _LIVE_STATES)
+    saved = sum(1 for step in workflow_images(run) if step.get("state") == "succeeded")
     current = next(
-        (n for n, step in enumerate(images, 1) if _WORKFLOW_STEP_STATES.get(step.get("state")) == "running"), None
+        (n for n, step in enumerate(steps, 1) if _WORKFLOW_STEP_STATES.get(step.get("state")) == "running"), None
     )
-    return settled, saved, len(images), current
+    return settled, saved, len(steps), current
 
 
 def workflow_stage(run: dict) -> str:
-    """Bottom-bar stage of a workflow run: ``image 2/5 running · 1 saved``."""
+    """Bottom-bar stage of a workflow run: ``step 2/5 running · 1 image saved``."""
     settled, saved, total, current = workflow_progress(run)
     if not total:
         return "Workflow running"
+    images = f"{saved} image{'s' if saved != 1 else ''} saved"
     if current is not None:
-        return f"image {current}/{total} running · {saved} saved"
-    return f"{saved}/{total} images saved" + (f" · {settled - saved} not saved" if settled > saved else "")
+        return f"step {current}/{total} running · {images}"
+    return f"{settled}/{total} steps · {images}"
 
 
 def _workflow_image_lines(run: dict) -> list[str]:
-    """One indented log line per image state change, like the script step lines (snapshot, durations when known)."""
-    images = workflow_images(run)
+    """One indented log line per step state (images and local steps such as Detect face), like the script step lines."""
+    images = workflow_steps(run)
     lines = []
     blank = " " * 8
     for number, step in enumerate(images, 1):
         progress = f"{number}/{len(images)}"
-        label = step.get("branch_label") or step.get("title") or ""
+        label = " · ".join(part for part in (step.get("title"), step.get("branch_label")) if part)
         label = f" · {label}" if label else ""
+        is_image = step.get("type") in _WORKFLOW_IMAGE_TYPES
         state = _WORKFLOW_STEP_STATES.get(step.get("state"), "running")
         if state == "pending":
             lines.append(f"{blank}  {progress} pending{label}")
@@ -526,7 +533,7 @@ def _workflow_image_lines(run: dict) -> list[str]:
         duration = _seconds_between(step.get("started_at"), step.get("finished_at"))
         tail = f" · {duration:.2f}s" if duration is not None else ""
         if state == "succeeded":
-            lines.append(f"{blank}  {progress} saved{tail}")
+            lines.append(f"{blank}  {progress} {'saved' if is_image else 'done'}{tail}")
         elif state in ("failed", "unknown", "cancelled"):
             short = {"failed": "fail", "unknown": "unknown", "cancelled": "stopped"}[state]
             lines.append(f"{blank}  {progress} {short}{tail}")
@@ -679,9 +686,9 @@ def progress_text(summary: QueueSummary, view: dict | None = None) -> str:
             return f"Progress: {committed}/{expected} steps · {committed} committed{tail}"
         return f"Progress: {started} step{'s' if started != 1 else ''} so far · {committed} committed{tail}"
     run = workflow_of(view) if view else None
-    if run is not None and workflow_images(run):
+    if run is not None and workflow_steps(run):
         settled, saved, total, _ = workflow_progress(run)
-        return f"Progress: {settled}/{total} images · {saved} saved"
+        return f"Progress: {settled}/{total} steps · {saved} image{'s' if saved != 1 else ''} saved"
     return f"Progress: {summary.settled}/{summary.total} · {summary.succeeded} succeeded"
 
 

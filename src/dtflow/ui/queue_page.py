@@ -509,9 +509,17 @@ class QueuePage:
         self._refresh_script_run()
 
     def _refresh_script_run(self) -> None:
-        """The running script's steps are read for the global bar whichever queue is selected."""
+        """The running script's or workflow's steps are read for the global bar whichever queue is selected."""
         run = self._dispatching
-        if run is None or self._reading_run or (self._views.get(run) or {}).get("kind") != "script":
+        if (
+            run is None
+            or self._reading_run
+            or (self._views.get(run) or {}).get("kind")
+            not in (
+                "script",
+                "workflow",
+            )
+        ):
             self._run_detail = None
             return
         if run == self._selected:
