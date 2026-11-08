@@ -34,6 +34,7 @@ from __future__ import annotations
 
 import asyncio
 import copy
+import hashlib
 import logging
 from collections.abc import Callable
 from datetime import UTC, datetime
@@ -52,9 +53,11 @@ from dtflow.core.workflows import (
     GENERATIVE,
     IMAGE_OPERATIONS,
     IMAGE_SCALE,
+    IMAGE_TO_MASK,
     INPAINT,
     LOAD_IMAGE,
     MASK,
+    MASK_TO_IMAGE,
     SAVE,
     SOURCES,
     STATIC_SOURCES,
@@ -170,38 +173,55 @@ def settings_of(request) -> dict[str, Any]:
 def _prepare_source(source: str, mask: str | None, grow: int, feather: float):
     """Read the parent's saved final (and mask) and prepare them (worker thread).
 
-    A source that is not a valid generation size (multiples of 64 within 128..2048) is resized and centre-cropped to the
-    nearest one, mask included (#316); a Generate output is already valid and passes untouched. The last value is the
-    ``(width, height)`` the source was before that, or None."""
-    from dtflow.services.image_preparation import (
-        harmonize_workflow_image,
-        prepare_image_bytes,
-        source_size,
-        validate_prepared_inputs,
-    )
+    A source that is not a valid generation size (multiples of 64 within 128..2048) is padded into the nearest valid
+    box by the existing image fit (#316); an inpaint that keeps the outside returns source-sized, any other result is
+    cropped back afterwards (``restore_source_frame``), so the whole frame is kept. A Generate output is already valid
+    and passes untouched. The last value is the ``(width, height)`` of the source when it was fitted, else None."""
+    from dtflow.core.image_inputs import suggest_generation_size
+    from dtflow.services.image_preparation import prepare_image_bytes, source_size, validate_prepared_inputs
 
     data = Path(source).read_bytes()
     mask_bytes = Path(mask).read_bytes() if mask is not None else None
     original = source_size(data)
-    width, height, data, mask_bytes, changed = harmonize_workflow_image(data, mask_bytes)
+    if mask_bytes is not None and source_size(mask_bytes) != original:
+        raise ValidationError(
+            f"The mask is {source_size(mask_bytes)[0]}x{source_size(mask_bytes)[1]} but its image is "
+            f"{original[0]}x{original[1]}; they must match. Resize both the same way: Convert mask to image, "
+            "Upscale image, Convert image to mask."
+        )
+    width, height = original
+    fitted = not (128 <= width <= 2048 and 128 <= height <= 2048 and width % 64 == 0 and height % 64 == 0)
+    if fitted:
+        width, height = suggest_generation_size(width, height, max_edge=2048)
     prepared = prepare_image_bytes(data, width, height, mask_bytes=mask_bytes, grow=grow, feather=feather)
     validate_prepared_inputs(prepared)
-    return width, height, prepared, original if changed else None
+    return width, height, prepared, original if fitted else None
 
 
 def _write_mask(path: Path, data: bytes) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    temporary = path.with_suffix(".tmp")
+    temporary = path.with_name(f".{path.name}.{uuid4().hex[:8]}.tmp")
     temporary.write_bytes(data)
     temporary.replace(path)
 
 
-def _load_static(state: Path, name: str, node_type: str, channel: str, folder: Path, node_id: int) -> dict[str, Any]:
-    """Snapshot a Load image / Load image (as mask) file into the run folder (worker thread, #316).
+def _store_shared(state: Path, prefix: str, data: bytes) -> str:
+    """Keep a loaded or converted image once per content under ``<state>/workflows/snapshots/`` (#316).
 
-    The node holds only a file name; the file itself lives in the DTFlow inputs folder. The run reads the copy it made
+    Runs, Retry and Earlier runs read these files, and a queue repeating a workflow reuses them instead of writing a
+    copy per item."""
+    path = state / "workflows" / "snapshots" / f"{prefix}-{hashlib.sha256(data).hexdigest()[:32]}.png"
+    if not path.is_file():
+        _write_mask(path, data)
+    return str(path)
+
+
+def _load_static(state: Path, name: str, node_type: str, channel: str) -> dict[str, Any]:
+    """Snapshot a Load image / Load image (as mask) file (worker thread, #316).
+
+    The node holds only a file name; the file itself lives in the DTFlow inputs folder. The run reads the snapshot made
     here, so later changes to the inputs folder cannot alter this run or its Retry."""
-    from dtflow.services.image_preparation import load_workflow_image, load_workflow_mask
+    from dtflow.services.image_preparation import load_workflow_image, load_workflow_mask, mask_selects_pixels
     from dtflow.services.workflow_inputs import input_path
 
     try:
@@ -213,31 +233,44 @@ def _load_static(state: Path, name: str, node_type: str, channel: str, folder: P
         raise ValidationError(
             f"{name} is not in this computer's DTFlow inputs folder; choose the file again in the node."
         )
-    tag = uuid4().hex[:8]
     if node_type == LOAD_IMAGE:
         image, mask, _, _ = load_workflow_image(str(source))
-        image_path = folder / f"load-{node_id}-{tag}.png"
-        _write_mask(image_path, image)
+        image_path = _store_shared(state, "load", image)
     else:
         mask, _, _ = load_workflow_mask(str(source), channel)
         image_path = None
-    mask_path = folder / f"load-{node_id}-mask-{tag}.png"
-    _write_mask(mask_path, mask)
-    return {"output": str(image_path) if image_path else None, "mask": str(mask_path)}
+    return {
+        "output": image_path,
+        "mask": _store_shared(state, "load-mask", mask),
+        "empty_mask": not mask_selects_pixels(mask),
+    }
 
 
-def _scale_file(source: str, params: dict[str, Any], path: Path) -> None:
-    """Upscale Image on a saved image into ``path`` (worker thread, #316)."""
-    from dtflow.services.image_preparation import scale_workflow_image
+def _transform_file(state: Path, node_type: str, source: str, params: dict[str, Any]) -> dict[str, Any]:
+    """Upscale image, Convert mask to image or Convert image to mask on a saved file (worker thread, #316)."""
+    from dtflow.services.image_preparation import image_to_mask_bytes, mask_to_image_bytes, scale_workflow_image
 
-    data = scale_workflow_image(
-        Path(source).read_bytes(),
-        str(params["upscale_method"]),
-        int(params["width"]),
-        int(params["height"]),
-        str(params["crop"]),
-    )
-    _write_mask(path, data)
+    data = Path(source).read_bytes()
+    if node_type == IMAGE_SCALE:
+        scaled = scale_workflow_image(
+            data,
+            str(params["upscale_method"]),
+            int(params["width"]),
+            int(params["height"]),
+            str(params["crop"]),
+        )
+        return {"output": _store_shared(state, "scale", scaled)}
+    if node_type == MASK_TO_IMAGE:
+        return {"output": _store_shared(state, "mask-image", mask_to_image_bytes(data))}
+    return {"mask": _store_shared(state, "image-mask", image_to_mask_bytes(data, str(params["channel"])))}
+
+
+def _restore_frame(state: Path, output: str, fit) -> str | None:
+    """Crop a result that was fitted into a larger box back to the source frame (worker thread, #316)."""
+    from dtflow.services.image_preparation import restore_source_frame
+
+    restored = restore_source_frame(Path(output).read_bytes(), fit)
+    return None if restored is None else _store_shared(state, "frame", restored)
 
 
 class WorkflowItemRunner:
@@ -619,8 +652,8 @@ class _Execution:
             return False
         node_id, branch = key
         node = self.graph.node(node_id)
-        if node.type in STATIC_SOURCES:
-            return False  # a file that could not be loaded stops the whole run: fix it and run again
+        if self.plan.nodes[node_id].static:
+            return False  # a loading step that failed stops the whole run: fix the file and run again
         if any(
             not task.done() and is_descendant(other, branch)
             for (kind, other), task in self.tasks.items()
@@ -730,8 +763,8 @@ class _Execution:
                     await self.detect(node_id, branch, inputs)
                 elif node_type in IMAGE_OPERATIONS:
                     await self.image_step(node_id, branch, inputs)
-                elif node_type == IMAGE_SCALE:
-                    await self.scale(node_id, branch, inputs)
+                elif node_type in (IMAGE_SCALE, MASK_TO_IMAGE, IMAGE_TO_MASK):
+                    await self.transform(node_id, branch, inputs)
                 elif node_type == SAVE:
                     await self.save(node_id, branch, inputs)
         except (asyncio.CancelledError, PersistenceError):
@@ -987,57 +1020,85 @@ class _Execution:
         await self.walk(branch)  # a branch without an image marks its steps stopped and submits nothing
 
     async def load_statics(self) -> bool:
-        """Read every Load image / Load image (as mask) file before anything is submitted (#316).
+        """Read every loaded file, and convert what depends only on them, before anything is submitted (#316).
 
-        A file that cannot be loaded ends the run at once, so no generation is spent before the problem shows; fixing
-        the file and running again is the remedy (a loading step has no Retry of its own)."""
+        A file that cannot be loaded, or a mask that selects nothing, ends the run at once, so no generation is spent
+        before the problem shows; fixing the file and running again is the remedy (a loading step has no Retry)."""
         for node_id in self.plan.order:
-            node = self.graph.node(node_id)
-            key = (node_id, (node_id, 0))
-            if node.type not in STATIC_SOURCES or key not in self.steps or self.steps[key]["state"] != "pending":
+            if not self.plan.nodes[node_id].static:
                 continue
-            await self.begin([key])
-            folder = self.runner.state / "workflows" / "runs" / self.request.run_id
-            try:
-                found = await settle(
-                    asyncio.to_thread(
-                        _load_static,
-                        self.runner.state,
-                        str(node.params["image"]),
-                        node.type,
-                        str(node.params.get("channel", "alpha")),
-                        folder,
-                        node_id,
-                    )
-                )
-            except (ValidationError, OSError) as exc:
-                message = str(exc) if isinstance(exc, ValidationError) else "The file could not be read."
-                await self.end([key], "failed", message)
-                self.halt(f"The workflow cannot run: {node.label}: {message}")
-                await self.finish()
-                return False
-            self.values[key] = {**found, "no_target": False}
-            await self.end([key], "succeeded", output=found["output"], mask=found["mask"])
+            node = self.graph.node(node_id)
+            for key in sorted(k for k in self.steps if k[0] == node_id):
+                if self.steps[key]["state"] != "pending":
+                    continue
+                if node.type in STATIC_SOURCES:
+                    await self.load_source(key)
+                else:
+                    inputs = self.inputs(node_id, key[1])
+                    if inputs is None:
+                        await self.end([key], "failed", "An earlier step did not finish.")
+                    else:
+                        await self.step(node_id, key[1], inputs)
+                if self.steps[key]["state"] != "succeeded":
+                    message = self.steps[key].get("message") or "The step did not finish."
+                    self.halt(f"The workflow cannot run: {node.label}: {message}")
+                    await self.finish()
+                    return False
         return True
 
-    async def scale(self, node_id: int, branch: Branch, inputs: dict[str, Any]) -> None:
+    async def load_source(self, key: Key) -> None:
+        node_id = key[0]
+        node = self.graph.node(node_id)
+        await self.begin([key])
+        try:
+            found = await settle(
+                asyncio.to_thread(
+                    _load_static,
+                    self.runner.state,
+                    str(node.params["image"]),
+                    node.type,
+                    str(node.params.get("channel", "alpha")),
+                )
+            )
+        except (ValidationError, OSError) as exc:
+            message = str(exc) if isinstance(exc, ValidationError) else "The file could not be read."
+            await self.end([key], "failed", message)
+            return
+        slot = 1 if node.type == LOAD_IMAGE else 0  # the MASK output
+        used = any(link.origin_id == node_id and link.origin_slot == slot for link in self.graph.links)
+        if used and found["empty_mask"]:
+            message = (
+                "its MASK is empty: the file has no transparent pixels (the mask is the inverted alpha). Use a file "
+                "with transparency, or Load image (as mask)."
+                if node.type == LOAD_IMAGE
+                else f"the mask selects nothing: no pixel of the {node.params['channel']} channel is brighter than "
+                "50%. Check the channel, or paint the area to change in white."
+            )
+            await self.end([key], "failed", message)
+            return
+        self.values[key] = {"output": found["output"], "mask": found["mask"], "no_target": False}
+        await self.end([key], "succeeded", output=found["output"], mask=found["mask"])
+
+    async def transform(self, node_id: int, branch: Branch, inputs: dict[str, Any]) -> None:
+        """Upscale image, Convert mask to image, Convert image to mask: local, deterministic, not generations."""
         node = self.graph.node(node_id)
         key = (node_id, branch)
-        source = inputs["image"]
-        self.steps[key]["parent"] = source
+        source = inputs.get("mask") if node.type == MASK_TO_IMAGE else inputs.get("image")
         await self.begin([key])
-        name = f"scale-{node_id}-{branch[0]}-{branch[1]}-{uuid4().hex[:8]}.png"
-        path = self.runner.state / "workflows" / "runs" / self.request.run_id / name
+        if source is None:
+            await self.end([key], "failed", "There is no mask to convert (no face was found and the branch continued).")
+            return
+        self.steps[key]["parent"] = source
         try:
-            await settle(asyncio.to_thread(_scale_file, source, node.params, path))
+            found = await settle(asyncio.to_thread(_transform_file, self.runner.state, node.type, source, node.params))
         except ValidationError as exc:
             await self.end([key], "failed", str(exc))
             return
         except OSError:
             await self.end([key], "failed", "The source image could not be read or the result written.")
             return
-        self.values[key] = {"output": str(path)}
-        await self.end([key], "succeeded", parent=source, output=str(path))
+        self.values[key] = {**found, "no_target": False}
+        await self.end([key], "succeeded", parent=source, output=found.get("output"), mask=found.get("mask"))
 
     async def detect(self, node_id: int, branch: Branch, inputs: dict[str, Any]) -> None:
         from dtflow.persistence.person_models import load_person_models
@@ -1164,7 +1225,7 @@ class _Execution:
                 )
             )
             if resized is not None:
-                self.set_stage([key], f"Resized {resized[0]}x{resized[1]} to {width}x{height}")
+                self.set_stage([key], f"Fitting {resized[0]}x{resized[1]} into {width}x{height}")
             # Several outputs per incoming image each get their own seed (node seed + output number); Retry reuses it.
             seed = branch_seed(int(node.params["seed"]), output_index(branch)) if node.outputs > 1 else None
             request = node_request(node, width=width, height=height, evidence=self.evidence(branch), seed=seed)
@@ -1189,6 +1250,13 @@ class _Execution:
             await self.end([key], "failed", "The backend returned no image.", settings=settings_of(outcome.request))
             return
         output = outcome.output_paths[0]  # the saved final (composite for a preserved inpaint), never raw or display
+        if resized is not None:
+            try:
+                restored = await settle(asyncio.to_thread(_restore_frame, self.runner.state, output, prepared.fit))
+            except (ValidationError, OSError):
+                await self.end([key], "failed", "The result could not be fitted back to the source frame.")
+                return
+            output = restored or output  # padding never reaches the next step
         self.values[key] = {"output": output}
         await self.end([key], "succeeded", output=output, settings=settings_of(outcome.request))
 
@@ -1197,7 +1265,13 @@ class _Execution:
         key = (node_id, branch)
         path = inputs["image"]
         self.run["results"].append(
-            {"label": str(node.params["label"]), "path": path, "branch": [branch[0], branch[1]], "node_id": node_id}
+            {
+                "label": str(node.params["label"]),
+                "path": path,
+                "branch": [branch[0], branch[1]],
+                "branch_label": self.steps[key]["branch_label"],
+                "node_id": node_id,
+            }
         )
         self.values[key] = {"output": path}
         await self.end([key], "succeeded", parent=path, output=path)

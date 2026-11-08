@@ -21,7 +21,6 @@ from dtflow.core.image_inputs import (
     ImageFit,
     PreparedImageInputs,
     max_mask_grow,
-    suggest_generation_size,
     validate_source_dimensions,
 )
 from dtflow.core.models import ValidationError
@@ -629,33 +628,35 @@ def scale_workflow_image(encoded: bytes, method: str, width: int, height: int, c
     return _png(image.resize((width, height), filter_))
 
 
-def harmonize_workflow_image(
-    source_bytes: bytes, mask_bytes: bytes | None = None
-) -> tuple[int, int, bytes, bytes | None, bool]:
-    """Make a workflow image step's source (and mask) a size generation accepts (#316).
+def mask_selects_pixels(encoded: bytes) -> bool:
+    """True when the mask PNG selects anything (a pixel brighter than 50%, the Inpaint threshold)."""
+    return _binary_mask(_decode(encoded, "Mask image")).getbbox() is not None
 
-    A source whose sides are already multiples of 64 within 128..2048 is returned untouched. Any other source is scaled
-    to cover the nearest valid box (the longest side capped at 2048, aspect ratio kept up to the 64 rounding) and the
-    overflow is trimmed evenly from both sides, like ComfyUI's Upscale Image with crop ``center``. The mask must match the
-    source and is resized and cropped identically, so it stays aligned. Returns ``(width, height, source, mask,
-    changed)``; changed sources are RGB PNG."""
-    source = _decode(source_bytes, "Source image")
-    width, height = source.size
-    if 128 <= width <= 2048 and 128 <= height <= 2048 and width % 64 == 0 and height % 64 == 0:
-        return width, height, source_bytes, mask_bytes, False
-    mask = None
-    if mask_bytes is not None:
-        mask = _decode(mask_bytes, "Mask image")
-        if mask.size != source.size:
-            raise ValidationError("Mask dimensions must match the EXIF-oriented source image.")
-    target_width, target_height = suggest_generation_size(width, height, max_edge=2048)
-    scale = max(target_width / width, target_height / height)
-    covered = (max(target_width, round(width * scale)), max(target_height, round(height * scale)))
-    left, top = (covered[0] - target_width) // 2, (covered[1] - target_height) // 2
-    box = (left, top, left + target_width, top + target_height)
-    new_source = _source_rgb(source_bytes).resize(covered, Image.Resampling.LANCZOS).crop(box)
-    new_mask = None
-    if mask is not None:
-        resized = _binary_mask(mask).resize(covered, Image.Resampling.BILINEAR).crop(box)
-        new_mask = _png(_binary_mask(resized))
-    return target_width, target_height, _png(new_source), new_mask, True
+
+def mask_to_image_bytes(encoded: bytes) -> bytes:
+    """ComfyUI's Convert Mask to Image: the mask as a grayscale RGB PNG (white = masked)."""
+    mask = _eight_bit(_decode(encoded, "Mask image"))
+    return _png(mask.convert("L").convert("RGB"))
+
+
+def image_to_mask_bytes(encoded: bytes, channel: str) -> bytes:
+    """ComfyUI's Convert Image to Mask: one channel of an image as a grayscale PNG (white = masked)."""
+    index = {"red": 0, "green": 1, "blue": 2}.get(channel)
+    if index is None:
+        raise ValidationError("DTFlow images have no alpha channel; choose red, green or blue.")
+    return _png(_decode(encoded, "Source image").convert("RGB").getchannel(index))
+
+
+def restore_source_frame(encoded: bytes, fit: ImageFit) -> bytes | None:
+    """Crop a generated image fitted into a larger valid box back to the source frame (#316).
+
+    Image steps pad a source that is not a valid generation size; an inpaint that keeps the outside already comes back
+    source-sized (None here), while any other result is cropped to the fitted area and resized to the source size, so
+    the padding never reaches the next step."""
+    image = _decode(encoded, "Generated image")
+    if image.size == (fit.source_width, fit.source_height):
+        return None
+    restored = (
+        image.convert("RGB").crop(fit.crop_box).resize((fit.source_width, fit.source_height), Image.Resampling.LANCZOS)
+    )
+    return _png(restored)

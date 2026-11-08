@@ -1621,7 +1621,7 @@ class WorkflowsPage(QObject):
             button.setFixedSize(THUMB + 8, THUMB + 8)
             path = result["path"]
             identity = output_identity(path)
-            tip = f"{result['label']} · {wf.branch_label(tuple(result['branch']))}"
+            tip = f"{result['label']} · {result.get('branch_label') or wf.branch_label(tuple(result['branch']))}"
             button.setToolTip(tip + (" · open in Images" if identity and self.open_image else ""))
             button.setAccessibleName(f"Result {tip}")
             pixmap = self._pixmap(path)

@@ -74,10 +74,16 @@ SAVE = "DTFSaveImage"
 LOAD_IMAGE = "LoadImage"
 LOAD_MASK = "LoadImageMask"
 IMAGE_SCALE = "ImageScale"
+MASK_TO_IMAGE = "MaskToImage"  # ComfyUI's Convert Mask to Image: lets Upscale image resize a mask
+IMAGE_TO_MASK = "ImageToMask"  # ComfyUI's Convert Image to Mask
 GENERATIVE = (GENERATE, INPAINT, IMG2IMG)
 # Loaders make one image or mask from a local file. Their single branch pairs with any other branch (a mask file applies
 # to every generated image), so a node reading one of them next to generated images never needs equal branches.
 STATIC_SOURCES = (LOAD_IMAGE, LOAD_MASK)
+# Local transforms that, fed only by loaded files, are loaded files too: they run before anything is submitted so every
+# branch can read them.
+STATIC_TRANSFORMS = (IMAGE_SCALE, MASK_TO_IMAGE, IMAGE_TO_MASK)
+TRANSFORM_CHANNELS = ("red", "green", "blue", "alpha")
 SOURCES = (GENERATE, *STATIC_SOURCES)  # nodes without inputs that start a branch
 MASK_CHANNELS = ("alpha", "red", "green", "blue")
 SCALE_METHODS = ("nearest-exact", "bilinear", "area", "bicubic", "lanczos")
@@ -252,6 +258,25 @@ CATALOG: dict[str, NodeSpec] = {
             "ComfyUI's Upscale Image: resizes to Width x Height. Crop center fills the box and trims the overflow; "
             "disabled stretches. Inpaint and Img2img resize and crop other sizes to a valid one themselves.",
             thumbnail=True,
+        ),
+        NodeSpec(
+            MASK_TO_IMAGE,
+            "Convert mask to image",
+            (Port("mask", MASK),),
+            (Port("IMAGE", IMAGE),),
+            (),
+            "ComfyUI's Convert Mask to Image: a grayscale image of the mask (white = masked), so Upscale image can "
+            "resize it. Convert it back with Convert image to mask.",
+            thumbnail=True,
+        ),
+        NodeSpec(
+            IMAGE_TO_MASK,
+            "Convert image to mask",
+            (Port("image", IMAGE),),
+            (Port("MASK", MASK),),
+            (Param("channel", "choice", "red", "Channel", choices=TRANSFORM_CHANNELS),),
+            "ComfyUI's Convert Image to Mask: one channel of the image as the mask (white = masked). DTFlow images "
+            "have no alpha, so choose red, green or blue.",
         ),
         NodeSpec(
             SAVE,
@@ -945,7 +970,7 @@ def source_branch(plan: WorkflowPlan, node_id: int, branch: Branch) -> Branch | 
     current: Branch | None = branch
     while current is not None and current not in known:
         current = parent_branch(current)
-    if current is None and plan.nodes[node_id].type in STATIC_SOURCES:
+    if current is None and plan.nodes[node_id].static:
         return known[0]  # a loaded file applies to every branch (#316)
     return current
 
@@ -966,6 +991,7 @@ class NodePlan:
     type: str
     branches: tuple[Branch, ...]  # the image branches this node runs for, in order
     generations: int  # submissions this node makes over all its branches (0 for local nodes)
+    static: bool = False  # a loaded file, or a local transform of loaded files only: one result for every branch
 
 
 @dataclass(frozen=True)
@@ -1039,6 +1065,7 @@ def _plan(graph: Graph, *, qualified: bool) -> WorkflowPlan:
             branches = tuple((node.id, index) for index in range(generate_outputs(node)))
         elif node.type in STATIC_SOURCES:
             branches = ((node.id, 0),)  # one file is one image (#316)
+            inputs = []
         else:
             inputs = []
             for slot, port in enumerate(spec.inputs):
@@ -1046,7 +1073,7 @@ def _plan(graph: Graph, *, qualified: bool) -> WorkflowPlan:
                 if link is None:
                     raise WorkflowError(f"{node.label}: input '{port.name}' is not connected.")
                 origin = plans[link.origin_id]
-                inputs.append((origin.branches, origin.type in STATIC_SOURCES))
+                inputs.append((origin.branches, origin.static))
             varying = [found for found, static in inputs if not static]
             branches = varying[0] if varying else inputs[0][0]
             if any(other != branches for other in varying[1:]):
@@ -1071,7 +1098,10 @@ def _plan(graph: Graph, *, qualified: bool) -> WorkflowPlan:
         if node.type == DETECT_FACE:
             analyses += len(branches)
         total += generations
-        plans[node.id] = NodePlan(node.id, node.type, branches, generations)
+        static = node.type in STATIC_SOURCES or (
+            node.type in STATIC_TRANSFORMS and bool(inputs) and all(found for _, found in inputs)
+        )
+        plans[node.id] = NodePlan(node.id, node.type, branches, generations, static)
     final = sum(len(p.branches) for p in plans.values() if p.type == SAVE)
     return WorkflowPlan(tuple(order), plans, total, analyses, any(n.type == DETECT_FACE for n in graph.nodes), final)
 
@@ -1177,6 +1207,8 @@ def summary(
     if node_type in STATIC_SOURCES:
         text = str(params["image"]).strip() or "No file chosen"
         return f"{text}\nchannel: {params['channel']}" if node_type == LOAD_MASK else text
+    if node_type == IMAGE_TO_MASK:
+        return f"channel: {params['channel']}"
     if node_type == IMAGE_SCALE:
         size = f"{params['width'] or 'auto'}×{params['height'] or 'auto'}"
         return f"{size} · {params['upscale_method']} · crop {params['crop']}"

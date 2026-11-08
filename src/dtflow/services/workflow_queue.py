@@ -351,6 +351,8 @@ async def retry_step(state: Path, queue_id: str, node_id: int, branch: tuple[int
         raise ValidationError("This workflow run's record is unreadable; nothing was created.")
     graph = load_workflow(record["workflow"])
     plan = plan_workflow(graph)
+    if plan.nodes[node_id].static:
+        raise ValidationError("A file that could not be loaded stops the whole run: fix the file and run it again.")
     seed = {
         "node_id": node_id,
         "branch": list(branch),
