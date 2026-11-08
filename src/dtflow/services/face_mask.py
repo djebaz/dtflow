@@ -90,13 +90,14 @@ def _connected_face_region(candidate: np.ndarray, face_box, crop: tuple[int, int
     cx, cy = (fx0 + fx1) / 2, (fy0 + fy1) / 2
     closest = int(np.argmin((xs + x0 - cx) ** 2 + (ys + y0 - cy) ** 2))
     seed = (int(xs[closest] + x0 - left), int(ys[closest] + y0 - top))
-    flood = Image.fromarray(candidate.astype(np.uint8) * 255, mode="L")
+    flood = Image.fromarray(candidate.astype(np.uint8) * 255)
     ImageDraw.floodfill(flood, seed, 128)
     connected = np.asarray(flood) == 128
 
     # All voids enclosed by the connected surface become filled. Border-connected
     # background stays out. No disconnected foreground island can be reintroduced.
-    inverse = ImageOps.expand(Image.fromarray(np.where(connected, 0, 255).astype(np.uint8), mode="L"), 1, 255)
+    inverted_region = Image.fromarray(np.where(connected, 0, 255).astype(np.uint8))
+    inverse = ImageOps.expand(inverted_region, border=1, fill=255)
     ImageDraw.floodfill(inverse, (0, 0), 128)
     return np.asarray(inverse)[1:-1, 1:-1] != 128
 
@@ -139,8 +140,8 @@ def _geometric_mask(source, models: PersonModels, *, method: str, person: str, e
         result[y0:y1, x0:x1] |= region
     if not result.any():
         return FaceMaskResult(None, "Face region is empty", len(people), len(boxes))
-    return FaceMaskResult(mask_png((result.astype(np.uint8) * 255).tobytes(), source.width, source.height),
-                          None, len(people), len(boxes))
+    pixels = (result.astype(np.uint8) * 255).tobytes()
+    return FaceMaskResult(mask_png(pixels, source.width, source.height), None, len(people), len(boxes))
 
 
 def detect_face_mask(
