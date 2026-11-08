@@ -617,6 +617,33 @@ def _clothes_layers(session, image: Image.Image, mask, box):
     return classes[y0:y1, x0:x1].tobytes()
 
 
+
+def analyze_face_geometry(
+    source: ImageContent,
+    faces: ModelRef,
+    segmentation: ModelRef | None = None,
+    *,
+    on_stage: Callable[[str], None] | None = None,
+):
+    """Detect NudeNet face boxes, optionally with YOLO person masks; never load SegFormer.
+
+    Face boxes are ordered by NudeNet confidence (the existing NMS order). Person instances
+    retain the same source-sized silhouettes and score ordering used by analyze_people.
+    Run this CPU work on a worker, not the UI thread.
+    """
+    stage = on_stage or (lambda _name: None)
+    image = Image.open(io.BytesIO(source.encoded)).convert("RGB")
+    stage("Loading model")
+    face_session = _verified_session(faces, _faces_session)
+    stage("Detecting faces")
+    boxes = _face_boxes(face_session, image)
+    if segmentation is None or not boxes:
+        return boxes, []
+    seg_session = _verified_session(segmentation, _segmentation_session)
+    stage("Detecting people")
+    return boxes, _instances(seg_session, image, 0.25)
+
+
 def analyze_people(
     source: ImageContent,
     segmentation: ModelRef,
