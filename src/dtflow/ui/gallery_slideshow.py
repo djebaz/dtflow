@@ -367,6 +367,15 @@ class GallerySlideshow(QObject):
             self._reveal_controls()
         if (
             event.type() in (QEvent.Type.ShortcutOverride, QEvent.Type.KeyPress, QEvent.Type.KeyRelease)
+            and event.key() in (Qt.Key.Key_Plus, Qt.Key.Key_Minus)
+            and event.modifiers() == Qt.KeyboardModifier.KeypadModifier
+        ):
+            if event.type() == QEvent.Type.KeyPress:
+                self.interval.stepBy(-1 if event.key() == Qt.Key.Key_Plus else 1)
+            event.accept()
+            return True
+        if (
+            event.type() in (QEvent.Type.ShortcutOverride, QEvent.Type.KeyPress, QEvent.Type.KeyRelease)
             and event.key() in (Qt.Key.Key_Left, Qt.Key.Key_Right)
             and (
                 event.modifiers() == Qt.KeyboardModifier.NoModifier
