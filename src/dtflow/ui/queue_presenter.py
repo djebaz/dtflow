@@ -518,28 +518,39 @@ def workflow_stage(run: dict) -> str:
     return f"{settled}/{total} steps · {images}"
 
 
+def _short_seconds(seconds: float) -> str:
+    return f"{seconds:.1f}s" if seconds < 10 else f"{seconds:.0f}s"
+
+
 def _workflow_image_lines(run: dict) -> list[str]:
-    """One indented log line per step state (images and local steps such as Detect face), like the script step lines."""
-    images = workflow_steps(run)
+    """One timestamped line per step (images and local steps such as Detect face), short enough for the narrow log.
+
+    ``HH:MM:SS  2/4 Detect face mask #2 done 30s``: the time is when the step ended (started while it runs); the
+    image number is added only when a run has several images, and a pending step has no time yet."""
+    steps = workflow_steps(run)
+    several = len({tuple(step.get("branch") or ()) for step in steps}) > 1
     lines = []
-    blank = " " * 8
-    for number, step in enumerate(images, 1):
-        progress = f"{number}/{len(images)}"
-        label = " · ".join(part for part in (step.get("title"), step.get("branch_label")) if part)
-        label = f" · {label}" if label else ""
-        is_image = step.get("type") in _WORKFLOW_IMAGE_TYPES
+    for number, step in enumerate(steps, 1):
+        name = str(step.get("title") or step.get("type") or "Step")
+        image = re.search(r"image (\d+)\Z", str(step.get("branch_label") or ""))
+        if several and image:
+            name += f" i{image.group(1)}"
         state = _WORKFLOW_STEP_STATES.get(step.get("state"), "running")
+        head = f"{number}/{len(steps)} {name}"
         if state == "pending":
-            lines.append(f"{blank}  {progress} pending{label}")
+            lines.append(f"{' ' * 8}  {head} pending")
             continue
-        lines.append(f"{blank}  {progress} start{label}")
+        stamp = local_time(step.get("finished_at") or step.get("started_at") or "")
         duration = _seconds_between(step.get("started_at"), step.get("finished_at"))
-        tail = f" · {duration:.2f}s" if duration is not None else ""
-        if state == "succeeded":
-            lines.append(f"{blank}  {progress} {'saved' if is_image else 'done'}{tail}")
-        elif state in ("failed", "unknown", "cancelled"):
-            short = {"failed": "fail", "unknown": "unknown", "cancelled": "stopped"}[state]
-            lines.append(f"{blank}  {progress} {short}{tail}")
+        tail = f" {_short_seconds(duration)}" if duration is not None else ""
+        word = {
+            "running": "running",
+            "succeeded": "saved" if step.get("type") in _WORKFLOW_IMAGE_TYPES else "done",
+            "failed": "fail",
+            "unknown": "unknown",
+            "cancelled": "stopped",
+        }[state]
+        lines.append(f"{stamp}  {head} {word}{tail}")
     return lines
 
 
