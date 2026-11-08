@@ -81,6 +81,12 @@ STATE_LABELS = {
 }
 # A node shows its most pressing branch state; "n/m images" counts the branches that are done.
 NODE_PRIORITY = ("running", "paused", "failed", "unknown", "pending", "stopped", "cancelled", "skipped", "succeeded")
+MASK_METHOD_LABELS = {
+    "fast": "Fast — Face ellipse",
+    "balanced": "Balanced — Person-clipped ellipse",
+    "face_skin": "Precise — Face skin",
+    "face_skin_and_hair": "Precise — Face skin + hair",
+}
 CHOICE_LABELS = {
     "face_skin": "Face skin only",
     "face_skin_and_hair": "Face skin and hair",
@@ -253,7 +259,15 @@ def _same_document(current, saved) -> bool:
 
 def _run_shape(graph) -> tuple:
     """What a run depends on: node types and settings, and links; positions and view are left out."""
-    nodes = tuple(sorted((node.id, node.type, repr(sorted(node.params.items()))) for node in graph.nodes))
+    nodes = tuple(
+        sorted(
+            (
+                node.id, node.type, repr(sorted(node.params.items())),
+                node.face_mask_method, node.face_expansion,
+            )
+            for node in graph.nodes
+        )
+    )
     links = tuple(sorted((link.origin_id, link.origin_slot, link.target_id, link.target_slot) for link in graph.links))
     return nodes, links
 
@@ -821,7 +835,8 @@ class WorkflowsPage(QObject):
             if len(stages) > 1:
                 text += " Generations per step: " + " · ".join(stages) + "."
             if plan.needs_face_models:
-                text += " Face detection runs locally and needs the detection models."
+                roles = wf.face_model_roles(graph)
+                text += " Face detection runs locally; required models: " + ", ".join(roles) + "."
             _repolish(i.workflowPlanText, workflowState="warning" if (self._missing or unknown) else "ok")
         else:
             text = f"Cannot run yet: {reason}"
@@ -871,12 +886,73 @@ class WorkflowsPage(QObject):
         layout = i.workflowParamsHost.layout()
         _clear(layout)
         choices = self.choices_source() or {}
+        if spec.type == wf.DETECT_FACE:
+            self._add_face_method(layout, node_id, node)
         for param in spec.params:
-            self._add_param(layout, node_id, param, params.get(param.name), choices)
+            if spec.type == wf.DETECT_FACE and param.name == "mask_region":
+                continue  # replaced by the single four-method selector
+            if spec.type == wf.DETECT_FACE and param.name == "person":
+                self._add_face_person(layout, node_id, params[param.name], node.face_mask_method == "fast")
+            else:
+                self._add_param(layout, node_id, param, params.get(param.name), choices)
         if spec.type in wf.IMAGE_OPERATIONS:
             self._add_outputs(layout, node_id, node.image_outputs)
         self._add_concurrency(layout, node_id, choices.get("backend"))
         self._sync_lock()
+
+    def _add_face_method(self, layout, node_id: int, node) -> None:
+        """One method control replaces the old two-way mask region picker."""
+        host = self.inspector.workflowParamsHost
+        layout.addWidget(_label("Mask method", "workflowParamLabel"))
+        selector = QComboBox(host)
+        selector.setAccessibleName(f"Mask method for node {node_id}")
+        selector.setToolTip(
+            "Fast uses NudeNet faces; Balanced also clips to the YOLO person silhouette. "
+            "Precise uses the existing SegFormer face or face-and-hair segmentation."
+        )
+        for choice in wf.FACE_METHODS:
+            selector.addItem(MASK_METHOD_LABELS[choice], choice)
+        method = node.face_mask_method or node.params["mask_region"]
+        selector.setCurrentIndex(wf.FACE_METHODS.index(method))
+        selector.currentIndexChanged.connect(
+            lambda index: self._set_face_method(node_id, wf.FACE_METHODS[index])
+        )
+        layout.addWidget(selector)
+        if method in ("fast", "balanced"):
+            layout.addWidget(_label("Face box expansion", "workflowParamLabel"))
+            spin = QDoubleSpinBox(host)
+            spin.setDecimals(1)
+            spin.setRange(wf.FACE_EXPANSION_MIN, wf.FACE_EXPANSION_MAX)
+            spin.setSingleStep(0.1)
+            spin.setValue(node.face_expansion)
+            spin.setSuffix("×")
+            spin.setAccessibleName(f"Face box expansion for node {node_id}")
+            spin.setToolTip(
+                "Scale the NudeNet face box width and height before drawing the ellipse. "
+                "Inpaint Mask grow and Mask feather remain separate downstream."
+            )
+            spin.setKeyboardTracking(False)
+            spin.valueChanged.connect(lambda value: self.canvas.set_node_face_expansion(node_id, value))
+            layout.addWidget(spin)
+
+    def _add_face_person(self, layout, node_id: int, value: str, fast: bool) -> None:
+        """Fast selects NudeNet faces; other methods select YOLO people."""
+        layout.addWidget(_label("Face" if fast else "Person", "workflowParamLabel"))
+        selector = QComboBox(self.inspector.workflowParamsHost)
+        selector.setAccessibleName(f"{'Face' if fast else 'Person'} for node {node_id}")
+        labels = ("Strongest face", "All faces") if fast else ("Strongest person", "All people")
+        for code, title in zip(wf.PERSON_CHOICES, labels, strict=True):
+            selector.addItem(title, code)
+        selector.setCurrentIndex(wf.PERSON_CHOICES.index(value))
+        selector.currentIndexChanged.connect(lambda index: self._set(node_id, "person", wf.PERSON_CHOICES[index]))
+        layout.addWidget(selector)
+
+    def _set_face_method(self, node_id: int, method: str) -> None:
+        if self.canvas is None:
+            return
+        self.canvas.set_node_face_method(node_id, method)
+        self._inspected = None
+        self._show_node(node_id)
 
     def _add_outputs(self, layout, node_id: int, value: int) -> None:
         """Images made per incoming image (#276); 1 is the default and is not written to the file."""
@@ -1194,9 +1270,9 @@ class WorkflowsPage(QObject):
         self._busy = True
 
         async def check():
-            from dtflow.services.model_provisioning import WORKFLOW_FACE_ROLES, missing_models
+            from dtflow.services.model_provisioning import missing_models
 
-            return await asyncio.to_thread(missing_models, self.state, WORKFLOW_FACE_ROLES)
+            return await asyncio.to_thread(missing_models, self.state, wf.face_model_roles(graph))
 
         def checked(entries, failure):
             self._busy = False
