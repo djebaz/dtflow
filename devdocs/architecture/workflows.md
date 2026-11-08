@@ -152,8 +152,13 @@ only DTFlow nodes without the `DTF` prefix; other ComfyUI nodes are still reject
 - **ImageScale** follows ComfyUI: methods `nearest-exact`, `bilinear`, `area`, `bicubic`, `lanczos` (Pillow filters
   NEAREST, BILINEAR, BOX, BICUBIC, LANCZOS), `crop` `disabled` (stretch) or `center` (fill and trim), and a width or
   height of 0 keeps the aspect ratio from the other side (both 0 returns the image unchanged). It takes `IMAGE` only; a
-  loaded mask cannot be scaled yet, so scale the image and supply a mask file of the resulting size. Image steps still need
-  both sides a multiple of 64 within 128–2048 and fail with a plain reason otherwise.
+  loaded mask cannot be scaled yet; supply a mask file of the same size as its image.
+- **Sizes that are not multiples of 64.** Image steps (Inpaint, Img2img) accept any source. One that is not a multiple of
+  64 within 128–2048 is scaled to cover the nearest valid box (longest side capped at 2048, aspect kept up to the 64
+  rounding) and the overflow is trimmed evenly (centre crop, like `ImageScale` with crop `center`); its mask is resized and
+  cropped identically, so the two stay aligned (the mask must match the source size first). The result and the step's
+  output have the harmonized size, the step shows "Resized WxH to W'xH'", and valid sources (all Generate outputs) pass
+  untouched. Add an Upscale image node to choose the size, method or crop yourself.
 
 ## Graph and fan-out (D3)
 

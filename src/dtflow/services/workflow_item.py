@@ -168,19 +168,25 @@ def settings_of(request) -> dict[str, Any]:
 
 
 def _prepare_source(source: str, mask: str | None, grow: int, feather: float):
-    """Read the parent's saved final (and mask) and prepare them at the source size (worker thread)."""
-    from dtflow.services.image_preparation import prepare_image_bytes, source_size, validate_prepared_inputs
+    """Read the parent's saved final (and mask) and prepare them (worker thread).
+
+    A source that is not a valid generation size (multiples of 64 within 128..2048) is resized and centre-cropped to the
+    nearest one, mask included (#316); a Generate output is already valid and passes untouched. The last value is the
+    ``(width, height)`` the source was before that, or None."""
+    from dtflow.services.image_preparation import (
+        harmonize_workflow_image,
+        prepare_image_bytes,
+        source_size,
+        validate_prepared_inputs,
+    )
 
     data = Path(source).read_bytes()
-    width, height = source_size(data)
-    if not (128 <= width <= 2048 and 128 <= height <= 2048 and width % 64 == 0 and height % 64 == 0):
-        raise ValidationError(
-            f"The source image is {width}x{height}; image steps need both sides a multiple of 64 within 128..2048."
-        )
     mask_bytes = Path(mask).read_bytes() if mask is not None else None
+    original = source_size(data)
+    width, height, data, mask_bytes, changed = harmonize_workflow_image(data, mask_bytes)
     prepared = prepare_image_bytes(data, width, height, mask_bytes=mask_bytes, grow=grow, feather=feather)
     validate_prepared_inputs(prepared)
-    return width, height, prepared
+    return width, height, prepared, original if changed else None
 
 
 def _write_mask(path: Path, data: bytes) -> None:
@@ -1144,7 +1150,7 @@ class _Execution:
             return
         self.set_stage([key], "Preparing image inputs")
         try:
-            width, height, prepared = await settle(
+            width, height, prepared, resized = await settle(
                 asyncio.to_thread(
                     _prepare_source,
                     source,
@@ -1153,6 +1159,8 @@ class _Execution:
                     float(node.params.get("feather", 0.0)),
                 )
             )
+            if resized is not None:
+                self.set_stage([key], f"Resized {resized[0]}x{resized[1]} to {width}x{height}")
             # Several outputs per incoming image each get their own seed (node seed + output number); Retry reuses it.
             seed = branch_seed(int(node.params["seed"]), output_index(branch)) if node.outputs > 1 else None
             request = node_request(node, width=width, height=height, evidence=self.evidence(branch), seed=seed)

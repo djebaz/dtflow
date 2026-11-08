@@ -249,7 +249,7 @@ CATALOG: dict[str, NodeSpec] = {
                 Param("crop", "choice", "disabled", "Crop", choices=SCALE_CROPS),
             ),
             "ComfyUI's Upscale Image: resizes to Width x Height. Crop center fills the box and trims the overflow; "
-            "disabled stretches. Image steps need both sides a multiple of 64 within 128-2048.",
+            "disabled stretches. Inpaint and Img2img resize and crop other sizes to a valid one themselves.",
             thumbnail=True,
         ),
         NodeSpec(

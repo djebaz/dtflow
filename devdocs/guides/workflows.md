@@ -38,8 +38,9 @@ are in the node library. Choose a PNG, JPEG or WebP file in the node's inspector
 into `<state>/workflows/inputs/` and the node, and the saved workflow, keep only the file name. Moving the workflow to
 another computer shows the name there; choose the file again before running. Mask channels `red`, `green` and `blue`
 are used as they are (white = inpaint), `alpha` is inverted (transparent = inpaint), and Inpaint needs a mask the same
-size as its image. Upscale image resizes to Width × Height (0 keeps the aspect ratio); image steps need both sides a
-multiple of 64 within 128–2048. A file that cannot be loaded ends the run before anything is submitted. See the
+size as its image. Upscale image resizes to Width × Height (0 keeps the aspect ratio). Inpaint and Img2img accept any
+size: one that is not a multiple of 64 within 128–2048 is resized and centre-cropped to the nearest valid size (mask
+included); add an Upscale image node to choose the size yourself. A file that cannot be loaded ends the run before anything is submitted. See the
 [contract](../architecture/workflows.md#file-nodes-316).
 
 ## Running
@@ -111,7 +112,7 @@ When editing Generate width/height, arrows step by 64 pixels. Typed values snap 
 
 - Structure compatibility with ComfyUI is not execution compatibility: DTFlow nodes do not run in ComfyUI and ComfyUI
   workflows do not import. No ComfyUI frontend release has been pinned or round-trip tested yet.
-- Image steps run at the source image size (multiples of 64 within 128–2048).
+- Image steps run at the source image size; a source that is not a multiple of 64 within 128–2048 is resized and centre-cropped to the nearest valid size first.
 - The fake provider runs text-to-image only, so image steps fail there with a plain message.
 - Detection model licences: YOLO26n is Ultralytics AGPL-3.0, NudeNet 320n is MIT, and the SegFormer B2 clothes model
   is under NVIDIA's SegFormer licence for research use only. SegFormer is planned to be replaced by a model with a
