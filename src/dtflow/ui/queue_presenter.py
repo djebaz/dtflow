@@ -493,27 +493,28 @@ def workflow_steps(run: dict) -> list[dict]:
     return [step for step in run.get("steps") or () if isinstance(step, dict)]
 
 
-def workflow_progress(run: dict) -> tuple[int, int, int, int | None]:
-    """(settled, saved images, total, running step number) over all steps of a workflow run; total 0 when none."""
+def workflow_progress(run: dict) -> tuple[int, int, int, list[int]]:
+    """(settled, saved images, total, numbers of the steps running now, in run order) over all steps of a workflow run; total 0 when none."""
     steps = workflow_steps(run)
     settled = sum(1 for step in steps if _WORKFLOW_STEP_STATES.get(step.get("state"), "running") not in _LIVE_STATES)
     saved = sum(1 for step in workflow_images(run) if step.get("state") == "succeeded")
-    current = next(
-        (n for n, step in enumerate(steps, 1) if _WORKFLOW_STEP_STATES.get(step.get("state")) == "running"), None
-    )
-    return settled, saved, len(steps), current
+    # Counts come from step states, never from order, so steps finishing out of order (concurrent runs) stay right.
+    running = [n for n, step in enumerate(steps, 1) if _WORKFLOW_STEP_STATES.get(step.get("state")) == "running"]
+    return settled, saved, len(steps), running
 
 
 def workflow_stage(run: dict) -> str:
     """Bottom-bar stage of a workflow run: ``step 2/5 running · 1 image saved``."""
-    settled, saved, total, current = workflow_progress(run)
+    settled, saved, total, running = workflow_progress(run)
     if not total:
         return "Workflow running"
     images = f"{saved} image{'s' if saved != 1 else ''} saved"
-    if current is not None:
-        step = workflow_steps(run)[current - 1]
+    if len(running) > 1:  # concurrent steps: say how many, and which
+        return f"{settled}/{total} steps · {len(running)} running (steps {', '.join(map(str, running))}) · {images}"
+    if running:
+        step = workflow_steps(run)[running[0] - 1]
         name = " ".join(str(part) for part in (step.get("title"), step.get("branch_label")) if part)
-        return f"step {current}/{total}" + (f" {name}" if name else "") + f" running · {images}"
+        return f"step {running[0]}/{total}" + (f" {name}" if name else "") + f" running · {images}"
     return f"{settled}/{total} steps · {images}"
 
 
