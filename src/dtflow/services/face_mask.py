@@ -8,6 +8,7 @@ The downstream Inpaint step still owns mask grow and feather.
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Callable
 from dataclasses import dataclass
 
@@ -18,11 +19,13 @@ from dtflow.core.workflows import (
     PERSON_CHOICES,
     validate_face_expansion,
 )
+from dtflow.memory_diagnostics import observe as memory_observe, scope as memory_scope
 from dtflow.persistence.person_models import PersonModels
 from dtflow.services.image_preparation import load_source_bytes, mask_png
 from dtflow.services.person_selection import analyze_people, apply_selection
 
 MASK_REGION_LAYERS = {"face_skin": frozenset({"face"}), "face_skin_and_hair": frozenset({"face", "hair"})}
+log = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True, slots=True)
@@ -74,26 +77,41 @@ def detect_face_mask(
     if method is not None and method not in GEOMETRIC_FACE_METHODS:
         raise ValidationError("Mask method must be Fast, Balanced or an existing precise region.")
     stage = on_stage or (lambda _name: None)
+    memory_observe(
+        log,
+        "detector.memory",
+        stage="source_decode_before",
+        source_png_bytes=len(source_png),
+        method=method or mask_region,
+    )
     source = load_source_bytes(source_png)
-    if method is not None:
-        factor = validate_face_expansion(expansion, "Face box expansion")
-        return _geometric_mask(source, models, method=method, person=person, expansion=factor, stage=stage)
+    with memory_scope(
+        log,
+        "detector.memory",
+        stage="face_mask",
+        method=method or mask_region,
+        source_width=source.width,
+        source_height=source.height,
+    ):
+        if method is not None:
+            factor = validate_face_expansion(expansion, "Face box expansion")
+            return _geometric_mask(source, models, method=method, person=person, expansion=factor, stage=stage)
 
-    if models.segmentation is None or models.clothes is None or models.faces is None:
-        raise ValidationError(
-            "Precise face detection needs the segmentation, clothes and faces models; download them before running."
-        )
-    analysis = analyze_people(source, models.segmentation, models.clothes, models.faces, on_stage=stage)
-    faces = analysis.faces or 0
-    if not analysis.people:
-        return FaceMaskResult(None, "No person detected", 0, faces)
-    if faces == 0:
-        return FaceMaskResult(None, "No face detected", len(analysis.people), 0)
-    stage("Preparing masks")
-    chosen = analysis.people[:1] if person == "strongest" else analysis.people
-    mask = bytes(analysis.width * analysis.height)
-    for target in chosen:
-        mask = apply_selection(mask, analysis, target, MASK_REGION_LAYERS[mask_region], remove=False)
-    if not mask.strip(b"\0"):
-        return FaceMaskResult(None, "Face region is empty", len(analysis.people), faces)
-    return FaceMaskResult(mask_png(mask, analysis.width, analysis.height), None, len(analysis.people), faces)
+        if models.segmentation is None or models.clothes is None or models.faces is None:
+            raise ValidationError(
+                "Precise face detection needs the segmentation, clothes and faces models; download them before running."
+            )
+        analysis = analyze_people(source, models.segmentation, models.clothes, models.faces, on_stage=stage)
+        faces = analysis.faces or 0
+        if not analysis.people:
+            return FaceMaskResult(None, "No person detected", 0, faces)
+        if faces == 0:
+            return FaceMaskResult(None, "No face detected", len(analysis.people), 0)
+        stage("Preparing masks")
+        chosen = analysis.people[:1] if person == "strongest" else analysis.people
+        mask = bytes(analysis.width * analysis.height)
+        for target in chosen:
+            mask = apply_selection(mask, analysis, target, MASK_REGION_LAYERS[mask_region], remove=False)
+        if not mask.strip(b"\0"):
+            return FaceMaskResult(None, "Face region is empty", len(analysis.people), faces)
+        return FaceMaskResult(mask_png(mask, analysis.width, analysis.height), None, len(analysis.people), faces)

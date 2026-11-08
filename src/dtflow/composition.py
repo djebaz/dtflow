@@ -104,6 +104,7 @@ def create_backend(
     image_permits: tuple[ImageOperationPermit, ...] = (),
     image_inputs_loader: Callable[[ImageInputSnapshot], PreparedImageInputs] | None = None,
     allow_image_probe: bool = False,
+    preview_images: bool = True,
 ) -> Backend:
     """Build the explicitly selected backend; ``tls`` is the injection point for fixture trust only.
 
@@ -111,6 +112,8 @@ def create_backend(
     so headless runs stay environment-only.
     """
     environ = os.environ if environ is None else environ
+    if type(preview_images) is not bool:
+        raise ValidationError("Preview image policy must be a boolean.")
     if selection.name in ("local", "cloud"):
         from dtflow.backends.drawthings.backend import DrawThingsBackend, DrawThingsEndpoint
         from dtflow.backends.drawthings.cloud import DirectCloudBackend
@@ -122,7 +125,7 @@ def create_backend(
             scenario=selection.scenario,
             delay=selection.delay,
             simulate=selection.delay > 0,
-            previews=selection.previews,
+            previews=selection.previews and preview_images,
         )
     if selection.name == "local":
         if not selection.endpoint:
@@ -137,6 +140,7 @@ def create_backend(
             image_permits=image_permits,
             image_inputs_loader=image_inputs_loader,
             allow_image_probe=allow_image_probe,
+            preview_images=preview_images,
         )
     if selection.name == "cloud":
         if (
@@ -159,5 +163,6 @@ def create_backend(
             image_permits=image_permits,
             image_inputs_loader=image_inputs_loader,
             allow_image_probe=allow_image_probe,
+            preview_images=preview_images,
         )
     raise ValidationError("Unknown backend selection.")

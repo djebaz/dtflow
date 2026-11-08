@@ -540,7 +540,8 @@ async def _dispatch_one(store, state, queue_id, policy, saved, out, on_settle, o
             if permits
             else {}
         )
-        backend = session.create_backend(selection, timeouts=policy, saved=saved, **image_options)
+        # A queue session covers ordinary queues, workflows and scripts; none consumes live preview images.
+        backend = session.create_backend(selection, timeouts=policy, saved=saved, preview_images=False, **image_options)
         async with asyncio.timeout(policy.connect):
             await backend.open()
         service = GenerationService(
@@ -550,6 +551,7 @@ async def _dispatch_one(store, state, queue_id, policy, saved, out, on_settle, o
             timeouts=policy,
             assets=session.asset_validator(backend),
             input_state=state if permits else None,
+            preview_images=False,
         )
         # Real adapters accept only inventory-listed models, so refresh once before dispatching.
         await service.get_inventory(refresh=True)

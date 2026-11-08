@@ -1,6 +1,6 @@
 # Current development status
 
-Updated: 2026-11-08 for [6.1.0 preparation](plans/2026-11-08-release-6.1.0.md), based on merged main `dda849f1`. [6.0.0](https://github.com/djebaz/dtflow/releases/tag/v6.0.0) remains the published predecessor. The 6.1.0 Windows build/draft, exact-artifact owner smoke and publication are separate gates; preparation is not publication. Repository source and linked evidence are authoritative; historical checkpoints remain in Git and versioned notes.
+Updated: 2026-11-08 for PR #306. [6.1.0](https://github.com/djebaz/dtflow/releases/tag/v6.1.0) was published from `8e6e01e4` after owner acceptance of the exact Windows executable; its published body is authoritative. Subsequent source changes, CI and owner observations are separate from that artifact's acceptance. Repository source and linked evidence are authoritative; historical checkpoints remain in Git and versioned notes.
 
 ## Implemented scope mapped to the initial plan
 
@@ -15,6 +15,8 @@ Updated: 2026-11-08 for [6.1.0 preparation](plans/2026-11-08-release-6.1.0.md), 
 | 10 — Native Workflows V1 | Strict contract/interchange, reference graph, pinned consent-based model provisioning, per-branch executor/queue item, CLI and production library/canvas/inspector/run view. | #223 owner reference smoke: real detectors/downloads, image operations, local/DT+, Windows/package. No pinned ComfyUI frontend round trip. [Guide](guides/workflows.md), [contract](architecture/workflows.md). |
 
 ## Delivered additions
+
+- **PR #306 — RAM diagnostics and unused previews:** dev-only workflow/detector/process-memory checkpoints and bounded post-execution observations use the existing JSONL sink. Queue-owned ordinary/workflow/script runs skip unused preview decode/encoding/forwarding, while direct Generate retains previews; network delivery remains unchanged without a verified upstream opt-out. Owner captures show counters and 72/72 preview payloads skipped, but source commits are unknown and no controlled performance or final-head acceptance is implied. [Development guide](guides/development.md#workflow-and-detector-memory-diagnostics). The owner-confirmed pre-existing Windows heap-corruption crash remains [#308](https://github.com/djebaz/dtflow/issues/308), not fixed by this PR.
 
 - **6.1.0 scope (PRs #282–#304):** per-image Generate/Workflow requests, concurrency and multi-output branches, workload counts, selected-image Retry/final markers, readable queue-grouped outputs and Fast/Balanced face masks. [Versioned notes](releases/v6.1.0.md) retain source-owner smoke evidence and downgrade limits; final-head CI and exact Windows executable acceptance remain separate. Execution schema stays 9; older builds cannot correctly interpret new parallel-split branch identities or remove newly named managed outputs.
 
