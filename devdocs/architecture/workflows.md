@@ -91,8 +91,10 @@ Ports are typed `IMAGE` or `MASK`. Parameter order is the `widgets_values` order
   highest-confidence NudeNet face, `all` unions all face ellipses. **Balanced:** NudeNet boxes plus
   YOLO26n-seg masks. Intersect each expanded ellipse with the matching person's silhouette,
   keep its face-anchored connected region, fill enclosed holes and union selected faces. For Balanced and
-  both Precise modes, `strongest` means the highest-scoring YOLO person and `all` means all selected
-  people. Precise still uses SegFormer B2 Face pixels (and optional Hair), constrained by face boxes.
+  both Precise modes, `strongest` means the highest-scoring YOLO person (for Balanced: the
+  highest-scoring person who owns a detected face; every face is matched against all people first) and `all`
+  means all selected people. Balanced's connected-region step uses a writable Pillow image because
+  `ImageDraw.floodfill` silently does nothing on a read-only array-backed one. Precise still uses SegFormer B2 Face pixels (and optional Hair), constrained by face boxes.
   All modes produce the same source-sized binary PNG mask; no-face/no-region keeps the existing branch pause.
 - **Required model union:** Fast → faces; Balanced → faces + segmentation; Precise → faces +
   segmentation + clothes. Workspace download consent and runner integrity preflight take the union
