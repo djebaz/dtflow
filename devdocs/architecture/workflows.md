@@ -135,10 +135,12 @@ only DTFlow nodes without the `DTF` prefix; other ComfyUI nodes are still reject
 
 - **Input folder.** Choosing a file in the inspector (remembered-folder dialog, key `workflow_input_image`) copies it to
   `<state>/workflows/inputs/` as `<readable stem>-<first 16 hex of its sha256><ext>` (PNG, JPEG or WebP, decoded and
-  size-checked first). The same content reuses the same name, different content never overwrites a file. The node stores
-  only that name (`image` param); names with a path separator or a leading dot are rejected. Nothing else is stored, so
-  a workflow carries no absolute path. On another computer the name is shown and Run stops with "choose the file again"
-  until the file is picked there (the file is not embedded in the workflow).
+  size-checked first, from one read of the file so the name always matches the stored bytes). The same content reuses
+  the same name; different content gets a different name (the full hash if the 16-character prefix is ever taken by
+  other bytes). The node stores only that name (`image` param) and no path. The file importer accepts any name text (a
+  ComfyUI subfolder name or `pic.png [input]` included) so one such node never rejects a workflow; Run then stops with
+  "choose the file again" because only plain names inside the inputs folder resolve. On another computer the name is
+  shown and Run stops the same way until the file is picked there (the file is not embedded in the workflow).
 - **Loading.** Before anything is submitted the run reads every file node, applies EXIF rotation, and snapshots the
   result into `<state>/workflows/runs/<run id>/` (`load-<node>-….png`). Retry and Earlier runs use that snapshot. A
   file that cannot be loaded ends the whole run at once; a loading step has no Retry (fix the file, run again).

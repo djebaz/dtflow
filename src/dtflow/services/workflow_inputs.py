@@ -12,7 +12,6 @@ from __future__ import annotations
 import hashlib
 import os
 import re
-import shutil
 from pathlib import Path
 from uuid import uuid4
 
@@ -41,39 +40,44 @@ def _stem(source: Path) -> str:
 
 
 def import_input_file(state: Path, source: str | Path) -> str:
-    """Copy ``source`` into the inputs folder and return the stored file name (worker thread: reads and hashes the file).
+    """Copy ``source`` into the inputs folder and return the stored file name (worker thread).
 
-    The file must be a PNG, JPEG or WebP that decodes as a single image. The copy is written next to its final place
-    and renamed, so a half-written file is never visible."""
-    from dtflow.services.image_preparation import check_image_file
+    The file is read once: that buffer is decode-checked (PNG, JPEG or WebP, a single image), hashed and written, so the
+    name always matches the stored bytes even if the source changes meanwhile. A stored file of the same name is reused
+    only when its bytes hash the same; on a prefix collision with different bytes the full hash names the file. The
+    copy is written next to its final place and renamed, so a half-written file is never visible."""
+    from dtflow.services.image_preparation import check_image_bytes
 
     source = Path(source)
-    if source.suffix.lower() not in INPUT_EXTENSIONS:
+    suffix = source.suffix.lower()
+    if suffix not in INPUT_EXTENSIONS:
         raise ValidationError("Choose a PNG, JPEG or WebP image file.")
-    check_image_file(source)
-    digest = hashlib.sha256()
     try:
         with source.open("rb") as stream:
-            for chunk in iter(lambda: stream.read(1 << 20), b""):
-                digest.update(chunk)
-        name = f"{_stem(source)}-{digest.hexdigest()[:HASH_LENGTH]}{source.suffix.lower()}"
-        folder = inputs_dir(state)
-        target = folder / name
-        if (
-            target.is_file()
-            and target.stat().st_size == source.stat().st_size
-            and target.stat().st_size <= IMAGE_BYTE_LIMIT
-        ):
-            return name  # the same content is already stored
-        folder.mkdir(parents=True, exist_ok=True)
-        temporary = folder / f".{uuid4().hex}.tmp"
-        try:
-            shutil.copyfile(source, temporary)
-            os.replace(temporary, target)
-        finally:
-            temporary.unlink(missing_ok=True)
+            data = stream.read(IMAGE_BYTE_LIMIT + 1)
+    except OSError as exc:
+        raise ValidationError(f"The file could not be read ({exc.strerror or 'I/O error'}).") from exc
+    check_image_bytes(data)  # empty, over 64 MiB, undecodable or animated files are refused here
+    digest = hashlib.sha256(data).hexdigest()
+    folder = inputs_dir(state)
+    try:
+        for length in (HASH_LENGTH, len(digest)):
+            name = f"{_stem(source)}-{digest[:length]}{suffix}"
+            target = folder / name
+            if target.is_file():
+                if hashlib.sha256(target.read_bytes()).hexdigest() == digest:
+                    return name  # the same content is already stored
+                continue  # a different file holds this name: use the longer one
+            folder.mkdir(parents=True, exist_ok=True)
+            temporary = folder / f".{uuid4().hex}.tmp"
+            try:
+                temporary.write_bytes(data)
+                os.replace(temporary, target)
+            finally:
+                temporary.unlink(missing_ok=True)
+            return name
     except OSError as exc:
         raise ValidationError(
             f"The file could not be copied into the DTFlow inputs folder ({exc.strerror or 'I/O error'})."
         ) from exc
-    return name
+    raise ValidationError("The file could not be stored under a free name.")

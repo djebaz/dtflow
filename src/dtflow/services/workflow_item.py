@@ -204,8 +204,12 @@ def _load_static(state: Path, name: str, node_type: str, channel: str, folder: P
     from dtflow.services.image_preparation import load_workflow_image, load_workflow_mask
     from dtflow.services.workflow_inputs import input_path
 
-    source = input_path(state, name)
-    if not source.is_file():
+    try:
+        source = input_path(state, name)
+        found = source.is_file()
+    except (ValidationError, OSError):
+        found = False
+    if not found:
         raise ValidationError(
             f"{name} is not in this computer's DTFlow inputs folder; choose the file again in the node."
         )

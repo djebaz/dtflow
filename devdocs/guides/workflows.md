@@ -113,6 +113,12 @@ When editing Generate width/height, arrows step by 64 pixels. Typed values snap 
 - Structure compatibility with ComfyUI is not execution compatibility: DTFlow nodes do not run in ComfyUI and ComfyUI
   workflows do not import. No ComfyUI frontend release has been pinned or round-trip tested yet.
 - Image steps run at the source image size; a source that is not a multiple of 64 within 128–2048 is resized and centre-cropped to the nearest valid size first.
+- File nodes: a mask file cannot be scaled (it must match its image's size, so Upscale image on the image side breaks
+  the pair); `LoadImage`'s own MASK of an opaque image is empty and fails Inpaint with "mask is empty"; resized or
+  centre-cropped sources can lose up to about 32 px per side, so the result is not a pixel-aligned overlay of the original
+  file; every run copies each loaded file and each scaled image into its run folder, so a queue repeating a large
+  photo many times writes that many copies; a result tooltip for a branch started by a loaded file may still read
+  "Generate #<node id>".
 - The fake provider runs text-to-image only, so image steps fail there with a plain message.
 - Detection model licences: YOLO26n is Ultralytics AGPL-3.0, NudeNet 320n is MIT, and the SegFormer B2 clothes model
   is under NVIDIA's SegFormer licence for research use only. SegFormer is planned to be replaced by a model with a

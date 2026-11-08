@@ -1206,15 +1206,19 @@ class WorkflowsPage(QObject):
         )
         if not selected:
             return
-        try:
-            name = import_input_file(self.state, selected)
-        except ValidationError as exc:
-            InlineNotice.error(self.workspace, "File not added", str(exc))
-            return
-        self._set(node_id, param.name, name)
-        self._inspected = None
-        self._show_node(node_id)
-        self._apply_run_to_canvas()  # the picked file is the node's preview until a run replaces it
+
+        def done(name, failure) -> None:
+            if failure is not None:
+                self._error("File not added", failure)
+                return
+            if self.canvas is None or self.canvas.node(node_id) is None:
+                return
+            self._set(node_id, param.name, name)
+            self._inspected = None
+            self._show_node(node_id)
+            self._apply_run_to_canvas()  # the picked file is the node's preview until a run replaces it
+
+        self._submit(asyncio.to_thread(import_input_file, self.state, selected), done)
 
     def _set_loras(self, node_id: int, param: wf.Param, chosen) -> None:
         value = [[name, float(weight)] for name, weight in chosen]

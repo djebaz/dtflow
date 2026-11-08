@@ -213,7 +213,7 @@ CATALOG: dict[str, NodeSpec] = {
                 ),
                 Param("upload", "choice", "image", "Upload", choices=("image",), hidden=True),
             ),
-            "ComfyUI's Load Image. The chosen file is copied into the DTFlow inputs folder and only its name is saved. One image; MASK is the inverted alpha (transparent = masked).",
+            "ComfyUI's Load Image. The chosen file is copied into the DTFlow inputs folder and only its name is saved. One image; MASK is the inverted alpha (transparent = masked), empty for an opaque image.",
             thumbnail=True,
         ),
         NodeSpec(
@@ -370,8 +370,10 @@ def check_param(param: Param, value: object, where: str = "", *, draft: bool = F
             if draft:
                 return value
             raise WorkflowError(f"{label}: choose a file.")
-        if value != value.strip() or "/" in value or "\\" in value or value.startswith(".") or "\0" in value:
-            raise WorkflowError(f"{label} must be a plain file name from the DTFlow inputs folder; got {value!r}.")
+        if "\0" in value or len(value) > 512:
+            raise WorkflowError(f"{label} must be a file name; got {value[:60]!r}.")
+        # Any other text is kept (a ComfyUI subfolder or "[input]" name too): Run reports a name that is not in the
+        # DTFlow inputs folder, so one such node never rejects the whole workflow.
         return value
     if param.kind == "choice":
         if value not in param.choices:

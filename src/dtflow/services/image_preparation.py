@@ -532,6 +532,19 @@ def _png(image: Image.Image) -> bytes:
     return buffer.getvalue()
 
 
+def _eight_bit(image: Image.Image) -> Image.Image:
+    """16-bit and integer grayscale images scaled to 8 bits (``value // 257``) instead of Pillow's clipping conversion."""
+    if image.mode.startswith("I;16") or image.mode == "I":
+        values = image.convert("I")
+        low, high = values.getextrema()
+        if low < 0 or high > 65535:
+            raise ValidationError("Integer images must use unsigned 16-bit values in 0..65535.")
+        return values.point([value // 257 for value in range(65536)], "L")
+    if image.mode == "F":
+        raise ValidationError("Floating-point images are unsupported; use an 8-bit or unsigned 16-bit image.")
+    return image
+
+
 def _inverted_alpha(image: Image.Image) -> Image.Image:
     """ComfyUI's MASK of an image: ``1 - alpha`` (transparent = masked); all zero without alpha."""
     if "A" in image.getbands():
@@ -546,6 +559,12 @@ def _read_file(path: str, label: str) -> bytes:
     return _read(file, label)
 
 
+def check_image_bytes(encoded: bytes) -> tuple[int, int]:
+    """Decode-check the bytes of a file chosen for a workflow file node and return ``(width, height)``."""
+    image = _decode(encoded, "The image file")
+    return image.width, image.height
+
+
 def check_image_file(path: str | Path) -> tuple[int, int]:
     """Decode-check a file chosen for a workflow file node and return its ``(width, height)``."""
     image = _decode(_read_file(str(path), "The image file"), "The image file")
@@ -557,7 +576,7 @@ def load_workflow_image(path: str) -> tuple[bytes, bytes, int, int]:
 
     EXIF rotation is applied, alpha is dropped from the image and becomes the inverted mask (an all-zero mask when the
     file has none). The file must be a single image; the pixel and byte limits of image preparation apply."""
-    image = _decode(_read_file(path, "The image file"), "The image file")
+    image = _eight_bit(_decode(_read_file(path, "The image file"), "The image file"))
     try:
         rgb = image.convert("RGB")
         mask = _inverted_alpha(image.convert("RGBA") if image.mode == "P" else image)
@@ -570,7 +589,7 @@ def load_workflow_mask(path: str, channel: str) -> tuple[bytes, int, int]:
     """Read a mask file like ComfyUI's Load Image (as Mask): ``(grayscale PNG, width, height)``.
 
     ``alpha`` is the inverted alpha; ``red``, ``green`` and ``blue`` are the channel values as they are."""
-    image = _decode(_read_file(path, "The mask file"), "The mask file")
+    image = _eight_bit(_decode(_read_file(path, "The mask file"), "The mask file"))
     try:
         if channel == "alpha":
             mask = _inverted_alpha(image.convert("RGBA") if image.mode == "P" else image)
