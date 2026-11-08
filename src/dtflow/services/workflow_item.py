@@ -51,9 +51,13 @@ from dtflow.core.workflows import (
     GENERATE,
     GENERATIVE,
     IMAGE_OPERATIONS,
+    IMAGE_SCALE,
     INPAINT,
+    LOAD_IMAGE,
     MASK,
     SAVE,
+    SOURCES,
+    STATIC_SOURCES,
     face_model_roles,
     is_descendant,
     load_workflow,
@@ -184,6 +188,46 @@ def _write_mask(path: Path, data: bytes) -> None:
     temporary = path.with_suffix(".tmp")
     temporary.write_bytes(data)
     temporary.replace(path)
+
+
+def _load_static(state: Path, name: str, node_type: str, channel: str, folder: Path, node_id: int) -> dict[str, Any]:
+    """Snapshot a Load image / Load image (as mask) file into the run folder (worker thread, #316).
+
+    The node holds only a file name; the file itself lives in the DTFlow inputs folder. The run reads the copy it made
+    here, so later changes to the inputs folder cannot alter this run or its Retry."""
+    from dtflow.services.image_preparation import load_workflow_image, load_workflow_mask
+    from dtflow.services.workflow_inputs import input_path
+
+    source = input_path(state, name)
+    if not source.is_file():
+        raise ValidationError(
+            f"{name} is not in this computer's DTFlow inputs folder; choose the file again in the node."
+        )
+    tag = uuid4().hex[:8]
+    if node_type == LOAD_IMAGE:
+        image, mask, _, _ = load_workflow_image(str(source))
+        image_path = folder / f"load-{node_id}-{tag}.png"
+        _write_mask(image_path, image)
+    else:
+        mask, _, _ = load_workflow_mask(str(source), channel)
+        image_path = None
+    mask_path = folder / f"load-{node_id}-mask-{tag}.png"
+    _write_mask(mask_path, mask)
+    return {"output": str(image_path) if image_path else None, "mask": str(mask_path)}
+
+
+def _scale_file(source: str, params: dict[str, Any], path: Path) -> None:
+    """Upscale Image on a saved image into ``path`` (worker thread, #316)."""
+    from dtflow.services.image_preparation import scale_workflow_image
+
+    data = scale_workflow_image(
+        Path(source).read_bytes(),
+        str(params["upscale_method"]),
+        int(params["width"]),
+        int(params["height"]),
+        str(params["crop"]),
+    )
+    _write_mask(path, data)
 
 
 class WorkflowItemRunner:
@@ -353,7 +397,7 @@ class _Execution:
         return [
             node_id
             for node_id in self.plan.order
-            if (node_id, branch) in self.steps and self.graph.node(node_id).type != GENERATE
+            if (node_id, branch) in self.steps and self.graph.node(node_id).type not in SOURCES
         ]
 
     # -- main loop -------------------------------------------------------------------------------------------------
@@ -386,6 +430,8 @@ class _Execution:
         except ValidationError as exc:
             self.halt(f"The workflow cannot run: {exc}")
             await self.finish()
+            return
+        if not await self.load_statics():
             return
         self.start_roots()
         next_memory_sample = monotonic() + 5 if memory_enabled(log) else None
@@ -563,6 +609,8 @@ class _Execution:
             return False
         node_id, branch = key
         node = self.graph.node(node_id)
+        if node.type in STATIC_SOURCES:
+            return False  # a file that could not be loaded stops the whole run: fix it and run again
         if any(
             not task.done() and is_descendant(other, branch)
             for (kind, other), task in self.tasks.items()
@@ -598,7 +646,7 @@ class _Execution:
 
     def start_roots(self) -> None:
         seed = self.request.seed
-        if seed is not None and self.graph.node(int(seed["node_id"])).type != GENERATE:
+        if seed is not None:
             branch = (int(seed["branch"][0]), int(seed["branch"][1]))
             for value in seed["values"]:
                 # A value may sit on an ancestor branch of the retried step (an earlier multiplying node, #276).
@@ -608,11 +656,15 @@ class _Execution:
                     "mask": value.get("mask"),
                     "no_target": bool(value.get("no_target")),
                 }
-            self.spawn(("branch", branch), self.walk(branch))
-            return
+            if self.graph.node(int(seed["node_id"])).type not in SOURCES:
+                self.spawn(("branch", branch), self.walk(branch))
+                return
         for node_id in self.plan.order:
-            if self.graph.node(node_id).type == GENERATE and any(key[0] == node_id for key in self.steps):
+            node_type = self.graph.node(node_id).type
+            if node_type == GENERATE and any(key[0] == node_id for key in self.steps):
                 self.spawn(("generate", node_id), self.generate(node_id))
+            elif node_type in STATIC_SOURCES and (node_id, (node_id, 0)) in self.steps:
+                self.spawn(("branch", (node_id, 0)), self.walk((node_id, 0)))  # the loaded file was read beforehand
 
     def inputs(self, node_id: int, branch: Branch) -> dict[str, Any] | None:
         """The node's input values on this branch, or None when a parent did not produce one."""
@@ -668,6 +720,8 @@ class _Execution:
                     await self.detect(node_id, branch, inputs)
                 elif node_type in IMAGE_OPERATIONS:
                     await self.image_step(node_id, branch, inputs)
+                elif node_type == IMAGE_SCALE:
+                    await self.scale(node_id, branch, inputs)
                 elif node_type == SAVE:
                     await self.save(node_id, branch, inputs)
         except (asyncio.CancelledError, PersistenceError):
@@ -921,6 +975,59 @@ class _Execution:
                 else:
                     await self.end([key], "failed", "The backend returned no image.", settings=settings)
         await self.walk(branch)  # a branch without an image marks its steps stopped and submits nothing
+
+    async def load_statics(self) -> bool:
+        """Read every Load image / Load image (as mask) file before anything is submitted (#316).
+
+        A file that cannot be loaded ends the run at once, so no generation is spent before the problem shows; fixing
+        the file and running again is the remedy (a loading step has no Retry of its own)."""
+        for node_id in self.plan.order:
+            node = self.graph.node(node_id)
+            key = (node_id, (node_id, 0))
+            if node.type not in STATIC_SOURCES or key not in self.steps or self.steps[key]["state"] != "pending":
+                continue
+            await self.begin([key])
+            folder = self.runner.state / "workflows" / "runs" / self.request.run_id
+            try:
+                found = await settle(
+                    asyncio.to_thread(
+                        _load_static,
+                        self.runner.state,
+                        str(node.params["image"]),
+                        node.type,
+                        str(node.params.get("channel", "alpha")),
+                        folder,
+                        node_id,
+                    )
+                )
+            except (ValidationError, OSError) as exc:
+                message = str(exc) if isinstance(exc, ValidationError) else "The file could not be read."
+                await self.end([key], "failed", message)
+                self.halt(f"The workflow cannot run: {node.label}: {message}")
+                await self.finish()
+                return False
+            self.values[key] = {**found, "no_target": False}
+            await self.end([key], "succeeded", output=found["output"], mask=found["mask"])
+        return True
+
+    async def scale(self, node_id: int, branch: Branch, inputs: dict[str, Any]) -> None:
+        node = self.graph.node(node_id)
+        key = (node_id, branch)
+        source = inputs["image"]
+        self.steps[key]["parent"] = source
+        await self.begin([key])
+        name = f"scale-{node_id}-{branch[0]}-{branch[1]}-{uuid4().hex[:8]}.png"
+        path = self.runner.state / "workflows" / "runs" / self.request.run_id / name
+        try:
+            await settle(asyncio.to_thread(_scale_file, source, node.params, path))
+        except ValidationError as exc:
+            await self.end([key], "failed", str(exc))
+            return
+        except OSError:
+            await self.end([key], "failed", "The source image could not be read or the result written.")
+            return
+        self.values[key] = {"output": str(path)}
+        await self.end([key], "succeeded", parent=source, output=str(path))
 
     async def detect(self, node_id: int, branch: Branch, inputs: dict[str, Any]) -> None:
         from dtflow.persistence.person_models import load_person_models

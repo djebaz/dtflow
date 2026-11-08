@@ -900,7 +900,8 @@ class WorkflowsPage(QObject):
             self._add_face_params(layout, node_id, node, params)
         else:
             for param in spec.params:
-                self._add_param(layout, node_id, param, params.get(param.name), choices)
+                if not param.hidden:
+                    self._add_param(layout, node_id, param, params.get(param.name), choices)
         if spec.type in wf.IMAGE_OPERATIONS:
             self._add_outputs(layout, node_id, node.image_outputs)
         self._add_concurrency(layout, node_id, choices.get("backend"))
@@ -1162,6 +1163,8 @@ class WorkflowsPage(QObject):
             spin.setKeyboardTracking(False)
             spin.valueChanged.connect(lambda number: self._set(node_id, param.name, float(number)))
             layout.addWidget(spin)
+        elif param.kind == "file":
+            self._add_file_param(layout, node_id, param, str(value))
         elif param.kind == "choice":
             combo = QComboBox(host)
             combo.setAccessibleName(f"{param.label} for node {node_id}")
@@ -1175,6 +1178,42 @@ class WorkflowsPage(QObject):
             box.setChecked(bool(value))
             box.toggled.connect(lambda on: self._set(node_id, param.name, bool(on)))
             layout.addWidget(box)
+
+    def _add_file_param(self, layout, node_id: int, param: wf.Param, value: str) -> None:
+        """Load image nodes (#316): the field shows the stored file name; Choose copies a picked file into the inputs folder."""
+        host = self.inspector.workflowParamsHost
+        field = QLineEdit(value, host)
+        field.setReadOnly(True)
+        field.setPlaceholderText("No file chosen")
+        field.setToolTip(value or param.hint)
+        field.setAccessibleName(f"{param.label} for node {node_id}")
+        button = QPushButton("Replace file…" if value else "Choose file…", host)
+        button.setAccessibleName(f"Choose {param.label.lower()} for node {node_id}")
+        button.setToolTip(param.hint)
+        button.clicked.connect(lambda _=False: self._choose_input_file(node_id, param))
+        layout.addWidget(field)
+        layout.addWidget(button)
+
+    def _choose_input_file(self, node_id: int, param: wf.Param) -> None:
+        from dtflow.services.workflow_inputs import import_input_file
+
+        selected, _ = QFileDialog.getOpenFileName(
+            self.workspace,
+            "Choose " + param.label.lower(),
+            "",
+            "Images (*.png *.jpg *.jpeg *.webp);;All files (*)",
+            remember_as="workflow_input_image",
+        )
+        if not selected:
+            return
+        try:
+            name = import_input_file(self.state, selected)
+        except ValidationError as exc:
+            InlineNotice.error(self.workspace, "File not added", str(exc))
+            return
+        self._set(node_id, param.name, name)
+        self._inspected = None
+        self._show_node(node_id)
 
     def _set_loras(self, node_id: int, param: wf.Param, chosen) -> None:
         value = [[name, float(weight)] for name, weight in chosen]
@@ -1546,7 +1585,7 @@ class WorkflowsPage(QObject):
         lines = []
         for branch, items_ in branches.items():
             current = next((s for s in items_ if s["state"] in ("running", "paused", "failed", "unknown")), items_[-1])
-            text = f"{wf.branch_label(branch)} · {STATE_LABELS.get(current['state'], current['state'])}"
+            text = f"{items_[0].get('branch_label') or wf.branch_label(branch)} · {STATE_LABELS.get(current['state'], current['state'])}"
             text += f" · {step_name(current)}"
             if current["state"] == "running" and current.get("stage"):
                 text += f" · {current['stage']}"

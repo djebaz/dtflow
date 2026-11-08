@@ -31,6 +31,17 @@ is the V1 specification; the file contract is [architecture/workflows.md](../arc
   <node>". A checkpoint the model list already loaded on Generate does not contain only warns (Run stays available);
   no backend is contacted for this check.
 
+## Starting from a file
+
+**Load image**, **Load image (as mask)** and **Upscale image** (ComfyUI's `LoadImage`, `LoadImageMask`, `ImageScale`)
+are in the node library. Choose a PNG, JPEG or WebP file in the node's inspector (**Choose file…**): DTFlow copies it
+into `<state>/workflows/inputs/` and the node, and the saved workflow, keep only the file name. Moving the workflow to
+another computer shows the name there; choose the file again before running. Mask channels `red`, `green` and `blue`
+are used as they are (white = inpaint), `alpha` is inverted (transparent = inpaint), and Inpaint needs a mask the same
+size as its image. Upscale image resizes to Width × Height (0 keeps the aspect ratio); image steps need both sides a
+multiple of 64 within 128–2048. A file that cannot be loaded ends the run before anything is submitted. See the
+[contract](../architecture/workflows.md#file-nodes-316).
+
 ## Running
 
 When editing Generate width/height, arrows step by 64 pixels. Typed values snap to the nearest multiple of 64 on focus loss or before Run (ties upward: 800 becomes 832), within the existing bounds. Imported/saved invalid values remain read-only with their validation reason; they are not silently rewritten.

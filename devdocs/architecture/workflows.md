@@ -91,6 +91,9 @@ Ports are typed `IMAGE` or `MASK`. Parameter order is the `widgets_values` order
 | `DTFInpaint` | `image:IMAGE`, `mask:MASK` | `IMAGE` | checkpoint, loras, prompt, negative_prompt, seed, steps, guidance, sampler, strength, grow, feather, preserve_outside |
 | `DTFImg2Img` | `image:IMAGE` | `IMAGE` | checkpoint, loras, prompt, negative_prompt, seed, steps, guidance, sampler, strength |
 | `DTFSaveImage` | `image:IMAGE` | — | label |
+| `LoadImage` | — | `IMAGE`, `MASK` | image (file name), upload (`"image"`) |
+| `LoadImageMask` | — | `MASK` | image (file name), channel (`alpha` \| `red` \| `green` \| `blue`), upload (`"image"`) |
+| `ImageScale` | `image:IMAGE` | `IMAGE` | upscale_method, width, height, crop |
 
 - `checkpoint` is the exact model file on the run's backend; `loras` is a list of `[file, weight]` pairs, weight
   0.0–3.0, no duplicates; `sampler` is a DTFlow sampler id (`dpmpp_2m_karras`, `euler_a`, …). Ranges and semantics
@@ -123,6 +126,34 @@ Ports are typed `IMAGE` or `MASK`. Parameter order is the `widgets_values` order
 - The Detect node controls its geometric **face-box expansion** only. `DTFInpaint` continues to own
   **Mask grow**, **Mask feather** and **Keep outside mask** as independent downstream operations.
 - `DTFSaveImage` marks its image as a workflow result. Every step's image is already a saved DTFlow output.
+
+## File nodes (#316)
+
+`LoadImage`, `LoadImageMask` and `ImageScale` use the **stock ComfyUI type names, port names and `widgets_values` order**
+(reference: ComfyUI backend 0.44.0 `nodes.py`; the saved-file order, built by the frontend, is unverified). They are the
+only DTFlow nodes without the `DTF` prefix; other ComfyUI nodes are still rejected.
+
+- **Input folder.** Choosing a file in the inspector (remembered-folder dialog, key `workflow_input_image`) copies it to
+  `<state>/workflows/inputs/` as `<readable stem>-<first 16 hex of its sha256><ext>` (PNG, JPEG or WebP, decoded and
+  size-checked first). The same content reuses the same name, different content never overwrites a file. The node stores
+  only that name (`image` param); names with a path separator or a leading dot are rejected. Nothing else is stored, so
+  a workflow carries no absolute path. On another computer the name is shown and Run stops with "choose the file again"
+  until the file is picked there (the file is not embedded in the workflow).
+- **Loading.** Before anything is submitted the run reads every file node, applies EXIF rotation, and snapshots the
+  result into `<state>/workflows/runs/<run id>/` (`load-<node>-….png`). Retry and Earlier runs use that snapshot. A
+  file that cannot be loaded ends the whole run at once; a loading step has no Retry (fix the file, run again).
+- **Masks.** As in ComfyUI, `LoadImage`'s `MASK` and `LoadImageMask` with `alpha` are the inverted alpha (transparent =
+  masked; an all-zero mask when there is no alpha), and `red`/`green`/`blue` are used as they are (white = masked).
+  Inpaint selects pixels brighter than 50% and needs a mask the same size as its image.
+- **Branches.** A file is one image, branch `(node id, 0)`. It pairs with any other branch: a loaded mask applies to every
+  generated image, and a loaded image can feed nodes next to generated ones. Nodes reading only loaded files run once.
+  Loading and scaling are not generations: no seed, no backend call, not counted in the 256 limit or the planned
+  total, and not Images-gallery outputs (the run card shows their latest image like other steps).
+- **ImageScale** follows ComfyUI: methods `nearest-exact`, `bilinear`, `area`, `bicubic`, `lanczos` (Pillow filters
+  NEAREST, BILINEAR, BOX, BICUBIC, LANCZOS), `crop` `disabled` (stretch) or `center` (fill and trim), and a width or
+  height of 0 keeps the aspect ratio from the other side (both 0 returns the image unchanged). It takes `IMAGE` only; a
+  loaded mask cannot be scaled yet, so scale the image and supply a mask file of the resulting size. Image steps still need
+  both sides a multiple of 64 within 128–2048 and fail with a plain reason otherwise.
 
 ## Graph and fan-out (D3)
 

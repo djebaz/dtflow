@@ -9,6 +9,8 @@ Changes through 6.1.0 are consolidated in [DTFlow 6.1.0](v6.1.0.md). This file t
 - The GUI writes a Python stack to `logs/crash-<pid>.txt` if the process dies natively (empty files are removed on clean exit), so a crash like [#308](https://github.com/djebaz/dtflow/issues/308) shows which Python code was running.
 - Dev-mode (`-x` / `--dev`) workflow/detector RAM checkpoints and up to one minute of post-execution observations in the existing structured log, with process/system memory availability and detector session/tensor byte counts. See [interpretation limits](../guides/development.md#workflow-and-detector-memory-diagnostics) (#306).
 
+- Workflows: ComfyUI-standard **Load Image**, **Load Image (as Mask)** and **Upscale Image** nodes (`LoadImage`, `LoadImageMask`, `ImageScale`) start a workflow from a local image or mask file and resize it. Choosing a file copies it into `<state>/workflows/inputs/` under a content-hash name and the workflow stores only that name, so no absolute paths are saved. See [workflows](../guides/workflows.md) ([#316](https://github.com/djebaz/dtflow/issues/316)).
+
 ## Changed
 
 - Every file and folder picker now opens at the folder it was last used in, remembered separately per picker and per runtime (Windows/WSL), in `settings.json`. Import/export pairs (presets, workflows, generation configuration, masks) and script input pickers share one folder each. A new picker needs no code beyond importing `QFileDialog` from `dtflow.ui.file_dialogs`. Connection has a Remembered folders list with Forget buttons. The Prepare picker's folder moves into the same memory ([#312](https://github.com/djebaz/dtflow/issues/312)).
