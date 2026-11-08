@@ -1,0 +1,322 @@
+{
+  "id": "00000000-0000-4000-8000-000000000302",
+  "revision": 0,
+  "version": 1,
+  "state": {
+    "lastNodeId": 6,
+    "lastLinkId": 8,
+    "lastRerouteId": 0,
+    "lastGroupid": 0
+  },
+  "nodes": [
+    {
+      "id": 1,
+      "type": "DTFGenerate",
+      "pos": [
+        0.0,
+        0.0
+      ],
+      "size": [
+        240.0,
+        236.0
+      ],
+      "flags": {},
+      "order": 0,
+      "mode": 0,
+      "outputs": [
+        {
+          "name": "IMAGE",
+          "type": "IMAGE",
+          "links": [
+            1,
+            2,
+            7
+          ],
+          "slot_index": 0
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "DTFGenerate"
+      },
+      "widgets_values": [
+        "PLACEHOLDER_checkpoint_a.ckpt",
+        [
+          [
+            "PLACEHOLDER_lora_a.safetensors",
+            0.8
+          ]
+        ],
+        "portrait photo of a lighthouse keeper at golden hour, detailed face",
+        "blurry, lowres",
+        1234,
+        24,
+        4.5,
+        "dpmpp_2m_karras",
+        1024,
+        1024,
+        1,
+        2
+      ]
+    },
+    {
+      "id": 2,
+      "type": "DTFDetectFaceMask",
+      "pos": [
+        300.0,
+        260.0
+      ],
+      "size": [
+        240.0,
+        120.0
+      ],
+      "flags": {},
+      "order": 1,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "image",
+          "type": "IMAGE",
+          "link": 1
+        }
+      ],
+      "outputs": [
+        {
+          "name": "MASK",
+          "type": "MASK",
+          "links": [
+            3
+          ],
+          "slot_index": 0
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "DTFDetectFaceMask"
+      },
+      "widgets_values": [
+        "face_skin",
+        "strongest"
+      ]
+    },
+    {
+      "id": 3,
+      "type": "DTFInpaint",
+      "pos": [
+        700.0,
+        100.0
+      ],
+      "size": [
+        240.0,
+        200.0
+      ],
+      "flags": {},
+      "order": 2,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "image",
+          "type": "IMAGE",
+          "link": 2
+        },
+        {
+          "name": "mask",
+          "type": "MASK",
+          "link": 3
+        }
+      ],
+      "outputs": [
+        {
+          "name": "IMAGE",
+          "type": "IMAGE",
+          "links": [
+            6
+          ],
+          "slot_index": 0
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "DTFInpaint",
+        "DTFlow outputs": 3
+      },
+      "widgets_values": [
+        "PLACEHOLDER_checkpoint_b_inpainting.ckpt",
+        [
+          [
+            "PLACEHOLDER_lora_b.safetensors",
+            0.6
+          ]
+        ],
+        "natural skin texture, sharp eyes",
+        "",
+        1234,
+        20,
+        4.0,
+        "dpmpp_2m_karras",
+        0.55,
+        8,
+        4.0,
+        true
+      ]
+    },
+    {
+      "id": 4,
+      "type": "DTFImg2Img",
+      "pos": [
+        700.0,
+        700.0
+      ],
+      "size": [
+        240.0,
+        180.0
+      ],
+      "flags": {},
+      "order": 3,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "image",
+          "type": "IMAGE",
+          "link": 7
+        }
+      ],
+      "outputs": [
+        {
+          "name": "IMAGE",
+          "type": "IMAGE",
+          "links": [
+            8
+          ],
+          "slot_index": 0
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "DTFImg2Img",
+        "DTFlow outputs": 2
+      },
+      "widgets_values": [
+        "PLACEHOLDER_checkpoint_c.ckpt",
+        [],
+        "portrait photo of a lighthouse keeper at golden hour, detailed face",
+        "",
+        5678,
+        16,
+        4.0,
+        "dpmpp_2m_karras",
+        0.4
+      ]
+    },
+    {
+      "id": 5,
+      "type": "DTFSaveImage",
+      "pos": [
+        1000.0,
+        100.0
+      ],
+      "size": [
+        240.0,
+        100.0
+      ],
+      "flags": {},
+      "order": 4,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "image",
+          "type": "IMAGE",
+          "link": 6
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "DTFSaveImage"
+      },
+      "widgets_values": [
+        "inpaint-branch"
+      ]
+    },
+    {
+      "id": 6,
+      "type": "DTFSaveImage",
+      "pos": [
+        1300.0,
+        700.0
+      ],
+      "size": [
+        240.0,
+        160.0
+      ],
+      "flags": {},
+      "order": 5,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "image",
+          "type": "IMAGE",
+          "link": 8
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "DTFSaveImage"
+      },
+      "widgets_values": [
+        "img2img-branch"
+      ]
+    }
+  ],
+  "links": [
+    {
+      "id": 1,
+      "origin_id": 1,
+      "origin_slot": 0,
+      "target_id": 2,
+      "target_slot": 0,
+      "type": "IMAGE"
+    },
+    {
+      "id": 2,
+      "origin_id": 1,
+      "origin_slot": 0,
+      "target_id": 3,
+      "target_slot": 0,
+      "type": "IMAGE"
+    },
+    {
+      "id": 3,
+      "origin_id": 2,
+      "origin_slot": 0,
+      "target_id": 3,
+      "target_slot": 1,
+      "type": "MASK"
+    },
+    {
+      "id": 7,
+      "origin_id": 1,
+      "origin_slot": 0,
+      "target_id": 4,
+      "target_slot": 0,
+      "type": "IMAGE"
+    },
+    {
+      "id": 6,
+      "origin_id": 3,
+      "origin_slot": 0,
+      "target_id": 5,
+      "target_slot": 0,
+      "type": "IMAGE"
+    },
+    {
+      "id": 8,
+      "origin_id": 4,
+      "origin_slot": 0,
+      "target_id": 6,
+      "target_slot": 0,
+      "type": "IMAGE"
+    }
+  ],
+  "groups": [],
+  "config": {},
+  "extra": {
+    "dtflow": {
+      "schema": "dtflow-workflow",
+      "version": 1
+    }
+  }
+}
