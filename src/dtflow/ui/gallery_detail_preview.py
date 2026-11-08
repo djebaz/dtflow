@@ -8,7 +8,7 @@ from pathlib import Path
 
 from dtflow.ui.gallery_selection_check import GallerySelectionCheck
 
-from PySide6.QtCore import QEvent, QObject, QRectF, QSize, Qt, QTimer
+from PySide6.QtCore import QEasingCurve, QEvent, QObject, QRectF, QSize, Qt, QTimer, QVariantAnimation
 from PySide6.QtGui import QColor, QFont, QIcon, QKeySequence, QPainter, QPainterPath, QPixmap, QShortcut
 from PySide6.QtWidgets import (
     QApplication,
@@ -48,6 +48,10 @@ class CoverPainter(QObject):
         self.widget = widget
         self.tokens = load_tokens()
         self.pixmap = QPixmap(str(path))
+        self._previous_pixmap = QPixmap()
+        self._previous_view = None
+        self._fade = None
+        self._blend = 1.0
         self.badges = badges
         self.placeholder = ""
         self.placeholder_icon = QIcon()
@@ -64,6 +68,54 @@ class CoverPainter(QObject):
         widget.installEventFilter(self)
         widget.setMouseTracking(True)
 
+    def finish_transition(self) -> None:
+        """Release the single outgoing image; never retain a chain of slide frames."""
+        if self._fade is not None:
+            self._fade.stop()
+        self._previous_pixmap = QPixmap()
+        self._previous_view = None
+        self._blend = 1.0
+        self.widget.update()
+
+    def set_pixmap(self, pixmap: QPixmap, *, fade_ms: int = 0) -> None:
+        outgoing = QPixmap(self.pixmap)
+        view = (self.mode, self.zoom, tuple(self.offset))
+        self.finish_transition()
+        self.pixmap = pixmap
+        if fade_ms:
+            self.zoom, self.offset = 1.0, [0.0, 0.0]
+        if fade_ms and not outgoing.isNull() and not pixmap.isNull():
+            self._previous_pixmap = outgoing
+            self._previous_view = view
+            if self._fade is None:
+                self._fade = QVariantAnimation(self)
+                self._fade.setEasingCurve(QEasingCurve.Type.InOutCubic)
+                self._fade.valueChanged.connect(self._blend_changed)
+                self._fade.finished.connect(self.finish_transition)
+            self._fade.setDuration(fade_ms)
+            self._fade.setStartValue(0.0)
+            self._fade.setEndValue(1.0)
+            self._blend = 0.0
+            self._fade.start()
+        self.widget.update()
+
+    def _blend_changed(self, value) -> None:
+        self._blend = float(value)
+        self.widget.update()
+
+    def _paint_pixmap(self, painter, rect, pixmap, mode, zoom, offset, opacity) -> None:
+        if pixmap.isNull():
+            return
+        sx, sy = rect.width() / pixmap.width(), rect.height() / pixmap.height()
+        scale = (min(sx, sy) if mode == "Fit" else max(sx, sy)) * zoom
+        if mode == "100%":
+            scale = zoom
+        w, h = pixmap.width() * scale, pixmap.height() * scale
+        dest = QRectF((rect.width() - w) / 2 + offset[0], (rect.height() - h) / 2 + offset[1], w, h)
+        painter.setOpacity(opacity)
+        painter.drawPixmap(dest, pixmap, QRectF(pixmap.rect()))
+        painter.setOpacity(1.0)
+
     def eventFilter(self, obj, event):
         if event.type() == QEvent.Paint:
             painter = QPainter(obj)
@@ -74,13 +126,9 @@ class CoverPainter(QObject):
             painter.setClipPath(clip)
             painter.fillRect(rect, QColor(self.tokens["color.canvas"]))
             if not self.pixmap.isNull():
-                sx, sy = rect.width() / self.pixmap.width(), rect.height() / self.pixmap.height()
-                scale = (min(sx, sy) if self.mode == "Fit" else max(sx, sy)) * self.zoom
-                if self.mode == "100%":
-                    scale = self.zoom
-                w, h = self.pixmap.width() * scale, self.pixmap.height() * scale
-                dest = QRectF((rect.width() - w) / 2 + self.offset[0], (rect.height() - h) / 2 + self.offset[1], w, h)
-                painter.drawPixmap(dest, self.pixmap, QRectF(self.pixmap.rect()))
+                if self._previous_view is not None:
+                    self._paint_pixmap(painter, rect, self._previous_pixmap, *self._previous_view, 1.0 - self._blend)
+                self._paint_pixmap(painter, rect, self.pixmap, self.mode, self.zoom, self.offset, self._blend)
             elif self.placeholder:
                 # Keep compact error text inside small cards; actionable detail is in the widget tooltip.
                 text_rect = rect.adjusted(8, 8, -8, -8)

@@ -172,6 +172,7 @@ class GallerySlideshow(QObject):
         gallery = self.gallery
         for widget, previous in self._mouse_tracking:
             widget.setMouseTracking(previous)
+        gallery.surface_painter.finish_transition()
         with QSignalBlocker(self.button):
             self.button.setChecked(False)
         gallery.hover_card.set_dock(None)

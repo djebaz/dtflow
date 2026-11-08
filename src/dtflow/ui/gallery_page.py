@@ -3328,7 +3328,8 @@ class GalleryPage(QObject):
         self._widget("galleryModelValue", QLabel).setText(item.model or "Not recorded")
         self._widget("galleryModelIdentifier", QLabel).hide()
         self._present_loras(item)
-        self.hover_card.set_item(item)
+        if not self.slideshow.active:
+            self.hover_card.set_item(item)
         self._widget("galleryStepsValue", QLabel).setText(self._value(request.get("steps")))
         self._widget("galleryGuidanceValue", QLabel).setText(self._value(request.get("guidance")))
         self._widget("gallerySamplerValue", QLabel).setText(self._value(request.get("sampler_id")))
@@ -3386,9 +3387,11 @@ class GalleryPage(QObject):
         if image_changed:
             self.external_button.setEnabled(available)
             self.surface.setToolTip(item.issue or "")
-            self.surface_painter.pixmap = QPixmap()
-            self.surface_painter.zoom = 1.0
-            self.surface_painter.offset = [0.0, 0.0]
+            if not self.slideshow.active:
+                self.surface_painter.finish_transition()
+                self.surface_painter.pixmap = QPixmap()
+                self.surface_painter.zoom = 1.0
+                self.surface_painter.offset = [0.0, 0.0]
             missing = item.issue == MISSING_ISSUE
             self.surface_painter.placeholder = "File missing" if missing else "Image unavailable" if item.issue else ""
             self.surface_painter.placeholder_icon = _missing_icon() if missing else QIcon()
@@ -3436,7 +3439,10 @@ class GalleryPage(QObject):
                     },
                 )
             issue = "decode failed" if error is not None or not result else result[1] or "decode failed"
+            self.surface_painter.finish_transition()
             self.surface_painter.pixmap = QPixmap()
+            if self.slideshow.active:
+                self.hover_card.set_item(self._selected())
             if issue == "Original temporarily busy":
                 QTimer.singleShot(2000, lambda: self._retry_detail_image(generation, identity))
                 return
@@ -3446,7 +3452,9 @@ class GalleryPage(QObject):
             self.external_button.setEnabled(False)
             self.surface.update()
             return
-        self.surface_painter.pixmap = QPixmap.fromImage(result[0])
+        self.surface_painter.set_pixmap(QPixmap.fromImage(result[0]), fade_ms=200 if self.slideshow.active else 0)
+        if self.slideshow.active:
+            self.hover_card.set_item(self._selected())
         self.surface_painter.placeholder = ""
         self.surface.update()
 
@@ -4339,6 +4347,7 @@ class GalleryPage(QObject):
         return next((item for item in self.items if item.identity == self.selected_id), None)
 
     def _clear_detail(self) -> None:
+        self.surface_painter.finish_transition()
         self._image_pending = False
         self._presented_item = None
         self.hover_card.set_item(None)
