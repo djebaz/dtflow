@@ -237,7 +237,7 @@ class ItemRow:
     position: int
     state: str
     attempt_id: str | None
-    seed: int
+    seed: int | None  # None when no seed was resolved or recorded; the page shows an em dash
     outputs: tuple[str, ...]
     metadata: str | None
     failure_text: str | None  # the original reason (provider wording kept); the code only when no message exists
@@ -404,10 +404,11 @@ _WORKFLOW_STEP_STATES = {
     "succeeded": "succeeded",
     "failed": "failed",
     "unknown": "unknown",
-    "skipped": "cancelled",
+    "skipped": "cancelled",  # no image was made; an image step that passed its source on is shown as succeeded
     "stopped": "cancelled",
     "cancelled": "cancelled",
 }
+_WORKFLOW_OPERATIONS = {"DTFGenerate": "txt2img", "DTFInpaint": "inpaint", "DTFImg2Img": "img2img"}
 _LIVE_STATES = ("pending", "running")
 
 
@@ -448,18 +449,22 @@ def _workflow_rows(item: dict, run: dict) -> list[ItemRow]:
         label = f"{step.get('title') or step.get('type')} · {step.get('branch_label') or ''}".rstrip(" ·")
         if output and output in finals:
             label += " · final"
-        operation = settings.get("operation")
+        state = _WORKFLOW_STEP_STATES.get(step.get("state"), "running")
+        if step.get("state") == "skipped" and output:
+            # "Continue without a mask": the image passes through unchanged. Nothing was cancelled or failed.
+            state = "succeeded"
+            label += " · passed through, no mask"
         rows.append(
             ItemRow(
                 f"wf:{step.get('node_id')}.{branch[0]}.{branch[1]}:{item['item_id']}",
                 number,
-                _WORKFLOW_STEP_STATES.get(step.get("state"), "running"),
+                state,
                 None,
-                settings["seed"] if type(settings.get("seed")) is int else 0,
+                settings["seed"] if type(settings.get("seed")) is int else None,
                 (output,) if output else (),
                 None,
                 step.get("message") if step.get("state") in ("failed", "unknown") else None,
-                operation if operation in ("txt2img", "img2img", "inpaint") else "txt2img",
+                _WORKFLOW_OPERATIONS[step["type"]],  # from the immutable node type, never from recorded settings
                 settings.get("strength"),
                 f"{label} · {settings.get('prompt') or ''}" if settings.get("prompt") else label,
                 settings.get("negative_prompt") or "",

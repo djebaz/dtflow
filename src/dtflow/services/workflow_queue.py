@@ -42,7 +42,6 @@ from dtflow.core.workflows import (
     WorkflowPlan,
     branch_label,
     dump_workflow,
-    generate_outputs,
     is_descendant,
     load_workflow,
     plan_workflow,
@@ -95,13 +94,11 @@ def run_scope(graph: Graph, plan: WorkflowPlan, seed: dict[str, Any] | None = No
     """The (node, branch) steps a run executes, in topological then branch order.
 
     Without a seed: every node for every branch it runs on. With a Retry seed: the seed's node and its downstream
-    nodes on the seed's branch (and branches split from it) only; a Generate seed reruns that Generate and every
-    branch it produces."""
+    nodes on the seed's branch (and branches split from it) only; a Generate seed reruns that one output and what it
+    feeds, never its sibling outputs."""
     if seed is None:
         return [(node_id, branch) for node_id in plan.order for branch in plan.nodes[node_id].branches]
     start, branch = int(seed["node_id"]), (int(seed["branch"][0]), int(seed["branch"][1]))
-    if graph.node(start).type == GENERATE:
-        return [(node_id, item) for node_id in plan.order for item in plan.nodes[node_id].branches if item[0] == start]
     wanted = descendants(graph, start) | {start}
     # The step itself and, below it, every branch split from this one by a multiplying node (#276).
     return [
@@ -114,17 +111,8 @@ def run_scope(graph: Graph, plan: WorkflowPlan, seed: dict[str, Any] | None = No
 
 
 def planned_submissions(graph: Graph, scope: list[tuple[int, Branch]]) -> int:
-    """Images the scope submits: a Generate once per output, an image operation once per branch."""
-    total, generates = 0, set()
-    for node_id, _ in scope:
-        node = graph.node(node_id)
-        if node.type == GENERATE:
-            if node_id not in generates:
-                generates.add(node_id)
-                total += generate_outputs(node)
-        elif node.type in GENERATIVE:
-            total += 1
-    return total
+    """Images the scope submits: one per Generate output, Inpaint or Img2Img branch it actually contains."""
+    return sum(1 for node_id, _ in scope if graph.node(node_id).type in GENERATIVE)
 
 
 def new_step(graph: Graph, node_id: int, branch: Branch) -> dict[str, Any]:
