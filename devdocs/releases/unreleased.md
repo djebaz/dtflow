@@ -6,7 +6,7 @@ Changes through 6.2.0 are consolidated in [DTFlow 6.2.0](v6.2.0.md); its publish
 
 ## Added
 
-- Images slideshow: F2 or the Slideshow toggle beside the buffered count opens fullscreen Detail, looping through the filtered gallery at 0.5–8 seconds per image. The right-hand thumbnail carousel is replaced by a scrollable grey prompt/LoRA panel reusing the info card, and restored on exit. Translucent controls become opaque on hover/focus; wheel over controls adjusts rate, and Left/Right navigate manually. Playback stops on exit/navigation/shutdown and never starts generation. Source-reviewed only; native acceptance pending. See [plan](../plans/2026-11-08-images-slideshow.md).
+- Images slideshow: F2 or the Slideshow toggle beside the buffered count opens fullscreen Detail, looping through the filtered gallery at 0.5–8 seconds per image. The right-hand thumbnail carousel is replaced by a scrollable grey prompt/LoRA panel reusing the info card, and restored on exit. Top-right translucent controls offer Forward/Backward playback and become opaque on hover/focus; wheel over controls adjusts rate, and Left/Right navigate manually. Playback stops on exit/navigation/shutdown and never starts generation. Source-reviewed only; native acceptance pending. See [plan](../plans/2026-11-08-images-slideshow.md).
 - F5 opens Images from any workspace and enables Live + Follow with newest-first sorting, returning to the newest matching image without changing filters or the selected view. Repeating F5 resumes following; it never submits generation or starts a queue.
 - Ctrl+Tab cycles Generate → Workflows → Queues → Images → Generate, entering at Generate from Connection or Logs without changing Images Live/Follow settings or submitting work.
 

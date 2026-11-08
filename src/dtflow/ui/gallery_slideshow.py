@@ -5,7 +5,15 @@ from pathlib import Path
 from PySide6.QtCore import QEvent, QFile, QIODevice, QObject, QSignalBlocker, Qt, QTimer, Slot
 from PySide6.QtGui import QKeySequence, QShortcut
 from PySide6.QtUiTools import QUiLoader
-from PySide6.QtWidgets import QApplication, QDoubleSpinBox, QGraphicsOpacityEffect, QPushButton, QScrollArea, QWidget
+from PySide6.QtWidgets import (
+    QApplication,
+    QComboBox,
+    QDoubleSpinBox,
+    QGraphicsOpacityEffect,
+    QPushButton,
+    QScrollArea,
+    QWidget,
+)
 
 from dtflow.ui.gallery_detail_preview import toggle_image_focus
 
@@ -32,8 +40,9 @@ class GallerySlideshow(QObject):
             raise RuntimeError("Cannot load slideshow controls form")
         self.controls.hide()
         self.seconds = self.controls.findChild(QDoubleSpinBox, "slideshowSeconds")
-        if self.seconds is None:
-            raise ValueError("Missing slideshow seconds control")
+        self.direction = self.controls.findChild(QComboBox, "slideshowDirection")
+        if self.seconds is None or self.direction is None:
+            raise ValueError("Missing slideshow rate/direction control")
         self.opacity = QGraphicsOpacityEffect(self.controls)
         self.controls.setGraphicsEffect(self.opacity)
         self.opacity.setOpacity(0.35)
@@ -48,6 +57,7 @@ class GallerySlideshow(QObject):
         self.timer = QTimer(self)
         self.timer.setSingleShot(True)
         self.timer.timeout.connect(self._advance)
+        self.direction.currentIndexChanged.connect(self._direction_changed)
         self.button.clicked.connect(self.toggle)
         self.interval.valueChanged.connect(self._interval_changed)
         self.shortcut = QShortcut(QKeySequence("F2"), gallery.page)
@@ -125,10 +135,14 @@ class GallerySlideshow(QObject):
     def _position_controls(self) -> None:
         self.controls.adjustSize()
         self.controls.move(
-            max(0, (self.gallery.surface.width() - self.controls.width()) // 2),
-            max(0, self.gallery.surface.height() - self.controls.height() - 16),
+            max(0, self.gallery.surface.width() - self.controls.width() - 16),
+            16,
         )
         self.controls.raise_()
+
+    def _direction_changed(self, _index: int) -> None:
+        if self.active:
+            self.timer.start(self._milliseconds())
 
     def eventFilter(self, watched, event):
         if not self.active:
@@ -184,7 +198,7 @@ class GallerySlideshow(QObject):
         if not gallery.items:
             self.stop()
             return
-        self.navigate(1)
+        self.navigate(1 if self.direction.currentIndex() == 0 else -1)
 
     def navigate(self, delta: int) -> None:
         gallery = self.gallery
