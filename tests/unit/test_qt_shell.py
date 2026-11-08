@@ -708,7 +708,12 @@ def test_startup_optional_reads_are_workers_and_cannot_overwrite_edits(window, q
         threads.append(threading.get_ident())
         entered.set()
         release.wait(5)
-        return {"selected": "none", "saved": "absent"}
+        return {
+            "selected": "none",
+            "saved": "absent",
+            "keys": (),
+            "environment": {"present": False, "credential_id": None, "hint": None},
+        }
 
     monkeypatch.setattr(main_window, "credential_status", slow_status)
     window.refresh_credentials(background=True)
