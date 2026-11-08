@@ -58,6 +58,17 @@ of a Retry seed (an ancestor branch; missing means the retried branch). Retry of
 branches split from it; for a Generate output that is the one image and what it feeds, also after the run has ended
 (sibling outputs are never resubmitted, and the new run plans only the generations in that scope).
 
+**Wildcard prompts (#317).** Generate, Inpaint and Img2img nodes may treat their prompt as a dynamic-prompt template
+(`{a|b}`, `{2$$a|b|c}`, `__name__`, the Queues syntax). The optional node properties `"DTFlow prompt mode"` (`"sample"` or
+`"all"`) and `"DTFlow prompt count"` (1..16, `"sample"` only) are additive like `DTFlow outputs`: absent means the
+prompt is literal, the file omits them, `widgets_values` and the contract version are unchanged, and any other node type
+rejects them. A wildcard node excludes `DTFlow outputs` (its prompt count replaces it). `sample` draws that many
+distinct prompts per incoming image; `all` makes every combination, a number only the wildcard lists know, so
+`plan_workflow(graph, prompt_counts)` takes it (node id -> combinations) and refuses a missing count or one above 16.
+On Inpaint/Img2img the prompt count is the node's outputs per image (more than 4 uses the wide branch form below); on
+Generate it is the image count and replaces batch size x count. The planned total counts them against the 256 limit
+before any branch is built.
+
 *Wide branches (#317).* A node that makes more than 4 images per incoming image (wildcard prompts, up to 16) does not fit
 the radix-5 digits. The wide form keeps the same two layouts at a wider radix in a disjoint integer range: plain wide is
 `2^60 + path` (digit = output number, radix 17) and node-qualified wide is `-1 - (2^60 + path)` (digit = `slot * 16 +
