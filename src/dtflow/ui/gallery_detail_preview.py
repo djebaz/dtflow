@@ -33,6 +33,7 @@ from PySide6.QtWidgets import (
 )
 from shiboken6 import isValid
 
+from dtflow.ui.app_filters import install_app_filter
 from dtflow.ui.prompt_tags import paint_cell_tags
 from dtflow.ui.theme import load_tokens
 
@@ -373,7 +374,7 @@ def apply_gallery(page, assets=ASSETS, sample=False):
     page._focus_escape = _EscapeLeavesFocus(page)
     # First event-loop turn, like WheelGuard: keys cannot arrive earlier, and an application-wide
     # Python filter would otherwise run for every event while the window is still being built.
-    QTimer.singleShot(0, page._focus_escape, lambda: QApplication.instance().installEventFilter(page._focus_escape))
+    QTimer.singleShot(0, page._focus_escape, lambda: install_app_filter(page._focus_escape))
     get("galleryFullscreenButton").setEnabled(True)
     get("galleryFullscreenButton").clicked.connect(lambda: toggle_image_focus(page))
     get("galleryFocusButton").clicked.connect(lambda: toggle_image_focus(page))

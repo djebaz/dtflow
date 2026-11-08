@@ -1629,13 +1629,12 @@ class WorkflowsPage(QObject):
     def _apply_run_to_canvas(self) -> None:
         if self.canvas is None:
             return
-        self.canvas.clear_status()
         run = self.run
-        if run is None or self._run_path != self.path:
-            return
         by_node: dict[int, list[dict]] = {}
-        for step in run.get("steps", []):
-            by_node.setdefault(step["node_id"], []).append(step)
+        if run is not None and self._run_path == self.path:
+            for step in run.get("steps", []):
+                by_node.setdefault(step["node_id"], []).append(step)
+        self.canvas.clear_status(keep=set(by_node))
         for node_id, steps in by_node.items():
             state, done, total = node_state(steps)
             text = STATE_LABELS.get(state, state)
@@ -1653,9 +1652,9 @@ class WorkflowsPage(QObject):
             latest = [s for s in steps if s.get("output")]
             if latest:
                 path = max(latest, key=lambda s: s.get("finished_at") or "")["output"]
-                pixmap = self._pixmap(path)
-                if pixmap is not None:
-                    self.canvas.set_thumbnail(node_id, pixmap)
+                self.canvas.set_thumbnail(node_id, self._pixmap(path))
+            else:
+                self.canvas.set_thumbnail(node_id, None)
 
     def _pixmap(self, path: str) -> QPixmap | None:
         pixmap = self._pixmaps.get(path)

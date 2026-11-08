@@ -21,6 +21,8 @@ from PySide6.QtCore import QEvent, QObject, QPoint, QPointF, Qt, QTimer
 from PySide6.QtGui import QBrush, QColor, QFont, QPen, QPixmap
 from PySide6.QtWidgets import QGraphicsSimpleTextItem, QGraphicsView, QLabel, QSizePolicy, QVBoxLayout, QWidget
 
+from shiboken6 import delete as _delete_native, isValid as _is_valid
+
 from nodeeditor.node_content_widget import QDMNodeContentWidget
 from nodeeditor.node_edge import EDGE_TYPE_BEZIER, Edge
 from nodeeditor.node_edge_dragging import EdgeDragging
@@ -34,6 +36,7 @@ from nodeeditor.node_scene_history import SceneHistory
 from nodeeditor.node_socket import LEFT_TOP, RIGHT_TOP
 
 from dtflow.core import workflows as wf
+from dtflow.ui.app_filters import app_filters_suspended
 from dtflow.ui.theme import load_tokens
 
 SOCKET_TYPES = {wf.IMAGE: 0, wf.MASK: 1}
@@ -322,6 +325,12 @@ class DTFNodeContent(QDMNodeContentWidget):
         )
 
     def set_status(self, state: str | None, text: str = "", tooltip: str = "") -> None:
+        # The run is re-presented on every poll; touching the embedded widgets (style repolish, show/hide) when
+        # nothing changed only churns the graphics proxy, so an identical status is a no-op (#308 run-time context).
+        key = (state or "", text, tooltip)
+        if key == getattr(self, "_status_key", None):
+            return
+        self._status_key = key
         self.status.setVisible(bool(state))
         self.status.setText(text)
         self.status.setToolTip(tooltip)
@@ -332,6 +341,10 @@ class DTFNodeContent(QDMNodeContentWidget):
     def set_thumbnail(self, pixmap: QPixmap | None) -> None:
         if self.thumb is None:
             return
+        key = None if pixmap is None or pixmap.isNull() else pixmap.cacheKey()
+        if key == getattr(self, "_thumb_key", None):
+            return
+        self._thumb_key = key
         if pixmap is None or pixmap.isNull():
             self.thumb.clear()
             self.thumb.hide()
@@ -404,6 +417,17 @@ class DTFNode(Node):
             label.setToolTip(f"{port.name}: {port.type}")
             socket.grSocket.setToolTip(f"{port.name}: {port.type}")
             self.port_labels.append(label)
+
+    def remove(self) -> None:
+        # #308: destroy the graphics item (and its embedded proxy widget) here, with the application-wide Python
+        # filters off, instead of whenever Python drops the last reference, which can be mid-event-dispatch.
+        # The item is freed immediately, so never call this from an event handler of the node's own widgets
+        # (a future "Remove node" button must defer it); today it runs from the view's key handler and scene loads.
+        gr_node = self.grNode
+        with app_filters_suspended():
+            super().remove()
+            if gr_node is not None and _is_valid(gr_node):
+                _delete_native(gr_node)
 
     def initSettings(self) -> None:
         super().initSettings()
@@ -728,21 +752,28 @@ class WorkflowCanvas(QObject):
         node = self.node(node_id)
         if node is None:
             return
+        changed = node.grNode.run_state != state
         node.grNode.run_state = state
         node.content.set_status(state, text, tooltip)
-        node.grNode.update()
+        if changed:
+            node.grNode.update()
 
     def set_thumbnail(self, node_id: int, pixmap: QPixmap | None) -> None:
         node = self.node(node_id)
         if node is not None:
             node.content.set_thumbnail(pixmap)
 
-    def clear_status(self) -> None:
+    def clear_status(self, keep: frozenset[int] | set[int] = frozenset()) -> None:
+        """Reset run presentation; nodes in ``keep`` are about to be set again and are left untouched."""
         for node in self.scene.nodes:
+            if node.comfy_id in keep:
+                continue
+            changed = node.grNode.run_state is not None
             node.grNode.run_state = None
             node.content.set_status(None)
             node.content.set_thumbnail(None)
-            node.grNode.update()
+            if changed:
+                node.grNode.update()
 
     # --- selection, history ---------------------------------------------------------------------------------------
     def _selection_changed(self) -> None:
