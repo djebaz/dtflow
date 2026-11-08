@@ -594,6 +594,9 @@ class MainWindow:
         self.form.installEventFilter(_CloseGuard(self._confirm_close, self.form))
         self._fullscreen_shortcut = QShortcut(QKeySequence("F11"), self.form)
         self._fullscreen_shortcut.activated.connect(self._toggle_window_fullscreen)
+        self._images_live_shortcut = QShortcut(QKeySequence("F5"), self.form)
+        self._images_live_shortcut.setAutoRepeat(False)
+        self._images_live_shortcut.activated.connect(self._open_live_images)
         diagnostic_event(
             log,
             "app.window_ready",
@@ -719,6 +722,13 @@ class MainWindow:
         snapshot = self.generation._inventory_snapshot
         models = list(eligible_model_ids(snapshot)) if snapshot is not None else list(choices.get("models", ()))
         return {"models": models, "loras": choices.get("loras", {}), "backend": self.form.backendCombo.currentText()}
+
+    def _open_live_images(self) -> None:
+        """F5 opens Images with Live and Follow enabled, without submitting work."""
+        if self.runner.closed:
+            return
+        self.form.workspaceStack.setCurrentWidget(self.images_page)
+        self.gallery.follow_newest()
 
     def _open_output_in_images(self, identity: str) -> None:
         """Queues → Open in Images: show this committed output in the Images Detail view."""
