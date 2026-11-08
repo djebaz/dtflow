@@ -234,6 +234,7 @@ CATALOG: dict[str, NodeSpec] = {
             ),
             "ComfyUI's Load Image (as Mask). Alpha is inverted (transparent = masked); red, green and blue are used "
             "as they are (white = masked). Inpaint selects pixels brighter than 50%.",
+            thumbnail=True,
         ),
         NodeSpec(
             IMAGE_SCALE,

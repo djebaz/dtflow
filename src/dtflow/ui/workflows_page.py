@@ -1214,6 +1214,7 @@ class WorkflowsPage(QObject):
         self._set(node_id, param.name, name)
         self._inspected = None
         self._show_node(node_id)
+        self._apply_run_to_canvas()  # the picked file is the node's preview until a run replaces it
 
     def _set_loras(self, node_id: int, param: wf.Param, chosen) -> None:
         value = [[name, float(weight)] for name, weight in chosen]
@@ -1701,7 +1702,25 @@ class WorkflowsPage(QObject):
                 path = max(latest, key=lambda s: s.get("finished_at") or "")["output"]
                 self.canvas.set_thumbnail(node_id, self._pixmap(path))
             else:
-                self.canvas.set_thumbnail(node_id, None)
+                self.canvas.set_thumbnail(node_id, self._file_preview(node_id))
+        for node_id in self.canvas.static_source_ids():
+            if node_id not in by_node:
+                self.canvas.set_thumbnail(node_id, self._file_preview(node_id))
+
+    def _file_preview(self, node_id: int) -> QPixmap | None:
+        """The picked file of a Load image / Load image (as mask) node, shown before any run (#316)."""
+        from dtflow.services.workflow_inputs import input_path
+
+        params = self.canvas.node_params(node_id) if self.canvas is not None else None
+        name = str((params or {}).get("image") or "")
+        node = self.canvas.node(node_id) if self.canvas is not None else None
+        if not name or node is None or node.SPEC.type not in wf.STATIC_SOURCES:
+            return None
+        try:
+            path = input_path(self.state, name)
+        except ValidationError:
+            return None
+        return self._pixmap(str(path)) if path.is_file() else None
 
     def _pixmap(self, path: str) -> QPixmap | None:
         pixmap = self._pixmaps.get(path)
@@ -1720,7 +1739,7 @@ class WorkflowsPage(QObject):
                     self._pixmaps[name] = QPixmap.fromImage(image)
                 if self.run is not None:
                     self._present_run(self.run)
-                    self._apply_run_to_canvas()
+                self._apply_run_to_canvas()
 
             self._submit(asyncio.to_thread(_read_images, paths, 192), done)
         return pixmap

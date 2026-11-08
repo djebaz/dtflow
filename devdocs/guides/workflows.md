@@ -34,7 +34,7 @@ is the V1 specification; the file contract is [architecture/workflows.md](../arc
 ## Starting from a file
 
 **Load image**, **Load image (as mask)** and **Upscale image** (ComfyUI's `LoadImage`, `LoadImageMask`, `ImageScale`)
-are in the node library. Choose a PNG, JPEG or WebP file in the node's inspector (**Choose file…**): DTFlow copies it
+are in the node library. Choose a PNG, JPEG or WebP file in the node's inspector (**Choose file…**; the node shows the file as its preview until a run replaces it): DTFlow copies it
 into `<state>/workflows/inputs/` and the node, and the saved workflow, keep only the file name. Moving the workflow to
 another computer shows the name there; choose the file again before running. Mask channels `red`, `green` and `blue`
 are used as they are (white = inpaint), `alpha` is inverted (transparent = inpaint), and Inpaint needs a mask the same
