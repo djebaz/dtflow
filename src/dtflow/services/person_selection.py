@@ -655,32 +655,30 @@ def _face_ellipse(box: tuple[float, float, float, float], size: tuple[int, int],
     return mask
 
 
-def _matching_person(box, people):
-    """Prefer a face-centred person silhouette, then maximum face-box overlap.
+def _matching_person(box, people, ellipse, crop):
+    """Match by face pixels first, then by silhouette overlap with the ellipse.
 
-    Prioritize actual face pixels, but do not require a minimum percentage:
-    YOLO can miss part of the head while segmenting the same person's body.
-    Its detection bounding box may associate the face when the silhouette
-    covers only the expanded ellipse. The final mask is always pixel-clipped.
+    YOLO may omit pixels in the original NudeNet face box. Requiring a fixed
+    face-box coverage or a person-box containment gate discards valid matches.
+    Only silhouettes that actually overlap the expanded ellipse are eligible.
     """
     x0, y0, x1, y1 = box
     cx, cy = (x0 + x1) / 2, (y0 + y1) / 2
+    ex0, ey0, ex1, ey1 = crop
     preferred = None
     for score, mask, _person_box in people:
+        expanded = mask[ey0:ey1, ex0:ex1] > 0
+        overlap = int(np.count_nonzero(expanded & ellipse))
+        if not overlap:
+            continue
         height, width = mask.shape
         left, top = max(0, int(x0)), max(0, int(y0))
         right, bottom = min(width, int(np.ceil(x1))), min(height, int(np.ceil(y1)))
-        if right <= left or bottom <= top:
-            continue
-        count = int(np.count_nonzero(mask[top:bottom, left:right]))
-        area = (right - left) * (bottom - top)
-        bx0, by0, bx1, by1 = _person_box
-        box_contains = int(bx0 <= cx < bx1 and by0 <= cy < by1)
-        if count == 0 and not box_contains:
-            continue
+        count = int(np.count_nonzero(mask[top:bottom, left:right])) if right > left and bottom > top else 0
+        area = max(1, (right - left) * (bottom - top))
         px, py = int(cx), int(cy)
         contains = int(0 <= px < width and 0 <= py < height and mask[py, px] > 0)
-        key = (contains, count / area, box_contains, float(score))
+        key = (contains, count / area, overlap, float(score))
         if preferred is None or key > preferred[0]:
             preferred = (key, mask)
     return None if preferred is None else preferred[1]
@@ -759,7 +757,7 @@ def geometric_face_pixels(
         if method == "fast":
             region = section
         else:
-            target = _matching_person(box, selected_people)
+            target = _matching_person(box, selected_people, section, crop)
             if target is None:
                 continue
             region = _connected_face_region(section & (target[y0:y1, x0:x1] > 0), box, crop)
