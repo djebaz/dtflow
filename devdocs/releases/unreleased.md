@@ -19,7 +19,7 @@ Changes through 6.2.0 are consolidated in [DTFlow 6.2.0](v6.2.0.md); its publish
 - Repair the offline Connection startup render fixture to supply the current credential-status shape (`keys` and `environment`), avoiding `KeyError: 'environment'` during the full UI render. Runtime credential behavior is unchanged. No local tests or renders were run; render completion remains unverified.
 - Register the existing hidden-Connection counter and WARNING-and-worse Logs render states. Counter fixtures clear the earlier synthetic saved key and wait for credential identity rather than obsolete labels; the synthetic mapped-image presentation decodes its known local image without claiming cross-runtime managed-original verification. Decode failure now fails that fixture rather than saving a blank decoded state.
 
-- Slideshow transition follow-up: keep Detail image scaling consistent across fade boundaries and ease the incoming opacity ramp. Owner-reported strobing still requires native recheck; no visual acceptance claimed.
+- Slideshow transition follow-up: keep Detail image scaling consistent across fade boundaries and ease the incoming opacity ramp; target a fixed 30 updates/second at owner request. Owner-reported strobing still requires native recheck; no visual acceptance claimed.
 
 ## Release audit
 

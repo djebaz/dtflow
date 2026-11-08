@@ -204,9 +204,9 @@ class GallerySlideshow(QObject):
         return round(self.interval.value() * 1000)
 
     def transition_timing(self) -> tuple[int, int]:
-        """Spend one third of the configured interval fading; short fades request finer sampling."""
+        """Spend one third of the configured interval fading at a fixed 30 Hz target."""
         duration = max(1, round(self._milliseconds() / 3))
-        return duration, 120 if duration < 300 else 60
+        return duration, 30
 
     def _interval_changed(self, _value: float) -> None:
         with QSignalBlocker(self.seconds):
