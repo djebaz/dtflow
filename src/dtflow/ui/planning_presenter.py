@@ -311,6 +311,17 @@ def count_text(form: PlanForm, prompt: str | None = None, folder: Path | None = 
     return "ok", f"{total} item{'s' if total != 1 else ''}"
 
 
+def images_requests(total: int) -> str:
+    """``3 images, 3 requests``: every queue item is one single-image request with its own thumbnail and seed (#279)."""
+    return f"{total} image{'s' if total != 1 else ''}, {total} request{'s' if total != 1 else ''}"
+
+
+def readout_text(text: str) -> str:
+    """The live count readout worded as images and requests; reasons and errors pass through unchanged."""
+    match = re.fullmatch(r"(\d+) items?", text)
+    return images_requests(int(match.group(1))) if match else text
+
+
 def sentence(text: str) -> str:
     """Messages from shared validators start lowercase with a field name; shown alone they read as a sentence."""
     return text[:1].upper() + text[1:]
@@ -318,9 +329,7 @@ def sentence(text: str) -> str:
 
 def summary_text(table: PlanTable) -> str:
     drawn = f" · plan seed {table.rng_seed}" if table.rng_seed is not None else ""
-    return (
-        f"{table.total} items · {table.mode} · {SEED_POLICY_TEXT[table.seed_policy]}{drawn}. Nothing is persisted yet."
-    )
+    return f"{images_requests(table.total)} · {table.mode} · {SEED_POLICY_TEXT[table.seed_policy]}{drawn}. Nothing is persisted yet."
 
 
 def _distinct(values) -> list:
