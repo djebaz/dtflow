@@ -9,6 +9,7 @@ from PySide6.QtGui import QKeySequence, QShortcut
 from PySide6.QtUiTools import QUiLoader
 from PySide6.QtWidgets import QApplication, QLineEdit
 
+from dtflow.ui.app_filters import install_app_filter, remove_app_filter
 from dtflow.ui.activity_strip import activity_strip
 from dtflow.ui.trash_icon import trash_icon_pixmap
 
@@ -130,11 +131,10 @@ class InlineFeedback(QObject):
         button.setAccessibleName("Dismiss" if cross else "Cancel")
 
     def _watch_outside(self, enabled: bool) -> None:
-        app = QApplication.instance()
         if enabled == self._outside:
             return
         self._outside = enabled
-        (app.installEventFilter if enabled else app.removeEventFilter)(self)
+        (install_app_filter if enabled else remove_app_filter)(self)
 
     def dismiss(self):
         self._watch_outside(False)

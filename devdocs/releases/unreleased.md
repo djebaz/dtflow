@@ -6,6 +6,7 @@ Changes through 6.1.0 are consolidated in [DTFlow 6.1.0](v6.1.0.md). This file t
 
 ## Added
 
+- The GUI writes a Python stack to `logs/crash-<pid>.txt` if the process dies natively (empty files are removed on clean exit), so a crash like [#308](https://github.com/djebaz/dtflow/issues/308) shows which Python code was running.
 - Dev-mode (`-x` / `--dev`) workflow/detector RAM checkpoints and up to one minute of post-execution observations in the existing structured log, with process/system memory availability and detector session/tensor byte counts. See [interpretation limits](../guides/development.md#workflow-and-detector-memory-diagnostics) (#306).
 
 ## Changed
@@ -16,6 +17,8 @@ Changes through 6.1.0 are consolidated in [DTFlow 6.1.0](v6.1.0.md). This file t
 - Ordinary queues, workflows and scripts skip unused preview image decoding, PNG encoding, service buffering and forwarding. Direct Generate keeps previews; progress and saved finals are unchanged. Preview bytes still arrive because the inspected protocol has no verified client download opt-out. Dev logs summarize received/skipped previews (#306).
 
 ## Fixed
+
+- Workflows: node graphics items and their embedded widgets are now destroyed at a known point with the app-wide wheel and Escape filters paused, targeting the suspected cause of the native Windows heap-corruption crash in [#308](https://github.com/djebaz/dtflow/issues/308). Unchanged run status is no longer re-applied to the node widgets on every poll (less proxy-widget churn during a run). The cause is not proven. The owner's load A, run, load B, run smoke passed once at 296a453 (an earlier head crashed); #308 stays open until it survives repeated runs.
 
 ## Upgrade and compatibility
 

@@ -7,6 +7,7 @@ scroll area. In a panel that does not scroll the wheel still changes them.
 """
 
 from PySide6.QtCore import QEvent, QObject, QTimer
+from dtflow.ui.app_filters import install_app_filter
 from PySide6.QtWidgets import QAbstractScrollArea, QAbstractSpinBox, QApplication, QComboBox, QWidget
 
 
@@ -21,9 +22,7 @@ class WheelGuard(QObject):
         QTimer.singleShot(0, self, self._install)
 
     def _install(self):
-        app = QApplication.instance()
-        if app is not None:
-            app.installEventFilter(self)
+        install_app_filter(self)
 
     def eventFilter(self, watched, event):
         if event.type() != QEvent.Type.Wheel or not isinstance(watched, QComboBox | QAbstractSpinBox):
