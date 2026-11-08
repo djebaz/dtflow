@@ -791,6 +791,7 @@ def plan_workflow(graph: Graph) -> WorkflowPlan:
     if not any(node.type == SAVE for node in graph.nodes):
         raise WorkflowError("Add a Save image node to mark the workflow result.")
     plans: dict[int, NodePlan] = {}
+    splitters: list[int] = []  # nodes with several outputs per image, whose child branches carry no node identity
     total = analyses = 0
     for node_id in order:
         node = graph.node(node_id)
@@ -819,6 +820,8 @@ def plan_workflow(graph: Graph) -> WorkflowPlan:
                 if node.outputs > 1:  # each incoming image becomes ``outputs`` branches (#276)
                     _check_bound(total, len(branches) * node.outputs, node)  # before the branches are built
                     branches = tuple(child_branch(parent, k) for parent in branches for k in range(node.outputs))
+                    _check_split_lineage(graph, plans, splitters, node, branches)
+                    splitters.append(node.id)
         generations = len(branches) if node.type in GENERATIVE else 0
         _check_bound(total, generations, node)
         if node.type == DETECT_FACE:
@@ -827,6 +830,23 @@ def plan_workflow(graph: Graph) -> WorkflowPlan:
         plans[node.id] = NodePlan(node.id, node.type, branches, generations)
     final = sum(len(p.branches) for p in plans.values() if p.type == SAVE)
     return WorkflowPlan(tuple(order), plans, total, analyses, any(n.type == DETECT_FACE for n in graph.nodes), final)
+
+
+def _check_split_lineage(
+    graph: Graph, plans: dict[int, NodePlan], earlier: list[int], node: GraphNode, branches
+) -> None:
+    """Refuse two unrelated nodes that both split the same images (#276): a branch is (Generate, mixed-radix path) and
+    names no node, so their children would share identities and could be paired, or serialized, with one another. A
+    node splitting the output of another one (a chain) has a longer path and stays unambiguous."""
+    for other_id in earlier:
+        if set(plans[other_id].branches) & set(branches) and not (
+            would_cycle(graph, other_id, node.id) or would_cycle(graph, node.id, other_id)
+        ):
+            raise WorkflowError(
+                f"{node.label}: it and {graph.node(other_id).label} both create several outputs from the same "
+                "images in parallel, so their results could not be told apart. Put one after the other, or give "
+                "only one of them several outputs."
+            )
 
 
 def _check_bound(total: int, adding: int, node: GraphNode) -> None:
