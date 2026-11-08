@@ -597,6 +597,18 @@ class MainWindow:
         self._images_live_shortcut = QShortcut(QKeySequence("F5"), self.form)
         self._images_live_shortcut.setAutoRepeat(False)
         self._images_live_shortcut.activated.connect(self._open_live_images)
+        self._workspace_shortcuts = []
+        for key, callback in (
+            ("F1", self._show_generation),
+            ("F2", self._show_workflows),
+            ("F3", self._show_queue),
+            ("F4", lambda: self.form.workspaceStack.setCurrentWidget(self.images_page)),
+            ("F12", lambda: self.form.workspaceStack.setCurrentWidget(self.form.connectionPage)),
+        ):
+            shortcut = QShortcut(QKeySequence(key), self.form)
+            shortcut.setAutoRepeat(False)
+            shortcut.activated.connect(callback)
+            self._workspace_shortcuts.append(shortcut)
         self._cycle_workspace_shortcut = QShortcut(QKeySequence("Ctrl+Tab"), self.form)
         self._cycle_workspace_shortcut.setAutoRepeat(False)
         self._cycle_workspace_shortcut.activated.connect(self._cycle_workspace)

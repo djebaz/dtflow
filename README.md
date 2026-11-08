@@ -21,6 +21,7 @@ and records every request so each image has an inspectable origin.
 - **Saved image gallery.** Browse outputs in Grid, List and Detail views with prompt search,
   filters and zoom; reuse or regenerate saved settings; export JPEG copies with readable filenames;
   move originals to Trash or delete them with explicit confirmation.
+  Fullscreen Detail slideshows loop through filtered images with adjustable timing and a prompt/LoRA information rail.
 - **Searchable logs.** Browse, filter and export structured application diagnostics from the
   desktop. Sensitive values such as tokens, signed URLs and image data are kept out of logs.
 - **Offline exploration.** A fake provider exercises the same forms, progress, outputs and queues
