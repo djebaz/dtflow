@@ -8,9 +8,9 @@ The downstream Inpaint step still owns mask grow and feather.
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Callable
 from dataclasses import dataclass
-import logging
 
 from dtflow.core.models import ValidationError
 from dtflow.core.workflows import (
@@ -19,8 +19,8 @@ from dtflow.core.workflows import (
     PERSON_CHOICES,
     validate_face_expansion,
 )
-from dtflow.persistence.person_models import PersonModels
 from dtflow.memory_diagnostics import observe as memory_observe, scope as memory_scope
+from dtflow.persistence.person_models import PersonModels
 from dtflow.services.image_preparation import load_source_bytes, mask_png
 from dtflow.services.person_selection import analyze_people, apply_selection
 

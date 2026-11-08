@@ -342,6 +342,11 @@ def verify_model_hashes(models: PersonModels, roles) -> None:
 
 def _verified_session(ref: ModelRef, builder):
     key = (ref.sha256, builder.__name__)
+    role = {
+        "_faces_session": "faces",
+        "_segmentation_session": "segmentation",
+        "_clothes_session": "clothes",
+    }.get(builder.__name__, "unknown")
     stamp = _stamp(ref.path)
     with _lock:
         # A file already hashed with this size and modification time is not re-read for every image (workflow runs
@@ -351,7 +356,7 @@ def _verified_session(ref: ModelRef, builder):
                 log,
                 "detector.memory",
                 stage="session_cache_hit",
-                model_role=builder.__name__,
+                model_role=role,
                 cached_sessions=len(_sessions),
             )
             return _sessions[key]
@@ -366,7 +371,7 @@ def _verified_session(ref: ModelRef, builder):
                 log,
                 "detector.memory",
                 stage="session_load",
-                model_role=builder.__name__,
+                model_role=role,
                 model_file_bytes=len(data),
                 cached_sessions=len(_sessions),
             ) as metrics:

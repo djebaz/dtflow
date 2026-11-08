@@ -951,6 +951,16 @@ class _Execution:
                     on_stage=on_stage,
                 )
             )
+            memory_observe(
+                log,
+                "workflow.memory",
+                stage="detector_returned",
+                run_id=self.request.run_id,
+                node_id=node_id,
+                method=node.face.method or str(node.params["mask_region"]),
+                source_png_bytes=len(data),
+                mask_png_bytes=len(result.mask_png) if result.mask_png else 0,
+            )
         except ValidationError as exc:
             await self.end([key], "failed", str(exc))
             return
