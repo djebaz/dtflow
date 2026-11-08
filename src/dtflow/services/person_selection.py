@@ -709,13 +709,14 @@ def _connected_face_region(candidate: np.ndarray, face_box, crop: tuple[int, int
     ys = ys + origin_y
     closest = int(np.argmin((xs + left - cx) ** 2 + (ys + top - cy) ** 2))
     seed = (int(xs[closest]), int(ys[closest]))
-    flood = Image.fromarray(candidate.astype(np.uint8) * 255)
+    # .copy(): an array-backed image is read-only and ImageDraw.floodfill silently fills nothing on it.
+    flood = Image.fromarray(candidate.astype(np.uint8) * 255).copy()
     ImageDraw.floodfill(flood, seed, 128)
     connected = np.asarray(flood) == 128
 
     # All voids enclosed by the connected surface become filled. Border-connected
     # background stays out. No disconnected foreground island can be reintroduced.
-    inverted_region = Image.fromarray(np.where(connected, 0, 255).astype(np.uint8))
+    inverted_region = Image.fromarray(np.where(connected, 0, 255).astype(np.uint8)).copy()
     inverse = ImageOps.expand(inverted_region, border=1, fill=255)
     ImageDraw.floodfill(inverse, (0, 0), 128)
     return np.asarray(inverse)[1:-1, 1:-1] != 128
@@ -772,11 +773,6 @@ def geometric_face_pixels(
     if not result.any():
         reason = (
             "Detected face does not overlap the selected person's silhouette"
-            f" (image {source.width}x{source.height}; face boxes "
-            + ", ".join("({:.0f},{:.0f},{:.0f},{:.0f})".format(*box) for box in boxes[:3])
-            + "; person boxes "
-            + (", ".join("{}@{:.2f}".format(item[2], item[0]) for item in people[:3]) or "none")
-            + ")"
             if method == "balanced"
             else "Face region is empty"
         )
