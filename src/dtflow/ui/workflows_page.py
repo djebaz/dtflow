@@ -36,6 +36,7 @@ from PySide6.QtWidgets import (
     QListWidgetItem,
     QPlainTextEdit,
     QPushButton,
+    QScrollArea,
     QSizePolicy,
     QSpinBox,
     QToolButton,
@@ -976,6 +977,7 @@ class WorkflowsPage(QObject):
     def _add_prompt_mode(self, layout, node_id: int, node) -> None:
         """Wildcard prompts (#317): the prompt is a template (``{a|b}``, ``__list__``); each image gets its own."""
         host = self.inspector.workflowParamsHost
+        self._prompt_preview_label = None  # set below only when this build shows a preview
         label = _label("Wildcard prompt", "workflowParamLabel")
         selector = QComboBox(host)
         selector.setAccessibleName(f"Wildcard prompt for node {node_id}")
@@ -1010,6 +1012,12 @@ class WorkflowsPage(QObject):
             # Only the stored count changes; rebuilding the inspector here would steal focus from the spin box.
             if selector.currentData() == "sample":
                 self.canvas.set_node_prompt_mode(node_id, "sample", number)
+                preview = self._prompt_preview_label
+                if preview is not None:
+                    try:
+                        self._fill_prompt_preview(preview, node_id)
+                    except RuntimeError:  # the inspector was rebuilt and this label is gone
+                        self._prompt_preview_label = None
 
         selector.currentIndexChanged.connect(mode_changed)
         spin.valueChanged.connect(count_changed)
@@ -1026,12 +1034,23 @@ class WorkflowsPage(QObject):
         folder.setToolTip("Lists are plain NAME.txt files, one entry per line. Edit them in your file manager.")
         folder.clicked.connect(self._show_wildcards_folder)
         layout.addWidget(folder)
-        layout.addWidget(self._prompt_preview(node))
+        preview = self._prompt_preview(node)
+        layout.addWidget(preview)
+        self._prompt_preview_label = preview
 
     def _rebuild_inspector(self, node_id: int) -> None:
-        if self.canvas is not None and self.canvas.node(node_id) is not None:
-            self._inspected = None
-            self._show_node(node_id)
+        """Rebuild the inspector for ``node_id`` keeping its scroll position (the panel must not jump, #317)."""
+        if self.canvas is None or self.canvas.node(node_id) is None:
+            return
+        area = self.inspector.workflowParamsHost.parentWidget()
+        while area is not None and not isinstance(area, QScrollArea):
+            area = area.parentWidget()
+        bar = area.verticalScrollBar() if area is not None else None
+        position = bar.value() if bar is not None else 0
+        self._inspected = None
+        self._show_node(node_id)
+        if bar is not None:  # the new layout is only sized after control returns to the event loop
+            QTimer.singleShot(0, lambda: bar.setValue(position))
 
     def _show_wildcards_folder(self) -> None:
         from dtflow.ui.desktop_open import open_local_path
@@ -1053,23 +1072,28 @@ class WorkflowsPage(QObject):
 
     def _prompt_preview(self, node) -> QLabel:
         """A few prompts the node would draw now, with the varied parts highlighted (#317)."""
+        preview = _label("", "secondary")  # example draws: an Inpaint/Img2img node draws again per incoming image
+        preview.setTextFormat(Qt.TextFormat.RichText)
+        preview.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+        self._fill_prompt_preview(preview, node.comfy_id)
+        return preview
+
+    def _fill_prompt_preview(self, preview: QLabel, node_id: int) -> None:
+        """Replace the preview text in place (a count change must not rebuild the inspector or move its scroll)."""
         from dtflow.services.workflow_prompts import draw, read_snapshot
         from dtflow.ui.prompt_tags import tagged_html
 
         graph = self.canvas.current_graph()
-        preview = _label("", "secondary")  # example draws: an Inpaint/Img2img node draws again per incoming image
-        preview.setTextFormat(Qt.TextFormat.RichText)
-        preview.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
         try:
-            item = graph.node(node.comfy_id)
-            drawn = draw(item, read_snapshot(graph, self.state / "wildcards"))
+            drawn = draw(graph.node(node_id), read_snapshot(graph, self.state / "wildcards"))
         except (ValidationError, KeyError) as exc:
-            preview.setText(f"Preview unavailable: {exc}")
-            return preview
-        shown = drawn[:5]
-        more = f"<br>… {len(drawn)} in all" if len(drawn) > len(shown) else ""
-        preview.setText("Example prompts<br>" + "<br>".join(tagged_html(text, runs) for text, runs in shown) + more)
-        return preview
+            text = f"Preview unavailable: {exc}"
+        else:
+            shown = drawn[:5]
+            more = f"<br>… {len(drawn)} in all" if len(drawn) > len(shown) else ""
+            text = "Example prompts<br>" + "<br>".join(tagged_html(t, runs) for t, runs in shown) + more
+        if preview.text() != text:
+            preview.setText(text)
 
     def _add_outputs(self, layout, node_id: int, value: int) -> None:
         """Images made per incoming image (#276); 1 is the default and is not written to the file."""
