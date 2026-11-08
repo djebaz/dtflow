@@ -12,6 +12,8 @@ Changes through 6.0.0 are consolidated in [DTFlow 6.0.0](v6.0.0.md). This file t
 
 ## Changed
 
+- Generate has one **Images** total. Above 1, Generate image creates a queue of single-image items (seed, seed + 1, ...) so every picture has its own Queues row with thumbnail, seed, status and Retry; behind running work it is added up next. The Queues composer readouts say "N images, N requests". Inpaint ignores the control (#279, #289). Smoke-tested by the owner.
+
 ## Fixed
 
 ## Upgrade and compatibility
