@@ -86,6 +86,7 @@ from dtflow.ui.queue_templates import QueueTemplates
 from dtflow.ui.queue_presenter import (
     CONCURRENCY_HINT,
     FILTERS,
+    item_counts,
     GROUPS,
     NEW_CAP_HINT,
     STATUS_TEXT,
@@ -726,7 +727,7 @@ class QueuePage:
         elif steps is not None:
             page.queueProgressBar.set_counts((("ok", steps[0]),) if steps[0] else (), steps[0], steps[1])
         else:
-            page.queueProgressBar.set_counts(segments(view["summary"]), summary.settled, summary.total)
+            page.queueProgressBar.set_counts(segments(item_counts(view)), summary.settled, summary.total)
         page.queueProgressLabel.setText(progress_text(summary, self._detail_for(view) or view))
         counts = filter_counts(view["summary"])
         for key, symbol, _, _ in FILTERS:

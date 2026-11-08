@@ -1636,6 +1636,16 @@ def read_queue_summaries(directory: Path, *, described: Sequence[str] = ()) -> t
                     if isinstance(lora, dict) and isinstance(lora.get("identifier"), str)
                 ],
             }
+            run = request.get("run") if workflow_name is not None else None
+            queue["workflow_image_states"] = (  # one entry per image the run makes, for the list's item count (#278)
+                [
+                    step.get("state")
+                    for step in run.get("steps") or ()
+                    if isinstance(step, dict) and step.get("type") in ("DTFGenerate", "DTFInpaint", "DTFImg2Img")
+                ]
+                if isinstance(run, dict)
+                else None
+            )
             queue["varied"] = None
             if row["queue_id"] not in described:
                 columns = ", ".join(

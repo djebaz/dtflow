@@ -762,10 +762,13 @@ class WorkflowPlan:
     total_generations: int  # the planned submission total shown before the run (D3, loop guard base)
     local_analyses: int
     needs_face_models: bool
+    final_images: int = 0  # images the Save nodes keep (retry attempts are never part of the plan)
 
     def summary(self) -> str:
         noun = "generation" if self.total_generations == 1 else "generations"
         text = f"{self.total_generations} {noun}"
+        if self.final_images:
+            text += f" making {self.final_images} saved image{'s' if self.final_images != 1 else ''}"
         if self.local_analyses:
             text += f" and {self.local_analyses} local face detection" + ("s" if self.local_analyses != 1 else "")
         return text
@@ -796,6 +799,7 @@ def plan_workflow(graph: Graph) -> WorkflowPlan:
             check_param(param, node.params.get(param.name), f"{node.label}: ")
         if node.type == GENERATE:
             node_request(node, Sampler(node.params["sampler"]))  # range/semantic checks through request validation
+            _check_bound(total, generate_outputs(node), node)
             branches = tuple((node.id, index) for index in range(generate_outputs(node)))
         else:
             inputs = []
@@ -813,17 +817,27 @@ def plan_workflow(graph: Graph) -> WorkflowPlan:
             if node.type in IMAGE_OPERATIONS:
                 node_request(node, Sampler(node.params["sampler"]), width=1024, height=1024)
                 if node.outputs > 1:  # each incoming image becomes ``outputs`` branches (#276)
+                    _check_bound(total, len(branches) * node.outputs, node)  # before the branches are built
                     branches = tuple(child_branch(parent, k) for parent in branches for k in range(node.outputs))
         generations = len(branches) if node.type in GENERATIVE else 0
+        _check_bound(total, generations, node)
         if node.type == DETECT_FACE:
             analyses += len(branches)
         total += generations
         plans[node.id] = NodePlan(node.id, node.type, branches, generations)
-    if total > MAX_PLANNED_GENERATIONS:
+    final = sum(len(p.branches) for p in plans.values() if p.type == SAVE)
+    return WorkflowPlan(tuple(order), plans, total, analyses, any(n.type == DETECT_FACE for n in graph.nodes), final)
+
+
+def _check_bound(total: int, adding: int, node: GraphNode) -> None:
+    """Refuse a plan whose generations across every stage exceed the limit, as soon as a node crosses it, so an
+    oversized multiplication is never built (or submitted)."""
+    if total + adding > MAX_PLANNED_GENERATIONS:
         raise WorkflowError(
-            f"This workflow would submit {total} generations; one run is limited to {MAX_PLANNED_GENERATIONS}."
+            f"{node.label}: the workflow would run at least {total + adding} generations in total "
+            f"(Generate, Inpaint and Img2Img steps all count, once per image they receive); "
+            f"one run is limited to {MAX_PLANNED_GENERATIONS}. Lower an image count or an outputs-per-image value."
         )
-    return WorkflowPlan(tuple(order), plans, total, analyses, any(n.type == DETECT_FACE for n in graph.nodes))
 
 
 def _check_request(node: GraphNode, *, draft: bool) -> None:

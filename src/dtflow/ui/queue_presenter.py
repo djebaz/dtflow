@@ -631,8 +631,22 @@ def backend_label(view: dict) -> str:
     return backend["name"] + (f" ({endpoint})" if endpoint else "")
 
 
+def item_counts(view: dict) -> dict:
+    """Items per state. A workflow run is one queue item but makes many images, so its images are counted instead
+    (the list read carries their states; an opened queue carries the run)."""
+    states = view.get("workflow_image_states")
+    if states is None and (run := workflow_of(view)) is not None:
+        states = [step.get("state") for step in workflow_images(run)]
+    if not states:
+        return view["summary"]
+    counts = {state: 0 for state in view["summary"]}
+    for state in states:
+        counts[_WORKFLOW_STEP_STATES.get(state, "running")] += 1
+    return counts
+
+
 def summarize(view: dict) -> QueueSummary:
-    counts = view["summary"]
+    counts = item_counts(view)
     total = sum(counts.values())
     settled = sum(counts[state] for state in SETTLED)
     status = view["status"]
@@ -778,7 +792,7 @@ def plan_text(view: dict) -> str:
     if script is not None:
         _, _, expected = script_steps(script)
         return f"Script · {expected} step{'s' if expected != 1 else ''}" if expected else "Script · steps as it runs"
-    total = sum(view["summary"].values())
+    total = sum(item_counts(view).values())
     text = f"{total} item{'s' if total != 1 else ''}"
     varied = view.get("varied") or {}
     parts = [f"{count} {VARIED_LABELS.get(name, name)}" for name, count in varied.items() if name != "seed"]
@@ -889,7 +903,7 @@ def queue_entries(views, now: datetime | None = None) -> tuple[QueueEntry, ...]:
                     level,
                     summary.settled,
                     summary.total,
-                    segments(view["summary"]),
+                    segments(item_counts(view)),
                     queue_title_runs(view),
                 )
             )

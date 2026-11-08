@@ -43,7 +43,10 @@ loads and runs unchanged, and the file omits it when it is 1. It is not part of 
 stays 1, and it is rejected on any other node type. Each output is its own single request with seed = node seed + output
 number (0-based, wrapped at the seed limit); Retry reuses it. Every downstream node runs once per output, and converging
 inputs still must come from the same branches. The planned total counts all generations of all stages against the
-256 limit before anything is submitted.
+256 limit before anything is submitted (#278): the check runs as each node is planned, before its branches are built, so
+an oversized multiplication is refused without building it. The plan shows the generations and the saved images (the
+branches reaching Save nodes) separately, e.g. "20 generations making 12 saved images"; Retry attempts are never part of
+the planned total. Queues counts a workflow run's images, not its one queue item, in the list, header and progress bar.
 
 *Branch identity.* The stored branch stays a `[Generate node id, integer]` pair, so run records, controls and Retry
 seeds keep their shape. The integer is a mixed-radix path: digit 0 (radix 16) is the Generate image index, each further
