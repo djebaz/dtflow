@@ -104,6 +104,9 @@ from dtflow.ui.queue_presenter import (
     primary_action,
     progress_text,
     script_progress,
+    workflow_bar,
+    workflow_of,
+    workflow_stage,
     queue_entries,
     lora_text,
     queue_facts,
@@ -506,9 +509,17 @@ class QueuePage:
         self._refresh_script_run()
 
     def _refresh_script_run(self) -> None:
-        """The running script's steps are read for the global bar whichever queue is selected."""
+        """The running script's or workflow's steps are read for the global bar whichever queue is selected."""
         run = self._dispatching
-        if run is None or self._reading_run or (self._views.get(run) or {}).get("kind") != "script":
+        if (
+            run is None
+            or self._reading_run
+            or (self._views.get(run) or {}).get("kind")
+            not in (
+                "script",
+                "workflow",
+            )
+        ):
             self._run_detail = None
             return
         if run == self._selected:
@@ -707,11 +718,14 @@ class QueuePage:
         self._show(page.queueStateLabel, level, chip)
         page.queueStateLabel.setToolTip(" ".join(part for part in (STATUS_TEXT.get(view["status"], ""), owner) if part))
         steps = script_progress(view)
-        if steps is not None:
+        images = workflow_bar(self._detail_for(view) or view)
+        if images is not None:
+            page.queueProgressBar.set_counts((("ok", images[0]),) if images[0] else (), images[0], images[1])
+        elif steps is not None:
             page.queueProgressBar.set_counts((("ok", steps[0]),) if steps[0] else (), steps[0], steps[1])
         else:
             page.queueProgressBar.set_counts(segments(view["summary"]), summary.settled, summary.total)
-        page.queueProgressLabel.setText(progress_text(summary, view))
+        page.queueProgressLabel.setText(progress_text(summary, self._detail_for(view) or view))
         counts = filter_counts(view["summary"])
         for key, symbol, _, _ in FILTERS:
             button = getattr(page, FILTER_BUTTONS[key])
@@ -901,6 +915,14 @@ class QueuePage:
                 wide = f"Script {queue_id[:8]} · {stage}"
                 detail = f"Script {queue_id[:8]} · {stage}."
                 completed, total = (committed, expected) if expected else (None, None)
+            elif workflow_of(shown) is not None and workflow_bar(shown):
+                # A workflow run is one item that makes many images: show images, never "0/1 items".
+                stage = workflow_stage(workflow_of(shown))
+                if progress and active_item_id is not None:
+                    stage += f" · step {progress[0][0]}/{progress[0][1]}"
+                wide = f"Workflow {queue_id[:8]} · {stage}"
+                detail = f"Workflow {queue_id[:8]} · {stage}."
+                completed, total = workflow_bar(shown)
             elif running == 1 and len(progress) == 1:
                 step, steps = progress[0]
                 # The item number is known only for the selected queue, whose items are read.
