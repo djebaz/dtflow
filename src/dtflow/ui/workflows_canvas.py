@@ -775,6 +775,10 @@ class WorkflowCanvas(QObject):
         if changed:
             node.grNode.update()
 
+    def static_source_ids(self) -> list[int]:
+        """Ids of the Load image / Load image (as mask) nodes, which preview their picked file."""
+        return [node.comfy_id for node in self.scene.nodes if node.SPEC.type in wf.STATIC_SOURCES]
+
     def set_thumbnail(self, node_id: int, pixmap: QPixmap | None) -> None:
         node = self.node(node_id)
         if node is not None:

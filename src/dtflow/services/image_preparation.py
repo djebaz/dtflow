@@ -512,3 +512,151 @@ def composite_image(prepared: PreparedImageInputs, generated_png: bytes) -> Imag
     if outside_alpha.getbbox() is not None:
         raise ValidationError("Blend mask extends outside selected mask support.")
     return _content(Image.composite(generated, source, alpha))
+
+
+# --- workflow file nodes (#316): ComfyUI's Load Image, Load Image (as Mask) and Upscale Image ----------------------
+
+_SCALE_FILTERS = {
+    "nearest-exact": Image.Resampling.NEAREST,
+    "bilinear": Image.Resampling.BILINEAR,
+    "area": Image.Resampling.BOX,
+    "bicubic": Image.Resampling.BICUBIC,
+    "lanczos": Image.Resampling.LANCZOS,
+}
+
+
+def _png(image: Image.Image) -> bytes:
+    buffer = io.BytesIO()
+    image.save(buffer, format="PNG")
+    return buffer.getvalue()
+
+
+def _eight_bit(image: Image.Image) -> Image.Image:
+    """16-bit and integer grayscale images scaled to 8 bits (``value // 257``) instead of Pillow's clipping conversion."""
+    if image.mode.startswith("I;16") or image.mode == "I":
+        values = image.convert("I")
+        low, high = values.getextrema()
+        if low < 0 or high > 65535:
+            raise ValidationError("Integer images must use unsigned 16-bit values in 0..65535.")
+        return values.point([value // 257 for value in range(65536)], "L")
+    if image.mode == "F":
+        raise ValidationError("Floating-point images are unsupported; use an 8-bit or unsigned 16-bit image.")
+    return image
+
+
+def _inverted_alpha(image: Image.Image) -> Image.Image:
+    """ComfyUI's MASK of an image: ``1 - alpha`` (transparent = masked); all zero without alpha."""
+    if "A" in image.getbands():
+        return ImageChops.invert(image.getchannel("A"))
+    return Image.new("L", image.size, 0)
+
+
+def _read_file(path: str, label: str) -> bytes:
+    file = Path(path)
+    if not file.is_file():
+        raise ValidationError(f"{label} was not found: {path}")
+    return _read(file, label)
+
+
+def check_image_bytes(encoded: bytes) -> tuple[int, int]:
+    """Decode-check the bytes of a file chosen for a workflow file node and return ``(width, height)``."""
+    image = _decode(encoded, "The image file")
+    return image.width, image.height
+
+
+def check_image_file(path: str | Path) -> tuple[int, int]:
+    """Decode-check a file chosen for a workflow file node and return its ``(width, height)``."""
+    image = _decode(_read_file(str(path), "The image file"), "The image file")
+    return image.width, image.height
+
+
+def load_workflow_image(path: str) -> tuple[bytes, bytes, int, int]:
+    """Read an image file like ComfyUI's Load Image: ``(RGB PNG, mask PNG, width, height)``.
+
+    EXIF rotation is applied, alpha is dropped from the image and becomes the inverted mask (an all-zero mask when the
+    file has none). The file must be a single image; the pixel and byte limits of image preparation apply."""
+    image = _eight_bit(_decode(_read_file(path, "The image file"), "The image file"))
+    try:
+        rgb = image.convert("RGB")
+        mask = _inverted_alpha(image.convert("RGBA") if image.mode == "P" else image)
+    except (OSError, ValueError) as exc:
+        raise ValidationError("The image file could not be converted safely.") from exc
+    return _png(rgb), _png(mask), rgb.width, rgb.height
+
+
+def load_workflow_mask(path: str, channel: str) -> tuple[bytes, int, int]:
+    """Read a mask file like ComfyUI's Load Image (as Mask): ``(grayscale PNG, width, height)``.
+
+    ``alpha`` is the inverted alpha; ``red``, ``green`` and ``blue`` are the channel values as they are."""
+    image = _eight_bit(_decode(_read_file(path, "The mask file"), "The mask file"))
+    try:
+        if channel == "alpha":
+            mask = _inverted_alpha(image.convert("RGBA") if image.mode == "P" else image)
+        else:
+            index = {"red": 0, "green": 1, "blue": 2}.get(channel)
+            if index is None:
+                raise ValidationError(f"Unknown mask channel {channel!r}.")
+            mask = image.convert("RGB").getchannel(index)
+    except (OSError, ValueError) as exc:
+        raise ValidationError("The mask file could not be converted safely.") from exc
+    return _png(mask), mask.width, mask.height
+
+
+def scale_workflow_image(encoded: bytes, method: str, width: int, height: int, crop: str) -> bytes:
+    """ComfyUI's Upscale Image on one PNG: ``width``/``height`` 0 keep the aspect ratio from the other side (both 0
+    returns the image unchanged), ``crop="center"`` fills the box and trims the overflow evenly, ``disabled`` stretches."""
+    filter_ = _SCALE_FILTERS.get(method)
+    if filter_ is None:
+        raise ValidationError(f"Unknown upscale method {method!r}.")
+    image = _decode(encoded, "Source image").convert("RGB")
+    if width == 0 and height == 0:
+        return _png(image)
+    old_width, old_height = image.size
+    if width == 0:
+        width = max(1, round(old_width * height / old_height))
+    elif height == 0:
+        height = max(1, round(old_height * width / old_width))
+    validate_source_dimensions(width, height)
+    if crop == "center":
+        old_aspect, new_aspect = old_width / old_height, width / height
+        x = y = 0
+        if old_aspect > new_aspect:
+            x = round((old_width - old_width * (new_aspect / old_aspect)) / 2)
+        elif old_aspect < new_aspect:
+            y = round((old_height - old_height * (old_aspect / new_aspect)) / 2)
+        image = image.crop((x, y, old_width - x, old_height - y))
+    return _png(image.resize((width, height), filter_))
+
+
+def mask_selects_pixels(encoded: bytes) -> bool:
+    """True when the mask PNG selects anything (a pixel brighter than 50%, the Inpaint threshold)."""
+    return _binary_mask(_decode(encoded, "Mask image")).getbbox() is not None
+
+
+def mask_to_image_bytes(encoded: bytes) -> bytes:
+    """ComfyUI's Convert Mask to Image: the mask as a grayscale RGB PNG (white = masked)."""
+    mask = _eight_bit(_decode(encoded, "Mask image"))
+    return _png(mask.convert("L").convert("RGB"))
+
+
+def image_to_mask_bytes(encoded: bytes, channel: str) -> bytes:
+    """ComfyUI's Convert Image to Mask: one channel of an image as a grayscale PNG (white = masked)."""
+    index = {"red": 0, "green": 1, "blue": 2}.get(channel)
+    if index is None:
+        raise ValidationError("DTFlow images have no alpha channel; choose red, green or blue.")
+    return _png(_decode(encoded, "Source image").convert("RGB").getchannel(index))
+
+
+def restore_source_frame(encoded: bytes, fit: ImageFit) -> bytes | None:
+    """Crop a generated image fitted into a larger valid box back to the source frame (#316).
+
+    Image steps pad a source that is not a valid generation size; an inpaint that keeps the outside already comes back
+    source-sized (None here), while any other result is cropped to the fitted area and resized to the source size, so
+    the padding never reaches the next step."""
+    image = _decode(encoded, "Generated image")
+    if image.size == (fit.source_width, fit.source_height):
+        return None
+    restored = (
+        image.convert("RGB").crop(fit.crop_box).resize((fit.source_width, fit.source_height), Image.Resampling.LANCZOS)
+    )
+    return _png(restored)
