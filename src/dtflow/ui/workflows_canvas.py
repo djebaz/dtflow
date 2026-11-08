@@ -388,15 +388,6 @@ class DTFNode(Node):
     NodeContent_class = DTFNodeContent
     SPEC: wf.NodeSpec
 
-    def remove(self) -> None:
-        # #308: destroy the graphics item (and its embedded proxy widget) here, with the application-wide Python
-        # filters off, instead of whenever Python drops the last reference, which can be mid-event-dispatch.
-        gr_node = self.grNode
-        with app_filters_suspended():
-            super().remove()
-            if gr_node is not None and _is_valid(gr_node):
-                _delete_native(gr_node)
-
     def __init__(self, scene, comfy_id: int = 0):
         self.comfy_id = comfy_id
         self.params = self.SPEC.defaults()
@@ -426,6 +417,17 @@ class DTFNode(Node):
             label.setToolTip(f"{port.name}: {port.type}")
             socket.grSocket.setToolTip(f"{port.name}: {port.type}")
             self.port_labels.append(label)
+
+    def remove(self) -> None:
+        # #308: destroy the graphics item (and its embedded proxy widget) here, with the application-wide Python
+        # filters off, instead of whenever Python drops the last reference, which can be mid-event-dispatch.
+        # The item is freed immediately, so never call this from an event handler of the node's own widgets
+        # (a future "Remove node" button must defer it); today it runs from the view's key handler and scene loads.
+        gr_node = self.grNode
+        with app_filters_suspended():
+            super().remove()
+            if gr_node is not None and _is_valid(gr_node):
+                _delete_native(gr_node)
 
     def initSettings(self) -> None:
         super().initSettings()
