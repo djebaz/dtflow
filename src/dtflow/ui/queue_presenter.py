@@ -408,6 +408,9 @@ _WORKFLOW_STEP_STATES = {
     "stopped": "cancelled",
     "cancelled": "cancelled",
 }
+# An image step (Generate, Inpaint, Img2Img) is only ever "skipped" when "Continue without a mask" forwarded its source
+# unchanged: nothing was cancelled or failed, so it counts as succeeded everywhere an image is presented.
+_IMAGE_STEP_STATES = {**_WORKFLOW_STEP_STATES, "skipped": "succeeded"}
 _WORKFLOW_OPERATIONS = {"DTFGenerate": "txt2img", "DTFInpaint": "inpaint", "DTFImg2Img": "img2img"}
 _LIVE_STATES = ("pending", "running")
 
@@ -447,12 +450,12 @@ def _workflow_rows(item: dict, run: dict) -> list[ItemRow]:
         )
         branch = step.get("branch") or [0, 0]
         label = f"{step.get('title') or step.get('type')} · {step.get('branch_label') or ''}".rstrip(" ·")
-        if output and output in finals:
+        passed = step.get("state") == "skipped"  # same file as its source: that image row is the final one, not this
+        is_final = bool(output and output in finals and not passed)
+        if is_final:
             label += " · final"
-        state = _WORKFLOW_STEP_STATES.get(step.get("state"), "running")
-        if step.get("state") == "skipped" and output:
-            # "Continue without a mask": the image passes through unchanged. Nothing was cancelled or failed.
-            state = "succeeded"
+        state = _IMAGE_STEP_STATES.get(step.get("state"), "running")
+        if passed:
             label += " · passed through, no mask"
         rows.append(
             ItemRow(
@@ -478,7 +481,7 @@ def _workflow_rows(item: dict, run: dict) -> list[ItemRow]:
                 height,
                 _managed_identity(output),
                 (),
-                is_final=bool(output and output in finals),
+                is_final=is_final,
             )
         )
     return rows
@@ -546,7 +549,8 @@ def _workflow_image_lines(run: dict) -> list[str]:
         image = re.search(r"image (\d+(?:\.\d+)*)\Z", str(step.get("branch_label") or ""))
         if several and image:
             name += f" i{image.group(1)}"
-        state = _WORKFLOW_STEP_STATES.get(step.get("state"), "running")
+        states = _IMAGE_STEP_STATES if step.get("type") in _WORKFLOW_IMAGE_TYPES else _WORKFLOW_STEP_STATES
+        state = states.get(step.get("state"), "running")
         head = f"{number}/{len(steps)} {name}"
         if state == "pending":
             lines.append(f"{' ' * 8}  {head} pending")
@@ -556,7 +560,11 @@ def _workflow_image_lines(run: dict) -> list[str]:
         tail = f" {_short_seconds(duration)}" if duration is not None else ""
         word = {
             "running": "running",
-            "succeeded": "saved" if step.get("type") in _WORKFLOW_IMAGE_TYPES else "done",
+            "succeeded": "passed"
+            if step.get("state") == "skipped"
+            else "saved"
+            if step.get("type") in _WORKFLOW_IMAGE_TYPES
+            else "done",
             "failed": "fail",
             "unknown": "unknown",
             "cancelled": "stopped",
@@ -652,7 +660,7 @@ def item_counts(view: dict) -> dict:
         return view["summary"]
     counts = {state: 0 for state in view["summary"]}
     for state in states:
-        counts[_WORKFLOW_STEP_STATES.get(state, "running")] += 1
+        counts[_IMAGE_STEP_STATES.get(state, "running")] += 1
     return counts
 
 

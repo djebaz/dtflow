@@ -729,7 +729,7 @@ class QueuePage:
         else:
             page.queueProgressBar.set_counts(segments(item_counts(view)), summary.settled, summary.total)
         page.queueProgressLabel.setText(progress_text(summary, self._detail_for(view) or view))
-        counts = filter_counts(view["summary"])
+        counts = filter_counts(item_counts(view))
         for key, symbol, _, _ in FILTERS:
             button = getattr(page, FILTER_BUTTONS[key])
             button.setText(f"{symbol} {counts[key]}")
