@@ -815,6 +815,13 @@ class WorkflowsPage(QObject):
         )
         if ready:
             text = f"Ready to run: {plan.summary()}."
+            stages = [
+                f"{graph.node(node_id).label}: {node.generations}"
+                for node_id, node in plan.nodes.items()
+                if node.generations
+            ]
+            if len(stages) > 1:
+                text += " Generations per step: " + " · ".join(stages) + "."
             if plan.needs_face_models:
                 text += " Face detection runs locally and needs the detection models."
             _repolish(i.workflowPlanText, workflowState="warning" if (self._missing or unknown) else "ok")
@@ -882,7 +889,7 @@ class WorkflowsPage(QObject):
         tip = (
             "How many images this node makes from each incoming image; each is its own request with its own seed "
             "(node seed + output number). Every downstream node then runs once per output. "
-            "The planned total is limited to " + str(wf.MAX_PLANNED_GENERATIONS) + " generations per run."
+            "The generations of all steps together are limited to " + str(wf.MAX_PLANNED_GENERATIONS) + " per run."
         )
         label.setToolTip(tip)
         spin.setToolTip(tip)
