@@ -56,6 +56,7 @@ class CoverPainter(QObject):
         self._fade_duration = 0
         self._fade_fps = 60
         self._blend = 1.0
+        self._outgoing_opacity = 0.0
         self.badges = badges
         self.placeholder = ""
         self.placeholder_icon = QIcon()
@@ -79,6 +80,7 @@ class CoverPainter(QObject):
         self._previous_pixmap = QPixmap()
         self._previous_view = None
         self._blend = 1.0
+        self._outgoing_opacity = 0.0
         self.widget.update()
 
     def set_pixmap(self, pixmap: QPixmap, *, fade_ms: int = 0, fade_fps: int = 60) -> None:
@@ -99,6 +101,7 @@ class CoverPainter(QObject):
             self._fade_duration = fade_ms
             self._fade_fps = max(1, min(120, fade_fps))
             self._blend = 0.0
+            self._outgoing_opacity = 1.0
             self._fade_clock.start()
             self._fade.start(math.ceil(1000 / self._fade_fps))
         self.widget.update()
@@ -111,6 +114,8 @@ class CoverPainter(QObject):
         progress = elapsed / self._fade_duration
         # Ease both endpoints so entering/leaving the blend has no abrupt opacity velocity.
         self._blend = progress * progress * (3.0 - 2.0 * progress)
+        outgoing_progress = min(1.0, progress * 2.0)
+        self._outgoing_opacity = 1.0 - outgoing_progress * outgoing_progress * (3.0 - 2.0 * outgoing_progress)
         self.widget.update()
         # Target the bounded cadence from elapsed time; never queue catch-up work after missed frames.
         next_frame = int(elapsed * self._fade_fps / 1000) + 1
@@ -150,7 +155,9 @@ class CoverPainter(QObject):
             painter.fillRect(rect, QColor(self.tokens["color.canvas"]))
             if not self.pixmap.isNull():
                 if self._previous_view is not None:
-                    self._paint_pixmap(painter, rect, self._previous_pixmap, *self._previous_view, 1.0)
+                    self._paint_pixmap(
+                        painter, rect, self._previous_pixmap, *self._previous_view, self._outgoing_opacity
+                    )
                 self._paint_pixmap(
                     painter,
                     rect,
