@@ -20,6 +20,7 @@ from PySide6.QtCore import (
     QDataStream,
     QEvent,
     QIODevice,
+    QSignalBlocker,
     QObject,
     QSize,
     Qt,
@@ -1578,6 +1579,18 @@ class GalleryPage(QObject):
             self._apply_live(1)
         else:  # off, live, newest-only: Follow implies Live, one click from Off
             self._apply_live(2)
+
+    def follow_newest(self) -> None:
+        """Enable Live + Follow and return to the newest matching image in the current view."""
+        if self.runner.closed:
+            return
+        with QSignalBlocker(self.sort):
+            self.sort.setCurrentText("Newest first")
+        already_following = self._live_mode == 2
+        self._apply_live(2)
+        if already_following:
+            self._jump_to_newest()  # F5 resumes a paused Follow instead of toggling it off.
+            self._schedule_save()  # sort may have changed even though the mode did not
 
     def _jump_to_newest(self) -> None:
         if self.mode == "Detail":

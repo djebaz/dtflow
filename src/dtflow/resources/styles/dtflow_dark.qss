@@ -920,10 +920,28 @@ QPushButton#connectionNavigationButton:disabled {
 }
 /* Shared utility entry above ordinary inspectors, hidden in Images and Logs. */
 QPushButton#imagesNavigationButton {
-  min-height: 34px;
-  max-height: 34px;
+  min-height: 32px;
+  max-height: 32px;
   padding: 0 12px;
-  border-radius: ${size.inputRadius};
+  background: ${color.selection};
+  border: 2px solid ${color.selectionBorder};
+  color: ${color.selectionText};
+  font-size: ${type.body};
+  font-weight: ${type.weightEmphasis};
+  border-radius: ${size.radius};
+}
+QPushButton#imagesNavigationButton:hover {
+  background: ${color.selectionHover};
+  border-color: ${color.focus};
+}
+QPushButton#imagesNavigationButton:pressed {
+  background: ${color.selectionPressed};
+}
+QPushButton#imagesNavigationButton[keyboardFocus="true"] {
+  border: 3px solid ${color.focus};
+  min-height: 30px;
+  max-height: 30px;
+  padding: 0 11px;
 }
 /* Define vertical page tracks too: do not inherit the native checkerboard brush. */
 QScrollBar::add-page:vertical,

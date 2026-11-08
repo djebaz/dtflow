@@ -62,7 +62,7 @@ from dtflow.services.credentials import (
 from dtflow.services.presets import export_presets, import_presets, load_presets
 from dtflow.ui.activity import Activity
 from dtflow.ui.activity_strip import ActivityStrip, activity_strip
-from dtflow.ui.brand import connection_icon, status_dot
+from dtflow.ui.brand import connection_icon, status_dot, tinted_icon
 from dtflow.ui.button_focus import KeyboardFocusGuard
 from dtflow.ui.current_page_stack import CurrentPageStack
 from dtflow.ui.cloud_usage_panel import CloudUsagePanel
@@ -557,6 +557,11 @@ class MainWindow:
         form.queueNavigationButton.clicked.connect(self._show_queue)
         form.workflowsNavigationButton.clicked.connect(self._show_workflows)
         form.imagesNavigationButton.setEnabled(True)
+        form.imagesNavigationButton.setIcon(
+            tinted_icon(ASSETS_CONTROLS.parent / "gallery" / "image.svg", "color.selectionText", 14)
+        )
+        form.imagesNavigationButton.setIconSize(QSize(14, 14))
+        form.imagesNavigationButton.installEventFilter(KeyboardFocusGuard(form.imagesNavigationButton))
         form.imagesNavigationButton.setToolTip("Browse committed saved outputs")
         form.imagesNavigationButton.setAccessibleName("Show saved Images")
         form.imagesNavigationButton.clicked.connect(lambda: form.workspaceStack.setCurrentWidget(self.images_page))
@@ -589,6 +594,12 @@ class MainWindow:
         self.form.installEventFilter(_CloseGuard(self._confirm_close, self.form))
         self._fullscreen_shortcut = QShortcut(QKeySequence("F11"), self.form)
         self._fullscreen_shortcut.activated.connect(self._toggle_window_fullscreen)
+        self._images_live_shortcut = QShortcut(QKeySequence("F5"), self.form)
+        self._images_live_shortcut.setAutoRepeat(False)
+        self._images_live_shortcut.activated.connect(self._open_live_images)
+        self._cycle_workspace_shortcut = QShortcut(QKeySequence("Ctrl+Tab"), self.form)
+        self._cycle_workspace_shortcut.setAutoRepeat(False)
+        self._cycle_workspace_shortcut.activated.connect(self._cycle_workspace)
         diagnostic_event(
             log,
             "app.window_ready",
@@ -714,6 +725,27 @@ class MainWindow:
         snapshot = self.generation._inventory_snapshot
         models = list(eligible_model_ids(snapshot)) if snapshot is not None else list(choices.get("models", ()))
         return {"models": models, "loras": choices.get("loras", {}), "backend": self.form.backendCombo.currentText()}
+
+    def _cycle_workspace(self) -> None:
+        """Cycle the ordinary workspaces without changing gallery follow or admitting work."""
+        if self.runner.closed:
+            return
+        current = self.form.workspaceStack.currentWidget()
+        if current is self.generation_page:
+            self._show_workflows()
+        elif current is self.workflows_marker:
+            self._show_queue()
+        elif current is self.queue_page:
+            self.form.workspaceStack.setCurrentWidget(self.images_page)
+        else:  # Images wraps to Generate; Connection and Logs enter the cycle there too.
+            self._show_generation()
+
+    def _open_live_images(self) -> None:
+        """F5 opens Images with Live and Follow enabled, without submitting work."""
+        if self.runner.closed:
+            return
+        self.form.workspaceStack.setCurrentWidget(self.images_page)
+        self.gallery.follow_newest()
 
     def _open_output_in_images(self, identity: str) -> None:
         """Queues → Open in Images: show this committed output in the Images Detail view."""
