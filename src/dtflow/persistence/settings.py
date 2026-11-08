@@ -7,10 +7,12 @@ than rewritten.
 
 import json
 import os
+import threading
 from pathlib import Path
 from tempfile import NamedTemporaryFile
 
 from dtflow.core.models import MAX_QUEUE_CONCURRENCY, ValidationError
+from dtflow.persistence.runtime_environment import environment_key
 
 SCHEMA_VERSION = 1
 DEFAULT_CLOUD_CONCURRENCY = 4
@@ -100,3 +102,86 @@ def save_workflow_defaults(state: Path, values: dict[str, int]) -> Path:
         if name in values:
             document[key] = validate_concurrency(values[name])
     return _write(state, document)
+
+
+# Remembered file and folder dialog locations (#312): ``dialog_paths[runtime][key] = {"path", "title"}``. Windows and WSL
+# can share one state directory, so each runtime keeps its own spelling and a path is never translated between them.
+MAX_DIALOG_PATH = 4096
+MAX_DIALOG_KEY = 128
+MAX_DIALOG_ENTRIES = 128
+MAX_DIALOG_TITLE = 200
+MAX_DIALOG_RUNTIMES = 8
+_DIALOG_LOCK = threading.Lock()
+
+
+def _dialog_entries(document: dict, runtime: str) -> dict[str, dict]:
+    """This runtime's valid entries in recency order (oldest first); anything malformed is dropped, not fatal."""
+    runtimes = document.get("dialog_paths")
+    entries = runtimes.get(runtime) if isinstance(runtimes, dict) else None
+    if not isinstance(entries, dict):
+        return {}
+    valid = {}
+    for key, entry in entries.items():
+        path = entry.get("path") if isinstance(entry, dict) else None
+        title = entry.get("title", "") if isinstance(entry, dict) else ""
+        if (
+            isinstance(key, str)
+            and 0 < len(key) <= MAX_DIALOG_KEY
+            and isinstance(path, str)
+            and 0 < len(path) <= MAX_DIALOG_PATH
+            and "\x00" not in path
+            and isinstance(title, str)
+        ):
+            valid[key] = {"path": path, "title": title[:MAX_DIALOG_TITLE]}
+    return valid
+
+
+def load_dialog_paths(state: Path, *, runtime: str | None = None) -> dict[str, dict]:
+    """Remembered dialog folders of this runtime as ``{key: {"path", "title"}}`` (oldest first)."""
+    return _dialog_entries(_read(state), runtime or environment_key())
+
+
+def save_dialog_path(state: Path, key: str, path: str, title: str = "", *, runtime: str | None = None) -> bool:
+    """Remember ``path`` for ``key``; returns False when the value was already stored. Other keys are preserved."""
+    runtime = runtime or environment_key()
+    if not 0 < len(key) <= MAX_DIALOG_KEY or not 0 < len(path) <= MAX_DIALOG_PATH or "\x00" in path:
+        raise SettingsError("Dialog folder cannot be remembered.")
+    with _DIALOG_LOCK:
+        document = _read(state)  # refuse to overwrite an unreadable or newer file
+        entries = _dialog_entries(document, runtime)
+        entry = {"path": path, "title": title[:MAX_DIALOG_TITLE]}
+        if list(entries)[-1:] == [key] and entries[key] == entry:
+            return False
+        entries.pop(key, None)
+        entries[key] = entry  # most recently used last
+        while len(entries) > MAX_DIALOG_ENTRIES:
+            entries.pop(next(iter(entries)))
+        _store_dialog_entries(state, document, runtime, entries)
+    return True
+
+
+def forget_dialog_paths(state: Path, keys: list[str] | None = None, *, runtime: str | None = None) -> None:
+    """Forget the given keys of this runtime, or every remembered folder of it when ``keys`` is None."""
+    runtime = runtime or environment_key()
+    with _DIALOG_LOCK:
+        document = _read(state)
+        entries = _dialog_entries(document, runtime)
+        for key in list(entries) if keys is None else keys:
+            entries.pop(key, None)
+        _store_dialog_entries(state, document, runtime, entries)
+
+
+def _store_dialog_entries(state: Path, document: dict, runtime: str, entries: dict[str, dict]) -> None:
+    runtimes = document.get("dialog_paths")
+    runtimes = dict(runtimes) if isinstance(runtimes, dict) else {}
+    if entries:
+        runtimes[runtime] = entries
+    else:
+        runtimes.pop(runtime, None)
+    if len(runtimes) > MAX_DIALOG_RUNTIMES:
+        raise SettingsError("Too many runtimes share remembered folders.")
+    if runtimes:
+        document["dialog_paths"] = runtimes
+    else:
+        document.pop("dialog_paths", None)
+    _write(state, document)

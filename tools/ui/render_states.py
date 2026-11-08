@@ -1063,11 +1063,9 @@ def render_generate_configuration_states(shell, out):
         lora._prepared(None, OSError("Offline synthetic unresolved result"))
         snap("generate-45-prepare-multiple-partial")
         clear()
-        with (
-            patch.object(lora, "choose_asset_file", return_value=files[:1]),
-            patch("dtflow.ui.lora_panel.load_prepare_folder", side_effect=OSError("Offline preference failure")),
-        ):
+        with patch.object(lora, "choose_asset_file", return_value=files[:1]):
             page.prepareAssetButton.click()
+        shell.dialog_folder_problem("write_failed")  # the one-time warning of a remembered-folder failure
         snap("generate-46-prepare-folder-unavailable")
         lora._prepared(record, None)
         clear()

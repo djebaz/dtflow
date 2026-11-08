@@ -7,8 +7,9 @@ from pathlib import Path, PureWindowsPath
 from PySide6.QtCore import QFile, QIODevice, QObject, Qt, QTimer, Slot
 from PySide6.QtGui import QBrush, QColor, QFont, QIcon, QPixmap
 from PySide6.QtUiTools import QUiLoader
-from PySide6.QtWidgets import QFileDialog, QLabel, QListWidgetItem, QSizePolicy
+from PySide6.QtWidgets import QLabel, QListWidgetItem, QSizePolicy
 
+from dtflow.ui.file_dialogs import QFileDialog
 from dtflow.core.image_inputs import ImageContent, max_mask_grow, suggest_generation_size
 from dtflow.core.model_profiles import profile_for
 from dtflow.core.models import ValidationError
@@ -642,7 +643,7 @@ class InpaintEditor(QObject):
         if self._source is None or self._loading:
             return
         path = QFileDialog.getOpenFileName(
-            self.page, "Load mask", "", "Images (*.png *.jpg *.jpeg *.tif *.tiff *.bmp)"
+            self.page, "Load mask", "", "Images (*.png *.jpg *.jpeg *.tif *.tiff *.bmp)", remember_as="inpaint_mask"
         )[0]
         if path:
             width, height = self._source.width, self._source.height
@@ -656,7 +657,11 @@ class InpaintEditor(QObject):
         if self._source is None or self._loading or self._coverage <= 0:
             return
         path = QFileDialog.getSaveFileName(
-            self.page, "Save new mask (existing files are refused)", "mask.png", "PNG (*.png)"
+            self.page,
+            "Save new mask (existing files are refused)",
+            "mask.png",
+            "PNG (*.png)",
+            remember_as="inpaint_mask",
         )[0]
         if path:
             pixels = self.canvas.mask_pixels()

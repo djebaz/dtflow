@@ -8,8 +8,9 @@ from dataclasses import replace
 from pathlib import Path
 
 from PySide6.QtCore import QEvent, QObject, Qt, Signal, Slot
-from PySide6.QtWidgets import QFileDialog, QWidget
+from PySide6.QtWidgets import QWidget
 
+from dtflow.ui.file_dialogs import QFileDialog
 from dtflow.core.export import ExportOptions
 from dtflow.core.gallery import GalleryQuery
 from dtflow.core.models import ValidationError
@@ -114,7 +115,10 @@ class ImageExportPanel(QObject):
 
     def browse(self) -> None:
         folder = QFileDialog.getExistingDirectory(
-            self.form, "Choose image export folder", self.form.imageExportFolderEdit.text() or str(Path.home())
+            self.form,
+            "Choose image export folder",
+            self.form.imageExportFolderEdit.text() or str(Path.home()),
+            remember=False,  # the destination is itself a remembered setting (export preferences)
         )
         if folder:
             self.form.imageExportFolderEdit.setText(folder)
