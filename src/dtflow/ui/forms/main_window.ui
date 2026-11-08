@@ -525,6 +525,70 @@
             </widget>
            </item>
            <item>
+            <widget class="QGroupBox" name="rememberedFoldersBox">
+             <property name="title"><string /></property>
+             <property name="role" stdset="0"><string>sectionCard</string></property>
+             <property name="accessibleName"><string>Remembered folders</string></property>
+             <layout class="QVBoxLayout" name="rememberedFoldersBoxCardLayout">
+              <property name="leftMargin"><number>0</number></property>
+              <property name="topMargin"><number>0</number></property>
+              <property name="rightMargin"><number>0</number></property>
+              <property name="bottomMargin"><number>0</number></property>
+              <property name="spacing"><number>0</number></property>
+              <item>
+               <widget class="QFrame" name="rememberedFoldersBoxHeader">
+                <property name="role" stdset="0"><string>sectionHeader</string></property>
+                <layout class="QHBoxLayout" name="rememberedFoldersBoxHeaderLayout">
+                 <property name="leftMargin"><number>10</number></property>
+                 <property name="topMargin"><number>7</number></property>
+                 <property name="rightMargin"><number>10</number></property>
+                 <property name="bottomMargin"><number>7</number></property>
+                 <item>
+                  <widget class="QLabel" name="rememberedFoldersBoxHeading">
+                   <property name="text"><string>Remembered folders</string></property>
+                   <property name="textRole" stdset="0"><string>panelHeading</string></property>
+                  </widget>
+                 </item>
+                </layout>
+               </widget>
+              </item>
+              <item>
+               <widget class="QWidget" name="rememberedFoldersBoxContents">
+                <property name="role" stdset="0"><string>sectionContents</string></property>
+                <layout class="QVBoxLayout" name="rememberedFoldersLayout">
+                 <property name="leftMargin"><number>10</number></property>
+                 <property name="topMargin"><number>8</number></property>
+                 <property name="rightMargin"><number>10</number></property>
+                 <property name="bottomMargin"><number>10</number></property>
+                 <property name="spacing"><number>8</number></property>
+                 <item>
+                  <widget class="QLabel" name="rememberedFoldersStatusLabel">
+                   <property name="text"><string>No folders remembered yet.</string></property>
+                   <property name="wordWrap"><bool>true</bool></property>
+                   <property name="role" stdset="0"><string>secondary</string></property>
+                  </widget>
+                 </item>
+                 <item>
+                  <widget class="QListWidget" name="rememberedFoldersList">
+                   <property name="accessibleName"><string>Remembered folders</string></property>
+                   <property name="maximumHeight"><number>160</number></property>
+                   <property name="textElideMode"><enum>Qt::ElideMiddle</enum></property>
+                  </widget>
+                 </item>
+                 <item>
+                  <layout class="QHBoxLayout" name="rememberedFoldersButtons">
+                   <property name="spacing"><number>6</number></property>
+                   <item><widget class="QPushButton" name="forgetFolderButton"><property name="text"><string>Forget selected</string></property></widget></item>
+                   <item><widget class="QPushButton" name="forgetAllFoldersButton"><property name="text"><string>Forget all</string></property></widget></item>
+                  </layout>
+                 </item>
+                </layout>
+               </widget>
+              </item>
+             </layout>
+            </widget>
+           </item>
+           <item>
             <spacer name="contextSpacer">
              <property name="orientation">
               <enum>Qt::Vertical</enum>

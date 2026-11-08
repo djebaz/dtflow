@@ -11,12 +11,12 @@ import re
 
 from PySide6.QtCore import QSize, Qt
 from PySide6.QtGui import QColor, QPainter, QPen
+from dtflow.ui.file_dialogs import QFileDialog
 from dtflow.ui.theme import load_tokens
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
     QFrame,
-    QFileDialog,
     QHBoxLayout,
     QLabel,
     QLineEdit,
@@ -241,10 +241,16 @@ def _path_control(spec: dict) -> QWidget:
 
     def choose_file():
         if spec["type"] == "directory":
-            selected = QFileDialog.getExistingDirectory(path, "Choose " + spec["label"])
+            selected = QFileDialog.getExistingDirectory(
+                path, "Choose " + spec["label"], remember_as="script_input_folder"
+            )
         else:
             selected, _ = QFileDialog.getOpenFileName(
-                path, "Choose " + spec["label"], "", "Images (*.png *.jpg *.jpeg *.webp);;All files (*)"
+                path,
+                "Choose " + spec["label"],
+                "",
+                "Images (*.png *.jpg *.jpeg *.webp);;All files (*)",
+                remember_as="script_input_file",
             )
         if selected:
             path.setText(selected)

@@ -20,13 +20,13 @@ from uuid import uuid4
 from PySide6.QtCore import QSize, Qt, QTimer, QUrl
 from PySide6.QtGui import QDesktopServices, QGuiApplication, QIcon, QPixmap
 from PySide6.QtWidgets import (
-    QFileDialog,
     QHBoxLayout,
     QListWidgetItem,
     QPushButton,
     QWidget,
 )
 
+from dtflow.ui.file_dialogs import QFileDialog
 from dtflow import startup
 from dtflow.composition import BACKENDS
 from dtflow.core.compute_units import ComputeUnitEstimate, estimate_compute_units
@@ -211,12 +211,18 @@ def compute_units_meter_value(units: int) -> int:
 
 def _choose_save(parent: QWidget, directory: Path) -> str:
     return QFileDialog.getSaveFileName(
-        parent, "Save generation configuration", str(directory / "generation.json"), "JSON (*.json)"
+        parent,
+        "Save generation configuration",
+        str(directory / "generation.json"),
+        "JSON (*.json)",
+        remember_as="generation_config",
     )[0]
 
 
 def _choose_open(parent: QWidget, directory: Path) -> str:
-    return QFileDialog.getOpenFileName(parent, "Load generation configuration", str(directory), "JSON (*.json)")[0]
+    return QFileDialog.getOpenFileName(
+        parent, "Load generation configuration", str(directory), "JSON (*.json)", remember_as="generation_config"
+    )[0]
 
 
 RAIL_LABELS = (

@@ -31,7 +31,6 @@ from PySide6.QtWidgets import (
     QApplication,
     QComboBox,
     QCompleter,
-    QFileDialog,
     QHeaderView,
     QMenu,
     QScrollBar,
@@ -40,6 +39,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from dtflow.ui.file_dialogs import QFileDialog
 from dtflow._diagnostic_export import export_matching
 from dtflow._diagnostic_reader import (
     PAGE_SIZE,

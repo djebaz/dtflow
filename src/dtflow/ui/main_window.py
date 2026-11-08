@@ -14,9 +14,9 @@ from PySide6.QtWidgets import (
     QAbstractSpinBox,
     QApplication,
     QComboBox,
-    QFileDialog,
     QHBoxLayout,
     QLabel,
+    QListWidgetItem,
     QLineEdit,
     QMainWindow,
     QPlainTextEdit,
@@ -25,6 +25,8 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from dtflow.ui import file_dialogs
+from dtflow.ui.file_dialogs import QFileDialog
 from dtflow import startup
 from dtflow.build import display_identity
 from dtflow.composition import BACKENDS, BackendSelection
@@ -59,7 +61,7 @@ from dtflow.services.credentials import (
 )
 from dtflow.services.presets import export_presets, import_presets, load_presets
 from dtflow.ui.activity import Activity
-from dtflow.ui.activity_strip import ActivityStrip
+from dtflow.ui.activity_strip import ActivityStrip, activity_strip
 from dtflow.ui.brand import connection_icon, status_dot
 from dtflow.ui.button_focus import KeyboardFocusGuard
 from dtflow.ui.cloud_usage_panel import CloudUsagePanel
@@ -522,6 +524,9 @@ class MainWindow:
         form.keySelectCombo.currentIndexChanged.connect(self.key_selected)
         form.importCustomLorasButton.clicked.connect(self.import_custom_loras)
         form.clearCustomLorasButton.clicked.connect(self.clear_custom_loras)
+        form.forgetFolderButton.clicked.connect(self.forget_selected_folder)
+        form.forgetAllFoldersButton.clicked.connect(self.forget_all_folders)
+        form.rememberedFoldersList.itemSelectionChanged.connect(self.refresh_remembered_folders_buttons)
         form.importPresetsButton.clicked.connect(self.import_presets)
         form.exportPresetsButton.clicked.connect(self.export_presets)
         form.clearInventoryCacheButton.clicked.connect(lambda: self.clear_cache(("inventory",)))
@@ -607,6 +612,10 @@ class MainWindow:
             self.gallery._perf_stats.flush,
         )
         self.refresh_custom_loras(background=True)
+        file_dialogs.configure(
+            self.state_dir, on_problem=self.dialog_folder_problem, on_change=self.refresh_remembered_folders
+        )
+        self.refresh_remembered_folders()
         self.refresh_presets(background=True)
         self._workspace_changed(0)
         self._responsive_workspace()
@@ -1462,7 +1471,11 @@ class MainWindow:
         if self.inline.commit(self.form.importPresetsButton):
             return
         chosen, _ = QFileDialog.getOpenFileName(
-            self.form, "Import Draw Things presets", str(self.state_dir), "Draw Things presets (*.json)"
+            self.form,
+            "Import Draw Things presets",
+            str(self.state_dir),
+            "Draw Things presets (*.json)",
+            remember_as="presets",
         )
         if not chosen:
             return
@@ -1487,7 +1500,11 @@ class MainWindow:
 
     def export_presets(self) -> None:
         chosen, _ = QFileDialog.getSaveFileName(
-            self.form, "Export Draw Things presets", str(Path.home() / "custom_configs.json"), "JSON (*.json)"
+            self.form,
+            "Export Draw Things presets",
+            str(Path.home() / "custom_configs.json"),
+            "JSON (*.json)",
+            remember_as="presets",
         )
         if not chosen:
             return
@@ -1700,6 +1717,50 @@ class MainWindow:
             proceed,
             danger=True,
         )
+
+    def dialog_folder_problem(self, reason: str) -> None:
+        """Once per session: the remembered-folder file could not be read or saved; dialogs keep working."""
+        activity_strip(self.form).complete(
+            "dialog-folders",
+            "Folder not remembered",
+            "Remembered folders could not be read or saved. File and folder pickers still work.",
+            "warning",
+        )
+
+    def refresh_remembered_folders(self) -> None:
+        """List every selector opened so far with its folder, most recent first."""
+        listing = self.form.rememberedFoldersList
+        listing.clear()
+        folders = file_dialogs.remembered()
+        for key, title, path in folders:
+            item = QListWidgetItem(f"{title or key}  ·  {path}")
+            item.setData(Qt.ItemDataRole.UserRole, key)
+            item.setToolTip(f"{title or key}\n{path}")
+            listing.addItem(item)
+        self.form.rememberedFoldersStatusLabel.setText(
+            f"{len(folders)} remembered folder" + ("" if len(folders) == 1 else "s") + "."
+            if folders
+            else "No folders remembered yet."
+        )
+        self.form.forgetAllFoldersButton.setEnabled(bool(folders))
+        self.refresh_remembered_folders_buttons()
+
+    def refresh_remembered_folders_buttons(self) -> None:
+        self.form.forgetFolderButton.setEnabled(bool(self.form.rememberedFoldersList.selectedItems()))
+
+    def forget_selected_folder(self) -> None:
+        keys = [item.data(Qt.ItemDataRole.UserRole) for item in self.form.rememberedFoldersList.selectedItems()]
+        self._forget_folders(keys)
+
+    def forget_all_folders(self) -> None:
+        self._forget_folders(None)
+
+    def _forget_folders(self, keys) -> None:
+        try:
+            file_dialogs.forget(keys)
+        except (OSError, ValueError) as exc:
+            InlineNotice.error(self.form, "Folders not forgotten", str(exc))
+        self.refresh_remembered_folders()
 
     def start_startup_check(self) -> None:
         """One non-generative check after the app's first event-loop turn, never periodic polling."""

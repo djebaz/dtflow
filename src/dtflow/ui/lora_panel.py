@@ -13,11 +13,11 @@ from collections.abc import Callable
 from pathlib import Path
 
 from PySide6.QtCore import Qt
-from PySide6.QtWidgets import QFileDialog, QListWidgetItem, QWidget
+from PySide6.QtWidgets import QListWidgetItem, QWidget
 
+from dtflow.ui.file_dialogs import QFileDialog
 from dtflow.core.models import BackendError, LoRASelection, RemoteOutcome, ResolvedGenerationRequest, ValidationError
 from dtflow.diagnostics import event as diagnostic_event
-from dtflow.persistence.prepare_preferences import load_prepare_folder, save_prepare_folder
 from dtflow.services.connection import (
     Presentation,
     present_asset_failure,
@@ -315,26 +315,12 @@ class LoraAssetPanel:
         if backend[0] != "cloud":
             return
         revision = self._ownership_revision
-        folder = self._state
-        preference_error = False
-        try:
-            remembered = load_prepare_folder(self._state)
-            if remembered and Path(remembered).is_dir() and os.access(remembered, os.R_OK | os.X_OK):
-                folder = Path(remembered)
-        except (OSError, ValueError, ValidationError):
-            preference_error = True
-        chosen = self.choose_asset_file(self.page, folder)
+        # The shared file dialog opens at the folder remembered for this picker, else at the state directory.
+        chosen = self.choose_asset_file(self.page, self._state)
         if isinstance(chosen, str):
             chosen = [chosen] if chosen else []  # retain injected single-file picker compatibility
         if not chosen:
             return
-        if preference_error:
-            self._prepare_folder_warning("read_failed")
-        else:
-            try:
-                save_prepare_folder(self._state, str(Path(chosen[0]).absolute().parent))
-            except (OSError, ValueError, ValidationError):
-                self._prepare_folder_warning("write_failed")
         if self._runner.closed or self._is_busy() or self._backend() != backend or revision != self._ownership_revision:
             return  # Cancelled picker or backend/ownership changed while choosing.
         self._prepare_files = tuple(dict.fromkeys(os.path.abspath(path) for path in chosen))
@@ -348,15 +334,6 @@ class LoraAssetPanel:
             "asset", "Preparing cloud assets", detail="May upload each selected file; waiting for receipts."
         )
         self._prepare_next()
-
-    def _prepare_folder_warning(self, reason: str) -> None:
-        diagnostic_event(log, "ui.prepare_folder_unavailable", level=logging.WARNING, data={"reason": reason})
-        activity_strip(self.page).complete(
-            "asset-folder",
-            "Prepare folder not remembered",
-            "Folder preferences could not be read or saved. Selected files can still be prepared.",
-            "warning",
-        )
 
     def invalidate_prepare_ownership(self) -> None:
         """Credential/backend changes stop admission after the currently admitted file settles."""

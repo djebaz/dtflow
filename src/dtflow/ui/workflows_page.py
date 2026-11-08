@@ -29,7 +29,6 @@ from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
     QDoubleSpinBox,
-    QFileDialog,
     QFrame,
     QHBoxLayout,
     QLabel,
@@ -44,6 +43,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from dtflow.ui.file_dialogs import QFileDialog
 from dtflow.core import workflows as wf
 from dtflow.core.output_layout import identity_from_path
 from dtflow.core.models import LoRASelection, ValidationError
@@ -733,7 +733,11 @@ class WorkflowsPage(QObject):
 
         def pick():
             source, _ = QFileDialog.getOpenFileName(
-                self.workspace.window(), "Import workflow", "", "Workflow JSON (*.json);;All files (*)"
+                self.workspace.window(),
+                "Import workflow",
+                "",
+                "Workflow JSON (*.json);;All files (*)",
+                remember_as="workflows",
             )
             if not source:
                 return
@@ -749,7 +753,11 @@ class WorkflowsPage(QObject):
         if self.canvas is None or not self.name:
             return
         target, _ = QFileDialog.getSaveFileName(
-            self.workspace.window(), "Export workflow", f"{self.name}.json", "Workflow JSON (*.json)"
+            self.workspace.window(),
+            "Export workflow",
+            f"{self.name}.json",
+            "Workflow JSON (*.json)",
+            remember_as="workflows",
         )
         if not target:
             return

@@ -20,7 +20,6 @@ from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
     QDoubleSpinBox,
-    QFileDialog,
     QFrame,
     QGridLayout,
     QLabel,
@@ -34,6 +33,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from dtflow.ui.file_dialogs import QFileDialog
 from dtflow.scripting.forms import (
     MAX_TEXT,
     contributes,
@@ -412,8 +412,10 @@ class LiveScriptForm(ScriptForm):
         if self.busy or self.identity is None or self.runner.closed:
             return
         identity, generation = self.identity, self._generation
-        picker = QFileDialog(self.window(), "Choose " + label)
         directory = spec["type"] == "directory"
+        picker = QFileDialog(
+            self.window(), "Choose " + label, remember_as="script_input_folder" if directory else "script_input_file"
+        )
         picker.setFileMode(
             QFileDialog.FileMode.Directory
             if directory
