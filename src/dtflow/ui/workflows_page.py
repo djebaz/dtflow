@@ -1025,7 +1025,7 @@ class WorkflowsPage(QObject):
         spin.valueChanged.connect(count_changed)
         if node.prompt_mode is None:
             return
-        ignored = "batch size × batch count" if node.type == wf.GENERATE else "Outputs per image"
+        ignored = "batch size × batch count" if node.SPEC.type == wf.GENERATE else "Outputs per image"
         note = _label(
             f"The prompt count sets how many images this node makes; {ignored} no longer applies.",
             "secondary",
