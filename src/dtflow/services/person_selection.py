@@ -680,8 +680,8 @@ def _matching_person(box, people, ellipse, crop):
         contains = int(0 <= px < width and 0 <= py < height and mask[py, px] > 0)
         key = (contains, count / area, overlap, float(score))
         if preferred is None or key > preferred[0]:
-            preferred = (key, mask)
-    return None if preferred is None else preferred[1]
+            preferred = (key, mask, float(score))
+    return None if preferred is None else (preferred[2], preferred[1])
 
 
 def _connected_face_region(candidate: np.ndarray, face_box, crop: tuple[int, int, int, int]) -> np.ndarray:
@@ -745,8 +745,10 @@ def geometric_face_pixels(
     stage("Preparing masks")
     # Fast's Strongest uses NudeNet order; Balanced uses YOLO person score order.
     selected_boxes = boxes[:1] if method == "fast" and person == "strongest" else boxes
-    selected_people = people[:1] if method == "balanced" and person == "strongest" else people
     result = np.zeros((source.height, source.width), dtype=bool)
+    # Balanced: match every face against all people first; Strongest then keeps only the faces of the
+    # highest-scoring person that actually owns a detected face (not a person without one).
+    matched = []
     for box in selected_boxes:
         ellipse = _face_ellipse(box, (source.width, source.height), expansion)
         crop = ellipse.getbbox()
@@ -755,12 +757,17 @@ def geometric_face_pixels(
         x0, y0, x1, y1 = crop
         section = np.asarray(ellipse.crop(crop)) > 0
         if method == "fast":
-            region = section
-        else:
-            target = _matching_person(box, selected_people, section, crop)
-            if target is None:
-                continue
-            region = _connected_face_region(section & (target[y0:y1, x0:x1] > 0), box, crop)
+            result[y0:y1, x0:x1] |= section
+            continue
+        found = _matching_person(box, people, section, crop)
+        if found is not None:
+            matched.append((found[0], found[1], box, section, crop))
+    if matched and person == "strongest":
+        best = max(item[0] for item in matched)
+        matched = [item for item in matched if item[0] == best]
+    for _score, target, box, section, crop in matched:
+        x0, y0, x1, y1 = crop
+        region = _connected_face_region(section & (target[y0:y1, x0:x1] > 0), box, crop)
         result[y0:y1, x0:x1] |= region
     if not result.any():
         reason = (
