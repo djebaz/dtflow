@@ -38,6 +38,7 @@ import logging
 from collections.abc import Callable
 from datetime import UTC, datetime
 from pathlib import Path
+from time import monotonic
 from typing import Any
 from uuid import uuid4
 
@@ -65,6 +66,7 @@ from dtflow.core.workflows import (
     workflow_limit,
 )
 from dtflow.diagnostics import event as diagnostic_event
+from dtflow.memory_diagnostics import enabled as memory_enabled, observe as memory_observe, scope as memory_scope
 from dtflow.persistence.queues import QueueError
 from dtflow.persistence.store import PersistenceError, SQLiteAttempts
 from dtflow.persistence.workflow_items import BAD_STEP_STATES, WorkflowRequest
@@ -227,6 +229,10 @@ class WorkflowItemRunner:
             )
 
     async def _run_item(self, queue_id: str, item_id: str, request: WorkflowRequest) -> None:
+        with memory_scope(log, "workflow.memory", stage="run", planned=request.planned, run_id=request.run_id):
+            await self._run_item_observed(queue_id, item_id, request)
+
+    async def _run_item_observed(self, queue_id: str, item_id: str, request: WorkflowRequest) -> None:
         await self._record(queue_id, "item_started", {"item_id": item_id, "run_id": request.run_id})
         execution = _Execution(self, queue_id, item_id, request)
         interrupted = False
@@ -382,8 +388,22 @@ class _Execution:
             await self.finish()
             return
         self.start_roots()
+        next_memory_sample = monotonic() + 5 if memory_enabled(log) else None
         try:
             while True:
+                if next_memory_sample is not None and monotonic() >= next_memory_sample:
+                    memory_observe(
+                        log,
+                        "workflow.memory",
+                        stage="running",
+                        run_id=self.request.run_id,
+                        active_tasks=sum(not task.done() for task in self.tasks.values()),
+                        active_detectors=sum(
+                            step["state"] == "running" and self.graph.node(step["node_id"]).type == DETECT_FACE
+                            for step in self.steps.values()
+                        ),
+                    )
+                    next_memory_sample = monotonic() + 5
                 actions = await self.store.apply_controls(self.queue_id)
                 if "cancel" in actions:
                     await self.stop()

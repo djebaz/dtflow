@@ -25,6 +25,7 @@ from PIL import Image
 from dtflow.core.image_inputs import ImageContent
 from dtflow.core.models import ValidationError
 from dtflow.diagnostics import event as diagnostic_event
+from dtflow.memory_diagnostics import observe as memory_observe, scope as memory_scope
 from dtflow.persistence.person_models import ModelRef, PersonModels
 from dtflow.services.artifact_paths import ArtifactReadPaths
 
@@ -346,6 +347,13 @@ def _verified_session(ref: ModelRef, builder):
         # A file already hashed with this size and modification time is not re-read for every image (workflow runs
         # detect once per branch); any change to the file makes it read and hashed again.
         if key in _sessions and stamp is not None and _hashed.get(str(ref.path)) == (*stamp, ref.sha256):
+            memory_observe(
+                log,
+                "detector.memory",
+                stage="session_cache_hit",
+                model_role=builder.__name__,
+                cached_sessions=len(_sessions),
+            )
             return _sessions[key]
     data = _read_model(ref.path)
     if len(data) > MAX_MODEL_BYTES or hashlib.sha256(data).hexdigest() != ref.sha256:
@@ -354,7 +362,17 @@ def _verified_session(ref: ModelRef, builder):
         if stamp is not None and _stamp(ref.path) == stamp:
             _hashed[str(ref.path)] = (*stamp, ref.sha256)
         if key not in _sessions:
-            _sessions[key] = builder(data)
+            with memory_scope(
+                log,
+                "detector.memory",
+                stage="session_load",
+                model_role=builder.__name__,
+                model_file_bytes=len(data),
+                cached_sessions=len(_sessions),
+            ) as metrics:
+                _sessions[key] = builder(data)
+                if metrics is not None:
+                    metrics["cached_sessions_after"] = len(_sessions)
         return _sessions[key]
 
 
@@ -373,13 +391,22 @@ def _options():
 FLOATS = ("tensor(float)", "tensor(float16)")
 
 
-def _run(session, tensor):
+def _run(session, tensor, *, role: str = "unknown"):
     """Run with the model's own float width (float32 or float16 exports); results come back as float32."""
     import numpy as np
 
     dtype = np.float16 if session.get_inputs()[0].type == "tensor(float16)" else np.float32
-    outputs = session.run(None, {session.get_inputs()[0].name: tensor.astype(dtype, copy=False)})
-    return [np.asarray(item, dtype=np.float32) for item in outputs]
+    with memory_scope(
+        log, "detector.memory", stage="inference", model_role=role, input_tensor_bytes=int(tensor.nbytes)
+    ) as metrics:
+        outputs = session.run(None, {session.get_inputs()[0].name: tensor.astype(dtype, copy=False)})
+        converted = [np.asarray(item, dtype=np.float32) for item in outputs]
+        if metrics is not None:
+            metrics.update(
+                raw_output_bytes=sum(int(item.nbytes) for item in outputs),
+                float32_output_bytes=sum(int(item.nbytes) for item in converted),
+            )
+        return converted
 
 
 def _describe(items) -> str:
@@ -487,7 +514,7 @@ def _face_boxes(session, image: Image.Image):
     canvas.paste(image, (0, 0))
     small = canvas.resize((FACES_SIDE, FACES_SIDE), Image.Resampling.BILINEAR)
     tensor = np.ascontiguousarray(np.asarray(small, dtype=np.float32).transpose(2, 0, 1)[None] / 255.0)
-    output = _run(session, tensor)[0]
+    output = _run(session, tensor, role="faces")[0]
     if not np.isfinite(output).all():
         raise ValidationError("Faces model returned non-finite values.")
     rows = output[0].T
@@ -553,7 +580,7 @@ def _instances(session, image: Image.Image, threshold: float, *, mask_threshold:
         raise ValidationError("Person mask threshold must be finite and in (0, 1).")
     mask_logit = math.log(mask_threshold) - math.log1p(-mask_threshold)
     tensor, (left, top, rw, rh) = _letterbox(image)
-    detections, prototypes = _run(session, tensor)
+    detections, prototypes = _run(session, tensor, role="segmentation")
     if not np.isfinite(detections).all() or not np.isfinite(prototypes).all():
         raise ValidationError("Segmentation model returned non-finite values.")
     rows = detections[0]
@@ -599,7 +626,7 @@ def _clothes_layers(session, image: Image.Image, mask, box):
         ((pixels - np.asarray(_MEAN, dtype=np.float32)) / np.asarray(_STD, dtype=np.float32)).transpose(2, 0, 1)[None],
         dtype=np.float32,
     )
-    logits = _run(session, tensor)[0]
+    logits = _run(session, tensor, role="clothes")[0]
     if not np.isfinite(logits).all():
         raise ValidationError("Clothes model returned non-finite values.")
     scores = logits[0]
