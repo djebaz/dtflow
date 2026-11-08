@@ -2071,7 +2071,10 @@ class QueuePage:
             return next((button for button in buttons if button.isEnabled()), None)
         view = self._view()
         action = primary_action(
-            view, self._controls_for(view), started=self._started(view), owned=bool(view and self._owns(view["queue_id"]))
+            view,
+            self._controls_for(view),
+            started=self._started(view),
+            owned=bool(view and self._owns(view["queue_id"])),
         )
         return page.queuePrimaryButton if action is not None and action.text in ("Start", "Start next") else None
 
