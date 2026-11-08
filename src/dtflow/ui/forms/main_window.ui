@@ -557,30 +557,35 @@
                 <property name="role" stdset="0"><string>sectionContents</string></property>
                 <layout class="QVBoxLayout" name="rememberedFoldersLayout">
                  <property name="leftMargin"><number>10</number></property>
-                 <property name="topMargin"><number>8</number></property>
+                 <property name="topMargin"><number>6</number></property>
                  <property name="rightMargin"><number>10</number></property>
-                 <property name="bottomMargin"><number>10</number></property>
-                 <property name="spacing"><number>8</number></property>
+                 <property name="bottomMargin"><number>8</number></property>
+                 <property name="spacing"><number>4</number></property>
                  <item>
-                  <widget class="QLabel" name="rememberedFoldersStatusLabel">
-                   <property name="text"><string>No folders remembered yet.</string></property>
-                   <property name="wordWrap"><bool>true</bool></property>
-                   <property name="role" stdset="0"><string>secondary</string></property>
-                  </widget>
+                  <layout class="QHBoxLayout" name="rememberedFoldersHeaderRow">
+                   <property name="spacing"><number>6</number></property>
+                   <item>
+                    <widget class="QLabel" name="rememberedFoldersStatusLabel">
+                     <property name="text"><string>No folders remembered yet.</string></property>
+                     <property name="role" stdset="0"><string>secondary</string></property>
+                    </widget>
+                   </item>
+                   <item>
+                    <spacer name="rememberedFoldersSpacer">
+                     <property name="orientation"><enum>Qt::Horizontal</enum></property>
+                     <property name="sizeHint"><size><width>20</width><height>0</height></size></property>
+                    </spacer>
+                   </item>
+                   <item><widget class="QPushButton" name="forgetFolderButton"><property name="text"><string>Forget selected</string></property></widget></item>
+                   <item><widget class="QPushButton" name="forgetAllFoldersButton"><property name="text"><string>Forget all</string></property></widget></item>
+                  </layout>
                  </item>
                  <item>
                   <widget class="QListWidget" name="rememberedFoldersList">
                    <property name="accessibleName"><string>Remembered folders</string></property>
-                   <property name="maximumHeight"><number>160</number></property>
+                   <property name="maximumHeight"><number>96</number></property>
                    <property name="textElideMode"><enum>Qt::ElideMiddle</enum></property>
                   </widget>
-                 </item>
-                 <item>
-                  <layout class="QHBoxLayout" name="rememberedFoldersButtons">
-                   <property name="spacing"><number>6</number></property>
-                   <item><widget class="QPushButton" name="forgetFolderButton"><property name="text"><string>Forget selected</string></property></widget></item>
-                   <item><widget class="QPushButton" name="forgetAllFoldersButton"><property name="text"><string>Forget all</string></property></widget></item>
-                  </layout>
                  </item>
                 </layout>
                </widget>
