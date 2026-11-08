@@ -6,6 +6,8 @@ Documentation and source inspection only. No live generation, probe, benchmark, 
 
 **Do not enable native batching. Keep the 1x1 advertisement and the `unsupported_batch` rejection.** Logical single-image expansion (#275) is the only batching path DTFlow should rely on. Evidence for the local server is source-level but not run; for DT+ Cloud there is none.
 
+This is an engineering decision from source inspection and missing operational evidence. It is not proof that native batching is slower or incompatible. The real problem is that individual images in a batch cannot be reproduced independently from their own seeds.
+
 ## What the upstream source shows
 
 | Question | Evidence | Strength |
