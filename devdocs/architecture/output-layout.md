@@ -1,6 +1,6 @@
 # Managed output layout (issue #296)
 
-Status: implemented in the PR for #296; real-backend smoke by the owner pending. Sub-issue of epic #274.
+Status: implemented (#297); real-backend smoke passed (owner). Sub-issue of epic #274.
 
 ## Problem
 
