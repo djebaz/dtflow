@@ -201,7 +201,7 @@ CATALOG: dict[str, NodeSpec] = {
 class FaceOptions:
     """Detect face mask options kept outside ``widgets_values`` (#299): the file stores them as node properties."""
 
-    method: str | None = None  # None means the legacy precise mask_region
+    method: str | None = None  # None = legacy Precise: the node's mask_region param decides, no property is stored
     expansion: float = FACE_EXPANSION_DEFAULT
 
 
