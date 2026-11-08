@@ -18,7 +18,7 @@ Changes through 6.1.0 are consolidated in [DTFlow 6.1.0](v6.1.0.md). This file t
 
 ## Fixed
 
-- Workflows: node graphics items and their embedded widgets are now destroyed at a known point with the app-wide wheel and Escape filters paused, targeting the suspected cause of the native Windows heap-corruption crash in [#308](https://github.com/djebaz/dtflow/issues/308). Unchanged run status is no longer re-applied to the node widgets on every poll (less proxy-widget churn during a run). This is an unconfirmed hypothesis; the issue stays open until the owner's Windows reproduction passes.
+- Workflows: node graphics items and their embedded widgets are now destroyed at a known point with the app-wide wheel and Escape filters paused, targeting the suspected cause of the native Windows heap-corruption crash in [#308](https://github.com/djebaz/dtflow/issues/308). Unchanged run status is no longer re-applied to the node widgets on every poll (less proxy-widget churn during a run). The cause is not proven. The owner's load A, run, load B, run smoke passed once at 296a453 (an earlier head crashed); #308 stays open until it survives repeated runs.
 
 ## Upgrade and compatibility
 
