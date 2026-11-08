@@ -108,7 +108,9 @@ class CoverPainter(QObject):
         if elapsed >= self._fade_duration:
             self.finish_transition()
             return
-        self._blend = elapsed / self._fade_duration  # evenly spaced visible blend levels
+        progress = elapsed / self._fade_duration
+        # Ease both endpoints so entering/leaving the blend has no abrupt opacity velocity.
+        self._blend = progress * progress * (3.0 - 2.0 * progress)
         self.widget.update()
         # Target the bounded cadence from elapsed time; never queue catch-up work after missed frames.
         next_frame = int(elapsed * self._fade_fps / 1000) + 1
@@ -137,7 +139,9 @@ class CoverPainter(QObject):
         if event.type() == QEvent.Paint:
             painter = QPainter(obj)
             painter.setRenderHint(QPainter.Antialiasing)
-            if self._previous_view is not None:
+            # Detail must use the same sampling before, during and after a fade;
+            # switching it at transition boundaries visibly changes fine image detail.
+            if not self.badges or self._previous_view is not None:
                 painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
             rect = QRectF(obj.rect())
             clip = QPainterPath()
