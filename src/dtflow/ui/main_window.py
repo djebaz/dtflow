@@ -62,7 +62,7 @@ from dtflow.services.credentials import (
 from dtflow.services.presets import export_presets, import_presets, load_presets
 from dtflow.ui.activity import Activity
 from dtflow.ui.activity_strip import ActivityStrip, activity_strip
-from dtflow.ui.brand import connection_icon, status_dot
+from dtflow.ui.brand import connection_icon, status_dot, tinted_icon
 from dtflow.ui.button_focus import KeyboardFocusGuard
 from dtflow.ui.current_page_stack import CurrentPageStack
 from dtflow.ui.cloud_usage_panel import CloudUsagePanel
@@ -557,6 +557,11 @@ class MainWindow:
         form.queueNavigationButton.clicked.connect(self._show_queue)
         form.workflowsNavigationButton.clicked.connect(self._show_workflows)
         form.imagesNavigationButton.setEnabled(True)
+        form.imagesNavigationButton.setIcon(
+            tinted_icon(ASSETS_CONTROLS.parent / "gallery" / "image.svg", "color.selectionText", 14)
+        )
+        form.imagesNavigationButton.setIconSize(QSize(14, 14))
+        form.imagesNavigationButton.installEventFilter(KeyboardFocusGuard(form.imagesNavigationButton))
         form.imagesNavigationButton.setToolTip("Browse committed saved outputs")
         form.imagesNavigationButton.setAccessibleName("Show saved Images")
         form.imagesNavigationButton.clicked.connect(lambda: form.workspaceStack.setCurrentWidget(self.images_page))

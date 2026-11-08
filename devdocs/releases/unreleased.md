@@ -8,6 +8,8 @@ Changes through 6.2.0 are consolidated in [DTFlow 6.2.0](v6.2.0.md); its publish
 
 ## Changed
 
+- Restyle the shared Images gallery link above ordinary right inspectors with selection-blue navigation states, a 14 px existing image icon and keyboard focus, rather than run-action accent blue. Keep navigation and responsive placement unchanged; align the web reference and document Qt styling differences. Source-reviewed only; no local tests or renders.
+
 ## Fixed
 
 - Repair the offline Connection startup render fixture to supply the current credential-status shape (`keys` and `environment`), avoiding `KeyError: 'environment'` during the full UI render. Runtime credential behavior is unchanged. No local tests or renders were run; render completion remains unverified.
@@ -15,5 +17,5 @@ Changes through 6.2.0 are consolidated in [DTFlow 6.2.0](v6.2.0.md); its publish
 
 ## Release audit
 
-- PRs: #321
-- Scope: Repair offline credential-status/counter/image render fixtures and register missing catalogue states after the 6.2.0 full-render failure and warning audit.
+- PRs: #321, #322
+- Scope: Repair offline render fixtures/catalogue and restyle the shared Images navigation link.
