@@ -114,7 +114,7 @@ class CoverPainter(QObject):
         next_frame = int(elapsed * self._fade_fps / 1000) + 1
         self._fade.start(max(1, math.ceil(next_frame * 1000 / self._fade_fps - elapsed)))
 
-    def _paint_pixmap(self, painter, rect, pixmap, mode, zoom, offset, opacity) -> None:
+    def _paint_pixmap(self, painter, rect, pixmap, mode, zoom, offset, opacity, *, matte: bool = False) -> None:
         if pixmap.isNull():
             return
         sx, sy = rect.width() / pixmap.width(), rect.height() / pixmap.height()
@@ -124,6 +124,12 @@ class CoverPainter(QObject):
         w, h = pixmap.width() * scale, pixmap.height() * scale
         dest = QRectF((rect.width() - w) / 2 + offset[0], (rect.height() - h) / 2 + offset[1], w, h)
         painter.setOpacity(opacity)
+        if matte:
+            # Reveal the incoming frame's letterbox area with the same opacity, not a hard cut at completion.
+            outside, image = QPainterPath(), QPainterPath()
+            outside.addRect(rect)
+            image.addRect(dest)
+            painter.fillPath(outside.subtracted(image), QColor(self.tokens["color.canvas"]))
         painter.drawPixmap(dest, pixmap, QRectF(pixmap.rect()))
         painter.setOpacity(1.0)
 
@@ -140,8 +146,17 @@ class CoverPainter(QObject):
             painter.fillRect(rect, QColor(self.tokens["color.canvas"]))
             if not self.pixmap.isNull():
                 if self._previous_view is not None:
-                    self._paint_pixmap(painter, rect, self._previous_pixmap, *self._previous_view, 1.0 - self._blend)
-                self._paint_pixmap(painter, rect, self.pixmap, self.mode, self.zoom, self.offset, self._blend)
+                    self._paint_pixmap(painter, rect, self._previous_pixmap, *self._previous_view, 1.0)
+                self._paint_pixmap(
+                    painter,
+                    rect,
+                    self.pixmap,
+                    self.mode,
+                    self.zoom,
+                    self.offset,
+                    self._blend,
+                    matte=self._previous_view is not None,
+                )
             elif self.placeholder:
                 # Keep compact error text inside small cards; actionable detail is in the widget tooltip.
                 text_rect = rect.adjusted(8, 8, -8, -8)
