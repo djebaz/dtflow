@@ -6,7 +6,7 @@ Changes through 6.0.0 are consolidated in [DTFlow 6.0.0](v6.0.0.md). This file t
 
 ## Added
 
-- Workflows: Detect face mask now offers Fast NudeNet face ellipse, Balanced NudeNet + YOLO person-clipped connected ellipse, and the two existing Precise face-skin/face+hair methods. New nodes default to Balanced with a 1.6× adjustable face-box expansion. Old workflow files keep their precise method. Model downloads/checks require only the selected roles; downstream Inpaint grow/feather is unchanged (#299, PR #301). Source implementation is in draft; no tests, renders, model inference, Windows smoke or backend checks have been run for this change.
+- Workflows: Detect face mask now offers Fast NudeNet face ellipse, Balanced NudeNet + YOLO person-clipped connected ellipse, and the two existing Precise face-skin/face+hair methods. New nodes default to Balanced with a 1.6× adjustable face-box expansion. Old workflow files keep their precise method. Model downloads/checks require only the selected roles; downstream Inpaint grow/feather is unchanged (#299, PR #301). Source implementation awaits GitHub CI and owner acceptance; no local tests, renders, model inference, Windows smoke or backend checks were run for this change.
 
 - Workflows: a global concurrency and an optional per-node concurrency (steps running at the same time), saved in the workflow file and edited in the Workflows inspector. Defaults for DT+, local and segmentation nodes are set in the Connection tab (#286, #287). Smoke-tested by the owner on a real backend; the local default of 2 lanes is the owner's choice and not otherwise verified.
 
