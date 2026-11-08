@@ -28,4 +28,4 @@ Changes through 6.2.0 are consolidated in [DTFlow 6.2.0](v6.2.0.md); its publish
 
 - Keyboard navigation: F1 Generate, F2 Workflows, F3 Queues, F4 Images, F6 slideshow and F12 Connection. Keep F5 Live+Follow, F11 fullscreen, Escape and Ctrl+Tab unchanged. Slideshow rate adjusts in 0.1-second steps; restore the preferred half-duration fade-out at 60 Hz. Latest changes await owner smoke; no tests or renders run.
 
-- Slideshow photo-position slider: 10-photo wheel steps, a 200x36 px minimum hitbox and larger handle; coalesced final-only image loading remains unchanged. Native acceptance pending.
+- Slideshow photo-position slider: 10-photo wheel steps, a 200x36 px minimum hitbox plus the adjacent photo-number label, retaining the original small handle; coalesced final-only image loading remains unchanged. Native acceptance pending.

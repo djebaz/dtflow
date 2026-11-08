@@ -776,10 +776,6 @@ QSlider::handle:horizontal {
   border: 1px solid ${color.handleBorder};
   border-radius: ${size.radiusXs};
 }
-QSlider#slideshowPosition::handle:horizontal {
-  width: 18px;
-  margin: -8px 0;
-}
 QSlider::handle:horizontal:hover,
 QSlider::handle:horizontal:focus {
   background: ${color.focus};

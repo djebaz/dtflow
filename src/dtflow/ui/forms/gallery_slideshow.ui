@@ -30,7 +30,7 @@
     <property name="accessibleName"><string>Slideshow photo number</string></property>
     <property name="toolTip"><string>Seek to photo number in the current filtered sort; release to jump. Wheel moves 10 photos per step.</string></property>
    </widget></item>
-   <item><widget class="QLabel" name="slideshowPositionLabel"><property name="text"><string>0 / 0</string></property><property name="minimumSize"><size><width>110</width><height>0</height></size></property></widget></item>
+   <item><widget class="QLabel" name="slideshowPositionLabel"><property name="text"><string>0 / 0</string></property><property name="minimumSize"><size><width>110</width><height>36</height></size></property><property name="toolTip"><string>Wheel moves 10 photos per step, just like over the position slider.</string></property></widget></item>
    <item><widget class="QPushButton" name="slideshowLeave"><property name="text"><string>Leave · F6</string></property><property name="accessibleName"><string>Leave slideshow</string></property></widget></item>
   </layout>
  </widget>

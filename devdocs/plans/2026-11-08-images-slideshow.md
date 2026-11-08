@@ -33,3 +33,5 @@ Source/static review only during implementation. No tests, fixtures, renders, sc
 - Owner preferred the earlier fade: restore outgoing duration to 50% of incoming duration, retain 60 Hz, and change both interval editors plus wheel/numpad adjustments to 0.1-second steps (range remains 0.5-8 seconds). Add F1 Generate, F2 Workflows, F3 Queues, F4 Images, F6 slideshow and F12 Connection. F5 Live+Follow, F11 fullscreen, Escape and Ctrl+Tab remain unchanged. Source-reviewed only; latest changes await owner smoke.
 
 - Owner requested coarser position-wheel movement and a larger hitbox: wheel now previews 10 photos per event, retaining final-only coalesced loading. The canonical slider has a 200x36 px minimum area and a wider/taller 18 px handle; other sliders and 0.1-second speed steps are unchanged. Source-reviewed only; native acceptance pending.
+
+- Owner clarified that the handle should stay small: restore the shared original handle styling. Keep the larger slider widget hit area and extend 10-photo wheel seeking over the adjacent 110x36 px photo-number label; speed controls retain their own wheel behavior. No tests or renders run; native smoke pending.
