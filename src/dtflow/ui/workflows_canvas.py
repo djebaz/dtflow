@@ -381,7 +381,7 @@ class DTFNode(Node):
         self.params = self.SPEC.defaults()
         self.concurrency: int | None = None  # steps of this node running together; None = the default (#286)
         self.image_outputs = 1  # Inpaint/Img2img: images made per incoming image (#276)
-        self.face_mask_method = "balanced" if self.SPEC.type == wf.DETECT_FACE else None
+        self.face_mask_method = wf.default_face_method(self.SPEC.type)
         self.face_expansion = wf.FACE_EXPANSION_DEFAULT
         super().__init__(
             scene,
@@ -578,10 +578,10 @@ class WorkflowCanvas(QObject):
                     (pos.x(), pos.y()),
                     wf.copy_params(node.params),
                     (float(node.grNode.width), float(node.grNode.height)),
-                    node.concurrency,
-                    node.image_outputs,
-                    node.face_mask_method,
-                    node.face_expansion,
+                    concurrency=node.concurrency,
+                    outputs=node.image_outputs,
+                    face_mask_method=node.face_mask_method,
+                    face_expansion=node.face_expansion,
                 )
             )
         for edge in self.scene.edges:
@@ -630,7 +630,7 @@ class WorkflowCanvas(QObject):
         """Switch the Detect node's single visible choice without changing legacy file fields."""
         node = self.node(node_id)
         if node is None or node.SPEC.type != wf.DETECT_FACE or method not in wf.FACE_METHODS:
-            return
+            return  # the inspector only offers valid methods; like set_node_param, anything else is dropped
         if method in wf.MASK_REGIONS:
             node.params["mask_region"] = method
             node.face_mask_method = None
@@ -643,7 +643,7 @@ class WorkflowCanvas(QObject):
         node = self.node(node_id)
         if node is None or node.SPEC.type != wf.DETECT_FACE:
             return
-        node.face_expansion = wf._face_expansion(value, "Face box expansion")
+        node.face_expansion = wf.validate_face_expansion(value, "Face box expansion")
         node.content.refresh()
         self.scene.history.storeHistory("Edit face expansion", setModified=True, merge_key=f"face_expansion:{node_id}")
 

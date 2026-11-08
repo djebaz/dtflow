@@ -45,7 +45,16 @@ PROP_OUTPUTS = "DTFlow outputs"  # optional Inpaint/Img2img node property: image
 MAX_OUTPUTS = 4  # most outputs per incoming image of one Inpaint/Img2img node
 LORA_WEIGHT_RANGE = (0.0, 3.0)  # the LoRA editor's range; imported values outside it are rejected, never clamped
 MASK_REGIONS = ("face_skin", "face_skin_and_hair")
-FACE_METHODS = ("fast", "balanced", *MASK_REGIONS)
+GEOMETRIC_FACE_METHODS = ("fast", "balanced")  # the methods stored as a node property; the rest are legacy mask regions
+FACE_METHODS = (*GEOMETRIC_FACE_METHODS, *MASK_REGIONS)
+# Detection model roles each method needs; face_model_roles() takes the union over a graph's Detect nodes.
+FACE_METHOD_ROLES = {
+    "fast": frozenset({"faces"}),
+    "balanced": frozenset({"faces", "segmentation"}),
+    "face_skin": frozenset({"faces", "segmentation", "clothes"}),
+    "face_skin_and_hair": frozenset({"faces", "segmentation", "clothes"}),
+}
+FACE_ROLE_ORDER = ("segmentation", "clothes", "faces")
 FACE_EXPANSION_DEFAULT = 1.6
 FACE_EXPANSION_MIN = 1.0
 FACE_EXPANSION_MAX = 2.5
@@ -345,7 +354,7 @@ def _concurrency(value: object, label: str) -> int | None:
     return value
 
 
-def _face_expansion(value: object, label: str) -> float:
+def validate_face_expansion(value: object, label: str) -> float:
     """Validate the source-box width/height scale, stored in tenths."""
     if type(value) not in (int, float) or not math.isfinite(value):
         raise WorkflowError(f"{label} must be a number.")
@@ -360,21 +369,24 @@ def face_method(node: GraphNode) -> str:
 
 
 def _face_settings(node: GraphNode) -> None:
-    if node.face_mask_method is not None and node.face_mask_method not in ("fast", "balanced"):
+    if node.face_mask_method is not None and node.face_mask_method not in GEOMETRIC_FACE_METHODS:
         raise WorkflowError(f"{node.label}: unsupported face mask method.")
     if node.type == DETECT_FACE:
-        _face_expansion(node.face_expansion, f"{node.label}: Face box expansion")
+        validate_face_expansion(node.face_expansion, f"{node.label}: Face box expansion")
 
 
 def face_model_roles(graph: Graph) -> tuple[str, ...]:
     """Union of the model roles required by this graph's selected Detect methods."""
-    methods = {face_method(node) for node in graph.nodes if node.type == DETECT_FACE}
-    roles = {"faces"} if methods else set()
-    if methods - {"fast"}:
-        roles.add("segmentation")
-    if methods & set(MASK_REGIONS):
-        roles.add("clothes")
-    return tuple(role for role in ("segmentation", "clothes", "faces") if role in roles)
+    roles: set[str] = set()
+    for node in graph.nodes:
+        if node.type == DETECT_FACE:
+            roles |= FACE_METHOD_ROLES[face_method(node)]
+    return tuple(role for role in FACE_ROLE_ORDER if role in roles)
+
+
+def default_face_method(node_type: str) -> str | None:
+    """New Detect nodes start Balanced; older or imported files keep their legacy precise region (None)."""
+    return "balanced" if node_type == DETECT_FACE else None
 
 
 def _outputs(value: object, label: str) -> int:
@@ -500,11 +512,11 @@ def load_workflow(data: object, *, draft: bool = False) -> Graph:
         if spec.type != DETECT_FACE and (PROP_FACE_METHOD in properties or PROP_FACE_EXPANSION in properties):
             raise WorkflowError(f"{where}: face mask properties apply to Detect face mask only.")
         face_mask_method = properties.get(PROP_FACE_METHOD)
-        if face_mask_method is not None and face_mask_method not in ("fast", "balanced"):
+        if face_mask_method is not None and face_mask_method not in GEOMETRIC_FACE_METHODS:
             raise WorkflowError(f"{where}: unsupported mask method {face_mask_method!r}.")
         if PROP_FACE_EXPANSION in properties and face_mask_method is None:
             raise WorkflowError(f"{where}: Face box expansion requires Fast or Balanced.")
-        expansion = _face_expansion(
+        expansion = validate_face_expansion(
             properties.get(PROP_FACE_EXPANSION, FACE_EXPANSION_DEFAULT), f"{where}: Face box expansion"
         )
         for key in ("title", "color", "bgcolor"):
@@ -529,10 +541,10 @@ def load_workflow(data: object, *, draft: bool = False) -> Graph:
             _pair(node["pos"], f"{where} pos"),
             params,
             _pair(node["size"], f"{where} size"),
-            nd_concurrency,
-            nd_outputs,
-            face_mask_method,
-            expansion,
+            concurrency=nd_concurrency,
+            outputs=nd_outputs,
+            face_mask_method=face_mask_method,
+            face_expansion=expansion,
         )
         if spec.type in GENERATIVE:
             _check_request(graph_node, draft=draft)
@@ -703,7 +715,7 @@ def dump_workflow(graph: Graph) -> dict:
             _face_settings(node)
             if node.face_mask_method is not None:
                 entry["properties"][PROP_FACE_METHOD] = node.face_mask_method
-                entry["properties"][PROP_FACE_EXPANSION] = _face_expansion(
+                entry["properties"][PROP_FACE_EXPANSION] = validate_face_expansion(
                     node.face_expansion, f"{node.label}: Face box expansion"
                 )
         entry["widgets_values"] = [_copy(node.params[param.name]) for param in spec.params]
@@ -971,7 +983,7 @@ def summary(
     """Short on-node text so the canvas shows configuration without opening the inspector."""
     if node_type == DETECT_FACE:
         method = face_mask_method or params["mask_region"]
-        if method in ("fast", "balanced"):
+        if method in GEOMETRIC_FACE_METHODS:
             name = "Fast ellipse" if method == "fast" else "Balanced ellipse"
             target = "face" if method == "fast" else "person"
             return f"{name} ×{face_expansion:g} · {target}: {params['person']}"
@@ -1004,7 +1016,7 @@ def new_node(graph: Graph, node_type: str, pos: tuple[float, float]) -> GraphNod
         node_type,
         (float(pos[0]), float(pos[1])),
         spec.defaults(),
-        face_mask_method="balanced" if node_type == DETECT_FACE else None,
+        face_mask_method=default_face_method(node_type),
     )
     graph.nodes.append(node)
     return node

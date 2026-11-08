@@ -890,18 +890,19 @@ class WorkflowsPage(QObject):
         _clear(layout)
         choices = self.choices_source() or {}
         if spec.type == wf.DETECT_FACE:
-            self._add_face_method(layout, node_id, node)
-        for param in spec.params:
-            if spec.type == wf.DETECT_FACE and param.name == "mask_region":
-                continue  # replaced by the single four-method selector
-            if spec.type == wf.DETECT_FACE and param.name == "person":
-                self._add_face_person(layout, node_id, params[param.name], node.face_mask_method == "fast")
-            else:
+            self._add_face_params(layout, node_id, node, params)
+        else:
+            for param in spec.params:
                 self._add_param(layout, node_id, param, params.get(param.name), choices)
         if spec.type in wf.IMAGE_OPERATIONS:
             self._add_outputs(layout, node_id, node.image_outputs)
         self._add_concurrency(layout, node_id, choices.get("backend"))
         self._sync_lock()
+
+    def _add_face_params(self, layout, node_id: int, node, params: dict) -> None:
+        """Detect face mask: the single method selector replaces ``mask_region``; ``person`` follows it."""
+        self._add_face_method(layout, node_id, node)
+        self._add_face_person(layout, node_id, params["person"], node.face_mask_method == "fast")
 
     def _add_face_method(self, layout, node_id: int, node) -> None:
         """One method control replaces the old two-way mask region picker."""
@@ -919,7 +920,7 @@ class WorkflowsPage(QObject):
         selector.setCurrentIndex(wf.FACE_METHODS.index(method))
         selector.currentIndexChanged.connect(lambda index: self._set_face_method(node_id, wf.FACE_METHODS[index]))
         layout.addWidget(selector)
-        if method in ("fast", "balanced"):
+        if method in wf.GEOMETRIC_FACE_METHODS:
             layout.addWidget(_label("Face box expansion", "workflowParamLabel"))
             spin = QDoubleSpinBox(host)
             spin.setDecimals(1)

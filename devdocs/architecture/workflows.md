@@ -93,8 +93,9 @@ Ports are typed `IMAGE` or `MASK`. Parameter order is the `widgets_values` order
   keep its face-anchored connected region, fill enclosed holes and union selected faces. For Balanced and
   both Precise modes, `strongest` means the highest-scoring YOLO person (for Balanced: the
   highest-scoring person who owns a detected face; every face is matched against all people first) and `all`
-  means all selected people. Balanced's connected-region step uses a writable Pillow image because
-  `ImageDraw.floodfill` silently does nothing on a read-only array-backed one. Precise still uses SegFormer B2 Face pixels (and optional Hair), constrained by face boxes.
+  means all selected people. Precise still uses SegFormer B2 Face pixels (and optional Hair), constrained by face boxes.
+  The Fast/Balanced geometry lives in `services/face_geometry.py` (on the Pillow/NumPy allowlist, built on the
+  faces-only `person_selection.analyze_face_geometry`); `services/face_mask.py` packages the PNG.
   All modes produce the same source-sized binary PNG mask; no-face/no-region keeps the existing branch pause.
 - **Required model union:** Fast → faces; Balanced → faces + segmentation; Precise → faces +
   segmentation + clothes. Workspace download consent and runner integrity preflight take the union
