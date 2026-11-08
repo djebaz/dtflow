@@ -14,7 +14,9 @@ Changes through 6.1.0 are consolidated in [DTFlow 6.1.0](v6.1.0.md). This file t
 
 ## Validations
 
-- Pending; record scoped evidence for subsequent changes.
+- [ ] pytest Full passed
+- [ ] render_ui passed
+- [ ] SmokeTests passed
 
 ## Release audit
 
