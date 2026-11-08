@@ -435,7 +435,7 @@
                 <bool>true</bool>
                </property>
                <property name="role" stdset="0">
-                <string>primary</string>
+                <string>galleryLink</string>
                </property>
                <property name="enabled">
                 <bool>true</bool>

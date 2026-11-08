@@ -255,6 +255,10 @@ decode. The selected Detail image and zoom/pan stay intact when other outputs
 change, except under **Follow** (below). Fully unchanged pages also preserve exact scroll and focus while
 counts/navigation can still update.
 
+Press **F5** from any workspace to open Images, enable Live + Follow and return to the newest matching image with newest-first sorting. Existing filters and Grid/List/Detail choice stay unchanged. Repeated F5 resumes following rather than toggling it off; it never starts generation or a queue.
+
+**Ctrl+Tab** cycles Generate → Workflows → Queues → Images → Generate. From Connection or Logs it enters at Generate. It uses ordinary workspace navigation, preserving drafts and the current Images Live/Follow mode; unlike F5, it does not enable following or jump to a newer image.
+
 Images has paired **Live** and **Follow** controls. Live toggles automatic refresh; Follow enables Live and newest-image following with the newest-first sort. The remembered modes remain Off, Auto and Follow. Under Follow:
 when new images arrive while the view is on the newest one (scrolled to the top in Grid/List,
 showing the newest in Detail, so Detail zoom/pan resets), it moves to the new image. Selecting an
