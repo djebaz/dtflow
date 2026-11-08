@@ -804,19 +804,26 @@ class _Execution:
             self.spawn(("branch", key[1]), self.produce(key))
 
     async def produce(self, key: Key) -> None:
+        try:
+            await self._produce(key)
+        except (asyncio.CancelledError, PersistenceError):
+            raise
+        except Exception as exc:  # a local defect fails this output only; siblings continue
+            if self.steps[key]["state"] in ("running", "pending", "paused"):
+                await self.end([key], "failed", f"Step failed unexpectedly ({type(exc).__name__}).")
+            await self.walk(key[1])
+
+    async def _produce(self, key: Key) -> None:
         """One Generate output as its own request: batch size 1 x count 1 and its own seed (base seed + output index,
         wrapped at the seed limit). A failure or unknown outcome stays on this output; its siblings are unaffected."""
         node_id, branch = key
         node = self.graph.node(node_id)
-        recorded = self.steps[key].get("settings") or {}
-        seed = recorded.get("seed")  # Retry reuses the seed this output was first submitted with
-        if seed is None:
-            seed = branch_seed(int(node.params["seed"]), branch[1])
+        # Deterministic, so Retry reuses the seed of the first try. Computed rather than read back from the step: a run
+        # stored before #275 holds the node seed on every output, which would make a retried output a duplicate.
+        seed = branch_seed(int(node.params["seed"]), branch[1])
         await self.begin([key])
         try:
-            request = node_request(
-                node, request_id=uuid4().hex, evidence=self.evidence(branch), seed=int(seed), single=True
-            )
+            request = node_request(node, request_id=uuid4().hex, evidence=self.evidence(branch), seed=seed, single=True)
         except ValidationError as exc:
             await self.end([key], "failed", str(exc))
             outcome = None
