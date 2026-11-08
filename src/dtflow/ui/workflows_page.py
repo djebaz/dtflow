@@ -978,7 +978,8 @@ class WorkflowsPage(QObject):
         """Wildcard prompts (#317): the prompt is a template (``{a|b}``, ``__list__``); each image gets its own."""
         host = self.inspector.workflowParamsHost
         self._prompt_preview_label = None  # set below only when this build shows a preview
-        self._preview_open = getattr(self, "_preview_open", False)  # the section stays as the user left it
+        if not hasattr(self, "_open_prompts"):
+            self._open_prompts: set[int] = set()  # which example prompts the user left open
         label = _label("Wildcard prompt", "workflowParamLabel")
         selector = QComboBox(host)
         selector.setAccessibleName(f"Wildcard prompt for node {node_id}")
@@ -1035,23 +1036,8 @@ class WorkflowsPage(QObject):
         folder.setToolTip("Lists are plain NAME.txt files, one entry per line. Edit them in your file manager.")
         folder.clicked.connect(self._show_wildcards_folder)
         layout.addWidget(folder)
-        # The example prompts sit in a collapsible section (closed by default) so a long list never crowds the panel.
-        toggle = QPushButton(host)
-        toggle.setCheckable(True)
-        toggle.setFlat(True)
-        toggle.setChecked(self._preview_open)
-        toggle.setAccessibleName(f"Example prompts for node {node_id}")
+        # Each example prompt is its own accordion: one line when closed, the full highlighted text when open.
         preview = self._prompt_preview(node)
-        preview.setVisible(self._preview_open)
-
-        def toggled(checked: bool) -> None:
-            self._preview_open = checked
-            preview.setVisible(checked)
-            toggle.setText(("▾ " if checked else "▸ ") + "Example prompts")
-
-        toggle.toggled.connect(toggled)
-        toggled(self._preview_open)
-        layout.addWidget(toggle)
         layout.addWidget(preview)
         self._prompt_preview_label = preview
 
@@ -1087,30 +1073,62 @@ class WorkflowsPage(QObject):
             ),
         )
 
-    def _prompt_preview(self, node) -> QLabel:
-        """A few prompts the node would draw now, with the varied parts highlighted (#317)."""
-        preview = _label("", "secondary")  # example draws: an Inpaint/Img2img node draws again per incoming image
-        preview.setTextFormat(Qt.TextFormat.RichText)
-        preview.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
-        self._fill_prompt_preview(preview, node.comfy_id)
-        return preview
+    def _prompt_preview(self, node) -> QWidget:
+        """Example prompts the node would draw now, one accordion each (#317); filled by ``_fill_prompt_preview``."""
+        box = QWidget(self.inspector.workflowParamsHost)
+        QVBoxLayout(box).setContentsMargins(0, 0, 0, 0)
+        box.layout().setSpacing(2)
+        self._fill_prompt_preview(box, node.comfy_id)
+        return box
 
-    def _fill_prompt_preview(self, preview: QLabel, node_id: int) -> None:
-        """Replace the preview text in place (a count change must not rebuild the inspector or move its scroll)."""
+    def _fill_prompt_preview(self, box: QWidget, node_id: int) -> None:
+        """Replace the accordions in place (a count change must not rebuild the inspector or move its scroll)."""
         from dtflow.services.workflow_prompts import draw, read_snapshot
         from dtflow.ui.prompt_tags import tagged_html
 
+        layout = box.layout()
+        _clear(layout)
         graph = self.canvas.current_graph()
         try:
             drawn = draw(graph.node(node_id), read_snapshot(graph, self.state / "wildcards"))
         except (ValidationError, KeyError) as exc:
-            text = f"Preview unavailable: {exc}"
-        else:
-            shown = drawn[:5]
-            more = f"<br>… {len(drawn)} in all" if len(drawn) > len(shown) else ""
-            text = "<br>".join(tagged_html(t, runs) for t, runs in shown) + more
-        if preview.text() != text:
-            preview.setText(text)
+            layout.addWidget(_label(f"Preview unavailable: {exc}", "secondary"))
+            return
+        layout.addWidget(_label("Example prompts", "workflowParamLabel"))
+        shown = drawn[:8]
+        for number, (text, runs) in enumerate(shown):
+            layout.addWidget(self._prompt_accordion(box, number, text, tagged_html(text, runs)))
+        if len(drawn) > len(shown):
+            layout.addWidget(_label(f"… {len(drawn)} in all", "secondary"))
+
+    def _prompt_accordion(self, parent: QWidget, number: int, text: str, html: str) -> QWidget:
+        """A flat header with the prompt's first words; opening it shows the whole prompt with its highlights."""
+        item = QWidget(parent)
+        column = QVBoxLayout(item)
+        column.setContentsMargins(0, 0, 0, 0)
+        column.setSpacing(0)
+        header = QPushButton(item)
+        header.setCheckable(True)
+        header.setFlat(True)
+        header.setProperty("role", "accordion")
+        header.setAccessibleName(f"Example prompt {number + 1}")
+        body = _label("", "secondary")
+        body.setTextFormat(Qt.TextFormat.RichText)
+        body.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+        body.setText(html)
+        short = text if len(text) <= 40 else text[:39] + "…"
+
+        def toggled(checked: bool) -> None:
+            body.setVisible(checked)
+            header.setText(f"{'▾' if checked else '▸'} {number + 1} · {short}")
+            (self._open_prompts.add if checked else self._open_prompts.discard)(number)
+
+        header.toggled.connect(toggled)
+        header.setChecked(number in self._open_prompts)
+        toggled(header.isChecked())
+        column.addWidget(header)
+        column.addWidget(body)
+        return item
 
     def _add_outputs(self, layout, node_id: int, value: int) -> None:
         """Images made per incoming image (#276); 1 is the default and is not written to the file."""

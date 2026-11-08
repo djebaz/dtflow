@@ -1168,6 +1168,10 @@ QPlainTextEdit#galleryPositivePrompt {
   padding: 0;
   font-size: 14px;
 }
+QPushButton[role="accordion"] {
+  text-align: left;
+  padding: 3px 6px;
+}
 QWidget#GalleryDetailPage QPushButton[role="galleryDisclosure"] {
   font-size: 12px;
 }
