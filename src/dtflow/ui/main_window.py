@@ -436,6 +436,7 @@ class MainWindow:
             lambda: self.queue_popover.open_at(self.generation_page.queueGenerateButton)
         )
         self.generation.queue_behind = self.queue.queue_behind
+        self.generation.queue_images = self._queue_images
         form.backendCombo.addItems(BACKENDS)
         startup.mark("page wiring")
         self._restore_session()
@@ -1141,6 +1142,13 @@ class MainWindow:
             "forms": self.generation.forms_document(),
             "edit": self.generation.inpaint.session_document(),
         }
+
+    def _queue_images(self, count: int) -> None:
+        """Generate image with Images above 1 (#279): a Repeat queue of single-image items, started now or, behind
+        running work, added up next. The Queues page reports the outcome like the Queue popover does."""
+        start, _, _ = self.queue.quick_state()
+        self.queue.quick_create("start" if start else "add", count=count)
+        self.remember()
 
     def remember(self, *_, background: bool = True) -> None:
         """Save the current session; small, but off the GUI thread unless the window is closing."""

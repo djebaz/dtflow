@@ -1571,6 +1571,35 @@
               </property>
              </widget>
             </item>
+            <item row="8" column="0">
+             <widget class="QLabel" name="imagesLabel">
+              <property name="text">
+               <string>Images</string>
+              </property>
+              <property name="textRole" stdset="0">
+               <string>caption</string>
+              </property>
+             </widget>
+            </item>
+            <item row="8" column="1">
+             <widget class="QSpinBox" name="imagesSpinBox">
+              <property name="minimum">
+               <number>1</number>
+              </property>
+              <property name="maximum">
+               <number>1000</number>
+              </property>
+              <property name="value">
+               <number>1</number>
+              </property>
+              <property name="accessibleName">
+               <string>Total number of images</string>
+              </property>
+              <property name="toolTip">
+               <string>Total images to make. Above 1, Generate image creates a queue with one single-image request per picture (seed, seed + 1, ...), so each shows in Queues with its own thumbnail, status and Retry.</string>
+              </property>
+             </widget>
+            </item>
             <property name="leftMargin">
              <number>10</number>
             </property>
