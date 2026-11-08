@@ -1000,7 +1000,10 @@ def new_node(graph: Graph, node_type: str, pos: tuple[float, float]) -> GraphNod
     if spec is None:
         raise WorkflowError(f"Unknown node type {node_type!r}.")
     node = GraphNode(
-        graph.next_node_id(), node_type, (float(pos[0]), float(pos[1])), spec.defaults(),
+        graph.next_node_id(),
+        node_type,
+        (float(pos[0]), float(pos[1])),
+        spec.defaults(),
         face_mask_method="balanced" if node_type == DETECT_FACE else None,
     )
     graph.nodes.append(node)

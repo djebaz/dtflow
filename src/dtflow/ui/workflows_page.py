@@ -262,8 +262,11 @@ def _run_shape(graph) -> tuple:
     nodes = tuple(
         sorted(
             (
-                node.id, node.type, repr(sorted(node.params.items())),
-                node.face_mask_method, node.face_expansion,
+                node.id,
+                node.type,
+                repr(sorted(node.params.items())),
+                node.face_mask_method,
+                node.face_expansion,
             )
             for node in graph.nodes
         )
@@ -914,9 +917,7 @@ class WorkflowsPage(QObject):
             selector.addItem(MASK_METHOD_LABELS[choice], choice)
         method = node.face_mask_method or node.params["mask_region"]
         selector.setCurrentIndex(wf.FACE_METHODS.index(method))
-        selector.currentIndexChanged.connect(
-            lambda index: self._set_face_method(node_id, wf.FACE_METHODS[index])
-        )
+        selector.currentIndexChanged.connect(lambda index: self._set_face_method(node_id, wf.FACE_METHODS[index]))
         layout.addWidget(selector)
         if method in ("fast", "balanced"):
             layout.addWidget(_label("Face box expansion", "workflowParamLabel"))

@@ -313,8 +313,11 @@ class DTFNodeContent(QDMNodeContentWidget):
     def refresh(self) -> None:
         self.summary.setText(
             wf.summary(
-                self.node.SPEC.type, self.node.params, self.node.image_outputs,
-                face_mask_method=self.node.face_mask_method, face_expansion=self.node.face_expansion,
+                self.node.SPEC.type,
+                self.node.params,
+                self.node.image_outputs,
+                face_mask_method=self.node.face_mask_method,
+                face_expansion=self.node.face_expansion,
             )
         )
 
@@ -642,8 +645,7 @@ class WorkflowCanvas(QObject):
             return
         node.face_expansion = wf._face_expansion(value, "Face box expansion")
         node.content.refresh()
-        self.scene.history.storeHistory("Edit face expansion", setModified=True,
-                                        merge_key=f"face_expansion:{node_id}")
+        self.scene.history.storeHistory("Edit face expansion", setModified=True, merge_key=f"face_expansion:{node_id}")
 
     def set_node_concurrency(self, node_id: int, value: int | None) -> None:
         node = self.node(node_id)
