@@ -114,7 +114,7 @@ class CoverPainter(QObject):
         progress = elapsed / self._fade_duration
         # Ease both endpoints so entering/leaving the blend has no abrupt opacity velocity.
         self._blend = progress * progress * (3.0 - 2.0 * progress)
-        outgoing_progress = min(1.0, progress * 2.5)
+        outgoing_progress = min(1.0, progress * 2.0)
         self._outgoing_opacity = 1.0 - outgoing_progress * outgoing_progress * (3.0 - 2.0 * outgoing_progress)
         self.widget.update()
         # Target the bounded cadence from elapsed time; never queue catch-up work after missed frames.

@@ -16,7 +16,7 @@
    </widget></item>
    <item><widget class="QDoubleSpinBox" name="slideshowSeconds">
     <property name="minimum"><double>0.5</double></property><property name="maximum"><double>8.0</double></property>
-    <property name="singleStep"><double>0.5</double></property><property name="decimals"><number>1</number></property>
+    <property name="singleStep"><double>0.1</double></property><property name="decimals"><number>1</number></property>
     <property name="value"><double>3.0</double></property><property name="suffix"><string> s</string></property>
     <property name="accessibleName"><string>Slideshow seconds per image</string></property>
     <property name="toolTip"><string>Seconds per image · wheel over controls to adjust · numpad + faster / − slower</string></property>
@@ -31,7 +31,7 @@
     <property name="toolTip"><string>Seek to photo number in the current filtered sort; release to jump. Wheel moves one photo.</string></property>
    </widget></item>
    <item><widget class="QLabel" name="slideshowPositionLabel"><property name="text"><string>0 / 0</string></property><property name="minimumSize"><size><width>110</width><height>0</height></size></property></widget></item>
-   <item><widget class="QPushButton" name="slideshowLeave"><property name="text"><string>Leave · F2</string></property><property name="accessibleName"><string>Leave slideshow</string></property></widget></item>
+   <item><widget class="QPushButton" name="slideshowLeave"><property name="text"><string>Leave · F6</string></property><property name="accessibleName"><string>Leave slideshow</string></property></widget></item>
   </layout>
  </widget>
  <resources/>

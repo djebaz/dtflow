@@ -89,8 +89,8 @@ class GallerySlideshow(QObject):
         self.button.clicked.connect(self.toggle)
         self.interval.valueChanged.connect(self._interval_changed)
         # Images' header/brand and other shell controls are siblings of the gallery page.
-        # Page-only shortcut scope missed F2 when focus stayed in one of those controls.
-        self.shortcut = QShortcut(QKeySequence("F2"), gallery.page.window())
+        # Keep slideshow available when focus stays in a sibling shell control.
+        self.shortcut = QShortcut(QKeySequence("F6"), gallery.page.window())
         self.shortcut.setContext(Qt.ShortcutContext.WindowShortcut)
         self.shortcut.setAutoRepeat(False)
         self.shortcut.activated.connect(self.toggle)
