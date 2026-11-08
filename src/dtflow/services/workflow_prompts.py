@@ -68,10 +68,10 @@ def _fail(node: GraphNode, exc: PlanError) -> ValidationError:
     return ValidationError(f"{node.label}: {exc}")
 
 
-def draw(node: GraphNode, snapshot: Snapshot | None, key: int = 0) -> tuple[tuple[str, dp.Runs], ...]:
+def draw(node: GraphNode, snapshot: Snapshot | None, key: str = "") -> tuple[tuple[str, dp.Runs], ...]:
     """The node's prompts with their variation runs: ``prompt_count`` random distinct ones, or every combination.
 
-    ``key`` makes the random draw of each incoming image its own (it is mixed into the seed of the sample)."""
+    ``key`` names the incoming image (its Generate node and branch number), so each image's random draw is its own."""
     template = str(node.params["prompt"])
     lists = _lists(snapshot)
     try:
@@ -111,14 +111,19 @@ def resolve(
 ) -> tuple[str, tuple[tuple[str, str], ...]]:
     """(prompt, evidence pairs) of one branch of a wildcard node.
 
-    Generate image ``i`` takes entry ``i`` of the node's one draw; an Inpaint/Img2img output takes entry ``output`` of
-    a draw seeded by its incoming image, so every incoming image gets its own prompts."""
+    Generate image ``i`` takes entry ``i`` of the node's one draw. An Inpaint/Img2img node that splits takes entry
+    ``output`` of a draw seeded by its incoming image (Generate node and branch), so every incoming image gets its own
+    prompts. One that does not split (a single prompt) takes entry 0 of a draw keyed by the incoming branch; the last
+    digit of that branch belongs to an upstream node, not to this one."""
     expected = prompt_branches(node, counts)
     if node.type == GENERATE:
-        key, index = 0, branch[1]
+        key, index = "", branch[1]
+    elif expected <= 1:
+        key, index = f"{branch[0]}.{branch[1]}", 0
     else:
         parent = parent_branch(branch)
-        key, index = (parent[1] if parent is not None else 0), output_index(branch)
+        incoming = parent if parent is not None else branch
+        key, index = f"{incoming[0]}.{incoming[1]}", output_index(branch)
     drawn = draw(node, snapshot, key)
     if len(drawn) != expected or index >= len(drawn):
         raise ValidationError(f"{node.label}: the wildcard lists changed since the run was planned.")

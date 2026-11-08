@@ -1000,16 +1000,27 @@ class WorkflowsPage(QObject):
         spin.setVisible(node.prompt_mode == "sample")
         layout.addWidget(spin)
 
-        def changed(*_args) -> None:
+        def mode_changed(*_args) -> None:
             mode = selector.currentData()
             spin.setVisible(mode == "sample")
             self.canvas.set_node_prompt_mode(node_id, mode, spin.value() if mode == "sample" else None)
-            QTimer.singleShot(0, lambda: self._rebuild_inspector(node_id))  # outputs per image follows the mode
+            QTimer.singleShot(0, lambda: self._rebuild_inspector(node_id))  # the prompt field and notes follow the mode
 
-        selector.currentIndexChanged.connect(changed)
-        spin.valueChanged.connect(changed)
+        def count_changed(number: int) -> None:
+            # Only the stored count changes; rebuilding the inspector here would steal focus from the spin box.
+            if selector.currentData() == "sample":
+                self.canvas.set_node_prompt_mode(node_id, "sample", number)
+
+        selector.currentIndexChanged.connect(mode_changed)
+        spin.valueChanged.connect(count_changed)
         if node.prompt_mode is None:
             return
+        ignored = "batch size × batch count" if node.type == wf.GENERATE else "Outputs per image"
+        note = _label(
+            f"The prompt count sets how many images this node makes; {ignored} no longer applies.",
+            "secondary",
+        )
+        layout.addWidget(note)
         folder = QPushButton("Show wildcards folder", host)
         folder.setAccessibleName(f"Show wildcards folder for node {node_id}")
         folder.setToolTip("Lists are plain NAME.txt files, one entry per line. Edit them in your file manager.")
@@ -1046,7 +1057,7 @@ class WorkflowsPage(QObject):
         from dtflow.ui.prompt_tags import tagged_html
 
         graph = self.canvas.current_graph()
-        preview = _label("", "secondary")
+        preview = _label("", "secondary")  # example draws: an Inpaint/Img2img node draws again per incoming image
         preview.setTextFormat(Qt.TextFormat.RichText)
         preview.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
         try:
@@ -1057,7 +1068,7 @@ class WorkflowsPage(QObject):
             return preview
         shown = drawn[:5]
         more = f"<br>… {len(drawn)} in all" if len(drawn) > len(shown) else ""
-        preview.setText("<br>".join(tagged_html(text, runs) for text, runs in shown) + more)
+        preview.setText("Example prompts<br>" + "<br>".join(tagged_html(text, runs) for text, runs in shown) + more)
         return preview
 
     def _add_outputs(self, layout, node_id: int, value: int) -> None:
