@@ -1090,7 +1090,9 @@ class QueuePage:
         kind = view.get("kind") if view is not None else None
         if kind == "workflow":
             # A workflow item retries its first failed or unconfirmed step with the original settings (#220).
-            page.itemRetryButton.setEnabled(row is not None and self._workflow_retry_target(view) is not None)
+            page.itemRetryButton.setEnabled(
+                row is not None and self._workflow_retry_target(view, row.item_id) is not None
+            )
         else:
             scripted = kind in RUN_KINDS
             page.itemRetryButton.setEnabled(row is not None and row.state in RELAUNCH_STATES and not scripted)
@@ -1362,8 +1364,12 @@ class QueuePage:
             self.relaunch(queue_id)
 
     @staticmethod
-    def _workflow_retry_target(view: dict | None) -> tuple[int, tuple[int, int]] | None:
-        """(node id, branch) of a workflow run's first failed step, else its first step with no confirmed outcome."""
+    def _workflow_retry_target(view: dict | None, row_id: str | None = None) -> tuple[int, tuple[int, int]] | None:
+        """(node id, branch) a workflow Retry reruns (#277).
+
+        An image row (``wf:<node>.<root>.<path>:<item>``) retries exactly that row's step, and the runner reruns only its
+        branch plus the branches split from it. The run's summary row retries its first failed step, else its first step
+        with no confirmed outcome."""
         from dtflow.core.workflows import is_descendant
 
         item = next((item for item in (view or {}).get("items", ()) if item.get("workflow")), None)
@@ -1375,10 +1381,20 @@ class QueuePage:
             for step in steps
             if run.get("state") == "running" and step.get("state") in ("running", "paused")
         }
+        chosen = None
+        if row_id and row_id.startswith("wf:"):
+            chosen = row_id[3:].split(":", 1)[0]
         for wanted in ("failed", "unknown"):
             for step in steps:
                 if step.get("state") != wanted:
                     continue
+                if chosen is not None:
+                    try:
+                        mine = f"{int(step['node_id'])}.{int(step['branch'][0])}.{int(step['branch'][1])}"
+                    except (KeyError, TypeError, ValueError, IndexError):
+                        continue
+                    if mine != chosen:
+                        continue
                 try:
                     branch = (int(step["branch"][0]), int(step["branch"][1]))
                     node_id = int(step["node_id"])
@@ -1393,7 +1409,8 @@ class QueuePage:
         return None
 
     def _retry_workflow(self, queue_id: str) -> None:
-        target = self._workflow_retry_target(self._views.get(queue_id))
+        row = self.model.row_at(self.page.queueItemsView.currentIndex().row())
+        target = self._workflow_retry_target(self._views.get(queue_id), row.item_id if row else None)
         if target is None:
             return
         node_id, branch = target
