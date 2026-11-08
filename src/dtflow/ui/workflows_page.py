@@ -903,8 +903,8 @@ class WorkflowsPage(QObject):
         else:
             for param in spec.params:
                 self._add_param(layout, node_id, param, params.get(param.name), choices)
-        if spec.type in wf.GENERATIVE:
-            self._add_prompt_mode(layout, node_id, node)
+                if param.name == "prompt" and spec.type in wf.GENERATIVE:
+                    self._add_prompt_mode(layout, node_id, node)  # right under the prompt it applies to
         if spec.type in wf.IMAGE_OPERATIONS and node.prompt_mode is None:
             self._add_outputs(layout, node_id, node.image_outputs)
         self._add_concurrency(layout, node_id, choices.get("backend"))
