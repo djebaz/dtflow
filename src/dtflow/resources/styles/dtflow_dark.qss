@@ -1965,6 +1965,11 @@ QFrame#galleryPagerBar {
   border: 1px solid ${color.sectionBorder};
   border-radius: ${size.panelRadius};
 }
+QFrame#galleryPagerBar[slideshow="true"] {
+  background: ${color.editorScrim};
+  border-color: transparent;
+  border-radius: 0;
+}
 QFrame#galleryPagerBar QLabel#galleryPagerRange {
   color: ${color.text};
   font-size: 13px;
@@ -2089,6 +2094,25 @@ QFrame[role="galleryHoverCard"] QTextEdit {
   color: ${color.text};
   border: 0;
   border-radius: 6px;
+}
+QFrame[role="galleryHoverCard"][slideshow="true"] {
+  background: ${color.editorScrim};
+  border-color: ${color.secondary};
+}
+QFrame[role="galleryHoverCard"][slideshow="true"] QLabel,
+QFrame[role="galleryHoverCard"][slideshow="true"] QTextEdit {
+  background: transparent;
+  color: ${color.secondary};
+}
+QFrame#gallerySlideshowControls {
+  background: ${color.surface};
+  border: 1px solid ${color.border};
+  border-radius: ${size.radius};
+}
+QPushButton#gallerySlideshowButton:checked {
+  background: ${color.selection};
+  border-color: ${color.selectionBorder};
+  color: ${color.selectionText};
 }
 
 QPushButton[role="galleryInfo"] {
