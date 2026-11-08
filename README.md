@@ -12,7 +12,7 @@ and records every request so each image has an inspectable origin.
 - **One workspace.** Connection, Generate, Queues, Images and Logs share one window with a
   persistent status bar, inline confirmations and notices, and an Inspector for request details.
 - **Local or cloud.** Use local Draw Things over gRPC or direct DT+ Cloud Compute. Model and LoRA
-  inventory refreshes without generating; cloud API keys are stored in Windows Credential Manager.
+  inventory refreshes without generating; cloud API keys are stored in Windows Credential Manager (several can be saved and switched; see devdocs/guides/credentials.md).
 - **Generation with provenance.** Pick a checkpoint from a searchable, classified catalogue, add
   LoRAs with explicit weights, and control seed, size, steps, guidance and sampler. Results record
   prompts, seeds, model and LoRA identifiers and effective parameters. An offline DT+ Compute Units

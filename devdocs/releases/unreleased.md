@@ -10,6 +10,9 @@ Changes through 6.1.0 are consolidated in [DTFlow 6.1.0](v6.1.0.md). This file t
 
 ## Changed
 
+- DT+ keys: the key selected in the app (saved in Windows Credential Manager) now wins over `DRAWTHINGS_API_KEY`; several keys can be saved, named and switched, and the environment key can be selected explicitly. The Connection card shows which key is active and whether the environment variable is also set. The CLI still reads the environment only.
+- Daily generation stats list every available key (even at zero) under one consistent name; no key is shown as unidentified.
+
 - Ordinary queues, workflows and scripts skip unused preview image decoding, PNG encoding, service buffering and forwarding. Direct Generate keeps previews; progress and saved finals are unchanged. Preview bytes still arrive because the inspected protocol has no verified client download opt-out. Dev logs summarize received/skipped previews (#306).
 
 ## Fixed

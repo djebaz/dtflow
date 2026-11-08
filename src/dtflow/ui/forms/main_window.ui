@@ -350,13 +350,36 @@
                  <item>
                   <widget class="QLabel" name="credentialHelpLabel">
                    <property name="text">
-                    <string>Saved securely in Windows Credential Manager. An environment key keeps precedence.</string>
+                    <string>Keys are saved securely in Windows Credential Manager. The selected key is used for all DT+ work; the DRAWTHINGS_API_KEY variable is read at launch and used only when nothing is saved or when selected here.</string>
                    </property>
                    <property name="wordWrap">
                     <bool>true</bool>
                    </property>
                    <property name="role" stdset="0">
                     <string>secondary</string>
+                   </property>
+                  </widget>
+                 </item>
+                 <item>
+                  <widget class="QLabel" name="keySelectLabel">
+                   <property name="text">
+                    <string>Active key</string>
+                   </property>
+                   <property name="textRole" stdset="0">
+                    <string>caption</string>
+                   </property>
+                   <property name="buddy">
+                    <cstring>keySelectCombo</cstring>
+                   </property>
+                  </widget>
+                 </item>
+                 <item>
+                  <widget class="QComboBox" name="keySelectCombo">
+                   <property name="accessibleName">
+                    <string>Active DT plus API key</string>
+                   </property>
+                   <property name="toolTip">
+                    <string>Switch between saved keys and the environment key. Nothing is sent to DT+.</string>
                    </property>
                   </widget>
                  </item>
@@ -373,6 +396,22 @@
                    </property>
                    <property name="accessibleName">
                     <string>DT plus API key</string>
+                   </property>
+                  </widget>
+                 </item>
+                 <item>
+                  <widget class="QLineEdit" name="keyNameEdit">
+                   <property name="placeholderText">
+                    <string>Name (optional, for example Studio)</string>
+                   </property>
+                   <property name="maxLength">
+                    <number>40</number>
+                   </property>
+                   <property name="clearButtonEnabled">
+                    <bool>true</bool>
+                   </property>
+                   <property name="accessibleName">
+                    <string>Name for the DT plus API key</string>
                    </property>
                   </widget>
                  </item>
