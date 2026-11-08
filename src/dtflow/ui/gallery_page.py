@@ -3452,7 +3452,8 @@ class GalleryPage(QObject):
             self.external_button.setEnabled(False)
             self.surface.update()
             return
-        self.surface_painter.set_pixmap(QPixmap.fromImage(result[0]), fade_ms=200 if self.slideshow.active else 0)
+        fade_ms, fade_fps = self.slideshow.transition_timing() if self.slideshow.active else (0, 60)
+        self.surface_painter.set_pixmap(QPixmap.fromImage(result[0]), fade_ms=fade_ms, fade_fps=fade_fps)
         if self.slideshow.active:
             self.hover_card.set_item(self._selected())
         self.surface_painter.placeholder = ""

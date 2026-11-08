@@ -4,11 +4,12 @@ No output discovery, persistence, credentials or provider calls. All artwork and
 metadata here are explicitly illustrative fixtures.
 """
 
+import math
 from pathlib import Path
 
 from dtflow.ui.gallery_selection_check import GallerySelectionCheck
 
-from PySide6.QtCore import QEasingCurve, QEvent, QObject, QRectF, QSize, Qt, QTimer, QVariantAnimation
+from PySide6.QtCore import QElapsedTimer, QEvent, QObject, QRectF, QSize, Qt, QTimer
 from PySide6.QtGui import QColor, QFont, QIcon, QKeySequence, QPainter, QPainterPath, QPixmap, QShortcut
 from PySide6.QtWidgets import (
     QApplication,
@@ -51,6 +52,9 @@ class CoverPainter(QObject):
         self._previous_pixmap = QPixmap()
         self._previous_view = None
         self._fade = None
+        self._fade_clock = QElapsedTimer()
+        self._fade_duration = 0
+        self._fade_fps = 60
         self._blend = 1.0
         self.badges = badges
         self.placeholder = ""
@@ -77,7 +81,7 @@ class CoverPainter(QObject):
         self._blend = 1.0
         self.widget.update()
 
-    def set_pixmap(self, pixmap: QPixmap, *, fade_ms: int = 0) -> None:
+    def set_pixmap(self, pixmap: QPixmap, *, fade_ms: int = 0, fade_fps: int = 60) -> None:
         outgoing = QPixmap(self.pixmap)
         view = (self.mode, self.zoom, tuple(self.offset))
         self.finish_transition()
@@ -88,20 +92,27 @@ class CoverPainter(QObject):
             self._previous_pixmap = outgoing
             self._previous_view = view
             if self._fade is None:
-                self._fade = QVariantAnimation(self)
-                self._fade.setEasingCurve(QEasingCurve.Type.InOutCubic)
-                self._fade.valueChanged.connect(self._blend_changed)
-                self._fade.finished.connect(self.finish_transition)
-            self._fade.setDuration(fade_ms)
-            self._fade.setStartValue(0.0)
-            self._fade.setEndValue(1.0)
+                self._fade = QTimer(self)
+                self._fade.setTimerType(Qt.TimerType.PreciseTimer)
+                self._fade.setSingleShot(True)
+                self._fade.timeout.connect(self._advance_fade)
+            self._fade_duration = fade_ms
+            self._fade_fps = max(1, min(120, fade_fps))
             self._blend = 0.0
-            self._fade.start()
+            self._fade_clock.start()
+            self._fade.start(math.ceil(1000 / self._fade_fps))
         self.widget.update()
 
-    def _blend_changed(self, value) -> None:
-        self._blend = float(value)
+    def _advance_fade(self) -> None:
+        elapsed = self._fade_clock.nsecsElapsed() / 1_000_000
+        if elapsed >= self._fade_duration:
+            self.finish_transition()
+            return
+        self._blend = elapsed / self._fade_duration  # evenly spaced visible blend levels
         self.widget.update()
+        # Target the bounded cadence from elapsed time; never queue catch-up work after missed frames.
+        next_frame = int(elapsed * self._fade_fps / 1000) + 1
+        self._fade.start(max(1, math.ceil(next_frame * 1000 / self._fade_fps - elapsed)))
 
     def _paint_pixmap(self, painter, rect, pixmap, mode, zoom, offset, opacity) -> None:
         if pixmap.isNull():
@@ -120,6 +131,8 @@ class CoverPainter(QObject):
         if event.type() == QEvent.Paint:
             painter = QPainter(obj)
             painter.setRenderHint(QPainter.Antialiasing)
+            if self._previous_view is not None:
+                painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
             rect = QRectF(obj.rect())
             clip = QPainterPath()
             clip.addRoundedRect(rect, 10, 10)
