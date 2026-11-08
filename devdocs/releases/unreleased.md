@@ -15,6 +15,8 @@ Changes through 6.0.0 are consolidated in [DTFlow 6.0.0](v6.0.0.md). This file t
 - Queues: selecting an image row of a workflow run and pressing Retry reruns exactly that image's step with its original settings, plus the branches split from it. Sibling images and their saved results stay as they are. The run's summary row still retries its first failed step. Smoke-tested by the owner (#277, #294).
 - Queues: a workflow run lists every image it makes under its summary row, and the images a Save node kept are labelled "final" and outlined in blue, so a 2 → 3 → 2 run shows 20 rows with the 12 final ones standing out. Smoke-tested by the owner (#281, #295).
 
+- Workflows: two or more unrelated Inpaint/Img2img nodes may each make several outputs from the same images (for example Generate 2 → Inpaint ×3 and Img2Img ×2 in parallel: 12 generations, 10 saved images). Each output keeps its own identity, seed, status and Retry; outputs of different multi-output nodes are never paired by matching variation numbers (#302).
+
 ## Changed
 
 - Saved images use readable names in one folder per queue: `outputs/queue-<queue id>/<label>-s<seed>-<attempt id>-1.png` with a matching `<label>-s<seed>-<attempt id>.json` sidecar (label = prompt excerpt, or node and branch in a workflow). Images saved earlier keep their `outputs/<attempt id>/final-1.png` paths and still work in Images, Queues, Export and Trash/Delete; nothing is renamed. See [output layout](../architecture/output-layout.md). Smoke-tested by the owner (#296, #297).
@@ -24,7 +26,7 @@ Changes through 6.0.0 are consolidated in [DTFlow 6.0.0](v6.0.0.md). This file t
 ## Fixed
 
 - Workflows: Retry of one failed Generate image after the run has ended now regenerates only that image and what it feeds (it used to resubmit every output of the Generate node, including successful ones), and the planned count matches.
-- Workflows: two unrelated Inpaint/Img2img nodes that both make several outputs from the same images are refused when the workflow is planned, because their results could not be told apart. Chained multiplying nodes are unaffected. A saved workflow of that shape now needs one of them in sequence or set to one output.
+- Workflows: two unrelated multi-output Inpaint/Img2img nodes on the same images were briefly refused when planned because their results could not be told apart (PR #300); #302 supports them.
 - Queues: an Inpaint that continued without a mask shows as succeeded ("passed through, no mask") in rows, counts, filter chips and the log instead of cancelled, and is not marked final twice; the filter chips count a workflow run's images. Workflow image rows take their operation from the node type and show an unknown seed instead of seed 0 and Text to image. Smoke-tested by the owner (#274 review, PR #300).
 
 ## Upgrade and compatibility
@@ -32,6 +34,8 @@ Changes through 6.0.0 are consolidated in [DTFlow 6.0.0](v6.0.0.md). This file t
 - No stored record changes for the new output layout: attempt records, gallery identity and recycle records are unchanged. Output folders written by this version are not understood as managed originals by an older app version (Trash/Delete refuses them).
 
 - Workflow files gain optional `extra.dtflow.concurrency` and a node property `"DTFlow concurrency"`; files without them load unchanged. Inpaint and Img2img nodes gain an optional node property `"DTFlow outputs"` (1..4, missing = 1); older app versions reject a file that sets it. `settings.json` gains optional `workflow_cloud`, `workflow_local` and `workflow_segmentation`; an older app version that rewrites `settings.json` drops them.
+
+- Branch integers of workflows with parallel multi-output nodes are stored negative (node-qualified); earlier runs and workflow files are unchanged. An older app version cannot read such a run's branches correctly.
 
 ## Validations
 

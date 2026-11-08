@@ -783,38 +783,67 @@ Branch = tuple[int, int]  # (originating DTFGenerate node id, encoded image inde
 # index (0..ROOT_RADIX-1); each further digit is the 1-based output number chosen by one multiplying node on the way
 # (1..MAX_OUTPUTS, radix OUTPUT_RADIX). A child never collides with a root branch or a sibling at another depth, and a
 # workflow without multiplying nodes keeps the plain index of every earlier run.
+#
+# That path names no node, so two unrelated multiplying nodes on the same images would share child identities. A
+# workflow with such parallel splitters (#302) therefore uses the node-qualified form: the integer is stored NEGATIVE
+# (-1 - path) and each further digit is ``slot * MAX_OUTPUTS + output + 1`` (radix QUALIFIED_RADIX), where ``slot`` is the
+# 0-based rank of the splitting node among the workflow's multiplying nodes by node id. A non-negative integer is always
+# read the old way, so records of earlier runs keep their meaning; Generate images keep their plain index in both forms.
 ROOT_RADIX = 16  # Generate makes at most batch_size x batch_count = 16 images
 OUTPUT_RADIX = MAX_OUTPUTS + 1
+MAX_SPLIT_NODES = 16  # multiplying nodes a workflow may hold once its branches are node-qualified
+QUALIFIED_RADIX = MAX_SPLIT_NODES * MAX_OUTPUTS + 1
 
 
 def _path(index: int) -> tuple[int, list[int]]:
-    """(Generate image index, output numbers from the first multiplying node to the last)."""
-    root, rest = index % ROOT_RADIX, index // ROOT_RADIX
-    outputs = []
+    """(Generate image index, raw digits from the first multiplying node to the last)."""
+    qualified = index < 0
+    value, radix = (-1 - index, QUALIFIED_RADIX) if qualified else (index, OUTPUT_RADIX)
+    root, rest = value % ROOT_RADIX, value // ROOT_RADIX
+    digits = []
     while rest:
-        outputs.append(rest % OUTPUT_RADIX)
-        rest //= OUTPUT_RADIX
-    return root, outputs
+        digits.append(rest % radix)
+        rest //= radix
+    return root, digits
 
 
-def child_branch(parent: Branch, output: int) -> Branch:
-    """The branch of output number ``output`` (0-based) of the node that splits ``parent``."""
-    _, outputs = _path(parent[1])
-    return (parent[0], parent[1] + (output + 1) * ROOT_RADIX * OUTPUT_RADIX ** len(outputs))
+def _output_number(index: int, digit: int) -> int:
+    """The 1-based output number a digit of this branch integer stands for."""
+    return (digit - 1) % MAX_OUTPUTS + 1 if index < 0 else digit
+
+
+def child_branch(parent: Branch, output: int, slot: int | None = None) -> Branch:
+    """The branch of output number ``output`` (0-based) of the node that splits ``parent``.
+
+    ``slot`` is the splitting node's rank among the workflow's multiplying nodes; given, the child is node-qualified
+    (#302). A node-qualified workflow qualifies every split, so a legacy child of a qualified parent is refused."""
+    _, digits = _path(parent[1])
+    if slot is None:
+        if parent[1] < 0:
+            raise ValueError("A node-qualified branch can only be split with a node slot.")
+        return (parent[0], parent[1] + (output + 1) * ROOT_RADIX * OUTPUT_RADIX ** len(digits))
+    if parent[1] >= 0 and digits:
+        raise ValueError("A legacy branch cannot be split with a node slot.")
+    value = -1 - parent[1] if parent[1] < 0 else parent[1]
+    digit = slot * MAX_OUTPUTS + output + 1
+    return (parent[0], -1 - (value + digit * ROOT_RADIX * QUALIFIED_RADIX ** len(digits)))
 
 
 def parent_branch(branch: Branch) -> Branch | None:
     """The branch this one was split from, or None for a Generate image."""
-    _, outputs = _path(branch[1])
-    if not outputs:
+    _, digits = _path(branch[1])
+    if not digits:
         return None
-    return (branch[0], branch[1] - outputs[-1] * ROOT_RADIX * OUTPUT_RADIX ** (len(outputs) - 1))
+    if branch[1] < 0:
+        value = -1 - branch[1] - digits[-1] * ROOT_RADIX * QUALIFIED_RADIX ** (len(digits) - 1)
+        return (branch[0], -1 - value if len(digits) > 1 else value)
+    return (branch[0], branch[1] - digits[-1] * ROOT_RADIX * OUTPUT_RADIX ** (len(digits) - 1))
 
 
 def output_index(branch: Branch) -> int:
     """0-based output number of the last multiplying node on this branch (0 for a Generate image)."""
-    _, outputs = _path(branch[1])
-    return outputs[-1] - 1 if outputs else 0
+    _, digits = _path(branch[1])
+    return _output_number(branch[1], digits[-1]) - 1 if digits else 0
 
 
 def is_descendant(branch: Branch, ancestor: Branch) -> bool:
@@ -837,8 +866,9 @@ def source_branch(plan: WorkflowPlan, node_id: int, branch: Branch) -> Branch | 
 
 
 def branch_label(branch: Branch) -> str:
-    root, outputs = _path(branch[1])
-    return f"Generate #{branch[0]} image {root + 1}" + "".join(f".{number}" for number in outputs)
+    root, digits = _path(branch[1])
+    numbers = (_output_number(branch[1], digit) for digit in digits)
+    return f"Generate #{branch[0]} image {root + 1}" + "".join(f".{number}" for number in numbers)
 
 
 @dataclass(frozen=True)
@@ -879,13 +909,33 @@ def plan_workflow(graph: Graph) -> WorkflowPlan:
     pairing on converging inputs and settings that pass ``ResolvedGenerationRequest`` validation. Raises
     WorkflowError naming the node.
     """
+    try:
+        return _plan(graph, qualified=False)
+    except _ParallelSplit:  # unrelated multiplying nodes share images: plan again with node-qualified branches (#302)
+        return _plan(graph, qualified=True)
+
+
+class _ParallelSplit(Exception):
+    """Internal: two unrelated multiplying nodes split the same images, so plain branch paths would be ambiguous."""
+
+
+def _plan(graph: Graph, *, qualified: bool) -> WorkflowPlan:
     if not graph.nodes:
         raise WorkflowError("The workflow is empty.")
     order = topological_order(graph)
     if not any(node.type == SAVE for node in graph.nodes):
         raise WorkflowError("Add a Save image node to mark the workflow result.")
     plans: dict[int, NodePlan] = {}
-    splitters: list[int] = []  # nodes with several outputs per image, whose child branches carry no node identity
+    splitters: list[int] = []  # nodes with several outputs per image planned so far
+    slots: dict[int, int] = {}
+    if qualified:  # the rank of each multiplying node by node id is the node part of its children's identity
+        multiplying = sorted(n.id for n in graph.nodes if n.type in IMAGE_OPERATIONS and n.outputs > 1)
+        if len(multiplying) > MAX_SPLIT_NODES:
+            raise WorkflowError(
+                f"A workflow with parallel multi-output nodes can hold at most {MAX_SPLIT_NODES} Inpaint or "
+                "Img2Img nodes with several outputs."
+            )
+        slots = {node_id: rank for rank, node_id in enumerate(multiplying)}
     total = analyses = 0
     for node_id in order:
         node = graph.node(node_id)
@@ -909,14 +959,19 @@ def plan_workflow(graph: Graph) -> WorkflowPlan:
             if any(other != branches for other in inputs[1:]):
                 raise WorkflowError(
                     f"{node.label}: its image and mask must come from the same generated images (same branch); "
-                    "DTFlow never pairs images from different Generate nodes."
+                    "DTFlow never pairs images from different Generate nodes, or the outputs of two different "
+                    "multi-output nodes (equal variation numbers are not the same image)."
                 )
             if node.type in IMAGE_OPERATIONS:
                 node_request(node, Sampler(node.params["sampler"]), width=1024, height=1024)
                 if node.outputs > 1:  # each incoming image becomes ``outputs`` branches (#276)
                     _check_bound(total, len(branches) * node.outputs, node)  # before the branches are built
-                    branches = tuple(child_branch(parent, k) for parent in branches for k in range(node.outputs))
-                    _check_split_lineage(graph, plans, splitters, node, branches)
+                    split_slot = slots[node.id] if qualified else None
+                    branches = tuple(
+                        child_branch(parent, k, split_slot) for parent in branches for k in range(node.outputs)
+                    )
+                    if not qualified:
+                        _check_split_lineage(graph, plans, splitters, node, branches)
                     splitters.append(node.id)
         generations = len(branches) if node.type in GENERATIVE else 0
         _check_bound(total, generations, node)
@@ -931,18 +986,15 @@ def plan_workflow(graph: Graph) -> WorkflowPlan:
 def _check_split_lineage(
     graph: Graph, plans: dict[int, NodePlan], earlier: list[int], node: GraphNode, branches
 ) -> None:
-    """Refuse two unrelated nodes that both split the same images (#276): a branch is (Generate, mixed-radix path) and
-    names no node, so their children would share identities and could be paired, or serialized, with one another. A
-    node splitting the output of another one (a chain) has a longer path and stays unambiguous."""
+    """Detect two unrelated nodes that both split the same images (#276): a plain branch is (Generate, mixed-radix
+    path) and names no node, so their children would share identities. The workflow is then planned again with
+    node-qualified branches (#302). A node splitting the output of another one (a chain) has a longer path and stays
+    unambiguous in the plain form."""
     for other_id in earlier:
         if set(plans[other_id].branches) & set(branches) and not (
             would_cycle(graph, other_id, node.id) or would_cycle(graph, node.id, other_id)
         ):
-            raise WorkflowError(
-                f"{node.label}: it and {graph.node(other_id).label} both create several outputs from the same "
-                "images in parallel, so their results could not be told apart. Put one after the other, or give "
-                "only one of them several outputs."
-            )
+            raise _ParallelSplit
 
 
 def _check_bound(total: int, adding: int, node: GraphNode) -> None:

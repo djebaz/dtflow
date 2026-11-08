@@ -58,10 +58,19 @@ of a Retry seed (an ancestor branch; missing means the retried branch). Retry of
 branches split from it; for a Generate output that is the one image and what it feeds, also after the run has ended
 (sibling outputs are never resubmitted, and the new run plans only the generations in that scope).
 
-A branch names no node, so two unrelated Inpaint/Img2img nodes that both make several outputs from the same images
-would produce identical child branches (shared scheduling, outputs paired across nodes). `plan_workflow` refuses that
-combination with a clear reason; a multiplying node placed after another one has a longer path and stays valid. No stored
-record changes.
+*Parallel multiplying nodes (#302).* A plain branch path names no node, so two unrelated Inpaint/Img2img nodes that
+both make several outputs from the same images would produce identical child branches. When `plan_workflow` meets that
+shape it plans the workflow again with **node-qualified** branches: the integer is stored negative (`-1 - path`) and each
+digit after the Generate index is `slot * 4 + output + 1` (radix 65), where `slot` is the 0-based rank of the splitting
+node among the workflow's multiplying nodes by node id (at most 16 such nodes in this form). A non-negative integer is
+always decoded the old way, so every earlier record, label and saved file keeps its meaning; workflows without parallel
+splitters (single outputs, chains, one splitter) still produce exactly the old branches. Output identity is therefore
+source image + splitting node + output number: seeds, Retry, scheduling, steps and results never share a key, Retry of
+one output reruns only that output's branch and what it feeds, and the labels still read `Generate #1 image 2.3`
+(the step title names the node). Converging inputs are still accepted only when their branches are equal, which now
+means the same lineage, so outputs of two different multiplying nodes are refused with a reason instead of being paired
+by matching variation numbers. The record shape is unchanged (`[Generate node id, integer]`); only the integer's value
+space gains negative values, which an older app version does not decode (it would mis-read the path of such a run).
 
 In Queues a step that "Continue without a mask" passed through (Inpaint skipped, source forwarded) is a succeeded image
 row labelled "passed through, no mask" in the rows, counts, filter chips and log; only the original image row is marked
