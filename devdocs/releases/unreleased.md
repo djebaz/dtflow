@@ -6,6 +6,7 @@ Changes through 6.1.0 are consolidated in [DTFlow 6.1.0](v6.1.0.md). This file t
 
 ## Added
 
+- The GUI writes a Python stack to `logs/crash-<pid>.txt` if the process dies natively (empty files are removed on clean exit), so a crash like [#308](https://github.com/djebaz/dtflow/issues/308) shows which Python code was running.
 - Dev-mode (`-x` / `--dev`) workflow/detector RAM checkpoints and up to one minute of post-execution observations in the existing structured log, with process/system memory availability and detector session/tensor byte counts. See [interpretation limits](../guides/development.md#workflow-and-detector-memory-diagnostics) (#306).
 
 ## Changed

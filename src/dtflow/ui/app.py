@@ -69,6 +69,40 @@ def close_window(window: MainWindow, result: int) -> int:
     return result
 
 
+_CRASH_TRACE = None  # kept open for the process lifetime so the fault handler can write to it
+
+
+def _enable_native_crash_trace() -> None:
+    """Write the Python stack of every thread to logs/crash-<pid>.txt if the process dies natively (#308).
+
+    The 0xC0000374 heap-corruption dump had no Python traceback, so the Python callback that was running when the
+    native failure was detected stayed unknown. An empty file is removed on a clean exit.
+    """
+    global _CRASH_TRACE
+    try:
+        import atexit
+        import faulthandler
+        import os
+
+        from dtflow.logging_setup import configured_directory
+
+        directory = configured_directory()
+        directory.mkdir(parents=True, exist_ok=True)
+        path = directory / f"crash-{os.getpid()}.txt"
+        _CRASH_TRACE = path.open("w", encoding="utf-8")
+        faulthandler.enable(file=_CRASH_TRACE, all_threads=True)
+
+        def _cleanup() -> None:
+            faulthandler.disable()
+            _CRASH_TRACE.close()
+            if path.stat().st_size == 0:
+                path.unlink(missing_ok=True)
+
+        atexit.register(_cleanup)
+    except Exception:
+        _CRASH_TRACE = None  # diagnostics are optional
+
+
 def run_gui(
     argv: list[str] | None = None,
     *,
@@ -78,6 +112,7 @@ def run_gui(
     diagnostic_notices=None,
 ) -> int:
     application = QApplication.instance() or QApplication(argv if argv is not None else sys.argv[:1])
+    _enable_native_crash_trace()
     window = open_window(
         application,
         no_cache=no_cache,

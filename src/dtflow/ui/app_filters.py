@@ -28,6 +28,13 @@ def install_app_filter(filter_object: QObject) -> None:
     _installed.add(filter_object)
 
 
+def remove_app_filter(filter_object: QObject) -> None:
+    app = QApplication.instance()
+    if app is not None:
+        app.removeEventFilter(filter_object)
+    _installed.discard(filter_object)
+
+
 @contextmanager
 def app_filters_suspended() -> Iterator[None]:
     """Take every registered application filter off while the body runs, then put back those still alive."""
