@@ -16,7 +16,7 @@ outputs/<run folder>/<prefix>-<attempt id>-raw-1.png      provider evidence of a
 outputs/<run folder>/<prefix>-<attempt id>.json           the attempt's metadata sidecar (one per attempt)
 ```
 
-- **Run folder** = one queue item: `queue-<item id 8>`, `workflow-<workflow name>-<run id 8>`, `script-<run id 8>`. A one-off generation outside a queue gets `YYYYMMDD-HHMMSS-single-<attempt id 8>`. Runs with a stable id carry no timestamp, so an app restart or a later per-image Retry of the same workflow run writes into the same folder.
+- **Run folder** = one queue: `queue-<queue id 8>`, shared by all of its items (plain, workflow and script items). A one-off generation outside a queue gets `YYYYMMDD-HHMMSS-single-<attempt id 8>`. Queue folders carry no timestamp, so an app restart or a later per-image Retry writes into the same folder. A script run outside a queue uses `script-<run id 8>`.
 - **Prefix** = readable label plus seed: prompt excerpt for queue items and scripts (`a-red-fox-s42`), node title plus branch for workflows (`inpaint-3-image-1-2-s42`). Lower-case `a-z0-9-` only, label at most 24 characters, prefix at most 48.
 - The full 32-character attempt id stays in the file name on purpose: the gallery identity `attempt:ordinal` can still be inferred from a path (Queues thumbnails, the Workflows result thumbnails, the gallery attempt prefilter), ownership checks stay exact, and two attempts in one folder can never collide.
 - Windows length: the longest name is about 48 + 1 + 32 + 6 = 87 characters, the folder at most 80, so `outputs\<folder>\<file>` adds at most 170 characters to the state path. This is within the 260 limit for normal state locations.
@@ -46,5 +46,4 @@ outputs/<run folder>/<prefix>-<attempt id>.json           the attempt's metadata
 ## Not done / for the owner
 
 - No rename of existing files (would be one-way; needs an explicit go).
-- One folder per queue item, not per whole queue; grouping a whole queue's items into one folder is a small follow-up if preferred.
 - Existing images do not get readable names.

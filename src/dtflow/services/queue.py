@@ -212,7 +212,7 @@ class QueueDispatcher:
                                 request.request_id,
                             )
                         ) from exc
-                layout = OutputLayout(group_name("queue", item_id), prompt_label(request.prompt))
+                layout = OutputLayout(group_name("queue", queue_id), prompt_label(request.prompt))
                 retries = 0
                 while True:
                     try:

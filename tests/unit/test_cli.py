@@ -209,7 +209,7 @@ def test_config_import_overrides_export_and_no_cache_bypass(invoke, tmp_path):
         "-b",
         "fake",
         "-c",
-        metadata["artifacts"][0]["path"].replace("final-1.png", "metadata.json"),
+        json.loads(out)["metadata"],
         "-s",
         "0",
     )

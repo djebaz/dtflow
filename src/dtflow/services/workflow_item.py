@@ -837,7 +837,7 @@ class _Execution:
         """The run's folder and a readable file label naming the node and branch (issue #296)."""
         step = self.steps[keys[0]]
         label = f"{step.get('title') or 'step'} {step.get('branch_label') or ''}"
-        return OutputLayout(group_name("workflow", self.request.run_id, name=self.request.name), slug(label))
+        return OutputLayout(group_name("queue", self.queue_id), slug(label))
 
     async def attempt_state(self, attempt_id: str) -> str | None:
         try:

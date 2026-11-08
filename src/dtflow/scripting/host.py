@@ -160,6 +160,7 @@ class ScriptHost:
         release_child: Callable[[str], Awaitable[None]] | None = None,
         available_assets: tuple[PreparedAsset, ...] = (),
         source_sha256: str = "",
+        output_group: str | None = None,
     ) -> None:
         if base.operation != "txt2img" or base.image_inputs is not None:
             raise ValueError("Scripts start from text-to-image settings only.")
@@ -181,7 +182,7 @@ class ScriptHost:
         self._script_inventory = None
         self._preferences_allowed = False
         self.run_id = run_id
-        self._group = group_name("script", run_id or uuid.uuid4().hex)
+        self._group = output_group or group_name("script", run_id or uuid.uuid4().hex)
         self._forms = 0
         self.baseline = normalize_configuration(decode_configuration(baseline_configuration(base)).values)
         self.generations = 0
@@ -1033,6 +1034,7 @@ def script_hooks(
     reserve_child: Callable[[str, int], Awaitable[bool]] | None = None,
     release_child: Callable[[str], Awaitable[None]] | None = None,
     available_assets: tuple[PreparedAsset, ...] = (),
+    output_group: str | None = None,
 ) -> Callable[[Any], dict[str, Callable[..., Any]]]:
     """The hook factory ``run_recorded`` takes, shared by the CLI and the queue item so both run the same host.
 
@@ -1057,6 +1059,7 @@ def script_hooks(
             reserve_child=reserve_child,
             release_child=release_child,
             available_assets=available_assets,
+            output_group=output_group,
             source_sha256=getattr(context, "source_sha256", ""),
         )
         hosts.append(host)
