@@ -617,7 +617,6 @@ def _clothes_layers(session, image: Image.Image, mask, box):
     return classes[y0:y1, x0:x1].tobytes()
 
 
-
 def analyze_face_geometry(
     source: ImageContent,
     faces: ModelRef,
