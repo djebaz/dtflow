@@ -36,7 +36,7 @@ is the V1 specification; the file contract is [architecture/workflows.md](../arc
   makes that many images (up to 16, replacing *Outputs per image*), each incoming image with its own random draw. The
   draws are seeded, so the same workflow and seed give the same prompts, and Retry reuses them even if a list changed
   afterwards: creating the run stores a copy of the lists it uses. The images count against the 256 generation limit
-  before the run. Each result keeps its resolved prompt, and the varied parts stay highlighted in Queues. A missing list
+  before the run. Each result keeps its resolved prompt and the list versions (SHA-256) it used. A missing list
   or too few variants is refused when the run is created, naming the node and the list.
 - **Checkpoints:** the reference workflow's `PLACEHOLDER_…` checkpoints block Run with "Choose a checkpoint for
   <node>". A checkpoint the model list already loaded on Generate does not contain only warns (Run stays available);

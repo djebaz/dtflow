@@ -86,3 +86,14 @@ Node inspector: mode select (Off / Every combination / Random sample), count fie
 5. Guide and release note.
 
 Per repo conventions: no new tests, `Refs #317`, Djé runs the real-backend smoke.
+
+## Status (at the end of the first implementation pass)
+
+Done: wide branch numbering, node properties and validation, plan counts, list snapshot stored with the run, per-branch
+resolution and evidence, CLI check, inspector controls (mode, count, Show wildcards folder, preview with highlights),
+guide and release note.
+
+Not done yet, to follow: the Connection setting for a different wildcards folder (the folder is `STATE/wildcards`, shared
+with Queues); highlights of the varied parts on workflow rows in Queues (the evidence is stored with each step's request);
+a canvas node summary line for the wildcard mode. The UI changes were written without Qt available in this environment,
+so CI render output and Djé's eyes-on check are the first real run of the inspector.
