@@ -36,6 +36,10 @@ MASK = "MASK"
 PORT_TYPES = (IMAGE, MASK)
 MAX_NODES = 200  # practical bound on one file, not a chain-length limit
 MAX_PLANNED_GENERATIONS = 256  # practical bound on one run's submissions after fan-out
+MAX_CONCURRENCY = 10  # most steps of one workflow, or of one node, that run together (#286)
+DEFAULT_CONCURRENCY = {"cloud": 10, "local": 2, "fake": 4}  # per backend, when the workflow does not say
+DETECT_CONCURRENCY = 2  # local detection default per node when the node does not say
+PROP_CONCURRENCY = "DTFlow concurrency"  # optional node property; a missing value means the default
 LORA_WEIGHT_RANGE = (0.0, 3.0)  # the LoRA editor's range; imported values outside it are rejected, never clamped
 MASK_REGIONS = ("face_skin", "face_skin_and_hair")
 PERSON_CHOICES = ("strongest", "all")
@@ -180,6 +184,7 @@ class GraphNode:
     pos: tuple[float, float]
     params: dict[str, object]
     size: tuple[float, float] = (240.0, 160.0)
+    concurrency: int | None = None  # steps of this node running together (#286); None = the workflow's limit
 
     @property
     def spec(self) -> NodeSpec:
@@ -208,6 +213,7 @@ class Graph:
     view: dict | None = None  # extra.ds (canvas scale/offset) is kept, never interpreted
     last_link_id: int = 0
     frontend_version: str | None = None
+    concurrency: int | None = None  # steps of this workflow running together (#286); None = the backend default
 
     def node(self, node_id: int) -> GraphNode:
         for node in self.nodes:
@@ -316,6 +322,26 @@ def _int(value: object, label: str, minimum: int = 0) -> int:
     return value
 
 
+def _concurrency(value: object, label: str) -> int | None:
+    """An optional concurrency limit: absent/null means the default; otherwise an integer 1..MAX_CONCURRENCY."""
+    if value is None:
+        return None
+    if type(value) is not int or not 1 <= value <= MAX_CONCURRENCY:
+        raise WorkflowError(f"{label} must be an integer from 1 to {MAX_CONCURRENCY}.")
+    return value
+
+
+def workflow_limit(graph: Graph, backend: str) -> int:
+    """Steps of one run that may be in flight together: the workflow's own limit, else the backend default."""
+    return graph.concurrency if graph.concurrency is not None else DEFAULT_CONCURRENCY.get(backend, 1)
+
+
+def node_limit(graph: Graph, node: GraphNode, backend: str) -> int:
+    """Steps of one node that may run together, never above the workflow limit; Detect defaults to a small bound."""
+    default = DETECT_CONCURRENCY if node.type == DETECT_FACE else MAX_CONCURRENCY
+    return max(1, min(node.concurrency if node.concurrency is not None else default, workflow_limit(graph, backend)))
+
+
 def _pair(value: object, label: str) -> tuple[float, float]:
     if not (
         isinstance(value, list) and len(value) == 2 and all(type(v) in (int, float) and math.isfinite(v) for v in value)
@@ -354,13 +380,14 @@ def load_workflow(data: object, *, draft: bool = False) -> Graph:
     if "definitions" in top["extra"] or "subgraphs" in top:
         raise WorkflowError("Subgraphs are not supported by DTFlow workflows.")
     extra = _keys(top["extra"], _EXTRA_KEYS, {"dtflow"}, "extra")
-    dtflow = _keys(extra["dtflow"], {"schema", "version"}, {"schema", "version"}, "extra.dtflow")
+    dtflow = _keys(extra["dtflow"], {"schema", "version", "concurrency"}, {"schema", "version"}, "extra.dtflow")
     if dtflow["schema"] != SCHEMA:
         raise WorkflowError(f"extra.dtflow.schema must be {SCHEMA!r}; this is not a DTFlow workflow.")
     if type(dtflow["version"]) is not int or dtflow["version"] != CONTRACT_VERSION:
         raise WorkflowError(
             f"DTFlow workflow contract version {dtflow['version']!r} is not supported (expected {CONTRACT_VERSION})."
         )
+    wf_concurrency = _concurrency(dtflow.get("concurrency"), "extra.dtflow.concurrency")
     frontend = extra.get("frontendVersion")
     if frontend is not None and not isinstance(frontend, str):
         raise WorkflowError("extra.frontendVersion must be text.")
@@ -381,6 +408,7 @@ def load_workflow(data: object, *, draft: bool = False) -> Graph:
         view=extra.get("ds"),
         last_link_id=state["lastLinkId"],
         frontend_version=frontend,
+        concurrency=wf_concurrency,
     )
     raw_nodes: dict[int, dict] = {}
     for index, raw in enumerate(top["nodes"]):
@@ -397,8 +425,10 @@ def load_workflow(data: object, *, draft: bool = False) -> Graph:
             raise WorkflowError(f"{where}: muted or bypassed nodes (mode {node['mode']!r}) are not supported.")
         if node["flags"] not in ({}, {"collapsed": False}, {"collapsed": True}):
             raise WorkflowError(f"{where}: unsupported flags {node['flags']!r}.")
-        if node["properties"] not in ({}, {"Node name for S&R": spec.type}):
+        properties = _keys(node["properties"], {"Node name for S&R", PROP_CONCURRENCY}, set(), f"{where} properties")
+        if properties.get("Node name for S&R", spec.type) != spec.type:
             raise WorkflowError(f"{where}: unsupported properties.")
+        nd_concurrency = _concurrency(properties.get(PROP_CONCURRENCY), f"{where}: {PROP_CONCURRENCY}")
         for key in ("title", "color", "bgcolor"):
             if key in node:
                 raise WorkflowError(f"{where}: custom '{key}' is not supported by DTFlow workflows.")
@@ -416,7 +446,12 @@ def load_workflow(data: object, *, draft: bool = False) -> Graph:
         _check_ports(node.get("outputs", []), spec.outputs, f"{where} outputs", is_input=False)
         raw_nodes[node_id] = node
         graph_node = GraphNode(
-            node_id, spec.type, _pair(node["pos"], f"{where} pos"), params, _pair(node["size"], f"{where} size")
+            node_id,
+            spec.type,
+            _pair(node["pos"], f"{where} pos"),
+            params,
+            _pair(node["size"], f"{where} size"),
+            nd_concurrency,
         )
         if spec.type in GENERATIVE:
             _check_request(graph_node, draft=draft)
@@ -579,9 +614,13 @@ def dump_workflow(graph: Graph) -> dict:
                 for slot, port in enumerate(spec.outputs)
             ]
         entry["properties"] = {"Node name for S&R": node.type}
+        if node.concurrency is not None:
+            entry["properties"][PROP_CONCURRENCY] = node.concurrency
         entry["widgets_values"] = [_copy(node.params[param.name]) for param in spec.params]
         nodes.append(entry)
     extra: dict = {"dtflow": {"schema": SCHEMA, "version": CONTRACT_VERSION}}
+    if graph.concurrency is not None:
+        extra["dtflow"]["concurrency"] = graph.concurrency
     if graph.view is not None:
         extra["ds"] = graph.view
     if graph.frontend_version is not None:

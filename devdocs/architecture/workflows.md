@@ -16,12 +16,21 @@ and stock ComfyUI workflows do not import into DTFlow.
   are rejected. Subgraphs (`definitions`) are rejected.
 - `extra.dtflow` = `{"schema": "dtflow-workflow", "version": 1}` versions the DTFlow parameter order. A missing,
   different or newer version rejects the file. `extra.ds` (canvas view) and `extra.frontendVersion` are kept, never
-  interpreted.
+  interpreted. `extra.dtflow.concurrency` is optional (#286): an integer 1..10, the most steps of the workflow that
+  run together; missing means the backend default (DT+ 10, local 2).
 - A node has `id`, `type`, `pos`, `size`, `flags` (`{}` or `collapsed`), `order`, `mode` (0 only), `properties`
-  (`{}` or `{"Node name for S&R": type}`), `inputs`/`outputs` exactly as the catalogue lists them and
+  (`{}` or `{"Node name for S&R": type}`, plus an optional `"DTFlow concurrency"` integer 1..10, #286), `inputs`/`outputs` exactly as the catalogue lists them and
   `widgets_values` as an **array** in the fixed order below (D1). Custom `title`/`color`/`bgcolor` are rejected.
 - Links are v1.0 objects; `type` must equal both ports' type; each input has at most one link; both ends must
   reference the link. Array (0.4) links and reroute `parentId` are rejected.
+
+**Concurrency (#286).** The run's limit is the workflow's `concurrency`, else the backend default (DT+ 10, local 2); a
+Draw Things session is widened to that many lanes for the run, so Queues' saved DT+ maximum does not apply to
+workflows. A node's own `DTFlow concurrency` can only lower its share (Detect face defaults to 2, other nodes to the
+workflow's limit). Both are edited in the Workflows inspector (no node selected: the workflow; a node: that node) and
+saved with the file. Seeds, the loop guard and Retry do not depend on the order outputs finish in. The Queues
+Concurrency control of a workflow queue is not used. Whether the local Draw Things app handles two lanes at once is
+unverified, and DT+ may reject many parallel jobs (INTERNAL "unknown error processing request").
 
 Import is all-or-nothing: the first problem rejects the whole file with one reason. Nothing is repaired, dropped,
 renamed or guessed. Values outside a range are rejected, never clamped. A ComfyUI frontend release has **not** been

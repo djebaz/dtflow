@@ -848,6 +848,8 @@ class WorkflowsPage(QObject):
             i.workflowNodeMeta.setText("Select one node on the canvas to edit its settings.")
             i.workflowNodeDescription.setText("")
             w.workflowSelectionCount.setText("" if count == 0 else f"{count} nodes selected")
+            if self.canvas is not None and self.name and count == 0:
+                self._add_concurrency(i.workflowParamsHost.layout(), None)
             return
         node = self.canvas.node(node_id)
         spec = node.SPEC
@@ -866,7 +868,44 @@ class WorkflowsPage(QObject):
         choices = self.choices_source() or {}
         for param in spec.params:
             self._add_param(layout, node_id, param, params.get(param.name), choices)
+        self._add_concurrency(layout, node_id)
         self._sync_lock()
+
+    def _add_concurrency(self, layout, node_id: int | None) -> None:
+        """The workflow's concurrency (no node selected) or one node's (#286); 0 shows "Default" and is not saved."""
+        host = self.inspector.workflowParamsHost
+        node = self.canvas.node(node_id) if node_id is not None else None
+        value = (node.concurrency if node is not None else self.canvas.concurrency) or 0
+        label = _label("Concurrency", "workflowParamLabel")
+        layout.addWidget(label)
+        spin = QSpinBox(host)
+        spin.setRange(0, wf.MAX_CONCURRENCY)
+        spin.setSpecialValueText("Default")
+        spin.setValue(value)
+        if node is None:
+            tip = (
+                "How many steps of this workflow run together. Default: 10 on DT+, 2 on local. "
+                "Each node can lower its own share. Saved in the workflow file."
+            )
+            spin.setAccessibleName("Workflow concurrency")
+        else:
+            tip = (
+                "How many steps of this node run together, never above the workflow concurrency. "
+                "Default: the workflow value (2 for Detect face). Saved in the workflow file."
+            )
+            spin.setAccessibleName(f"Concurrency for node {node_id}")
+        label.setToolTip(tip)
+        spin.setToolTip(tip)
+
+        def changed(number: int) -> None:
+            chosen = number or None
+            if node_id is None:
+                self.canvas.set_concurrency(chosen)
+            else:
+                self.canvas.set_node_concurrency(node_id, chosen)
+
+        spin.valueChanged.connect(changed)
+        layout.addWidget(spin)
 
     def _run_on_canvas(self) -> bool:
         """The followed run belongs to the workflow on the canvas (its steps paint there and in the inspector)."""
