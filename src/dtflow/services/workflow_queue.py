@@ -56,6 +56,7 @@ from dtflow.persistence.queues import (
 )
 from dtflow.persistence.store import SQLiteAttempts, StateBusyError
 from dtflow.persistence.workflow_items import KIND_WORKFLOW, is_workflow_record, workflow_record
+from dtflow.services.workflow_prompts import prompt_counts, read_snapshot
 
 BRANCH_CONTROL = "workflow_branch"  # queue control action; payload {"node_id", "branch", "decision"}
 RETRY_CONTROL = "workflow_retry"  # queue control action; payload {"node_id", "branch"}
@@ -179,7 +180,14 @@ async def _persist(state: Path, backend: dict[str, Any], record: dict[str, Any],
 
 
 async def create_workflow_queue(
-    state: Path, backend: dict[str, Any], workflow: dict[str, Any], name: str, *, up_next: bool = False
+    state: Path,
+    backend: dict[str, Any],
+    workflow: dict[str, Any],
+    name: str,
+    *,
+    up_next: bool = False,
+    wildcards_dir: Path | None = None,
+    wildcards: dict[str, Any] | None | str = "read",
 ) -> tuple[str, str]:
     """Validate (``load_workflow`` + ``plan_workflow``) and persist one paused workflow queue (one item, cap 1).
 
@@ -189,7 +197,14 @@ async def create_workflow_queue(
     if not isinstance(name, str) or not name.strip():
         raise ValidationError("Give the workflow run a name.")
     graph = load_workflow(workflow)
-    plan = plan_workflow(graph)
+    # The wildcard lists are read once, here, and stored with the run so planning, execution and Retry agree (#317).
+    # A caller that already read the lists (the CLI, which printed the plan from them) passes that snapshot.
+    snapshot = (
+        await asyncio.to_thread(read_snapshot, graph, wildcards_dir or Path(state) / "wildcards")
+        if isinstance(wildcards, str)
+        else wildcards
+    )
+    plan = plan_workflow(graph, prompt_counts(graph, snapshot))
     scope = run_scope(graph, plan)
     run_id = uuid4().hex
     planned = planned_submissions(graph, scope)
@@ -200,6 +215,7 @@ async def create_workflow_queue(
         backend=backend["name"],
         planned=planned,
         run=initial_run(run_id, name.strip(), graph, scope, planned),
+        wildcards=snapshot,
     )
     return await _persist(Path(state), backend, record, up_next), run_id
 
@@ -350,7 +366,7 @@ async def retry_step(state: Path, queue_id: str, node_id: int, branch: tuple[int
     if record is None:
         raise ValidationError("This workflow run's record is unreadable; nothing was created.")
     graph = load_workflow(record["workflow"])
-    plan = plan_workflow(graph)
+    plan = plan_workflow(graph, prompt_counts(graph, record.get("wildcards")))
     seed = {
         "node_id": node_id,
         "branch": list(branch),
@@ -367,5 +383,6 @@ async def retry_step(state: Path, queue_id: str, node_id: int, branch: tuple[int
         planned=planned,
         run=initial_run(run_id, record["name"], graph, scope, planned, retry_of=record["run_id"]),
         seed=seed,
+        wildcards=record.get("wildcards"),
     )
     return await _persist(Path(state), backend, retry, False)
