@@ -27,6 +27,17 @@ is the V1 specification; the file contract is [architecture/workflows.md](../arc
   read-only: the run keeps the settings it started with.
 - Before running, the inspector shows what is missing or the plan, for example "Ready: 6 generations and 2 local face
   detections". Batches fan out: each Generate image is its own branch and every downstream node runs once per branch. Batch size × batch count only sets how many images a Generate makes (2 × 1 and 1 × 2 are the same): each image is sent as its own single-image request with seed = the node's seed + the image's index (image 1 uses the node's seed; the sum wraps at 4294967295).
+- **Wildcard prompts (#317):** a Generate, Inpaint or Img2img node can treat its prompt as a template with the same
+  syntax as Queues: `{red|blue}` picks one, `{2$$a|b|c}` picks two, `{3::red|1::blue}` weights, and `__name__` takes a
+  line of `NAME.txt` (one entry per line, `#` comments) from the `wildcards` folder of the state directory. Select the
+  node, set **Wildcard prompt** to *Random sample* (and how many prompts) or *Every combination*; **Show wildcards
+  folder** opens the folder, and the preview lists a few draws with the varied parts highlighted. On Generate the
+  prompt count is the number of images (it replaces batch size × count; image `i` still uses the node seed + `i`); on Inpaint and Img2img each incoming image
+  makes that many images (up to 16, replacing *Outputs per image*), each incoming image with its own random draw. The
+  draws are seeded, so the same workflow and seed give the same prompts, and Retry reuses them even if a list changed
+  afterwards: creating the run stores a copy of the lists it uses. The images count against the 256 generation limit
+  before the run. Each result keeps its resolved prompt and the list versions (SHA-256) it used. A missing list
+  or too few variants is refused when the run is created, naming the node and the list.
 - **Checkpoints:** the reference workflow's `PLACEHOLDER_…` checkpoints block Run with "Choose a checkpoint for
   <node>". A checkpoint the model list already loaded on Generate does not contain only warns (Run stays available);
   no backend is contacted for this check.

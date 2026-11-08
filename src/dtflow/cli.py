@@ -355,6 +355,9 @@ def add_workflow_commands(commands) -> None:
     actions = workflow.add_subparsers(dest="workflow_command", required=True, metavar="{check,queue}")
     check = actions.add_parser("check", help="Strictly load and plan a workflow file; never generates.")
     check.add_argument("file", type=Path, help="Workflow JSON (ComfyUI saved-workflow format, DTFlow contract v1).")
+    check.add_argument(
+        "-d", "--state", type=Path, default=Path(".dtflow"), help="State directory whose wildcards folder is read."
+    )
     queue = actions.add_parser(
         "queue",
         help="Save a workflow file as a paused one-item workflow queue; `dtflow queue start QUEUE` runs it.",
@@ -368,7 +371,7 @@ def add_workflow_commands(commands) -> None:
     )
 
 
-def _read_workflow_file(path: Path):
+def _read_workflow_file(path: Path, folder: Path | None = None):
     from dtflow.core.workflows import load_workflow, plan_workflow
 
     try:
@@ -378,14 +381,17 @@ def _read_workflow_file(path: Path):
     except (UnicodeDecodeError, ValueError):
         raise ValidationError("The workflow file is not valid JSON.") from None
     graph = load_workflow(data)
-    return data, graph, plan_workflow(graph)
+    from dtflow.services.workflow_prompts import prompt_counts, read_snapshot
+
+    snapshot = read_snapshot(graph, folder)  # read once: the plan shown and the stored run use the same lists
+    return data, graph, plan_workflow(graph, prompt_counts(graph, snapshot)), snapshot
 
 
 async def run_workflow(args: argparse.Namespace) -> int:
     """Offline check, or a paused workflow queue; neither contacts a backend nor generates."""
     if args.workflow_command == "check":
         try:
-            _, graph, plan = _read_workflow_file(args.file)
+            _, graph, plan, _ = _read_workflow_file(args.file, args.state / "wildcards")
         except ValidationError as exc:
             print(json.dumps({"valid": False, "reason": str(exc)}, indent=2))
             return EXIT_INVALID
@@ -408,9 +414,11 @@ async def run_workflow(args: argparse.Namespace) -> int:
         return EXIT_OK
     from dtflow.services.workflow_queue import create_workflow_queue
 
-    data, _, plan = _read_workflow_file(args.file)
+    data, _, plan, snapshot = _read_workflow_file(args.file, args.state / "wildcards")
     backend = {"name": args.backend, "endpoint": args.endpoint}
-    queue_id, run_id = await create_workflow_queue(args.state, backend, data, args.name or args.file.stem)
+    queue_id, run_id = await create_workflow_queue(
+        args.state, backend, data, args.name or args.file.stem, wildcards=snapshot
+    )
     print(
         json.dumps(
             {"queue_id": queue_id, "run_id": run_id, "state": "paused", "planned_generations": plan.total_generations},

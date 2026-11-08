@@ -36,6 +36,7 @@ from PySide6.QtWidgets import (
     QListWidgetItem,
     QPlainTextEdit,
     QPushButton,
+    QScrollArea,
     QSizePolicy,
     QSpinBox,
     QToolButton,
@@ -50,6 +51,7 @@ from dtflow.core.models import LoRASelection, ValidationError
 from dtflow.services import workflow_library as library
 from dtflow.ui.activity_strip import activity_strip
 from dtflow.ui.inline_feedback import InlineNotice, confirm_action, edit_text, feedback
+from dtflow.ui.prompt_tags import style_prompt_tags
 from dtflow.ui.search_select import SearchableComboBox
 
 log = logging.getLogger(__name__)
@@ -820,8 +822,8 @@ class WorkflowsPage(QObject):
         graph = self.canvas.current_graph()
         notes = graph.diagnostics()
         try:
-            plan = wf.plan_workflow(graph)
-        except wf.WorkflowError as exc:
+            plan = self._plan_graph(graph)
+        except ValidationError as exc:
             plan, reason = None, str(exc)
         # Checkpoints: a reference placeholder blocks Run; one the in-memory inventory does not list only warns.
         blocking, unknown = checkpoint_problems(graph, (self.choices_source() or {}).get("models"))
@@ -901,7 +903,9 @@ class WorkflowsPage(QObject):
         else:
             for param in spec.params:
                 self._add_param(layout, node_id, param, params.get(param.name), choices)
-        if spec.type in wf.IMAGE_OPERATIONS:
+                if param.name == "prompt" and spec.type in wf.GENERATIVE:
+                    self._add_prompt_mode(layout, node_id, node)  # right under the prompt it applies to
+        if spec.type in wf.IMAGE_OPERATIONS and node.prompt_mode is None:
             self._add_outputs(layout, node_id, node.image_outputs)
         self._add_concurrency(layout, node_id, choices.get("backend"))
         self._sync_lock()
@@ -962,6 +966,169 @@ class WorkflowsPage(QObject):
         self.canvas.set_node_face_method(node_id, method)
         self._inspected = None
         self._show_node(node_id)
+
+    def _plan_graph(self, graph):
+        """``plan_workflow`` with the wildcard lists of the shared folder (#317); raises ValidationError."""
+        from dtflow.services.workflow_prompts import prompt_counts, read_snapshot
+
+        folder = self.state / "wildcards"
+        return wf.plan_workflow(graph, prompt_counts(graph, read_snapshot(graph, folder)))
+
+    def _add_prompt_mode(self, layout, node_id: int, node) -> None:
+        """Wildcard prompts (#317): the prompt is a template (``{a|b}``, ``__list__``); each image gets its own."""
+        host = self.inspector.workflowParamsHost
+        self._prompt_preview_label = None  # set below only when this build shows a preview
+        if not hasattr(self, "_open_prompts"):
+            self._open_prompts: set[int] = set()  # which example prompts the user left open
+        label = _label("Wildcard prompt", "workflowParamLabel")
+        selector = QComboBox(host)
+        selector.setAccessibleName(f"Wildcard prompt for node {node_id}")
+        for text, code in (("Off", None), ("Every combination", "all"), ("Random sample", "sample")):
+            selector.addItem(text, code)
+        selector.setCurrentIndex({None: 0, "all": 1, "sample": 2}[node.prompt_mode])
+        tip = (
+            "Treat the prompt as a template: {red|blue} picks one, {2$$a|b|c} picks two, __name__ takes a line of "
+            "NAME.txt in the wildcards folder. Every combination makes one image per combination; Random sample makes "
+            "that many different prompts. A Generate node then makes that many images; Inpaint and Img2img make "
+            "them from each incoming image (up to " + str(wf.MAX_PROMPT_COUNT) + ")."
+        )
+        label.setToolTip(tip)
+        selector.setToolTip(tip)
+        layout.addWidget(label)
+        layout.addWidget(selector)
+        spin = QSpinBox(host)
+        spin.setRange(1, wf.MAX_PROMPT_COUNT)
+        spin.setValue(node.prompt_count or 1)
+        spin.setPrefix("Prompts: ")
+        spin.setAccessibleName(f"Prompts to draw for node {node_id}")
+        spin.setVisible(node.prompt_mode == "sample")
+        layout.addWidget(spin)
+
+        def mode_changed(*_args) -> None:
+            mode = selector.currentData()
+            spin.setVisible(mode == "sample")
+            self.canvas.set_node_prompt_mode(node_id, mode, spin.value() if mode == "sample" else None)
+            QTimer.singleShot(0, lambda: self._rebuild_inspector(node_id))  # the prompt field and notes follow the mode
+
+        def count_changed(number: int) -> None:
+            # Only the stored count changes; rebuilding the inspector here would steal focus from the spin box.
+            if selector.currentData() == "sample":
+                self.canvas.set_node_prompt_mode(node_id, "sample", number)
+                preview = self._prompt_preview_label
+                if preview is not None:
+                    try:
+                        self._fill_prompt_preview(preview, node_id)
+                    except RuntimeError:  # the inspector was rebuilt and this label is gone
+                        self._prompt_preview_label = None
+
+        selector.currentIndexChanged.connect(mode_changed)
+        spin.valueChanged.connect(count_changed)
+        if node.prompt_mode is None:
+            return
+        ignored = "batch size × batch count" if node.SPEC.type == wf.GENERATE else "Outputs per image"
+        note = _label(
+            f"The prompt count sets how many images this node makes; {ignored} no longer applies.",
+            "secondary",
+        )
+        layout.addWidget(note)
+        folder = QPushButton("Show wildcards folder", host)
+        folder.setAccessibleName(f"Show wildcards folder for node {node_id}")
+        folder.setToolTip("Lists are plain NAME.txt files, one entry per line. Edit them in your file manager.")
+        folder.clicked.connect(self._show_wildcards_folder)
+        layout.addWidget(folder)
+        # Each example prompt is its own accordion: one line when closed, the full highlighted text when open.
+        preview = self._prompt_preview(node)
+        layout.addWidget(preview)
+        self._prompt_preview_label = preview
+
+    def _rebuild_inspector(self, node_id: int) -> None:
+        """Rebuild the inspector for ``node_id`` keeping its scroll position (the panel must not jump, #317)."""
+        if self.canvas is None or self.canvas.node(node_id) is None:
+            return
+        area = self.inspector.workflowParamsHost.parentWidget()
+        while area is not None and not isinstance(area, QScrollArea):
+            area = area.parentWidget()
+        bar = area.verticalScrollBar() if area is not None else None
+        position = bar.value() if bar is not None else 0
+        self._inspected = None
+        self._show_node(node_id)
+        if bar is not None:  # the new layout is only sized after control returns to the event loop
+            QTimer.singleShot(0, lambda: bar.setValue(position))
+
+    def _show_wildcards_folder(self) -> None:
+        from dtflow.ui.desktop_open import open_local_path
+
+        folder = self.state / "wildcards"
+        try:
+            folder.mkdir(parents=True, exist_ok=True)
+        except OSError:
+            InlineNotice.error(self.workspace, "Wildcards folder", "The folder could not be created.")
+            return
+        open_local_path(
+            str(folder),
+            runner=self.runner,
+            directory=True,
+            on_error=lambda reason: InlineNotice.error(
+                self.workspace, "Wildcards folder", f"Could not open it: {reason}"
+            ),
+        )
+
+    def _prompt_preview(self, node) -> QWidget:
+        """Example prompts the node would draw now, one accordion each (#317); filled by ``_fill_prompt_preview``."""
+        box = QWidget(self.inspector.workflowParamsHost)
+        QVBoxLayout(box).setContentsMargins(0, 0, 0, 0)
+        box.layout().setSpacing(2)
+        self._fill_prompt_preview(box, node.comfy_id)
+        return box
+
+    def _fill_prompt_preview(self, box: QWidget, node_id: int) -> None:
+        """Replace the accordions in place (a count change must not rebuild the inspector or move its scroll)."""
+        from dtflow.services.workflow_prompts import draw, read_snapshot
+        from dtflow.ui.prompt_tags import tagged_html
+
+        layout = box.layout()
+        _clear(layout)
+        graph = self.canvas.current_graph()
+        try:
+            drawn = draw(graph.node(node_id), read_snapshot(graph, self.state / "wildcards"))
+        except (ValidationError, KeyError) as exc:
+            layout.addWidget(_label(f"Preview unavailable: {exc}", "secondary"))
+            return
+        layout.addWidget(_label("Example prompts", "workflowParamLabel"))
+        shown = drawn[:8]
+        for number, (text, runs) in enumerate(shown):
+            layout.addWidget(self._prompt_accordion(box, number, text, tagged_html(text, runs)))
+        if len(drawn) > len(shown):
+            layout.addWidget(_label(f"… {len(drawn)} in all", "secondary"))
+
+    def _prompt_accordion(self, parent: QWidget, number: int, text: str, html: str) -> QWidget:
+        """A flat header with the prompt's first words; opening it shows the whole prompt with its highlights."""
+        item = QWidget(parent)
+        column = QVBoxLayout(item)
+        column.setContentsMargins(0, 0, 0, 0)
+        column.setSpacing(0)
+        header = QPushButton(item)
+        header.setCheckable(True)
+        header.setFlat(True)
+        header.setProperty("role", "accordion")
+        header.setAccessibleName(f"Example prompt {number + 1}")
+        body = _label("", "secondary")
+        body.setTextFormat(Qt.TextFormat.RichText)
+        body.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+        body.setText(html)
+        short = text if len(text) <= 40 else text[:39] + "…"
+
+        def toggled(checked: bool) -> None:
+            body.setVisible(checked)
+            header.setText(f"{'▾' if checked else '▸'} {number + 1} · {short}")
+            (self._open_prompts.add if checked else self._open_prompts.discard)(number)
+
+        header.toggled.connect(toggled)
+        header.setChecked(number in self._open_prompts)
+        toggled(header.isChecked())
+        column.addWidget(header)
+        column.addWidget(body)
+        return item
 
     def _add_outputs(self, layout, node_id: int, value: int) -> None:
         """Images made per incoming image (#276); 1 is the default and is not written to the file."""
@@ -1112,6 +1279,10 @@ class WorkflowsPage(QObject):
             edit.setMaximumHeight(72)
             edit.setTabChangesFocus(True)
             edit.textChanged.connect(lambda: self._set(node_id, param.name, edit.toPlainText()))
+            node = self.canvas.node(node_id)
+            if param.name == "prompt" and node is not None and node.prompt_mode is not None:
+                # Wildcard prompt (#317): tag {a|b} groups and __lists__ like the Queues composer does.
+                edit.prompt_tags = style_prompt_tags(edit)
             layout.addWidget(edit)
         elif param.kind == "string":
             line = QLineEdit(str(value), host)
@@ -1263,9 +1434,9 @@ class WorkflowsPage(QObject):
             spin.interpretText()
         graph = self.canvas.current_graph()
         try:
-            plan = wf.plan_workflow(graph)
+            plan = self._plan_graph(graph)
             document = wf.dump_workflow(graph)
-        except wf.WorkflowError as exc:
+        except ValidationError as exc:
             InlineNotice.error(self.workspace, "Workflow cannot run", str(exc))
             return
         blocking, _unknown = checkpoint_problems(graph, (self.choices_source() or {}).get("models"))
