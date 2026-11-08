@@ -820,8 +820,8 @@ class WorkflowsPage(QObject):
         graph = self.canvas.current_graph()
         notes = graph.diagnostics()
         try:
-            plan = wf.plan_workflow(graph)
-        except wf.WorkflowError as exc:
+            plan = self._plan_graph(graph)
+        except ValidationError as exc:
             plan, reason = None, str(exc)
         # Checkpoints: a reference placeholder blocks Run; one the in-memory inventory does not list only warns.
         blocking, unknown = checkpoint_problems(graph, (self.choices_source() or {}).get("models"))
@@ -901,7 +901,9 @@ class WorkflowsPage(QObject):
         else:
             for param in spec.params:
                 self._add_param(layout, node_id, param, params.get(param.name), choices)
-        if spec.type in wf.IMAGE_OPERATIONS:
+        if spec.type in wf.GENERATIVE:
+            self._add_prompt_mode(layout, node_id, node)
+        if spec.type in wf.IMAGE_OPERATIONS and node.prompt_mode is None:
             self._add_outputs(layout, node_id, node.image_outputs)
         self._add_concurrency(layout, node_id, choices.get("backend"))
         self._sync_lock()
@@ -962,6 +964,100 @@ class WorkflowsPage(QObject):
         self.canvas.set_node_face_method(node_id, method)
         self._inspected = None
         self._show_node(node_id)
+
+    def _plan_graph(self, graph):
+        """``plan_workflow`` with the wildcard lists of the shared folder (#317); raises ValidationError."""
+        from dtflow.services.workflow_prompts import prompt_counts, read_snapshot
+
+        folder = self.state / "wildcards"
+        return wf.plan_workflow(graph, prompt_counts(graph, read_snapshot(graph, folder)))
+
+    def _add_prompt_mode(self, layout, node_id: int, node) -> None:
+        """Wildcard prompts (#317): the prompt is a template (``{a|b}``, ``__list__``); each image gets its own."""
+        host = self.inspector.workflowParamsHost
+        label = _label("Wildcard prompt", "workflowParamLabel")
+        selector = QComboBox(host)
+        selector.setAccessibleName(f"Wildcard prompt for node {node_id}")
+        for text, code in (("Off", None), ("Every combination", "all"), ("Random sample", "sample")):
+            selector.addItem(text, code)
+        selector.setCurrentIndex({None: 0, "all": 1, "sample": 2}[node.prompt_mode])
+        tip = (
+            "Treat the prompt as a template: {red|blue} picks one, {2$$a|b|c} picks two, __name__ takes a line of "
+            "NAME.txt in the wildcards folder. Every combination makes one image per combination; Random sample makes "
+            "that many different prompts. A Generate node then makes that many images; Inpaint and Img2img make "
+            "them from each incoming image (up to " + str(wf.MAX_PROMPT_COUNT) + ")."
+        )
+        label.setToolTip(tip)
+        selector.setToolTip(tip)
+        layout.addWidget(label)
+        layout.addWidget(selector)
+        spin = QSpinBox(host)
+        spin.setRange(1, wf.MAX_PROMPT_COUNT)
+        spin.setValue(node.prompt_count or 1)
+        spin.setPrefix("Prompts: ")
+        spin.setAccessibleName(f"Prompts to draw for node {node_id}")
+        spin.setVisible(node.prompt_mode == "sample")
+        layout.addWidget(spin)
+
+        def changed(*_args) -> None:
+            mode = selector.currentData()
+            spin.setVisible(mode == "sample")
+            self.canvas.set_node_prompt_mode(node_id, mode, spin.value() if mode == "sample" else None)
+            QTimer.singleShot(0, lambda: self._rebuild_inspector(node_id))  # outputs per image follows the mode
+
+        selector.currentIndexChanged.connect(changed)
+        spin.valueChanged.connect(changed)
+        if node.prompt_mode is None:
+            return
+        folder = QPushButton("Show wildcards folder", host)
+        folder.setAccessibleName(f"Show wildcards folder for node {node_id}")
+        folder.setToolTip("Lists are plain NAME.txt files, one entry per line. Edit them in your file manager.")
+        folder.clicked.connect(self._show_wildcards_folder)
+        layout.addWidget(folder)
+        layout.addWidget(self._prompt_preview(node))
+
+    def _rebuild_inspector(self, node_id: int) -> None:
+        if self.canvas is not None and self.canvas.node(node_id) is not None:
+            self._inspected = None
+            self._show_node(node_id)
+
+    def _show_wildcards_folder(self) -> None:
+        from dtflow.ui.desktop_open import open_local_path
+
+        folder = self.state / "wildcards"
+        try:
+            folder.mkdir(parents=True, exist_ok=True)
+        except OSError:
+            InlineNotice.error(self.workspace, "Wildcards folder", "The folder could not be created.")
+            return
+        open_local_path(
+            str(folder),
+            runner=self.runner,
+            directory=True,
+            on_error=lambda reason: InlineNotice.error(
+                self.workspace, "Wildcards folder", f"Could not open it: {reason}"
+            ),
+        )
+
+    def _prompt_preview(self, node) -> QLabel:
+        """A few prompts the node would draw now, with the varied parts highlighted (#317)."""
+        from dtflow.services.workflow_prompts import draw, read_snapshot
+        from dtflow.ui.prompt_tags import tagged_html
+
+        graph = self.canvas.current_graph()
+        preview = _label("", "secondary")
+        preview.setTextFormat(Qt.TextFormat.RichText)
+        preview.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+        try:
+            item = graph.node(node.comfy_id)
+            drawn = draw(item, read_snapshot(graph, self.state / "wildcards"))
+        except (ValidationError, KeyError) as exc:
+            preview.setText(f"Preview unavailable: {exc}")
+            return preview
+        shown = drawn[:5]
+        more = f"<br>… {len(drawn)} in all" if len(drawn) > len(shown) else ""
+        preview.setText("<br>".join(tagged_html(text, runs) for text, runs in shown) + more)
+        return preview
 
     def _add_outputs(self, layout, node_id: int, value: int) -> None:
         """Images made per incoming image (#276); 1 is the default and is not written to the file."""
@@ -1263,9 +1359,9 @@ class WorkflowsPage(QObject):
             spin.interpretText()
         graph = self.canvas.current_graph()
         try:
-            plan = wf.plan_workflow(graph)
+            plan = self._plan_graph(graph)
             document = wf.dump_workflow(graph)
-        except wf.WorkflowError as exc:
+        except ValidationError as exc:
             InlineNotice.error(self.workspace, "Workflow cannot run", str(exc))
             return
         blocking, _unknown = checkpoint_problems(graph, (self.choices_source() or {}).get("models"))

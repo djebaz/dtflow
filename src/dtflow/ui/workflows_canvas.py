@@ -367,6 +367,8 @@ class DTFNodeContent(QDMNodeContentWidget):
                 ("params", wf.copy_params(self.node.params)),
                 ("concurrency", self.node.concurrency),
                 ("outputs", self.node.image_outputs),
+                ("prompt_mode", self.node.prompt_mode),
+                ("prompt_count", self.node.prompt_count),
                 ("face", {"method": self.node.face.method, "expansion": self.node.face.expansion}),
             ]
         )
@@ -376,6 +378,8 @@ class DTFNodeContent(QDMNodeContentWidget):
         self.node.params = wf.copy_params(data["params"])
         self.node.concurrency = data.get("concurrency")
         self.node.image_outputs = data.get("outputs", 1)
+        self.node.prompt_mode = data.get("prompt_mode")
+        self.node.prompt_count = data.get("prompt_count")
         face = data.get("face") or {}
         self.node.face = wf.FaceOptions(face.get("method"), face.get("expansion", wf.FACE_EXPANSION_DEFAULT))
         self.node.grNode.title = f"{self.node.SPEC.title} #{self.node.comfy_id}"
@@ -393,6 +397,8 @@ class DTFNode(Node):
         self.params = self.SPEC.defaults()
         self.concurrency: int | None = None  # steps of this node running together; None = the default (#286)
         self.image_outputs = 1  # Inpaint/Img2img: images made per incoming image (#276)
+        self.prompt_mode: str | None = None  # wildcard prompt mode of a generative node (#317); None = literal
+        self.prompt_count: int | None = None  # "sample" only
         self.face = wf.default_face_options(self.SPEC.type)
         super().__init__(
             scene,
@@ -560,6 +566,7 @@ class WorkflowCanvas(QObject):
                 node.params = wf.copy_params(item.params)
                 node.concurrency = item.concurrency
                 node.image_outputs = item.outputs
+                node.prompt_mode, node.prompt_count = item.prompt_mode, item.prompt_count
                 node.face = item.face
                 node.setPos(*item.pos)
                 node.content.refresh()
@@ -601,6 +608,8 @@ class WorkflowCanvas(QObject):
                     (float(node.grNode.width), float(node.grNode.height)),
                     concurrency=node.concurrency,
                     outputs=node.image_outputs,
+                    prompt_mode=node.prompt_mode,
+                    prompt_count=node.prompt_count,
                     face=node.face,
                 )
             )
@@ -681,6 +690,16 @@ class WorkflowCanvas(QObject):
         node.image_outputs = value
         node.content.refresh()
         self.scene.history.storeHistory("Edit outputs", setModified=True, merge_key=f"outputs:{node_id}")
+
+    def set_node_prompt_mode(self, node_id: int, mode: str | None, count: int | None) -> None:
+        node = self.node(node_id)
+        if node is None:
+            return
+        node.prompt_mode, node.prompt_count = mode, count
+        if mode is not None:
+            node.image_outputs = 1  # a wildcard prompt replaces outputs per image (#317)
+        node.content.refresh()
+        self.scene.history.storeHistory("Edit wildcard prompt", setModified=True, merge_key=f"prompt-mode:{node_id}")
 
     def set_concurrency(self, value: int | None) -> None:
         """The workflow's own limit; saved with the file, not part of undo."""
