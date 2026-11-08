@@ -15,7 +15,7 @@ Changes through 6.0.0 are consolidated in [DTFlow 6.0.0](v6.0.0.md). This file t
 - Queues: selecting an image row of a workflow run and pressing Retry reruns exactly that image's step with its original settings, plus the branches split from it. Sibling images and their saved results stay as they are. The run's summary row still retries its first failed step. Smoke-tested by the owner (#277, #294).
 - Queues: a workflow run lists every image it makes under its summary row, and the images a Save node kept are labelled "final" and outlined in blue, so a 2 → 3 → 2 run shows 20 rows with the 12 final ones standing out. Smoke-tested by the owner (#281, #295).
 
-- Workflows: two or more unrelated Inpaint/Img2img nodes may each make several outputs from the same images (for example Generate 2 → Inpaint ×3 and Img2Img ×2 in parallel: 12 generations, 10 saved images). Each output keeps its own identity, seed, status and Retry; outputs of different multi-output nodes are never paired by matching variation numbers (#302).
+- Workflows: two or more unrelated Inpaint/Img2img nodes may each make several outputs from the same images (for example Generate 2 → Inpaint ×3 and Img2Img ×2 in parallel: 12 generations, 10 saved images). Each output keeps its own identity, seed, status and Retry; outputs of different multi-output nodes are never paired by matching variation numbers. Smoke-tested by the owner with `devdocs/plans/examples/workflow_302_parallel_multi_output_smoke.json` (#302, PR #304).
 
 ## Changed
 
