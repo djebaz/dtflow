@@ -1,6 +1,6 @@
 # Current development status
 
-Updated: 2026-11-07 after the [6.0.0 release](https://github.com/djebaz/dtflow/releases/tag/v6.0.0) was published from `eee1a01` (see [release plan](plans/2026-11-07-release-6.0.0.md)). The published GitHub release body is the source of truth for its notes. Repository source and linked evidence are authoritative; historical checkpoints remain in Git and versioned notes.
+Updated: 2026-11-08 for [6.1.0 preparation](plans/2026-11-08-release-6.1.0.md), based on merged main `dda849f1`. [6.0.0](https://github.com/djebaz/dtflow/releases/tag/v6.0.0) remains the published predecessor. The 6.1.0 Windows build/draft, exact-artifact owner smoke and publication are separate gates; preparation is not publication. Repository source and linked evidence are authoritative; historical checkpoints remain in Git and versioned notes.
 
 ## Implemented scope mapped to the initial plan
 
@@ -15,6 +15,8 @@ Updated: 2026-11-07 after the [6.0.0 release](https://github.com/djebaz/dtflow/r
 | 10 — Native Workflows V1 | Strict contract/interchange, reference graph, pinned consent-based model provisioning, per-branch executor/queue item, CLI and production library/canvas/inspector/run view. | #223 owner reference smoke: real detectors/downloads, image operations, local/DT+, Windows/package. No pinned ComfyUI frontend round trip. [Guide](guides/workflows.md), [contract](architecture/workflows.md). |
 
 ## Delivered additions
+
+- **6.1.0 scope (PRs #282–#304):** per-image Generate/Workflow requests, concurrency and multi-output branches, workload counts, selected-image Retry/final markers, readable queue-grouped outputs and Fast/Balanced face masks. [Versioned notes](releases/v6.1.0.md) retain source-owner smoke evidence and downgrade limits; final-head CI and exact Windows executable acceptance remain separate. Execution schema stays 9; older builds cannot correctly interpret new parallel-split branch identities or remove newly named managed outputs.
 
 - **#220 reliability simplification (PRs #248, #250–#254, merged):** Generate/Queues show meaningful failure reasons and offer manual Retry with the recorded settings; Scripts offers Retry/Continue for failed steps; a single bounded automatic retry policy is shared across Generate, Queues, Scripts and Workflows. Queued edit Start supplies consent without redundant per-item evidence. Script runs now live in their queue items, not `script_runs.sqlite3`. PR #255 additionally permits read-only queue browsing of supported older schemas before owner-controlled migration. The close-out acceptance audit is [#245](https://github.com/djebaz/dtflow/issues/245); owner-reported Windows schema 9 migration and DT+ retry smoke and Linux offline CI are recorded there; exact release-artifact acceptance remains separate. Review follow-up retains headless CLI form behavior and rejects late controls; Retry/Continue preview definitions were added but not locally rendered. A possible late database commit after the 60-second write timeout remains a known uncertainty.
 
