@@ -101,6 +101,7 @@ class DrawThingsBackend:
         image_permits: tuple[ImageOperationPermit, ...] = (),
         image_inputs_loader: Callable[[ImageInputSnapshot], PreparedImageInputs] | None = None,
         allow_image_probe: bool = False,
+        preview_images: bool = True,
     ):
         self.endpoint = endpoint
         self.timeouts = timeouts or TimeoutPolicy()
@@ -116,6 +117,9 @@ class DrawThingsBackend:
         self._model_specs: dict[str, dict] = {}
         self._image_inputs_loader = image_inputs_loader
         self._allow_image_probe = allow_image_probe
+        if type(preview_images) is not bool:
+            raise ValidationError("Preview image policy must be a boolean.")
+        self._preview_images = preview_images
         self._image_permits, self._image_specs = self.validate_image_permits(
             endpoint, image_permits, image_inputs_loader, allow_image_probe
         )
@@ -415,6 +419,8 @@ class DrawThingsBackend:
         warnings: tuple[str, ...] = ()
         stream = None
         metadata = {}
+        previews = preview_bytes = skipped_previews = 0
+        preview_decode_ms = 0.0
 
         def remaining() -> float:
             return max(0.0, self.timeouts.total - (time.monotonic() - started))
@@ -532,7 +538,6 @@ class DrawThingsBackend:
                             level=logging.INFO,
                             data={"transport": "grpc", "backend": self.backend_id},
                         )
-                        previews = 0
                         first_response = True
                         async for response in stream:
                             if first_response:
@@ -555,11 +560,23 @@ class DrawThingsBackend:
                                 self._signpost(signpost, request, emit)
                             if response.preview_image:
                                 previews += 1
-                                preview = await settle(
-                                    asyncio.to_thread(decode_preview_artifact, response.preview_image, previews, limits)
-                                )
-                                if preview is not None:
-                                    emit("preview", artifact=preview)
+                                preview_bytes += len(response.preview_image)
+                                if self._preview_images:
+                                    preview_started = time.monotonic()
+                                    try:
+                                        preview = await settle(
+                                            asyncio.to_thread(
+                                                decode_preview_artifact, response.preview_image, previews, limits
+                                            )
+                                        )
+                                    finally:
+                                        preview_decode_ms += (time.monotonic() - preview_started) * 1000
+                                    if preview is not None:
+                                        emit("preview", artifact=preview)
+                                else:
+                                    # The pinned request protocol has no verified preview opt-out. Discard these bytes
+                                    # before decode/PNG encoding, but still process signposts/finals in this response.
+                                    skipped_previews += 1
                             for data in response.generated_images:
                                 if len(finals) >= min(expected, limits.final_count):
                                     raise self._reject(request, "unexpected_final_output", stage, finals)
@@ -624,6 +641,19 @@ class DrawThingsBackend:
             raise BackendError(replace(problem, partial_artifacts=self._partials(finals))) from None
         finally:
             self._active -= 1
+            diagnostic_event(
+                log,
+                "backend.preview_summary",
+                level=logging.DEBUG,
+                data={
+                    "enabled": self._preview_images,
+                    "received": previews,
+                    "skipped": skipped_previews,
+                    "received_bytes": preview_bytes,
+                    "decode_wait_ms": preview_decode_ms,
+                    "download_suppression": "unavailable_in_protocol",
+                },
+            )
         diagnostic_event(
             log,
             "backend.api_completed",
