@@ -612,6 +612,12 @@ class MainWindow:
         self._cycle_workspace_shortcut = QShortcut(QKeySequence("Ctrl+Tab"), self.form)
         self._cycle_workspace_shortcut.setAutoRepeat(False)
         self._cycle_workspace_shortcut.activated.connect(self._cycle_workspace)
+        self._submit_shortcuts = []
+        for key in ("Ctrl+Return", "Ctrl+Enter"):  # Return and keypad Enter are distinct Qt keys.
+            shortcut = QShortcut(QKeySequence(key), self.form)
+            shortcut.setAutoRepeat(False)
+            shortcut.activated.connect(self._submit_active_page)
+            self._submit_shortcuts.append(shortcut)
         diagnostic_event(
             log,
             "app.window_ready",
@@ -843,6 +849,26 @@ class MainWindow:
         else:
             self._logs_previous_page = self.form.workspaceStack.currentWidget()
             self.form.workspaceStack.setCurrentWidget(self.logs_marker)
+
+    def _submit_active_page(self) -> None:
+        """Ctrl+Enter clicks the active workspace's generation action, without bypassing its normal guards."""
+        if self.runner.closed or self.inline.owns_keyboard() or QApplication.activePopupWidget() is not None:
+            return
+        current = self.form.workspaceStack.currentWidget()
+        button = None
+        if current is self.generation_page:
+            if self._scripts_active:
+                candidate = self.scripts.start
+                if candidate.text() == "Run Script":
+                    button = candidate  # Never submit Setup, Continue or Retry Setup by shortcut.
+            else:
+                button = self.generation_page.generateButton  # Generate image or Edit image.
+        elif current is self.queue_page:
+            button = self.queue._shortcut_button()  # Existing Start now / Add to queue choice; never Save paused.
+        elif current is self.workflows_marker:
+            button = self.workflows.workspace.runWorkflowButton
+        if button is not None and button.isVisible() and button.isEnabled():
+            button.click()
 
     def _toggle_window_fullscreen(self) -> None:
         if self.form.isFullScreen():
