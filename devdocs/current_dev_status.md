@@ -1,6 +1,6 @@
 # Current development status
 
-Updated: 2026-11-08 for PR #306. [6.1.0](https://github.com/djebaz/dtflow/releases/tag/v6.1.0) was published from `8e6e01e4` after owner acceptance of the exact Windows executable; its published body is authoritative. Subsequent source changes, CI and owner observations are separate from that artifact's acceptance. Repository source and linked evidence are authoritative; historical checkpoints remain in Git and versioned notes.
+Updated: 2026-11-08 for 6.2.0 preparation. [6.2.0 notes](releases/v6.2.0.md) cover workflow image/mask/resize nodes, wildcard prompts, saved-key selection, picker memory, panel sizing and diagnostics/crash mitigation. The candidate is not published; PR-head build, final merged build and owner artifact acceptance are separate gates. [6.1.0](https://github.com/djebaz/dtflow/releases/tag/v6.1.0) was published from `8e6e01e4` after owner acceptance of the exact Windows executable; its published body is authoritative. Subsequent source changes, CI and owner observations are separate from that artifact's acceptance. Repository source and linked evidence are authoritative; historical checkpoints remain in Git and versioned notes.
 
 ## Implemented scope mapped to the initial plan
 
