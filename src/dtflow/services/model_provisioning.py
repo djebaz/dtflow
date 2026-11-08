@@ -37,7 +37,7 @@ from dtflow.services import person_selection
 log = logging.getLogger(__name__)
 
 ROLES = ("segmentation", "clothes", "faces")
-WORKFLOW_FACE_ROLES = ROLES  # DTFDetectFaceMask needs all three (D4)
+WORKFLOW_FACE_ROLES = ROLES  # Legacy all-role alias; workflows now use face_model_roles(graph).
 CATALOGUE_PATH = Path(__file__).parents[1] / "resources" / "catalogue" / "detection_models.json"
 CHUNK = 256 * 1024
 TIMEOUT = 30.0
