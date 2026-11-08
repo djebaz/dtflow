@@ -137,6 +137,7 @@ WIRED_CONTROLS = (
     "promptEdit",
     "negativePromptEdit",
     "seedEdit",
+    "imagesSpinBox",
     "stepsSpinBox",
     "widthSpinBox",
     "heightSpinBox",
@@ -223,6 +224,7 @@ RAIL_LABELS = (
     "generationDomainLabel",
     "baseModelLabel",
     "seedLabel",
+    "imagesLabel",
     "stepsLabel",
     "widthLabel",
     "heightLabel",
@@ -277,6 +279,7 @@ class GenerationPage:
         self._previewed_seed: int | None = None
         # Set by the window: queue_behind(request, backend, endpoint, receipts, edit) adds a one-item up-next queue.
         self.queue_behind: Callable | None = None
+        self.queue_images: Callable[[int], None] | None = None  # (#279) Images above 1: one queue row per picture
         self._activity.listen(self._sync_activity)
         page.destroyed.connect(self._unlisten_activity)
         self._choose_save, self._choose_open = choose_save, choose_open
@@ -966,6 +969,12 @@ class GenerationPage:
             self.inpaint.generate()
             return False
         if self._busy or self._generating:
+            return False
+        images = self.page.imagesSpinBox.value()
+        if edit is None and images > 1 and self.queue_images is not None:
+            # One total: every picture is its own single-image queue item (Repeat expansion), so it has a row,
+            # thumbnail, seed, status and Retry in Queues. The queue's creation validates the form.
+            self.queue_images(images)
             return False
         if self._activity.dispatching:
             self._queue_behind(edit)

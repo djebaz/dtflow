@@ -70,6 +70,8 @@ from dtflow.ui.planning_presenter import (
     build_plan,
     lora_set_value,
     count_text,
+    images_requests,
+    readout_text,
     plan_error,
     sentence,
     SEED_POLICY_TEXT,
@@ -1909,7 +1911,7 @@ class QueuePage:
             count = page.queueCountSpinBox.value()
             first = request.seed
             seeds = f"seed {first}" if count == 1 else f"seeds {first}–{first + count - 1}"
-            self._show(page.planCountLabel, "ok", f"{count} item{'s' if count != 1 else ''} · {seeds}")
+            self._show(page.planCountLabel, "ok", f"{images_requests(count)} · {seeds}")
             self._show_summary(request, count, "Nothing (repeats the queue draft)", seeds.capitalize())
             return
         if self._plan_form().variation != "Off" and not self._runner.closed:
@@ -2558,7 +2560,7 @@ class QueuePage:
         else:
             count = self.page.queueCountSpinBox.value()
             level, text = "ok", f"{count} item{'s' if count != 1 else ''}"
-        self._show(self.page.planCountLabel, level, sentence(text))
+        self._show(self.page.planCountLabel, level, sentence(readout_text(text)))
         if level != "ok":
             self.page.planTableView.hide()  # reject stale previews immediately on invalid inputs
         self.page.startQueueButton.setText(f"Start now ({text})" if level == "ok" else "Start now")
