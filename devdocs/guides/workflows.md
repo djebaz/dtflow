@@ -42,6 +42,21 @@ is the V1 specification; the file contract is [architecture/workflows.md](../arc
   <node>". A checkpoint the model list already loaded on Generate does not contain only warns (Run stays available);
   no backend is contacted for this check.
 
+## Starting from a file
+
+**Load image**, **Load image (as mask)** and **Upscale image** (ComfyUI's `LoadImage`, `LoadImageMask`, `ImageScale`)
+are in the node library. Choose a PNG, JPEG or WebP file in the node's inspector (**Choose file…**; the node shows the file as its preview until a run replaces it): DTFlow copies it
+into `<state>/workflows/inputs/` and the node, and the saved workflow, keep only the file name. Moving the workflow to
+another computer shows the name there; choose the file again before running. Mask channels `red`, `green` and `blue`
+are used as they are (white = inpaint), `alpha` is inverted (transparent = inpaint), and Inpaint needs a mask the same
+size as its image. Upscale image resizes to Width × Height (0 keeps the aspect ratio). Inpaint and Img2img accept any
+size: a source that is not a multiple of 64 within 128–2048 is padded into the nearest valid size for generation and the
+result is cropped back to the source frame (nothing is trimmed); add an Upscale image node to choose the size yourself.
+To resize a mask file the same way, chain Convert mask to image → Upscale image → Convert image to mask (red) with the
+same settings as the photo. A file that cannot be loaded, or a mask that selects nothing (an opaque image's own MASK,
+the wrong channel), ends the run before anything is submitted. See the
+[contract](../architecture/workflows.md#file-nodes-316).
+
 ## Running
 
 When editing Generate width/height, arrows step by 64 pixels. Typed values snap to the nearest multiple of 64 on focus loss or before Run (ties upward: 800 becomes 832), within the existing bounds. Imported/saved invalid values remain read-only with their validation reason; they are not silently rewritten.
@@ -98,7 +113,7 @@ When editing Generate width/height, arrows step by 64 pixels. Typed values snap 
   item. The run's own workflow is put on the canvas unless that workflow is already open, or the open one has unsaved
   changes (then only the Run panel follows the run).
 - **Outputs:** every step's image is an ordinary saved output in Images with its settings; Save nodes mark the results
-  shown in the run card. Masks are kept under `<state>/workflows/runs/<run id>/`.
+  shown in the run card. Face masks are kept under `<state>/workflows/runs/<run id>/`; loaded and converted images once per content under `<state>/workflows/snapshots/`.
 
 ## Command line
 
@@ -111,7 +126,7 @@ When editing Generate width/height, arrows step by 64 pixels. Typed values snap 
 
 - Structure compatibility with ComfyUI is not execution compatibility: DTFlow nodes do not run in ComfyUI and ComfyUI
   workflows do not import. No ComfyUI frontend release has been pinned or round-trip tested yet.
-- Image steps run at the source image size (multiples of 64 within 128–2048).
+- Image steps run at the source image size; a source that is not a multiple of 64 within 128–2048 is padded into the nearest valid size for generation and the result is cropped back to the source frame, so its size and every pixel of it are kept.
 - The fake provider runs text-to-image only, so image steps fail there with a plain message.
 - Detection model licences: YOLO26n is Ultralytics AGPL-3.0, NudeNet 320n is MIT, and the SegFormer B2 clothes model
   is under NVIDIA's SegFormer licence for research use only. SegFormer is planned to be replaced by a model with a

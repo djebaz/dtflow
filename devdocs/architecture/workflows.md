@@ -119,6 +119,11 @@ Ports are typed `IMAGE` or `MASK`. Parameter order is the `widgets_values` order
 | `DTFInpaint` | `image:IMAGE`, `mask:MASK` | `IMAGE` | checkpoint, loras, prompt, negative_prompt, seed, steps, guidance, sampler, strength, grow, feather, preserve_outside |
 | `DTFImg2Img` | `image:IMAGE` | `IMAGE` | checkpoint, loras, prompt, negative_prompt, seed, steps, guidance, sampler, strength |
 | `DTFSaveImage` | `image:IMAGE` | — | label |
+| `LoadImage` | — | `IMAGE`, `MASK` | image (file name), upload (`"image"`) |
+| `LoadImageMask` | — | `MASK` | image (file name), channel (`alpha` \| `red` \| `green` \| `blue`), upload (`"image"`) |
+| `ImageScale` | `image:IMAGE` | `IMAGE` | upscale_method, width, height, crop |
+| `MaskToImage` | `mask:MASK` | `IMAGE` | — |
+| `ImageToMask` | `image:IMAGE` | `MASK` | channel (`red` \| `green` \| `blue` \| `alpha`) |
 
 - `checkpoint` is the exact model file on the run's backend; `loras` is a list of `[file, weight]` pairs, weight
   0.0–3.0, no duplicates; `sampler` is a DTFlow sampler id (`dpmpp_2m_karras`, `euler_a`, …). Ranges and semantics
@@ -151,6 +156,48 @@ Ports are typed `IMAGE` or `MASK`. Parameter order is the `widgets_values` order
 - The Detect node controls its geometric **face-box expansion** only. `DTFInpaint` continues to own
   **Mask grow**, **Mask feather** and **Keep outside mask** as independent downstream operations.
 - `DTFSaveImage` marks its image as a workflow result. Every step's image is already a saved DTFlow output.
+
+## File nodes (#316)
+
+`LoadImage`, `LoadImageMask`, `ImageScale`, `MaskToImage` and `ImageToMask` use the **stock ComfyUI type names, port names and `widgets_values` order**
+(reference: ComfyUI backend 0.44.0 `nodes.py`; the saved-file order, built by the frontend, is unverified). They are the
+only DTFlow nodes without the `DTF` prefix; other ComfyUI nodes are still rejected.
+
+- **Input folder.** Choosing a file in the inspector (remembered-folder dialog, key `workflow_input_image`) copies it to
+  `<state>/workflows/inputs/` as `<readable stem>-<first 16 hex of its sha256><ext>` (PNG, JPEG or WebP, decoded and
+  size-checked first, from one read of the file so the name always matches the stored bytes). The same content reuses
+  the same name; different content gets a different name (the full hash if the 16-character prefix is ever taken by
+  other bytes). The node stores only that name (`image` param) and no path. The file importer accepts any name text (a
+  ComfyUI subfolder name or `pic.png [input]` included) so one such node never rejects a workflow; Run then stops with
+  "choose the file again" because only plain names inside the inputs folder resolve. On another computer the name is
+  shown and Run stops the same way until the file is picked there (the file is not embedded in the workflow).
+- **Loading.** Before anything is submitted the run reads every file node, applies EXIF rotation, and keeps the result
+  once per content under `<state>/workflows/snapshots/` (`load-<hash>.png`, `load-mask-<hash>.png`; converted and scaled
+  images use the same folder), so a queue repeating a workflow reuses the files instead of copying them per item.
+  Retry and Earlier runs read these snapshots. A file that cannot be loaded, or a mask that selects nothing (for
+  example `LoadImage`'s MASK of an opaque image, or the wrong channel), ends the whole run before anything is
+  submitted, with a message naming the node; a loading step has no Retry (fix the file, run again).
+- **Masks.** As in ComfyUI, `LoadImage`'s `MASK` and `LoadImageMask` with `alpha` are the inverted alpha (transparent =
+  masked), and `red`/`green`/`blue` are used as they are (white = masked); 16-bit grayscale files are scaled to 8 bits.
+  Inpaint selects pixels brighter than 50% and needs a mask the same size as its image; a mismatch fails with the two
+  sizes and how to resize both the same way.
+- **Branches.** A file is one image, branch `(node id, 0)`. It pairs with any other branch: a loaded mask applies to every
+  generated image, and a loaded image can feed nodes next to generated ones. `ImageScale`, `MaskToImage` and `ImageToMask`
+  fed only by loaded files are loaded files too (`NodePlan.static`): they run before anything is submitted and their one
+  result is read by every branch. Loading and converting are not generations: no seed, no backend call, not counted in
+  the 256 limit, and not Images-gallery outputs (the run card shows their latest image like other steps).
+- **ImageScale** follows ComfyUI: methods `nearest-exact`, `bilinear`, `area`, `bicubic`, `lanczos` (Pillow filters
+  NEAREST, BILINEAR, BOX, BICUBIC, LANCZOS), `crop` `disabled` (stretch) or `center` (fill and trim), and a width or
+  height of 0 keeps the aspect ratio from the other side (both 0 returns the image unchanged). It takes `IMAGE` only, as
+  in ComfyUI. To resize a mask, use ComfyUI's own pair: `MaskToImage` (a grayscale image of the mask), `ImageScale` with
+  the same settings as the photo, `ImageToMask` (channel `red`, `green` or `blue`; DTFlow images have no alpha).
+- **Sizes that are not multiples of 64.** Image steps (Inpaint, Img2img) accept any source. One that is not a multiple of
+  64 within 128–2048 is padded into the nearest valid box by the existing image fit (longest side capped at 2048,
+  `suggest_generation_size`); nothing is cropped. An inpaint that keeps the outside comes back source-sized (the
+  composite), and any other result is cropped back to the source frame and resized to it, so the output always has the
+  source's size, the padding never reaches the next step, and no source pixel is lost. The mask is not touched (it must
+  already match the source). The step shows "Fitting WxH into W'xH'". Valid sources (all Generate outputs) pass
+  untouched. Add Upscale image to choose the size, method or crop yourself.
 
 ## Graph and fan-out (D3)
 

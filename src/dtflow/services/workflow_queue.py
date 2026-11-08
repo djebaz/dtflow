@@ -35,9 +35,9 @@ from uuid import uuid4
 from dtflow.core.models import ValidationError
 from dtflow.core.workflows import (
     DETECT_FACE,
-    GENERATE,
     GENERATIVE,
     MASK,
+    STATIC_SOURCES,
     Graph,
     WorkflowPlan,
     branch_label,
@@ -123,7 +123,7 @@ def new_step(graph: Graph, node_id: int, branch: Branch) -> dict[str, Any]:
         "type": node.type,
         "title": node.label,
         "branch": [branch[0], branch[1]],
-        "branch_label": branch_label(branch),
+        "branch_label": branch_label(branch, graph),
         "state": "pending",
         "stage": None,
         "message": None,
@@ -297,8 +297,6 @@ def _seed_values(
     Every such input must still exist on disk; a face mask skipped by "Continue anyway" passes on as no mask. A Retry
     run's own steps cover only its scope, so its ``inherited`` seed supplies the inputs from before it. Each value
     sits on the branch its node ran on: the retried branch, or the ancestor it was split from (#276)."""
-    if graph.node(start).type == GENERATE:
-        return []
     scope = descendants(graph, start) | {start}
     outside: set[int] = set()
     for node_id in scope:
@@ -355,6 +353,8 @@ async def retry_step(state: Path, queue_id: str, node_id: int, branch: tuple[int
     step = _step(run, node_id, branch)
     if step is None or step.get("state") not in RETRYABLE:
         raise ValidationError("Only a failed step or one with no confirmed outcome can be retried.")
+    if step.get("type") in STATIC_SOURCES:
+        raise ValidationError("A file that could not be loaded stops the whole run: fix the file and run it again.")
     if _live(view, run):
         payload = {"node_id": node_id, "branch": list(branch)}
         await asyncio.to_thread(post_control, Path(state), queue_id, RETRY_CONTROL, payload)
@@ -367,6 +367,8 @@ async def retry_step(state: Path, queue_id: str, node_id: int, branch: tuple[int
         raise ValidationError("This workflow run's record is unreadable; nothing was created.")
     graph = load_workflow(record["workflow"])
     plan = plan_workflow(graph, prompt_counts(graph, record.get("wildcards")))
+    if plan.nodes[node_id].static:
+        raise ValidationError("A file that could not be loaded stops the whole run: fix the file and run it again.")
     seed = {
         "node_id": node_id,
         "branch": list(branch),

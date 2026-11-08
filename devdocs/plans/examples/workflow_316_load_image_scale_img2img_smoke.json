@@ -1,0 +1,200 @@
+{
+  "id": "00000000-0000-4000-8000-000000003161",
+  "revision": 0,
+  "version": 1,
+  "state": {
+    "lastNodeId": 4,
+    "lastLinkId": 3,
+    "lastRerouteId": 0,
+    "lastGroupid": 0
+  },
+  "nodes": [
+    {
+      "id": 1,
+      "type": "LoadImage",
+      "pos": [
+        0.0,
+        0.0
+      ],
+      "size": [
+        240.0,
+        160.0
+      ],
+      "flags": {},
+      "order": 0,
+      "mode": 0,
+      "outputs": [
+        {
+          "name": "IMAGE",
+          "type": "IMAGE",
+          "links": [
+            1
+          ],
+          "slot_index": 0
+        },
+        {
+          "name": "MASK",
+          "type": "MASK",
+          "links": [],
+          "slot_index": 1
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "LoadImage"
+      },
+      "widgets_values": [
+        "PLACEHOLDER_choose_your_photo.png",
+        "image"
+      ]
+    },
+    {
+      "id": 2,
+      "type": "ImageScale",
+      "pos": [
+        300.0,
+        0.0
+      ],
+      "size": [
+        240.0,
+        160.0
+      ],
+      "flags": {},
+      "order": 1,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "image",
+          "type": "IMAGE",
+          "link": 1
+        }
+      ],
+      "outputs": [
+        {
+          "name": "IMAGE",
+          "type": "IMAGE",
+          "links": [
+            2
+          ],
+          "slot_index": 0
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "ImageScale"
+      },
+      "widgets_values": [
+        "lanczos",
+        1024,
+        0,
+        "disabled"
+      ]
+    },
+    {
+      "id": 3,
+      "type": "DTFImg2Img",
+      "pos": [
+        620.0,
+        0.0
+      ],
+      "size": [
+        240.0,
+        160.0
+      ],
+      "flags": {},
+      "order": 2,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "image",
+          "type": "IMAGE",
+          "link": 2
+        }
+      ],
+      "outputs": [
+        {
+          "name": "IMAGE",
+          "type": "IMAGE",
+          "links": [
+            3
+          ],
+          "slot_index": 0
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "DTFImg2Img"
+      },
+      "widgets_values": [
+        "PLACEHOLDER_checkpoint.ckpt",
+        [],
+        "same photo, cleaner detail",
+        "blurry, lowres",
+        3161,
+        24,
+        4.5,
+        "dpmpp_2m_karras",
+        0.35
+      ]
+    },
+    {
+      "id": 4,
+      "type": "DTFSaveImage",
+      "pos": [
+        960.0,
+        0.0
+      ],
+      "size": [
+        240.0,
+        160.0
+      ],
+      "flags": {},
+      "order": 3,
+      "mode": 0,
+      "inputs": [
+        {
+          "name": "image",
+          "type": "IMAGE",
+          "link": 3
+        }
+      ],
+      "properties": {
+        "Node name for S&R": "DTFSaveImage"
+      },
+      "widgets_values": [
+        "refined"
+      ]
+    }
+  ],
+  "links": [
+    {
+      "id": 1,
+      "origin_id": 1,
+      "origin_slot": 0,
+      "target_id": 2,
+      "target_slot": 0,
+      "type": "IMAGE"
+    },
+    {
+      "id": 2,
+      "origin_id": 2,
+      "origin_slot": 0,
+      "target_id": 3,
+      "target_slot": 0,
+      "type": "IMAGE"
+    },
+    {
+      "id": 3,
+      "origin_id": 3,
+      "origin_slot": 0,
+      "target_id": 4,
+      "target_slot": 0,
+      "type": "IMAGE"
+    }
+  ],
+  "groups": [],
+  "config": {},
+  "extra": {
+    "dtflow": {
+      "schema": "dtflow-workflow",
+      "version": 1
+    }
+  }
+}
