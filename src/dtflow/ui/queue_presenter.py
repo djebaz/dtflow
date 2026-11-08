@@ -257,6 +257,7 @@ class ItemRow:
     is_script_parent: bool = False  # aggregate queue item, not an additional image-generating attempt
     script_preview_path: str | None = None  # last committed child image, display-only on the parent
     script_preview_identity: str | None = None  # true child gallery identity; never a parent attempt
+    is_final: bool = False  # a workflow image a Save node kept; display-only (blue outline)
 
     @property
     def dimensions_text(self) -> str:
@@ -472,6 +473,7 @@ def _workflow_rows(item: dict, run: dict) -> list[ItemRow]:
                 height,
                 _managed_identity(output),
                 (),
+                is_final=bool(output and output in finals),
             )
         )
     return rows
