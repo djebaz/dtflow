@@ -20,6 +20,7 @@ Changes through 6.1.0 are consolidated in [DTFlow 6.1.0](v6.1.0.md). This file t
 
 ## Fixed
 
+- The left and right side panels no longer show a vertical scrollbar when their content fits: the rail stacks are now `CurrentPageStack`, which sizes from the shown page only instead of the tallest page of any tab (documented in the design system and Qt design tokens) ([#314](https://github.com/djebaz/dtflow/issues/314)).
 - Workflows: node graphics items and their embedded widgets are now destroyed at a known point with the app-wide wheel and Escape filters paused, targeting the suspected cause of the native Windows heap-corruption crash in [#308](https://github.com/djebaz/dtflow/issues/308). Unchanged run status is no longer re-applied to the node widgets on every poll (less proxy-widget churn during a run). The cause is not proven. The owner's load A, run, load B, run smoke passed once at 296a453 (an earlier head crashed); #308 stays open until it survives repeated runs.
 
 ## Upgrade and compatibility

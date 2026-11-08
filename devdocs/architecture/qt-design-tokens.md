@@ -15,7 +15,7 @@ The native Windows-oriented charcoal/blue identity is preserved. `tokens.json` b
 | Control content minimum | 22px | Plus QSS padding and border; not the total widget height |
 | Input / button radius | 5px / 6px | Consistent component families |
 | Standard outer / rail margins | 8px / 12px | Designer layout spacing; Images outer/header inset is 0px |
-| Rails | 248–300px | Independently scrolling settings and inspector |
+| Rails | 248–300px | Independently scrolling settings and inspector; each rail is as tall as its shown page only (`CurrentPageStack`), so it scrolls only on real overflow |
 | Prompt | 76px / 180px | Compact or explicitly expanded editor |
 | Canvas fit inset | 12px | Entire image remains visible, no crop/stretch |
 | Overlay inset | 10px | Controls stay inside canvas at any ratio |
