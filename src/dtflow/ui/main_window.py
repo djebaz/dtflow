@@ -1738,10 +1738,11 @@ class MainWindow:
             item.setToolTip(f"{title or key}\n{path}")
             listing.addItem(item)
         self.form.rememberedFoldersStatusLabel.setText(
-            f"{len(folders)} remembered folder" + ("" if len(folders) == 1 else "s") + "."
-            if folders
-            else "No folders remembered yet."
+            f"{len(folders)} folder" + ("" if len(folders) == 1 else "s") if folders else "None yet"
         )
+        # Up to four rows are visible (the rest scroll vertically); long entries are elided, never scrolled sideways.
+        row = listing.sizeHintForRow(0) if folders else listing.fontMetrics().height() + 10
+        listing.setFixedHeight(min(max(len(folders), 1), 4) * row + 2 * listing.frameWidth())
         self.form.forgetAllFoldersButton.setEnabled(bool(folders))
         self.refresh_remembered_folders_buttons()
 

@@ -585,7 +585,7 @@
                   <widget class="QListWidget" name="rememberedFoldersList">
                    <property name="accessibleName"><string>Remembered folders</string></property>
                    <property name="sizePolicy"><sizepolicy hsizetype="Expanding" vsizetype="Maximum"/></property>
-                   <property name="maximumHeight"><number>96</number></property>
+                   <property name="horizontalScrollBarPolicy"><enum>Qt::ScrollBarAlwaysOff</enum></property>
                    <property name="textElideMode"><enum>Qt::ElideMiddle</enum></property>
                   </widget>
                  </item>
