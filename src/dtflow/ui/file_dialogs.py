@@ -31,22 +31,21 @@ from dtflow.persistence.settings import (
 log = logging.getLogger(__name__)
 
 # Selectors whose folder was remembered by an older mechanism: the Prepare picker kept ``prepare_preferences.json``.
-_LEGACY_PREPARE_KEY = "ui.lora_panel:_choose_asset_file:open"
+_LEGACY_PREPARE_KEY = "ui.lora_panel:_choose_asset_file:open_many"
 
 _state: Path | None = None
 _entries: dict[str, dict] = {}
 _on_problem: Callable[[str], None] | None = None
 _on_change: Callable[[], None] | None = None
-_warned = False
 
 
 def configure(
     state: Path | None, *, on_problem: Callable[[str], None] | None = None, on_change: Callable[[], None] | None = None
 ) -> None:
     """Point the memory at a state directory (None disables it); load what is remembered for this runtime."""
-    global _state, _entries, _on_problem, _on_change, _warned
+    global _state, _entries, _on_problem, _on_change
     _on_change = on_change
-    _state, _on_problem, _warned = (Path(state) if state is not None else None), on_problem, False
+    _state, _on_problem = (Path(state) if state is not None else None), on_problem
     _entries = {}
     if _state is None:
         return
@@ -58,6 +57,7 @@ def configure(
         legacy = _legacy_prepare_folder(_state)
         if legacy:
             _entries[_LEGACY_PREPARE_KEY] = {"path": legacy, "title": "Prepare converted LoRA files"}
+    _trace("ui.dialog_folders_loaded", count=len(_entries), seeded=_LEGACY_PREPARE_KEY in _entries)
 
 
 def _legacy_prepare_folder(state: Path) -> str:
@@ -84,13 +84,28 @@ def forget(keys: list[str] | None = None) -> None:
         _entries.pop(key, None)
 
 
+def _trace(name: str, **data) -> None:
+    """Privacy-safe observation: selector names and booleans only, never a path (the shared schema redacts those)."""
+    diagnostic_event(log, name, level=logging.INFO, data=data)
+
+
+def _style(path: str) -> str:
+    """The shape of a path for diagnostics (``empty``, ``unc``, ``windows``, ``posix``, ``relative``)."""
+    if not path:
+        return "empty"
+    if _is_unc(path):
+        return "unc"
+    if len(path) > 2 and path[1] == ":" and path[2] in "\\/":
+        return "windows"
+    return "posix" if path.startswith("/") else "relative"
+
+
 def _problem(reason: str, exc: BaseException) -> None:
-    global _warned
+    """Every failure is logged and shown, so one early failure cannot hide the ones after it."""
     diagnostic_event(
         log, "ui.dialog_folder_unavailable", level=logging.WARNING, data={"reason": reason, "error": type(exc).__name__}
     )
-    if not _warned and _on_problem is not None:
-        _warned = True
+    if _on_problem is not None:
         _on_problem(reason)
 
 
@@ -142,15 +157,32 @@ def _remember(key: str, title: str, chosen, *, folder: bool) -> None:
         return
     path = first if folder else os.path.dirname(os.path.abspath(first))
     if _entries.get(key) == {"path": path, "title": title[:200]}:
+        _trace("ui.dialog_folder_saved", selector=key, changed=False, saved=True, path_style=_style(path))
         return
     _entries.pop(key, None)
     _entries[key] = {"path": path, "title": title[:200]}
+    saved = True
     try:
         save_dialog_path(_state, key, path, title)
     except (OSError, ValueError) as exc:
+        saved = False
         _problem("write_failed", exc)
+    _trace("ui.dialog_folder_saved", selector=key, changed=True, saved=saved, path_style=_style(path))
     if _on_change is not None:
         _on_change()
+
+
+def _trace_open(key: str, kind: str, requested, start: str) -> None:
+    entry = _entries.get(key)
+    _trace(
+        "ui.dialog_folder_open",
+        selector=key,
+        kind=kind,
+        remembered=entry is not None,
+        from_memory=entry is not None and start != os.fspath(requested or ""),
+        start_style=_style(start),
+        start_is_dir=os.path.isdir(start) if start and not _is_unc(start) else None,
+    )
 
 
 def _static(kind, qt_method, parent, caption, requested, tail, kwargs, remember, remember_as):
@@ -158,7 +190,9 @@ def _static(kind, qt_method, parent, caption, requested, tail, kwargs, remember,
     if not remember or _state is None:
         return qt_method(parent, caption, requested, *tail, **kwargs)
     key = _key(kind, remember_as, sys._getframe(2))
-    result = qt_method(parent, caption, _start(kind, key, requested), *tail, **kwargs)
+    start = _start(kind, key, requested)
+    _trace_open(key, kind, requested, start)
+    result = qt_method(parent, caption, start, *tail, **kwargs)
     chosen = result[0] if isinstance(result, tuple) else result
     if chosen:
         _remember(key, caption, chosen, folder=kind == "folder")
@@ -198,6 +232,15 @@ class QFileDialog(_QtFileDialog):
             self._memory_key = _key("dialog", remember_as, sys._getframe(1))
             entry = _entries.get(self._memory_key)
             directory = _usable_directory(entry["path"]) if entry is not None else None
+            _trace(
+                "ui.dialog_folder_open",
+                selector=self._memory_key,
+                kind="dialog",
+                remembered=entry is not None,
+                from_memory=directory is not None,
+                start_style=_style(directory or ""),
+                start_is_dir=None,
+            )
             if directory is not None:
                 self.setDirectory(directory)
             self.accepted.connect(self._remember_selection)
