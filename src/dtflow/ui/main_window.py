@@ -64,6 +64,7 @@ from dtflow.ui.activity import Activity
 from dtflow.ui.activity_strip import ActivityStrip, activity_strip
 from dtflow.ui.brand import connection_icon, status_dot
 from dtflow.ui.button_focus import KeyboardFocusGuard
+from dtflow.ui.current_page_stack import CurrentPageStack
 from dtflow.ui.cloud_usage_panel import CloudUsagePanel
 from dtflow.ui.workflow_defaults_panel import WorkflowDefaultsPanel
 from dtflow.ui.gallery_page import GalleryPage
@@ -113,7 +114,15 @@ def _form_loader() -> QUiLoader:
     loader = getattr(application, "_dtflow_form_loader", None)
     if loader is None:
         loader = QUiLoader(application)
-        for widget_type in (ImagePreview, SearchableComboBox, RunControl, SegmentedBar, ValueChips, ScriptRemoveButton):
+        for widget_type in (
+            ImagePreview,
+            SearchableComboBox,
+            RunControl,
+            SegmentedBar,
+            ValueChips,
+            ScriptRemoveButton,
+            CurrentPageStack,
+        ):
             loader.registerCustomWidget(widget_type)
         application._dtflow_form_loader = loader
     return loader
@@ -931,26 +940,6 @@ class MainWindow:
         if offset.width() != width:
             offset.setFixedWidth(width)
 
-    @staticmethod
-    def _fit_stack_height(stack, current) -> None:
-        """Let only the shown page set a rail stack's height.
-
-        A QStackedWidget is as tall as its tallest page, hidden ones included, so the
-        shared scroll area showed a scrollbar on short pages (Connection) whenever
-        another tab's panel was taller than the viewport.
-        """
-        for index in range(stack.count()):
-            page = stack.widget(index)
-            original = page.property("_dtflowVerticalPolicy")
-            if original is None:
-                original = int(page.sizePolicy().verticalPolicy().value)
-                page.setProperty("_dtflowVerticalPolicy", original)
-            wanted = QSizePolicy.Policy(original) if page is current else QSizePolicy.Policy.Ignored
-            policy = page.sizePolicy()
-            if policy.verticalPolicy() != wanted:
-                policy.setVerticalPolicy(wanted)
-                page.setSizePolicy(policy)
-
     def _fit_context_pages(self, *_args) -> None:
         stack = self.shell.leftStack
         for index in range(stack.count()):
@@ -959,7 +948,6 @@ class MainWindow:
             if policy.horizontalPolicy() != QSizePolicy.Policy.Ignored:
                 policy.setHorizontalPolicy(QSizePolicy.Policy.Ignored)
                 page.setSizePolicy(policy)
-        self._fit_stack_height(stack, stack.currentWidget())
 
     def _fit_inspector_page(self, *_args) -> None:
         stack = self.shell.rightStack
@@ -979,7 +967,6 @@ class MainWindow:
             if policy.horizontalPolicy() != horizontal:
                 policy.setHorizontalPolicy(horizontal)
                 page.setSizePolicy(policy)
-        self._fit_stack_height(stack, stack.currentWidget())
 
     def _responsive_workspace(self) -> None:
         shell = self.shell
