@@ -534,6 +534,7 @@ class MainWindow:
         )
         form.generationNavigationButton.clicked.connect(self._show_generation)
         form.backendCombo.currentTextChanged.connect(lambda _: self.generation.sync_backend())
+        form.backendCombo.currentTextChanged.connect(lambda _: self.workflows.backend_changed())
         form.queueNavigationButton.clicked.connect(self._show_queue)
         form.workflowsNavigationButton.clicked.connect(self._show_workflows)
         form.imagesNavigationButton.setEnabled(True)
@@ -688,7 +689,7 @@ class MainWindow:
         choices = self.generation.plan_choices()
         snapshot = self.generation._inventory_snapshot
         models = list(eligible_model_ids(snapshot)) if snapshot is not None else list(choices.get("models", ()))
-        return {"models": models, "loras": choices.get("loras", {})}
+        return {"models": models, "loras": choices.get("loras", {}), "backend": self.form.backendCombo.currentText()}
 
     def _open_output_in_images(self, identity: str) -> None:
         """Queues → Open in Images: show this committed output in the Images Detail view."""
