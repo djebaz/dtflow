@@ -416,7 +416,7 @@ class GallerySlideshow(QObject):
             if delta:
                 step = 1 if delta > 0 else -1
                 if watched is self.position:
-                    self._preview_step(step)
+                    self._preview_step(step * 10)
                     self.wheel_timer.start()
                 else:
                     self.interval.stepBy(step)
