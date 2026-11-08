@@ -772,6 +772,11 @@ def geometric_face_pixels(
     if not result.any():
         reason = (
             "Detected face does not overlap the selected person's silhouette"
+            f" (image {source.width}x{source.height}; face boxes "
+            + ", ".join("({:.0f},{:.0f},{:.0f},{:.0f})".format(*box) for box in boxes[:3])
+            + "; person boxes "
+            + (", ".join("{}@{:.2f}".format(item[2], item[0]) for item in people[:3]) or "none")
+            + ")"
             if method == "balanced"
             else "Face region is empty"
         )
