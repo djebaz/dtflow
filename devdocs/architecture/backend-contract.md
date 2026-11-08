@@ -69,7 +69,7 @@ ResolvedGenerationRequest fields:
 | steps | Explicit integer 1..150 initially; model-specific restrictions apply |
 | guidance | Finite number 0..50 initially; preserve effective float32 value in wire evidence |
 | sampler_id | Core string enum: euler_a or dpmpp_2m_karras initially; advertised per-backend subset only |
-| batch_size, batch_count | Explicit positive integers; product bounded by output limit; initially advertise 1/1 until batch seed/count behavior is fixture-verified |
+| batch_size, batch_count | Explicit positive integers; product bounded by output limit; advertise 1/1 until batch seed/count behavior is verified; the #280 [findings](../research/2026-11-08-native-batching-findings.md) found no safe native combination, so native batching stays disabled |
 | loras | Immutable tuple of exact identifier and finite explicit weight; empty initially; metadata/preflight contract now, supported generation combinations in 3A |
 | resolution_evidence | Original input/config provenance and explicitly resolved effective values; credential-free |
 
