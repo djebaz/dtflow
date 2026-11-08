@@ -61,6 +61,7 @@ from dtflow.ui.activity_strip import ActivityStrip
 from dtflow.ui.brand import connection_icon, status_dot
 from dtflow.ui.button_focus import KeyboardFocusGuard
 from dtflow.ui.cloud_usage_panel import CloudUsagePanel
+from dtflow.ui.workflow_defaults_panel import WorkflowDefaultsPanel
 from dtflow.ui.gallery_page import GalleryPage
 from dtflow.ui.generation_page import GenerationPage
 from dtflow.ui.image_export_panel import ImageExportPanel
@@ -587,6 +588,7 @@ class MainWindow:
             active_credential=self._active_credential_id,
             on_active=self._show_active_key,
         )
+        self.workflow_defaults = WorkflowDefaultsPanel(form, self.runner, self.state_dir)
         self.cloud_usage.refresh()  # the bottom bar names the active key on every view from startup
         self.activity.listen(self._usage_activity_changed)
         self._gui_heartbeat = GuiHeartbeat(

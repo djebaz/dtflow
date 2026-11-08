@@ -268,6 +268,7 @@ class _Execution:
         self.graph = None
         self.plan = None
         self.slots: dict[int, asyncio.Semaphore] = {}  # per node: steps of that node running together
+        self.total = asyncio.Semaphore(10)  # all steps together (the global limit); set from the workflow at run start
         self.in_flight: dict[str, list[Key]] = {}  # attempt id -> steps whose generation may have been sent
         self.closed = False  # the run settled; a step abandoned at Stop may not write over it
 
@@ -315,16 +316,23 @@ class _Execution:
                 self.steps[key]["stage"] = text
                 self.dirty = True
 
-    def set_limits(self) -> None:
-        """Lanes and per-node slots from the workflow file (#286): its concurrency, else the backend default."""
+    async def set_limits(self) -> None:
+        """Global limit, lanes and per-node slots (#286): the workflow's own values, else the app defaults."""
+        from dtflow.persistence.settings import SettingsError, load_workflow_defaults
+
+        try:
+            defaults = await asyncio.to_thread(load_workflow_defaults, self.runner.state)
+        except SettingsError:
+            defaults = None  # an unreadable settings file never blocks a run: the built-in defaults apply
         backend = self.runner.service.backend
-        limit = workflow_limit(self.graph, self.request.backend)
+        limit = workflow_limit(self.graph, self.request.backend, defaults)
         widen = getattr(backend, "set_concurrency", None)
         if widen is not None:
             widen(limit)  # a Draw Things session runs as many generations together as this run asks for
         self.lanes = max(1, min(limit, backend.capabilities.max_concurrency, 10))
+        self.total = asyncio.Semaphore(limit)  # every running step, local or generative, takes one
         self.slots = {
-            node.id: asyncio.Semaphore(min(node_limit(self.graph, node, self.request.backend), self.lanes))
+            node.id: asyncio.Semaphore(node_limit(self.graph, node, self.request.backend, defaults))
             for node in self.graph.nodes
         }
 
@@ -345,7 +353,7 @@ class _Execution:
         try:
             self.graph = load_workflow(self.request.workflow)
             self.plan = plan_workflow(self.graph)
-            self.set_limits()
+            await self.set_limits()
             if any(key[0] not in self.plan.nodes for key in self.steps):
                 raise ValidationError("The stored run does not match its workflow.")
             if self.plan.needs_face_models:
@@ -613,7 +621,7 @@ class _Execution:
         key = (node_id, branch)
         node_type = self.graph.node(node_id).type
         try:
-            async with self.slots[node_id]:  # this node's own concurrency limit
+            async with self.slots[node_id], self.total:  # this node's limit, then the global one
                 if node_type == DETECT_FACE:
                     await self.detect(node_id, branch, inputs)
                 elif node_type in IMAGE_OPERATIONS:
@@ -839,7 +847,7 @@ class _Execution:
         # Deterministic, so Retry reuses the seed of the first try. Computed rather than read back from the step: a run
         # stored before #275 holds the node seed on every output, which would make a retried output a duplicate.
         seed = branch_seed(int(node.params["seed"]), branch[1])
-        async with self.slots[node_id]:  # this node's own concurrency limit; not held while the branch walks on
+        async with self.slots[node_id], self.total:  # node limit, then global; not held while the branch walks on
             await self.begin([key])
             try:
                 request = node_request(

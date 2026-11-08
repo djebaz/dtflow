@@ -872,28 +872,38 @@ class WorkflowsPage(QObject):
         self._sync_lock()
 
     def _add_concurrency(self, layout, node_id: int | None) -> None:
-        """The workflow's concurrency (no node selected) or one node's (#286); 0 shows "Default" and is not saved."""
+        """The global concurrency (no node selected) or one node's (#286); 0 shows the default and is not saved."""
+        from dtflow.persistence.settings import SettingsError, WORKFLOW_DEFAULTS, load_workflow_defaults
+
         host = self.inspector.workflowParamsHost
         node = self.canvas.node(node_id) if node_id is not None else None
         value = (node.concurrency if node is not None else self.canvas.concurrency) or 0
-        label = _label("Concurrency", "workflowParamLabel")
-        layout.addWidget(label)
+        try:
+            defaults = load_workflow_defaults(self.state)
+        except SettingsError:
+            defaults = dict(WORKFLOW_DEFAULTS)
         spin = QSpinBox(host)
         spin.setRange(0, wf.MAX_CONCURRENCY)
-        spin.setSpecialValueText("Default")
-        spin.setValue(value)
         if node is None:
+            label = _label("Global concurrency", "workflowParamLabel")
+            spin.setSpecialValueText(f"Default (DT+ {defaults['cloud']}, local {defaults['local']})")
             tip = (
-                "How many steps of this workflow run together. Default: 10 on DT+, 2 on local. "
-                "Each node can lower its own share. Saved in the workflow file."
+                "The most steps of this workflow that run at the same time, all nodes together. "
+                "Default: set in the Connection tab. Saved in the workflow file."
             )
-            spin.setAccessibleName("Workflow concurrency")
+            spin.setAccessibleName("Global concurrency")
         else:
+            label = _label("Concurrency", "workflowParamLabel")
+            spin.setSpecialValueText(
+                f"Default ({defaults['detect']})" if node.SPEC.type == wf.DETECT_FACE else "Default (global)"
+            )
             tip = (
-                "How many steps of this node run together, never above the workflow concurrency. "
-                "Default: the workflow value (2 for Detect face). Saved in the workflow file."
+                "The most steps of this node that run at the same time, never above the global concurrency. "
+                "Default: the global value (Detect face: set in the Connection tab). Saved in the workflow file."
             )
             spin.setAccessibleName(f"Concurrency for node {node_id}")
+        layout.addWidget(label)
+        spin.setValue(value)
         label.setToolTip(tip)
         spin.setToolTip(tip)
 

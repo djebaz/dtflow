@@ -37,8 +37,8 @@ PORT_TYPES = (IMAGE, MASK)
 MAX_NODES = 200  # practical bound on one file, not a chain-length limit
 MAX_PLANNED_GENERATIONS = 256  # practical bound on one run's submissions after fan-out
 MAX_CONCURRENCY = 10  # most steps of one workflow, or of one node, that run together (#286)
-DEFAULT_CONCURRENCY = {"cloud": 10, "local": 2, "fake": 4}  # per backend, when the workflow does not say
-DETECT_CONCURRENCY = 2  # local detection default per node when the node does not say
+# Built-in defaults; the app settings (Connection tab) replace them: DT+, local, fake backend, Detect face node.
+DEFAULT_CONCURRENCY = {"cloud": 10, "local": 2, "fake": 4, "detect": 2}
 PROP_CONCURRENCY = "DTFlow concurrency"  # optional node property; a missing value means the default
 LORA_WEIGHT_RANGE = (0.0, 3.0)  # the LoRA editor's range; imported values outside it are rejected, never clamped
 MASK_REGIONS = ("face_skin", "face_skin_and_hair")
@@ -331,15 +331,20 @@ def _concurrency(value: object, label: str) -> int | None:
     return value
 
 
-def workflow_limit(graph: Graph, backend: str) -> int:
-    """Steps of one run that may be in flight together: the workflow's own limit, else the backend default."""
-    return graph.concurrency if graph.concurrency is not None else DEFAULT_CONCURRENCY.get(backend, 1)
+def workflow_limit(graph: Graph, backend: str, defaults: dict[str, int] | None = None) -> int:
+    """Global limit: steps of one run that may be in flight together; the workflow's own, else the default."""
+    if graph.concurrency is not None:
+        return graph.concurrency
+    return {**DEFAULT_CONCURRENCY, **(defaults or {})}.get(backend, 1)
 
 
-def node_limit(graph: Graph, node: GraphNode, backend: str) -> int:
-    """Steps of one node that may run together, never above the workflow limit; Detect defaults to a small bound."""
-    default = DETECT_CONCURRENCY if node.type == DETECT_FACE else MAX_CONCURRENCY
-    return max(1, min(node.concurrency if node.concurrency is not None else default, workflow_limit(graph, backend)))
+def node_limit(graph: Graph, node: GraphNode, backend: str, defaults: dict[str, int] | None = None) -> int:
+    """Steps of one node that may run together, never above the global limit; Detect has its own default."""
+    own = node.concurrency
+    if own is None and node.type == DETECT_FACE:
+        own = {**DEFAULT_CONCURRENCY, **(defaults or {})}["detect"]
+    limit = workflow_limit(graph, backend, defaults)
+    return max(1, min(own if own is not None else limit, limit))
 
 
 def _pair(value: object, label: str) -> tuple[float, float]:

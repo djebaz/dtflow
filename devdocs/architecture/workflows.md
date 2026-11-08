@@ -24,13 +24,17 @@ and stock ComfyUI workflows do not import into DTFlow.
 - Links are v1.0 objects; `type` must equal both ports' type; each input has at most one link; both ends must
   reference the link. Array (0.4) links and reroute `parentId` are rejected.
 
-**Concurrency (#286).** The run's limit is the workflow's `concurrency`, else the backend default (DT+ 10, local 2); a
-Draw Things session is widened to that many lanes for the run, so Queues' saved DT+ maximum does not apply to
-workflows. A node's own `DTFlow concurrency` can only lower its share (Detect face defaults to 2, other nodes to the
-workflow's limit). Both are edited in the Workflows inspector (no node selected: the workflow; a node: that node) and
-saved with the file. Seeds, the loop guard and Retry do not depend on the order outputs finish in. The Queues
-Concurrency control of a workflow queue is not used. Whether the local Draw Things app handles two lanes at once is
-unverified, and DT+ may reject many parallel jobs (INTERNAL "unknown error processing request").
+**Concurrency (#286).** The *global concurrency* is the most steps of a run that are in flight together, all nodes and
+kinds counted (generations, Detect face, image operations, saves). It is the workflow's `concurrency`, else the default
+from the app settings (`<state>/settings.json`: `workflow_cloud` 10, `workflow_local` 2, `workflow_detect` 2, edited in
+the Connection tab; the code constants in `core/workflows.py` are only the first-run values). A Draw Things session is
+widened to that many lanes for the run, so Queues' saved DT+ maximum does not apply to workflows. A node's own
+`DTFlow concurrency` can only lower its share (Detect face defaults to the Detect setting, other nodes to the global
+value); a step takes its node slot and then one global slot. Both are edited in the Workflows inspector (no node
+selected: Global concurrency; a node: that node) and saved with the file; "Default (...)" shows the current default.
+Seeds, the loop guard and Retry do not depend on the order outputs finish in. The Queues Concurrency control of a
+workflow queue is not used. Whether the local Draw Things app handles two lanes at once is unverified, and DT+ may reject
+many parallel jobs (INTERNAL "unknown error processing request").
 
 Import is all-or-nothing: the first problem rejects the whole file with one reason. Nothing is repaired, dropped,
 renamed or guessed. Values outside a range are rejected, never clamped. A ComfyUI frontend release has **not** been
