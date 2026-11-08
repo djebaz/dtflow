@@ -325,6 +325,12 @@ class DTFNodeContent(QDMNodeContentWidget):
         )
 
     def set_status(self, state: str | None, text: str = "", tooltip: str = "") -> None:
+        # The run is re-presented on every poll; touching the embedded widgets (style repolish, show/hide) when
+        # nothing changed only churns the graphics proxy, so an identical status is a no-op (#308 run-time context).
+        key = (state or "", text, tooltip)
+        if key == getattr(self, "_status_key", None):
+            return
+        self._status_key = key
         self.status.setVisible(bool(state))
         self.status.setText(text)
         self.status.setToolTip(tooltip)
@@ -335,6 +341,10 @@ class DTFNodeContent(QDMNodeContentWidget):
     def set_thumbnail(self, pixmap: QPixmap | None) -> None:
         if self.thumb is None:
             return
+        key = None if pixmap is None or pixmap.isNull() else pixmap.cacheKey()
+        if key == getattr(self, "_thumb_key", None):
+            return
+        self._thumb_key = key
         if pixmap is None or pixmap.isNull():
             self.thumb.clear()
             self.thumb.hide()
@@ -740,21 +750,28 @@ class WorkflowCanvas(QObject):
         node = self.node(node_id)
         if node is None:
             return
+        changed = node.grNode.run_state != state
         node.grNode.run_state = state
         node.content.set_status(state, text, tooltip)
-        node.grNode.update()
+        if changed:
+            node.grNode.update()
 
     def set_thumbnail(self, node_id: int, pixmap: QPixmap | None) -> None:
         node = self.node(node_id)
         if node is not None:
             node.content.set_thumbnail(pixmap)
 
-    def clear_status(self) -> None:
+    def clear_status(self, keep: frozenset[int] | set[int] = frozenset()) -> None:
+        """Reset run presentation; nodes in ``keep`` are about to be set again and are left untouched."""
         for node in self.scene.nodes:
+            if node.comfy_id in keep:
+                continue
+            changed = node.grNode.run_state is not None
             node.grNode.run_state = None
             node.content.set_status(None)
             node.content.set_thumbnail(None)
-            node.grNode.update()
+            if changed:
+                node.grNode.update()
 
     # --- selection, history ---------------------------------------------------------------------------------------
     def _selection_changed(self) -> None:
