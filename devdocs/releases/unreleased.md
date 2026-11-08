@@ -21,6 +21,10 @@ Changes through 6.0.0 are consolidated in [DTFlow 6.0.0](v6.0.0.md). This file t
 
 ## Fixed
 
+- Workflows: Retry of one failed Generate image after the run has ended now regenerates only that image and what it feeds (it used to resubmit every output of the Generate node, including successful ones), and the planned count matches.
+- Workflows: two unrelated Inpaint/Img2img nodes that both make several outputs from the same images are refused when the workflow is planned, because their results could not be told apart. Chained multiplying nodes are unaffected. A saved workflow of that shape now needs one of them in sequence or set to one output.
+- Queues: an Inpaint that continued without a mask shows as succeeded ("passed through, no mask") in rows, counts, filter chips and the log instead of cancelled, and is not marked final twice; the filter chips count a workflow run's images. Workflow image rows take their operation from the node type and show an unknown seed instead of seed 0 and Text to image. Smoke-tested by the owner (#274 review, PR #300).
+
 ## Upgrade and compatibility
 
 - No stored record changes for the new output layout: attempt records, gallery identity and recycle records are unchanged. Output folders written by this version are not understood as managed originals by an older app version (Trash/Delete refuses them).
