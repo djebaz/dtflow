@@ -1518,6 +1518,7 @@ class MainWindow:
             return
         source = "environment" if choice == ENVIRONMENT else "saved"
         status = getattr(self, "_credential_status_for_switch", {})
+        alias = None
         if source == "environment":
             environment = status.get("environment", {})
             identity = (
@@ -1526,11 +1527,12 @@ class MainWindow:
         else:
             selected = next((key for key in status.get("keys", ()) if key.id == choice), None)
             identity = (selected.credential_id, selected.hint) if selected is not None else None
+            alias = selected.alias if selected is not None else None
         diagnostic_event(
             log,
             "app.api_key_switched",
             level=logging.INFO,
-            data={"to": source, **cloud_key_data(identity, source)},
+            data={"to": source, **cloud_key_data(identity, source, alias=alias)},
         )
         self.refresh_credentials()
         self._selection_changed()
