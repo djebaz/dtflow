@@ -136,9 +136,10 @@ class QueueDispatcher:
             or not callable(getattr(assets, "recover_missing", None))
             or not request.prepared_assets
             or failure.category != ErrorCategory.REMOTE_REJECTION
-            or self._recovery_attempted
         ):
-            if self._asset_recovery is None:
+            return False
+        if self._recovery_attempted:
+            if self._asset_recovery is None or self._asset_recovery.done():
                 return False
             return await asyncio.shield(self._asset_recovery)
         self._recovery_attempted = True
