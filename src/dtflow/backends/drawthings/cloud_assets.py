@@ -229,6 +229,36 @@ def _signed_destination(value: object, *, response=None) -> UploadTicket:
     return UploadTicket(str(httpx.URL(value)))
 
 
+async def negotiate_lora_assets(
+    auth: CloudAuth, contents: tuple[AssetContent, ...]
+) -> dict[tuple[str, str, int], AssetNegotiation]:
+    """Resolve distinct custom LoRAs in one authenticated BYOM request, without uploading."""
+    if not contents:
+        return {}
+    response = await auth.authenticated_json(
+        "/get_byom_urls",
+        {"files": [{"file": c.identifier, "sha256": c.sha256, "size": c.size} for c in contents]},
+    )
+    already, urls = _response_branches(response)
+    results = {}
+    for content in contents:
+        reference = already.get(content.sha256)
+        if _valid_reference(reference):
+            result = AssetNegotiation("exists", reference)
+        else:
+            upload = urls.get(content.identifier)
+            if not _usable_upload(upload):
+                raise _invalid(response=response, reason="missing_or_invalid_batched_asset_evidence")
+            result = AssetNegotiation("upload_required", ticket=_signed_destination(upload.get("url"), response=response))
+        results[(content.identifier, content.sha256, content.size)] = result
+    event(
+        logging.getLogger(__name__), "backend.assets_negotiated", level=logging.DEBUG,
+        data={"requested": len(contents), "exists": sum(x.status == "exists" for x in results.values()),
+              "upload_required": sum(x.status == "upload_required" for x in results.values())},
+    )
+    return results
+
+
 async def negotiate_lora_asset(auth: CloudAuth, content: AssetContent) -> AssetNegotiation:
     """Ask DT+ for the current storage state of one content identity; transfers nothing.
 
