@@ -200,20 +200,24 @@ class LoraStore:
         return self._read()
 
     def remove(self, sha256: str, size: int) -> bool:
-        """Delete one retained copy and its index entry; unrelated state and outputs are never touched."""
-        handle = self._locked()
-        try:
-            files = self._read()
-            kept = [item for item in files if (item.get("sha256"), item.get("size")) != (sha256, size)]
-            if len(kept) == len(files):
-                return False
-            for item in files:
-                if (item.get("sha256"), item.get("size")) == (sha256, size):
-                    self._path(item).unlink(missing_ok=True)
-            self._write(kept)
-            return True
-        finally:
-            handle.close()
+        """Delete only the managed copy; refuse removal while an asset writer may be uploading it."""
+        self.directory.parent.mkdir(parents=True, exist_ok=True)
+        # An active restoration holds this existing registry lock through upload.
+        # Taking it before the store lock prevents deleting bytes being uploaded, across processes.
+        with _lock_file(self.directory.parent / "assets.lock"):
+            handle = self._locked()
+            try:
+                files = self._read()
+                kept = [item for item in files if (item.get("sha256"), item.get("size")) != (sha256, size)]
+                if len(kept) == len(files):
+                    return False
+                for item in files:
+                    if (item.get("sha256"), item.get("size")) == (sha256, size):
+                        self._path(item).unlink(missing_ok=True)
+                self._write(kept)
+                return True
+            finally:
+                handle.close()
 
     def clear(self) -> int:
         """Remove every retained copy; returns how many entries were removed."""
