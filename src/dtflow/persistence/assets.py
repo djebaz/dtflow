@@ -320,7 +320,8 @@ class AssetRegistry:
         # an already-confirmed historical row unchanged; each key's current reference
         # lives in asset_key_receipts instead.
         where = (
-            "WHERE asset_id=?" if credential_id is None
+            "WHERE asset_id=?"
+            if credential_id is None
             else "WHERE asset_id=? AND (state!='confirmed' OR remote_id IS NULL)"
         )
         db.execute(
