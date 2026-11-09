@@ -201,6 +201,27 @@ async def bind_prepared(
         return request
     prepared = await load_prepared(state, backend_name, asset_ids)
     selected = {item.identifier for item in request.loras}
+    # A receipt ID identifies local content; a distinct logical LoRA name may share its bytes.
+    # Preserve the explicitly selected names rather than silently replacing them with the
+    # global asset row's first filename.
+    registry = AssetRegistry(state)
+    await registry.open()
+    try:
+        candidates = await registry.choices()
+    finally:
+        await registry.aclose()
+    ids = {item.receipt_id for item in prepared}
+    named = {
+        (item.receipt_id, item.identifier): item
+        for item in candidates if item.receipt_id in ids and item.identifier in selected
+    }
+    resolved = tuple(
+        named.get((item.receipt_id, identifier))
+        for item in prepared
+        for identifier in (lora.identifier for lora in request.loras)
+        if (item.receipt_id, identifier) in named
+    )
+    prepared = tuple(dict.fromkeys(resolved)) or prepared
     for item in prepared:
         if item.identifier not in selected:
             raise ValidationError(f"--asset {item.receipt_id[:8]} needs a matching --lora {item.identifier}:WEIGHT.")
@@ -216,13 +237,12 @@ async def script_asset_choices(state: Path, backend_name: str) -> tuple[Prepared
     """
     if backend_name != "cloud":
         return ()
-    records = await list_assets(state)
-    choices = {
-        record["identifier"]: record["asset_id"]
-        for record in records
-        if record["state"] == "confirmed" and record["kind"] == "lora"
-    }
-    return await load_prepared(state, backend_name, tuple(choices.values()))
+    registry = AssetRegistry(state)
+    await registry.open()
+    try:
+        return await registry.choices()
+    finally:
+        await registry.aclose()
 
 
 @asynccontextmanager
