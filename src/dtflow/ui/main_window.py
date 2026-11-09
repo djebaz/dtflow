@@ -478,7 +478,7 @@ class MainWindow:
         logs_button.setAutoRaise(True)
         logs_button.setFixedSize(20, 20)
         logs_button.setCheckable(True)
-        logs_button.setToolTip("Open Logs workspace")
+        logs_button.setToolTip("Open Logs workspace (F10)")
         logs_button.setAccessibleName("Open Logs workspace")
         logs_button.clicked.connect(self._toggle_logs)
         status_actions_layout.addWidget(about_button)
@@ -603,6 +603,7 @@ class MainWindow:
             ("F2", self._show_workflows),
             ("F3", self._show_queue),
             ("F4", lambda: self.form.workspaceStack.setCurrentWidget(self.images_page)),
+            ("F10", self._toggle_logs),
             ("F12", lambda: self.form.workspaceStack.setCurrentWidget(self.form.connectionPage)),
         ):
             shortcut = QShortcut(QKeySequence(key), self.form)
