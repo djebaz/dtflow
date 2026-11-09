@@ -23,13 +23,15 @@ from dtflow.core.models import (
     BackendEvent,
     BackendFailure,
     ErrorCategory,
+    RemoteOutcome,
     ResolvedGenerationRequest,
     ValidationError,
 )
 from dtflow.core.tasks import settle
 from dtflow.diagnostics import event as diagnostic_event
-from dtflow.persistence.queues import QueueError
+from dtflow.persistence.queues import QueueError, post_control, read_queue_requests
 from dtflow.persistence.store import PersistenceError, SQLiteAttempts
+from dtflow.core.request_records import request_from_record
 from dtflow.services.generation import GenerationService
 from dtflow.services.image_inputs import restore_image_inputs
 
@@ -49,6 +51,9 @@ class QueueDispatcher:
         on_event: Callable[[str, BackendEvent], None] | None = None,
     ):
         self.store, self.service, self.poll, self.on_settle, self.on_event = store, service, poll, on_settle, on_event
+        self._asset_recovery: asyncio.Task | None = None
+        self._recovery_active = False
+        self._recovery_attempted = False
 
     async def run(self, queue_id: str) -> dict[str, Any]:
         """Dispatch until the queue is finished or cancelled.
@@ -62,13 +67,38 @@ class QueueDispatcher:
         await self.store.apply_controls(queue_id)
         await self.store.set_running(queue_id)
         try:
+            # Resolve all distinct first-use receipts before opening up to ten generation lanes.
+            # Legacy and cross-key receipts share one BYOM batch, not one check per item.
+            assets = getattr(self.service, "assets", None)
+            if assets is not None and callable(getattr(assets, "ensure_many", None)):
+                try:
+                    _, _, records = await asyncio.to_thread(read_queue_requests, self.store.directory, queue_id)
+                    distinct = {}
+                    for _, state, record in records:
+                        if state != "pending" or not isinstance(record, dict) or "model_id" not in record:
+                            continue
+                        request = request_from_record(record)
+                        for prepared in request.prepared_assets:
+                            distinct[(prepared.identifier, prepared.sha256, prepared.size)] = prepared
+                    if distinct:
+                        await assets.ensure_many(tuple(distinct.values()))
+                except BackendError as exc:
+                    diagnostic_event(
+                        log, "queue.asset_prepare_blocked", level=logging.WARNING,
+                        data={"code": exc.failure.code, "queue_id": queue_id},
+                    )
+                    await asyncio.to_thread(post_control, self.store.directory, queue_id, "pause")
+                    await self.store.apply_controls(queue_id)
+                    return await self.store.inspect_queue(queue_id)
             while True:
                 applied = await self.store.apply_controls(queue_id)
                 if "cancel" in applied:
                     # Interruption of running attempts is local only; the service records any remote uncertainty.
+                    if self._asset_recovery is not None and not self._asset_recovery.done():
+                        self._asset_recovery.cancel()
                     for task in tasks:
                         task.cancel()
-                while failure is None:
+                while failure is None and not self._recovery_active:
                     claim = await self.store.claim_next(queue_id, limit)
                     if claim is None:
                         break
@@ -89,10 +119,53 @@ class QueueDispatcher:
                     return state
                 await asyncio.sleep(self.poll)
         finally:
+            if self._asset_recovery is not None and not self._asset_recovery.done():
+                self._asset_recovery.cancel()
             for task in tasks:
                 task.cancel()
             if tasks:
                 await asyncio.shield(asyncio.gather(*tasks, return_exceptions=True))
+
+    async def _try_asset_recovery(
+        self, queue_id: str, request: ResolvedGenerationRequest, failure: BackendFailure
+    ) -> bool:
+        """One coordinated probe/reprepare episode per queue, with admission held until it settles."""
+        assets = getattr(self.service, "assets", None)
+        if (
+            assets is None
+            or not callable(getattr(assets, "recover_missing", None))
+            or not request.prepared_assets
+            or failure.category != ErrorCategory.REMOTE_REJECTION
+            or self._recovery_attempted
+        ):
+            if self._asset_recovery is None:
+                return False
+            return await asyncio.shield(self._asset_recovery)
+        self._recovery_attempted = True
+        self._recovery_active = True
+
+        async def recover():
+            try:
+                await self._record_event(queue_id, "asset_recovery_started", {"kind": "lora"})
+                restored = await assets.recover_missing(request.prepared_assets)
+                await self._record_event(
+                    queue_id, "asset_recovery_finished", {"restored": restored}
+                )
+                return restored
+            except Exception as exc:
+                diagnostic_event(
+                    log, "queue.asset_recovery_failed", level=logging.WARNING,
+                    data={"reason": type(exc).__name__},
+                )
+                await self._record_event(queue_id, "asset_recovery_failed", {"reason": "restore_failed"})
+                await asyncio.to_thread(post_control, self.store.directory, queue_id, "pause")
+                await self.store.apply_controls(queue_id)
+                return False
+            finally:
+                self._recovery_active = False
+
+        self._asset_recovery = asyncio.create_task(recover())
+        return await asyncio.shield(self._asset_recovery)
 
     async def _record_event(
         self,
@@ -219,7 +292,13 @@ class QueueDispatcher:
                         saved = await self.service.generate(request, on_event=receive, layout=layout, **options)
                         break
                     except BackendError as exc:
-                        if retries >= AUTO_RETRIES or not auto_retryable(exc.failure):
+                        repaired = await self._try_asset_recovery(queue_id, request, exc.failure)
+                        # Retry a repaired request only when the provider definitely did not receive it.
+                        safe_replay = (
+                            repaired and exc.failure.remote_outcome == RemoteOutcome.NOT_STARTED
+                            and retries < AUTO_RETRIES
+                        )
+                        if not safe_replay and (retries >= AUTO_RETRIES or not auto_retryable(exc.failure)):
                             raise
                         retries += 1
                         retry, first = auto_retry_request(request), exc.failure
