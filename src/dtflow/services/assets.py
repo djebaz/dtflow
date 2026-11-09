@@ -38,6 +38,10 @@ CHUNK = 1024 * 1024
 
 # One shielded operation per (origin, auth scope, content): identical concurrent prepares join it, anything else never does.
 _INFLIGHT: dict[tuple, asyncio.Task] = {}
+# Concurrent queue/workflow items needing the same restore or rebind join one operation, and distinct ones take
+# turns, because the asset writer lock admits a single writer per state directory.
+_SHARED: dict[tuple, asyncio.Task] = {}
+_WRITER = asyncio.Lock()
 
 
 def _failure(
@@ -283,9 +287,11 @@ class AssetService:
             data={"status": result.status, "evidence": result.evidence, "restoring": restoring},
         )
         if restoring and result.status == "upload_required":
-            return await self._restore(prepared, asset, on_stage)
+            return await self._shared("restore", prepared, lambda: self._restore(prepared, asset, on_stage))
         if restoring and result.evidence == "reference_mismatch" and result.reference:
-            return await self._rebind(prepared, asset, result.reference)
+            return await self._shared(
+                "rebind:" + result.reference, prepared, lambda: self._rebind(prepared, asset, result.reference)
+            )
         problem = _failure(
             ErrorCategory.VALIDATION,
             "prepared_asset_" + result.status,
@@ -306,6 +312,22 @@ class AssetService:
                 diagnostics=tuple(sorted(details.items())),
             )
         ) from None
+
+    async def _shared(self, action: str, prepared: PreparedAsset, operation) -> PreparedAsset:
+        """One operation per (action, scope, content); callers needing it concurrently join it."""
+        key = (action, self.backend.backend_id, self.backend.origin, self.backend.scope, prepared.sha256, prepared.size)
+        task = _SHARED.get(key)
+        if task is None or task.done():
+
+            async def serialized() -> PreparedAsset:
+                async with _WRITER:
+                    return await operation()
+
+            task = asyncio.create_task(serialized())
+            _SHARED[key] = task
+            task.add_done_callback(lambda done, key=key: _SHARED.pop(key, None) if _SHARED.get(key) is done else None)
+            task.add_done_callback(lambda done: None if done.cancelled() else done.exception())
+        return await asyncio.shield(task)
 
     async def _rebind(self, prepared: PreparedAsset, asset: str, reference: str) -> PreparedAsset:
         """The server holds these exact bytes (it looked them up by SHA-256 and size) under a newer reference.
