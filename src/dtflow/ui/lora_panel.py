@@ -469,6 +469,10 @@ class LoraAssetPanel:
     def _start_reconcile(self, asset_id: str, bind: str | None = None) -> None:
         if self._is_busy() or self._backend()[0] != "cloud":
             return
+        # A prior async asset-list refresh must not rebind an older confirmed receipt
+        # after this fresh check establishes that the selected key has lost it.
+        self._registry_generation += 1
+        self._bind_after_list = None
         self._set_busy(True)
         self._show(self.page.assetStatusLabel, Presentation("warning", "Reconciling", "Metadata check only."))
         self._runner.submit(
