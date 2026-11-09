@@ -78,7 +78,11 @@ class QueueDispatcher:
                     for _, state, record in records:
                         if state != "pending" or not isinstance(record, dict) or "model_id" not in record:
                             continue
-                        request = request_from_record(record)
+                        try:
+                            request = request_from_record(record)
+                        except (TypeError, ValueError):
+                            # Leave malformed items to the established claim/settlement path.
+                            continue
                         for prepared in request.prepared_assets:
                             distinct[(prepared.identifier, prepared.sha256, prepared.size)] = prepared
                     if distinct:
