@@ -472,14 +472,32 @@ class _Execution:
                 prepared = tuple(item for item in choices if item.identifier in selected)
                 ensure_many = getattr(self.runner.service.assets, "ensure_many", None)
                 if prepared and callable(ensure_many):
+                    preparation = asyncio.create_task(ensure_many(prepared))
                     try:
-                        await ensure_many(prepared)
+                        while not preparation.done():
+                            actions = await self.store.apply_controls(self.queue_id)
+                            if "pause" in actions:
+                                self.go.clear()
+                            if "resume" in actions:
+                                self.go.set()
+                            if "cancel" in actions:
+                                preparation.cancel()
+                                await asyncio.gather(preparation, return_exceptions=True)
+                                await self.stop()
+                                await self.finish()
+                                return
+                            await asyncio.sleep(self.runner.poll)
+                        await preparation
                     except BackendError as exc:
                         await asyncio.to_thread(post_control, self.runner.state, self.queue_id, "pause")
                         await self.store.apply_controls(self.queue_id)
                         self.go.clear()
                         self.run["message"] = f"LoRA preparation paused: {exc.failure.message}"
                         await self.flush()
+                    finally:
+                        if not preparation.done():
+                            preparation.cancel()
+                            await asyncio.gather(preparation, return_exceptions=True)
             if any(key[0] not in self.plan.nodes for key in self.steps):
                 raise ValidationError("The stored run does not match its workflow.")
             if self.plan.needs_face_models:
