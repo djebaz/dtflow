@@ -244,11 +244,13 @@ class AssetService:
         return result
 
     async def _check(
-        self, content: AssetContent, expected: str | None
+        self, content: AssetContent, expected: str | None, answers: list | None = None
     ) -> tuple[AssetReconciliation, BackendFailure | None]:
         """Retain backend-neutral failure evidence for dispatch without persisting response bodies."""
         try:
-            negotiation = await self._negotiate_shared(content)
+            negotiation, answer = await self._negotiate_shared(content)
+            if answers is not None:
+                answers.append(answer)
         except BackendError as exc:
             code = exc.failure.code
             if exc.failure.category in (ErrorCategory.AUTHENTICATION, ErrorCategory.CREDENTIALS):
@@ -271,9 +273,11 @@ class AssetService:
         )
         reused = _EXISTS.get(key)
         if reused is not None and time.monotonic() - reused[0] < EXISTS_REUSE_SECONDS:
-            return reused[1]
+            return reused[1], "reused a result from the last 15 seconds"
         task = _CHECKS.get(key)
+        answer = "shared with another item in this app"
         if task is None or task.done():
+            answer = "asked DT+"
             task = asyncio.create_task(self.backend.negotiate_asset(content))
             _CHECKS[key] = task
             task.add_done_callback(lambda done, key=key: _CHECKS.pop(key, None) if _CHECKS.get(key) is done else None)
@@ -281,7 +285,7 @@ class AssetService:
         negotiation = await asyncio.shield(task)
         if negotiation.status == "exists":
             _EXISTS[key] = (time.monotonic(), negotiation)
-        return negotiation
+        return negotiation, answer
 
     async def validate(self, prepared: PreparedAsset) -> None:
         """Dispatch-time guard without restoration: require current server validation or fail without uploading."""
@@ -314,14 +318,23 @@ class AssetService:
             newer = _CURRENT.get((prepared.backend_id, prepared.origin, self.backend.scope, prepared.receipt_id))
             if newer is not None and (newer.sha256, newer.size) == (prepared.sha256, prepared.size):
                 prepared = newer
-        result, cause = await self._check(self._content(prepared), prepared.remote_id)
+        answers: list[str] = []
+        result, cause = await self._check(self._content(prepared), prepared.remote_id, answers)
         if result.status == "confirmed":
             return prepared
         diagnostic_event(
             log,
-            "assets.validation_not_confirmed",
+            {"upload_required": "assets.missing_on_dtplus"}.get(
+                result.status,
+                "assets.reference_changed" if result.evidence == "reference_mismatch" else "assets.check_inconclusive",
+            ),
             level=logging.INFO,
-            data={"asset": asset, "status": result.status, "evidence": result.evidence, "restoring": restoring},
+            data={
+                "asset": asset,
+                "answer": answers[0] if answers else "unknown",
+                "evidence": result.evidence,
+                "restoring": restoring,
+            },
         )
         if restoring and result.status == "upload_required":
             return await self._shared("restore", prepared, lambda: self._restore(prepared, asset, on_stage))
