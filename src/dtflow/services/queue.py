@@ -174,13 +174,13 @@ class QueueDispatcher:
             try:
                 await self._record_event(queue_id, "asset_recovery_started", {"kind": "lora"})
                 restored = await assets.recover_missing(self._queue_assets or request.prepared_assets)
-                await self._record_event(
-                    queue_id, "asset_recovery_finished", {"restored": restored}
-                )
+                await self._record_event(queue_id, "asset_recovery_finished", {"restored": restored})
                 return restored
             except Exception as exc:
                 diagnostic_event(
-                    log, "queue.asset_recovery_failed", level=logging.WARNING,
+                    log,
+                    "queue.asset_recovery_failed",
+                    level=logging.WARNING,
                     data={"reason": type(exc).__name__},
                 )
                 await self._record_event(queue_id, "asset_recovery_failed", {"reason": "restore_failed"})
