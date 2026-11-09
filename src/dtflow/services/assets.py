@@ -152,7 +152,10 @@ class AssetService:
         return await identity() if callable(identity) else None
 
     async def _prepare(
-        self, path: Path, content: AssetContent, stat: os.stat_result,
+        self,
+        path: Path,
+        content: AssetContent,
+        stat: os.stat_result,
         negotiation: AssetNegotiation | None = None,
     ) -> PreparedAsset:
         backend = self.backend
@@ -163,8 +166,12 @@ class AssetService:
             negotiation = negotiation or await backend.negotiate_asset(content)
             if negotiation.status == "exists":
                 receipt = await self.registry.confirm(
-                    asset_id, operation, negotiation.reference, "already_exists",
-                    credential_id=credential_id, identifier=content.identifier,
+                    asset_id,
+                    operation,
+                    negotiation.reference,
+                    "already_exists",
+                    credential_id=credential_id,
+                    identifier=content.identifier,
                 )
                 diagnostic_event(
                     log,
@@ -227,8 +234,12 @@ class AssetService:
             )
         try:
             receipt = await self.registry.confirm(
-                asset_id, operation, after.reference, "transfer",
-                credential_id=credential_id, identifier=content.identifier,
+                asset_id,
+                operation,
+                after.reference,
+                "transfer",
+                credential_id=credential_id,
+                identifier=content.identifier,
             )
         except asyncio.CancelledError:
             await settle(self._settle_unknown(asset_id, operation, "cancelled_after_transfer", True))
