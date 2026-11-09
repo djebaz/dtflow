@@ -366,7 +366,7 @@ class AssetService:
 
     async def ensure_many(
         self, prepared_assets: tuple[PreparedAsset, ...], on_stage: Callable[[str], None] | None = None,
-        *, force: bool = False,
+        *, force: bool = False, restored_out: list[str] | None = None,
     ) -> tuple[PreparedAsset, ...]:
         """Trust existing per-key receipts; batch-check only first use or an explicit recovery probe."""
         if not prepared_assets:
@@ -425,6 +425,8 @@ class AssetService:
                         credential_id=credential_id,
                     ), scope_id=credential_id,
                 )
+                if restored_out is not None:
+                    restored_out.append(item.sha256)
             else:
                 raise _failure(ErrorCategory.PROTOCOL, "asset_check_inconclusive", "DT+ asset status is unknown.")
         return tuple(results)
@@ -438,24 +440,9 @@ class AssetService:
         scope_id = await self._credential_id()
         if scope_id is None:
             return False
-        prior = [await self._key_record(item, scope_id) for item in prepared_assets]
-        await self.ensure_many(prepared_assets, on_stage, force=True)
-        # The probe is shared; detect a confirmed missing-file restoration from this episode, not reference rebinding.
-        return any(
-            previously is None or previously.remote_id != subsequently.remote_id
-            for previously, subsequently in zip(prior, await self._key_records(prepared_assets, scope_id), strict=True)
-        )
-
-    async def _key_record(self, prepared: PreparedAsset, scope_id: str) -> PreparedAsset | None:
-        registry = AssetRegistry(self.state)
-        await registry.open()
-        try:
-            return await registry.scoped(prepared.receipt_id, scope_id)
-        finally:
-            await registry.aclose()
-
-    async def _key_records(self, prepared_assets, scope_id):
-        return [await self._key_record(item, scope_id) for item in prepared_assets]
+        restored: list[str] = []
+        await self.ensure_many(prepared_assets, on_stage, force=True, restored_out=restored)
+        return bool(restored)
 
     async def validate(self, prepared: PreparedAsset) -> None:
         """Dispatch-time guard without restoration: require current server validation or fail without uploading."""
