@@ -344,8 +344,10 @@ async def run_generation(
             # Named child attempts (Workflows/Scripts) own their own retry accounting.
             # A rejected/possibly submitted generation is never silently replayed.
             safe_repair_retry = repaired and failure.remote_outcome == RemoteOutcome.NOT_STARTED
-            if attempt_id is not None or retries >= AUTO_RETRIES or (
-                not safe_repair_retry and not auto_retryable(failure)
+            if (
+                attempt_id is not None
+                or retries >= AUTO_RETRIES
+                or (not safe_repair_retry and not auto_retryable(failure))
             ):
                 raise
         retries += 1
