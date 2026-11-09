@@ -556,13 +556,17 @@ async def _dispatch_one(store, state, queue_id, policy, saved, out, on_settle, o
             preview_images=False,
         )
         if on_event is not None and isinstance(service.assets, AssetService):
+
             def show_asset_resolution(report: dict) -> None:
                 # UI-only names and error details; JSONL summaries have counts, not filenames.
                 if report["restored_names"]:
                     on_event(
                         "_assets",
                         BackendEvent(
-                            queue_id, 0, "assets_restored", datetime.now(UTC).isoformat(),
+                            queue_id,
+                            0,
+                            "assets_restored",
+                            datetime.now(UTC).isoformat(),
                             stage=", ".join(report["restored_names"]),
                         ),
                     )
@@ -570,9 +574,11 @@ async def _dispatch_one(store, state, queue_id, policy, saved, out, on_settle, o
                     on_event(
                         "_assets",
                         BackendEvent(
-                            queue_id, 0,
+                            queue_id,
+                            0,
                             "assets_inconclusive" if report["outcome"] == "inconclusive" else "assets_failed",
-                            datetime.now(UTC).isoformat(), stage=report["error"],
+                            datetime.now(UTC).isoformat(),
+                            stage=report["error"],
                         ),
                     )
 

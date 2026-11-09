@@ -226,30 +226,34 @@ class GenerationService:
             # No routine network validation once this key owns confirmed copies.
             ensure_many = getattr(self.assets, "ensure_many", None)
             if isinstance(self.assets, AssetService):
+
                 def resolved_assets(report: dict) -> None:
                     # An actual restoration gets a named UI notice; routine reuse/matches remain quiet.
                     restored = report["restored_names"]
                     if restored and on_event is not None:
                         on_event(
                             BackendEvent(
-                                request.request_id, 0, "assets_restored",
-                                datetime.now(UTC).isoformat(), stage=", ".join(restored),
+                                request.request_id,
+                                0,
+                                "assets_restored",
+                                datetime.now(UTC).isoformat(),
+                                stage=", ".join(restored),
                             )
                         )
                     if report["error"] and on_event is not None:
                         on_event(
                             BackendEvent(
-                                request.request_id, 0,
+                                request.request_id,
+                                0,
                                 "assets_inconclusive" if report["outcome"] == "inconclusive" else "assets_failed",
-                                datetime.now(UTC).isoformat(), stage=report["error"],
+                                datetime.now(UTC).isoformat(),
+                                stage=report["error"],
                             )
                         )
 
                 # A Queue/Workflow/Script owns its own status callback; interactive Generate uses this one.
                 feedback = resolved_assets if on_event is not None and self.assets.on_resolution is None else None
-                confirmed = await self.assets.ensure_many(
-                    request.prepared_assets, preparation, on_resolution=feedback
-                )
+                confirmed = await self.assets.ensure_many(request.prepared_assets, preparation, on_resolution=feedback)
             elif callable(ensure_many):
                 confirmed = await ensure_many(request.prepared_assets, preparation)
             else:

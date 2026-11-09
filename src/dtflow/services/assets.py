@@ -288,7 +288,9 @@ class AssetService:
             ) from None
         if content.provenance != "auto_restore":
             diagnostic_event(
-                log, "assets.prepared", level=logging.INFO,
+                log,
+                "assets.prepared",
+                level=logging.INFO,
                 data={"receipt": receipt.receipt_id, "source": "transfer"},
             )
         return receipt
@@ -482,7 +484,9 @@ class AssetService:
                     raise _failure(ErrorCategory.VALIDATION, "prepared_asset_scope", "LoRA backend mismatch.")
                 known = existing[index]
                 if known is not None and (known.sha256, known.size, known.identifier) != (
-                    item.sha256, item.size, item.identifier
+                    item.sha256,
+                    item.size,
+                    item.identifier,
                 ):
                     raise _failure(
                         ErrorCategory.VALIDATION, "prepared_asset_identity", "LoRA receipt identity changed."
@@ -522,19 +526,26 @@ class AssetService:
                         outcomes[current] = "matched"
                     else:
                         results[index] = await self._shared(
-                            "key-rebind:" + negotiation.reference, item,
+                            "key-rebind:" + negotiation.reference,
+                            item,
                             lambda item=item, ref=negotiation.reference: self._rebind(
                                 item, PureWindowsPath(item.identifier).name, ref, credential_id=credential_id
-                            ), scope_id=credential_id,
+                            ),
+                            scope_id=credential_id,
                         )
                         outcomes[current] = "relinked"
                 elif negotiation.status == "upload_required":
                     results[index] = await self._shared(
-                        "key-restore", item,
+                        "key-restore",
+                        item,
                         lambda item=item, negotiation=negotiation: self._restore(
-                            item, PureWindowsPath(item.identifier).name, on_stage, negotiation=negotiation,
+                            item,
+                            PureWindowsPath(item.identifier).name,
+                            on_stage,
+                            negotiation=negotiation,
                             credential_id=credential_id,
-                        ), scope_id=credential_id,
+                        ),
+                        scope_id=credential_id,
                     )
                     outcomes[current] = "restored"
                     if restored_out is not None:
@@ -548,9 +559,7 @@ class AssetService:
             outcome = "cancelled"
             raise
         except BackendError as exc:
-            affected = (current,) if current is not None else tuple(
-                key for key in pending if key not in outcomes
-            )
+            affected = (current,) if current is not None else tuple(key for key in pending if key not in outcomes)
             if current is not None and exc.failure.remote_outcome != RemoteOutcome.UNKNOWN:
                 outcomes[current] = "failed"
                 outcome = "failed"

@@ -1187,9 +1187,7 @@ class GenerationPage:
                 "assets_failed": "error",
                 "assets_inconclusive": "warning",
             }
-            activity_strip(self.page).complete(
-                event.kind, titles[event.kind], event.stage, states[event.kind]
-            )
+            activity_strip(self.page).complete(event.kind, titles[event.kind], event.stage, states[event.kind])
             return
         if event.kind == "preparing" and event.stage == "retrying" and self._request is not None:
             # The one automatic retry (#241) runs under a new request identity; Stop reads that attempt's evidence.
