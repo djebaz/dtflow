@@ -236,6 +236,13 @@ class GenerationService:
                                 datetime.now(UTC).isoformat(), stage=", ".join(restored),
                             )
                         )
+                    if report["error"] and on_event is not None:
+                        on_event(
+                            BackendEvent(
+                                request.request_id, 0, "assets_failed",
+                                datetime.now(UTC).isoformat(), stage=report["error"],
+                            )
+                        )
 
                 # A Queue/Workflow/Script owns its own status callback; interactive Generate uses this one.
                 feedback = resolved_assets if on_event is not None and self.assets.on_resolution is None else None
