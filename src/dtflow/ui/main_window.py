@@ -47,6 +47,7 @@ from dtflow.persistence.original_io import (
 )
 from dtflow.services.cache_management import CATEGORIES, cache_usage, purge_cache
 from dtflow.services.catalogue import Catalogue, import_user_loras
+from dtflow.services.lora_store import LoraStore
 from dtflow.services.connection import Presentation, check_connection, present_failure, present_status
 from dtflow.services.cloud_usage import key_identity
 from dtflow.services.credentials import (
@@ -533,6 +534,12 @@ class MainWindow:
         form.keySelectCombo.currentIndexChanged.connect(self.key_selected)
         form.importCustomLorasButton.clicked.connect(self.import_custom_loras)
         form.clearCustomLorasButton.clicked.connect(self.clear_custom_loras)
+        form.removeRetainedLoraButton.clicked.connect(self.remove_retained_lora)
+        form.retainedLorasList.itemSelectionChanged.connect(self._retained_lora_selection_changed)
+        self._remove_lora_shortcut = QShortcut(QKeySequence("Delete"), form.retainedLorasList)
+        self._remove_lora_shortcut.setContext(Qt.ShortcutContext.WidgetWithChildrenShortcut)
+        self._remove_lora_shortcut.activated.connect(self.remove_retained_lora)
+        self._removing_retained_lora = False
         form.forgetFolderButton.clicked.connect(self.forget_selected_folder)
         form.forgetAllFoldersButton.clicked.connect(self.forget_all_folders)
         form.rememberedFoldersList.itemSelectionChanged.connect(self.refresh_remembered_folders_buttons)
@@ -912,6 +919,7 @@ class MainWindow:
         if index == 0:
             self.refresh_cache()
             self.cloud_usage.refresh()
+            self.refresh_custom_loras(background=True)
         for stack in (self.shell.leftStack, self.shell.centerStack, self.shell.rightStack):
             stack.setCurrentIndex(index)
         if index == 1 and self._scripts_active:
@@ -1737,24 +1745,89 @@ class MainWindow:
         )
 
     def refresh_custom_loras(self, *, background: bool = False) -> None:
+        """Read catalogue and managed-file usage away from Qt, including after navigation or removal."""
+        if self._removing_retained_lora:
+            return
         self._summary_reads.pop("loras", None)
-        if background:
-            self.form.customLorasStatusLabel.setText("Loading custom LoRA definitions…")
-            self.form.clearCustomLorasButton.setEnabled(False)
-            self._read_summary("loras", lambda: len(Catalogue(self.state_dir).user_loras()), self._custom_loras_read)
-            return
-        self._custom_loras_read(len(Catalogue(self.state_dir).user_loras()), None)
+        self.form.retainedLorasStatusLabel.setText("Loading retained LoRAs…")
+        self.form.removeRetainedLoraButton.setEnabled(False)
 
-    def _custom_loras_read(self, count, error) -> None:
-        if error is not None:
-            self.form.customLorasStatusLabel.setText("Custom LoRA definitions could not be read; import to retry.")
+        def read():
+            store = LoraStore(self.state_dir)
+            return len(Catalogue(self.state_dir).user_loras()), store.entries(), store.usage()
+
+        self._read_summary("loras", read, self._custom_loras_read)
+
+    def _custom_loras_read(self, result, error) -> None:
+        if self._removing_retained_lora:
             return
+        if error is not None:
+            self.form.customLorasStatusLabel.setText("Custom LoRA definitions or retained files could not be read.")
+            self.form.retainedLorasStatusLabel.setText("Retained files unavailable; reopen Connection to retry.")
+            self.form.clearCustomLorasButton.setEnabled(False)
+            self.form.removeRetainedLoraButton.setEnabled(False)
+            return
+        count, entries, (stored_count, stored_bytes) = result
         self.form.customLorasStatusLabel.setText(
             f"{count} custom LoRA definition" + ("" if count == 1 else "s") + " imported."
             if count
             else "No custom LoRA definitions imported."
         )
         self.form.clearCustomLorasButton.setEnabled(count > 0)
+        self.form.retainedLorasStatusLabel.setText(
+            f"{stored_count} retained LoRA" + ("" if stored_count == 1 else "s")
+            + f" · {self._human_bytes(stored_bytes)} stored locally."
+            if stored_count
+            else "No locally retained LoRAs."
+        )
+        listing = self.form.retainedLorasList
+        selected = listing.currentItem()
+        identity = selected.data(Qt.ItemDataRole.UserRole) if selected else None
+        listing.clear()
+        for entry in sorted(entries, key=lambda item: str(item.get("name", "")).casefold()):
+            name, sha256, size = entry.get("name"), entry.get("sha256"), entry.get("size")
+            if not isinstance(name, str) or not isinstance(sha256, str) or not isinstance(size, int):
+                continue
+            item = QListWidgetItem(f"{name} · {self._human_bytes(size)}")
+            item.setData(Qt.ItemDataRole.UserRole, (sha256, size))
+            item.setToolTip(
+                f"{name}\n{self._human_bytes(size)} · SHA-256 {sha256}\n"
+                "Remove deletes only this managed copy, not the original, remote asset, or history."
+            )
+            listing.addItem(item)
+            if (sha256, size) == identity:
+                listing.setCurrentItem(item)
+        self._retained_lora_selection_changed()
+
+    def _retained_lora_selection_changed(self) -> None:
+        self.form.removeRetainedLoraButton.setEnabled(
+            not self._removing_retained_lora and bool(self.form.retainedLorasList.selectedItems())
+        )
+
+    def remove_retained_lora(self) -> None:
+        """Click Remove or press Delete on a selected retained copy: no confirmation or other deletion."""
+        if self._removing_retained_lora:
+            return
+        selected = self.form.retainedLorasList.selectedItems()
+        if not selected:
+            return
+        sha256, size = selected[0].data(Qt.ItemDataRole.UserRole)
+        self._removing_retained_lora = True
+        self.form.removeRetainedLoraButton.setEnabled(False)
+        self.form.retainedLorasList.setEnabled(False)
+        self.runner.submit(
+            asyncio.to_thread(LoraStore(self.state_dir).remove, sha256, size),
+            self._retained_lora_removed,
+        )
+
+    def _retained_lora_removed(self, removed, error) -> None:
+        self._removing_retained_lora = False
+        self.form.retainedLorasList.setEnabled(True)
+        if error is not None:
+            InlineNotice.error(self.form, "Retained LoRA not removed", str(error))
+        elif removed:
+            self.form.statusBar().showMessage("Local retained LoRA removed. Remote and saved results unchanged.", 5000)
+        self.refresh_custom_loras(background=True)
 
     def import_custom_loras(self) -> None:
         chosen, _ = QFileDialog.getOpenFileName(self.form, "Import custom LoRAs", str(self.state_dir), "JSON (*.json)")
