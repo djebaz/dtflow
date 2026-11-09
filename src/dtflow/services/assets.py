@@ -315,7 +315,7 @@ class AssetService:
         try:
             content = self._content(prepared)
             asset_id, operation = await registry.begin(content, prepared.backend_id, prepared.origin, "rebind")
-            rebound = await registry.confirm(asset_id, operation, reference, "rebound")
+            rebound = await registry.confirm(asset_id, operation, reference, "reconciled")
         finally:
             await registry.aclose()
         diagnostic_event(log, "assets.rebound", level=logging.INFO, data={"receipt": rebound.receipt_id})
