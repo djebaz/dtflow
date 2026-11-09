@@ -809,7 +809,8 @@ class _Execution:
         """One restoration shared across concurrent branches; no duplicate checks or uploads."""
         assets = getattr(self.runner.service, "assets", None)
         if (
-            assets is None or not request.prepared_assets
+            assets is None
+            or not request.prepared_assets
             or failure.category != ErrorCategory.REMOTE_REJECTION
             or not callable(getattr(assets, "recover_missing", None))
         ):
@@ -825,7 +826,9 @@ class _Execution:
                     raise
                 except Exception as exc:
                     diagnostic_event(
-                        log, "workflow.asset_recovery_failed", level=logging.WARNING,
+                        log,
+                        "workflow.asset_recovery_failed",
+                        level=logging.WARNING,
                         data={"reason": type(exc).__name__},
                     )
                     await asyncio.to_thread(post_control, self.runner.state, self.queue_id, "pause")
