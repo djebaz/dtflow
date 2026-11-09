@@ -43,7 +43,7 @@ from time import monotonic
 from typing import Any
 from uuid import uuid4
 
-from dtflow.core.models import SEED_LIMIT, BackendError, BackendEvent, RemoteOutcome, ValidationError
+from dtflow.core.models import SEED_LIMIT, BackendError, BackendEvent, ErrorCategory, RemoteOutcome, ValidationError
 from dtflow.core.output_layout import OutputLayout, group_name, slug
 from dtflow.core.retry_policy import AUTO_RETRIES, AUTO_RETRY_DELAY, RETRY_STAGE, auto_retry_request, auto_retryable
 from dtflow.core.tasks import settle
@@ -75,7 +75,7 @@ from dtflow.core.workflows import (
 )
 from dtflow.diagnostics import event as diagnostic_event
 from dtflow.memory_diagnostics import enabled as memory_enabled, observe as memory_observe, scope as memory_scope
-from dtflow.persistence.queues import QueueError
+from dtflow.persistence.queues import QueueError, post_control
 from dtflow.persistence.store import PersistenceError, SQLiteAttempts
 from dtflow.persistence.workflow_items import BAD_STEP_STATES, WorkflowRequest
 from dtflow.services import session
@@ -361,6 +361,9 @@ class _Execution:
         self.halted: str | None = None
         self.go = asyncio.Event()
         self.go.set()
+        self.asset_gate = asyncio.Event()
+        self.asset_gate.set()
+        self.asset_recovery: asyncio.Task | None = None
         self.dirty = False
         # Each planned submission may get the shared automatic retry (#241): at most planned x 2 before any Retry.
         self.allowance = request.planned * (1 + AUTO_RETRIES)
@@ -569,6 +572,9 @@ class _Execution:
 
     async def stop(self) -> None:
         """Queue Stop: nothing new starts, open pauses close and in-flight waits end now (#247); never replayed."""
+        if self.asset_recovery is not None and not self.asset_recovery.done():
+            self.asset_recovery.cancel()
+        self.asset_gate.set()
         await self.abandon()
 
     async def finish(self, *, interrupted: bool = False) -> None:
@@ -779,6 +785,40 @@ class _Execution:
 
     # -- submission ------------------------------------------------------------------------------------------------
 
+    async def recover_assets(self, keys: list[Key], request, failure) -> bool:
+        """One restoration shared across concurrent branches; no duplicate checks or uploads."""
+        assets = getattr(self.runner.service, "assets", None)
+        if (
+            assets is None or not request.prepared_assets
+            or failure.category != ErrorCategory.REMOTE_REJECTION
+            or not callable(getattr(assets, "recover_missing", None))
+        ):
+            return False
+        if self.asset_recovery is None:
+            self.asset_gate.clear()
+            self.set_stage(keys, "Restoring LoRA on DT+")
+
+            async def repair():
+                try:
+                    return await assets.recover_missing(request.prepared_assets)
+                except asyncio.CancelledError:
+                    raise
+                except Exception as exc:
+                    diagnostic_event(
+                        log, "workflow.asset_recovery_failed", level=logging.WARNING,
+                        data={"reason": type(exc).__name__},
+                    )
+                    await asyncio.to_thread(post_control, self.runner.state, self.queue_id, "pause")
+                    self.go.clear()
+                    return False
+                finally:
+                    self.asset_gate.set()
+
+            self.asset_recovery = asyncio.create_task(repair())
+        if self.asset_recovery.done():
+            return False  # One bounded recovery episode per workflow, not per failed branch.
+        return await asyncio.shield(self.asset_recovery)
+
     async def submit(self, keys: list[Key], request, weight: int, prepared=None):
         """One generation for ``keys`` under the loop guard and a backend lane; None when it did not succeed (the
         steps then hold their end state)."""
@@ -796,6 +836,9 @@ class _Execution:
         # Counted at the check so concurrent branches cannot pass it together; given back when nothing is sent.
         self.run["submitted"] += weight
         try:
+            while not self.asset_gate.is_set() and not self.stopping and not self.halted:
+                self.set_stage(keys, "Waiting for LoRA restoration")
+                await self.asset_gate.wait()
             while not self.go.is_set() and not self.stopping and not self.halted:
                 for key in keys:
                     self.steps[key]["stage"] = "Waiting: queue paused"
@@ -859,6 +902,14 @@ class _Execution:
                         return None
                 auto_left = AUTO_RETRIES
                 while True:
+                    while not self.asset_gate.is_set() and not self.stopping and not self.halted:
+                        self.set_stage(keys, "Waiting for LoRA restoration")
+                        await self.asset_gate.wait()
+                    while not self.go.is_set() and not self.stopping and not self.halted:
+                        self.set_stage(keys, "Waiting: queue paused")
+                        await self.go.wait()
+                    if self.stopping or self.halted:
+                        raise asyncio.CancelledError
                     self.in_flight[attempt_id] = keys
                     try:
                         outcome = await session.run_generation(
@@ -871,7 +922,9 @@ class _Execution:
                         )
                         break
                     except BackendError as exc:
-                        if auto_left <= 0 or not auto_retryable(exc.failure):
+                        restored = await self.recover_assets(keys, request, exc.failure)
+                        safe_repair_retry = restored and exc.failure.remote_outcome == RemoteOutcome.NOT_STARTED
+                        if auto_left <= 0 or (not safe_repair_retry and not auto_retryable(exc.failure)):
                             raise
                         first = exc
                     auto_left -= 1
