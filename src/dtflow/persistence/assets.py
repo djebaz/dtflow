@@ -465,6 +465,12 @@ class AssetRegistry:
         if record is None:
             raise ValidationError("No local asset receipt has that identifier.")
         if record["state"] != "confirmed" or not record["remote_id"]:
+            # Earlier schema-2 versions could mark the shared content row unknown after a
+            # different API key failed, despite preserving another key's confirmed receipt.
+            # Recover that *candidate* without guessing a key; dispatch resolves its scope.
+            alternatives = [item for item in await self.choices() if item.receipt_id == asset_id]
+            if alternatives:
+                return alternatives[0]
             raise ValidationError(f"Asset receipt is {record['state']}, not confirmed; run `dtflow assets reconcile`.")
         return PreparedAsset(
             record["backend_id"],
