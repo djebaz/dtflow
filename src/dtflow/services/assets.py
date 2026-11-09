@@ -297,12 +297,19 @@ class AssetService:
         return receipt
 
     async def _settle_unknown(
-        self, asset_id: str, operation: str, evidence: str, transferred: bool,
+        self,
+        asset_id: str,
+        operation: str,
+        evidence: str,
+        transferred: bool,
         credential_id: str | None = None,
     ) -> None:
         await self.registry.mark(
-            asset_id, operation, "unknown" if transferred else "failed",
-            evidence, asset=credential_id is None,
+            asset_id,
+            operation,
+            "unknown" if transferred else "failed",
+            evidence,
+            asset=credential_id is None,
         )
 
     # -- metadata-only checks -------------------------------------------------------------------------------------
