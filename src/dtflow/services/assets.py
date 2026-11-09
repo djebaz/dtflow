@@ -18,6 +18,7 @@ from typing import Protocol
 from dtflow.core.models import (
     AssetBackend,
     AssetContent,
+    AssetNegotiation,
     AssetReconciliation,
     BackendError,
     BackendFailure,
@@ -49,6 +50,8 @@ _CURRENT: dict[tuple, PreparedAsset] = {}
 # A previous positive answer cannot prove that the remote copy still exists.
 _CHECKS: dict[tuple, asyncio.Task] = {}
 _SHARED_WAITERS: dict[asyncio.Task, int] = {}
+_BATCHES: dict[tuple, dict[tuple[str, str, int], asyncio.Future]] = {}
+_BATCH_TASKS: dict[tuple, asyncio.Task] = {}
 
 
 def _failure(
@@ -141,14 +144,26 @@ class AssetService:
         # Cancelling this caller must not cancel an operation another caller still awaits.
         return await asyncio.shield(task)
 
-    async def _prepare(self, path: Path, content: AssetContent, stat: os.stat_result) -> PreparedAsset:
+    async def _credential_id(self) -> str | None:
+        """Real DT+ clients have a durable key identity; fixture backends retain their legacy path."""
+        identity = getattr(self.backend, "asset_credential_identity", None)
+        return await identity() if callable(identity) else None
+
+    async def _prepare(
+        self, path: Path, content: AssetContent, stat: os.stat_result,
+        negotiation: AssetNegotiation | None = None,
+    ) -> PreparedAsset:
         backend = self.backend
+        credential_id = await self._credential_id()
         asset_id, operation = await self.registry.begin(content, backend.backend_id, backend.origin)
         transferred = False
         try:
-            negotiation = await backend.negotiate_asset(content)
+            negotiation = negotiation or await backend.negotiate_asset(content)
             if negotiation.status == "exists":
-                receipt = await self.registry.confirm(asset_id, operation, negotiation.reference, "already_exists")
+                receipt = await self.registry.confirm(
+                    asset_id, operation, negotiation.reference, "already_exists",
+                    credential_id=credential_id, identifier=content.identifier,
+                )
                 diagnostic_event(
                     log,
                     "assets.prepared",
@@ -209,7 +224,10 @@ class AssetService:
                 RemoteOutcome.UNKNOWN,
             )
         try:
-            receipt = await self.registry.confirm(asset_id, operation, after.reference, "transfer")
+            receipt = await self.registry.confirm(
+                asset_id, operation, after.reference, "transfer",
+                credential_id=credential_id, identifier=content.identifier,
+            )
         except asyncio.CancelledError:
             await settle(self._settle_unknown(asset_id, operation, "cancelled_after_transfer", True))
             raise
@@ -299,6 +317,146 @@ class AssetService:
         negotiation = await asyncio.shield(task)
         return negotiation, answer
 
+    @staticmethod
+    def _identity(content: AssetContent) -> tuple[str, str, int]:
+        return content.identifier, content.sha256, content.size
+
+    async def _negotiate_many(
+        self, contents: tuple[AssetContent, ...], credential_id: str
+    ) -> dict[tuple[str, str, int], AssetNegotiation]:
+        """Coalesce near-simultaneous queue/branch requests into one BYOM batch per key."""
+        scope = (self.backend.backend_id, self.backend.origin, credential_id)
+        pending = _BATCHES.setdefault(scope, {})
+        awaited = {}
+        for content in contents:
+            identity = self._identity(content)
+            if identity not in pending:
+                pending[identity] = asyncio.get_running_loop().create_future()
+            awaited[identity] = pending[identity]
+        if scope not in _BATCH_TASKS or _BATCH_TASKS[scope].done():
+            async def flush() -> None:
+                await asyncio.sleep(0.02)
+                batch = _BATCHES.pop(scope, {})
+                if not batch:
+                    return
+                unique = tuple(AssetContent("lora", *identity) for identity in batch)
+                try:
+                    negotiate = getattr(self.backend, "negotiate_assets", None)
+                    if callable(negotiate):
+                        answers = await negotiate(unique)
+                    else:
+                        answers = {
+                            self._identity(item): await self.backend.negotiate_asset(item) for item in unique
+                        }
+                    for identity, future in batch.items():
+                        if not future.done():
+                            future.set_result(answers[identity])
+                except BaseException as exc:
+                    for future in batch.values():
+                        if not future.done():
+                            future.set_exception(exc)
+            task = asyncio.create_task(flush())
+            _BATCH_TASKS[scope] = task
+            task.add_done_callback(
+                lambda done, key=scope: _BATCH_TASKS.pop(key, None)
+                if _BATCH_TASKS.get(key) is done else None
+            )
+            task.add_done_callback(lambda done: None if done.cancelled() else done.exception())
+        return {identity: await asyncio.shield(future) for identity, future in awaited.items()}
+
+    async def ensure_many(
+        self, prepared_assets: tuple[PreparedAsset, ...], on_stage: Callable[[str], None] | None = None,
+        *, force: bool = False,
+    ) -> tuple[PreparedAsset, ...]:
+        """Trust existing per-key receipts; batch-check only first use or an explicit recovery probe."""
+        if not prepared_assets:
+            return ()
+        credential_id = await self._credential_id()
+        if credential_id is None:
+            # Existing fixture backends keep the historical validation contract.
+            return tuple([await self._verify(item, on_stage, restoring=self.state is not None)
+                          for item in prepared_assets])
+        if self.state is None:
+            raise _failure(ErrorCategory.VALIDATION, "asset_scope_unavailable", "Asset state is unavailable.")
+        registry = AssetRegistry(self.state)
+        await registry.open()
+        try:
+            existing = [await registry.scoped(item.receipt_id, credential_id) for item in prepared_assets]
+        finally:
+            await registry.aclose()
+        missing = []
+        for index, item in enumerate(prepared_assets):
+            if (item.backend_id, item.origin) != (self.backend.backend_id, self.backend.origin):
+                raise _failure(ErrorCategory.VALIDATION, "prepared_asset_scope", "LoRA backend mismatch.")
+            known = existing[index]
+            if known is not None and (known.sha256, known.size, known.identifier) != (
+                item.sha256, item.size, item.identifier
+            ):
+                raise _failure(ErrorCategory.VALIDATION, "prepared_asset_identity", "LoRA receipt identity changed.")
+            if force or known is None:
+                missing.append((index, item, known))
+        if not missing:
+            return tuple(existing)
+        contents = tuple(dict.fromkeys(self._content(item) for _, item, _ in missing))
+        try:
+            negotiations = await self._negotiate_many(contents, credential_id)
+        except BackendError:
+            raise
+        except Exception as exc:
+            raise _failure(ErrorCategory.CONNECTIVITY, "asset_check_failed", "DT+ asset check failed; nothing uploaded.") from exc
+        results = list(existing)
+        for index, item, known in missing:
+            negotiation = negotiations[self._identity(self._content(item))]
+            if negotiation.status == "exists":
+                if known is not None and known.remote_id == negotiation.reference:
+                    results[index] = known
+                else:
+                    results[index] = await self._shared(
+                        "key-rebind:" + negotiation.reference, item,
+                        lambda item=item, ref=negotiation.reference: self._rebind(
+                            item, item.identifier, ref, credential_id=credential_id
+                        ), scope_id=credential_id,
+                    )
+            elif negotiation.status == "upload_required":
+                results[index] = await self._shared(
+                    "key-restore", item,
+                    lambda item=item, negotiation=negotiation: self._restore(
+                        item, item.identifier, on_stage, negotiation=negotiation,
+                        credential_id=credential_id,
+                    ), scope_id=credential_id,
+                )
+            else:
+                raise _failure(ErrorCategory.PROTOCOL, "asset_check_inconclusive", "DT+ asset status is unknown.")
+        return tuple(results)
+
+    async def recover_missing(
+        self, prepared_assets: tuple[PreparedAsset, ...], on_stage: Callable[[str], None] | None = None
+    ) -> bool:
+        """Probe after an asset-related rejected generation; true only if a missing LoRA was restored."""
+        if not prepared_assets:
+            return False
+        scope_id = await self._credential_id()
+        if scope_id is None:
+            return False
+        prior = [await self._key_record(item, scope_id) for item in prepared_assets]
+        await self.ensure_many(prepared_assets, on_stage, force=True)
+        # The probe is shared; detect a confirmed missing-file restoration from this episode, not reference rebinding.
+        return any(
+            previously is None or previously.remote_id != subsequently.remote_id
+            for previously, subsequently in zip(prior, await self._key_records(prepared_assets, scope_id), strict=True)
+        )
+
+    async def _key_record(self, prepared: PreparedAsset, scope_id: str) -> PreparedAsset | None:
+        registry = AssetRegistry(self.state)
+        await registry.open()
+        try:
+            return await registry.scoped(prepared.receipt_id, scope_id)
+        finally:
+            await registry.aclose()
+
+    async def _key_records(self, prepared_assets, scope_id):
+        return [await self._key_record(item, scope_id) for item in prepared_assets]
+
     async def validate(self, prepared: PreparedAsset) -> None:
         """Dispatch-time guard without restoration: require current server validation or fail without uploading."""
         await self._verify(prepared, None, restoring=False)
@@ -308,7 +466,7 @@ class AssetService:
 
         Returns the receipt to submit with: the original when the server already has the file, otherwise the freshly
         confirmed one. One restoration is attempted per asset per call; the old receipt remains in the registry."""
-        return await self._verify(prepared, on_stage, restoring=self.state is not None)
+        return (await self.ensure_many((prepared,), on_stage))[0]
 
     async def _verify(self, prepared: PreparedAsset, on_stage, *, restoring: bool) -> PreparedAsset:
         # Display only the local basename, through shared privacy projection; never the remote reference or path.
@@ -397,13 +555,13 @@ class AssetService:
             return known
         return prepared
 
-    async def _shared(self, action: str, prepared: PreparedAsset, operation) -> PreparedAsset:
+    async def _shared(self, action: str, prepared: PreparedAsset, operation, *, scope_id: str | None = None) -> PreparedAsset:
         """One operation per (action, scope, content); callers needing it concurrently join it."""
         key = (
             action,
             self.backend.backend_id,
             self.backend.origin,
-            self.backend.scope,
+            scope_id or self.backend.scope,
             prepared.identifier,
             prepared.sha256,
             prepared.size,
@@ -436,7 +594,9 @@ class AssetService:
                         _SHARED.pop(key, None)
                     task.cancel()
 
-    async def _rebind(self, prepared: PreparedAsset, asset: str, reference: str) -> PreparedAsset:
+    async def _rebind(
+        self, prepared: PreparedAsset, asset: str, reference: str, *, credential_id: str | None = None
+    ) -> PreparedAsset:
         """The server holds these exact bytes (it looked them up by SHA-256 and size) under a newer reference.
 
         Nothing is uploaded: the receipt adopts the server's current reference for this scope, and the operation log
@@ -456,7 +616,10 @@ class AssetService:
                 ) from None
             content = self._content(prepared)
             asset_id, operation = await registry.begin(content, prepared.backend_id, prepared.origin, "rebind")
-            rebound = await registry.confirm(asset_id, operation, reference, "reconciled")
+            rebound = await registry.confirm(
+                asset_id, operation, reference, "reconciled",
+                credential_id=credential_id, identifier=prepared.identifier,
+            )
         finally:
             await settle(registry.aclose())
         _CURRENT[(rebound.backend_id, rebound.origin, self.backend.scope, rebound.receipt_id)] = rebound
@@ -466,7 +629,8 @@ class AssetService:
         return rebound
 
     async def _restore(
-        self, prepared: PreparedAsset, asset: str, on_stage: Callable[[str], None] | None
+        self, prepared: PreparedAsset, asset: str, on_stage: Callable[[str], None] | None,
+        *, negotiation: AssetNegotiation | None = None, credential_id: str | None = None,
     ) -> PreparedAsset:
         """Upload the retained copy once under the exclusive asset writer, then return its confirmed receipt.
 
@@ -523,6 +687,7 @@ class AssetService:
                 retained.path,
                 AssetContent("lora", prepared.identifier, prepared.sha256, prepared.size, "auto_restore"),
                 await asyncio.to_thread(retained.path.stat),
+                negotiation=negotiation,
             )
         finally:
             await settle(registry.aclose())
