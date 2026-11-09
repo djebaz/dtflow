@@ -17,7 +17,7 @@ import httpx
 
 from dtflow.backends.drawthings.errors import api_error, diagnostics, error
 from dtflow.core.models import BackendError, CredentialProvider, ErrorCategory, ValidationError
-from dtflow.diagnostics import CLOUD_KEY, api_error_data, cloud_key_data, event
+from dtflow.diagnostics import api_error_data, cloud_key_data, event
 from dtflow.services.cloud_usage import key_identity
 
 log = logging.getLogger(__name__)
@@ -151,8 +151,6 @@ class CloudAuth:
                 self._refresh.add_done_callback(lambda task: None if task.cancelled() else task.exception())
             refresh = self._refresh
         token = await asyncio.shield(refresh)
-        if self._identity is not None:
-            CLOUD_KEY.set((*self._identity, self._source))
         return token
 
     async def _exchange(self) -> str:
@@ -178,8 +176,6 @@ class CloudAuth:
             self._key = credential.secret.strip()
             self._identity = key_identity(self._key)
             self._source = credential.source
-        if self._identity is not None:
-            CLOUD_KEY.set((*self._identity, self._source))
         started = self._clock()
         reply = await self._post("/sdk/token", {"apiKey": self._key, "appCheckType": "none", "appCheckToken": None})
         try:
