@@ -121,7 +121,14 @@ class AssetService:
             diagnostic_event(
                 log, "assets.copy_kept", level=logging.INFO, data={"size": stat.st_size, "name": kept.name}
             )
-        key = (self.backend.backend_id, self.backend.origin, self.backend.scope, content.sha256, content.size)
+        key = (
+            self.backend.backend_id,
+            self.backend.origin,
+            self.backend.scope,
+            content.identifier,
+            content.sha256,
+            content.size,
+        )
         task = _INFLIGHT.get(key)
         if task is None or task.done():
             task = asyncio.create_task(self._prepare(path, content, stat))
@@ -392,7 +399,15 @@ class AssetService:
 
     async def _shared(self, action: str, prepared: PreparedAsset, operation) -> PreparedAsset:
         """One operation per (action, scope, content); callers needing it concurrently join it."""
-        key = (action, self.backend.backend_id, self.backend.origin, self.backend.scope, prepared.sha256, prepared.size)
+        key = (
+            action,
+            self.backend.backend_id,
+            self.backend.origin,
+            self.backend.scope,
+            prepared.identifier,
+            prepared.sha256,
+            prepared.size,
+        )
         task = _SHARED.get(key)
         if task is None or task.done():
 
