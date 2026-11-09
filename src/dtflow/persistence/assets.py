@@ -350,8 +350,10 @@ class AssetRegistry:
             from dataclasses import replace
 
             prepared = replace(
-                prepared, identifier=identifier or row["identifier"],
-                remote_id=remote_id, confirmed_at_utc=now,
+                prepared,
+                identifier=identifier or row["identifier"],
+                remote_id=remote_id,
+                confirmed_at_utc=now,
             )
         return prepared
 
