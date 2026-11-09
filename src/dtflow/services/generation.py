@@ -227,17 +227,15 @@ class GenerationService:
                 # else, including unknown availability, still blocks here without uploading.
                 confirmed.append(await self.assets.ensure(prepared, lambda stage: preparation(stage)))
             if tuple(confirmed) != tuple(request.prepared_assets):
-                swapped = {
-                    old.receipt_id: new.receipt_id
-                    for old, new in zip(request.prepared_assets, confirmed, strict=True)
-                    if old != new
-                }
+                changed = [
+                    new.receipt_id for old, new in zip(request.prepared_assets, confirmed, strict=True) if old != new
+                ]
                 request = replace(
                     request,
                     prepared_assets=tuple(confirmed),
                     resolution_evidence=(
                         *request.resolution_evidence,
-                        ("restored_assets", ",".join(f"{o[:8]}>{n[:8]}" for o, n in swapped.items())),
+                        ("restored_assets", ",".join(receipt[:8] for receipt in changed)),
                     ),
                 )
         if request.loras:

@@ -275,6 +275,8 @@ class AssetService:
             return prepared
         if restoring and result.status == "upload_required":
             return await self._restore(prepared, asset, on_stage)
+        if restoring and result.evidence == "reference_mismatch" and result.reference:
+            return await self._rebind(prepared, asset, result.reference)
         problem = _failure(
             ErrorCategory.VALIDATION,
             "prepared_asset_" + result.status,
@@ -295,6 +297,29 @@ class AssetService:
                 diagnostics=tuple(sorted(details.items())),
             )
         ) from None
+
+    async def _rebind(self, prepared: PreparedAsset, asset: str, reference: str) -> PreparedAsset:
+        """The server holds these exact bytes (it looked them up by SHA-256 and size) under a newer reference.
+
+        Nothing is uploaded: the receipt adopts the server's current reference for this scope, and the operation log
+        keeps the earlier evidence."""
+        registry = AssetRegistry(self.state, writer=True)
+        try:
+            await registry.open()
+        except AssetsBusyError:
+            raise _failure(
+                ErrorCategory.VALIDATION,
+                "prepared_asset_restore_busy",
+                f"LoRA {asset} has a newer DT+ reference, but another process is preparing assets. Nothing was submitted.",
+            ) from None
+        try:
+            content = self._content(prepared)
+            asset_id, operation = await registry.begin(content, prepared.backend_id, prepared.origin, "rebind")
+            rebound = await registry.confirm(asset_id, operation, reference, "rebound")
+        finally:
+            await registry.aclose()
+        diagnostic_event(log, "assets.rebound", level=logging.INFO, data={"receipt": rebound.receipt_id})
+        return rebound
 
     async def _restore(
         self, prepared: PreparedAsset, asset: str, on_stage: Callable[[str], None] | None
