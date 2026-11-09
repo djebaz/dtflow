@@ -9,6 +9,9 @@ Examples:
     python tools/drawthings/lora_convert.py my_lora.safetensors --cli C:/tools/media-generation-kit-cli.exe
     python tools/drawthings/lora_convert.py --build   # clone the pinned revision and swift build it
 
+On native Windows the CLI has no `lora convert`, so the script re-runs itself inside WSL
+(needs WSL with python3, git and a Swift toolchain installed there).
+
 The CLI is looked up in this order: ``--cli``, ``DT_MGK_CLI``, the local build made by
 ``--build``, then ``PATH``.
 """
@@ -27,7 +30,17 @@ from pathlib import Path
 REPO_URL = "https://github.com/drawthingsai/media-generation-kit.git"
 PINNED_REVISION = "37e0b70092ad1a0c1d4c6b24f16e17b73f1b1fb3"
 CLI_NAME = "media-generation-kit-cli"
-DEFAULT_BUILD_DIR = Path(__file__).resolve().parent / ".mgk-build"
+
+
+def default_build_dir() -> Path:
+    """Build next to the script, or in the home folder when the script sits on a Windows drive under WSL."""
+    here = Path(__file__).resolve().parent
+    if str(here).startswith("/mnt/"):
+        return Path.home() / ".cache" / "dtflow-mgk-build"
+    return here / ".mgk-build"
+
+
+DEFAULT_BUILD_DIR = default_build_dir()
 CHUNK_SIZE = 1024 * 1024
 
 
@@ -154,8 +167,41 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def wsl_path(path: str) -> str:
+    """Translate a Windows path to its WSL path."""
+    result = subprocess.run(["wsl", "wslpath", "-a", path], check=False, capture_output=True, text=True)
+    if result.returncode != 0:
+        raise RuntimeError(f"wslpath failed for {path}: {result.stderr.strip()}")
+    return result.stdout.strip()
+
+
+def run_through_wsl(argv: list[str]) -> int:
+    """On native Windows, re-run this script inside WSL, where the Linux CLI works."""
+    if shutil.which("wsl") is None:
+        print("error: native Windows has no converter; install WSL (`wsl --install`) and retry.", file=sys.stderr)
+        return 1
+    path_flags = {"--output-dir", "--cli", "--build-dir"}
+    translated: list[str] = []
+    expect_path = False
+    for arg in argv:
+        if expect_path:
+            arg = wsl_path(arg)
+            expect_path = False
+        elif arg in path_flags:
+            expect_path = True
+        elif not arg.startswith("-") and Path(arg).exists():
+            arg = wsl_path(arg)
+        translated.append(arg)
+    if "--output-dir" not in argv:
+        translated += ["--output-dir", wsl_path(str(Path("lora_out").resolve()))]
+    print("native Windows detected: running the converter inside WSL", flush=True)
+    return run(["wsl", "python3", wsl_path(str(Path(__file__).resolve())), *translated])
+
+
 def main() -> int:
     """Run the converter."""
+    if os.name == "nt":
+        return run_through_wsl(sys.argv[1:])
     args = build_parser().parse_args()
     cli: Path | None = None
     if args.build:
