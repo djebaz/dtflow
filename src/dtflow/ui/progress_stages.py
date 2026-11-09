@@ -13,6 +13,7 @@ def event_stage(event: BackendEvent) -> str:
             "validating_image_inputs": "Validating image inputs",
             "validating_request": "Validating generation request",
             "validating_assets": "Validating prepared assets",
+            "restoring_assets": "Restoring LoRA on DT+",
             "checking_loras": "Checking LoRA compatibility",
             "checking_output_storage": "Checking output storage",
             "creating_attempt": "Creating generation attempt",

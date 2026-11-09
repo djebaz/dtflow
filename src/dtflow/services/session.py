@@ -29,6 +29,7 @@ from dtflow.core.models import (
     CredentialProvider,
     Designation,
     EventSink,
+    RemoteOutcome,
     InventorySnapshot,
     PreflightDiagnostic,
     PreparedAsset,
@@ -45,7 +46,7 @@ from dtflow.persistence.gallery_snapshot import schedule_publish
 from dtflow.persistence.inventory_cache import load_inventory, save_inventory
 from dtflow.persistence.settings import load_cloud_concurrency
 from dtflow.persistence.store import SQLiteAttempts
-from dtflow.services.assets import AssetService
+from dtflow.services.assets import AssetService, possible_missing_asset
 from dtflow.services.credentials import EnvironmentCredentials, resolve_credentials
 from dtflow.services.generation import GenerationService
 from dtflow.services.image_inputs import restore_image_inputs
@@ -170,9 +171,9 @@ def selection_for(
     )
 
 
-def asset_validator(backend) -> AssetService | None:
-    """Metadata-only validation for dispatch, available only where the backend can negotiate cloud assets."""
-    return AssetService(backend) if hasattr(backend, "negotiate_asset") else None
+def asset_validator(backend, state: Path | None = None) -> AssetService | None:
+    """Dispatch-time validation (and restoration from retained copies when ``state`` is given) for cloud backends."""
+    return AssetService(backend, state=state) if hasattr(backend, "negotiate_asset") else None
 
 
 async def load_prepared(
@@ -199,6 +200,28 @@ async def bind_prepared(
         return request
     prepared = await load_prepared(state, backend_name, asset_ids)
     selected = {item.identifier for item in request.loras}
+    # A receipt ID identifies local content; a distinct logical LoRA name may share its bytes.
+    # Preserve the explicitly selected names rather than silently replacing them with the
+    # global asset row's first filename.
+    registry = AssetRegistry(state)
+    await registry.open()
+    try:
+        candidates = await registry.choices()
+    finally:
+        await registry.aclose()
+    ids = {item.receipt_id for item in prepared}
+    named = {
+        (item.receipt_id, item.identifier): item
+        for item in candidates
+        if item.receipt_id in ids and item.identifier in selected
+    }
+    resolved = tuple(
+        named.get((item.receipt_id, identifier))
+        for item in prepared
+        for identifier in (lora.identifier for lora in request.loras)
+        if (item.receipt_id, identifier) in named
+    )
+    prepared = tuple(dict.fromkeys(resolved)) or prepared
     for item in prepared:
         if item.identifier not in selected:
             raise ValidationError(f"--asset {item.receipt_id[:8]} needs a matching --lora {item.identifier}:WEIGHT.")
@@ -214,13 +237,12 @@ async def script_asset_choices(state: Path, backend_name: str) -> tuple[Prepared
     """
     if backend_name != "cloud":
         return ()
-    records = await list_assets(state)
-    choices = {
-        record["identifier"]: record["asset_id"]
-        for record in records
-        if record["state"] == "confirmed" and record["kind"] == "lora"
-    }
-    return await load_prepared(state, backend_name, tuple(choices.values()))
+    registry = AssetRegistry(state)
+    await registry.open()
+    try:
+        return await registry.choices()
+    finally:
+        await registry.aclose()
 
 
 @asynccontextmanager
@@ -267,7 +289,7 @@ async def open_session(
             store,
             output or state / "outputs",
             timeouts=policy,
-            assets=asset_validator(backend),
+            assets=asset_validator(backend, state),
             input_state=state if image_permits else None,
         )
     finally:
@@ -328,9 +350,26 @@ async def run_generation(
             result = await service.generate(request, on_event=on_event, **options)
             break
         except BackendError as exc:
-            if attempt_id is not None or retries >= AUTO_RETRIES or not auto_retryable(exc.failure):
-                raise
             failure = exc.failure
+            repaired = False
+            assets = getattr(service, "assets", None)
+            if (
+                attempt_id is None
+                and assets is not None
+                and request.prepared_assets
+                and possible_missing_asset(failure)
+                and callable(getattr(assets, "recover_missing", None))
+            ):
+                repaired = await assets.recover_missing(request.prepared_assets)
+            # Named child attempts (Workflows/Scripts) own their own retry accounting.
+            # A rejected/possibly submitted generation is never silently replayed.
+            safe_repair_retry = repaired and failure.remote_outcome == RemoteOutcome.NOT_STARTED
+            if (
+                attempt_id is not None
+                or retries >= AUTO_RETRIES
+                or (not safe_repair_retry and not auto_retryable(failure))
+            ):
+                raise
         retries += 1
         request = auto_retry_request(request)
         diagnostic_event(
@@ -802,7 +841,7 @@ async def open_assets(
         if not hasattr(backend, "negotiate_asset"):
             raise ValidationError("The selected backend cannot prepare cloud assets.")
         await registry.open()
-        yield AssetService(backend, registry)
+        yield AssetService(backend, registry, state=state)
     finally:
         try:
             async with asyncio.timeout(policy.cleanup):
@@ -819,10 +858,19 @@ async def prepare_asset(
     provenance: str,
     saved: CredentialProvider | None = None,
 ) -> dict:
-    """The only operation that may upload: prepare one converted LoRA and return its local record."""
+    """Explicitly prepare a converted LoRA and retain its local copy for later bounded recovery."""
     async with open_assets(state, saved=saved) as service:
         prepared = await service.prepare(file, name, provenance=provenance)
-        return await service.registry.get(prepared.receipt_id)
+        record = await service.registry.get(prepared.receipt_id)
+        # The historical content row can have another filename/key. Present this
+        # exact successful preparation, rather than the first name to share its bytes.
+        record.update(
+            identifier=prepared.identifier,
+            remote_id=prepared.remote_id,
+            confirmed_at_utc=prepared.confirmed_at_utc,
+            state="confirmed",
+        )
+        return record
 
 
 async def reconcile_asset(
@@ -833,11 +881,29 @@ async def reconcile_asset(
         return await service.reconcile(asset_id)
 
 
-async def list_assets(state: Path) -> list[dict]:
-    """Local registry receipts and unresolved operations (no network, no writer lock)."""
+async def list_assets(state: Path, *, named: bool = False) -> list[dict]:
+    """Local receipt and unresolved-operation candidates; optionally expand logical LoRA names for Qt."""
     registry = AssetRegistry(state)
     await registry.open()
     try:
-        return [asset_view(record) for record in await registry.list()]
+        records = await registry.list()
+        if not named:
+            return [asset_view(record) for record in records]
+        parents = {record["asset_id"]: record for record in records}
+        shown = {
+            (record["asset_id"], record["identifier"]): asset_view(record)
+            for record in records
+            if record["state"] != "confirmed"
+        }
+        for alias in await registry.choices():
+            record = dict(parents[alias.receipt_id])
+            record.update(
+                identifier=alias.identifier,
+                remote_id=alias.remote_id,
+                state="confirmed",
+                confirmed_at_utc=alias.confirmed_at_utc,
+            )
+            shown[(alias.receipt_id, alias.identifier)] = asset_view(record)
+        return list(shown.values())
     finally:
         await registry.aclose()

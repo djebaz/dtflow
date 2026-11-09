@@ -75,7 +75,7 @@ class LoraAssetPanel:
         self.loras: tuple[LoRASelection, ...] = ()
         self._receipts: dict[str, str] = {}  # selected LoRA identifier -> local receipt id (never exported)
         self._candidates: list[tuple[str, float | None]] = []
-        self._records: dict[str, dict] = {}
+        self._records: dict[tuple[str, str], dict] = {}
         self._bind_after_list: str | None = None  # identifier to bind once the registry list has been refreshed
         self._add_when_bound = False  # a Prepare also adds the LoRA to the list; a plain add never needs to
         page.addLoraButton.clicked.connect(self.add)
@@ -192,7 +192,11 @@ class LoraAssetPanel:
 
     def confirmed_receipts(self) -> dict[str, str]:
         """Identifier -> confirmed local receipt id of the custom LoRAs that can be bound (cloud only)."""
-        return {r["identifier"]: asset for asset, r in self._records.items() if r["state"] == "confirmed"}
+        return {
+            record["identifier"]: record["asset_id"]
+            for record in self._records.values()
+            if record["state"] == "confirmed"
+        }
 
     def add(self) -> None:
         """Edit the whole selection: check, uncheck and weigh every offered LoRA, then apply once."""
@@ -264,7 +268,7 @@ class LoraAssetPanel:
             if generation == self._registry_generation:
                 self._listed(records, failure)
 
-        self._runner.submit(list_assets(self._state), listed)
+        self._runner.submit(list_assets(self._state, named=True), listed)
 
     def _listed(self, records, failure) -> None:
         status = self.page.assetStatusLabel
@@ -274,12 +278,12 @@ class LoraAssetPanel:
             )
             self._show(status, Presentation("warning", "Registry unavailable", present_asset_failure(failure).detail))
             return
-        self._records = {record["asset_id"]: record for record in records}
+        self._records = {(record["asset_id"], record["identifier"]): record for record in records}
         # a receipt the registry no longer confirms (reconcile said the server lost the file) must not stay bound
         self._receipts = {
             name: asset
             for name, asset in self._receipts.items()
-            if self._records.get(asset, {}).get("state") == "confirmed"
+            if self._records.get((asset, name), {}).get("state") == "confirmed"
         }
         self._render_loras()
         selected = self._selected_id()
@@ -290,10 +294,10 @@ class LoraAssetPanel:
                 f"{record['sha256'][:8]} · {record['size']} B"
             )
             item = QListWidgetItem(text)
-            item.setData(Qt.ItemDataRole.UserRole, record["asset_id"])  # Qt.UserRole
+            item.setData(Qt.ItemDataRole.UserRole, (record["asset_id"], record["identifier"]))  # Qt.UserRole
             item.setToolTip(f"Receipt {record['asset_id']} on {record['origin']}")
             self.page.assetList.addItem(item)
-            if record["asset_id"] == selected:
+            if (record["asset_id"], record["identifier"]) == selected:
                 self.page.assetList.setCurrentItem(item)
         if self._bind_after_list is not None:
             identifier, self._bind_after_list = self._bind_after_list, None
@@ -304,7 +308,7 @@ class LoraAssetPanel:
             self._bind_confirmed(identifier)
         self.bind_selected()
 
-    def _selected_id(self) -> str | None:
+    def _selected_id(self) -> tuple[str, str] | None:
         item = self.page.assetList.currentItem()
         return item.data(Qt.ItemDataRole.UserRole) if item is not None else None
 
@@ -390,7 +394,7 @@ class LoraAssetPanel:
                     },
                 )
             if record is not None and failure is None:
-                self._records[record["asset_id"]] = record
+                self._records[(record["asset_id"], record["identifier"])] = record
                 # Single-file completion adds/binds in the existing final registry callback.
                 if (
                     state == "confirmed"
@@ -501,8 +505,8 @@ class LoraAssetPanel:
         """Bind the confirmed receipt for a selected LoRA identifier; ``True`` when one was found."""
         if identifier not in {item.identifier for item in self.loras}:
             return False
-        for asset_id, record in self._records.items():
-            if record["identifier"] == identifier and record["state"] == "confirmed":
+        for (asset_id, name), record in self._records.items():
+            if name == identifier and record["state"] == "confirmed":
                 self._receipts[identifier] = asset_id
                 self._render_loras()
                 if announce:

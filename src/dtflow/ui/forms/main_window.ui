@@ -518,6 +518,27 @@
                    <item><widget class="QPushButton" name="clearCustomLorasButton"><property name="text"><string>Clear</string></property></widget></item>
                   </layout>
                  </item>
+                 <item>
+                  <widget class="QLabel" name="retainedLorasStatusLabel">
+                   <property name="text"><string>No locally retained LoRAs.</string></property>
+                   <property name="wordWrap"><bool>true</bool></property>
+                   <property name="role" stdset="0"><string>secondary</string></property>
+                  </widget>
+                 </item>
+                 <item>
+                  <widget class="QListWidget" name="retainedLorasList">
+                   <property name="toolTip"><string>Local retained copies only. Select a file and press Delete to remove it.</string></property>
+                   <property name="maximumHeight"><number>112</number></property>
+                   <property name="selectionMode"><enum>QAbstractItemView::SingleSelection</enum></property>
+                  </widget>
+                 </item>
+                 <item>
+                  <widget class="QPushButton" name="removeRetainedLoraButton">
+                   <property name="text"><string>Remove selected</string></property>
+                   <property name="toolTip"><string>Delete the selected retained copy only. Original files, DT+ assets and saved results are unchanged.</string></property>
+                   <property name="enabled"><bool>false</bool></property>
+                  </widget>
+                 </item>
                 </layout>
                </widget>
               </item>

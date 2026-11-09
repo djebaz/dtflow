@@ -59,6 +59,7 @@ from dtflow.scripting.models import (
 from dtflow.scripting.runner import ScriptCancelled
 from dtflow.scripting.forms import initial_answers as _initial_answers
 from dtflow.scripting.forms import validate_answers, validate_components
+from dtflow.services.assets import possible_missing_asset
 from dtflow.services.session import GenerationOutcome, run_generation
 
 #: Upstream ``SamplerType`` numbers (vendored JS) <-> DTFlow sampler ids.
@@ -393,6 +394,15 @@ class ScriptHost:
                 )
                 reason = exc.failure.message or exc.failure.code
                 automatic = auto_retryable(exc.failure)
+                assets = getattr(self.service, "assets", None)
+                if (
+                    assets is not None
+                    and request.prepared_assets
+                    and possible_missing_asset(exc.failure)
+                    and callable(getattr(assets, "recover_missing", None))
+                ):
+                    repaired = self._await(assets.recover_missing(request.prepared_assets), track=True)
+                    automatic = automatic or (repaired and exc.failure.remote_outcome == RemoteOutcome.NOT_STARTED)
             except Exception as exc:
                 kind, reason, automatic = "unknown", str(exc) or type(exc).__name__, False
             else:
@@ -558,10 +568,83 @@ class ScriptHost:
         results: list[dict] = [{"status": "not_started", "attemptId": None, "outputPaths": []} for _ in requests]
         next_job = 0
         intake_open = True
+        asset_gate = asyncio.Event()
+        asset_gate.set()
+        assets = getattr(self.service, "assets", None)
+        recovery_task: asyncio.Task | None = None
+        recovery_assets: frozenset[tuple[str, str, int]] = frozenset()
+        recovery_attempted: set[tuple[str, str, int]] = set()
+        recovery_waiters: dict[asyncio.Task, int] = {}
+
+        async def recover_assets(request: ResolvedGenerationRequest, failure) -> bool:
+            """One bounded restoration for overlapping batch workers; unrelated assets remain eligible."""
+            nonlocal recovery_task, recovery_assets
+            if (
+                assets is None
+                or not request.prepared_assets
+                or not possible_missing_asset(failure)
+                or not callable(getattr(assets, "recover_missing", None))
+            ):
+                return False
+            wanted = {(item.identifier, item.sha256, item.size) for item in request.prepared_assets}
+            if recovery_task is not None and not recovery_task.done():
+                task = recovery_task
+            else:
+                task = None
+            if task is None:
+                pending = tuple(
+                    item
+                    for item in request.prepared_assets
+                    if (item.identifier, item.sha256, item.size) not in recovery_attempted
+                )
+                if not pending:
+                    return False
+                recovery_assets = frozenset((item.identifier, item.sha256, item.size) for item in pending)
+                recovery_attempted.update(recovery_assets)
+                asset_gate.clear()
+
+                async def repair():
+                    try:
+                        return await assets.recover_missing(pending)
+                    finally:
+                        asset_gate.set()
+
+                task = asyncio.create_task(repair())
+                recovery_task = task
+            active_assets = recovery_assets
+            recovery_waiters[task] = recovery_waiters.get(task, 0) + 1
+            try:
+                restored = await asyncio.shield(task)
+            finally:
+                remaining = recovery_waiters[task] - 1
+                if remaining:
+                    recovery_waiters[task] = remaining
+                else:
+                    recovery_waiters.pop(task, None)
+                    if not task.done():
+                        task.cancel()
+            if restored and active_assets & wanted:
+                return True
+            if wanted - recovery_attempted:
+                return await recover_assets(request, failure)
+            return False
+
+        if assets is not None and callable(getattr(assets, "ensure_many", None)):
+            distinct = {
+                (asset.identifier, asset.sha256, asset.size): asset
+                for request in requests
+                for asset in request.prepared_assets
+            }
+            if distinct:
+                await assets.ensure_many(tuple(distinct.values()))
 
         async def worker():
             nonlocal next_job, intake_open
             while intake_open and not self.cancel.is_set() and next_job < len(requests):
+                while not asset_gate.is_set() and not self.cancel.is_set():
+                    await asyncio.sleep(POLL_SECONDS)
+                if not intake_open or self.cancel.is_set():
+                    break
                 index = next_job
                 next_job += 1
                 request = requests[index]
@@ -596,7 +679,7 @@ class ScriptHost:
                     if not intake_open or self.cancel.is_set():
                         return
                     try:
-                        outcome = await self._generate_child(request, attempt_id, relinked)
+                        outcome = await self._generate_child(request, attempt_id, relinked, recover_assets)
                     except BackendError as exc:
                         remote = exc.failure.remote_outcome
                         results[index] = {
@@ -684,7 +767,11 @@ class ScriptHost:
         return results
 
     async def _generate_child(
-        self, request: ResolvedGenerationRequest, attempt_id: str, relinked: Callable[[str], None]
+        self,
+        request: ResolvedGenerationRequest,
+        attempt_id: str,
+        relinked: Callable[[str], None],
+        recover_assets: Callable,
     ) -> GenerationOutcome:
         """One batch job's generation with the shared automatic retry (#241): a retry is a new child, linked before it
         is sent, counted as one of the run's generations. Stop during the wait raises the first try's failure."""
@@ -695,9 +782,11 @@ class ScriptHost:
                     self.service, request, prefix=self.prefix, attempt_id=attempt_id, layout=self._layout(request)
                 )
             except BackendError as exc:
+                repaired = await recover_assets(request, exc.failure)
+                safe_retry = repaired and exc.failure.remote_outcome == RemoteOutcome.NOT_STARTED
                 if not (
                     auto_left > 0
-                    and auto_retryable(exc.failure)
+                    and (safe_retry or auto_retryable(exc.failure))
                     and self.generations < self.max_generations
                     and not self.cancel.is_set()
                 ):

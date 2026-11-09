@@ -332,6 +332,10 @@ def add_asset_commands(commands) -> None:
     prepare.add_argument("-f", "--file", type=Path, required=True, help="Already-converted Draw Things LoRA file.")
     prepare.add_argument("-n", "--name", help="Identifier to use instead of the file name.")
     action("list", "List locally known receipts and unresolved operations (local registry; no network).")
+    files = action("files", "List retained LoRA copies kept in application data and their disk usage (no network).")
+    files.add_argument(
+        "--remove", metavar="SHA256", help="Delete the retained copy with this checksum (not DT+ copies)."
+    )
     action("show", "Show one local record (no network).", ident=True)
     action(
         "reconcile",
@@ -530,7 +534,7 @@ COMMAND_HELP = {
     "models": "List backend inventory with provenance (models, LoRAs, controls, unknown entries).",
     "attempts": "Inspect durable attempts; unknown outcomes are never replayed.",
     "settings": "Show or persist shared settings such as the cloud concurrency maximum.",
-    "assets": "Cloud LoRA assets: prepare (may upload), list, show, reconcile. Local receipts are not remote inventory.",
+    "assets": "Cloud LoRA assets: prepare (may upload, keeps a local copy), files, list, show, reconcile. Local receipts are not remote inventory.",
     "queue": "Durable queues with rolling dispatch: add, list, show, start, pause, resume, cancel, cap, relaunch.",
     "script": "Analyze a Draw Things JavaScript script offline (never runs it), self-check the engine, or --run it.",
     "workflow": "Check a DTFlow workflow file offline, or save it as a paused workflow queue (never generates).",
@@ -702,6 +706,17 @@ async def run_assets(args: argparse.Namespace) -> int:
             return EXIT_OK
         finally:
             await registry.aclose()
+    if command == "files":
+        from dtflow.services.lora_store import LoraStore
+
+        store = LoraStore(args.state)
+        if args.remove:
+            match = [e for e in await asyncio.to_thread(store.entries) if e.get("sha256") == args.remove]
+            if not match or not await asyncio.to_thread(store.remove, match[0]["sha256"], match[0]["size"]):
+                raise ValidationError("No retained LoRA copy has that checksum.")
+        count, total = await asyncio.to_thread(store.usage)
+        print(json.dumps({"files": await asyncio.to_thread(store.entries), "count": count, "bytes": total}, indent=2))
+        return EXIT_OK
     if command == "prepare":
         record = await prepare_asset(args.state, args.file, args.name, provenance="cli")
         print(json.dumps({"note": ASSET_NOTE, **asset_view(record)}, indent=2))

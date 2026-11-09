@@ -210,8 +210,9 @@ class GenerationService:
             )
         if request.prepared_assets:
             preparation("validating_assets")
-            # Validation is metadata-only: a stale, inaccessible or unconfirmed reference blocks the request here,
-            # before any attempt exists, and never triggers an upload or substitutes another receipt.
+            # A fresh DT+ metadata check validates each bound LoRA before the attempt exists.
+            # Only a positive missing-file result may restore verified retained bytes; identical content may rebind
+            # to a newer server reference. Unknown/authentication failures cannot authorize an upload.
             if self.assets is None or any(item.backend_id != caps.backend_id for item in request.prepared_assets):
                 raise BackendError(
                     BackendFailure(
@@ -221,8 +222,28 @@ class GenerationService:
                         request.request_id,
                     )
                 )
-            for prepared in request.prepared_assets:
-                await self._bounded(self.assets.validate(prepared), self.timeouts.http, "asset_validation")
+            # One local per-key receipt gate; first-use assets share a batched BYOM lookup.
+            # No routine network validation once this key owns confirmed copies.
+            ensure_many = getattr(self.assets, "ensure_many", None)
+            if callable(ensure_many):
+                confirmed = await ensure_many(request.prepared_assets, lambda stage: preparation(stage))
+            else:
+                confirmed = [
+                    await self.assets.ensure(prepared, lambda stage: preparation(stage))
+                    for prepared in request.prepared_assets
+                ]
+            if tuple(confirmed) != tuple(request.prepared_assets):
+                changed = [
+                    new.receipt_id for old, new in zip(request.prepared_assets, confirmed, strict=True) if old != new
+                ]
+                request = replace(
+                    request,
+                    prepared_assets=tuple(confirmed),
+                    resolution_evidence=(
+                        *request.resolution_evidence,
+                        ("restored_assets", ",".join(receipt[:8] for receipt in changed)),
+                    ),
+                )
         if request.loras:
             preparation("checking_loras")
             # Confirmed incompatibility or absence must stop the request before any durable attempt exists.
@@ -433,6 +454,9 @@ class GenerationService:
             raise
         except BackendError as exc:
             failure = exc.failure
+            if self.assets is not None and request.prepared_assets:
+                # A failure may mean a LoRA changed on DT+: the next item must ask again instead of trusting an old answer.
+                self.assets.forget(request.prepared_assets)
             diagnostic_event(
                 log,
                 "generation.attempt_failed",

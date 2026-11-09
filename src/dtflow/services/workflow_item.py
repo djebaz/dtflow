@@ -75,10 +75,11 @@ from dtflow.core.workflows import (
 )
 from dtflow.diagnostics import event as diagnostic_event
 from dtflow.memory_diagnostics import enabled as memory_enabled, observe as memory_observe, scope as memory_scope
-from dtflow.persistence.queues import QueueError
+from dtflow.persistence.queues import QueueError, post_control
 from dtflow.persistence.store import PersistenceError, SQLiteAttempts
 from dtflow.persistence.workflow_items import BAD_STEP_STATES, WorkflowRequest
 from dtflow.services import session
+from dtflow.services.assets import possible_missing_asset
 from dtflow.services.generation import GenerationService
 from dtflow.services.workflow_prompts import prompt_counts, resolve as resolve_prompt
 from dtflow.services.workflow_queue import (
@@ -361,6 +362,11 @@ class _Execution:
         self.halted: str | None = None
         self.go = asyncio.Event()
         self.go.set()
+        self.asset_gate = asyncio.Event()
+        self.asset_gate.set()
+        self.asset_recovery: asyncio.Task | None = None
+        self.recovery_attempted: set[tuple[str, str, int]] = set()
+        self.recovery_assets: frozenset[tuple[str, str, int]] = frozenset()
         self.dirty = False
         # Each planned submission may get the shared automatic retry (#241): at most planned x 2 before any Retry.
         self.allowance = request.planned * (1 + AUTO_RETRIES)
@@ -457,6 +463,44 @@ class _Execution:
             self.prompt_counts = prompt_counts(self.graph, self.request.wildcards)
             self.plan = plan_workflow(self.graph, self.prompt_counts)
             await self.set_limits()
+            if self.request.backend == "cloud" and self.runner.service.assets is not None:
+                # One first-use BYOM batch before concurrent workflow branches begin.
+                selected = {
+                    name
+                    for node in self.graph.nodes
+                    if node.type in GENERATIVE
+                    for name, _ in node.params.get("loras", ())
+                }
+                choices = await session.script_asset_choices(self.runner.state, self.request.backend)
+                prepared = tuple(item for item in choices if item.identifier in selected)
+                ensure_many = getattr(self.runner.service.assets, "ensure_many", None)
+                if prepared and callable(ensure_many):
+                    preparation = asyncio.create_task(ensure_many(prepared))
+                    try:
+                        while not preparation.done():
+                            actions = await self.store.apply_controls(self.queue_id)
+                            if "pause" in actions:
+                                self.go.clear()
+                            if "resume" in actions:
+                                self.go.set()
+                            if "cancel" in actions:
+                                preparation.cancel()
+                                await asyncio.gather(preparation, return_exceptions=True)
+                                await self.stop()
+                                await self.finish()
+                                return
+                            await asyncio.sleep(self.runner.poll)
+                        await preparation
+                    except BackendError as exc:
+                        await asyncio.to_thread(post_control, self.runner.state, self.queue_id, "pause")
+                        await self.store.apply_controls(self.queue_id)
+                        self.go.clear()
+                        self.run["message"] = f"LoRA preparation paused: {exc.failure.message}"
+                        await self.flush()
+                    finally:
+                        if not preparation.done():
+                            preparation.cancel()
+                            await asyncio.gather(preparation, return_exceptions=True)
             if any(key[0] not in self.plan.nodes for key in self.steps):
                 raise ValidationError("The stored run does not match its workflow.")
             if self.plan.needs_face_models:
@@ -480,6 +524,18 @@ class _Execution:
             return
         if not await self.load_statics():
             return
+        # A Pause/Stop posted during a lengthy first-use BYOM check must take effect
+        # before any workflow branch is admitted to a provider.
+        actions = await self.store.apply_controls(self.queue_id)
+        if "cancel" in actions:
+            await self.stop()
+            await self.take_controls()
+            await self.finish()
+            return
+        if "pause" in actions:
+            self.go.clear()
+        if "resume" in actions:
+            self.go.set()
         self.start_roots()
         next_memory_sample = monotonic() + 5 if memory_enabled(log) else None
         try:
@@ -569,6 +625,9 @@ class _Execution:
 
     async def stop(self) -> None:
         """Queue Stop: nothing new starts, open pauses close and in-flight waits end now (#247); never replayed."""
+        if self.asset_recovery is not None and not self.asset_recovery.done():
+            self.asset_recovery.cancel()
+        self.asset_gate.set()
         await self.abandon()
 
     async def finish(self, *, interrupted: bool = False) -> None:
@@ -779,6 +838,56 @@ class _Execution:
 
     # -- submission ------------------------------------------------------------------------------------------------
 
+    async def recover_assets(self, keys: list[Key], request, failure) -> bool:
+        """Hold new branches while one repair covers a bounded group of LoRA identities."""
+        assets = getattr(self.runner.service, "assets", None)
+        if (
+            assets is None
+            or not request.prepared_assets
+            or not possible_missing_asset(failure)
+            or not callable(getattr(assets, "recover_missing", None))
+        ):
+            return False
+        wanted = {(item.identifier, item.sha256, item.size) for item in request.prepared_assets}
+        if self.asset_recovery is not None and not self.asset_recovery.done():
+            restored = await asyncio.shield(self.asset_recovery)
+            if restored and wanted & self.recovery_assets:
+                return True
+        pending = tuple(
+            item
+            for item in request.prepared_assets
+            if (item.identifier, item.sha256, item.size) not in self.recovery_attempted
+        )
+        if not pending:
+            return False
+        self.recovery_assets = frozenset((item.identifier, item.sha256, item.size) for item in pending)
+        self.recovery_attempted.update(self.recovery_assets)
+        self.asset_gate.clear()
+        self.set_stage(keys, "Restoring LoRA on DT+")
+
+        async def repair():
+            try:
+                return await assets.recover_missing(
+                    pending, on_stage=lambda stage: self.set_stage(keys, "Restoring LoRA on DT+")
+                )
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:
+                diagnostic_event(
+                    log,
+                    "workflow.asset_recovery_failed",
+                    level=logging.WARNING,
+                    data={"reason": type(exc).__name__},
+                )
+                await asyncio.to_thread(post_control, self.runner.state, self.queue_id, "pause")
+                self.go.clear()
+                return False
+            finally:
+                self.asset_gate.set()
+
+        self.asset_recovery = asyncio.create_task(repair())
+        return await asyncio.shield(self.asset_recovery)
+
     async def submit(self, keys: list[Key], request, weight: int, prepared=None):
         """One generation for ``keys`` under the loop guard and a backend lane; None when it did not succeed (the
         steps then hold their end state)."""
@@ -796,6 +905,9 @@ class _Execution:
         # Counted at the check so concurrent branches cannot pass it together; given back when nothing is sent.
         self.run["submitted"] += weight
         try:
+            while not self.asset_gate.is_set() and not self.stopping and not self.halted:
+                self.set_stage(keys, "Waiting for LoRA restoration")
+                await self.asset_gate.wait()
             while not self.go.is_set() and not self.stopping and not self.halted:
                 for key in keys:
                     self.steps[key]["stage"] = "Waiting: queue paused"
@@ -859,6 +971,14 @@ class _Execution:
                         return None
                 auto_left = AUTO_RETRIES
                 while True:
+                    while not self.asset_gate.is_set() and not self.stopping and not self.halted:
+                        self.set_stage(keys, "Waiting for LoRA restoration")
+                        await self.asset_gate.wait()
+                    while not self.go.is_set() and not self.stopping and not self.halted:
+                        self.set_stage(keys, "Waiting: queue paused")
+                        await self.go.wait()
+                    if self.stopping or self.halted:
+                        raise asyncio.CancelledError
                     self.in_flight[attempt_id] = keys
                     try:
                         outcome = await session.run_generation(
@@ -871,7 +991,9 @@ class _Execution:
                         )
                         break
                     except BackendError as exc:
-                        if auto_left <= 0 or not auto_retryable(exc.failure):
+                        restored = await self.recover_assets(keys, request, exc.failure)
+                        safe_repair_retry = restored and exc.failure.remote_outcome == RemoteOutcome.NOT_STARTED
+                        if auto_left <= 0 or (not safe_repair_retry and not auto_retryable(exc.failure)):
                             raise
                         first = exc
                     auto_left -= 1
