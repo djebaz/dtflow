@@ -221,8 +221,25 @@ class GenerationService:
                         request.request_id,
                     )
                 )
+            confirmed = []
             for prepared in request.prepared_assets:
-                await self._bounded(self.assets.validate(prepared), self.timeouts.http, "asset_validation")
+                # A positive "upload required" answer restores the retained copy (its own, longer budget); everything
+                # else, including unknown availability, still blocks here without uploading.
+                confirmed.append(await self.assets.ensure(prepared, lambda stage: preparation(stage)))
+            if tuple(confirmed) != tuple(request.prepared_assets):
+                swapped = {
+                    old.receipt_id: new.receipt_id
+                    for old, new in zip(request.prepared_assets, confirmed, strict=True)
+                    if old != new
+                }
+                request = replace(
+                    request,
+                    prepared_assets=tuple(confirmed),
+                    resolution_evidence=(
+                        *request.resolution_evidence,
+                        ("restored_assets", ",".join(f"{o[:8]}>{n[:8]}" for o, n in swapped.items())),
+                    ),
+                )
         if request.loras:
             preparation("checking_loras")
             # Confirmed incompatibility or absence must stop the request before any durable attempt exists.

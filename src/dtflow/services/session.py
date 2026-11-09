@@ -170,9 +170,9 @@ def selection_for(
     )
 
 
-def asset_validator(backend) -> AssetService | None:
-    """Metadata-only validation for dispatch, available only where the backend can negotiate cloud assets."""
-    return AssetService(backend) if hasattr(backend, "negotiate_asset") else None
+def asset_validator(backend, state: Path | None = None) -> AssetService | None:
+    """Dispatch-time validation (and restoration from retained copies when ``state`` is given) for cloud backends."""
+    return AssetService(backend, state=state) if hasattr(backend, "negotiate_asset") else None
 
 
 async def load_prepared(
@@ -267,7 +267,7 @@ async def open_session(
             store,
             output or state / "outputs",
             timeouts=policy,
-            assets=asset_validator(backend),
+            assets=asset_validator(backend, state),
             input_state=state if image_permits else None,
         )
     finally:
@@ -802,7 +802,7 @@ async def open_assets(
         if not hasattr(backend, "negotiate_asset"):
             raise ValidationError("The selected backend cannot prepare cloud assets.")
         await registry.open()
-        yield AssetService(backend, registry)
+        yield AssetService(backend, registry, state=state)
     finally:
         try:
             async with asyncio.timeout(policy.cleanup):

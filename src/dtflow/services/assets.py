@@ -12,6 +12,7 @@ import hashlib
 import logging
 import os
 from pathlib import Path, PureWindowsPath
+from collections.abc import Callable
 from typing import Protocol
 
 from dtflow.core.models import (
@@ -28,8 +29,9 @@ from dtflow.core.models import (
 )
 from dtflow.core.tasks import settle
 from dtflow.diagnostics import api_error_data, event as diagnostic_event
-from dtflow.persistence.assets import AssetRegistry
+from dtflow.persistence.assets import AssetRegistry, AssetsBusyError
 from dtflow.persistence.store import PersistenceError
+from dtflow.services.lora_store import LoraStore
 
 log = logging.getLogger(__name__)
 CHUNK = 1024 * 1024
@@ -69,11 +71,23 @@ def _observe(path: Path) -> tuple[os.stat_result, str]:
 class AssetValidator(Protocol):
     async def validate(self, prepared: PreparedAsset) -> None: ...
 
+    async def ensure(self, prepared: PreparedAsset, on_stage: Callable[[str], None] | None = None) -> PreparedAsset: ...
+
 
 class AssetService:
-    def __init__(self, backend: AssetBackend, registry: AssetRegistry | None = None):
-        """``registry`` may be omitted by callers that only ``validate`` (generation and queue dispatch)."""
+    def __init__(
+        self,
+        backend: AssetBackend,
+        registry: AssetRegistry | None = None,
+        *,
+        state: Path | None = None,
+        store: LoraStore | None = None,
+    ):
+        """``registry`` may be omitted by callers that only ``validate``. ``store`` keeps a managed copy on every prepare;
+        ``state`` additionally lets ``ensure`` restore a file DT+ positively reports missing (generation and queues)."""
         self.backend, self._registry = backend, registry
+        self.state = Path(state) if state is not None else None
+        self.store = store if store is not None else (LoraStore(self.state) if self.state is not None else None)
 
     @property
     def registry(self) -> AssetRegistry:
@@ -88,6 +102,9 @@ class AssetService:
         path = Path(path)
         stat, digest = await asyncio.to_thread(_observe, path)
         content = AssetContent("lora", identifier or path.name, digest, stat.st_size, provenance)
+        if self.store is not None:
+            # Keep the durable copy first, so a failed or interrupted upload never costs the user the file.
+            await asyncio.to_thread(self.store.retain, path, digest, stat.st_size)
         key = (self.backend.backend_id, self.backend.origin, self.backend.scope, content.sha256, content.size)
         task = _INFLIGHT.get(key)
         if task is None or task.done():
@@ -227,7 +244,17 @@ class AssetService:
         return AssetReconciliation("confirmed", "server_validated", negotiation.reference), None
 
     async def validate(self, prepared: PreparedAsset) -> None:
-        """Dispatch-time guard: require current server validation of the exact reference, or fail without uploading."""
+        """Dispatch-time guard without restoration: require current server validation or fail without uploading."""
+        await self._verify(prepared, None, restoring=False)
+
+    async def ensure(self, prepared: PreparedAsset, on_stage: Callable[[str], None] | None = None) -> PreparedAsset:
+        """Validate the receipt; only a positive "upload required" answer restores it from the retained local copy.
+
+        Returns the receipt to submit with: the original when the server already has the file, otherwise the freshly
+        confirmed one. One restoration is attempted per asset per call; the old receipt remains in the registry."""
+        return await self._verify(prepared, on_stage, restoring=self.state is not None)
+
+    async def _verify(self, prepared: PreparedAsset, on_stage, *, restoring: bool) -> PreparedAsset:
         # Display only the local basename, through shared privacy projection; never the remote reference or path.
         asset = (
             api_error_data(
@@ -244,27 +271,75 @@ class AssetService:
                 diagnostics=(("asset", asset),),
             )
         result, cause = await self._check(self._content(prepared), prepared.remote_id)
-        if result.status != "confirmed":
-            problem = _failure(
-                ErrorCategory.VALIDATION,
-                "prepared_asset_" + result.status,
-                f"LoRA {asset} is not validated by the server ({result.evidence}); nothing was uploaded or submitted.",
+        if result.status == "confirmed":
+            return prepared
+        if restoring and result.status == "upload_required":
+            return await self._restore(prepared, asset, on_stage)
+        problem = _failure(
+            ErrorCategory.VALIDATION,
+            "prepared_asset_" + result.status,
+            f"LoRA {asset} is not validated by the server ({result.evidence}); nothing was uploaded or submitted.",
+        )
+        details = {"validation_reason": result.evidence}
+        if cause is not None:
+            # Only the adapter's projected evidence crosses this boundary, never provider objects or references.
+            details.update(cause.diagnostics)
+            details["cause_code"] = cause.code
+            details["cause_category"] = cause.category.value
+        details["asset"] = asset
+        raise BackendError(
+            BackendFailure(
+                problem.failure.category,
+                problem.failure.code,
+                problem.failure.message,
+                diagnostics=tuple(sorted(details.items())),
             )
-            details = {"validation_reason": result.evidence}
-            if cause is not None:
-                # Only the adapter's projected evidence crosses this boundary, never provider objects or references.
-                details.update(cause.diagnostics)
-                details["cause_code"] = cause.code
-                details["cause_category"] = cause.category.value
-            details["asset"] = asset
-            raise BackendError(
-                BackendFailure(
-                    problem.failure.category,
-                    problem.failure.code,
-                    problem.failure.message,
-                    diagnostics=tuple(sorted(details.items())),
+        ) from None
+
+    async def _restore(
+        self, prepared: PreparedAsset, asset: str, on_stage: Callable[[str], None] | None
+    ) -> PreparedAsset:
+        """Upload the retained copy once under a short-lived asset writer, then return the confirmed receipt."""
+        store = self.store or LoraStore(self.state)
+        try:
+            retained = await asyncio.to_thread(store.find, prepared.sha256, prepared.size)
+            if retained is None:
+                raise _failure(
+                    ErrorCategory.VALIDATION,
+                    "prepared_asset_no_local_copy",
+                    f"LoRA {asset} is missing on DT+ and no verified local copy is kept; run `assets prepare` again."
+                    " Nothing was submitted.",
                 )
+            await asyncio.to_thread(store.verify, retained)
+        except ValidationError as exc:
+            raise _failure(
+                ErrorCategory.VALIDATION,
+                "prepared_asset_local_copy_invalid",
+                f"LoRA {asset} is missing on DT+ and its kept local copy is unusable ({exc}). Nothing was submitted.",
             ) from None
+        if on_stage is not None:
+            on_stage("restoring_assets")
+        registry = AssetRegistry(self.state, writer=True)
+        try:
+            await registry.open()
+        except AssetsBusyError:
+            raise _failure(
+                ErrorCategory.VALIDATION,
+                "prepared_asset_restore_busy",
+                f"LoRA {asset} is missing on DT+, but another process is preparing assets. Nothing was submitted.",
+            ) from None
+        try:
+            restored = await AssetService(self.backend, registry).prepare(
+                retained.path, prepared.identifier, provenance="auto_restore"
+            )
+        finally:
+            await registry.aclose()
+        if (restored.sha256, restored.size) != (prepared.sha256, prepared.size):
+            raise _failure(
+                ErrorCategory.PROTOCOL, "asset_restore_mismatch", "Restored asset does not match its record."
+            )
+        diagnostic_event(log, "assets.restored", level=logging.INFO, data={"receipt": restored.receipt_id})
+        return restored
 
     async def reconcile(self, asset_id: str) -> tuple[dict, AssetReconciliation]:
         """Metadata-only server validation of one local record under the current credential; never a PUT."""
