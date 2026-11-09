@@ -40,6 +40,7 @@ from typing import Any
 from dtflow.core.models import (
     SEED_LIMIT,
     BackendError,
+    ErrorCategory,
     LoRASelection,
     PreparedAsset,
     RemoteOutcome,
@@ -393,6 +394,16 @@ class ScriptHost:
                 )
                 reason = exc.failure.message or exc.failure.code
                 automatic = auto_retryable(exc.failure)
+                assets = getattr(self.service, "assets", None)
+                if (
+                    assets is not None and request.prepared_assets
+                    and exc.failure.category == ErrorCategory.REMOTE_REJECTION
+                    and callable(getattr(assets, "recover_missing", None))
+                ):
+                    repaired = self._await(assets.recover_missing(request.prepared_assets), track=True)
+                    automatic = automatic or (
+                        repaired and exc.failure.remote_outcome == RemoteOutcome.NOT_STARTED
+                    )
             except Exception as exc:
                 kind, reason, automatic = "unknown", str(exc) or type(exc).__name__, False
             else:
@@ -558,10 +569,23 @@ class ScriptHost:
         results: list[dict] = [{"status": "not_started", "attemptId": None, "outputPaths": []} for _ in requests]
         next_job = 0
         intake_open = True
+        asset_gate = asyncio.Event()
+        asset_gate.set()
+        assets = getattr(self.service, "assets", None)
+        if assets is not None and callable(getattr(assets, "ensure_many", None)):
+            distinct = {
+                (asset.identifier, asset.sha256, asset.size): asset
+                for request in requests for asset in request.prepared_assets
+            }
+            if distinct:
+                await assets.ensure_many(tuple(distinct.values()))
 
         async def worker():
             nonlocal next_job, intake_open
             while intake_open and not self.cancel.is_set() and next_job < len(requests):
+                await asset_gate.wait()
+                if not intake_open or self.cancel.is_set():
+                    break
                 index = next_job
                 next_job += 1
                 request = requests[index]
@@ -596,7 +620,7 @@ class ScriptHost:
                     if not intake_open or self.cancel.is_set():
                         return
                     try:
-                        outcome = await self._generate_child(request, attempt_id, relinked)
+                        outcome = await self._generate_child(request, attempt_id, relinked, asset_gate)
                     except BackendError as exc:
                         remote = exc.failure.remote_outcome
                         results[index] = {
@@ -684,7 +708,8 @@ class ScriptHost:
         return results
 
     async def _generate_child(
-        self, request: ResolvedGenerationRequest, attempt_id: str, relinked: Callable[[str], None]
+        self, request: ResolvedGenerationRequest, attempt_id: str, relinked: Callable[[str], None],
+        asset_gate: asyncio.Event,
     ) -> GenerationOutcome:
         """One batch job's generation with the shared automatic retry (#241): a retry is a new child, linked before it
         is sent, counted as one of the run's generations. Stop during the wait raises the first try's failure."""
@@ -695,9 +720,22 @@ class ScriptHost:
                     self.service, request, prefix=self.prefix, attempt_id=attempt_id, layout=self._layout(request)
                 )
             except BackendError as exc:
+                repaired = False
+                assets = getattr(self.service, "assets", None)
+                if (
+                    assets is not None and request.prepared_assets
+                    and exc.failure.category == ErrorCategory.REMOTE_REJECTION
+                    and callable(getattr(assets, "recover_missing", None))
+                ):
+                    asset_gate.clear()
+                    try:
+                        repaired = await assets.recover_missing(request.prepared_assets)
+                    finally:
+                        asset_gate.set()
+                safe_retry = repaired and exc.failure.remote_outcome == RemoteOutcome.NOT_STARTED
                 if not (
                     auto_left > 0
-                    and auto_retryable(exc.failure)
+                    and (safe_retry or auto_retryable(exc.failure))
                     and self.generations < self.max_generations
                     and not self.cancel.is_set()
                 ):
