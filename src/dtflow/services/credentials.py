@@ -123,6 +123,7 @@ class SavedKey:
     credential_id: str
     hint: str | None
     active: bool
+    alias: str | None = None  # Only an explicitly saved name, never the generated label.
 
 
 def key_label(hint: str | None, credential_id: str) -> str:
@@ -183,7 +184,11 @@ class SavedCredentials:
         for item in document.get("keys", []) if isinstance(document, dict) else []:
             if isinstance(item, dict) and isinstance(item.get("id"), str) and item["id"].strip():
                 name = item.get("name")
-                keys.append({"id": item["id"], "name": name if isinstance(name, str) else None})
+                try:
+                    name = _clean_name(name if isinstance(name, str) else None)
+                except ValidationError:
+                    name = None
+                keys.append({"id": item["id"], "name": name})
         active = document.get("active") if isinstance(document, dict) else None
         return {"active": active if isinstance(active, str) else None, "keys": keys}
 
@@ -237,7 +242,10 @@ class SavedCredentials:
             if used[name] > 1:
                 name = f"{name} ({used[name]})"
             result.append(
-                SavedKey(item["id"], name, credential_id, hint, item["id"] == active and not self._env(document))
+                SavedKey(
+                    item["id"], name, credential_id, hint, item["id"] == active and not self._env(document),
+                    item["name"],
+                )
             )
         return result
 
@@ -254,7 +262,8 @@ class SavedCredentials:
             raise BackendError(
                 BackendFailure(ErrorCategory.CREDENTIALS, "empty_saved_key", "Selected saved credential is empty.")
             )
-        return Credential("saved", value)
+        alias = next((item["name"] for item in self._read()["keys"] if item["id"] == key_id), None)
+        return Credential("saved", value, alias)
 
     def present(self) -> bool:
         return self.active_id() is not None
