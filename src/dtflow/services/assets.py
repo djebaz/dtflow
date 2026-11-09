@@ -64,6 +64,22 @@ def _failure(
     return BackendError(BackendFailure(category, code, message, None, stage, outcome, diagnostics=diagnostics))
 
 
+# The deployed server can reject an unavailable custom LoRA as gRPC PERMISSION_DENIED.
+# This is a reason to check the selected bucket once, not evidence that upload is authorized.
+# Generic rejection/quota/auth failures do not trigger an unrelated BYOM lookup.
+_ASSET_REJECTION_CODES = frozenset({
+    "grpc_not_found",
+    "grpc_failed_precondition",
+    "grpc_invalid_argument",
+    "grpc_permission_denied",
+})
+
+
+def possible_missing_asset(failure: BackendFailure) -> bool:
+    """Only a plausible missing-LoRA rejection may start a bounded metadata probe."""
+    return failure.code in _ASSET_REJECTION_CODES
+
+
 def _observe(path: Path) -> tuple[os.stat_result, str]:
     """Hash incrementally (bounded memory) and require the file to be unchanged while it was read."""
     try:
@@ -381,7 +397,7 @@ class AssetService:
                 future.add_done_callback(finished)
             awaited[identity] = future
 
-        if pending and scope not in _BATCH_TASKS:
+        if pending and (scope not in _BATCH_TASKS or _BATCH_TASKS[scope].done()):
 
             async def flush() -> None:
                 await asyncio.sleep(0.02)
