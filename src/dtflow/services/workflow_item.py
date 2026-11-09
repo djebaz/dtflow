@@ -460,6 +460,24 @@ class _Execution:
             self.prompt_counts = prompt_counts(self.graph, self.request.wildcards)
             self.plan = plan_workflow(self.graph, self.prompt_counts)
             await self.set_limits()
+            if self.request.backend == "cloud" and self.runner.service.assets is not None:
+                # One first-use BYOM batch before concurrent workflow branches begin.
+                selected = {
+                    name for node in self.graph.nodes if node.type in GENERATIVE
+                    for name, _ in node.params.get("loras", ())
+                }
+                choices = await session.script_asset_choices(self.runner.state, self.request.backend)
+                prepared = tuple(item for item in choices if item.identifier in selected)
+                ensure_many = getattr(self.runner.service.assets, "ensure_many", None)
+                if prepared and callable(ensure_many):
+                    try:
+                        await ensure_many(prepared)
+                    except BackendError as exc:
+                        await asyncio.to_thread(post_control, self.runner.state, self.queue_id, "pause")
+                        await self.store.apply_controls(self.queue_id)
+                        self.go.clear()
+                        self.run["message"] = f"LoRA preparation paused: {exc.failure.message}"
+                        await self.flush()
             if any(key[0] not in self.plan.nodes for key in self.steps):
                 raise ValidationError("The stored run does not match its workflow.")
             if self.plan.needs_face_models:
