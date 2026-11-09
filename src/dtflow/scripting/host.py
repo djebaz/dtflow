@@ -593,7 +593,8 @@ class ScriptHost:
                 task = None
             if task is None:
                 pending = tuple(
-                    item for item in request.prepared_assets
+                    item
+                    for item in request.prepared_assets
                     if (item.identifier, item.sha256, item.size) not in recovery_attempted
                 )
                 if not pending:
