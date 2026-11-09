@@ -87,7 +87,20 @@ class QueueDispatcher:
                             distinct[(prepared.identifier, prepared.sha256, prepared.size)] = prepared
                     if distinct:
                         self._queue_assets = tuple(distinct.values())
-                        await assets.ensure_many(self._queue_assets)
+                        preparation = asyncio.create_task(assets.ensure_many(self._queue_assets))
+                        try:
+                            while not preparation.done():
+                                actions = await self.store.apply_controls(queue_id)
+                                if "cancel" in actions or "pause" in actions:
+                                    preparation.cancel()
+                                    await asyncio.gather(preparation, return_exceptions=True)
+                                    return await self.store.inspect_queue(queue_id)
+                                await asyncio.sleep(self.poll)
+                            await preparation
+                        finally:
+                            if not preparation.done():
+                                preparation.cancel()
+                                await asyncio.gather(preparation, return_exceptions=True)
                 except BackendError as exc:
                     diagnostic_event(
                         log, "queue.asset_prepare_blocked", level=logging.WARNING,
