@@ -334,7 +334,9 @@ async def run_generation(
             repaired = False
             assets = getattr(service, "assets", None)
             if (
-                attempt_id is None and assets is not None and request.prepared_assets
+                attempt_id is None
+                and assets is not None
+                and request.prepared_assets
                 and failure.category == ErrorCategory.REMOTE_REJECTION
                 and callable(getattr(assets, "recover_missing", None))
             ):
