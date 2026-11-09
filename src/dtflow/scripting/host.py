@@ -396,14 +396,13 @@ class ScriptHost:
                 automatic = auto_retryable(exc.failure)
                 assets = getattr(self.service, "assets", None)
                 if (
-                    assets is not None and request.prepared_assets
+                    assets is not None
+                    and request.prepared_assets
                     and exc.failure.category == ErrorCategory.REMOTE_REJECTION
                     and callable(getattr(assets, "recover_missing", None))
                 ):
                     repaired = self._await(assets.recover_missing(request.prepared_assets), track=True)
-                    automatic = automatic or (
-                        repaired and exc.failure.remote_outcome == RemoteOutcome.NOT_STARTED
-                    )
+                    automatic = automatic or (repaired and exc.failure.remote_outcome == RemoteOutcome.NOT_STARTED)
             except Exception as exc:
                 kind, reason, automatic = "unknown", str(exc) or type(exc).__name__, False
             else:
