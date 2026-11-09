@@ -570,8 +570,9 @@ async def _dispatch_one(store, state, queue_id, policy, saved, out, on_settle, o
                     on_event(
                         "_assets",
                         BackendEvent(
-                            queue_id, 0, "assets_failed", datetime.now(UTC).isoformat(),
-                            stage=report["error"],
+                            queue_id, 0,
+                            "assets_inconclusive" if report["outcome"] == "inconclusive" else "assets_failed",
+                            datetime.now(UTC).isoformat(), stage=report["error"],
                         ),
                     )
 
