@@ -438,8 +438,12 @@ class AssetService:
         return {identity: await asyncio.shield(future) for identity, future in awaited.items()}
 
     async def ensure_many(
-        self, prepared_assets: tuple[PreparedAsset, ...], on_stage: Callable[[str], None] | None = None,
-        *, force: bool = False, restored_out: list[tuple[str, str, int]] | None = None,
+        self,
+        prepared_assets: tuple[PreparedAsset, ...],
+        on_stage: Callable[[str], None] | None = None,
+        *,
+        force: bool = False,
+        restored_out: list[tuple[str, str, int]] | None = None,
         on_resolution: Callable[[dict], None] | None = None,
     ) -> tuple[PreparedAsset, ...]:
         """Resolve one logical set of LoRAs and report one aggregate outcome, never one success log per LoRA."""
@@ -448,13 +452,12 @@ class AssetService:
         credential_id = await self._credential_id()
         if credential_id is None:
             # Existing fixture backends keep the historical validation contract.
-            return tuple([await self._verify(item, on_stage, restoring=self.state is not None)
-                          for item in prepared_assets])
+            return tuple(
+                [await self._verify(item, on_stage, restoring=self.state is not None) for item in prepared_assets]
+            )
         if self.state is None:
             # Stateless callers only validate exact remote references; they cannot retain or restore bytes.
-            return tuple([
-                await self._verify(item, on_stage, restoring=False) for item in prepared_assets
-            ])
+            return tuple([await self._verify(item, on_stage, restoring=False) for item in prepared_assets])
 
         identities = {self._identity(self._content(item)): item for item in prepared_assets}
         outcomes: dict[tuple[str, str, int], str] = {}
@@ -467,7 +470,9 @@ class AssetService:
             registry = AssetRegistry(self.state)
             await registry.open()
             try:
-                existing = [await registry.scoped(item.receipt_id, credential_id, item.identifier) for item in prepared_assets]
+                existing = [
+                    await registry.scoped(item.receipt_id, credential_id, item.identifier) for item in prepared_assets
+                ]
             finally:
                 await registry.aclose()
             missing = []
@@ -479,7 +484,9 @@ class AssetService:
                 if known is not None and (known.sha256, known.size, known.identifier) != (
                     item.sha256, item.size, item.identifier
                 ):
-                    raise _failure(ErrorCategory.VALIDATION, "prepared_asset_identity", "LoRA receipt identity changed.")
+                    raise _failure(
+                        ErrorCategory.VALIDATION, "prepared_asset_identity", "LoRA receipt identity changed."
+                    )
                 if force or known is None:
                     missing.append((index, item, known))
                 else:
@@ -497,8 +504,7 @@ class AssetService:
                 raise
             except Exception as exc:
                 raise _failure(
-                    ErrorCategory.CONNECTIVITY, "asset_check_failed",
-                    "DT+ asset check failed; nothing uploaded."
+                    ErrorCategory.CONNECTIVITY, "asset_check_failed", "DT+ asset check failed; nothing uploaded."
                 ) from exc
             results = list(existing)
             for index, item, known in missing:
@@ -506,8 +512,9 @@ class AssetService:
                 negotiation = negotiations.get(current)
                 if negotiation is None:
                     raise _failure(
-                        ErrorCategory.PROTOCOL, "asset_check_inconclusive",
-                        "DT+ returned no usable status for this LoRA; nothing was uploaded."
+                        ErrorCategory.PROTOCOL,
+                        "asset_check_inconclusive",
+                        "DT+ returned no usable status for this LoRA; nothing was uploaded.",
                     )
                 if negotiation.status == "exists":
                     if known is not None and known.remote_id == negotiation.reference:
@@ -559,14 +566,21 @@ class AssetService:
                 raise BackendError(replace(exc.failure, message=message)) from exc
             error_message = exc.failure.message
             raise
-        except Exception:
+        except Exception as exc:
             if current is not None:
                 outcomes[current] = "failed"
                 outcome = "failed"
+                error_message = f"LoRA {names[current]}: asset resolution failed ({type(exc).__name__})."
+            else:
+                affected = [names[key] for key in identities if key not in outcomes]
+                if affected:
+                    error_message = f"LoRAs {', '.join(affected)}: asset resolution failed ({type(exc).__name__})."
             raise
         finally:
-            counts = {kind: sum(value == kind for value in outcomes.values())
-                      for kind in ("reused", "matched", "relinked", "restored", "failed")}
+            counts = {
+                kind: sum(value == kind for value in outcomes.values())
+                for kind in ("reused", "matched", "relinked", "restored", "failed")
+            }
             report = {
                 "total": len(identities),
                 **counts,
@@ -578,15 +592,20 @@ class AssetService:
                 "error": error_message,
             }
             level = (
-                logging.WARNING if outcome in ("failed", "inconclusive")
-                else logging.INFO if counts["relinked"] or counts["restored"]
+                logging.WARNING
+                if outcome in ("failed", "inconclusive")
+                else logging.INFO
+                if counts["relinked"] or counts["restored"]
                 else logging.DEBUG
             )
             diagnostic_event(
-                log, "assets.resolution_summary", level=level,
-                data={key: report[key] for key in (
-                    "total", "reused", "matched", "relinked", "restored", "failed", "unresolved", "outcome"
-                )},
+                log,
+                "assets.resolution_summary",
+                level=level,
+                data={
+                    key: report[key]
+                    for key in ("total", "reused", "matched", "relinked", "restored", "failed", "unresolved", "outcome")
+                },
             )
             receiver = on_resolution if on_resolution is not None else self.on_resolution
             if receiver is not None:
