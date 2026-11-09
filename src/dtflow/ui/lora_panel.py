@@ -294,9 +294,7 @@ class LoraAssetPanel:
                 f"{record['sha256'][:8]} · {record['size']} B"
             )
             item = QListWidgetItem(text)
-            item.setData(
-                Qt.ItemDataRole.UserRole, (record["asset_id"], record["identifier"])
-            )  # Qt.UserRole
+            item.setData(Qt.ItemDataRole.UserRole, (record["asset_id"], record["identifier"]))  # Qt.UserRole
             item.setToolTip(f"Receipt {record['asset_id']} on {record['origin']}")
             self.page.assetList.addItem(item)
             if (record["asset_id"], record["identifier"]) == selected:
