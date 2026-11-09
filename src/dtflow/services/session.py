@@ -47,7 +47,7 @@ from dtflow.persistence.gallery_snapshot import schedule_publish
 from dtflow.persistence.inventory_cache import load_inventory, save_inventory
 from dtflow.persistence.settings import load_cloud_concurrency
 from dtflow.persistence.store import SQLiteAttempts
-from dtflow.services.assets import AssetService
+from dtflow.services.assets import AssetService, possible_missing_asset
 from dtflow.services.credentials import EnvironmentCredentials, resolve_credentials
 from dtflow.services.generation import GenerationService
 from dtflow.services.image_inputs import restore_image_inputs
@@ -357,7 +357,7 @@ async def run_generation(
                 attempt_id is None
                 and assets is not None
                 and request.prepared_assets
-                and failure.category == ErrorCategory.REMOTE_REJECTION
+                and possible_missing_asset(failure)
                 and callable(getattr(assets, "recover_missing", None))
             ):
                 repaired = await assets.recover_missing(request.prepared_assets)
