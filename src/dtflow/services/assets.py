@@ -264,7 +264,7 @@ class AssetService:
                 identifier=content.identifier,
             )
         except asyncio.CancelledError:
-            await settle(self._settle_unknown(asset_id, operation, "cancelled_after_transfer", True))
+            await settle(self._settle_unknown(asset_id, operation, "cancelled_after_transfer", True, credential_id))
             raise
         except (PersistenceError, ValidationError):
             try:
