@@ -1,8 +1,8 @@
 """Shared asset preparation, reconciliation and dispatch-time validation.
 
-Upload happens only here, only on an explicit ``prepare``. Generation and queue dispatch call ``validate`` (metadata
-only). The service owns orchestration and uncertainty rules; the adapter owns HTTP and signed-URL handling; the
-registry owns durable receipts. Nothing here retries a transfer that may have stored data.
+Uploads happen here during explicit ``prepare`` or when dispatch-time ``ensure`` has a positive missing-file
+response and a verified retained copy. The service owns orchestration and uncertainty rules; the adapter owns
+HTTP and signed-URL handling; the registry owns durable receipts. Uncertain transfers are never retried blindly.
 """
 
 from __future__ import annotations
@@ -45,12 +45,10 @@ _WRITER = asyncio.Lock()
 # Receipts rebound or restored during this process, so later items still carrying the older reference are validated
 # against the current one instead of repeating the same rebind for every item.
 _CURRENT: dict[tuple, PreparedAsset] = {}
-# One DT+ metadata request per asset at a time: concurrent checks join it, and a positive answer is reused briefly, so
-# a queue of many items does not ask the service about the same LoRA for every item. Only "exists" is reused, with no
-# timer: it is dropped as soon as a generation using the asset fails (``forget``) and the next item asks again.
-# Failures and "upload required" are always asked again.
+# Concurrent metadata checks may share an in-flight request, but every later submission asks DT+ again.
+# A previous positive answer cannot prove that the remote copy still exists.
 _CHECKS: dict[tuple, asyncio.Task] = {}
-_EXISTS: dict[tuple, object] = {}
+_SHARED_WAITERS: dict[tuple, int] = {}
 
 
 def _failure(
@@ -184,6 +182,9 @@ class AssetService:
         # The transfer returned success; the server's own reference is still needed for a confirmed receipt.
         try:
             after = await backend.negotiate_asset(content)
+        except asyncio.CancelledError:
+            await settle(self._settle_unknown(asset_id, operation, "cancelled_after_transfer", True))
+            raise
         except BackendError as exc:
             await settle(self._settle_unknown(asset_id, operation, exc.failure.code, True))
             raise _failure(
@@ -202,6 +203,9 @@ class AssetService:
             )
         try:
             receipt = await self.registry.confirm(asset_id, operation, after.reference, "transfer")
+        except asyncio.CancelledError:
+            await settle(self._settle_unknown(asset_id, operation, "cancelled_after_transfer", True))
+            raise
         except (PersistenceError, ValidationError):
             try:
                 await settle(self._settle_unknown(asset_id, operation, "receipt_write_failed", True))
@@ -241,15 +245,15 @@ class AssetService:
 
     async def check(self, content: AssetContent, expected: str | None) -> AssetReconciliation:
         """Fresh authenticated metadata check; never transfers. ``expected`` is the receipt's remote reference."""
-        result, _ = await self._check(content, expected, fresh=True)
+        result, _ = await self._check(content, expected)
         return result
 
     async def _check(
-        self, content: AssetContent, expected: str | None, answers: list | None = None, *, fresh: bool = False
+        self, content: AssetContent, expected: str | None, answers: list | None = None
     ) -> tuple[AssetReconciliation, BackendFailure | None]:
         """Retain backend-neutral failure evidence for dispatch without persisting response bodies."""
         try:
-            negotiation, answer = await self._negotiate_shared(content, fresh=fresh)
+            negotiation, answer = await self._negotiate_shared(content)
             if answers is not None:
                 answers.append(answer)
         except BackendError as exc:
@@ -264,15 +268,11 @@ class AssetService:
         return AssetReconciliation("confirmed", "server_validated", negotiation.reference), None
 
     def forget(self, assets) -> None:
-        """Drop remembered "DT+ has it" answers for these assets, e.g. after a generation using them failed."""
+        """Forget local receipt rebinding after a failed generation; DT+ checks are always fresh."""
         for item in assets:
-            for key in [
-                k for k in _EXISTS if k[:2] == (item.backend_id, item.origin) and k[4:] == (item.sha256, item.size)
-            ]:
-                _EXISTS.pop(key, None)
             _CURRENT.pop((item.backend_id, item.origin, self.backend.scope, item.receipt_id), None)
 
-    async def _negotiate_shared(self, content: AssetContent, *, fresh: bool = False):
+    async def _negotiate_shared(self, content: AssetContent):
         key = (
             self.backend.backend_id,
             self.backend.origin,
@@ -281,9 +281,6 @@ class AssetService:
             content.sha256,
             content.size,
         )
-        reused = None if fresh else _EXISTS.get(key)
-        if reused is not None:
-            return reused, "reused an earlier check (no error since)"
         task = _CHECKS.get(key)
         answer = "shared with another item in this app"
         if task is None or task.done():
@@ -293,8 +290,6 @@ class AssetService:
             task.add_done_callback(lambda done, key=key: _CHECKS.pop(key, None) if _CHECKS.get(key) is done else None)
             task.add_done_callback(lambda done: None if done.cancelled() else done.exception())
         negotiation = await asyncio.shield(task)
-        if negotiation.status == "exists":
-            _EXISTS[key] = negotiation
         return negotiation, answer
 
     async def validate(self, prepared: PreparedAsset) -> None:
@@ -409,7 +404,19 @@ class AssetService:
             _SHARED[key] = task
             task.add_done_callback(lambda done, key=key: _SHARED.pop(key, None) if _SHARED.get(key) is done else None)
             task.add_done_callback(lambda done: None if done.cancelled() else done.exception())
-        return await asyncio.shield(task)
+        _SHARED_WAITERS[key] = _SHARED_WAITERS.get(key, 0) + 1
+        try:
+            return await asyncio.shield(task)
+        finally:
+            remaining = _SHARED_WAITERS[key] - 1
+            if remaining:
+                _SHARED_WAITERS[key] = remaining
+            else:
+                _SHARED_WAITERS.pop(key, None)
+                # One Stop must not abort a restore still needed by another queued item.
+                # With no consumers left, cancellation can reach the transport/registry.
+                if not task.done():
+                    task.cancel()
 
     async def _rebind(self, prepared: PreparedAsset, asset: str, reference: str) -> PreparedAsset:
         """The server holds these exact bytes (it looked them up by SHA-256 and size) under a newer reference.
@@ -443,7 +450,11 @@ class AssetService:
     async def _restore(
         self, prepared: PreparedAsset, asset: str, on_stage: Callable[[str], None] | None
     ) -> PreparedAsset:
-        """Upload the retained copy once under a short-lived asset writer, then return the confirmed receipt."""
+        """Upload the retained copy once under the exclusive asset writer, then return its confirmed receipt.
+
+        The writer spans the network operation because the registry's active intent and its recovery semantics
+        are owned by that writer. Releasing it mid-upload would let another writer mark the transfer interrupted.
+        """
         store = self.store or LoraStore(self.state)
         try:
             retained = await asyncio.to_thread(store.find, prepared.sha256, prepared.size)
@@ -488,8 +499,10 @@ class AssetService:
                 f"LoRA {asset} is missing on DT+, but another process is preparing assets. Nothing was submitted.",
             ) from None
         try:
-            restored = await AssetService(self.backend, registry).prepare(
-                retained.path, prepared.identifier, provenance="auto_restore"
+            # This restore already has a shared task and verified source bytes. Avoid the separate shielded
+            # explicit-Prepare task: cancellation must propagate to the upload and settle its registry state.
+            restored = await AssetService(self.backend, registry)._prepare(
+                retained.path, self._content(prepared), retained.path.stat()
             )
         finally:
             await registry.aclose()
