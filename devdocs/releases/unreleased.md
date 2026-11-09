@@ -16,6 +16,9 @@ Changes through 6.2.0 are consolidated in [DTFlow 6.2.0](v6.2.0.md); its publish
 
 ## Changed
 
+- Logs can select a bundled, source-generated Component before its first logged event; Event/characteristic discovery happens on explicit Refresh, not startup, Logs open, or Follow. Component/Event selectors are wider, Search is narrower, and filter settings are durable across restarts. The new persisted Compact toggle switches resident rows between one terminal-like line and the wrapped view without requerying logs.
+- Queue polls skip full panel rendering only for unchanged *idle* results; active runs always redraw their Queue status/items so live progress remains visible even when persisted snapshots are unchanged. Returning from Logs to Queues now forces a fresh read/render, including completed History entries and the selected Queue detail. Thumbnails revalidate less frequently; Open in Images no longer blinks during background checks because the Images workspace validates the saved identity on click.
+
 - Restyle the shared Images gallery link above ordinary right inspectors with selection-blue navigation states, a 14 px existing image icon and keyboard focus, rather than run-action accent blue. Keep navigation and responsive placement unchanged; align the web reference and document Qt styling differences. Source-reviewed only; no local tests or renders.
 
 ## Fixed

@@ -52,7 +52,9 @@ from dtflow._diagnostic_reader import (
     segment_age,
     snapshot,
 )
+from dtflow.diagnostic_components import COMPONENTS
 from dtflow.diagnostic_projection import characteristics
+from dtflow.persistence.settings import SettingsError, load_logs_preferences, save_logs_preferences
 from dtflow.logging_setup import LOGGER
 from dtflow.ui.activity_strip import activity_strip
 from dtflow.ui.desktop_open import open_local_path
@@ -396,9 +398,13 @@ class _LogModel(QAbstractTableModel):
 class LogsWorkspace(QObject):
     """Window-owned UI controller; reader and writer responsibilities stay independent."""
 
-    def __init__(self, form, directory: Path, on_close, *, runner=None, escape_owner=None):
+    def __init__(self, form, directory: Path, on_close, *, runner=None, escape_owner=None, state_dir=None):
         super().__init__(form)
         self.form, self.directory, self.on_close = form, Path(directory), on_close
+        self._settings_state = Path(state_dir) if state_dir is not None else None
+        self._restoring_preferences = False
+        self._preferences_dirty = False
+        self._pending_preferences = None
         # `escape_owner()` lets a shared confirmation/editor consume Escape before Logs does.
         self.runner, self.escape_owner = runner, escape_owner
         self.pool = QThreadPool.globalInstance()
@@ -448,6 +454,8 @@ class LogsWorkspace(QObject):
             self.form.logsLevelCombo.addItem(f">={level}", level)
         self.form.logsLevelCombo.setCurrentIndex(self.form.logsLevelCombo.findData("WARNING"))
         self.form.logsComponentCombo.addItem("All", "")
+        for component in COMPONENTS:
+            self.form.logsComponentCombo.addItem(component.removeprefix("dtflow."), component)
         self.form.logsEventCombo.addItem("All events", "")
         for label, operator in OPERATORS:
             self.form.logsOperator.addItem(label, operator)
@@ -459,6 +467,8 @@ class LogsWorkspace(QObject):
             self.form.logsSortCombo.addItem(label)
         self.form.logsFollowButton.setCheckable(True)
         self.form.logsFollowButton.setChecked(True)
+        self.form.logsCompactButton.setCheckable(True)
+        self.form.logsCompactButton.toggled.connect(self._compact_changed)
         self.form.logsCloseButton.clicked.connect(on_close)
         self.form.logsRefreshButton.clicked.connect(lambda: self.refresh(facets=True))
         self.form.logsPreviousButton.clicked.connect(lambda: self._navigate_page(before=True))
@@ -547,7 +557,7 @@ class LogsWorkspace(QObject):
         self._outside_watch = False
         self._outside_armed = False
         self._outside_widgets = []
-        self._facets = (None, [], [], [], [])
+        self._facets = (None, list(COMPONENTS), [], [], [])
         self._programmatic = False
         self._timer = QTimer(form)
         self._timer.setInterval(1000)
@@ -558,6 +568,146 @@ class LogsWorkspace(QObject):
         self.form.destroyed.connect(self._cancel_export)
         # Outside-click dismissal is watched only while the details pane is shown.
         self.form.logsDetail.installEventFilter(self)
+        # Load only on the first Logs construction, never during main-window startup.
+        self._preferences_timer = QTimer(form)
+        self._preferences_timer.setSingleShot(True)
+        self._preferences_timer.setInterval(500)
+        self._preferences_timer.timeout.connect(self._save_preferences)
+        self._restore_preferences()
+        for combo in (
+            self.form.logsLevelCombo,
+            self.form.logsComponentCombo,
+            self.form.logsEventCombo,
+            self.form.logsSortCombo,
+            self.form.logsOperator,
+        ):
+            combo.currentIndexChanged.connect(self._schedule_preferences)
+        for field in (
+            self.form.logsSearch,
+            self.form.logsFrom,
+            self.form.logsTo,
+            self.form.logsField,
+            self.form.logsValue,
+        ):
+            field.textEdited.connect(self._schedule_preferences)
+        self.form.logsFollowButton.toggled.connect(self._schedule_preferences)
+
+    def _preferences(self):
+        """Collect user-chosen Logs filters and view mode, not diagnostic session content."""
+        return {
+            "search": self.form.logsSearch.text(),
+            "min_level": self.form.logsLevelCombo.currentData() or "",
+            "component": self.form.logsComponentCombo.currentData() or "",
+            "event": self.form.logsEventCombo.currentData() or "",
+            "from_ts": self.form.logsFrom.text(),
+            "to_ts": self.form.logsTo.text(),
+            "field": self.form.logsField.text(),
+            "operator": self.form.logsOperator.currentData() or "=",
+            "value": self.form.logsValue.text(),
+            "sort": self.form.logsSortCombo.currentIndex(),
+            "follow": self.form.logsFollowButton.isChecked(),
+            "advanced": self.form.logsAdvanced.isVisible(),
+            "compact": self.form.logsCompactButton.isChecked(),
+        }
+
+    @staticmethod
+    def _select_saved(combo, value):
+        if not value:
+            combo.setCurrentIndex(0)
+            return
+        index = combo.findData(value)
+        if index < 0:
+            combo.addItem(value.removeprefix("dtflow.") + " (not listed)", value)
+            index = combo.count() - 1
+        combo.setCurrentIndex(index)
+
+    def _restore_preferences(self):
+        if self._settings_state is None:
+            return
+        try:
+            saved = load_logs_preferences(self._settings_state)
+        except (OSError, SettingsError):
+            self.form.logsStatus.setText("Saved Logs filters could not be loaded")
+            return
+        self._restoring_preferences = True
+        try:
+            for key, widget in (
+                ("search", self.form.logsSearch),
+                ("from_ts", self.form.logsFrom),
+                ("to_ts", self.form.logsTo),
+                ("field", self.form.logsField),
+                ("value", self.form.logsValue),
+            ):
+                if key in saved:
+                    widget.setText(saved[key])
+            for key, combo in (
+                ("min_level", self.form.logsLevelCombo),
+                ("component", self.form.logsComponentCombo),
+                ("event", self.form.logsEventCombo),
+                ("operator", self.form.logsOperator),
+            ):
+                if key in saved and (key not in ("min_level", "operator") or combo.findData(saved[key]) >= 0):
+                    combo.blockSignals(True)
+                    self._select_saved(combo, saved[key])
+                    combo.blockSignals(False)
+            self.form.logsSortCombo.blockSignals(True)
+            self.form.logsSortCombo.setCurrentIndex(saved.get("sort", 0))
+            self.form.logsSortCombo.blockSignals(False)
+            follow = saved.get("follow", True) and self.form.logsSortCombo.currentIndex() == 0
+            self.form.logsFollowButton.blockSignals(True)
+            self.form.logsFollowButton.setChecked(follow)
+            self.form.logsFollowButton.setText(ICON_GAP + ("Follow: On" if follow else "Follow: Off"))
+            self.form.logsFollowButton.blockSignals(False)
+            self._show_advanced(saved.get("advanced", False))
+            self.form.logsCompactButton.blockSignals(True)
+            self.form.logsCompactButton.setChecked(saved.get("compact", False))
+            self.form.logsCompactButton.blockSignals(False)
+            self._compact_changed(self.form.logsCompactButton.isChecked())
+        finally:
+            self._restoring_preferences = False
+
+    def _schedule_preferences(self, *_):
+        if not self._restoring_preferences and self._settings_state is not None:
+            # Snapshot while widgets are alive: shutdown may destroy them before the deferred save.
+            self._pending_preferences = self._preferences()
+            self._preferences_dirty = True
+            self._preferences_timer.start()
+
+    def _save_preferences(self):
+        if not self._preferences_dirty or self._settings_state is None or self._pending_preferences is None:
+            return
+        try:
+            save_logs_preferences(self._settings_state, self._pending_preferences)
+        except (OSError, SettingsError):
+            try:
+                self.form.logsStatus.setText("Could not save Logs view preferences")
+            except RuntimeError:
+                pass  # the form may already be closing
+        else:
+            self._preferences_dirty = False
+
+    def _row_height(self, row):
+        if self.delegate.compact:
+            return 25
+        index = self.model.index(row, 3)
+        option = QStyleOptionViewItem()
+        option.font = self.form.logsTable.font()
+        option.rect = self.form.logsTable.visualRect(index)
+        option.rect.setWidth(self.form.logsTable.columnWidth(3))
+        height = self.delegate.sizeHint(option, index).height()
+        return min(168, max(53, height))
+
+    def _compact_changed(self, enabled):
+        """Switch density for resident rows only; never query the session or touch filters."""
+        self.delegate.compact = enabled
+        table = self.form.logsTable
+        table.setWordWrap(not enabled)
+        table.verticalHeader().setDefaultSectionSize(25 if enabled else 56)
+        for row in range(self.model.rowCount()):
+            table.setRowHeight(row, self._row_height(row))
+        table.viewport().update()
+        self.form.logsCompactButton.setText("Compact: On" if enabled else "Compact: Off")
+        self._schedule_preferences()
 
     def _run(self, func, callback, *, kind, cancel=None):
         old = self._cancellations.get(kind)
@@ -637,10 +787,13 @@ class LogsWorkspace(QObject):
         # The popup may be wider than the closed combo, so complete labels stay readable there.
         combo.view().setMinimumWidth(combo.view().sizeHintForColumn(0) + 24)
         combo.blockSignals(False)
-        self.refresh(facets=True)
+        self.refresh(facets=False)
         self._timer.start()
 
     def stop(self):
+        if self._preferences_dirty:
+            self._preferences_timer.stop()
+            self._save_preferences()
         self.active = False
         self._watch_outside(False)
         self._tokens.clear()
@@ -664,6 +817,7 @@ class LogsWorkspace(QObject):
     def _show_advanced(self, visible):
         self.form.logsAdvanced.setVisible(visible)
         self.form.logsMoreFiltersButton.setText("More filters ▴" if visible else "More filters ▾")
+        self._schedule_preferences()
 
     def _query_arguments(self):
         try:
@@ -721,12 +875,8 @@ class LogsWorkspace(QObject):
         return sort, descending, metric
 
     def _session_changed(self, *_):
-        # Component/event names belong to the previous session; never carry them over as a hidden filter.
-        for combo in (self.form.logsComponentCombo, self.form.logsEventCombo):
-            combo.blockSignals(True)
-            combo.setCurrentIndex(0)
-            combo.blockSignals(False)
-        self.refresh(facets=True)
+        # Keep a chosen Component and Event usable even before this session emits them.
+        self.refresh(facets=False)
 
     def _filtered(self, *_):
         # Filters keep Follow; only a nondefault sort pauses it.
@@ -911,11 +1061,11 @@ class LogsWorkspace(QObject):
         self._start_spin()
         self._page_controls()
         self.form.logsCounter.setText("Loading session…")
-        # Filter, sort and Follow refreshes reuse the session-wide choices and merge newly shown
-        # values; only an explicit Refresh, session change or reopen rescans them.
+        # Session opening and Follow never scan solely to build filter choices.
+        # Manual Refresh explicitly discovers the session's Events and characteristic keys.
         cached = self._facets if self._facets[0] == sid and not facets else None
         cancel = Event()
-        fallback = self._facets if self._facets[0] == sid else (sid, [], [], [], [])
+        fallback = self._facets if self._facets[0] == sid else (sid, list(COMPONENTS), [], [], [])
 
         def load():
             status, count, page, cursor = query(
@@ -931,12 +1081,14 @@ class LogsWorkspace(QObject):
                 project=row_preview,
             )
             choices = cached
-            if choices is None:
+            if choices is None and facets:
                 try:
                     choices = (sid, *session_facets(self.directory, sid, cancelled=cancel.is_set))
                 except Exception:
-                    # A failed choice rescan never discards an otherwise readable page.
+                    # A failed explicit choice scan never discards an otherwise readable page.
                     choices = fallback
+            if choices is None:
+                choices = fallback
             return status, count, page, cursor, [tiny["preview"] for tiny, _ in page], choices
 
         request_cursor = cursor
@@ -984,15 +1136,9 @@ class LogsWorkspace(QObject):
             else:
                 self.model.replace(page, projections)
                 changed = range(len(page))
-            # Size only the bounded, resident page. Never scan the session for geometry.
+            # Compact rows skip text geometry measurements; only resident pages are sized.
             for row in changed:
-                index = self.model.index(row, 3)
-                option = QStyleOptionViewItem()
-                option.font = self.form.logsTable.font()
-                option.rect = self.form.logsTable.visualRect(index)
-                option.rect.setWidth(self.form.logsTable.columnWidth(3))
-                height = self.delegate.sizeHint(option, index).height()
-                self.form.logsTable.setRowHeight(row, min(168, max(53, height)))
+                self.form.logsTable.setRowHeight(row, self._row_height(row))
             selection = table.selectionModel()
             for row, ref in enumerate(self.model.refs):
                 identity = (ref.session_id, ref.seq)
@@ -1036,15 +1182,22 @@ class LogsWorkspace(QObject):
 
     def _populate_filter_values(self, page, choices):
         sid, components, events, keys, numeric = choices
-        # Rows shown by Follow may introduce names after the last session-wide scan.
-        components = sorted(set(components) | {row["component"] for row, _ in page})[:FACET_LIMIT]
-        events = sorted(set(events) | {row["event"] for row, _ in page})[:FACET_LIMIT]
+        # Always show bundled known components, including ones not yet seen in a log.
+        # Events and characteristic keys are refreshed only on explicit user Refresh.
+        components = sorted(set(COMPONENTS) | set(components))[:FACET_LIMIT]
+        previous_sid, previous_components, previous_events, previous_keys, _ = self._facets
+        if (sid, components, events, keys, numeric) == self._facets:
+            return
         self._facets = (sid, components, events, keys, numeric)
-        self._key_completer.model().setStringList(["data." + key for key in keys])
-        for combo, options, initial in (
-            (self.form.logsComponentCombo, components, "All"),
-            (self.form.logsEventCombo, events, "All events"),
+        if sid != previous_sid or keys != previous_keys:
+            self._key_completer.model().setStringList(["data." + key for key in keys])
+        for combo, options, initial, previous_options in (
+            (self.form.logsComponentCombo, components, "All", previous_components),
+            (self.form.logsEventCombo, events, "All events", previous_events),
         ):
+            # A session change alone does not invalidate the same known names.
+            if options == previous_options:
+                continue
             current = combo.currentData()
             combo.blockSignals(True)
             combo.clear()
@@ -1440,6 +1593,7 @@ class LogsWorkspace(QObject):
             combo.blockSignals(True)
             combo.setCurrentIndex(combo.findData("WARNING") if combo is self.form.logsLevelCombo else 0)
             combo.blockSignals(False)
+        self._schedule_preferences()
         if self.form.logsFollowButton.isChecked():
             self.refresh()
         else:
