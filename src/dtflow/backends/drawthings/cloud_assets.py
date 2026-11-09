@@ -21,7 +21,7 @@ import httpx
 
 from dtflow.backends.drawthings.cloud_auth import CloudAuth
 from dtflow.backends.drawthings.errors import api_error, diagnostics
-from dtflow.diagnostics import active_cloud_key_data, api_error_data, event
+from dtflow.diagnostics import api_error_data, event
 from dtflow.core.models import (
     AssetContent,
     AssetNegotiation,
@@ -261,7 +261,6 @@ async def negotiate_lora_assets(
             "requested": len(contents),
             "exists": sum(x.status == "exists" for x in results.values()),
             "upload_required": sum(x.status == "upload_required" for x in results.values()),
-            **active_cloud_key_data(),
         },
     )
     return results
@@ -285,7 +284,7 @@ async def negotiate_lora_asset(auth: CloudAuth, content: AssetContent) -> AssetN
         result = AssetNegotiation("exists", reference)
         event(
             logging.getLogger(__name__), "backend.asset_negotiated", level=logging.DEBUG,
-            data={"outcome": "exists", **active_cloud_key_data()},
+            data={"outcome": "exists"},
         )
         return result
     if not _usable_upload(upload):
@@ -308,7 +307,7 @@ async def negotiate_lora_asset(auth: CloudAuth, content: AssetContent) -> AssetN
         logging.getLogger(__name__),
         "backend.asset_negotiated",
         level=logging.DEBUG,
-        data={"outcome": "upload_required", **active_cloud_key_data()},
+        data={"outcome": "upload_required"},
     )
     return result
 
@@ -429,8 +428,7 @@ async def upload_signed(
                     "http_status": status,
                     "bytes_yielded": yielded,
                     "elapsed_ms": elapsed(),
-                    **active_cloud_key_data(),
-                },
+                        },
             )
             return
         if 400 <= status < 500:
