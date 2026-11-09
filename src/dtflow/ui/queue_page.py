@@ -2755,6 +2755,15 @@ class QueuePage:
         from dtflow.ui.progress_stages import event_stage
 
         event = wrapped.event
+        if event.kind in ("assets_restored", "assets_failed"):
+            if event.stage:
+                activity_strip(self.page).complete(
+                    f"queue-assets:{wrapped.queue_id}:{event.kind}",
+                    "LoRA preparation failed" if event.kind == "assets_failed" else "LoRAs restored on DT+",
+                    event.stage,
+                    "error" if event.kind == "assets_failed" else "success",
+                )
+            return
         if self._owns(wrapped.queue_id):
             self._dispatch_started = True
         key = (wrapped.queue_id, wrapped.item_id)

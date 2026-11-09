@@ -13,6 +13,7 @@ import logging
 import os
 from pathlib import Path, PureWindowsPath
 from collections.abc import Callable
+from dataclasses import replace
 from typing import Protocol
 
 from dtflow.core.models import (
@@ -43,7 +44,7 @@ _INFLIGHT: dict[tuple, asyncio.Task] = {}
 # turns, because the asset writer lock admits a single writer per state directory.
 _SHARED: dict[tuple, asyncio.Task] = {}
 _WRITER = asyncio.Lock()
-# Receipts rebound or restored during this process, so later items still carrying the older reference are validated
+# Receipts relinked or restored during this process, so later items still carrying the older reference are validated
 # against the current one instead of repeating the same rebind for every item.
 _CURRENT: dict[tuple, PreparedAsset] = {}
 # Concurrent metadata checks may share an in-flight request, but every later submission asks DT+ again.
@@ -125,6 +126,8 @@ class AssetService:
         self._recovery_waiters: dict[asyncio.Task, int] = {}
         self._recovery_checked: set[tuple[str, str, int]] = set()
         self._recovery_restored: set[tuple[str, str, int]] = set()
+        # The UI can receive individual names without adding them to diagnostic records.
+        self.on_resolution: Callable[[dict], None] | None = None
 
     @property
     def registry(self) -> AssetRegistry:
@@ -192,15 +195,13 @@ class AssetService:
                     credential_id=credential_id,
                     identifier=content.identifier,
                 )
-                diagnostic_event(
-                    log,
-                    "assets.prepared",
-                    level=logging.INFO,
-                    data={
-                        "receipt": receipt.receipt_id,
-                        "source": "already_exists",
-                    },
-                )
+                if content.provenance != "auto_restore":
+                    diagnostic_event(
+                        log,
+                        "assets.prepared",
+                        level=logging.INFO,
+                        data={"receipt": receipt.receipt_id, "source": "already_exists"},
+                    )
                 return receipt
             await self.registry.mark(
                 asset_id, operation, "transferring", "transfer_started", asset=credential_id is None
@@ -285,15 +286,11 @@ class AssetService:
                 "The file was uploaded but its receipt could not be saved; run `assets reconcile`. No retry was made.",
                 RemoteOutcome.SUCCEEDED,
             ) from None
-        diagnostic_event(
-            log,
-            "assets.prepared",
-            level=logging.INFO,
-            data={
-                "receipt": receipt.receipt_id,
-                "source": "transfer",
-            },
-        )
+        if content.provenance != "auto_restore":
+            diagnostic_event(
+                log, "assets.prepared", level=logging.INFO,
+                data={"receipt": receipt.receipt_id, "source": "transfer"},
+            )
         return receipt
 
     async def _settle_unknown(
@@ -441,90 +438,162 @@ class AssetService:
         return {identity: await asyncio.shield(future) for identity, future in awaited.items()}
 
     async def ensure_many(
-        self,
-        prepared_assets: tuple[PreparedAsset, ...],
-        on_stage: Callable[[str], None] | None = None,
-        *,
-        force: bool = False,
-        restored_out: list[tuple[str, str, int]] | None = None,
+        self, prepared_assets: tuple[PreparedAsset, ...], on_stage: Callable[[str], None] | None = None,
+        *, force: bool = False, restored_out: list[tuple[str, str, int]] | None = None,
+        on_resolution: Callable[[dict], None] | None = None,
     ) -> tuple[PreparedAsset, ...]:
-        """Trust existing per-key receipts; batch-check only first use or an explicit recovery probe."""
+        """Resolve one logical set of LoRAs and report one aggregate outcome, never one success log per LoRA."""
         if not prepared_assets:
             return ()
         credential_id = await self._credential_id()
         if credential_id is None:
             # Existing fixture backends keep the historical validation contract.
-            return tuple(
-                [await self._verify(item, on_stage, restoring=self.state is not None) for item in prepared_assets]
-            )
+            return tuple([await self._verify(item, on_stage, restoring=self.state is not None)
+                          for item in prepared_assets])
         if self.state is None:
             # Stateless callers only validate exact remote references; they cannot retain or restore bytes.
-            return tuple([await self._verify(item, on_stage, restoring=False) for item in prepared_assets])
-        registry = AssetRegistry(self.state)
-        await registry.open()
+            return tuple([
+                await self._verify(item, on_stage, restoring=False) for item in prepared_assets
+            ])
+
+        identities = {self._identity(self._content(item)): item for item in prepared_assets}
+        outcomes: dict[tuple[str, str, int], str] = {}
+        names = {key: PureWindowsPath(item.identifier).name for key, item in identities.items()}
+        current: tuple[str, str, int] | None = None
+        pending: tuple[tuple[str, str, int], ...] = ()
+        outcome = "inconclusive"
+        error_message = ""
         try:
-            existing = [
-                await registry.scoped(item.receipt_id, credential_id, item.identifier) for item in prepared_assets
-            ]
-        finally:
-            await registry.aclose()
-        missing = []
-        for index, item in enumerate(prepared_assets):
-            if (item.backend_id, item.origin) != (self.backend.backend_id, self.backend.origin):
-                raise _failure(ErrorCategory.VALIDATION, "prepared_asset_scope", "LoRA backend mismatch.")
-            known = existing[index]
-            if known is not None and (known.sha256, known.size, known.identifier) != (
-                item.sha256,
-                item.size,
-                item.identifier,
-            ):
-                raise _failure(ErrorCategory.VALIDATION, "prepared_asset_identity", "LoRA receipt identity changed.")
-            if force or known is None:
-                missing.append((index, item, known))
-        if not missing:
-            return tuple(existing)
-        contents = tuple(dict.fromkeys(self._content(item) for _, item, _ in missing))
-        try:
-            negotiations = await self._negotiate_many(contents, credential_id)
-        except BackendError:
-            raise
-        except Exception as exc:
-            raise _failure(
-                ErrorCategory.CONNECTIVITY, "asset_check_failed", "DT+ asset check failed; nothing uploaded."
-            ) from exc
-        results = list(existing)
-        for index, item, known in missing:
-            negotiation = negotiations[self._identity(self._content(item))]
-            if negotiation.status == "exists":
-                if known is not None and known.remote_id == negotiation.reference:
-                    results[index] = known
+            registry = AssetRegistry(self.state)
+            await registry.open()
+            try:
+                existing = [await registry.scoped(item.receipt_id, credential_id, item.identifier) for item in prepared_assets]
+            finally:
+                await registry.aclose()
+            missing = []
+            for index, item in enumerate(prepared_assets):
+                current = self._identity(self._content(item))
+                if (item.backend_id, item.origin) != (self.backend.backend_id, self.backend.origin):
+                    raise _failure(ErrorCategory.VALIDATION, "prepared_asset_scope", "LoRA backend mismatch.")
+                known = existing[index]
+                if known is not None and (known.sha256, known.size, known.identifier) != (
+                    item.sha256, item.size, item.identifier
+                ):
+                    raise _failure(ErrorCategory.VALIDATION, "prepared_asset_identity", "LoRA receipt identity changed.")
+                if force or known is None:
+                    missing.append((index, item, known))
                 else:
-                    results[index] = await self._shared(
-                        "key-rebind:" + negotiation.reference,
-                        item,
-                        lambda item=item, ref=negotiation.reference: self._rebind(
-                            item, item.identifier, ref, credential_id=credential_id
-                        ),
-                        scope_id=credential_id,
+                    outcomes[current] = "reused"
+            current = None
+            if not missing:
+                outcome = "completed"
+                return tuple(existing)
+
+            pending = tuple(dict.fromkeys(self._identity(self._content(item)) for _, item, _ in missing))
+            contents = tuple(dict.fromkeys(self._content(item) for _, item, _ in missing))
+            try:
+                negotiations = await self._negotiate_many(contents, credential_id)
+            except BackendError:
+                raise
+            except Exception as exc:
+                raise _failure(
+                    ErrorCategory.CONNECTIVITY, "asset_check_failed",
+                    "DT+ asset check failed; nothing uploaded."
+                ) from exc
+            results = list(existing)
+            for index, item, known in missing:
+                current = self._identity(self._content(item))
+                negotiation = negotiations.get(current)
+                if negotiation is None:
+                    raise _failure(
+                        ErrorCategory.PROTOCOL, "asset_check_inconclusive",
+                        "DT+ returned no usable status for this LoRA; nothing was uploaded."
                     )
-            elif negotiation.status == "upload_required":
-                results[index] = await self._shared(
-                    "key-restore",
-                    item,
-                    lambda item=item, negotiation=negotiation: self._restore(
-                        item,
-                        item.identifier,
-                        on_stage,
-                        negotiation=negotiation,
-                        credential_id=credential_id,
-                    ),
-                    scope_id=credential_id,
-                )
-                if restored_out is not None:
-                    restored_out.append(self._identity(self._content(item)))
+                if negotiation.status == "exists":
+                    if known is not None and known.remote_id == negotiation.reference:
+                        results[index] = known
+                        outcomes[current] = "matched"
+                    else:
+                        results[index] = await self._shared(
+                            "key-rebind:" + negotiation.reference, item,
+                            lambda item=item, ref=negotiation.reference: self._rebind(
+                                item, PureWindowsPath(item.identifier).name, ref, credential_id=credential_id
+                            ), scope_id=credential_id,
+                        )
+                        outcomes[current] = "relinked"
+                elif negotiation.status == "upload_required":
+                    results[index] = await self._shared(
+                        "key-restore", item,
+                        lambda item=item, negotiation=negotiation: self._restore(
+                            item, PureWindowsPath(item.identifier).name, on_stage, negotiation=negotiation,
+                            credential_id=credential_id,
+                        ), scope_id=credential_id,
+                    )
+                    outcomes[current] = "restored"
+                    if restored_out is not None:
+                        restored_out.append(self._identity(self._content(item)))
+                else:
+                    raise _failure(ErrorCategory.PROTOCOL, "asset_check_inconclusive", "DT+ asset status is unknown.")
+                current = None
+            outcome = "completed"
+            return tuple(results)
+        except asyncio.CancelledError:
+            outcome = "cancelled"
+            raise
+        except BackendError as exc:
+            affected = (current,) if current is not None else tuple(
+                key for key in pending if key not in outcomes
+            )
+            if current is not None:
+                outcomes[current] = "failed"
+                outcome = "failed"
             else:
-                raise _failure(ErrorCategory.PROTOCOL, "asset_check_inconclusive", "DT+ asset status is unknown.")
-        return tuple(results)
+                outcome = "inconclusive"
+            if affected:
+                labels = [names[key] for key in dict.fromkeys(affected)]
+                subject = ("LoRA " if len(labels) == 1 else "LoRAs ") + ", ".join(labels)
+                message = exc.failure.message
+                if not (len(labels) == 1 and f"LoRA {labels[0]}" in message):
+                    message = f"{subject}: {message}"
+                error_message = message
+                raise BackendError(replace(exc.failure, message=message)) from exc
+            error_message = exc.failure.message
+            raise
+        except Exception:
+            if current is not None:
+                outcomes[current] = "failed"
+                outcome = "failed"
+            raise
+        finally:
+            counts = {kind: sum(value == kind for value in outcomes.values())
+                      for kind in ("reused", "matched", "relinked", "restored", "failed")}
+            report = {
+                "total": len(identities),
+                **counts,
+                "unresolved": len(identities) - len(outcomes),
+                "outcome": outcome,
+                # These display names are delivered to UI owners, never to the diagnostic event.
+                "restored_names": tuple(names[key] for key, kind in outcomes.items() if kind == "restored"),
+                "failed_names": tuple(names[key] for key, kind in outcomes.items() if kind == "failed"),
+                "error": error_message,
+            }
+            level = (
+                logging.WARNING if outcome in ("failed", "inconclusive")
+                else logging.INFO if counts["relinked"] or counts["restored"]
+                else logging.DEBUG
+            )
+            diagnostic_event(
+                log, "assets.resolution_summary", level=level,
+                data={key: report[key] for key in (
+                    "total", "reused", "matched", "relinked", "restored", "failed", "unresolved", "outcome"
+                )},
+            )
+            receiver = on_resolution if on_resolution is not None else self.on_resolution
+            if receiver is not None:
+                try:
+                    receiver(report)
+                except Exception:
+                    log.warning("Asset resolution status could not be displayed.")
 
     async def recover_missing(
         self, prepared_assets: tuple[PreparedAsset, ...], on_stage: Callable[[str], None] | None = None
@@ -720,10 +789,10 @@ class AssetService:
     async def _rebind(
         self, prepared: PreparedAsset, asset: str, reference: str, *, credential_id: str | None = None
     ) -> PreparedAsset:
-        """The server holds these exact bytes (it looked them up by SHA-256 and size) under a newer reference.
+        """The server holds these exact bytes (matched by SHA-256 and size) under this reference.
 
-        Nothing is uploaded: the receipt adopts the server's current reference for this scope, and the operation log
-        keeps the earlier evidence."""
+        Nothing is uploaded: the receipt gets its first association for this key or updates an earlier one;
+        previous evidence remains in the operation history."""
         known = _CURRENT.get((prepared.backend_id, prepared.origin, self.backend.scope, prepared.receipt_id))
         if credential_id is None and known is not None and known.remote_id == reference:
             return known  # Only the legacy single-scope cache can authorize this shortcut.
@@ -750,9 +819,6 @@ class AssetService:
         finally:
             await settle(registry.aclose())
         _CURRENT[(rebound.backend_id, rebound.origin, self.backend.scope, rebound.receipt_id)] = rebound
-        diagnostic_event(
-            log, "assets.rebound", level=logging.INFO, data={"asset": asset, "receipt": rebound.receipt_id}
-        )
         return rebound
 
     async def _restore(
@@ -777,7 +843,7 @@ class AssetService:
                     log,
                     "assets.restore_blocked",
                     level=logging.WARNING,
-                    data={"asset": asset, "reason": "no_local_copy"},
+                    data={"reason": "no_local_copy"},
                 )
                 raise _failure(
                     ErrorCategory.VALIDATION,
@@ -791,16 +857,13 @@ class AssetService:
                 log,
                 "assets.restore_blocked",
                 level=logging.WARNING,
-                data={"asset": asset, "reason": "local_copy_invalid"},
+                data={"reason": "local_copy_invalid"},
             )
             raise _failure(
                 ErrorCategory.VALIDATION,
                 "prepared_asset_local_copy_invalid",
                 f"LoRA {asset} is missing on DT+ and its kept local copy is unusable ({exc}). Nothing was submitted.",
             ) from None
-        diagnostic_event(
-            log, "assets.restore_started", level=logging.INFO, data={"asset": asset, "size": retained.size}
-        )
         if on_stage is not None:
             on_stage("restoring_assets")
         registry = AssetRegistry(self.state, writer=True)
@@ -831,9 +894,6 @@ class AssetService:
                 ErrorCategory.PROTOCOL, "asset_restore_mismatch", "Restored asset does not match its record."
             )
         _CURRENT[(restored.backend_id, restored.origin, self.backend.scope, restored.receipt_id)] = restored
-        diagnostic_event(
-            log, "assets.restored", level=logging.INFO, data={"asset": asset, "receipt": restored.receipt_id}
-        )
         return restored
 
     async def reconcile(self, asset_id: str) -> tuple[dict, AssetReconciliation]:

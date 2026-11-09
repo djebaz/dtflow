@@ -1176,6 +1176,11 @@ class GenerationPage:
     def _event(self, event: BackendEvent) -> None:
         if not self._generating:
             return  # a late event after completion never changes the settled view
+        if event.kind == "assets_restored" and event.stage:
+            activity_strip(self.page).complete(
+                "assets-restored", "LoRAs restored on DT+", event.stage, "success"
+            )
+            return
         if event.kind == "preparing" and event.stage == "retrying" and self._request is not None:
             # The one automatic retry (#241) runs under a new request identity; Stop reads that attempt's evidence.
             self._request = replace(self._request, request_id=event.request_id)

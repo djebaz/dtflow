@@ -16,6 +16,7 @@ Changes through 6.2.0 are consolidated in [DTFlow 6.2.0](v6.2.0.md); its publish
 
 ## Changed
 
+- DT+ LoRA resolution now emits one diagnostic summary per scoped operation, counting local reuse, verified matches, relinks, restores and failures without repeating per-LoRA success records. The Generate/Queue feedback overlay names restored LoRAs and reports affected names on resolution errors. Routine reuse/match summaries are verbose-only; relinking/restoration remains visible in normal logs. Source-reviewed; native and DT+ acceptance pending.
 - Logs can select a bundled, source-generated Component before its first logged event; Event/characteristic discovery happens on explicit Refresh, not startup, Logs open, or Follow. Component/Event selectors are wider, Search is narrower, and filter settings are durable across restarts. The new persisted Compact toggle switches resident rows between one terminal-like line and the wrapped view without requerying logs.
 - Queue polls skip full panel rendering only for unchanged *idle* results; active runs always redraw their Queue status/items so live progress remains visible even when persisted snapshots are unchanged. Returning from Logs to Queues now forces a fresh read/render, including completed History entries and the selected Queue detail. Thumbnails revalidate less frequently; Open in Images no longer blinks during background checks because the Images workspace validates the saved identity on click.
 
