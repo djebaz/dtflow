@@ -671,6 +671,9 @@ class AssetService:
                     "prepared_asset_restore_busy",
                     f"LoRA {asset} is missing on DT+, but another process is preparing assets. Nothing was submitted.",
                 ) from None
+            if credential_id is not None:
+                # Once DT+ positively reports a missing copy, no sibling can trust this key's old receipt.
+                await registry.invalidate_scope(prepared.receipt_id, credential_id)
             # The restore already has a shared task and verified source bytes. Avoid a separately shielded
             # explicit-Prepare task so Stop can cancel the upload and settle its registry state.
             restored = await AssetService(self.backend, registry)._prepare(
