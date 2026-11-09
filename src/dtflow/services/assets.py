@@ -48,7 +48,7 @@ _CURRENT: dict[tuple, PreparedAsset] = {}
 # Concurrent metadata checks may share an in-flight request, but every later submission asks DT+ again.
 # A previous positive answer cannot prove that the remote copy still exists.
 _CHECKS: dict[tuple, asyncio.Task] = {}
-_SHARED_WAITERS: dict[tuple, int] = {}
+_SHARED_WAITERS: dict[asyncio.Task, int] = {}
 
 
 def _failure(
@@ -404,15 +404,15 @@ class AssetService:
             _SHARED[key] = task
             task.add_done_callback(lambda done, key=key: _SHARED.pop(key, None) if _SHARED.get(key) is done else None)
             task.add_done_callback(lambda done: None if done.cancelled() else done.exception())
-        _SHARED_WAITERS[key] = _SHARED_WAITERS.get(key, 0) + 1
+        _SHARED_WAITERS[task] = _SHARED_WAITERS.get(task, 0) + 1
         try:
             return await asyncio.shield(task)
         finally:
-            remaining = _SHARED_WAITERS[key] - 1
+            remaining = _SHARED_WAITERS[task] - 1
             if remaining:
-                _SHARED_WAITERS[key] = remaining
+                _SHARED_WAITERS[task] = remaining
             else:
-                _SHARED_WAITERS.pop(key, None)
+                _SHARED_WAITERS.pop(task, None)
                 # One Stop must not abort a restore still needed by another queued item.
                 # With no consumers left, cancellation can reach the transport/registry.
                 if not task.done():
@@ -505,7 +505,9 @@ class AssetService:
             # The restore already has a shared task and verified source bytes. Avoid a separately shielded
             # explicit-Prepare task so Stop can cancel the upload and settle its registry state.
             restored = await AssetService(self.backend, registry)._prepare(
-                retained.path, self._content(prepared), await asyncio.to_thread(retained.path.stat)
+                retained.path,
+                AssetContent("lora", prepared.identifier, prepared.sha256, prepared.size, "auto_restore"),
+                await asyncio.to_thread(retained.path.stat),
             )
         finally:
             await settle(registry.aclose())
