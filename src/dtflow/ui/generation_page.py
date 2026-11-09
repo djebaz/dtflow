@@ -1176,9 +1176,13 @@ class GenerationPage:
     def _event(self, event: BackendEvent) -> None:
         if not self._generating:
             return  # a late event after completion never changes the settled view
-        if event.kind == "assets_restored" and event.stage:
+        if event.kind in ("assets_restored", "assets_failed") and event.stage:
+            failed = event.kind == "assets_failed"
             activity_strip(self.page).complete(
-                "assets-restored", "LoRAs restored on DT+", event.stage, "success"
+                "assets-failed" if failed else "assets-restored",
+                "LoRA preparation failed" if failed else "LoRAs restored on DT+",
+                event.stage,
+                "error" if failed else "success",
             )
             return
         if event.kind == "preparing" and event.stage == "retrying" and self._request is not None:
