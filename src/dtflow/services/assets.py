@@ -284,7 +284,7 @@ class AssetService:
             log,
             "assets.validation_not_confirmed",
             level=logging.INFO,
-            data={"status": result.status, "evidence": result.evidence, "restoring": restoring},
+            data={"asset": asset, "status": result.status, "evidence": result.evidence, "restoring": restoring},
         )
         if restoring and result.status == "upload_required":
             return await self._shared("restore", prepared, lambda: self._restore(prepared, asset, on_stage))
@@ -349,7 +349,9 @@ class AssetService:
             rebound = await registry.confirm(asset_id, operation, reference, "reconciled")
         finally:
             await registry.aclose()
-        diagnostic_event(log, "assets.rebound", level=logging.INFO, data={"receipt": rebound.receipt_id})
+        diagnostic_event(
+            log, "assets.rebound", level=logging.INFO, data={"asset": asset, "receipt": rebound.receipt_id}
+        )
         return rebound
 
     async def _restore(
@@ -360,7 +362,12 @@ class AssetService:
         try:
             retained = await asyncio.to_thread(store.find, prepared.sha256, prepared.size)
             if retained is None:
-                diagnostic_event(log, "assets.restore_blocked", level=logging.WARNING, data={"reason": "no_local_copy"})
+                diagnostic_event(
+                    log,
+                    "assets.restore_blocked",
+                    level=logging.WARNING,
+                    data={"asset": asset, "reason": "no_local_copy"},
+                )
                 raise _failure(
                     ErrorCategory.VALIDATION,
                     "prepared_asset_no_local_copy",
@@ -370,14 +377,19 @@ class AssetService:
             await asyncio.to_thread(store.verify, retained)
         except ValidationError as exc:
             diagnostic_event(
-                log, "assets.restore_blocked", level=logging.WARNING, data={"reason": "local_copy_invalid"}
+                log,
+                "assets.restore_blocked",
+                level=logging.WARNING,
+                data={"asset": asset, "reason": "local_copy_invalid"},
             )
             raise _failure(
                 ErrorCategory.VALIDATION,
                 "prepared_asset_local_copy_invalid",
                 f"LoRA {asset} is missing on DT+ and its kept local copy is unusable ({exc}). Nothing was submitted.",
             ) from None
-        diagnostic_event(log, "assets.restore_started", level=logging.INFO, data={"size": retained.size})
+        diagnostic_event(
+            log, "assets.restore_started", level=logging.INFO, data={"asset": asset, "size": retained.size}
+        )
         if on_stage is not None:
             on_stage("restoring_assets")
         registry = AssetRegistry(self.state, writer=True)
@@ -399,7 +411,9 @@ class AssetService:
             raise _failure(
                 ErrorCategory.PROTOCOL, "asset_restore_mismatch", "Restored asset does not match its record."
             )
-        diagnostic_event(log, "assets.restored", level=logging.INFO, data={"receipt": restored.receipt_id})
+        diagnostic_event(
+            log, "assets.restored", level=logging.INFO, data={"asset": asset, "receipt": restored.receipt_id}
+        )
         return restored
 
     async def reconcile(self, asset_id: str) -> tuple[dict, AssetReconciliation]:
