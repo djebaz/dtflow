@@ -73,6 +73,11 @@ class DirectCloudBackend(DrawThingsBackend):
         """Opaque identity of the key that authorized this client's generations, for local usage attribution."""
         return self._auth.key_identity
 
+    @property
+    def credential_source(self) -> str | None:
+        """Source pinned to the authenticated backend, independent of subsequent UI key switches."""
+        return self._auth.key_source
+
     async def negotiate_asset(self, content: AssetContent) -> AssetNegotiation:
         """Metadata-only BYOM negotiation for one converted LoRA; never transfers bytes."""
         return await negotiate_lora_asset(self._auth, content)
