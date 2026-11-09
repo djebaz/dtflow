@@ -860,7 +860,16 @@ async def prepare_asset(
     """Explicitly prepare a converted LoRA and retain its local copy for later bounded recovery."""
     async with open_assets(state, saved=saved) as service:
         prepared = await service.prepare(file, name, provenance=provenance)
-        return await service.registry.get(prepared.receipt_id)
+        record = await service.registry.get(prepared.receipt_id)
+        # The historical content row can have another filename/key. Present this
+        # exact successful preparation, rather than the first name to share its bytes.
+        record.update(
+            identifier=prepared.identifier,
+            remote_id=prepared.remote_id,
+            confirmed_at_utc=prepared.confirmed_at_utc,
+            state="confirmed",
+        )
+        return record
 
 
 async def reconcile_asset(
@@ -871,11 +880,28 @@ async def reconcile_asset(
         return await service.reconcile(asset_id)
 
 
-async def list_assets(state: Path) -> list[dict]:
-    """Local registry receipts and unresolved operations (no network, no writer lock)."""
+async def list_assets(state: Path, *, named: bool = False) -> list[dict]:
+    """Local receipt and unresolved-operation candidates; optionally expand logical LoRA names for Qt."""
     registry = AssetRegistry(state)
     await registry.open()
     try:
-        return [asset_view(record) for record in await registry.list()]
+        records = await registry.list()
+        if not named:
+            return [asset_view(record) for record in records]
+        parents = {record["asset_id"]: record for record in records}
+        shown = {
+            (record["asset_id"], record["identifier"]): asset_view(record)
+            for record in records if record["state"] != "confirmed"
+        }
+        for alias in await registry.choices():
+            record = dict(parents[alias.receipt_id])
+            record.update(
+                identifier=alias.identifier,
+                remote_id=alias.remote_id,
+                state="confirmed",
+                confirmed_at_utc=alias.confirmed_at_utc,
+            )
+            shown[(alias.receipt_id, alias.identifier)] = asset_view(record)
+        return list(shown.values())
     finally:
         await registry.aclose()
