@@ -341,6 +341,9 @@ class AssetService:
 
         Nothing is uploaded: the receipt adopts the server's current reference for this scope, and the operation log
         keeps the earlier evidence."""
+        known = _CURRENT.get((prepared.backend_id, prepared.origin, self.backend.scope, prepared.receipt_id))
+        if known is not None and known.remote_id == reference:
+            return known  # A concurrent item already rebound it to this very reference.
         registry = AssetRegistry(self.state, writer=True)
         try:
             await registry.open()
