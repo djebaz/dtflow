@@ -25,7 +25,7 @@ from dtflow.core.models import PREPARATION_STATES, AssetContent, PreparedAsset, 
 from dtflow.persistence import store
 from dtflow.persistence.store import PersistenceError
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 UNRESOLVED = ("intent", "transferring")
 SOURCES = ("transfer", "already_exists", "reconciled")
 
@@ -56,6 +56,16 @@ SCHEMA = (
         evidence TEXT NOT NULL,
         started_at_utc TEXT NOT NULL,
         updated_at_utc TEXT NOT NULL
+    )""",
+    """CREATE TABLE IF NOT EXISTS asset_key_receipts (
+        asset_id TEXT NOT NULL REFERENCES assets(asset_id),
+        credential_id TEXT NOT NULL,
+        identifier TEXT NOT NULL,
+        remote_id TEXT NOT NULL,
+        state TEXT NOT NULL,
+        confirmed_at_utc TEXT NOT NULL,
+        updated_at_utc TEXT NOT NULL,
+        PRIMARY KEY(asset_id, credential_id)
     )""",
 )
 
@@ -154,7 +164,7 @@ class AssetRegistry:
 
     def _check_version(self, db: sqlite3.Connection, *, create: bool) -> None:
         version = db.execute("PRAGMA user_version").fetchone()[0]
-        if version not in (0, SCHEMA_VERSION):
+        if version not in (0, 1, SCHEMA_VERSION):
             raise PersistenceError("Unsupported asset-registry schema; no reset or migration was performed.")
         if create:
             db.execute("PRAGMA journal_mode=WAL")
@@ -266,14 +276,22 @@ class AssetRegistry:
                 (state, evidence, now, asset_id),
             )
 
-    async def confirm(self, asset_id: str, operation_id: str | None, remote_id: str, source: str) -> PreparedAsset:
-        """Atomically store the server-acknowledged reference and return the immutable prepared reference."""
+    async def confirm(
+        self, asset_id: str, operation_id: str | None, remote_id: str, source: str,
+        *, credential_id: str | None = None, identifier: str | None = None,
+    ) -> PreparedAsset:
+        """Commit server evidence; keep separate references for each DT+ credential bucket."""
         if source not in SOURCES:
             raise ValidationError("Unsupported receipt source.")
-        return await self._run(self._write, self._confirm, asset_id, operation_id, remote_id, source)
+        return await self._run(
+            self._write, self._confirm, asset_id, operation_id, remote_id, source, credential_id, identifier
+        )
 
     @staticmethod
-    def _confirm(db, asset_id: str, operation_id: str | None, remote_id: str, source: str) -> PreparedAsset:
+    def _confirm(
+        db, asset_id: str, operation_id: str | None, remote_id: str, source: str,
+        credential_id: str | None, identifier: str | None,
+    ) -> PreparedAsset:
         now = _now()
         db.execute(
             "UPDATE assets SET remote_id=?, state='confirmed', evidence=?, source=?, confirmed_at_utc=?,"
@@ -285,7 +303,60 @@ class AssetRegistry:
                 "UPDATE asset_operations SET state='confirmed', evidence=?, updated_at_utc=? WHERE operation_id=?",
                 ("confirmed_" + source, now, operation_id),
             )
-        return AssetRegistry._prepared(db.execute("SELECT * FROM assets WHERE asset_id=?", (asset_id,)).fetchone())
+        row = db.execute("SELECT * FROM assets WHERE asset_id=?", (asset_id,)).fetchone()
+        if credential_id is not None:
+            db.execute(
+                "INSERT INTO asset_key_receipts "
+                "(asset_id, credential_id, identifier, remote_id, state, confirmed_at_utc, updated_at_utc)"
+                " VALUES (?,?,?,?, 'confirmed',?,?) "
+                "ON CONFLICT(asset_id, credential_id) DO UPDATE SET "
+                "identifier=excluded.identifier, remote_id=excluded.remote_id, state='confirmed', "
+                "confirmed_at_utc=excluded.confirmed_at_utc, updated_at_utc=excluded.updated_at_utc",
+                (asset_id, credential_id, identifier or row["identifier"], remote_id, now, now),
+            )
+        prepared = AssetRegistry._prepared(row)
+        if credential_id is not None and identifier is not None:
+            from dataclasses import replace
+            prepared = replace(prepared, identifier=identifier)
+        return prepared
+
+    async def scoped(self, asset_id: str, credential_id: str) -> PreparedAsset | None:
+        """Return a confirmed receipt only for this key; schema-1 historical rows are not attributed."""
+        return await self._run(self._scoped, asset_id, credential_id)
+
+    def _scoped(self, asset_id: str, credential_id: str) -> PreparedAsset | None:
+        if not self.path.exists():
+            return None
+        with closing(self._connect()) as db:
+            if db.execute("PRAGMA user_version").fetchone()[0] < 2:
+                return None
+            row = db.execute(
+                "SELECT a.*, k.identifier AS scoped_identifier, k.remote_id AS scoped_remote, "
+                "k.confirmed_at_utc AS scoped_confirmed FROM assets a "
+                "JOIN asset_key_receipts k ON k.asset_id=a.asset_id "
+                "WHERE a.asset_id=? AND k.credential_id=? AND k.state='confirmed'",
+                (asset_id, credential_id),
+            ).fetchone()
+            if row is None:
+                return None
+            from dataclasses import replace
+            return replace(
+                self._prepared(row),
+                identifier=row["scoped_identifier"], remote_id=row["scoped_remote"],
+                confirmed_at_utc=row["scoped_confirmed"],
+            )
+
+    async def invalidate_scope(self, asset_id: str, credential_id: str) -> None:
+        """A verified missing asset must not be trusted again until restored."""
+        return await self._run(self._write, self._invalidate_scope, asset_id, credential_id)
+
+    @staticmethod
+    def _invalidate_scope(db, asset_id: str, credential_id: str) -> None:
+        db.execute(
+            "UPDATE asset_key_receipts SET state='missing', updated_at_utc=? "
+            "WHERE asset_id=? AND credential_id=?",
+            (_now(), asset_id, credential_id),
+        )
 
     @staticmethod
     def _prepared(row: sqlite3.Row) -> PreparedAsset:
