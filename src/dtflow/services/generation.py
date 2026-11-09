@@ -228,10 +228,10 @@ class GenerationService:
             if callable(ensure_many):
                 confirmed = await ensure_many(request.prepared_assets, lambda stage: preparation(stage))
             else:
-                confirmed = tuple([
+                confirmed = [
                     await self.assets.ensure(prepared, lambda stage: preparation(stage))
                     for prepared in request.prepared_assets
-                ])
+                ]
             if tuple(confirmed) != tuple(request.prepared_assets):
                 changed = [
                     new.receipt_id for old, new in zip(request.prepared_assets, confirmed, strict=True) if old != new
