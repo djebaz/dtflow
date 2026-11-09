@@ -165,9 +165,7 @@ class QueueDispatcher:
             or not possible_missing_asset(failure)
         ):
             return False
-        wanted = {
-            (item.identifier, item.sha256, item.size) for item in request.prepared_assets
-        }
+        wanted = {(item.identifier, item.sha256, item.size) for item in request.prepared_assets}
         running = self._asset_recovery
         if running is not None and not running.done():
             restored = await asyncio.shield(running)
