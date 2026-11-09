@@ -256,9 +256,9 @@ class AssetRegistry:
             asset_id = row["asset_id"]
             if action == "prepare" and row["state"] != "confirmed":
                 db.execute(
-                    "UPDATE assets SET state='intent', evidence='intent_recorded', identifier=?, updated_at_utc=? "
+                    "UPDATE assets SET state='intent', evidence='intent_recorded', updated_at_utc=? "
                     "WHERE asset_id=?",
-                    (content.identifier, now, asset_id),
+                    (now, asset_id),
                 )
         db.execute(
             "INSERT INTO asset_operations (operation_id, asset_id, action, state, evidence, started_at_utc,"
@@ -317,9 +317,11 @@ class AssetRegistry:
         identifier: str | None,
     ) -> PreparedAsset:
         now = _now()
+        # The shared content row retains the first confirmed legacy reference. A later
+        # different-key confirmation updates only its scoped receipt, never key A's history.
         db.execute(
             "UPDATE assets SET remote_id=?, state='confirmed', evidence=?, source=?, confirmed_at_utc=?,"
-            " updated_at_utc=? WHERE asset_id=?",
+            " updated_at_utc=? WHERE asset_id=? AND (state!='confirmed' OR remote_id IS NULL)",
             (remote_id, "confirmed_" + source, source, now, now, asset_id),
         )
         if operation_id is not None:
@@ -339,10 +341,13 @@ class AssetRegistry:
                 (asset_id, credential_id, identifier or row["identifier"], remote_id, now, now),
             )
         prepared = AssetRegistry._prepared(row)
-        if credential_id is not None and identifier is not None:
+        if credential_id is not None:
             from dataclasses import replace
 
-            prepared = replace(prepared, identifier=identifier)
+            prepared = replace(
+                prepared, identifier=identifier or row["identifier"],
+                remote_id=remote_id, confirmed_at_utc=now,
+            )
         return prepared
 
     async def scoped(self, asset_id: str, credential_id: str, identifier: str) -> PreparedAsset | None:
