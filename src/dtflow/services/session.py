@@ -892,7 +892,8 @@ async def list_assets(state: Path, *, named: bool = False) -> list[dict]:
         parents = {record["asset_id"]: record for record in records}
         shown = {
             (record["asset_id"], record["identifier"]): asset_view(record)
-            for record in records if record["state"] != "confirmed"
+            for record in records
+            if record["state"] != "confirmed"
         }
         for alias in await registry.choices():
             record = dict(parents[alias.receipt_id])
