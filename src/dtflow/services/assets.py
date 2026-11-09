@@ -385,7 +385,10 @@ class AssetService:
             return tuple([await self._verify(item, on_stage, restoring=self.state is not None)
                           for item in prepared_assets])
         if self.state is None:
-            raise _failure(ErrorCategory.VALIDATION, "asset_scope_unavailable", "Asset state is unavailable.")
+            # Stateless callers only validate exact remote references; they cannot retain or restore bytes.
+            return tuple([
+                await self._verify(item, on_stage, restoring=False) for item in prepared_assets
+            ])
         registry = AssetRegistry(self.state)
         await registry.open()
         try:
