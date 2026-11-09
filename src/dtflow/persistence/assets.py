@@ -266,25 +266,33 @@ class AssetRegistry:
         )
         return asset_id, operation
 
-    async def mark(self, asset_id: str, operation_id: str, state: str, evidence: str, *, asset: bool = True) -> None:
+    async def mark(
+        self, asset_id: str, operation_id: str, state: str, evidence: str,
+        *, asset: bool = True, protect_confirmed: bool = False,
+    ) -> None:
         """Record a non-confirmed state (``transferring``, ``unknown`` or ``failed``) for an operation.
 
         ``asset=False`` keeps the asset row as it is: a failed metadata check says nothing about an existing receipt.
         """
         if state not in PREPARATION_STATES or state == "confirmed":
             raise ValidationError("Use confirm() to record a confirmed receipt.")
-        await self._run(self._write, self._mark, asset_id, operation_id, state, evidence, asset)
+        await self._run(self._write, self._mark, asset_id, operation_id, state, evidence, asset, protect_confirmed)
 
     @staticmethod
-    def _mark(db, asset_id: str, operation_id: str, state: str, evidence: str, asset: bool) -> None:
+    def _mark(
+        db, asset_id: str, operation_id: str, state: str, evidence: str,
+        asset: bool, protect_confirmed: bool,
+    ) -> None:
         now = _now()
         db.execute(
             "UPDATE asset_operations SET state=?, evidence=?, updated_at_utc=? WHERE operation_id=?",
             (state, evidence, now, operation_id),
         )
         if asset:
+            # Preserve a confirmed historical receipt while recording this key's failed operation.
+            where = "WHERE asset_id=? AND state!='confirmed'" if protect_confirmed else "WHERE asset_id=?"
             db.execute(
-                "UPDATE assets SET state=?, evidence=?, updated_at_utc=? WHERE asset_id=?",
+                "UPDATE assets SET state=?, evidence=?, updated_at_utc=? " + where,
                 (state, evidence, now, asset_id),
             )
 
@@ -316,12 +324,27 @@ class AssetRegistry:
         identifier: str | None,
     ) -> PreparedAsset:
         now = _now()
-        # The legacy path still updates its one reference. For scoped DT+ keys, keep
-        # an already-confirmed historical row unchanged; each key's current reference
-        # lives in asset_key_receipts instead.
+        # Keep cross-key historical receipt evidence untouched. When the exact same
+        # key/name/reference is the sole confirmed scope, update its source for the
+        # explicit Prepare status while keeping older operation history available.
+        same_sole_scope = False
+        if credential_id is not None:
+            scopes = db.execute(
+                "SELECT credential_id, identifier, remote_id, state FROM asset_key_receipts WHERE asset_id=?",
+                (asset_id,),
+            ).fetchall()
+            same_sole_scope = (
+                len(scopes) == 1
+                and scopes[0]["credential_id"] == credential_id
+                and scopes[0]["identifier"] == (identifier or db.execute(
+                    "SELECT identifier FROM assets WHERE asset_id=?", (asset_id,)
+                ).fetchone()["identifier"])
+                and scopes[0]["state"] == "confirmed"
+                and scopes[0]["remote_id"] == remote_id
+            )
         where = (
             "WHERE asset_id=?"
-            if credential_id is None
+            if credential_id is None or same_sole_scope
             else "WHERE asset_id=? AND (state!='confirmed' OR remote_id IS NULL)"
         )
         db.execute(
