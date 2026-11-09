@@ -13,6 +13,7 @@ import json
 import logging
 import os
 import re
+import tempfile
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -89,11 +90,21 @@ class LoraStore:
 
     # -- operations (blocking; callers run them in a worker thread) -------------------------------------------------
 
+    def _path(self, item: dict) -> Path:
+        """Never use an indexed name to escape or redirect outside the managed store."""
+        name = item.get("name")
+        if not isinstance(name, str) or not name or _safe_name(name) != name:
+            raise ValidationError("A retained LoRA index entry has an unsafe filename; nothing was changed.")
+        path = self.directory / name
+        if path.is_symlink():
+            raise ValidationError("A retained LoRA points to a link; nothing was changed.")
+        return path
+
     def find(self, sha256: str, size: int) -> RetainedFile | None:
-        """The retained copy of exactly these bytes, if the index lists it and the file is still there."""
+        """Find a copy by recorded content identity; callers verify its bytes before uploading."""
         for item in self._read():
             if item.get("sha256") == sha256 and item.get("size") == size:
-                path = self.directory / str(item.get("name", ""))
+                path = self._path(item)
                 if path.is_file():
                     return RetainedFile(path.name, sha256, size, path)
         return None
@@ -108,24 +119,48 @@ class LoraStore:
             raise ValidationError(f"Retained LoRA {retained.name} no longer matches its recorded checksum.")
 
     def retain(self, source: Path, sha256: str, size: int) -> RetainedFile:
-        """Keep a verified copy of ``source`` (already measured as ``sha256``/``size``); identical bytes are not duplicated."""
+        """Keep verified source bytes, deduplicated by digest/size; repair a damaged managed copy if possible."""
         source = Path(source)
         handle = self._locked()
         try:
             files = self._read()
-            existing = self.find(sha256, size)
-            if existing is not None:
-                return existing
-            name = _safe_name(source.name)
-            taken = {item.get("name") for item in files}
-            if name in taken or (self.directory / name).exists():
-                stem, dot, extension = name.rpartition(".")
-                name = f"{stem}-{sha256[:8]}.{extension}" if dot else f"{name}-{sha256[:8]}"
-            target = self.directory / name
-            part = self.directory / f".{name}.part"
+            matching = next(
+                (item for item in files if item.get("sha256") == sha256 and item.get("size") == size),
+                None,
+            )
+            if matching is not None:
+                target = self._path(matching)
+                name = target.name
+                if target.is_file():
+                    retained = RetainedFile(name, sha256, size, target)
+                    try:
+                        self.verify(retained)
+                    except ValidationError:
+                        # Source is rehashed below before atomically repairing this recorded copy.
+                        pass
+                    else:
+                        return retained
+                elif target.exists():
+                    raise ValidationError("The retained LoRA destination is not a regular file.")
+            else:
+                original = _safe_name(source.name)
+                stem, suffix = os.path.splitext(original)
+                taken = {str(item.get("name", "")).casefold() for item in files}
+                name = original
+                counter = 0
+                while name.casefold() in taken or os.path.lexists(self.directory / name):
+                    counter += 1
+                    end = f"-{sha256[:8]}" + (f"-{counter}" if counter > 1 else "")
+                    name = f"{stem}{end}{suffix}"
+                target = self.directory / name
+
+            temporary = None
             digest, total = hashlib.sha256(), 0
             try:
-                with source.open("rb") as reader, part.open("wb") as writer:
+                with source.open("rb") as reader, tempfile.NamedTemporaryFile(
+                    mode="wb", dir=self.directory, prefix=".lora-", suffix=".part", delete=False
+                ) as writer:
+                    temporary = Path(writer.name)
                     while chunk := reader.read(CHUNK):
                         digest.update(chunk)
                         total += len(chunk)
@@ -134,15 +169,19 @@ class LoraStore:
                     os.fsync(writer.fileno())
                 if (digest.hexdigest(), total) != (sha256, size):
                     raise ValidationError("The LoRA file changed while it was copied; no copy was kept.")
-                os.replace(part, target)
+                if matching is None and os.path.lexists(target):
+                    raise ValidationError("The retained LoRA destination appeared during copying; nothing was overwritten.")
+                os.replace(temporary, target)
             except OSError as exc:
                 raise ValidationError("A copy of the LoRA file could not be kept in application data.") from exc
             finally:
-                part.unlink(missing_ok=True)
-            files.append(
-                {"name": name, "sha256": sha256, "size": size, "retained_at_utc": datetime.now(UTC).isoformat()}
-            )
-            self._write(files)
+                if temporary is not None:
+                    temporary.unlink(missing_ok=True)
+            if matching is None:
+                files.append(
+                    {"name": name, "sha256": sha256, "size": size, "retained_at_utc": datetime.now(UTC).isoformat()}
+                )
+                self._write(files)
             return RetainedFile(name, sha256, size, target)
         finally:
             handle.close()
@@ -151,7 +190,7 @@ class LoraStore:
         """(file count, total bytes) of indexed files that still exist."""
         count = total = 0
         for item in self._read():
-            path = self.directory / str(item.get("name", ""))
+            path = self._path(item)
             if path.is_file():
                 count += 1
                 total += path.stat().st_size
@@ -170,7 +209,7 @@ class LoraStore:
                 return False
             for item in files:
                 if (item.get("sha256"), item.get("size")) == (sha256, size):
-                    (self.directory / _safe_name(str(item.get("name", "")))).unlink(missing_ok=True)
+                    self._path(item).unlink(missing_ok=True)
             self._write(kept)
             return True
         finally:
@@ -182,7 +221,7 @@ class LoraStore:
         try:
             files = self._read()
             for item in files:
-                (self.directory / _safe_name(str(item.get("name", "")))).unlink(missing_ok=True)
+                self._path(item).unlink(missing_ok=True)
             self._write([])
             return len(files)
         finally:
