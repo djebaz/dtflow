@@ -324,27 +324,10 @@ class AssetRegistry:
         identifier: str | None,
     ) -> PreparedAsset:
         now = _now()
-        # Keep cross-key historical receipt evidence untouched. When the exact same
-        # key/name/reference is the sole confirmed scope, update its source for the
-        # explicit Prepare status while keeping older operation history available.
-        same_sole_scope = False
-        if credential_id is not None:
-            scopes = db.execute(
-                "SELECT credential_id, identifier, remote_id, state FROM asset_key_receipts WHERE asset_id=?",
-                (asset_id,),
-            ).fetchall()
-            same_sole_scope = (
-                len(scopes) == 1
-                and scopes[0]["credential_id"] == credential_id
-                and scopes[0]["identifier"] == (identifier or db.execute(
-                    "SELECT identifier FROM assets WHERE asset_id=?", (asset_id,)
-                ).fetchone()["identifier"])
-                and scopes[0]["state"] == "confirmed"
-                and scopes[0]["remote_id"] == remote_id
-            )
+        # Key-scoped references are stored separately; a confirmed historical row
+        # is never rewritten by another key or a later recheck.
         where = (
-            "WHERE asset_id=?"
-            if credential_id is None or same_sole_scope
+            "WHERE asset_id=?" if credential_id is None
             else "WHERE asset_id=? AND (state!='confirmed' OR remote_id IS NULL)"
         )
         db.execute(
