@@ -30,7 +30,7 @@ from dtflow.core.models import (
 from dtflow.core.storage import AttemptStore
 from dtflow.core.tasks import settle
 from dtflow.diagnostics import ATTEMPT
-from dtflow.diagnostics import event as diagnostic_event
+from dtflow.diagnostics import cloud_key_data, event as diagnostic_event
 from dtflow.persistence.original_io import (
     OriginalImagesBusyError,
     OriginalImagesUnavailableError,
@@ -111,6 +111,13 @@ class GenerationService:
                     timeout_phase=phase,
                 )
             ) from exc
+
+    def _key_diagnostics(self) -> dict:
+        """Return the non-secret identity pinned to this backend, not the current UI selection."""
+        return cloud_key_data(
+            getattr(self.backend, "credential_usage", None),
+            getattr(self.backend, "credential_source", None),
+        )
 
     async def _attribute_credential(self, attempt_id: str) -> None:
         """Record which opaque key identity produced this saved output (cloud only); best effort, never a failure.
@@ -320,6 +327,7 @@ class GenerationService:
                 "backend": caps.backend_id,
                 "request_id": request.request_id,
                 "model_id": request.model_id,
+                **self._key_diagnostics(),
             },
         )
         stage = SubmissionStage.NOT_SUBMITTED
@@ -427,6 +435,7 @@ class GenerationService:
                 level=logging.INFO,
                 data={
                     "outputs": len(paths),
+                    **self._key_diagnostics(),
                 },
             )
             return SavedGeneration(
@@ -494,6 +503,7 @@ class GenerationService:
                     "code": failure.code,
                     "category": failure.category,
                     "outcome": failure.remote_outcome,
+                    **self._key_diagnostics(),
                 },
             )
             await self.store.transition(
