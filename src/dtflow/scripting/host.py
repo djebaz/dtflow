@@ -574,7 +574,8 @@ class ScriptHost:
         if assets is not None and callable(getattr(assets, "ensure_many", None)):
             distinct = {
                 (asset.identifier, asset.sha256, asset.size): asset
-                for request in requests for asset in request.prepared_assets
+                for request in requests
+                for asset in request.prepared_assets
             }
             if distinct:
                 await assets.ensure_many(tuple(distinct.values()))
