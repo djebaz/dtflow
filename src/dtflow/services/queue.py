@@ -71,7 +71,11 @@ class QueueDispatcher:
             # Resolve all distinct first-use receipts before opening up to ten generation lanes.
             # Legacy and cross-key receipts share one BYOM batch, not one check per item.
             assets = getattr(self.service, "assets", None)
-            if assets is not None and callable(getattr(assets, "ensure_many", None)):
+            if (
+                assets is not None
+                and getattr(assets, "state", None) is not None
+                and callable(getattr(assets, "ensure_many", None))
+            ):
                 try:
                     _, _, records = await asyncio.to_thread(read_queue_requests, self.store.directory, queue_id)
                     distinct = {}
