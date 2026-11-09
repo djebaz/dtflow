@@ -173,7 +173,8 @@ class QueueDispatcher:
                 return True
 
         pending = tuple(
-            item for item in request.prepared_assets
+            item
+            for item in request.prepared_assets
             if (item.identifier, item.sha256, item.size) not in self._recovery_attempted
         )
         if not pending:
