@@ -194,7 +194,8 @@ class LoraAssetPanel:
         """Identifier -> confirmed local receipt id of the custom LoRAs that can be bound (cloud only)."""
         return {
             record["identifier"]: record["asset_id"]
-            for record in self._records.values() if record["state"] == "confirmed"
+            for record in self._records.values()
+            if record["state"] == "confirmed"
         }
 
     def add(self) -> None:
