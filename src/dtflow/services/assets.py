@@ -183,13 +183,15 @@ class AssetService:
                     },
                 )
                 return receipt
-            await self.registry.mark(asset_id, operation, "transferring", "transfer_started")
+            await self.registry.mark(
+                asset_id, operation, "transferring", "transfer_started", asset=credential_id is None
+            )
             transferred = True
             await backend.upload_asset(path, content, negotiation)
         except asyncio.CancelledError:
             await settle(
                 self._settle_unknown(
-                    asset_id, operation, "cancelled" if transferred else "cancelled_early", transferred
+                    asset_id, operation, "cancelled" if transferred else "cancelled_early", transferred, credential_id
                 )
             )
             raise
@@ -198,7 +200,8 @@ class AssetService:
             definite = failure.remote_outcome in (RemoteOutcome.NOT_STARTED, RemoteOutcome.FAILED)
             await settle(
                 self.registry.mark(
-                    asset_id, operation, "failed" if definite or not transferred else "unknown", failure.code
+                    asset_id, operation, "failed" if definite or not transferred else "unknown",
+                    failure.code, asset=credential_id is None,
                 )
             )
             raise
@@ -206,7 +209,7 @@ class AssetService:
             # Persistence failed before any PUT began: nothing was transferred; leftover intent is swept to unknown.
             raise
         except Exception:
-            await settle(self._settle_unknown(asset_id, operation, "unexpected_failure", transferred))
+            await settle(self._settle_unknown(asset_id, operation, "unexpected_failure", transferred, credential_id))
             raise _failure(
                 ErrorCategory.PROTOCOL, "asset_unexpected_failure", "Asset preparation failed.", RemoteOutcome.UNKNOWN
             ) from None
@@ -214,10 +217,10 @@ class AssetService:
         try:
             after = await backend.negotiate_asset(content)
         except asyncio.CancelledError:
-            await settle(self._settle_unknown(asset_id, operation, "cancelled_after_transfer", True))
+            await settle(self._settle_unknown(asset_id, operation, "cancelled_after_transfer", True, credential_id))
             raise
         except BackendError as exc:
-            await settle(self._settle_unknown(asset_id, operation, exc.failure.code, True))
+            await settle(self._settle_unknown(asset_id, operation, exc.failure.code, True, credential_id))
             raise _failure(
                 ErrorCategory.PROTOCOL,
                 "asset_upload_unconfirmed",
@@ -225,7 +228,7 @@ class AssetService:
                 RemoteOutcome.UNKNOWN,
             ) from None
         if after.status != "exists":
-            await settle(self._settle_unknown(asset_id, operation, "post_upload_unconfirmed", True))
+            await settle(self._settle_unknown(asset_id, operation, "post_upload_unconfirmed", True, credential_id))
             raise _failure(
                 ErrorCategory.PROTOCOL,
                 "asset_upload_unconfirmed",
@@ -246,7 +249,7 @@ class AssetService:
             raise
         except (PersistenceError, ValidationError):
             try:
-                await settle(self._settle_unknown(asset_id, operation, "receipt_write_failed", True))
+                await settle(self._settle_unknown(asset_id, operation, "receipt_write_failed", True, credential_id))
             except Exception:
                 diagnostic_event(
                     log,
@@ -271,8 +274,14 @@ class AssetService:
         )
         return receipt
 
-    async def _settle_unknown(self, asset_id: str, operation: str, evidence: str, transferred: bool) -> None:
-        await self.registry.mark(asset_id, operation, "unknown" if transferred else "failed", evidence)
+    async def _settle_unknown(
+        self, asset_id: str, operation: str, evidence: str, transferred: bool,
+        credential_id: str | None = None,
+    ) -> None:
+        await self.registry.mark(
+            asset_id, operation, "unknown" if transferred else "failed",
+            evidence, asset=credential_id is None,
+        )
 
     # -- metadata-only checks -------------------------------------------------------------------------------------
 
@@ -404,7 +413,10 @@ class AssetService:
         registry = AssetRegistry(self.state)
         await registry.open()
         try:
-            existing = [await registry.scoped(item.receipt_id, credential_id) for item in prepared_assets]
+            existing = [
+                await registry.scoped(item.receipt_id, credential_id, item.identifier)
+                for item in prepared_assets
+            ]
         finally:
             await registry.aclose()
         missing = []
@@ -627,8 +639,8 @@ class AssetService:
         Nothing is uploaded: the receipt adopts the server's current reference for this scope, and the operation log
         keeps the earlier evidence."""
         known = _CURRENT.get((prepared.backend_id, prepared.origin, self.backend.scope, prepared.receipt_id))
-        if known is not None and known.remote_id == reference:
-            return known  # A concurrent item already rebound it to this very reference.
+        if credential_id is None and known is not None and known.remote_id == reference:
+            return known  # Only the legacy single-scope cache can authorize this shortcut.
         registry = AssetRegistry(self.state, writer=True)
         try:
             try:
@@ -708,7 +720,7 @@ class AssetService:
                 ) from None
             if credential_id is not None:
                 # Once DT+ positively reports a missing copy, no sibling can trust this key's old receipt.
-                await registry.invalidate_scope(prepared.receipt_id, credential_id)
+                await registry.invalidate_scope(prepared.receipt_id, credential_id, prepared.identifier)
             # The restore already has a shared task and verified source bytes. Avoid a separately shielded
             # explicit-Prepare task so Stop can cancel the upload and settle its registry state.
             restored = await AssetService(self.backend, registry)._prepare(
