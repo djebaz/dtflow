@@ -204,7 +204,8 @@ class AssetService:
                     )
                 return receipt
             await self.registry.mark(
-                asset_id, operation, "transferring", "transfer_started", asset=credential_id is None
+                asset_id, operation, "transferring", "transfer_started",
+                protect_confirmed=credential_id is not None,
             )
             transferred = True
             await backend.upload_asset(path, content, negotiation)
@@ -224,7 +225,7 @@ class AssetService:
                     operation,
                     "failed" if definite or not transferred else "unknown",
                     failure.code,
-                    asset=credential_id is None,
+                    protect_confirmed=credential_id is not None,
                 )
             )
             raise
@@ -308,7 +309,7 @@ class AssetService:
             operation,
             "unknown" if transferred else "failed",
             evidence,
-            asset=credential_id is None,
+            protect_confirmed=credential_id is not None,
         )
 
     # -- metadata-only checks -------------------------------------------------------------------------------------
