@@ -461,6 +461,7 @@ class AssetService:
         if not prepared_assets or self.state is None or await self._credential_id() is None:
             return False
         if self._failure_recovery is None:
+
             async def probe():
                 restored: list[str] = []
                 await self.ensure_many(prepared_assets, on_stage, force=True, restored_out=restored)
@@ -582,6 +583,7 @@ class AssetService:
         """One operation per (action, scope, content); callers needing it concurrently join it."""
         key = (
             action,
+            str(self.state.resolve()) if self.state is not None else "",
             self.backend.backend_id,
             self.backend.origin,
             scope_id or self.backend.scope,
