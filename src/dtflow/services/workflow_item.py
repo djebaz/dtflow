@@ -43,7 +43,7 @@ from time import monotonic
 from typing import Any
 from uuid import uuid4
 
-from dtflow.core.models import SEED_LIMIT, BackendError, BackendEvent, ErrorCategory, RemoteOutcome, ValidationError
+from dtflow.core.models import SEED_LIMIT, BackendError, BackendEvent, RemoteOutcome, ValidationError
 from dtflow.core.output_layout import OutputLayout, group_name, slug
 from dtflow.core.retry_policy import AUTO_RETRIES, AUTO_RETRY_DELAY, RETRY_STAGE, auto_retry_request, auto_retryable
 from dtflow.core.tasks import settle
