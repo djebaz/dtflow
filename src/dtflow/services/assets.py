@@ -52,6 +52,7 @@ _CHECKS: dict[tuple, asyncio.Task] = {}
 _SHARED_WAITERS: dict[asyncio.Task, int] = {}
 _BATCHES: dict[tuple, dict[tuple[str, str, int], asyncio.Future]] = {}
 _BATCH_TASKS: dict[tuple, asyncio.Task] = {}
+_BATCH_INFLIGHT: dict[tuple, asyncio.Future] = {}
 
 
 def _failure(
@@ -346,23 +347,44 @@ class AssetService:
     async def _negotiate_many(
         self, contents: tuple[AssetContent, ...], credential_id: str
     ) -> dict[tuple[str, str, int], AssetNegotiation]:
-        """Coalesce near-simultaneous queue/branch requests into one BYOM batch per key."""
-        scope = (self.backend.backend_id, self.backend.origin, credential_id)
+        """Join in-flight BYOM lookups by exact key, state directory and LoRA identity.
+
+        A batch can close for new distinct assets when HTTP starts; its existing members
+        remain joinable until the response settles, including when the queue has ten waiters.
+        """
+        scope = (
+            asyncio.get_running_loop(),
+            str(self.state.resolve()) if self.state is not None else "",
+            self.backend.backend_id,
+            self.backend.origin,
+            credential_id,
+        )
         pending = _BATCHES.setdefault(scope, {})
         awaited = {}
         for content in contents:
             identity = self._identity(content)
-            if identity not in pending:
-                pending[identity] = asyncio.get_running_loop().create_future()
-            awaited[identity] = pending[identity]
-        if scope not in _BATCH_TASKS or _BATCH_TASKS[scope].done():
+            key = (*scope, *identity)
+            future = _BATCH_INFLIGHT.get(key)
+            if future is None:
+                future = asyncio.get_running_loop().create_future()
+                _BATCH_INFLIGHT[key] = future
+                pending[identity] = future
+
+                def finished(done, key=key):
+                    if _BATCH_INFLIGHT.get(key) is done:
+                        _BATCH_INFLIGHT.pop(key, None)
+                    if not done.cancelled():
+                        done.exception()  # Observe a failed lookup if all consumers were cancelled.
+
+                future.add_done_callback(finished)
+            awaited[identity] = future
+
+        if pending and scope not in _BATCH_TASKS:
 
             async def flush() -> None:
                 await asyncio.sleep(0.02)
                 batch = _BATCHES.pop(scope, {})
-                # Release the batch slot before awaiting the network, so requests arriving
-                # during a flush get their own bounded flush instead of waiting forever.
-                _BATCH_TASKS.pop(scope, None)
+                _BATCH_TASKS.pop(scope, None)  # Let new distinct assets start a later batch.
                 if not batch:
                     return
                 unique = tuple(AssetContent("lora", *identity) for identity in batch)
@@ -370,7 +392,6 @@ class AssetService:
                     negotiate = getattr(self.backend, "negotiate_assets", None)
                     if callable(negotiate):
                         answers = {}
-                        # Keep the provider request bounded even for a thousand-item queue with varied LoRAs.
                         for start in range(0, len(unique), 64):
                             answers.update(await negotiate(unique[start : start + 64]))
                     else:
@@ -384,6 +405,7 @@ class AssetService:
                     for future in batch.values():
                         if not future.done():
                             future.set_exception(exc)
+
             task = asyncio.create_task(flush())
             _BATCH_TASKS[scope] = task
             task.add_done_callback(
