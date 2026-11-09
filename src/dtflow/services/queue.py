@@ -103,7 +103,9 @@ class QueueDispatcher:
                                 await asyncio.gather(preparation, return_exceptions=True)
                 except BackendError as exc:
                     diagnostic_event(
-                        log, "queue.asset_prepare_blocked", level=logging.WARNING,
+                        log,
+                        "queue.asset_prepare_blocked",
+                        level=logging.WARNING,
                         data={"code": exc.failure.code, "queue_id": queue_id},
                     )
                     await asyncio.to_thread(post_control, self.store.directory, queue_id, "pause")
