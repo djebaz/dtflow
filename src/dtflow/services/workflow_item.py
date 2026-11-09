@@ -79,6 +79,7 @@ from dtflow.persistence.queues import QueueError, post_control
 from dtflow.persistence.store import PersistenceError, SQLiteAttempts
 from dtflow.persistence.workflow_items import BAD_STEP_STATES, WorkflowRequest
 from dtflow.services import session
+from dtflow.services.assets import possible_missing_asset
 from dtflow.services.generation import GenerationService
 from dtflow.services.workflow_prompts import prompt_counts, resolve as resolve_prompt
 from dtflow.services.workflow_queue import (
@@ -364,6 +365,8 @@ class _Execution:
         self.asset_gate = asyncio.Event()
         self.asset_gate.set()
         self.asset_recovery: asyncio.Task | None = None
+        self.recovery_attempted: set[tuple[str, str, int]] = set()
+        self.recovery_assets: frozenset[tuple[str, str, int]] = frozenset()
         self.dirty = False
         # Each planned submission may get the shared automatic retry (#241): at most planned x 2 before any Retry.
         self.allowance = request.planned * (1 + AUTO_RETRIES)
@@ -836,40 +839,54 @@ class _Execution:
     # -- submission ------------------------------------------------------------------------------------------------
 
     async def recover_assets(self, keys: list[Key], request, failure) -> bool:
-        """One restoration shared across concurrent branches; no duplicate checks or uploads."""
+        """Hold new branches while one repair covers a bounded group of LoRA identities."""
         assets = getattr(self.runner.service, "assets", None)
         if (
             assets is None
             or not request.prepared_assets
-            or failure.category != ErrorCategory.REMOTE_REJECTION
+            or not possible_missing_asset(failure)
             or not callable(getattr(assets, "recover_missing", None))
         ):
             return False
-        if self.asset_recovery is None:
-            self.asset_gate.clear()
-            self.set_stage(keys, "Restoring LoRA on DT+")
+        wanted = {(item.identifier, item.sha256, item.size) for item in request.prepared_assets}
+        if self.asset_recovery is not None and not self.asset_recovery.done():
+            restored = await asyncio.shield(self.asset_recovery)
+            if restored and wanted & self.recovery_assets:
+                return True
+        pending = tuple(
+            item for item in request.prepared_assets
+            if (item.identifier, item.sha256, item.size) not in self.recovery_attempted
+        )
+        if not pending:
+            return False
+        self.recovery_assets = frozenset(
+            (item.identifier, item.sha256, item.size) for item in pending
+        )
+        self.recovery_attempted.update(self.recovery_assets)
+        self.asset_gate.clear()
+        self.set_stage(keys, "Restoring LoRA on DT+")
 
-            async def repair():
-                try:
-                    return await assets.recover_missing(request.prepared_assets)
-                except asyncio.CancelledError:
-                    raise
-                except Exception as exc:
-                    diagnostic_event(
-                        log,
-                        "workflow.asset_recovery_failed",
-                        level=logging.WARNING,
-                        data={"reason": type(exc).__name__},
-                    )
-                    await asyncio.to_thread(post_control, self.runner.state, self.queue_id, "pause")
-                    self.go.clear()
-                    return False
-                finally:
-                    self.asset_gate.set()
+        async def repair():
+            try:
+                return await assets.recover_missing(
+                    pending, on_stage=lambda stage: self.set_stage(keys, "Restoring LoRA on DT+")
+                )
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:
+                diagnostic_event(
+                    log,
+                    "workflow.asset_recovery_failed",
+                    level=logging.WARNING,
+                    data={"reason": type(exc).__name__},
+                )
+                await asyncio.to_thread(post_control, self.runner.state, self.queue_id, "pause")
+                self.go.clear()
+                return False
+            finally:
+                self.asset_gate.set()
 
-            self.asset_recovery = asyncio.create_task(repair())
-        if self.asset_recovery.done():
-            return False  # One bounded recovery episode per workflow, not per failed branch.
+        self.asset_recovery = asyncio.create_task(repair())
         return await asyncio.shield(self.asset_recovery)
 
     async def submit(self, keys: list[Key], request, weight: int, prepared=None):
