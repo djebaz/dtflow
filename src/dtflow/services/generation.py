@@ -210,8 +210,9 @@ class GenerationService:
             )
         if request.prepared_assets:
             preparation("validating_assets")
-            # Validation is metadata-only: a stale, inaccessible or unconfirmed reference blocks the request here,
-            # before any attempt exists, and never triggers an upload or substitutes another receipt.
+            # A fresh DT+ metadata check validates each bound LoRA before the attempt exists.
+            # Only a positive missing-file result may restore verified retained bytes; identical content may rebind
+            # to a newer server reference. Unknown/authentication failures cannot authorize an upload.
             if self.assets is None or any(item.backend_id != caps.backend_id for item in request.prepared_assets):
                 raise BackendError(
                     BackendFailure(
