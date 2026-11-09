@@ -854,14 +854,13 @@ class _Execution:
             if restored and wanted & self.recovery_assets:
                 return True
         pending = tuple(
-            item for item in request.prepared_assets
+            item
+            for item in request.prepared_assets
             if (item.identifier, item.sha256, item.size) not in self.recovery_attempted
         )
         if not pending:
             return False
-        self.recovery_assets = frozenset(
-            (item.identifier, item.sha256, item.size) for item in pending
-        )
+        self.recovery_assets = frozenset((item.identifier, item.sha256, item.size) for item in pending)
         self.recovery_attempted.update(self.recovery_assets)
         self.asset_gate.clear()
         self.set_stage(keys, "Restoring LoRA on DT+")
