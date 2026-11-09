@@ -42,6 +42,9 @@ _INFLIGHT: dict[tuple, asyncio.Task] = {}
 # turns, because the asset writer lock admits a single writer per state directory.
 _SHARED: dict[tuple, asyncio.Task] = {}
 _WRITER = asyncio.Lock()
+# Receipts rebound or restored during this process, so later items still carrying the older reference are validated
+# against the current one instead of repeating the same rebind for every item.
+_CURRENT: dict[tuple, PreparedAsset] = {}
 
 
 def _failure(
@@ -277,6 +280,10 @@ class AssetService:
                 f"LoRA {asset}: prepared asset belongs to a different backend scope. Nothing was submitted.",
                 diagnostics=(("asset", asset),),
             )
+        if restoring:
+            newer = _CURRENT.get((prepared.backend_id, prepared.origin, self.backend.scope, prepared.receipt_id))
+            if newer is not None and (newer.sha256, newer.size) == (prepared.sha256, prepared.size):
+                prepared = newer
         result, cause = await self._check(self._content(prepared), prepared.remote_id)
         if result.status == "confirmed":
             return prepared
@@ -349,6 +356,7 @@ class AssetService:
             rebound = await registry.confirm(asset_id, operation, reference, "reconciled")
         finally:
             await registry.aclose()
+        _CURRENT[(rebound.backend_id, rebound.origin, self.backend.scope, rebound.receipt_id)] = rebound
         diagnostic_event(
             log, "assets.rebound", level=logging.INFO, data={"asset": asset, "receipt": rebound.receipt_id}
         )
@@ -411,6 +419,7 @@ class AssetService:
             raise _failure(
                 ErrorCategory.PROTOCOL, "asset_restore_mismatch", "Restored asset does not match its record."
             )
+        _CURRENT[(restored.backend_id, restored.origin, self.backend.scope, restored.receipt_id)] = restored
         diagnostic_event(
             log, "assets.restored", level=logging.INFO, data={"asset": asset, "receipt": restored.receipt_id}
         )
