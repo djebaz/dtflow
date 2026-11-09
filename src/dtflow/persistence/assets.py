@@ -329,6 +329,7 @@ class AssetRegistry:
         prepared = AssetRegistry._prepared(row)
         if credential_id is not None and identifier is not None:
             from dataclasses import replace
+
             prepared = replace(prepared, identifier=identifier)
         return prepared
 
@@ -352,6 +353,7 @@ class AssetRegistry:
             if row is None:
                 return None
             from dataclasses import replace
+
             return replace(
                 self._prepared(row),
                 identifier=row["scoped_identifier"], remote_id=row["scoped_remote"],
