@@ -558,6 +558,8 @@ class QueuePage:
             logging.getLogger(__name__).warning("Queue refresh failed (%s).", type(failure).__name__)
             self._message(present_generation_failure(failure))
             return
+        previous_views, previous_detail = self._views, self._detail
+        previous_cap, previous_selected = self._shared_cap, self._selected
         views, self._detail, shared = result
         if epoch is None or epoch == self._shared_epoch:
             self._shared_cap = shared
@@ -598,8 +600,20 @@ class QueuePage:
             self._select_after = None
         elif self._selected not in self._views:
             self._set_selected(None)
-        self._render()
         busy = self.dispatching_here or any(view["status"] in ("running", "queued") for view in views)
+        if (
+            not busy
+            and self._views == previous_views
+            and tuple(self._views) == tuple(previous_views)
+            and self._detail == previous_detail
+            and self._shared_cap == previous_cap
+            and self._selected == previous_selected
+        ):
+            # Skip redundant idle-only rendering. Live backend progress is not part of these snapshots:
+            # running queues must still redraw their header and items on each poll.
+            self._sync()
+        else:
+            self._render()
         if busy or self.page.queueWorkspace.isVisible():
             self._timer.start(POLL_MS if busy else IDLE_POLL_MS)
         else:
@@ -1138,15 +1152,18 @@ class QueuePage:
         # attempt/folder of its own. Select an actual step for image actions.
         self._output_folder = Path(outputs[0]).parent if outputs and not row.is_script_parent else None
         page.itemOpenFolderButton.setEnabled(self._output_folder is not None)
-        verified = (
+        # Thumbnail refresh is not navigation authority: the Images workspace resolves the
+        # committed identity against live history on click. Keep this action stable while
+        # previews revalidate in the background, rather than flashing every few seconds.
+        can_open = (
             not self._composing
             and page.queueItemsView.isVisible()
             and bool(row.outputs)
             and not row.is_script_parent
             and bool(row.gallery_identity)
-            and self.model.thumbnails.available(row.outputs[0], row.gallery_identity)
+            and self._images_hook is not None
         )
-        page.itemOpenImagesButton.setEnabled(verified and self._images_hook is not None)
+        page.itemOpenImagesButton.setEnabled(can_open)
         fit_rail(page.queueInspector)
 
     def _thumbnail_changed(self, path: str) -> None:
@@ -1175,8 +1192,9 @@ class QueuePage:
             and row.gallery_identity
             and row.outputs
         ):
-            if self.model.thumbnails.available(row.outputs[0], row.gallery_identity):
-                self._images_hook(row.gallery_identity)
+            # Gallery.open_output performs the authoritative live identity lookup and
+            # warns if this saved image has since become unavailable.
+            self._images_hook(row.gallery_identity)
 
     def open_output_folder(self) -> None:
         if self._output_folder is not None:

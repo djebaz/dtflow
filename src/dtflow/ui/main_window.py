@@ -697,6 +697,7 @@ class MainWindow:
             self._close_logs,
             runner=self.runner,
             escape_owner=self._inline_consumes_escape,
+            state_dir=self.state_dir,
         )
 
     def _originals_ready_checked(self, _result, error) -> None:
@@ -896,7 +897,11 @@ class MainWindow:
 
     def _close_logs(self) -> None:
         if self.form.workspaceStack.currentWidget() is self.logs_marker:
-            self.form.workspaceStack.setCurrentWidget(self._logs_previous_page)
+            if self._logs_previous_page is self.queue_page:
+                # Returning from Logs must take the same fresh read/render path as Queue navigation.
+                self._show_queue()
+            else:
+                self.form.workspaceStack.setCurrentWidget(self._logs_previous_page)
 
     def _sync_grid_index_status(self, first: int, total: int) -> None:
         """Publish the real Grid viewport position in the global status bar."""

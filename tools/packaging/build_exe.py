@@ -43,6 +43,8 @@ def main(argv: list[str] | None = None) -> int:
         "--onedir", action="store_true", help="build a folder distribution instead of the default one-file executable"
     )
     args = parser.parse_args(argv)
+    # Derive all potential Component filters from source at packaging time, never at startup or Logs open.
+    subprocess.run([sys.executable, str(ROOT / "tools" / "generate_diagnostic_components.py")], cwd=ROOT, check=True)
     commit, status = source_identity()
     if status == "dirty":
         print(

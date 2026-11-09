@@ -104,6 +104,55 @@ def save_workflow_defaults(state: Path, values: dict[str, int]) -> Path:
     return _write(state, document)
 
 
+# Small, durable Logs view preferences.  The reader remains independent of these choices.
+# Text can contain user-entered search terms: never include preferences in diagnostic events.
+LOG_STRING_LIMITS = {
+    "search": 512,
+    "component": 200,
+    "event": 200,
+    "min_level": 16,
+    "from_ts": 64,
+    "to_ts": 64,
+    "field": 128,
+    "operator": 16,
+    "value": 512,
+}
+LOG_BOOL_KEYS = ("follow", "compact", "advanced")
+
+
+def _logs_preferences(document: dict) -> dict:
+    """Return only bounded, supported preference fields; ignore corrupt individual values."""
+    raw = document.get("logs_preferences")
+    if not isinstance(raw, dict):
+        return {}
+    result = {
+        key: value
+        for key, limit in LOG_STRING_LIMITS.items()
+        if isinstance((value := raw.get(key)), str) and len(value) <= limit and "\x00" not in value
+    }
+    result.update({key: raw[key] for key in LOG_BOOL_KEYS if type(raw.get(key)) is bool})
+    if type(raw.get("sort")) is int and 0 <= raw["sort"] <= 9:
+        result["sort"] = raw["sort"]
+    return result
+
+
+def load_logs_preferences(state: Path) -> dict:
+    """Restore a prior Logs view without reading or querying any diagnostic sessions."""
+    return _logs_preferences(_read(state))
+
+
+def save_logs_preferences(state: Path, preferences: dict) -> bool:
+    """Atomically save one validated view state, preserving all other shared settings."""
+    values = _logs_preferences({"logs_preferences": preferences})
+    with _DIALOG_LOCK:
+        document = _read(state)
+        if document.get("logs_preferences") == values:
+            return False
+        document["logs_preferences"] = values
+        _write(state, document)
+    return True
+
+
 # Remembered file and folder dialog locations (#312): ``dialog_paths[runtime][key] = {"path", "title"}``. Windows and WSL
 # can share one state directory, so each runtime keeps its own spelling and a path is never translated between them.
 MAX_DIALOG_PATH = 4096
