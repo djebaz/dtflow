@@ -5,18 +5,30 @@ assign sequence numbers, parse messages, or own sinks. Disabled levels stay chea
 """
 
 import logging
+import re
 from contextvars import ContextVar
 from time import monotonic_ns
 
 
-def cloud_key_data(identity: tuple[str, str | None] | None, source: str | None = None) -> dict:
-    """Non-secret identity of the key pinned to this cloud operation, when resolved."""
+def cloud_key_data(
+    identity: tuple[str, str | None] | None, source: str | None = None, *, alias: str | None = None
+) -> dict:
+    """Identify the pinned cloud key with a safe human label, never its secret."""
     if identity is None:
         return {}
     credential_id, hint = identity
+    safe_alias = (
+        alias
+        if type(alias) is str
+        and 0 < len(alias) <= 40
+        and alias.isprintable()
+        and not re.search(r"dk_[A-Za-z0-9]{6,}", alias)
+        else None
+    )
+    label = safe_alias or (f"Key {hint}••••" if hint else f"Key {credential_id[:4].upper()}")
     return {
         "credential_id": credential_id,
-        **({"key_hint": hint} if hint else {}),
+        "key_alias": label,
         **({"key_source": source} if source in ("saved", "environment") else {}),
     }
 
