@@ -937,25 +937,42 @@ class AssetService:
         _CURRENT[(restored.backend_id, restored.origin, self.backend.scope, restored.receipt_id)] = restored
         return restored
 
-    async def reconcile(self, asset_id: str) -> tuple[dict, AssetReconciliation]:
-        """Metadata-only server validation of one local record under the current credential; never a PUT."""
+    async def reconcile(
+        self, asset_id: str, identifier: str | None = None
+    ) -> tuple[dict, AssetReconciliation]:
+        """Check one named LoRA against the selected DT+ key without uploading or changing other keys."""
         record = await self.registry.get(asset_id)
         if record is None:
             raise ValidationError("No local asset receipt has that identifier.")
         if (record["backend_id"], record["origin"]) != (self.backend.backend_id, self.backend.origin):
             raise ValidationError("The record belongs to a different backend scope than the selected credential.")
-        content = self._content(record)
+        name = identifier or record["identifier"]
+        content = AssetContent("lora", name, record["sha256"], record["size"])
+        credential_id = await self._credential_id()
+        scoped = (
+            await self.registry.scoped(asset_id, credential_id, name) if credential_id is not None else None
+        )
+        was_confirmed = scoped is not None if credential_id is not None else record["state"] == "confirmed"
+        previous = scoped.remote_id if scoped is not None else (
+            record["remote_id"] if credential_id is None and was_confirmed else None
+        )
         _, operation = await self.registry.begin(content, record["backend_id"], record["origin"], "reconcile")
-        was_confirmed = record["state"] == "confirmed"
-        result = await self.check(content, record["remote_id"] if was_confirmed else None)
+        result = await self.check(content, previous)
         if result.status == "confirmed":
-            await self.registry.confirm(asset_id, operation, result.reference, "reconciled")
+            await self.registry.confirm(
+                asset_id, operation, result.reference, "reconciled",
+                credential_id=credential_id, identifier=name,
+            )
         elif result.status == "upload_required":
-            # The server positively lacks the file: a receipt that claimed otherwise is stale, an unresolved record failed.
+            if credential_id is not None:
+                await self.registry.invalidate_scope(asset_id, credential_id, name)
+            # A missing scoped copy is not evidence that another key lost its receipt.
             await self.registry.mark(
-                asset_id, operation, "unknown" if was_confirmed else "failed", "reconcile_" + result.evidence
+                asset_id, operation, "unknown" if was_confirmed else "failed",
+                "reconcile_" + result.evidence,
+                asset=credential_id is None,
             )
         else:
-            # An unreachable, unauthorized or inconsistent check says nothing certain, so the record itself is kept.
+            # Unavailable or inconsistent checks cannot invalidate a confirmed receipt.
             await self.registry.mark(asset_id, operation, "unknown", "reconcile_" + result.evidence, asset=False)
         return await self.registry.get(asset_id), result
