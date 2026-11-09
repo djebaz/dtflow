@@ -367,7 +367,12 @@ class QueueDispatcher:
                         log,
                         "queue.item_auto_retry",
                         level=logging.WARNING,
-                        data={"item_id": item_id, "code": first.code, "category": first.category},
+                        data={
+                            "item_id": item_id,
+                            "code": first.code,
+                            "category": first.category,
+                            **self.service._key_diagnostics(),
+                        },
                     )
                     if self.on_event is not None:
                         self.on_event(
@@ -429,6 +434,7 @@ class QueueDispatcher:
                 data={
                     "item_id": item_id,
                     "state": state,
+                    **self.service._key_diagnostics(),
                 },
             )
         finally:

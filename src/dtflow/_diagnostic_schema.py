@@ -286,7 +286,12 @@ class _Snapshot:
                 safe_key = self.value(key, depth + 1)
                 if safe_key in result:
                     raise CaptureRejected("unsupported_value")
-                result[safe_key] = "[redacted]" if _PRIVATE_KEY.search(key) else self.value(item, depth + 1)
+                # This is a domain-separated, truncated digest, not a token. Do not whitelist
+                # arbitrary credential-shaped field names or values; hints remain short display metadata.
+                identity = key == "credential_id" and type(item) is str and re.fullmatch(r"[0-9a-f]{32}", item)
+                result[safe_key] = (
+                    self.value(item, depth + 1) if identity or not _PRIVATE_KEY.search(key) else "[redacted]"
+                )
             return result
         raise CaptureRejected("unsupported_value")
 

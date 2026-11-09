@@ -266,25 +266,44 @@ class AssetRegistry:
         )
         return asset_id, operation
 
-    async def mark(self, asset_id: str, operation_id: str, state: str, evidence: str, *, asset: bool = True) -> None:
+    async def mark(
+        self,
+        asset_id: str,
+        operation_id: str,
+        state: str,
+        evidence: str,
+        *,
+        asset: bool = True,
+        protect_confirmed: bool = False,
+    ) -> None:
         """Record a non-confirmed state (``transferring``, ``unknown`` or ``failed``) for an operation.
 
         ``asset=False`` keeps the asset row as it is: a failed metadata check says nothing about an existing receipt.
         """
         if state not in PREPARATION_STATES or state == "confirmed":
             raise ValidationError("Use confirm() to record a confirmed receipt.")
-        await self._run(self._write, self._mark, asset_id, operation_id, state, evidence, asset)
+        await self._run(self._write, self._mark, asset_id, operation_id, state, evidence, asset, protect_confirmed)
 
     @staticmethod
-    def _mark(db, asset_id: str, operation_id: str, state: str, evidence: str, asset: bool) -> None:
+    def _mark(
+        db,
+        asset_id: str,
+        operation_id: str,
+        state: str,
+        evidence: str,
+        asset: bool,
+        protect_confirmed: bool,
+    ) -> None:
         now = _now()
         db.execute(
             "UPDATE asset_operations SET state=?, evidence=?, updated_at_utc=? WHERE operation_id=?",
             (state, evidence, now, operation_id),
         )
         if asset:
+            # Preserve a confirmed historical receipt while recording this key's failed operation.
+            where = "WHERE asset_id=? AND state!='confirmed'" if protect_confirmed else "WHERE asset_id=?"
             db.execute(
-                "UPDATE assets SET state=?, evidence=?, updated_at_utc=? WHERE asset_id=?",
+                "UPDATE assets SET state=?, evidence=?, updated_at_utc=? " + where,
                 (state, evidence, now, asset_id),
             )
 
@@ -316,9 +335,8 @@ class AssetRegistry:
         identifier: str | None,
     ) -> PreparedAsset:
         now = _now()
-        # The legacy path still updates its one reference. For scoped DT+ keys, keep
-        # an already-confirmed historical row unchanged; each key's current reference
-        # lives in asset_key_receipts instead.
+        # Key-scoped references are stored separately; a confirmed historical row
+        # is never rewritten by another key or a later recheck.
         where = (
             "WHERE asset_id=?"
             if credential_id is None
@@ -391,10 +409,23 @@ class AssetRegistry:
 
     @staticmethod
     def _invalidate_scope(db, asset_id: str, credential_id: str, identifier: str) -> None:
-        db.execute(
+        now = _now()
+        affected = db.execute(
             "UPDATE asset_key_receipts SET state='missing', updated_at_utc=? "
-            "WHERE asset_id=? AND credential_id=? AND identifier=?",
-            (_now(), asset_id, credential_id, identifier),
+            "WHERE asset_id=? AND credential_id=? AND identifier=? AND state='confirmed'",
+            (now, asset_id, credential_id, identifier),
+        )
+        if not affected.rowcount:
+            # A different key's absence cannot invalidate unassigned legacy receipt evidence.
+            return
+        # A historical content row is no longer locally confirmed when its final
+        # key-scoped receipt disappears. Other keys retain their confirmed evidence.
+        db.execute(
+            "UPDATE assets SET state='unknown', evidence='scoped_receipt_missing', updated_at_utc=? "
+            "WHERE asset_id=? AND state='confirmed' "
+            "AND NOT EXISTS (SELECT 1 FROM asset_key_receipts "
+            "WHERE asset_id=? AND state='confirmed')",
+            (now, asset_id, asset_id),
         )
 
     @staticmethod

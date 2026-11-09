@@ -17,7 +17,7 @@ import httpx
 
 from dtflow.backends.drawthings.errors import api_error, diagnostics, error
 from dtflow.core.models import BackendError, CredentialProvider, ErrorCategory, ValidationError
-from dtflow.diagnostics import api_error_data, event
+from dtflow.diagnostics import api_error_data, cloud_key_data, event
 from dtflow.services.cloud_usage import key_identity
 
 log = logging.getLogger(__name__)
@@ -111,6 +111,7 @@ class CloudAuth:
         )
         self._key: str | None = None
         self._identity: tuple[str, str | None] | None = None
+        self._source: str | None = None
         self._token: str | None = None
         self._expires = 0.0
         self._margin = 0.0
@@ -133,6 +134,11 @@ class CloudAuth:
         """Opaque credential identity and optional four-character hint once the key was resolved; never the key."""
         return self._identity
 
+    @property
+    def key_source(self) -> str | None:
+        """Source pinned when this client resolved the key; never follows later UI selection."""
+        return self._source
+
     async def token(self) -> str:
         if self._closed:
             raise error(ErrorCategory.CONNECTIVITY, "cloud_auth_closed", "Cloud authentication client is closed.")
@@ -144,7 +150,8 @@ class CloudAuth:
                 # Retrieve abandoned-waiter failures without logging tokens or response details.
                 self._refresh.add_done_callback(lambda task: None if task.cancelled() else task.exception())
             refresh = self._refresh
-        return await asyncio.shield(refresh)
+        token = await asyncio.shield(refresh)
+        return token
 
     async def _exchange(self) -> str:
         try:
@@ -168,6 +175,7 @@ class CloudAuth:
                 raise error(ErrorCategory.AUTHENTICATION, "missing_cloud_credentials", "Cloud API key is missing.")
             self._key = credential.secret.strip()
             self._identity = key_identity(self._key)
+            self._source = credential.source
         started = self._clock()
         reply = await self._post("/sdk/token", {"apiKey": self._key, "appCheckType": "none", "appCheckToken": None})
         try:
@@ -329,6 +337,7 @@ class CloudAuth:
                             "operation": path.strip("/").replace("/", "."),
                             "http_status": 200,
                             "elapsed_ms": elapsed(),
+                            **cloud_key_data(self._identity, self._source),
                         },
                     )
                     return _HTTPReply(bytes(body), tuple(response.headers.items()), elapsed())

@@ -282,7 +282,12 @@ async def negotiate_lora_asset(auth: CloudAuth, content: AssetContent) -> AssetN
         _observe_upload(upload, content.sha256)
     if _valid_reference(reference):
         result = AssetNegotiation("exists", reference)
-        event(logging.getLogger(__name__), "backend.asset_negotiated", level=logging.DEBUG, data={"outcome": "exists"})
+        event(
+            logging.getLogger(__name__),
+            "backend.asset_negotiated",
+            level=logging.DEBUG,
+            data={"outcome": "exists"},
+        )
         return result
     if not _usable_upload(upload):
         reason = "no_matching_asset_entry"

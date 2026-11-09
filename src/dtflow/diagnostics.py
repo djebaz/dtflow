@@ -8,6 +8,19 @@ import logging
 from contextvars import ContextVar
 from time import monotonic_ns
 
+
+def cloud_key_data(identity: tuple[str, str | None] | None, source: str | None = None) -> dict:
+    """Non-secret identity of the key pinned to this cloud operation, when resolved."""
+    if identity is None:
+        return {}
+    credential_id, hint = identity
+    return {
+        "credential_id": credential_id,
+        **({"key_hint": hint} if hint else {}),
+        **({"key_source": source} if source in ("saved", "environment") else {}),
+    }
+
+
 ATTEMPT: ContextVar[str] = ContextVar("dtflow_attempt", default="-")
 
 
