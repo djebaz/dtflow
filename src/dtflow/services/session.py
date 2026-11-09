@@ -28,7 +28,6 @@ from dtflow.core.models import (
     BackendEvent,
     CredentialProvider,
     Designation,
-    ErrorCategory,
     EventSink,
     RemoteOutcome,
     InventorySnapshot,
