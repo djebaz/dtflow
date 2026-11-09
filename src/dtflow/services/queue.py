@@ -368,7 +368,9 @@ class QueueDispatcher:
                         "queue.item_auto_retry",
                         level=logging.WARNING,
                         data={
-                            "item_id": item_id, "code": first.code, "category": first.category,
+                            "item_id": item_id,
+                            "code": first.code,
+                            "category": first.category,
                             **self.service._key_diagnostics(),
                         },
                     )

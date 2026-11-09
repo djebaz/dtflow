@@ -267,8 +267,14 @@ class AssetRegistry:
         return asset_id, operation
 
     async def mark(
-        self, asset_id: str, operation_id: str, state: str, evidence: str,
-        *, asset: bool = True, protect_confirmed: bool = False,
+        self,
+        asset_id: str,
+        operation_id: str,
+        state: str,
+        evidence: str,
+        *,
+        asset: bool = True,
+        protect_confirmed: bool = False,
     ) -> None:
         """Record a non-confirmed state (``transferring``, ``unknown`` or ``failed``) for an operation.
 
@@ -280,8 +286,13 @@ class AssetRegistry:
 
     @staticmethod
     def _mark(
-        db, asset_id: str, operation_id: str, state: str, evidence: str,
-        asset: bool, protect_confirmed: bool,
+        db,
+        asset_id: str,
+        operation_id: str,
+        state: str,
+        evidence: str,
+        asset: bool,
+        protect_confirmed: bool,
     ) -> None:
         now = _now()
         db.execute(
@@ -327,7 +338,8 @@ class AssetRegistry:
         # Key-scoped references are stored separately; a confirmed historical row
         # is never rewritten by another key or a later recheck.
         where = (
-            "WHERE asset_id=?" if credential_id is None
+            "WHERE asset_id=?"
+            if credential_id is None
             else "WHERE asset_id=? AND (state!='confirmed' OR remote_id IS NULL)"
         )
         db.execute(

@@ -283,7 +283,9 @@ async def negotiate_lora_asset(auth: CloudAuth, content: AssetContent) -> AssetN
     if _valid_reference(reference):
         result = AssetNegotiation("exists", reference)
         event(
-            logging.getLogger(__name__), "backend.asset_negotiated", level=logging.DEBUG,
+            logging.getLogger(__name__),
+            "backend.asset_negotiated",
+            level=logging.DEBUG,
             data={"outcome": "exists"},
         )
         return result
@@ -428,7 +430,7 @@ async def upload_signed(
                     "http_status": status,
                     "bytes_yielded": yielded,
                     "elapsed_ms": elapsed(),
-                        },
+                },
             )
             return
         if 400 <= status < 500:

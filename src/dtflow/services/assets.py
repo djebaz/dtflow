@@ -211,7 +211,10 @@ class AssetService:
                     )
                 return receipt
             await self.registry.mark(
-                asset_id, operation, "transferring", "transfer_started",
+                asset_id,
+                operation,
+                "transferring",
+                "transfer_started",
                 protect_confirmed=credential_id is not None,
             )
             transferred = True
@@ -627,7 +630,8 @@ class AssetService:
                 data={
                     key: report[key]
                     for key in ("total", "reused", "matched", "relinked", "restored", "failed", "unresolved", "outcome")
-                } | self._key_diagnostics(),
+                }
+                | self._key_diagnostics(),
             )
             receiver = on_resolution if on_resolution is not None else self.on_resolution
             if receiver is not None:
@@ -937,9 +941,7 @@ class AssetService:
         _CURRENT[(restored.backend_id, restored.origin, self.backend.scope, restored.receipt_id)] = restored
         return restored
 
-    async def reconcile(
-        self, asset_id: str, identifier: str | None = None
-    ) -> tuple[dict, AssetReconciliation]:
+    async def reconcile(self, asset_id: str, identifier: str | None = None) -> tuple[dict, AssetReconciliation]:
         """Check one named LoRA against the selected DT+ key without uploading or changing other keys."""
         record = await self.registry.get(asset_id)
         if record is None:
@@ -949,26 +951,32 @@ class AssetService:
         name = identifier or record["identifier"]
         content = AssetContent("lora", name, record["sha256"], record["size"])
         credential_id = await self._credential_id()
-        scoped = (
-            await self.registry.scoped(asset_id, credential_id, name) if credential_id is not None else None
-        )
+        scoped = await self.registry.scoped(asset_id, credential_id, name) if credential_id is not None else None
         was_confirmed = scoped is not None if credential_id is not None else record["state"] == "confirmed"
-        previous = scoped.remote_id if scoped is not None else (
-            record["remote_id"] if credential_id is None and was_confirmed else None
+        previous = (
+            scoped.remote_id
+            if scoped is not None
+            else (record["remote_id"] if credential_id is None and was_confirmed else None)
         )
         _, operation = await self.registry.begin(content, record["backend_id"], record["origin"], "reconcile")
         result = await self.check(content, previous)
         if result.status == "confirmed":
             await self.registry.confirm(
-                asset_id, operation, result.reference, "reconciled",
-                credential_id=credential_id, identifier=name,
+                asset_id,
+                operation,
+                result.reference,
+                "reconciled",
+                credential_id=credential_id,
+                identifier=name,
             )
         elif result.status == "upload_required":
             if credential_id is not None:
                 await self.registry.invalidate_scope(asset_id, credential_id, name)
             # A missing scoped copy is not evidence that another key lost its receipt.
             await self.registry.mark(
-                asset_id, operation, "unknown" if was_confirmed else "failed",
+                asset_id,
+                operation,
+                "unknown" if was_confirmed else "failed",
                 "reconcile_" + result.evidence,
                 asset=credential_id is None,
             )

@@ -1521,15 +1521,15 @@ class MainWindow:
         if source == "environment":
             environment = status.get("environment", {})
             identity = (
-                (environment["credential_id"], environment.get("hint"))
-                if environment.get("credential_id")
-                else None
+                (environment["credential_id"], environment.get("hint")) if environment.get("credential_id") else None
             )
         else:
             selected = next((key for key in status.get("keys", ()) if key.id == choice), None)
             identity = (selected.credential_id, selected.hint) if selected is not None else None
         diagnostic_event(
-            log, "app.api_key_switched", level=logging.INFO,
+            log,
+            "app.api_key_switched",
+            level=logging.INFO,
             data={"to": source, **cloud_key_data(identity, source)},
         )
         self.refresh_credentials()
