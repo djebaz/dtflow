@@ -67,12 +67,12 @@ def _failure(
 # The deployed server can reject an unavailable custom LoRA as gRPC PERMISSION_DENIED.
 # This is a reason to check the selected bucket once, not evidence that upload is authorized.
 # Generic rejection/quota/auth failures do not trigger an unrelated BYOM lookup.
-_ASSET_REJECTION_CODES = frozenset({
+_ASSET_REJECTION_CODES = {
     "grpc_not_found",
     "grpc_failed_precondition",
     "grpc_invalid_argument",
     "grpc_permission_denied",
-})
+}
 
 
 def possible_missing_asset(failure: BackendFailure) -> bool:
