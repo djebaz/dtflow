@@ -173,7 +173,9 @@ class LoraStore:
                 if (digest.hexdigest(), total) != (sha256, size):
                     raise ValidationError("The LoRA file changed while it was copied; no copy was kept.")
                 if matching is None and os.path.lexists(target):
-                    raise ValidationError("The retained LoRA destination appeared during copying; nothing was overwritten.")
+                    raise ValidationError(
+                        "The retained LoRA destination appeared during copying; nothing was overwritten."
+                    )
                 os.replace(temporary, target)
             except OSError as exc:
                 raise ValidationError("A copy of the LoRA file could not be kept in application data.") from exc
