@@ -349,7 +349,8 @@ class QueueDispatcher:
                         repaired = await self._try_asset_recovery(queue_id, item_id, request, exc.failure)
                         # Retry a repaired request only when the provider definitely did not receive it.
                         safe_replay = (
-                            repaired and exc.failure.remote_outcome == RemoteOutcome.NOT_STARTED
+                            repaired
+                            and exc.failure.remote_outcome == RemoteOutcome.NOT_STARTED
                             and retries < AUTO_RETRIES
                         )
                         if not safe_replay and (retries >= AUTO_RETRIES or not auto_retryable(exc.failure)):

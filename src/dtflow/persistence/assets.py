@@ -380,7 +380,8 @@ class AssetRegistry:
 
             return replace(
                 self._prepared(row),
-                identifier=row["scoped_identifier"], remote_id=row["scoped_remote"],
+                identifier=row["scoped_identifier"],
+                remote_id=row["scoped_remote"],
                 confirmed_at_utc=row["scoped_confirmed"],
             )
 
