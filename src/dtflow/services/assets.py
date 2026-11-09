@@ -30,7 +30,7 @@ from dtflow.core.models import (
     ValidationError,
 )
 from dtflow.core.tasks import settle
-from dtflow.diagnostics import api_error_data, event as diagnostic_event
+from dtflow.diagnostics import api_error_data, cloud_key_data, event as diagnostic_event
 from dtflow.persistence.assets import AssetRegistry, AssetsBusyError
 from dtflow.persistence.store import PersistenceError
 from dtflow.services.lora_store import LoraStore
@@ -135,6 +135,13 @@ class AssetService:
             raise ValidationError("This operation needs the durable asset registry.")
         return self._registry
 
+    def _key_diagnostics(self) -> dict:
+        """Safe identity of this backend's pinned cloud key; never read mutable UI selection."""
+        return cloud_key_data(
+            getattr(self.backend, "credential_usage", None),
+            getattr(self.backend, "credential_source", None),
+        )
+
     # -- prepare --------------------------------------------------------------------------------------------------
 
     async def prepare(self, path: Path, identifier: str | None = None, *, provenance: str = "") -> PreparedAsset:
@@ -200,7 +207,7 @@ class AssetService:
                         log,
                         "assets.prepared",
                         level=logging.INFO,
-                        data={"receipt": receipt.receipt_id, "source": "already_exists"},
+                        data={"receipt": receipt.receipt_id, "source": "already_exists", **self._key_diagnostics()},
                     )
                 return receipt
             await self.registry.mark(
@@ -292,7 +299,7 @@ class AssetService:
                 log,
                 "assets.prepared",
                 level=logging.INFO,
-                data={"receipt": receipt.receipt_id, "source": "transfer"},
+                data={"receipt": receipt.receipt_id, "source": "transfer", **self._key_diagnostics()},
             )
         return receipt
 
@@ -620,7 +627,7 @@ class AssetService:
                 data={
                     key: report[key]
                     for key in ("total", "reused", "matched", "relinked", "restored", "failed", "unresolved", "outcome")
-                },
+                } | self._key_diagnostics(),
             )
             receiver = on_resolution if on_resolution is not None else self.on_resolution
             if receiver is not None:
