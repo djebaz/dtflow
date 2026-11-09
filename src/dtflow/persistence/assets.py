@@ -415,11 +415,14 @@ class AssetRegistry:
     @staticmethod
     def _invalidate_scope(db, asset_id: str, credential_id: str, identifier: str) -> None:
         now = _now()
-        db.execute(
+        affected = db.execute(
             "UPDATE asset_key_receipts SET state='missing', updated_at_utc=? "
-            "WHERE asset_id=? AND credential_id=? AND identifier=?",
+            "WHERE asset_id=? AND credential_id=? AND identifier=? AND state='confirmed'",
             (now, asset_id, credential_id, identifier),
         )
+        if not affected.rowcount:
+            # A different key's absence cannot invalidate unassigned legacy receipt evidence.
+            return
         # A historical content row is no longer locally confirmed when its final
         # key-scoped receipt disappears. Other keys retain their confirmed evidence.
         db.execute(
