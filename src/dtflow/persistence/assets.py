@@ -278,8 +278,14 @@ class AssetRegistry:
             )
 
     async def confirm(
-        self, asset_id: str, operation_id: str | None, remote_id: str, source: str,
-        *, credential_id: str | None = None, identifier: str | None = None,
+        self,
+        asset_id: str,
+        operation_id: str | None,
+        remote_id: str,
+        source: str,
+        *,
+        credential_id: str | None = None,
+        identifier: str | None = None,
     ) -> PreparedAsset:
         """Commit server evidence; keep separate references for each DT+ credential bucket."""
         if source not in SOURCES:
@@ -290,8 +296,13 @@ class AssetRegistry:
 
     @staticmethod
     def _confirm(
-        db, asset_id: str, operation_id: str | None, remote_id: str, source: str,
-        credential_id: str | None, identifier: str | None,
+        db,
+        asset_id: str,
+        operation_id: str | None,
+        remote_id: str,
+        source: str,
+        credential_id: str | None,
+        identifier: str | None,
     ) -> PreparedAsset:
         now = _now()
         db.execute(
