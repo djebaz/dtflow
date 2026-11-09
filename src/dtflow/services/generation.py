@@ -448,6 +448,9 @@ class GenerationService:
             raise
         except BackendError as exc:
             failure = exc.failure
+            if self.assets is not None and request.prepared_assets:
+                # A failure may mean a LoRA changed on DT+: the next item must ask again instead of trusting an old answer.
+                self.assets.forget(request.prepared_assets)
             diagnostic_event(
                 log,
                 "generation.attempt_failed",

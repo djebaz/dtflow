@@ -11,7 +11,6 @@ import asyncio
 import hashlib
 import logging
 import os
-import time
 from pathlib import Path, PureWindowsPath
 from collections.abc import Callable
 from typing import Protocol
@@ -47,11 +46,11 @@ _WRITER = asyncio.Lock()
 # against the current one instead of repeating the same rebind for every item.
 _CURRENT: dict[tuple, PreparedAsset] = {}
 # One DT+ metadata request per asset at a time: concurrent checks join it, and a positive answer is reused briefly, so
-# a queue of many items does not ask the service about the same LoRA for every item. Only "exists" is reused; failures
-# and "upload required" are always asked again.
+# a queue of many items does not ask the service about the same LoRA for every item. Only "exists" is reused, with no
+# timer: it is dropped as soon as a generation using the asset fails (``forget``) and the next item asks again.
+# Failures and "upload required" are always asked again.
 _CHECKS: dict[tuple, asyncio.Task] = {}
-_EXISTS: dict[tuple, tuple[float, object]] = {}
-EXISTS_REUSE_SECONDS = 600.0
+_EXISTS: dict[tuple, object] = {}
 
 
 def _failure(
@@ -86,6 +85,8 @@ class AssetValidator(Protocol):
     async def validate(self, prepared: PreparedAsset) -> None: ...
 
     async def ensure(self, prepared: PreparedAsset, on_stage: Callable[[str], None] | None = None) -> PreparedAsset: ...
+
+    def forget(self, assets) -> None: ...
 
 
 class AssetService:
@@ -240,15 +241,15 @@ class AssetService:
 
     async def check(self, content: AssetContent, expected: str | None) -> AssetReconciliation:
         """Fresh authenticated metadata check; never transfers. ``expected`` is the receipt's remote reference."""
-        result, _ = await self._check(content, expected)
+        result, _ = await self._check(content, expected, fresh=True)
         return result
 
     async def _check(
-        self, content: AssetContent, expected: str | None, answers: list | None = None
+        self, content: AssetContent, expected: str | None, answers: list | None = None, *, fresh: bool = False
     ) -> tuple[AssetReconciliation, BackendFailure | None]:
         """Retain backend-neutral failure evidence for dispatch without persisting response bodies."""
         try:
-            negotiation, answer = await self._negotiate_shared(content)
+            negotiation, answer = await self._negotiate_shared(content, fresh=fresh)
             if answers is not None:
                 answers.append(answer)
         except BackendError as exc:
@@ -262,7 +263,16 @@ class AssetService:
             return AssetReconciliation("unknown", "reference_mismatch", negotiation.reference), None
         return AssetReconciliation("confirmed", "server_validated", negotiation.reference), None
 
-    async def _negotiate_shared(self, content: AssetContent):
+    def forget(self, assets) -> None:
+        """Drop remembered "DT+ has it" answers for these assets, e.g. after a generation using them failed."""
+        for item in assets:
+            for key in [
+                k for k in _EXISTS if k[:2] == (item.backend_id, item.origin) and k[4:] == (item.sha256, item.size)
+            ]:
+                _EXISTS.pop(key, None)
+            _CURRENT.pop((item.backend_id, item.origin, self.backend.scope, item.receipt_id), None)
+
+    async def _negotiate_shared(self, content: AssetContent, *, fresh: bool = False):
         key = (
             self.backend.backend_id,
             self.backend.origin,
@@ -271,9 +281,9 @@ class AssetService:
             content.sha256,
             content.size,
         )
-        reused = _EXISTS.get(key)
-        if reused is not None and time.monotonic() - reused[0] < EXISTS_REUSE_SECONDS:
-            return reused[1], "reused a check made less than 10 minutes ago"
+        reused = None if fresh else _EXISTS.get(key)
+        if reused is not None:
+            return reused, "reused an earlier check (no error since)"
         task = _CHECKS.get(key)
         answer = "shared with another item in this app"
         if task is None or task.done():
@@ -284,7 +294,7 @@ class AssetService:
             task.add_done_callback(lambda done: None if done.cancelled() else done.exception())
         negotiation = await asyncio.shield(task)
         if negotiation.status == "exists":
-            _EXISTS[key] = (time.monotonic(), negotiation)
+            _EXISTS[key] = negotiation
         return negotiation, answer
 
     async def validate(self, prepared: PreparedAsset) -> None:
