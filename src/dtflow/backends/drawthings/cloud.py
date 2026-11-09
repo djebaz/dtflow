@@ -11,6 +11,7 @@ from dtflow.backends.drawthings.cloud_assets import (
     UploadTicket,
     lookup_lora_assets,
     negotiate_lora_asset,
+    negotiate_lora_assets,
     upload_signed,
 )
 from dtflow.backends.drawthings.cloud_auth import CloudAuth
@@ -75,6 +76,17 @@ class DirectCloudBackend(DrawThingsBackend):
     async def negotiate_asset(self, content: AssetContent) -> AssetNegotiation:
         """Metadata-only BYOM negotiation for one converted LoRA; never transfers bytes."""
         return await negotiate_lora_asset(self._auth, content)
+
+    async def asset_credential_identity(self) -> str:
+        """Resolve the selected DT+ key to a stable, non-secret bucket identity."""
+        await self._auth.token()
+        return self._auth.key_identity[0]
+
+    async def negotiate_assets(
+        self, contents: tuple[AssetContent, ...]
+    ) -> dict[tuple[str, str, int], AssetNegotiation]:
+        """Batch-check distinct unconfirmed LoRAs with one BYOM request."""
+        return await negotiate_lora_assets(self._auth, contents)
 
     async def upload_asset(self, path: Path, content: AssetContent, negotiation: AssetNegotiation) -> None:
         """Stream the file to the negotiated signed destination (explicit asset preparation only)."""

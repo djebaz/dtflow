@@ -1,8 +1,8 @@
 """Shared asset preparation, reconciliation and dispatch-time validation.
 
-Upload happens only here, only on an explicit ``prepare``. Generation and queue dispatch call ``validate`` (metadata
-only). The service owns orchestration and uncertainty rules; the adapter owns HTTP and signed-URL handling; the
-registry owns durable receipts. Nothing here retries a transfer that may have stored data.
+Uploads happen here during explicit ``prepare`` or when dispatch-time ``ensure`` has a positive missing-file
+response and a verified retained copy. The service owns orchestration and uncertainty rules; the adapter owns
+HTTP and signed-URL handling; the registry owns durable receipts. Uncertain transfers are never retried blindly.
 """
 
 from __future__ import annotations
@@ -12,11 +12,13 @@ import hashlib
 import logging
 import os
 from pathlib import Path, PureWindowsPath
+from collections.abc import Callable
 from typing import Protocol
 
 from dtflow.core.models import (
     AssetBackend,
     AssetContent,
+    AssetNegotiation,
     AssetReconciliation,
     BackendError,
     BackendFailure,
@@ -28,14 +30,29 @@ from dtflow.core.models import (
 )
 from dtflow.core.tasks import settle
 from dtflow.diagnostics import api_error_data, event as diagnostic_event
-from dtflow.persistence.assets import AssetRegistry
+from dtflow.persistence.assets import AssetRegistry, AssetsBusyError
 from dtflow.persistence.store import PersistenceError
+from dtflow.services.lora_store import LoraStore
 
 log = logging.getLogger(__name__)
 CHUNK = 1024 * 1024
 
 # One shielded operation per (origin, auth scope, content): identical concurrent prepares join it, anything else never does.
 _INFLIGHT: dict[tuple, asyncio.Task] = {}
+# Concurrent queue/workflow items needing the same restore or rebind join one operation, and distinct ones take
+# turns, because the asset writer lock admits a single writer per state directory.
+_SHARED: dict[tuple, asyncio.Task] = {}
+_WRITER = asyncio.Lock()
+# Receipts rebound or restored during this process, so later items still carrying the older reference are validated
+# against the current one instead of repeating the same rebind for every item.
+_CURRENT: dict[tuple, PreparedAsset] = {}
+# Concurrent metadata checks may share an in-flight request, but every later submission asks DT+ again.
+# A previous positive answer cannot prove that the remote copy still exists.
+_CHECKS: dict[tuple, asyncio.Task] = {}
+_SHARED_WAITERS: dict[asyncio.Task, int] = {}
+_BATCHES: dict[tuple, dict[tuple[str, str, int], asyncio.Future]] = {}
+_BATCH_TASKS: dict[tuple, asyncio.Task] = {}
+_BATCH_INFLIGHT: dict[tuple, asyncio.Future] = {}
 
 
 def _failure(
@@ -45,6 +62,22 @@ def _failure(
         SubmissionStage.NOT_SUBMITTED if outcome == RemoteOutcome.NOT_STARTED else SubmissionStage.POSSIBLY_SUBMITTED
     )
     return BackendError(BackendFailure(category, code, message, None, stage, outcome, diagnostics=diagnostics))
+
+
+# The deployed server can reject an unavailable custom LoRA as gRPC PERMISSION_DENIED.
+# This is a reason to check the selected bucket once, not evidence that upload is authorized.
+# Generic rejection/quota/auth failures do not trigger an unrelated BYOM lookup.
+_ASSET_REJECTION_CODES = {
+    "grpc_not_found",
+    "grpc_failed_precondition",
+    "grpc_invalid_argument",
+    "grpc_permission_denied",
+}
+
+
+def possible_missing_asset(failure: BackendFailure) -> bool:
+    """Only a plausible missing-LoRA rejection may start a bounded metadata probe."""
+    return failure.code in _ASSET_REJECTION_CODES
 
 
 def _observe(path: Path) -> tuple[os.stat_result, str]:
@@ -69,11 +102,29 @@ def _observe(path: Path) -> tuple[os.stat_result, str]:
 class AssetValidator(Protocol):
     async def validate(self, prepared: PreparedAsset) -> None: ...
 
+    async def ensure(self, prepared: PreparedAsset, on_stage: Callable[[str], None] | None = None) -> PreparedAsset: ...
+
+    def forget(self, assets) -> None: ...
+
 
 class AssetService:
-    def __init__(self, backend: AssetBackend, registry: AssetRegistry | None = None):
-        """``registry`` may be omitted by callers that only ``validate`` (generation and queue dispatch)."""
+    def __init__(
+        self,
+        backend: AssetBackend,
+        registry: AssetRegistry | None = None,
+        *,
+        state: Path | None = None,
+        store: LoraStore | None = None,
+    ):
+        """``registry`` may be omitted by callers that only ``validate``. ``store`` keeps a managed copy on every prepare;
+        ``state`` additionally lets ``ensure`` restore a file DT+ positively reports missing (generation and queues)."""
         self.backend, self._registry = backend, registry
+        self.state = Path(state) if state is not None else None
+        self.store = store if store is not None else (LoraStore(self.state) if self.state is not None else None)
+        self._failure_recovery: asyncio.Task | None = None
+        self._recovery_waiters: dict[asyncio.Task, int] = {}
+        self._recovery_checked: set[tuple[str, str, int]] = set()
+        self._recovery_restored: set[tuple[str, str, int]] = set()
 
     @property
     def registry(self) -> AssetRegistry:
@@ -88,7 +139,20 @@ class AssetService:
         path = Path(path)
         stat, digest = await asyncio.to_thread(_observe, path)
         content = AssetContent("lora", identifier or path.name, digest, stat.st_size, provenance)
-        key = (self.backend.backend_id, self.backend.origin, self.backend.scope, content.sha256, content.size)
+        if self.store is not None:
+            # Keep the durable copy first, so a failed or interrupted upload never costs the user the file.
+            kept = await asyncio.to_thread(self.store.retain, path, digest, stat.st_size)
+            diagnostic_event(
+                log, "assets.copy_kept", level=logging.INFO, data={"size": stat.st_size, "name": kept.name}
+            )
+        key = (
+            self.backend.backend_id,
+            self.backend.origin,
+            self.backend.scope,
+            content.identifier,
+            content.sha256,
+            content.size,
+        )
         task = _INFLIGHT.get(key)
         if task is None or task.done():
             task = asyncio.create_task(self._prepare(path, content, stat))
@@ -101,14 +165,33 @@ class AssetService:
         # Cancelling this caller must not cancel an operation another caller still awaits.
         return await asyncio.shield(task)
 
-    async def _prepare(self, path: Path, content: AssetContent, stat: os.stat_result) -> PreparedAsset:
+    async def _credential_id(self) -> str | None:
+        """Real DT+ clients have a durable key identity; fixture backends retain their legacy path."""
+        identity = getattr(self.backend, "asset_credential_identity", None)
+        return await identity() if callable(identity) else None
+
+    async def _prepare(
+        self,
+        path: Path,
+        content: AssetContent,
+        stat: os.stat_result,
+        negotiation: AssetNegotiation | None = None,
+    ) -> PreparedAsset:
         backend = self.backend
+        credential_id = await self._credential_id()
         asset_id, operation = await self.registry.begin(content, backend.backend_id, backend.origin)
         transferred = False
         try:
-            negotiation = await backend.negotiate_asset(content)
+            negotiation = negotiation or await backend.negotiate_asset(content)
             if negotiation.status == "exists":
-                receipt = await self.registry.confirm(asset_id, operation, negotiation.reference, "already_exists")
+                receipt = await self.registry.confirm(
+                    asset_id,
+                    operation,
+                    negotiation.reference,
+                    "already_exists",
+                    credential_id=credential_id,
+                    identifier=content.identifier,
+                )
                 diagnostic_event(
                     log,
                     "assets.prepared",
@@ -119,13 +202,15 @@ class AssetService:
                     },
                 )
                 return receipt
-            await self.registry.mark(asset_id, operation, "transferring", "transfer_started")
+            await self.registry.mark(
+                asset_id, operation, "transferring", "transfer_started", asset=credential_id is None
+            )
             transferred = True
             await backend.upload_asset(path, content, negotiation)
         except asyncio.CancelledError:
             await settle(
                 self._settle_unknown(
-                    asset_id, operation, "cancelled" if transferred else "cancelled_early", transferred
+                    asset_id, operation, "cancelled" if transferred else "cancelled_early", transferred, credential_id
                 )
             )
             raise
@@ -134,7 +219,11 @@ class AssetService:
             definite = failure.remote_outcome in (RemoteOutcome.NOT_STARTED, RemoteOutcome.FAILED)
             await settle(
                 self.registry.mark(
-                    asset_id, operation, "failed" if definite or not transferred else "unknown", failure.code
+                    asset_id,
+                    operation,
+                    "failed" if definite or not transferred else "unknown",
+                    failure.code,
+                    asset=credential_id is None,
                 )
             )
             raise
@@ -142,15 +231,18 @@ class AssetService:
             # Persistence failed before any PUT began: nothing was transferred; leftover intent is swept to unknown.
             raise
         except Exception:
-            await settle(self._settle_unknown(asset_id, operation, "unexpected_failure", transferred))
+            await settle(self._settle_unknown(asset_id, operation, "unexpected_failure", transferred, credential_id))
             raise _failure(
                 ErrorCategory.PROTOCOL, "asset_unexpected_failure", "Asset preparation failed.", RemoteOutcome.UNKNOWN
             ) from None
         # The transfer returned success; the server's own reference is still needed for a confirmed receipt.
         try:
             after = await backend.negotiate_asset(content)
+        except asyncio.CancelledError:
+            await settle(self._settle_unknown(asset_id, operation, "cancelled_after_transfer", True, credential_id))
+            raise
         except BackendError as exc:
-            await settle(self._settle_unknown(asset_id, operation, exc.failure.code, True))
+            await settle(self._settle_unknown(asset_id, operation, exc.failure.code, True, credential_id))
             raise _failure(
                 ErrorCategory.PROTOCOL,
                 "asset_upload_unconfirmed",
@@ -158,7 +250,7 @@ class AssetService:
                 RemoteOutcome.UNKNOWN,
             ) from None
         if after.status != "exists":
-            await settle(self._settle_unknown(asset_id, operation, "post_upload_unconfirmed", True))
+            await settle(self._settle_unknown(asset_id, operation, "post_upload_unconfirmed", True, credential_id))
             raise _failure(
                 ErrorCategory.PROTOCOL,
                 "asset_upload_unconfirmed",
@@ -166,10 +258,20 @@ class AssetService:
                 RemoteOutcome.UNKNOWN,
             )
         try:
-            receipt = await self.registry.confirm(asset_id, operation, after.reference, "transfer")
+            receipt = await self.registry.confirm(
+                asset_id,
+                operation,
+                after.reference,
+                "transfer",
+                credential_id=credential_id,
+                identifier=content.identifier,
+            )
+        except asyncio.CancelledError:
+            await settle(self._settle_unknown(asset_id, operation, "cancelled_after_transfer", True, credential_id))
+            raise
         except (PersistenceError, ValidationError):
             try:
-                await settle(self._settle_unknown(asset_id, operation, "receipt_write_failed", True))
+                await settle(self._settle_unknown(asset_id, operation, "receipt_write_failed", True, credential_id))
             except Exception:
                 diagnostic_event(
                     log,
@@ -194,8 +296,21 @@ class AssetService:
         )
         return receipt
 
-    async def _settle_unknown(self, asset_id: str, operation: str, evidence: str, transferred: bool) -> None:
-        await self.registry.mark(asset_id, operation, "unknown" if transferred else "failed", evidence)
+    async def _settle_unknown(
+        self,
+        asset_id: str,
+        operation: str,
+        evidence: str,
+        transferred: bool,
+        credential_id: str | None = None,
+    ) -> None:
+        await self.registry.mark(
+            asset_id,
+            operation,
+            "unknown" if transferred else "failed",
+            evidence,
+            asset=credential_id is None,
+        )
 
     # -- metadata-only checks -------------------------------------------------------------------------------------
 
@@ -210,11 +325,13 @@ class AssetService:
         return result
 
     async def _check(
-        self, content: AssetContent, expected: str | None
+        self, content: AssetContent, expected: str | None, answers: list | None = None
     ) -> tuple[AssetReconciliation, BackendFailure | None]:
         """Retain backend-neutral failure evidence for dispatch without persisting response bodies."""
         try:
-            negotiation = await self.backend.negotiate_asset(content)
+            negotiation, answer = await self._negotiate_shared(content)
+            if answers is not None:
+                answers.append(answer)
         except BackendError as exc:
             code = exc.failure.code
             if exc.failure.category in (ErrorCategory.AUTHENTICATION, ErrorCategory.CREDENTIALS):
@@ -226,8 +343,252 @@ class AssetService:
             return AssetReconciliation("unknown", "reference_mismatch", negotiation.reference), None
         return AssetReconciliation("confirmed", "server_validated", negotiation.reference), None
 
+    def forget(self, assets) -> None:
+        """Forget local receipt rebinding after a failed generation; DT+ checks are always fresh."""
+        for item in assets:
+            _CURRENT.pop((item.backend_id, item.origin, self.backend.scope, item.receipt_id), None)
+
+    async def _negotiate_shared(self, content: AssetContent):
+        key = (
+            self.backend.backend_id,
+            self.backend.origin,
+            self.backend.scope,
+            content.identifier,
+            content.sha256,
+            content.size,
+        )
+        task = _CHECKS.get(key)
+        answer = "shared with another item in this app"
+        if task is None or task.done():
+            answer = "asked DT+"
+            task = asyncio.create_task(self.backend.negotiate_asset(content))
+            _CHECKS[key] = task
+            task.add_done_callback(lambda done, key=key: _CHECKS.pop(key, None) if _CHECKS.get(key) is done else None)
+            task.add_done_callback(lambda done: None if done.cancelled() else done.exception())
+        negotiation = await asyncio.shield(task)
+        return negotiation, answer
+
+    @staticmethod
+    def _identity(content: AssetContent) -> tuple[str, str, int]:
+        return content.identifier, content.sha256, content.size
+
+    async def _negotiate_many(
+        self, contents: tuple[AssetContent, ...], credential_id: str
+    ) -> dict[tuple[str, str, int], AssetNegotiation]:
+        """Join in-flight BYOM lookups by exact key, state directory and LoRA identity.
+
+        A batch can close for new distinct assets when HTTP starts; its existing members
+        remain joinable until the response settles, including when the queue has ten waiters.
+        """
+        scope = (
+            asyncio.get_running_loop(),
+            str(self.state.resolve()) if self.state is not None else "",
+            self.backend.backend_id,
+            self.backend.origin,
+            credential_id,
+        )
+        pending = _BATCHES.setdefault(scope, {})
+        awaited = {}
+        for content in contents:
+            identity = self._identity(content)
+            key = (*scope, *identity)
+            future = _BATCH_INFLIGHT.get(key)
+            if future is None:
+                future = asyncio.get_running_loop().create_future()
+                _BATCH_INFLIGHT[key] = future
+                pending[identity] = future
+
+                def finished(done, key=key):
+                    if _BATCH_INFLIGHT.get(key) is done:
+                        _BATCH_INFLIGHT.pop(key, None)
+                    if not done.cancelled():
+                        done.exception()  # Observe a failed lookup if all consumers were cancelled.
+
+                future.add_done_callback(finished)
+            awaited[identity] = future
+
+        if pending and (scope not in _BATCH_TASKS or _BATCH_TASKS[scope].done()):
+
+            async def flush() -> None:
+                await asyncio.sleep(0.02)
+                batch = _BATCHES.pop(scope, {})
+                _BATCH_TASKS.pop(scope, None)  # Let new distinct assets start a later batch.
+                if not batch:
+                    return
+                unique = tuple(AssetContent("lora", *identity) for identity in batch)
+                try:
+                    negotiate = getattr(self.backend, "negotiate_assets", None)
+                    if callable(negotiate):
+                        answers = {}
+                        for start in range(0, len(unique), 64):
+                            answers.update(await negotiate(unique[start : start + 64]))
+                    else:
+                        answers = {self._identity(item): await self.backend.negotiate_asset(item) for item in unique}
+                    for identity, future in batch.items():
+                        if not future.done():
+                            future.set_result(answers[identity])
+                except BaseException as exc:
+                    for future in batch.values():
+                        if not future.done():
+                            future.set_exception(exc)
+
+            task = asyncio.create_task(flush())
+            _BATCH_TASKS[scope] = task
+            task.add_done_callback(
+                lambda done, key=scope: _BATCH_TASKS.pop(key, None) if _BATCH_TASKS.get(key) is done else None
+            )
+            task.add_done_callback(lambda done: None if done.cancelled() else done.exception())
+        return {identity: await asyncio.shield(future) for identity, future in awaited.items()}
+
+    async def ensure_many(
+        self,
+        prepared_assets: tuple[PreparedAsset, ...],
+        on_stage: Callable[[str], None] | None = None,
+        *,
+        force: bool = False,
+        restored_out: list[tuple[str, str, int]] | None = None,
+    ) -> tuple[PreparedAsset, ...]:
+        """Trust existing per-key receipts; batch-check only first use or an explicit recovery probe."""
+        if not prepared_assets:
+            return ()
+        credential_id = await self._credential_id()
+        if credential_id is None:
+            # Existing fixture backends keep the historical validation contract.
+            return tuple(
+                [await self._verify(item, on_stage, restoring=self.state is not None) for item in prepared_assets]
+            )
+        if self.state is None:
+            # Stateless callers only validate exact remote references; they cannot retain or restore bytes.
+            return tuple([await self._verify(item, on_stage, restoring=False) for item in prepared_assets])
+        registry = AssetRegistry(self.state)
+        await registry.open()
+        try:
+            existing = [
+                await registry.scoped(item.receipt_id, credential_id, item.identifier) for item in prepared_assets
+            ]
+        finally:
+            await registry.aclose()
+        missing = []
+        for index, item in enumerate(prepared_assets):
+            if (item.backend_id, item.origin) != (self.backend.backend_id, self.backend.origin):
+                raise _failure(ErrorCategory.VALIDATION, "prepared_asset_scope", "LoRA backend mismatch.")
+            known = existing[index]
+            if known is not None and (known.sha256, known.size, known.identifier) != (
+                item.sha256,
+                item.size,
+                item.identifier,
+            ):
+                raise _failure(ErrorCategory.VALIDATION, "prepared_asset_identity", "LoRA receipt identity changed.")
+            if force or known is None:
+                missing.append((index, item, known))
+        if not missing:
+            return tuple(existing)
+        contents = tuple(dict.fromkeys(self._content(item) for _, item, _ in missing))
+        try:
+            negotiations = await self._negotiate_many(contents, credential_id)
+        except BackendError:
+            raise
+        except Exception as exc:
+            raise _failure(
+                ErrorCategory.CONNECTIVITY, "asset_check_failed", "DT+ asset check failed; nothing uploaded."
+            ) from exc
+        results = list(existing)
+        for index, item, known in missing:
+            negotiation = negotiations[self._identity(self._content(item))]
+            if negotiation.status == "exists":
+                if known is not None and known.remote_id == negotiation.reference:
+                    results[index] = known
+                else:
+                    results[index] = await self._shared(
+                        "key-rebind:" + negotiation.reference,
+                        item,
+                        lambda item=item, ref=negotiation.reference: self._rebind(
+                            item, item.identifier, ref, credential_id=credential_id
+                        ),
+                        scope_id=credential_id,
+                    )
+            elif negotiation.status == "upload_required":
+                results[index] = await self._shared(
+                    "key-restore",
+                    item,
+                    lambda item=item, negotiation=negotiation: self._restore(
+                        item,
+                        item.identifier,
+                        on_stage,
+                        negotiation=negotiation,
+                        credential_id=credential_id,
+                    ),
+                    scope_id=credential_id,
+                )
+                if restored_out is not None:
+                    restored_out.append(self._identity(self._content(item)))
+            else:
+                raise _failure(ErrorCategory.PROTOCOL, "asset_check_inconclusive", "DT+ asset status is unknown.")
+        return tuple(results)
+
+    async def recover_missing(
+        self, prepared_assets: tuple[PreparedAsset, ...], on_stage: Callable[[str], None] | None = None
+    ) -> bool:
+        """Bound each distinct key/LoRA to one check while sharing concurrent recovery work.
+
+        Unrelated assets are not exhausted by a previous recovery. A second simultaneous
+        caller joins the active probe; after it settles, previously unchecked assets can
+        have their own bounded episode. Successful restoration counts only for the caller's
+        own LoRAs, not for an unrelated branch.
+        """
+        if not prepared_assets or self.state is None or await self._credential_id() is None:
+            return False
+        wanted = {self._identity(self._content(item)) for item in prepared_assets}
+        while True:
+            if wanted & self._recovery_restored:
+                return True
+            running = self._failure_recovery
+            if running is not None and not running.done():
+                task = running
+            else:
+                pending = tuple(
+                    item
+                    for item in prepared_assets
+                    if self._identity(self._content(item)) not in self._recovery_checked
+                )
+                if not pending:
+                    return False
+                self._recovery_checked.update(self._identity(self._content(item)) for item in pending)
+
+                async def probe(items: tuple[PreparedAsset, ...]) -> set[tuple[str, str, int]]:
+                    restored: list[tuple[str, str, int]] = []
+                    await self.ensure_many(items, on_stage, force=True, restored_out=restored)
+                    result = set(restored)
+                    self._recovery_restored.update(result)
+                    return result
+
+                task = asyncio.create_task(probe(pending))
+                self._failure_recovery = task
+                task.add_done_callback(lambda done: None if done.cancelled() else done.exception())
+            self._recovery_waiters[task] = self._recovery_waiters.get(task, 0) + 1
+            try:
+                await asyncio.shield(task)
+            finally:
+                remaining = self._recovery_waiters[task] - 1
+                if remaining:
+                    self._recovery_waiters[task] = remaining
+                else:
+                    self._recovery_waiters.pop(task, None)
+                    if not task.done():
+                        task.cancel()
+
     async def validate(self, prepared: PreparedAsset) -> None:
-        """Dispatch-time guard: require current server validation of the exact reference, or fail without uploading."""
+        """Dispatch-time guard without restoration: require current server validation or fail without uploading."""
+        await self._verify(prepared, None, restoring=False)
+
+    async def ensure(self, prepared: PreparedAsset, on_stage: Callable[[str], None] | None = None) -> PreparedAsset:
+        """Validate the receipt; only a positive "upload required" answer restores it from the retained local copy.
+
+        Returns the receipt to submit with: the original when the server already has the file, otherwise the freshly
+        confirmed one. One restoration is attempted per asset per call; the old receipt remains in the registry."""
+        return (await self.ensure_many((prepared,), on_stage))[0]
+
+    async def _verify(self, prepared: PreparedAsset, on_stage, *, restoring: bool) -> PreparedAsset:
         # Display only the local basename, through shared privacy projection; never the remote reference or path.
         asset = (
             api_error_data(
@@ -243,28 +604,237 @@ class AssetService:
                 f"LoRA {asset}: prepared asset belongs to a different backend scope. Nothing was submitted.",
                 diagnostics=(("asset", asset),),
             )
-        result, cause = await self._check(self._content(prepared), prepared.remote_id)
-        if result.status != "confirmed":
-            problem = _failure(
-                ErrorCategory.VALIDATION,
-                "prepared_asset_" + result.status,
-                f"LoRA {asset} is not validated by the server ({result.evidence}); nothing was uploaded or submitted.",
+        if restoring:
+            prepared = await self._latest(prepared)
+        answers: list[str] = []
+        result, cause = await self._check(self._content(prepared), prepared.remote_id, answers)
+        if result.status == "confirmed":
+            return prepared
+        diagnostic_event(
+            log,
+            {"upload_required": "assets.missing_on_dtplus"}.get(
+                result.status,
+                "assets.reference_changed" if result.evidence == "reference_mismatch" else "assets.check_inconclusive",
+            ),
+            level=logging.INFO,
+            data={
+                "asset": asset,
+                "answer": answers[0] if answers else "unknown",
+                "evidence": result.evidence,
+                "restoring": restoring,
+            },
+        )
+        if restoring and result.status == "upload_required":
+            return await self._shared("restore", prepared, lambda: self._restore(prepared, asset, on_stage))
+        if restoring and result.evidence == "reference_mismatch" and result.reference:
+            return await self._shared(
+                "rebind:" + result.reference, prepared, lambda: self._rebind(prepared, asset, result.reference)
             )
-            details = {"validation_reason": result.evidence}
-            if cause is not None:
-                # Only the adapter's projected evidence crosses this boundary, never provider objects or references.
-                details.update(cause.diagnostics)
-                details["cause_code"] = cause.code
-                details["cause_category"] = cause.category.value
-            details["asset"] = asset
-            raise BackendError(
-                BackendFailure(
-                    problem.failure.category,
-                    problem.failure.code,
-                    problem.failure.message,
-                    diagnostics=tuple(sorted(details.items())),
+        problem = _failure(
+            ErrorCategory.VALIDATION,
+            "prepared_asset_" + result.status,
+            f"LoRA {asset} is not validated by the server ({result.evidence}); nothing was uploaded or submitted.",
+        )
+        details = {"validation_reason": result.evidence}
+        if cause is not None:
+            # Only the adapter's projected evidence crosses this boundary, never provider objects or references.
+            details.update(cause.diagnostics)
+            details["cause_code"] = cause.code
+            details["cause_category"] = cause.category.value
+        details["asset"] = asset
+        raise BackendError(
+            BackendFailure(
+                problem.failure.category,
+                problem.failure.code,
+                problem.failure.message,
+                diagnostics=tuple(sorted(details.items())),
+            )
+        ) from None
+
+    async def _latest(self, prepared: PreparedAsset) -> PreparedAsset:
+        """The newest confirmed reference this machine knows for the same receipt.
+
+        Saved queue items, "Edit as new" copies and scripts keep the reference they were built with. A later rebind or
+        restore updated the local registry, so use that record (once per session) instead of re-discovering the
+        change, and let the normal DT+ check below confirm it. The saved request itself is never rewritten."""
+        key = (prepared.backend_id, prepared.origin, self.backend.scope, prepared.receipt_id)
+        known = _CURRENT.get(key)
+        if known is None and self.state is not None:
+            registry = AssetRegistry(self.state)
+            try:
+                await registry.open()
+                try:
+                    known = await registry.prepared(prepared.receipt_id)
+                finally:
+                    await registry.aclose()
+            except (PersistenceError, ValidationError):
+                known = None
+            if known is not None:
+                _CURRENT[key] = known
+        if known is not None and (known.sha256, known.size) == (prepared.sha256, prepared.size):
+            return known
+        return prepared
+
+    async def _shared(
+        self, action: str, prepared: PreparedAsset, operation, *, scope_id: str | None = None
+    ) -> PreparedAsset:
+        """One operation per (action, scope, content); callers needing it concurrently join it."""
+        key = (
+            action,
+            str(self.state.resolve()) if self.state is not None else "",
+            self.backend.backend_id,
+            self.backend.origin,
+            scope_id or self.backend.scope,
+            prepared.identifier,
+            prepared.sha256,
+            prepared.size,
+        )
+        task = _SHARED.get(key)
+        if task is None or task.done():
+
+            async def serialized() -> PreparedAsset:
+                async with _WRITER:
+                    return await operation()
+
+            task = asyncio.create_task(serialized())
+            _SHARED[key] = task
+            task.add_done_callback(lambda done, key=key: _SHARED.pop(key, None) if _SHARED.get(key) is done else None)
+            task.add_done_callback(lambda done: None if done.cancelled() else done.exception())
+        _SHARED_WAITERS[task] = _SHARED_WAITERS.get(task, 0) + 1
+        try:
+            return await asyncio.shield(task)
+        finally:
+            remaining = _SHARED_WAITERS[task] - 1
+            if remaining:
+                _SHARED_WAITERS[task] = remaining
+            else:
+                _SHARED_WAITERS.pop(task, None)
+                # One Stop must not abort a restore still needed by another queued item.
+                # With no consumers left, cancellation can reach the transport/registry.
+                if not task.done():
+                    # A new consumer must not join a cancelled operation still cleaning up.
+                    if _SHARED.get(key) is task:
+                        _SHARED.pop(key, None)
+                    task.cancel()
+
+    async def _rebind(
+        self, prepared: PreparedAsset, asset: str, reference: str, *, credential_id: str | None = None
+    ) -> PreparedAsset:
+        """The server holds these exact bytes (it looked them up by SHA-256 and size) under a newer reference.
+
+        Nothing is uploaded: the receipt adopts the server's current reference for this scope, and the operation log
+        keeps the earlier evidence."""
+        known = _CURRENT.get((prepared.backend_id, prepared.origin, self.backend.scope, prepared.receipt_id))
+        if credential_id is None and known is not None and known.remote_id == reference:
+            return known  # Only the legacy single-scope cache can authorize this shortcut.
+        registry = AssetRegistry(self.state, writer=True)
+        try:
+            try:
+                await settle(registry.open())
+            except AssetsBusyError:
+                raise _failure(
+                    ErrorCategory.VALIDATION,
+                    "prepared_asset_restore_busy",
+                    f"LoRA {asset} has a newer DT+ reference, but another process is preparing assets. Nothing was submitted.",
+                ) from None
+            content = self._content(prepared)
+            asset_id, operation = await registry.begin(content, prepared.backend_id, prepared.origin, "rebind")
+            rebound = await registry.confirm(
+                asset_id,
+                operation,
+                reference,
+                "reconciled",
+                credential_id=credential_id,
+                identifier=prepared.identifier,
+            )
+        finally:
+            await settle(registry.aclose())
+        _CURRENT[(rebound.backend_id, rebound.origin, self.backend.scope, rebound.receipt_id)] = rebound
+        diagnostic_event(
+            log, "assets.rebound", level=logging.INFO, data={"asset": asset, "receipt": rebound.receipt_id}
+        )
+        return rebound
+
+    async def _restore(
+        self,
+        prepared: PreparedAsset,
+        asset: str,
+        on_stage: Callable[[str], None] | None,
+        *,
+        negotiation: AssetNegotiation | None = None,
+        credential_id: str | None = None,
+    ) -> PreparedAsset:
+        """Upload the retained copy once under the exclusive asset writer, then return its confirmed receipt.
+
+        The writer spans the network operation because the registry's active intent and its recovery semantics
+        are owned by that writer. Releasing it mid-upload would let another writer mark the transfer interrupted.
+        """
+        store = self.store or LoraStore(self.state)
+        try:
+            retained = await asyncio.to_thread(store.find, prepared.sha256, prepared.size)
+            if retained is None:
+                diagnostic_event(
+                    log,
+                    "assets.restore_blocked",
+                    level=logging.WARNING,
+                    data={"asset": asset, "reason": "no_local_copy"},
                 )
+                raise _failure(
+                    ErrorCategory.VALIDATION,
+                    "prepared_asset_no_local_copy",
+                    f"LoRA {asset} is missing on DT+ and no verified local copy is kept; run `assets prepare` again."
+                    " Nothing was submitted.",
+                )
+            await asyncio.to_thread(store.verify, retained)
+        except ValidationError as exc:
+            diagnostic_event(
+                log,
+                "assets.restore_blocked",
+                level=logging.WARNING,
+                data={"asset": asset, "reason": "local_copy_invalid"},
+            )
+            raise _failure(
+                ErrorCategory.VALIDATION,
+                "prepared_asset_local_copy_invalid",
+                f"LoRA {asset} is missing on DT+ and its kept local copy is unusable ({exc}). Nothing was submitted.",
             ) from None
+        diagnostic_event(
+            log, "assets.restore_started", level=logging.INFO, data={"asset": asset, "size": retained.size}
+        )
+        if on_stage is not None:
+            on_stage("restoring_assets")
+        registry = AssetRegistry(self.state, writer=True)
+        try:
+            try:
+                await settle(registry.open())
+            except AssetsBusyError:
+                raise _failure(
+                    ErrorCategory.VALIDATION,
+                    "prepared_asset_restore_busy",
+                    f"LoRA {asset} is missing on DT+, but another process is preparing assets. Nothing was submitted.",
+                ) from None
+            if credential_id is not None:
+                # Once DT+ positively reports a missing copy, no sibling can trust this key's old receipt.
+                await registry.invalidate_scope(prepared.receipt_id, credential_id, prepared.identifier)
+            # The restore already has a shared task and verified source bytes. Avoid a separately shielded
+            # explicit-Prepare task so Stop can cancel the upload and settle its registry state.
+            restored = await AssetService(self.backend, registry)._prepare(
+                retained.path,
+                AssetContent("lora", prepared.identifier, prepared.sha256, prepared.size, "auto_restore"),
+                await asyncio.to_thread(retained.path.stat),
+                negotiation=negotiation,
+            )
+        finally:
+            await settle(registry.aclose())
+        if (restored.sha256, restored.size) != (prepared.sha256, prepared.size):
+            raise _failure(
+                ErrorCategory.PROTOCOL, "asset_restore_mismatch", "Restored asset does not match its record."
+            )
+        _CURRENT[(restored.backend_id, restored.origin, self.backend.scope, restored.receipt_id)] = restored
+        diagnostic_event(
+            log, "assets.restored", level=logging.INFO, data={"asset": asset, "receipt": restored.receipt_id}
+        )
+        return restored
 
     async def reconcile(self, asset_id: str) -> tuple[dict, AssetReconciliation]:
         """Metadata-only server validation of one local record under the current credential; never a PUT."""

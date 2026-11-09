@@ -549,7 +549,7 @@ async def _dispatch_one(store, state, queue_id, policy, saved, out, on_settle, o
             store,
             out or state / "outputs",
             timeouts=policy,
-            assets=session.asset_validator(backend),
+            assets=session.asset_validator(backend, state),
             input_state=state if permits else None,
             preview_images=False,
         )
