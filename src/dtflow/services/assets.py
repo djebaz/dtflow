@@ -104,7 +104,10 @@ class AssetService:
         content = AssetContent("lora", identifier or path.name, digest, stat.st_size, provenance)
         if self.store is not None:
             # Keep the durable copy first, so a failed or interrupted upload never costs the user the file.
-            await asyncio.to_thread(self.store.retain, path, digest, stat.st_size)
+            kept = await asyncio.to_thread(self.store.retain, path, digest, stat.st_size)
+            diagnostic_event(
+                log, "assets.copy_kept", level=logging.INFO, data={"size": stat.st_size, "name": kept.name}
+            )
         key = (self.backend.backend_id, self.backend.origin, self.backend.scope, content.sha256, content.size)
         task = _INFLIGHT.get(key)
         if task is None or task.done():
@@ -273,6 +276,12 @@ class AssetService:
         result, cause = await self._check(self._content(prepared), prepared.remote_id)
         if result.status == "confirmed":
             return prepared
+        diagnostic_event(
+            log,
+            "assets.validation_not_confirmed",
+            level=logging.INFO,
+            data={"status": result.status, "evidence": result.evidence, "restoring": restoring},
+        )
         if restoring and result.status == "upload_required":
             return await self._restore(prepared, asset, on_stage)
         if restoring and result.evidence == "reference_mismatch" and result.reference:
@@ -329,6 +338,7 @@ class AssetService:
         try:
             retained = await asyncio.to_thread(store.find, prepared.sha256, prepared.size)
             if retained is None:
+                diagnostic_event(log, "assets.restore_blocked", level=logging.WARNING, data={"reason": "no_local_copy"})
                 raise _failure(
                     ErrorCategory.VALIDATION,
                     "prepared_asset_no_local_copy",
@@ -337,11 +347,15 @@ class AssetService:
                 )
             await asyncio.to_thread(store.verify, retained)
         except ValidationError as exc:
+            diagnostic_event(
+                log, "assets.restore_blocked", level=logging.WARNING, data={"reason": "local_copy_invalid"}
+            )
             raise _failure(
                 ErrorCategory.VALIDATION,
                 "prepared_asset_local_copy_invalid",
                 f"LoRA {asset} is missing on DT+ and its kept local copy is unusable ({exc}). Nothing was submitted.",
             ) from None
+        diagnostic_event(log, "assets.restore_started", level=logging.INFO, data={"size": retained.size})
         if on_stage is not None:
             on_stage("restoring_assets")
         registry = AssetRegistry(self.state, writer=True)
