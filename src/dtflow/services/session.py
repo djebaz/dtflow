@@ -212,7 +212,8 @@ async def bind_prepared(
     ids = {item.receipt_id for item in prepared}
     named = {
         (item.receipt_id, item.identifier): item
-        for item in candidates if item.receipt_id in ids and item.identifier in selected
+        for item in candidates
+        if item.receipt_id in ids and item.identifier in selected
     }
     resolved = tuple(
         named.get((item.receipt_id, identifier))
