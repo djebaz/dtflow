@@ -834,7 +834,7 @@ async def prepare_asset(
     provenance: str,
     saved: CredentialProvider | None = None,
 ) -> dict:
-    """The only operation that may upload: prepare one converted LoRA and return its local record."""
+    """Explicitly prepare a converted LoRA and retain its local copy for later bounded recovery."""
     async with open_assets(state, saved=saved) as service:
         prepared = await service.prepare(file, name, provenance=provenance)
         return await service.registry.get(prepared.receipt_id)
