@@ -1774,9 +1774,9 @@ class MainWindow:
             else "No custom LoRA definitions imported."
         )
         self.form.clearCustomLorasButton.setEnabled(count > 0)
+        unit = "LoRA" if stored_count == 1 else "LoRAs"
         self.form.retainedLorasStatusLabel.setText(
-            f"{stored_count} retained LoRA" + ("" if stored_count == 1 else "s")
-            + f" · {self._human_bytes(stored_bytes)} stored locally."
+            f"{stored_count} retained {unit} · {self._human_bytes(stored_bytes)} stored locally."
             if stored_count
             else "No locally retained LoRAs."
         )
