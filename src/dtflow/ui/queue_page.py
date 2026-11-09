@@ -2510,7 +2510,8 @@ class QueuePage:
             # the named candidate selected in the composer, not the parent asset's first name.
             candidates = await script_asset_choices(self._state, "cloud")
             receipts = tuple(
-                item for item in candidates
+                item
+                for item in candidates
                 if item.identifier in named and known.get(item.identifier) == item.receipt_id
             )
         request = self._with_weighted_loras(request, weighted)
