@@ -16,6 +16,7 @@ from PySide6.QtCore import QObject, QSignalBlocker, QTimer
 from PySide6.QtWidgets import QFrame, QHBoxLayout, QLabel, QWidget
 
 from dtflow.persistence.cloud_usage import load_timezone, read_usage_records, save_timezone
+from dtflow.persistence.store import PersistenceError
 from dtflow.services.cloud_usage import (
     AMBER_FROM,
     DEFAULT_TIMEZONE,
@@ -61,6 +62,7 @@ class CloudUsagePanel(QObject):
         self._active: str | None = None
         self.active_label: str | None = None
         self._error = False
+        self._error_reason: str | None = None
         self._loaded = False
         self._token: object | None = None
         self.counts: DayCounts | None = None
@@ -119,8 +121,10 @@ class CloudUsagePanel(QObject):
         if token is not self._token:
             return
         if failure is not None:
-            log.warning("Local DT+ usage could not be read: %s", type(failure).__name__)
+            reason = str(failure) if isinstance(failure, PersistenceError) else type(failure).__name__
+            log.warning("Local DT+ usage could not be read: %s", reason)
             self._error = True
+            self._error_reason = reason if isinstance(failure, PersistenceError) else None
         else:
             self._records, identity, self._directory = result
             self._active = identity[0] if identity else None
@@ -131,6 +135,7 @@ class CloudUsagePanel(QObject):
                 or (f"Key {identity[1]}\u2022\u2022\u2022\u2022" if identity[1] else f"Key {identity[0][:4].upper()}")
             )
             self._error, self._loaded = False, True
+            self._error_reason = None
         self.render()
 
     def _zone_changed(self, _index: int) -> None:
@@ -177,13 +182,14 @@ class CloudUsagePanel(QObject):
         for key in counts.keys:
             layout.addWidget(self._row(key))
         if self._error:
-            note = "Saved image records could not be read; counts are unavailable."
+            status = "Previous counts may be outdated." if self._loaded else "Saved image counts are unavailable."
+            note = f"{status} {self._error_reason or 'See Logs for the error type.'}"
         elif not self._loaded:
             note = "Reading saved images…"
         else:
             note = "No DT+ images were saved on this day."
         form.usageEmptyLabel.setText(note)
-        form.usageEmptyLabel.setVisible(not counts.keys)
+        form.usageEmptyLabel.setVisible(self._error or not counts.keys)
         if counts.unattributed:
             form.usageUnattributedLabel.setText(
                 f"{counts.unattributed} more were saved before key tracking began, so they belong to none of the keys above."

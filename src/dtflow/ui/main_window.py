@@ -647,7 +647,6 @@ class MainWindow:
             on_active=self._show_active_key,
         )
         self.workflow_defaults = WorkflowDefaultsPanel(form, self.runner, self.state_dir)
-        self.cloud_usage.refresh()  # the bottom bar names the active key on every view from startup
         self.activity.listen(self._usage_activity_changed)
         self._gui_heartbeat = GuiHeartbeat(
             form,
@@ -663,7 +662,7 @@ class MainWindow:
         )
         self.refresh_remembered_folders()
         self.refresh_presets(background=True)
-        self._workspace_changed(0)
+        self._workspace_changed(0)  # Starts the initial counter read; do not duplicate it above.
         self._responsive_workspace()
         # Readiness precedes reconciliation so an unsupported bridge gets one
         # startup notice, not duplicate warnings from concurrent startup tasks.
