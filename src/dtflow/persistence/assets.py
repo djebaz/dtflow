@@ -457,11 +457,18 @@ class AssetRegistry:
         if not self.path.exists():
             return ()
         with closing(self._connect()) as db:
-            rows = db.execute(
-                "SELECT * FROM assets WHERE kind='lora' AND state='confirmed' AND remote_id IS NOT NULL"
-            ).fetchall()
+            scoped = db.execute("PRAGMA user_version").fetchone()[0] >= 2
+            query = "SELECT * FROM assets a WHERE kind='lora' AND state='confirmed' AND remote_id IS NOT NULL"
+            if scoped:
+                # A missing key-scoped receipt takes precedence over the historical global
+                # row for that same logical name; legacy unassigned names remain visible.
+                query += (
+                    " AND NOT EXISTS (SELECT 1 FROM asset_key_receipts k "
+                    "WHERE k.asset_id=a.asset_id AND k.identifier=a.identifier)"
+                )
+            rows = db.execute(query).fetchall()
             by_name = {(row["asset_id"], row["identifier"]): self._prepared(row) for row in rows}
-            if db.execute("PRAGMA user_version").fetchone()[0] >= 2:
+            if scoped:
                 for row in db.execute(
                     "SELECT a.*, k.identifier AS logical_name, k.remote_id AS logical_remote, "
                     "k.confirmed_at_utc AS logical_confirmed FROM assets a "
