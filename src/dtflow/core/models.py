@@ -590,6 +590,7 @@ class AssetBackend(Protocol):
 class Credential:
     source: str
     secret: str = field(repr=False)
+    alias: str | None = None  # Explicit saved name; never the generated display fallback.
 
 
 class CredentialProvider(Protocol):
