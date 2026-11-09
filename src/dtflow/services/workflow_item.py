@@ -503,6 +503,18 @@ class _Execution:
             return
         if not await self.load_statics():
             return
+        # A Pause/Stop posted during a lengthy first-use BYOM check must take effect
+        # before any workflow branch is admitted to a provider.
+        actions = await self.store.apply_controls(self.queue_id)
+        if "cancel" in actions:
+            await self.stop()
+            await self.take_controls()
+            await self.finish()
+            return
+        if "pause" in actions:
+            self.go.clear()
+        if "resume" in actions:
+            self.go.set()
         self.start_roots()
         next_memory_sample = monotonic() + 5 if memory_enabled(log) else None
         try:
