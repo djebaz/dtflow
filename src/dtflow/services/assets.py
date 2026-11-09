@@ -560,7 +560,11 @@ class AssetService:
             if affected:
                 labels = [names[key] for key in dict.fromkeys(affected)]
                 subject = ("LoRA " if len(labels) == 1 else "LoRAs ") + ", ".join(labels)
-                message = exc.failure.message
+                # Preserve the provider's already-projected explanation in the named UI feedback.
+                details = dict(exc.failure.diagnostics)
+                message = str(
+                    details.get("interpretation_message") or details.get("server_message") or exc.failure.message
+                )
                 if not (len(labels) == 1 and f"LoRA {labels[0]}" in message):
                     message = f"{subject}: {message}"
                 error_message = message
