@@ -13,7 +13,7 @@ from grpclib import GRPCError, Status
 from grpclib.exceptions import ProtocolError, StreamTerminatedError
 
 from dtflow.backends.drawthings.tls import classify_tls_error
-from dtflow.diagnostics import active_cloud_key_data, api_error_data, event
+from dtflow.diagnostics import api_error_data, event
 from dtflow.core.models import (
     BackendError,
     BackendFailure,
@@ -79,7 +79,6 @@ def api_failure(*args, operation: str, transport: str, response=None, elapsed_ms
             "submission_stage": problem.submission_stage.value,
             "remote_outcome": problem.remote_outcome.value,
             **({"request_id": problem.request_id} if problem.request_id else {}),
-            **active_cloud_key_data(),
         },
     )
     return problem
