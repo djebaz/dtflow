@@ -222,11 +222,16 @@ class GenerationService:
                         request.request_id,
                     )
                 )
-            confirmed = []
-            for prepared in request.prepared_assets:
-                # A positive "upload required" answer restores the retained copy (its own, longer budget); everything
-                # else, including unknown availability, still blocks here without uploading.
-                confirmed.append(await self.assets.ensure(prepared, lambda stage: preparation(stage)))
+            # One local per-key receipt gate; first-use assets share a batched BYOM lookup.
+            # No routine network validation once this key owns confirmed copies.
+            ensure_many = getattr(self.assets, "ensure_many", None)
+            if callable(ensure_many):
+                confirmed = await ensure_many(request.prepared_assets, lambda stage: preparation(stage))
+            else:
+                confirmed = tuple([
+                    await self.assets.ensure(prepared, lambda stage: preparation(stage))
+                    for prepared in request.prepared_assets
+                ])
             if tuple(confirmed) != tuple(request.prepared_assets):
                 changed = [
                     new.receipt_id for old, new in zip(request.prepared_assets, confirmed, strict=True) if old != new
