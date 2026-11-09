@@ -30,7 +30,7 @@ from dtflow.core.models import (
 from dtflow.core.storage import AttemptStore
 from dtflow.core.tasks import settle
 from dtflow.diagnostics import ATTEMPT
-from dtflow.diagnostics import event as diagnostic_event
+from dtflow.diagnostics import cloud_key_data, event as diagnostic_event
 from dtflow.persistence.original_io import (
     OriginalImagesBusyError,
     OriginalImagesUnavailableError,
@@ -39,7 +39,7 @@ from dtflow.persistence.original_io import (
 )
 from dtflow.core.output_layout import OutputLayout
 from dtflow.services.artifacts import save_artifacts, validate_result
-from dtflow.services.assets import AssetValidator
+from dtflow.services.assets import AssetService, AssetValidator
 from dtflow.services.budget import BufferBudget
 from dtflow.services.events import EventBuffer
 from dtflow.services.image_artifacts import save_image_artifacts
@@ -111,6 +111,13 @@ class GenerationService:
                     timeout_phase=phase,
                 )
             ) from exc
+
+    def _key_diagnostics(self) -> dict:
+        """Return the non-secret identity pinned to this backend, not the current UI selection."""
+        return cloud_key_data(
+            getattr(self.backend, "credential_usage", None),
+            getattr(self.backend, "credential_source", None),
+        )
 
     async def _attribute_credential(self, attempt_id: str) -> None:
         """Record which opaque key identity produced this saved output (cloud only); best effort, never a failure.
@@ -225,8 +232,37 @@ class GenerationService:
             # One local per-key receipt gate; first-use assets share a batched BYOM lookup.
             # No routine network validation once this key owns confirmed copies.
             ensure_many = getattr(self.assets, "ensure_many", None)
-            if callable(ensure_many):
-                confirmed = await ensure_many(request.prepared_assets, lambda stage: preparation(stage))
+            if isinstance(self.assets, AssetService):
+
+                def resolved_assets(report: dict) -> None:
+                    # An actual restoration gets a named UI notice; routine reuse/matches remain quiet.
+                    restored = report["restored_names"]
+                    if restored and on_event is not None:
+                        on_event(
+                            BackendEvent(
+                                request.request_id,
+                                0,
+                                "assets_restored",
+                                datetime.now(UTC).isoformat(),
+                                stage=", ".join(restored),
+                            )
+                        )
+                    if report["error"] and on_event is not None:
+                        on_event(
+                            BackendEvent(
+                                request.request_id,
+                                0,
+                                "assets_inconclusive" if report["outcome"] == "inconclusive" else "assets_failed",
+                                datetime.now(UTC).isoformat(),
+                                stage=report["error"],
+                            )
+                        )
+
+                # A Queue/Workflow/Script owns its own status callback; interactive Generate uses this one.
+                feedback = resolved_assets if on_event is not None and self.assets.on_resolution is None else None
+                confirmed = await self.assets.ensure_many(request.prepared_assets, preparation, on_resolution=feedback)
+            elif callable(ensure_many):
+                confirmed = await ensure_many(request.prepared_assets, preparation)
             else:
                 confirmed = [
                     await self.assets.ensure(prepared, lambda stage: preparation(stage))
@@ -291,6 +327,7 @@ class GenerationService:
                 "backend": caps.backend_id,
                 "request_id": request.request_id,
                 "model_id": request.model_id,
+                **self._key_diagnostics(),
             },
         )
         stage = SubmissionStage.NOT_SUBMITTED
@@ -398,6 +435,7 @@ class GenerationService:
                 level=logging.INFO,
                 data={
                     "outputs": len(paths),
+                    **self._key_diagnostics(),
                 },
             )
             return SavedGeneration(
@@ -465,6 +503,7 @@ class GenerationService:
                     "code": failure.code,
                     "category": failure.category,
                     "outcome": failure.remote_outcome,
+                    **self._key_diagnostics(),
                 },
             )
             await self.store.transition(

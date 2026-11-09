@@ -65,13 +65,11 @@ async def test_prepare_upload_receipt_restart_and_validated_reuse(tmp_path):
         assert record["state"] == "confirmed" and record["source"] == "transfer"
         await two.service.validate(await two.registry.prepared(receipt.receipt_id))
         again = await two.service.prepare(file)
+        history = await two.registry.get(receipt.receipt_id)
     assert again.receipt_id == receipt.receipt_id and again.remote_id == receipt.remote_id and len(cloud.puts) == 1
-    assert (await_source(state, receipt.receipt_id)) == "already_exists"
-
-
-def await_source(state, asset_id):
-    with sqlite3.connect(state / "assets.sqlite3") as db:
-        return db.execute("SELECT source FROM assets WHERE asset_id=?", (asset_id,)).fetchone()[0]
+    assert history["source"] == "transfer"  # The original upload remains historical evidence.
+    assert history["operations"][-1]["state"] == "confirmed"
+    assert history["operations"][-1]["evidence"] == "confirmed_already_exists"
 
 
 @pytest.mark.asyncio

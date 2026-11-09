@@ -9,6 +9,7 @@ import logging
 import secrets
 from collections.abc import Callable
 from dataclasses import asdict, replace
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 from uuid import uuid4
@@ -47,6 +48,7 @@ from dtflow.persistence.settings import load_cloud_concurrency, save_cloud_concu
 from dtflow.persistence.store import SQLiteAttempts, StateBusyError, state_is_owned
 from dtflow.persistence.workflow_items import KIND_WORKFLOW, is_workflow_record
 from dtflow.services import session
+from dtflow.services.assets import AssetService
 from dtflow.services.generation import GenerationService
 from dtflow.services.image_inputs import restore_image_inputs, snapshot_image_inputs
 from dtflow.services.planning import Plan, PlanError, expand_plan
@@ -553,6 +555,35 @@ async def _dispatch_one(store, state, queue_id, policy, saved, out, on_settle, o
             input_state=state if permits else None,
             preview_images=False,
         )
+        if on_event is not None and isinstance(service.assets, AssetService):
+
+            def show_asset_resolution(report: dict) -> None:
+                # UI-only names and error details; JSONL summaries have counts, not filenames.
+                if report["restored_names"]:
+                    on_event(
+                        "_assets",
+                        BackendEvent(
+                            queue_id,
+                            0,
+                            "assets_restored",
+                            datetime.now(UTC).isoformat(),
+                            stage=", ".join(report["restored_names"]),
+                        ),
+                    )
+                if report["error"]:
+                    on_event(
+                        "_assets",
+                        BackendEvent(
+                            queue_id,
+                            0,
+                            "assets_inconclusive" if report["outcome"] == "inconclusive" else "assets_failed",
+                            datetime.now(UTC).isoformat(),
+                            stage=report["error"],
+                        ),
+                    )
+
+            # Applies to ordinary queues, Scripts, Workflows and their shared recovery checks.
+            service.assets.on_resolution = show_asset_resolution
         # Real adapters accept only inventory-listed models, so refresh once before dispatching.
         await service.get_inventory(refresh=True)
         diagnostic_event(

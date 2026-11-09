@@ -874,11 +874,11 @@ async def prepare_asset(
 
 
 async def reconcile_asset(
-    state: Path, asset_id: str, *, saved: CredentialProvider | None = None
+    state: Path, asset_id: str, *, identifier: str | None = None, saved: CredentialProvider | None = None
 ) -> tuple[dict, AssetReconciliation]:
-    """Metadata-only server check of one local record; never uploads."""
+    """Metadata-only check of the named LoRA under the selected DT+ key; never uploads."""
     async with open_assets(state, saved=saved) as service:
-        return await service.reconcile(asset_id)
+        return await service.reconcile(asset_id, identifier)
 
 
 async def list_assets(state: Path, *, named: bool = False) -> list[dict]:
