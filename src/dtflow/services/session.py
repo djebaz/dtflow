@@ -328,9 +328,22 @@ async def run_generation(
             result = await service.generate(request, on_event=on_event, **options)
             break
         except BackendError as exc:
-            if attempt_id is not None or retries >= AUTO_RETRIES or not auto_retryable(exc.failure):
-                raise
             failure = exc.failure
+            repaired = False
+            assets = getattr(service, "assets", None)
+            if (
+                assets is not None and request.prepared_assets
+                and failure.category == ErrorCategory.REMOTE_REJECTION
+                and callable(getattr(assets, "recover_missing", None))
+            ):
+                repaired = await assets.recover_missing(request.prepared_assets)
+            # Named child attempts (Workflows/Scripts) own their own retry accounting.
+            # A rejected/possibly submitted generation is never silently replayed.
+            safe_repair_retry = repaired and failure.remote_outcome == RemoteOutcome.NOT_STARTED
+            if attempt_id is not None or retries >= AUTO_RETRIES or (
+                not safe_repair_retry and not auto_retryable(failure)
+            ):
+                raise
         retries += 1
         request = auto_retry_request(request)
         diagnostic_event(
