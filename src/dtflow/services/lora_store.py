@@ -157,9 +157,12 @@ class LoraStore:
             temporary = None
             digest, total = hashlib.sha256(), 0
             try:
-                with source.open("rb") as reader, tempfile.NamedTemporaryFile(
-                    mode="wb", dir=self.directory, prefix=".lora-", suffix=".part", delete=False
-                ) as writer:
+                with (
+                    source.open("rb") as reader,
+                    tempfile.NamedTemporaryFile(
+                        mode="wb", dir=self.directory, prefix=".lora-", suffix=".part", delete=False
+                    ) as writer,
+                ):
                     temporary = Path(writer.name)
                     while chunk := reader.read(CHUNK):
                         digest.update(chunk)
