@@ -472,7 +472,7 @@ class LoraAssetPanel:
         self._set_busy(True)
         self._show(self.page.assetStatusLabel, Presentation("warning", "Reconciling", "Metadata check only."))
         self._runner.submit(
-            reconcile_asset(self._state, asset_id, saved=self._saved()),
+            reconcile_asset(self._state, asset_id, identifier=bind, saved=self._saved()),
             lambda outcome, failure: self._reconciled(outcome, failure, bind),
         )
 
