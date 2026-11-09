@@ -325,9 +325,7 @@ class AssetService:
                 diagnostics=(("asset", asset),),
             )
         if restoring:
-            newer = _CURRENT.get((prepared.backend_id, prepared.origin, self.backend.scope, prepared.receipt_id))
-            if newer is not None and (newer.sha256, newer.size) == (prepared.sha256, prepared.size):
-                prepared = newer
+            prepared = await self._latest(prepared)
         answers: list[str] = []
         result, cause = await self._check(self._content(prepared), prepared.remote_id, answers)
         if result.status == "confirmed":
@@ -372,6 +370,30 @@ class AssetService:
                 diagnostics=tuple(sorted(details.items())),
             )
         ) from None
+
+    async def _latest(self, prepared: PreparedAsset) -> PreparedAsset:
+        """The newest confirmed reference this machine knows for the same receipt.
+
+        Saved queue items, "Edit as new" copies and scripts keep the reference they were built with. A later rebind or
+        restore updated the local registry, so use that record (once per session) instead of re-discovering the
+        change, and let the normal DT+ check below confirm it. The saved request itself is never rewritten."""
+        key = (prepared.backend_id, prepared.origin, self.backend.scope, prepared.receipt_id)
+        known = _CURRENT.get(key)
+        if known is None and self.state is not None:
+            registry = AssetRegistry(self.state)
+            try:
+                await registry.open()
+                try:
+                    known = await registry.prepared(prepared.receipt_id)
+                finally:
+                    await registry.aclose()
+            except (PersistenceError, ValidationError):
+                known = None
+            if known is not None:
+                _CURRENT[key] = known
+        if known is not None and (known.sha256, known.size) == (prepared.sha256, prepared.size):
+            return known
+        return prepared
 
     async def _shared(self, action: str, prepared: PreparedAsset, operation) -> PreparedAsset:
         """One operation per (action, scope, content); callers needing it concurrently join it."""
