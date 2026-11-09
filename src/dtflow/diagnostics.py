@@ -8,9 +8,6 @@ import logging
 from contextvars import ContextVar
 from time import monotonic_ns
 
-CLOUD_KEY: ContextVar[tuple[str, str | None, str | None] | None] = ContextVar("dtflow_cloud_key", default=None)
-
-
 def cloud_key_data(identity: tuple[str, str | None] | None, source: str | None = None) -> dict:
     """Non-secret identity of the key pinned to this cloud operation, when resolved."""
     if identity is None:
@@ -21,12 +18,6 @@ def cloud_key_data(identity: tuple[str, str | None] | None, source: str | None =
         **({"key_hint": hint} if hint else {}),
         **({"key_source": source} if source in ("saved", "environment") else {}),
     }
-
-
-def active_cloud_key_data() -> dict:
-    """Explicit attribution for provider events in the current cloud task, not global log context."""
-    context = CLOUD_KEY.get()
-    return cloud_key_data(context[:2], context[2]) if context is not None else {}
 
 
 ATTEMPT: ContextVar[str] = ContextVar("dtflow_attempt", default="-")
