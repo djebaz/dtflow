@@ -200,13 +200,9 @@ class QueueDispatcher:
         async def recover():
             try:
                 progress("restoring_assets")
-                await self._record_event(
-                    queue_id, "asset_recovery_started", {"kind": "lora", "count": len(pending)}
-                )
+                await self._record_event(queue_id, "asset_recovery_started", {"kind": "lora", "count": len(pending)})
                 restored = await assets.recover_missing(pending, on_stage=progress)
-                await self._record_event(
-                    queue_id, "asset_recovery_finished", {"restored": restored}
-                )
+                await self._record_event(queue_id, "asset_recovery_finished", {"restored": restored})
                 return restored
             except Exception as exc:
                 diagnostic_event(
