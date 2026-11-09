@@ -628,6 +628,7 @@ class ScriptHost:
             if wanted - recovery_attempted:
                 return await recover_assets(request, failure)
             return False
+
         if assets is not None and callable(getattr(assets, "ensure_many", None)):
             distinct = {
                 (asset.identifier, asset.sha256, asset.size): asset
