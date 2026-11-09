@@ -767,7 +767,10 @@ class ScriptHost:
         return results
 
     async def _generate_child(
-        self, request: ResolvedGenerationRequest, attempt_id: str, relinked: Callable[[str], None],
+        self,
+        request: ResolvedGenerationRequest,
+        attempt_id: str,
+        relinked: Callable[[str], None],
         recover_assets: Callable,
     ) -> GenerationOutcome:
         """One batch job's generation with the shared automatic retry (#241): a retry is a new child, linked before it
