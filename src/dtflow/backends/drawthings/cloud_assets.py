@@ -249,12 +249,19 @@ async def negotiate_lora_assets(
             upload = urls.get(content.identifier)
             if not _usable_upload(upload):
                 raise _invalid(response=response, reason="missing_or_invalid_batched_asset_evidence")
-            result = AssetNegotiation("upload_required", ticket=_signed_destination(upload.get("url"), response=response))
+            result = AssetNegotiation(
+                "upload_required", ticket=_signed_destination(upload.get("url"), response=response)
+            )
         results[(content.identifier, content.sha256, content.size)] = result
     event(
-        logging.getLogger(__name__), "backend.assets_negotiated", level=logging.DEBUG,
-        data={"requested": len(contents), "exists": sum(x.status == "exists" for x in results.values()),
-              "upload_required": sum(x.status == "upload_required" for x in results.values())},
+        logging.getLogger(__name__),
+        "backend.assets_negotiated",
+        level=logging.DEBUG,
+        data={
+            "requested": len(contents),
+            "exists": sum(x.status == "exists" for x in results.values()),
+            "upload_required": sum(x.status == "upload_required" for x in results.values()),
+        },
     )
     return results
 
