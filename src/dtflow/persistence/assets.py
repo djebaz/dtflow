@@ -1,7 +1,7 @@
-"""Independent durable registry of locally known cloud assets (``<state>/assets.sqlite3``, schema version 2).
+"""Independent durable registry of locally known cloud assets (``<state>/assets.sqlite3``, schema version 3).
 
 A row is a *local candidate*, not remote inventory: it records what this machine measured and what a server once
-acknowledged. It never stores raw credentials, signed URLs or file contents. A version-2 side table records per-key references
+acknowledged. It never stores raw credentials, signed URLs or file contents. A version-3 side table records per-key and per-name references
 under the stable opaque credential identity; schema-1 receipts remain historical, unassigned evidence until checked
 under a selected key. Confirmed per-key receipts are reused without routine network checks.
 
@@ -26,7 +26,7 @@ from dtflow.core.models import PREPARATION_STATES, AssetContent, PreparedAsset, 
 from dtflow.persistence import store
 from dtflow.persistence.store import PersistenceError
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 UNRESOLVED = ("intent", "transferring")
 SOURCES = ("transfer", "already_exists", "reconciled")
 
@@ -66,7 +66,7 @@ SCHEMA = (
         state TEXT NOT NULL,
         confirmed_at_utc TEXT NOT NULL,
         updated_at_utc TEXT NOT NULL,
-        PRIMARY KEY(asset_id, credential_id)
+        PRIMARY KEY(asset_id, credential_id, identifier)
     )""",
 )
 
@@ -165,14 +165,26 @@ class AssetRegistry:
 
     def _check_version(self, db: sqlite3.Connection, *, create: bool) -> None:
         version = db.execute("PRAGMA user_version").fetchone()[0]
-        if version not in (0, 1, SCHEMA_VERSION):
+        if version not in (0, 1, 2, SCHEMA_VERSION):
             raise PersistenceError("Unsupported asset-registry schema; no reset or migration was performed.")
         if create:
             db.execute("PRAGMA journal_mode=WAL")
             db.execute("BEGIN IMMEDIATE")
             try:
+                if version == 2:
+                    # Keep every v2 receipt, its opaque credential identity and history, while allowing
+                    # distinct LoRA filenames with identical content to coexist within the same key.
+                    db.execute("ALTER TABLE asset_key_receipts RENAME TO asset_key_receipts_v2")
                 for statement in SCHEMA:
                     db.execute(statement)
+                if version == 2:
+                    db.execute(
+                        "INSERT INTO asset_key_receipts "
+                        "(asset_id, credential_id, identifier, remote_id, state, confirmed_at_utc, updated_at_utc) "
+                        "SELECT asset_id, credential_id, identifier, remote_id, state, "
+                        "confirmed_at_utc, updated_at_utc FROM asset_key_receipts_v2"
+                    )
+                    db.execute("DROP TABLE asset_key_receipts_v2")
                 db.execute(f"PRAGMA user_version={SCHEMA_VERSION}")
                 db.execute("COMMIT")
             except BaseException:
@@ -321,8 +333,8 @@ class AssetRegistry:
                 "INSERT INTO asset_key_receipts "
                 "(asset_id, credential_id, identifier, remote_id, state, confirmed_at_utc, updated_at_utc)"
                 " VALUES (?,?,?,?, 'confirmed',?,?) "
-                "ON CONFLICT(asset_id, credential_id) DO UPDATE SET "
-                "identifier=excluded.identifier, remote_id=excluded.remote_id, state='confirmed', "
+                "ON CONFLICT(asset_id, credential_id, identifier) DO UPDATE SET "
+                "remote_id=excluded.remote_id, state='confirmed', "
                 "confirmed_at_utc=excluded.confirmed_at_utc, updated_at_utc=excluded.updated_at_utc",
                 (asset_id, credential_id, identifier or row["identifier"], remote_id, now, now),
             )
@@ -333,11 +345,11 @@ class AssetRegistry:
             prepared = replace(prepared, identifier=identifier)
         return prepared
 
-    async def scoped(self, asset_id: str, credential_id: str) -> PreparedAsset | None:
-        """Return a confirmed receipt only for this key; schema-1 historical rows are not attributed."""
-        return await self._run(self._scoped, asset_id, credential_id)
+    async def scoped(self, asset_id: str, credential_id: str, identifier: str) -> PreparedAsset | None:
+        """Return a confirmed receipt only for this exact key and logical LoRA filename."""
+        return await self._run(self._scoped, asset_id, credential_id, identifier)
 
-    def _scoped(self, asset_id: str, credential_id: str) -> PreparedAsset | None:
+    def _scoped(self, asset_id: str, credential_id: str, identifier: str) -> PreparedAsset | None:
         if not self.path.exists():
             return None
         with closing(self._connect()) as db:
@@ -347,8 +359,8 @@ class AssetRegistry:
                 "SELECT a.*, k.identifier AS scoped_identifier, k.remote_id AS scoped_remote, "
                 "k.confirmed_at_utc AS scoped_confirmed FROM assets a "
                 "JOIN asset_key_receipts k ON k.asset_id=a.asset_id "
-                "WHERE a.asset_id=? AND k.credential_id=? AND k.state='confirmed'",
-                (asset_id, credential_id),
+                "WHERE a.asset_id=? AND k.credential_id=? AND k.identifier=? AND k.state='confirmed'",
+                (asset_id, credential_id, identifier),
             ).fetchone()
             if row is None:
                 return None
@@ -360,16 +372,16 @@ class AssetRegistry:
                 confirmed_at_utc=row["scoped_confirmed"],
             )
 
-    async def invalidate_scope(self, asset_id: str, credential_id: str) -> None:
-        """A verified missing asset must not be trusted again until restored."""
-        return await self._run(self._write, self._invalidate_scope, asset_id, credential_id)
+    async def invalidate_scope(self, asset_id: str, credential_id: str, identifier: str) -> None:
+        """Invalidate only this key/name receipt; shared bytes and other key records remain valid."""
+        return await self._run(self._write, self._invalidate_scope, asset_id, credential_id, identifier)
 
     @staticmethod
-    def _invalidate_scope(db, asset_id: str, credential_id: str) -> None:
+    def _invalidate_scope(db, asset_id: str, credential_id: str, identifier: str) -> None:
         db.execute(
             "UPDATE asset_key_receipts SET state='missing', updated_at_utc=? "
-            "WHERE asset_id=? AND credential_id=?",
-            (_now(), asset_id, credential_id),
+            "WHERE asset_id=? AND credential_id=? AND identifier=?",
+            (_now(), asset_id, credential_id, identifier),
         )
 
     @staticmethod
@@ -384,6 +396,38 @@ class AssetRegistry:
             row["asset_id"],
             row["confirmed_at_utc"],
         )
+
+    async def choices(self) -> tuple[PreparedAsset, ...]:
+        """Known logical names, including those sharing content but prepared under different keys.
+
+        These are local *candidates*. Dispatch must still resolve each one in the selected key's bucket.
+        """
+        return await self._run(self._choices)
+
+    def _choices(self) -> tuple[PreparedAsset, ...]:
+        if not self.path.exists():
+            return ()
+        with closing(self._connect()) as db:
+            rows = db.execute(
+                "SELECT * FROM assets WHERE kind='lora' AND state='confirmed' AND remote_id IS NOT NULL"
+            ).fetchall()
+            by_name = {(row["asset_id"], row["identifier"]): self._prepared(row) for row in rows}
+            if db.execute("PRAGMA user_version").fetchone()[0] >= 2:
+                for row in db.execute(
+                    "SELECT a.*, k.identifier AS logical_name, k.remote_id AS logical_remote, "
+                    "k.confirmed_at_utc AS logical_confirmed FROM assets a "
+                    "JOIN asset_key_receipts k ON a.asset_id=k.asset_id "
+                    "WHERE a.kind='lora' AND k.state='confirmed'"
+                ):
+                    from dataclasses import replace
+
+                    by_name[(row["asset_id"], row["logical_name"])] = replace(
+                        self._prepared(row),
+                        identifier=row["logical_name"],
+                        remote_id=row["logical_remote"],
+                        confirmed_at_utc=row["logical_confirmed"],
+                    )
+            return tuple(by_name.values())
 
     async def get(self, asset_id: str) -> dict[str, Any] | None:
         return await self._run(self._get, asset_id)
