@@ -21,6 +21,7 @@ import os
 import shutil
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 REPO_URL = "https://github.com/drawthingsai/media-generation-kit.git"
@@ -57,17 +58,42 @@ def build_cli(build_dir: Path) -> Path | None:
     if shutil.which("git") is None or shutil.which("swift") is None:
         print("error: --build needs both `git` and `swift` on PATH.", file=sys.stderr)
         return None
+    if os.name == "nt":
+        print(
+            "warning: at the pinned revision the CLI has no `lora convert` on native Windows; use Linux, WSL or macOS.",
+            file=sys.stderr,
+        )
     source = build_dir / "media-generation-kit"
     if not source.exists():
         build_dir.mkdir(parents=True, exist_ok=True)
         if run(["git", "clone", REPO_URL, str(source)]) != 0:
             return None
+    elif not checkout_is_clean(source):
+        return None
     if run(["git", "checkout", PINNED_REVISION], cwd=source) != 0:
         return None
     if run(["swift", "build", "-c", "release", "--product", CLI_NAME], cwd=source) != 0:
         print("error: swift build failed; see the output above.", file=sys.stderr)
         return None
     return find_built_cli(build_dir)
+
+
+def git_output(args: list[str], cwd: Path) -> str | None:
+    """Return the stdout of a git command, or None if it fails."""
+    result = subprocess.run(["git", *args], cwd=cwd, check=False, capture_output=True, text=True)
+    return result.stdout.strip() if result.returncode == 0 else None
+
+
+def checkout_is_clean(source: Path) -> bool:
+    """Check that an existing checkout is the expected repository with no local changes."""
+    origin = git_output(["remote", "get-url", "origin"], source)
+    if origin is None or origin.removesuffix(".git") != REPO_URL.removesuffix(".git"):
+        print(f"error: {source} is not a clone of {REPO_URL}; remove it or pass another --build-dir.", file=sys.stderr)
+        return False
+    if git_output(["status", "--porcelain"], source) != "":
+        print(f"error: {source} has local changes; clean or remove it. Nothing was discarded.", file=sys.stderr)
+        return False
+    return True
 
 
 def find_built_cli(build_dir: Path) -> Path | None:
@@ -94,21 +120,26 @@ def locate_cli(explicit: Path | None, build_dir: Path) -> Path | None:
 
 
 def convert(cli: Path, source: Path, output_dir: Path, scale: float | None) -> Path | None:
-    """Run ``lora convert`` and return the newest .ckpt it wrote."""
+    """Run ``lora convert`` in a private staging directory and publish its single .ckpt."""
     output_dir.mkdir(parents=True, exist_ok=True)
-    before = {p: p.stat().st_mtime_ns for p in output_dir.glob("*.ckpt")}
-    command = [str(cli), "lora", "convert", "--input", str(source), "--output-dir", str(output_dir)]
-    if scale is not None:
-        command += ["--scale", str(scale)]
-    code = run(command)
-    if code != 0:
-        print(f"error: the converter exited with code {code}.", file=sys.stderr)
-        return None
-    changed = [p for p in output_dir.glob("*.ckpt") if before.get(p) != p.stat().st_mtime_ns]
-    if not changed:
-        print("error: the converter reported success but wrote no .ckpt file.", file=sys.stderr)
-        return None
-    return max(changed, key=lambda p: p.stat().st_mtime_ns)
+    with tempfile.TemporaryDirectory(prefix=".convert-", dir=output_dir) as staging:
+        command = [str(cli), "lora", "convert", "--input", str(source), "--output-dir", staging]
+        if scale is not None:
+            command += ["--scale", str(scale)]
+        code = run(command)
+        if code != 0:
+            print(f"error: the converter exited with code {code}.", file=sys.stderr)
+            return None
+        produced = list(Path(staging).glob("*.ckpt"))
+        if len(produced) != 1:
+            print(f"error: expected exactly one .ckpt from the converter, found {len(produced)}.", file=sys.stderr)
+            return None
+        target = output_dir / produced[0].name
+        if target.exists():
+            print(f"error: {target} already exists; not overwriting it.", file=sys.stderr)
+            return None
+        produced[0].replace(target)
+    return target
 
 
 def build_parser() -> argparse.ArgumentParser:
