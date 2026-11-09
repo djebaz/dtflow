@@ -544,14 +544,14 @@ class AssetService:
                     return False
                 self._recovery_checked.update(self._identity(self._content(item)) for item in pending)
 
-                async def probe() -> set[tuple[str, str, int]]:
+                async def probe(items: tuple[PreparedAsset, ...]) -> set[tuple[str, str, int]]:
                     restored: list[tuple[str, str, int]] = []
-                    await self.ensure_many(pending, on_stage, force=True, restored_out=restored)
+                    await self.ensure_many(items, on_stage, force=True, restored_out=restored)
                     result = set(restored)
                     self._recovery_restored.update(result)
                     return result
 
-                task = asyncio.create_task(probe())
+                task = asyncio.create_task(probe(pending))
                 self._failure_recovery = task
                 task.add_done_callback(lambda done: None if done.cancelled() else done.exception())
             self._recovery_waiters[task] = self._recovery_waiters.get(task, 0) + 1
