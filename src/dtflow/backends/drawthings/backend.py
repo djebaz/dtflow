@@ -54,7 +54,7 @@ from dtflow.core.models import (
     eligible_model_ids,
 )
 from dtflow.core.tasks import settle
-from dtflow.diagnostics import event as diagnostic_event
+from dtflow.diagnostics import CLOUD_KEY, event as diagnostic_event
 
 log = logging.getLogger(__name__)
 GENERATE_METHOD = "/ImageGenerationService/GenerateImage"
@@ -198,6 +198,9 @@ class DrawThingsBackend:
 
     async def open(self) -> None:
         """Create the channel; the connection itself is established lazily and bounded by the connect deadline."""
+        # Do not attribute a new local/cloud session's early errors to a prior DT+ key.
+        # CloudAuth.token() pins the actual key again after credentials are resolved.
+        CLOUD_KEY.set(None)
         if self._closing or self._closed:
             raise error(ErrorCategory.CONNECTIVITY, "backend_closed", "Backend is closed.")
         if self._channel is None:
