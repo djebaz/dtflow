@@ -54,6 +54,7 @@ class QueueDispatcher:
         self._asset_recovery: asyncio.Task | None = None
         self._recovery_active = False
         self._recovery_attempted = False
+        self._queue_assets: tuple = ()
 
     async def run(self, queue_id: str) -> dict[str, Any]:
         """Dispatch until the queue is finished or cancelled.
@@ -81,7 +82,8 @@ class QueueDispatcher:
                         for prepared in request.prepared_assets:
                             distinct[(prepared.identifier, prepared.sha256, prepared.size)] = prepared
                     if distinct:
-                        await assets.ensure_many(tuple(distinct.values()))
+                        self._queue_assets = tuple(distinct.values())
+                        await assets.ensure_many(self._queue_assets)
                 except BackendError as exc:
                     diagnostic_event(
                         log, "queue.asset_prepare_blocked", level=logging.WARNING,
@@ -148,7 +150,7 @@ class QueueDispatcher:
         async def recover():
             try:
                 await self._record_event(queue_id, "asset_recovery_started", {"kind": "lora"})
-                restored = await assets.recover_missing(request.prepared_assets)
+                restored = await assets.recover_missing(self._queue_assets or request.prepared_assets)
                 await self._record_event(
                     queue_id, "asset_recovery_finished", {"restored": restored}
                 )
