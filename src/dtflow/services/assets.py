@@ -104,6 +104,8 @@ class AssetService:
         self.backend, self._registry = backend, registry
         self.state = Path(state) if state is not None else None
         self.store = store if store is not None else (LoraStore(self.state) if self.state is not None else None)
+        self._failure_recovery: asyncio.Task | None = None
+        self._failure_recovery_waiters = 0
 
     @property
     def registry(self) -> AssetRegistry:
@@ -437,15 +439,28 @@ class AssetService:
     async def recover_missing(
         self, prepared_assets: tuple[PreparedAsset, ...], on_stage: Callable[[str], None] | None = None
     ) -> bool:
-        """Probe after an asset-related rejected generation; true only if a missing LoRA was restored."""
-        if not prepared_assets:
+        """One bounded failure-triggered probe per backend session, shared by simultaneous consumers."""
+        if not prepared_assets or self.state is None or await self._credential_id() is None:
             return False
-        scope_id = await self._credential_id()
-        if scope_id is None:
-            return False
-        restored: list[str] = []
-        await self.ensure_many(prepared_assets, on_stage, force=True, restored_out=restored)
-        return bool(restored)
+        if self._failure_recovery is None:
+            async def probe():
+                restored: list[str] = []
+                await self.ensure_many(prepared_assets, on_stage, force=True, restored_out=restored)
+                return bool(restored)
+            self._failure_recovery = asyncio.create_task(probe())
+            self._failure_recovery.add_done_callback(
+                lambda done: None if done.cancelled() else done.exception()
+            )
+        task = self._failure_recovery
+        if task.done():
+            return False  # Never start another failure-triggered probe in this session.
+        self._failure_recovery_waiters += 1
+        try:
+            return await asyncio.shield(task)
+        finally:
+            self._failure_recovery_waiters -= 1
+            if not self._failure_recovery_waiters and not task.done():
+                task.cancel()
 
     async def validate(self, prepared: PreparedAsset) -> None:
         """Dispatch-time guard without restoration: require current server validation or fail without uploading."""
