@@ -463,7 +463,9 @@ class _Execution:
             if self.request.backend == "cloud" and self.runner.service.assets is not None:
                 # One first-use BYOM batch before concurrent workflow branches begin.
                 selected = {
-                    name for node in self.graph.nodes if node.type in GENERATIVE
+                    name
+                    for node in self.graph.nodes
+                    if node.type in GENERATIVE
                     for name, _ in node.params.get("loras", ())
                 }
                 choices = await session.script_asset_choices(self.runner.state, self.request.backend)
