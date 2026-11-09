@@ -645,6 +645,7 @@ class MainWindow:
             active_credential=self._active_credential_id,
             key_directory=self._key_directory,
             on_active=self._show_active_key,
+            on_unavailable=self._show_usage_unavailable,
         )
         self.workflow_defaults = WorkflowDefaultsPanel(form, self.runner, self.state_dir)
         self.activity.listen(self._usage_activity_changed)
@@ -1386,6 +1387,16 @@ class MainWindow:
         pill.setAccessibleName(f"Local DT+ completed images today, active key / all keys: {text}")
         pill.setToolTip(tip)
         pill.setProperty("state", state)
+        pill.style().unpolish(pill)
+        pill.style().polish(pill)
+
+    def _show_usage_unavailable(self) -> None:
+        """Do not present stale or missing local counts as a fresh daily total."""
+        pill = self.usage_pill
+        pill.setText("\u2013/\u2013")
+        pill.setAccessibleName("Local DT+ completed image counts unavailable")
+        pill.setToolTip("Saved-image history could not be read. Return to Connection to refresh the local count.")
+        pill.setProperty("state", "warning")
         pill.style().unpolish(pill)
         pill.style().polish(pill)
 

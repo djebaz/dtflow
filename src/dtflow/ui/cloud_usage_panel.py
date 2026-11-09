@@ -50,12 +50,14 @@ class CloudUsagePanel(QObject):
         *,
         active_credential: Callable[[], Awaitable[tuple[str, str | None] | None]] | None = None,
         key_directory: Callable[[], dict[str, str]] | None = None,
-        on_active: Callable[[str | None, int, str, str], None] | None = None,
+        on_active: Callable[[str | None, int, int, str, str], None] | None = None,
+        on_unavailable: Callable[[], None] | None = None,
         clock: Callable[[], datetime] = lambda: datetime.now(UTC),
     ):
         super().__init__(form)
         self.form, self.runner, self.state_dir = form, runner, Path(state_dir)
         self._active_credential, self._on_active, self._clock = active_credential, on_active, clock
+        self._on_unavailable = on_unavailable
         self._key_directory = key_directory
         self._directory: dict[str, str] = {}
         self._records: tuple[UsageRecord, ...] = ()
@@ -169,7 +171,9 @@ class CloudUsagePanel(QObject):
             self._records, self._clock(), zone, active_credential=self._active, directory=self._directory
         )
         start = counts.start.astimezone(zone)
-        if self._on_active is not None:
+        if self._error and self._on_unavailable is not None:
+            self._on_unavailable()
+        elif self._on_active is not None:
             mine = next((key for key in counts.keys if key.active), None)
             total = sum(key.count for key in counts.keys)
             self._on_active(self.active_label, mine.count if mine else 0, total, mine.level if mine else "ok", zone.key)
