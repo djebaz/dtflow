@@ -239,7 +239,8 @@ class GenerationService:
                     if report["error"] and on_event is not None:
                         on_event(
                             BackendEvent(
-                                request.request_id, 0, "assets_failed",
+                                request.request_id, 0,
+                                "assets_inconclusive" if report["outcome"] == "inconclusive" else "assets_failed",
                                 datetime.now(UTC).isoformat(), stage=report["error"],
                             )
                         )
