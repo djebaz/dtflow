@@ -52,7 +52,7 @@ from dtflow.services.queue_session import (
     set_concurrency,
     RELAUNCH_STATES,
 )
-from dtflow.services.session import bind_prepared, load_prepared, selection_for
+from dtflow.services.session import bind_prepared, script_asset_choices, selection_for
 from dtflow.ui.activity import Activity, RunState
 from dtflow.ui.performance import profile_slow_gui_callback
 from dtflow.ui.activity_strip import activity_strip
@@ -2506,8 +2506,12 @@ class QueuePage:
             known = receipt_choices or {}
             named = {identifier for chosen in sets or () for identifier, _ in chosen} | set(weighted)
             named -= {x.identifier for x in request.loras}
-            receipts = await load_prepared(
-                self._state, "cloud", [known[name] for name in sorted(named) if name in known]
+            # Same retained bytes can be prepared under several logical filenames. Bind
+            # the named candidate selected in the composer, not the parent asset's first name.
+            candidates = await script_asset_choices(self._state, "cloud")
+            receipts = tuple(
+                item for item in candidates
+                if item.identifier in named and known.get(item.identifier) == item.receipt_id
             )
         request = self._with_weighted_loras(request, weighted)
         if job is not None:
