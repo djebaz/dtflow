@@ -32,7 +32,7 @@ from dtflow.build import display_identity
 from dtflow.composition import BACKENDS, BackendSelection
 from dtflow.core.gallery import GalleryQuery
 from dtflow.core.models import BackendError, ValidationError, eligible_model_ids
-from dtflow.diagnostics import event as diagnostic_event
+from dtflow.diagnostics import cloud_key_data, event as diagnostic_event
 from dtflow.logging_setup import configured_directory, development_mode
 from dtflow.paths import application_state_dir
 from dtflow.persistence.cache_coordination import CacheBusyError, CacheCleanupError, CacheSafetyError
@@ -1461,6 +1461,7 @@ class MainWindow:
         if error is not None:
             form.credentialStatusLabel.setText("Credential availability could not be read; check again or enter a key.")
             return
+        self._credential_status_for_switch = status
         env = status["environment"]
         selected = status["selected"]
         combo = form.keySelectCombo
@@ -1515,11 +1516,21 @@ class MainWindow:
             self.form.credentialStatusLabel.setText(f"Key not switched: {code}")
             self.refresh_credentials()
             return
+        source = "environment" if choice == ENVIRONMENT else "saved"
+        status = getattr(self, "_credential_status_for_switch", {})
+        if source == "environment":
+            environment = status.get("environment", {})
+            identity = (
+                (environment["credential_id"], environment.get("hint"))
+                if environment.get("credential_id")
+                else None
+            )
+        else:
+            selected = next((key for key in status.get("keys", ()) if key.id == choice), None)
+            identity = (selected.credential_id, selected.hint) if selected is not None else None
         diagnostic_event(
-            log,
-            "app.api_key_switched",
-            level=logging.INFO,
-            data={"to": "environment" if choice == ENVIRONMENT else "saved"},
+            log, "app.api_key_switched", level=logging.INFO,
+            data={"to": source, **cloud_key_data(identity, source)},
         )
         self.refresh_credentials()
         self._selection_changed()
