@@ -416,6 +416,9 @@ class AssetService:
                 # One Stop must not abort a restore still needed by another queued item.
                 # With no consumers left, cancellation can reach the transport/registry.
                 if not task.done():
+                    # A new consumer must not join a cancelled operation still cleaning up.
+                    if _SHARED.get(key) is task:
+                        _SHARED.pop(key, None)
                     task.cancel()
 
     async def _rebind(self, prepared: PreparedAsset, asset: str, reference: str) -> PreparedAsset:
@@ -428,19 +431,19 @@ class AssetService:
             return known  # A concurrent item already rebound it to this very reference.
         registry = AssetRegistry(self.state, writer=True)
         try:
-            await registry.open()
-        except AssetsBusyError:
-            raise _failure(
-                ErrorCategory.VALIDATION,
-                "prepared_asset_restore_busy",
-                f"LoRA {asset} has a newer DT+ reference, but another process is preparing assets. Nothing was submitted.",
-            ) from None
-        try:
+            try:
+                await settle(registry.open())
+            except AssetsBusyError:
+                raise _failure(
+                    ErrorCategory.VALIDATION,
+                    "prepared_asset_restore_busy",
+                    f"LoRA {asset} has a newer DT+ reference, but another process is preparing assets. Nothing was submitted.",
+                ) from None
             content = self._content(prepared)
             asset_id, operation = await registry.begin(content, prepared.backend_id, prepared.origin, "rebind")
             rebound = await registry.confirm(asset_id, operation, reference, "reconciled")
         finally:
-            await registry.aclose()
+            await settle(registry.aclose())
         _CURRENT[(rebound.backend_id, rebound.origin, self.backend.scope, rebound.receipt_id)] = rebound
         diagnostic_event(
             log, "assets.rebound", level=logging.INFO, data={"asset": asset, "receipt": rebound.receipt_id}
@@ -491,21 +494,21 @@ class AssetService:
             on_stage("restoring_assets")
         registry = AssetRegistry(self.state, writer=True)
         try:
-            await registry.open()
-        except AssetsBusyError:
-            raise _failure(
-                ErrorCategory.VALIDATION,
-                "prepared_asset_restore_busy",
-                f"LoRA {asset} is missing on DT+, but another process is preparing assets. Nothing was submitted.",
-            ) from None
-        try:
-            # This restore already has a shared task and verified source bytes. Avoid the separate shielded
-            # explicit-Prepare task: cancellation must propagate to the upload and settle its registry state.
+            try:
+                await settle(registry.open())
+            except AssetsBusyError:
+                raise _failure(
+                    ErrorCategory.VALIDATION,
+                    "prepared_asset_restore_busy",
+                    f"LoRA {asset} is missing on DT+, but another process is preparing assets. Nothing was submitted.",
+                ) from None
+            # The restore already has a shared task and verified source bytes. Avoid a separately shielded
+            # explicit-Prepare task so Stop can cancel the upload and settle its registry state.
             restored = await AssetService(self.backend, registry)._prepare(
-                retained.path, self._content(prepared), retained.path.stat()
+                retained.path, self._content(prepared), await asyncio.to_thread(retained.path.stat)
             )
         finally:
-            await registry.aclose()
+            await settle(registry.aclose())
         if (restored.sha256, restored.size) != (prepared.sha256, prepared.size):
             raise _failure(
                 ErrorCategory.PROTOCOL, "asset_restore_mismatch", "Restored asset does not match its record."
