@@ -1,8 +1,9 @@
-"""Independent durable registry of locally known cloud assets (``<state>/assets.sqlite3``, schema version 1).
+"""Independent durable registry of locally known cloud assets (``<state>/assets.sqlite3``, schema version 2).
 
 A row is a *local candidate*, not remote inventory: it records what this machine measured and what a server once
-acknowledged. It never stores credentials, credential fingerprints, signed URLs or file contents. Reuse always needs a
-fresh authenticated metadata check by the caller.
+acknowledged. It never stores raw credentials, signed URLs or file contents. A version-2 side table records per-key references
+under the stable opaque credential identity; schema-1 receipts remain historical, unassigned evidence until checked
+under a selected key. Confirmed per-key receipts are reused without routine network checks.
 
 Writers (``prepare`` and ``reconcile``) hold an exclusive ``assets.lock`` for their lifetime; opening as a writer
 turns any leftover ``intent``/``transferring`` operation of an interrupted process into explicit ``unknown`` evidence.
