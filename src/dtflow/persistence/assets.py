@@ -317,11 +317,16 @@ class AssetRegistry:
         identifier: str | None,
     ) -> PreparedAsset:
         now = _now()
-        # The shared content row retains the first confirmed legacy reference. A later
-        # different-key confirmation updates only its scoped receipt, never key A's history.
+        # The legacy path still updates its one reference. For scoped DT+ keys, keep
+        # an already-confirmed historical row unchanged; each key's current reference
+        # lives in asset_key_receipts instead.
+        where = (
+            "WHERE asset_id=?" if credential_id is None
+            else "WHERE asset_id=? AND (state!='confirmed' OR remote_id IS NULL)"
+        )
         db.execute(
             "UPDATE assets SET remote_id=?, state='confirmed', evidence=?, source=?, confirmed_at_utc=?,"
-            " updated_at_utc=? WHERE asset_id=? AND (state!='confirmed' OR remote_id IS NULL)",
+            " updated_at_utc=? " + where,
             (remote_id, "confirmed_" + source, source, now, now, asset_id),
         )
         if operation_id is not None:
