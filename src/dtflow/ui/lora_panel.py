@@ -480,7 +480,7 @@ class LoraAssetPanel:
         self._set_busy(False)
         status = self.page.assetStatusLabel
         self._show(status, present_asset_failure(failure) if failure else present_reconciliation(outcome[1]))
-        if bind is not None and failure is None:
+        if bind is not None and failure is None and outcome[1].status == "confirmed":
             self._bind_after_list = bind
         self.refresh_assets()
 
