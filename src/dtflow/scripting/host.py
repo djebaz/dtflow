@@ -40,7 +40,6 @@ from typing import Any
 from dtflow.core.models import (
     SEED_LIMIT,
     BackendError,
-    ErrorCategory,
     LoRASelection,
     PreparedAsset,
     RemoteOutcome,
