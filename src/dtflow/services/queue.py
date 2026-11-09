@@ -32,6 +32,7 @@ from dtflow.diagnostics import event as diagnostic_event
 from dtflow.persistence.queues import QueueError, post_control, read_queue_requests
 from dtflow.persistence.store import PersistenceError, SQLiteAttempts
 from dtflow.core.request_records import request_from_record
+from dtflow.services.assets import possible_missing_asset
 from dtflow.services.generation import GenerationService
 from dtflow.services.image_inputs import restore_image_inputs
 
@@ -53,7 +54,8 @@ class QueueDispatcher:
         self.store, self.service, self.poll, self.on_settle, self.on_event = store, service, poll, on_settle, on_event
         self._asset_recovery: asyncio.Task | None = None
         self._recovery_active = False
-        self._recovery_attempted = False
+        self._recovery_attempted: set[tuple[str, str, int]] = set()
+        self._recovery_assets: frozenset[tuple[str, str, int]] = frozenset()
         self._queue_assets: tuple = ()
 
     async def run(self, queue_id: str) -> dict[str, Any]:
@@ -152,29 +154,60 @@ class QueueDispatcher:
                 await asyncio.shield(asyncio.gather(*tasks, return_exceptions=True))
 
     async def _try_asset_recovery(
-        self, queue_id: str, request: ResolvedGenerationRequest, failure: BackendFailure
+        self, queue_id: str, item_id: str, request: ResolvedGenerationRequest, failure: BackendFailure
     ) -> bool:
-        """One coordinated probe/reprepare episode per queue, with admission held until it settles."""
+        """Hold new admissions while one bounded LoRA repair serves concurrent queue items."""
         assets = getattr(self.service, "assets", None)
         if (
             assets is None
             or not callable(getattr(assets, "recover_missing", None))
             or not request.prepared_assets
-            or failure.category != ErrorCategory.REMOTE_REJECTION
+            or not possible_missing_asset(failure)
         ):
             return False
-        if self._recovery_attempted:
-            if self._asset_recovery is None or self._asset_recovery.done():
-                return False
-            return await asyncio.shield(self._asset_recovery)
-        self._recovery_attempted = True
+        wanted = {
+            (item.identifier, item.sha256, item.size) for item in request.prepared_assets
+        }
+        running = self._asset_recovery
+        if running is not None and not running.done():
+            restored = await asyncio.shield(running)
+            if restored and wanted & self._recovery_assets:
+                return True
+
+        pending = tuple(
+            item for item in request.prepared_assets
+            if (item.identifier, item.sha256, item.size) not in self._recovery_attempted
+        )
+        if not pending:
+            return False
+        identities = frozenset((item.identifier, item.sha256, item.size) for item in pending)
+        self._recovery_attempted.update(identities)
+        self._recovery_assets = identities
         self._recovery_active = True
+
+        def progress(stage: str) -> None:
+            if self.on_event is not None:
+                self.on_event(
+                    item_id,
+                    BackendEvent(
+                        request.request_id,
+                        0,
+                        "preparing",
+                        datetime.now(timezone.utc).isoformat(),
+                        stage=stage,
+                    ),
+                )
 
         async def recover():
             try:
-                await self._record_event(queue_id, "asset_recovery_started", {"kind": "lora"})
-                restored = await assets.recover_missing(self._queue_assets or request.prepared_assets)
-                await self._record_event(queue_id, "asset_recovery_finished", {"restored": restored})
+                progress("restoring_assets")
+                await self._record_event(
+                    queue_id, "asset_recovery_started", {"kind": "lora", "count": len(pending)}
+                )
+                restored = await assets.recover_missing(pending, on_stage=progress)
+                await self._record_event(
+                    queue_id, "asset_recovery_finished", {"restored": restored}
+                )
                 return restored
             except Exception as exc:
                 diagnostic_event(
@@ -318,7 +351,7 @@ class QueueDispatcher:
                         saved = await self.service.generate(request, on_event=receive, layout=layout, **options)
                         break
                     except BackendError as exc:
-                        repaired = await self._try_asset_recovery(queue_id, request, exc.failure)
+                        repaired = await self._try_asset_recovery(queue_id, item_id, request, exc.failure)
                         # Retry a repaired request only when the provider definitely did not receive it.
                         safe_replay = (
                             repaired and exc.failure.remote_outcome == RemoteOutcome.NOT_STARTED
