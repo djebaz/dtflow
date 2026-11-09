@@ -219,8 +219,11 @@ class AssetService:
             definite = failure.remote_outcome in (RemoteOutcome.NOT_STARTED, RemoteOutcome.FAILED)
             await settle(
                 self.registry.mark(
-                    asset_id, operation, "failed" if definite or not transferred else "unknown",
-                    failure.code, asset=credential_id is None,
+                    asset_id,
+                    operation,
+                    "failed" if definite or not transferred else "unknown",
+                    failure.code,
+                    asset=credential_id is None,
                 )
             )
             raise
