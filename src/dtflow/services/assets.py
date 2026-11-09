@@ -337,6 +337,9 @@ class AssetService:
             async def flush() -> None:
                 await asyncio.sleep(0.02)
                 batch = _BATCHES.pop(scope, {})
+                # Release the batch slot before awaiting the network, so requests arriving
+                # during a flush get their own bounded flush instead of waiting forever.
+                _BATCH_TASKS.pop(scope, None)
                 if not batch:
                     return
                 unique = tuple(AssetContent("lora", *identity) for identity in batch)
