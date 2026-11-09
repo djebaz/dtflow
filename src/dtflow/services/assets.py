@@ -106,7 +106,9 @@ class AssetService:
         self.state = Path(state) if state is not None else None
         self.store = store if store is not None else (LoraStore(self.state) if self.state is not None else None)
         self._failure_recovery: asyncio.Task | None = None
-        self._failure_recovery_waiters = 0
+        self._recovery_waiters: dict[asyncio.Task, int] = {}
+        self._recovery_checked: set[tuple[str, str, int]] = set()
+        self._recovery_restored: set[tuple[str, str, int]] = set()
 
     @property
     def registry(self) -> AssetRegistry:
@@ -417,7 +419,7 @@ class AssetService:
 
     async def ensure_many(
         self, prepared_assets: tuple[PreparedAsset, ...], on_stage: Callable[[str], None] | None = None,
-        *, force: bool = False, restored_out: list[str] | None = None,
+        *, force: bool = False, restored_out: list[tuple[str, str, int]] | None = None,
     ) -> tuple[PreparedAsset, ...]:
         """Trust existing per-key receipts; batch-check only first use or an explicit recovery probe."""
         if not prepared_assets:
@@ -483,7 +485,7 @@ class AssetService:
                     ), scope_id=credential_id,
                 )
                 if restored_out is not None:
-                    restored_out.append(item.sha256)
+                    restored_out.append(self._identity(self._content(item)))
             else:
                 raise _failure(ErrorCategory.PROTOCOL, "asset_check_inconclusive", "DT+ asset status is unknown.")
         return tuple(results)
@@ -491,29 +493,52 @@ class AssetService:
     async def recover_missing(
         self, prepared_assets: tuple[PreparedAsset, ...], on_stage: Callable[[str], None] | None = None
     ) -> bool:
-        """One bounded failure-triggered probe per backend session, shared by simultaneous consumers."""
+        """Bound each distinct key/LoRA to one check while sharing concurrent recovery work.
+
+        Unrelated assets are not exhausted by a previous recovery. A second simultaneous
+        caller joins the active probe; after it settles, previously unchecked assets can
+        have their own bounded episode. Successful restoration counts only for the caller's
+        own LoRAs, not for an unrelated branch.
+        """
         if not prepared_assets or self.state is None or await self._credential_id() is None:
             return False
-        if self._failure_recovery is None:
+        wanted = {self._identity(self._content(item)) for item in prepared_assets}
+        while True:
+            if wanted & self._recovery_restored:
+                return True
+            running = self._failure_recovery
+            if running is not None and not running.done():
+                task = running
+            else:
+                pending = tuple(
+                    item for item in prepared_assets
+                    if self._identity(self._content(item)) not in self._recovery_checked
+                )
+                if not pending:
+                    return False
+                self._recovery_checked.update(self._identity(self._content(item)) for item in pending)
 
-            async def probe():
-                restored: list[str] = []
-                await self.ensure_many(prepared_assets, on_stage, force=True, restored_out=restored)
-                return bool(restored)
-            self._failure_recovery = asyncio.create_task(probe())
-            self._failure_recovery.add_done_callback(
-                lambda done: None if done.cancelled() else done.exception()
-            )
-        task = self._failure_recovery
-        if task.done():
-            return False  # Never start another failure-triggered probe in this session.
-        self._failure_recovery_waiters += 1
-        try:
-            return await asyncio.shield(task)
-        finally:
-            self._failure_recovery_waiters -= 1
-            if not self._failure_recovery_waiters and not task.done():
-                task.cancel()
+                async def probe() -> set[tuple[str, str, int]]:
+                    restored: list[tuple[str, str, int]] = []
+                    await self.ensure_many(pending, on_stage, force=True, restored_out=restored)
+                    result = set(restored)
+                    self._recovery_restored.update(result)
+                    return result
+
+                task = asyncio.create_task(probe())
+                self._failure_recovery = task
+                task.add_done_callback(lambda done: None if done.cancelled() else done.exception())
+            self._recovery_waiters[task] = self._recovery_waiters.get(task, 0) + 1
+            try:
+                await asyncio.shield(task)
+            finally:
+                remaining = self._recovery_waiters[task] - 1
+                if remaining:
+                    self._recovery_waiters[task] = remaining
+                else:
+                    self._recovery_waiters.pop(task, None)
+                    if not task.done():
+                        task.cancel()
 
     async def validate(self, prepared: PreparedAsset) -> None:
         """Dispatch-time guard without restoration: require current server validation or fail without uploading."""
