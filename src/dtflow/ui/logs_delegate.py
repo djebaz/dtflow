@@ -18,6 +18,7 @@ class LogCellDelegate(QStyledItemDelegate):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.tokens = load_tokens()
+        self.compact = False
         icons_dir = Path(__file__).parents[1] / "resources" / "images" / "gallery"
         self.action_icons = (QIcon(str(icons_dir / "detail.svg")), QIcon(str(icons_dir / "json.svg")))
 
@@ -100,6 +101,25 @@ class LogCellDelegate(QStyledItemDelegate):
         rect = option.rect.adjusted(5, 3, -5, -3)
         painter.setFont(option.font)
         metrics = QFontMetrics(option.font)
+        if self.compact and col in (1, 2, 3):
+            if col == 1:
+                text = record["ts"].replace("T", " ")
+            elif col == 2:
+                text = record["component"] + "  ·  " + record["event"]
+            else:
+                pairs, overflow = self._preview(index)
+                message = self._message(index)
+                text = message if message and not pairs else "  ·  ".join(f"{key}={value}" for key, value in pairs[:6])
+                if overflow:
+                    text += f"  ·  +{overflow} more"
+            painter.setPen(self._color("color.text" if col == 1 else "color.secondary"))
+            painter.drawText(
+                rect,
+                Qt.AlignmentFlag.AlignVCenter | Qt.TextFlag.TextSingleLine,
+                metrics.elidedText(text.replace("\n", " "), Qt.TextElideMode.ElideRight, max(1, rect.width())),
+            )
+            painter.restore()
+            return
         if col == 0:
             levels = {
                 "DEBUG": "color.disabled",
@@ -164,6 +184,8 @@ class LogCellDelegate(QStyledItemDelegate):
         painter.restore()
 
     def sizeHint(self, option, index):
+        if self.compact:
+            return QSize(max(0, option.rect.width()), 25)
         if index.column() != 3:
             return QSize(max(0, option.rect.width()), 53)
         pairs, overflow = self._preview(index)

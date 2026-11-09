@@ -80,6 +80,14 @@ There is no menu bar: About DTFlow is the small help icon at the right of the bo
 
 For a portable Windows executable that launches the GUI directly, see [the build guide](building.md).
 
+## Logs
+
+The **Component** selector contains the DTFlow logger catalogue bundled with the installed build, so you can select a component *before* it emits any records in the current session. The list is generated from logger declarations in the source (run `python tools/generate_diagnostic_components.py` when adding one; packaging runs the generator automatically). **Event** begins at **All events**, or the last saved Event; use **Refresh** when you want to discover all events and numeric characteristic keys from the selected session in a background read. **Follow** updates log rows without rescanning for choices or rebuilding filter dropdowns. The text Search field is narrower so the Component and Event selections remain readable; full labels are available on hover/in the popup.
+
+Select **Compact: On** in the Logs header to render one terminal-style line per record, with long values truncated in the table. Record details, copy actions and matching exports are unchanged; **Compact: Off** restores the wrapped, multi-line view. Changing density only resizes resident rows, never scans logs. Compact is **Off** by default.
+
+The selected search/severity/Component/Event/time/characteristic filters, sort, Follow and Compact are remembered between app restarts in the durable `settings.json` file. They are not disposable cache and are retained under `--no-cache`. Values for components and events remain selected even if no matching log has been emitted yet. **Reset filters** clears the filters but not the preferred density; the app still opens the newest/current diagnostic session by default rather than restoring an obsolete session identity. Saved Search and Value expressions are user-entered text and may be sensitive; the preferences are local and are not written to diagnostic logs. A newer/unreadable settings file is left unchanged.
+
 ## Connect
 
 Select the fake, local Draw Things or DT+ cloud provider on Connection. The local provider needs its server endpoint. Connection checks run in the background and never generate. The Generate page uses the selected provider and endpoint; switching provider resets connection results.

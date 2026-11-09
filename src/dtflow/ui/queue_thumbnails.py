@@ -32,7 +32,8 @@ CONCURRENCY = 3  # lighter than the gallery's 6: this table shares the window wi
 PREVIEW_DELAY_MS = 350
 PREVIEW_COLUMN = 0
 PREVIEW_BOX = 440  # longest side of the hover preview in logical px (the 600 px source covers it up to 1.35x DPI)
-REVALIDATE_MS = 3000  # visible previews are re-read through live gallery authority, not retained indefinitely
+REVALIDATE_MS = 3000  # selected-item action availability stays short-lived
+DISPLAY_REVALIDATE_MS = 60_000  # other preview pixels can be reused between ordinary queue polls
 SUMMARY_SECONDS = 30
 log = logging.getLogger(__name__)
 
@@ -56,6 +57,7 @@ class QueueThumbnails(QObject):
     def __init__(self, runner, state: Path, parent=None):
         super().__init__(parent)
         self._runner, self._state = runner, Path(state)
+        self._view = parent if isinstance(parent, QTableView) else None
         self._stores = {ROW_SIDE: (OrderedDict(), MAX_ROW_PIXMAPS), PREVIEW_SIDE: (OrderedDict(), MAX_PREVIEW_PIXMAPS)}
         self._waiting: deque = deque()
         self._queued: set[tuple[str, str | None]] = set()
@@ -92,10 +94,39 @@ class QueueThumbnails(QObject):
         now = monotonic()
         if now - self._diagnostic_since >= SUMMARY_SECONDS:
             self._flush_diagnostics()
+        visible = None
+        selected = None
+        if self._view is not None:
+            if not self._view.isVisible():
+                return
+            model = self._view.model()
+            index = self._view.currentIndex()
+            row = model.row_at(index.row()) if index.isValid() else None
+            if row is not None and row.outputs:
+                selected = (row.outputs[0], row.gallery_identity)
+            first = self._view.rowAt(0)
+            if first >= 0:
+                last = self._view.rowAt(max(0, self._view.viewport().height() - 1))
+                if last < first:
+                    last = model.rowCount() - 1
+                visible = {
+                    (item.outputs[0], item.gallery_identity)
+                    for index in range(first, last + 1)
+                    if (item := model.row_at(index)) is not None and item.outputs
+                }
+                if selected is not None:
+                    visible.add(selected)
+            else:
+                visible = {selected} if selected is not None else set()
         for key, checked in tuple(self._checked.items()):
-            if now - checked >= REVALIDATE_MS / 1000 and key not in self._queued:
+            if key in self._queued or (visible is not None and key not in visible):
+                continue
+            # The selected Open in Images action validates through the gallery on click;
+            # successful preview pixels need no three-second availability repaint.
+            threshold = REVALIDATE_MS if key in self._failed else DISPLAY_REVALIDATE_MS
+            if now - checked >= threshold / 1000:
                 if key in self._failed:
-                    self._forget(key)  # permit retry, but keep successful pixels until a worker replaces them
+                    self._forget(key)  # let failed visible previews retry without resetting successful pixels
                 self.changed.emit(key[0])
 
     def _forget(self, key) -> None:
@@ -104,37 +135,47 @@ class QueueThumbnails(QObject):
         self._checked.pop(key, None)
         self._failed.discard(key)
 
+    def _request(self, key, side: int) -> None:
+        self._wanted.setdefault(key, set()).add(side)
+        if key not in self._queued:
+            self._queued.add(key)
+            self._waiting.append((self._epoch, key))
+            self._pump()
+
     def pixmap(self, path: str, side: int = ROW_SIDE, identity: str | None = None) -> QPixmap | None:
         if self._closed or self._runner.closed or not identity:
             return None
         key = (path, identity)
-        stale = monotonic() - self._checked.get(key, monotonic()) >= REVALIDATE_MS / 1000
-        if stale and key in self._failed:
+        age_ms = (monotonic() - self._checked.get(key, monotonic())) * 1000
+        stale = age_ms >= DISPLAY_REVALIDATE_MS
+        if key in self._failed and age_ms >= REVALIDATE_MS:
             self._forget(key)
         store = self._stores[side][0]
         found = store.get(key)
         if found is not None:
             store.move_to_end(key)
         if (found is None or stale) and key not in self._failed:
-            self._wanted.setdefault(key, set()).add(side)
-            if key not in self._queued:
-                self._queued.add(key)
-                self._waiting.append((self._epoch, key))
-                self._pump()
+            self._request(key, side)
         return found
 
     def is_failed(self, path: str, side: int = ROW_SIDE, identity: str | None = None) -> bool:
         return not identity or (path, identity) in self._failed
 
     def available(self, path: str, identity: str | None) -> bool:
-        """Fresh availability only; retained pixels during revalidation are presentation, not authority."""
+        """Keep selected-item availability fresh without decoding every displayed tile on each poll."""
         pixmap = self.pixmap(path, identity=identity)
         key = (path, identity)
-        return (
+        fresh = monotonic() - self._checked.get(key, float("-inf")) < REVALIDATE_MS / 1000
+        if (
             pixmap is not None
+            and not fresh
             and key not in self._queued
-            and monotonic() - self._checked.get(key, float("-inf")) < REVALIDATE_MS / 1000
-        )
+            and key not in self._failed
+            and not self._closed
+            and not self._runner.closed
+        ):
+            self._request(key, ROW_SIDE)
+        return pixmap is not None and fresh and key not in self._queued
 
     def clear(self) -> None:
         """Forget everything; results still in flight are ignored when they arrive."""
