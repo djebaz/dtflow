@@ -347,6 +347,7 @@ class AssetService:
                 pending[identity] = asyncio.get_running_loop().create_future()
             awaited[identity] = pending[identity]
         if scope not in _BATCH_TASKS or _BATCH_TASKS[scope].done():
+
             async def flush() -> None:
                 await asyncio.sleep(0.02)
                 batch = _BATCHES.pop(scope, {})
@@ -362,7 +363,7 @@ class AssetService:
                         answers = {}
                         # Keep the provider request bounded even for a thousand-item queue with varied LoRAs.
                         for start in range(0, len(unique), 64):
-                            answers.update(await negotiate(unique[start:start + 64]))
+                            answers.update(await negotiate(unique[start : start + 64]))
                     else:
                         answers = {
                             self._identity(item): await self.backend.negotiate_asset(item) for item in unique
