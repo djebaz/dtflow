@@ -551,10 +551,11 @@ class AssetService:
             affected = (current,) if current is not None else tuple(
                 key for key in pending if key not in outcomes
             )
-            if current is not None:
+            if current is not None and exc.failure.remote_outcome != RemoteOutcome.UNKNOWN:
                 outcomes[current] = "failed"
                 outcome = "failed"
             else:
+                # An uncertain transfer may already exist remotely; never call it a proven failure.
                 outcome = "inconclusive"
             if affected:
                 labels = [names[key] for key in dict.fromkeys(affected)]
