@@ -256,8 +256,7 @@ class AssetRegistry:
             asset_id = row["asset_id"]
             if action == "prepare" and row["state"] != "confirmed":
                 db.execute(
-                    "UPDATE assets SET state='intent', evidence='intent_recorded', updated_at_utc=? "
-                    "WHERE asset_id=?",
+                    "UPDATE assets SET state='intent', evidence='intent_recorded', updated_at_utc=? WHERE asset_id=?",
                     (now, asset_id),
                 )
         db.execute(
