@@ -51,7 +51,7 @@ _CURRENT: dict[tuple, PreparedAsset] = {}
 # and "upload required" are always asked again.
 _CHECKS: dict[tuple, asyncio.Task] = {}
 _EXISTS: dict[tuple, tuple[float, object]] = {}
-EXISTS_REUSE_SECONDS = 15.0
+EXISTS_REUSE_SECONDS = 600.0
 
 
 def _failure(
@@ -273,7 +273,7 @@ class AssetService:
         )
         reused = _EXISTS.get(key)
         if reused is not None and time.monotonic() - reused[0] < EXISTS_REUSE_SECONDS:
-            return reused[1], "reused a result from the last 15 seconds"
+            return reused[1], "reused a check made less than 10 minutes ago"
         task = _CHECKS.get(key)
         answer = "shared with another item in this app"
         if task is None or task.done():
