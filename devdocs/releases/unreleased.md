@@ -38,6 +38,7 @@ Changes through 6.2.0 are consolidated in [DTFlow 6.2.0](v6.2.0.md); its publish
 - Register the existing hidden-Connection counter and WARNING-and-worse Logs render states. Counter fixtures clear the earlier synthetic saved key and wait for credential identity rather than obsolete labels; the synthetic mapped-image presentation decodes its known local image without claiming cross-runtime managed-original verification. Decode failure now fails that fixture rather than saving a blank decoded state.
 
 - Slideshow transition follow-up: keep Detail image scaling consistent across fade boundaries and target a fixed 60 updates/second. At owner request, the outgoing photo fades out in half of the incoming fade-in duration, with eased opacity on both. Owner accepted the asymmetric fade at 60 FPS; the subsequent slightly faster fade-out remains pending owner smoke.
+- Generate, Add to queue and Edit image are disabled while no model is chosen, with the reason in their tooltip, so an empty model field no longer produces a rejected request. The existing request check still refuses an empty model if it is reached another way. No tests or renders run; awaiting owner smoke.
 
 ## Release audit
 
