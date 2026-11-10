@@ -18,6 +18,7 @@ from PySide6.QtWidgets import QListWidgetItem, QWidget
 from dtflow.ui.file_dialogs import QFileDialog
 from dtflow.core.models import BackendError, LoRASelection, RemoteOutcome, ResolvedGenerationRequest, ValidationError
 from dtflow.diagnostics import event as diagnostic_event
+from dtflow.services.catalogue import Catalogue, FAMILY_LABELS
 from dtflow.services.connection import (
     Presentation,
     present_asset_failure,
@@ -76,6 +77,8 @@ class LoraAssetPanel:
         self._receipts: dict[str, str] = {}  # selected LoRA identifier -> local receipt id (never exported)
         self._candidates: list[tuple[str, float | None]] = []
         self._records: dict[tuple[str, str], dict] = {}
+        self._inventory_families: dict[str, str] = {}
+        self._catalogue = Catalogue(self._state)
         self._bind_after_list: str | None = None  # identifier to bind once the registry list has been refreshed
         self._add_when_bound = False  # a Prepare also adds the LoRA to the list; a plain add never needs to
         page.addLoraButton.clicked.connect(self.add)
@@ -127,6 +130,11 @@ class LoraAssetPanel:
 
     def set_inventory(self, snapshot) -> None:
         """Remember raw backend LoRAs until the catalogue controller supplies a compatible candidate set."""
+        self._inventory_families = {
+            entry.identifier: entry.architecture
+            for entry in snapshot.entries
+            if entry.kind == "lora" and entry.architecture
+        } if snapshot else {}
         self._inventory_candidates = (
             [(e.identifier, e.default_weight) for e in snapshot.entries if e.kind == "lora"] if snapshot else []
         )
@@ -165,10 +173,40 @@ class LoraAssetPanel:
         )
         self._show(self.page.compatibilityStatusLabel, Presentation("unknown", text, ""))
 
+    def family_labels(self) -> dict[str, str]:
+        """Family evidence for display only; actual identifiers remain unchanged in requests.
+
+        Prepared file evidence takes priority over declarations. Conflicting prepared
+        receipts without a selected binding are shown as Unknown, not guessed.
+        """
+        family = {
+            entry.identifier: f"{FAMILY_LABELS.get(entry.base_model, entry.base_model)} (catalogue)"
+            for entry in self._catalogue.lora_definitions()
+            if entry.base_model
+        }
+        for name, value in self._inventory_families.items():
+            family.setdefault(name, f"{FAMILY_LABELS.get(value, value)} (provider)")
+        received: dict[str, set[str]] = {}
+        for (asset_id, name), record in self._records.items():
+            if record.get("state") != "confirmed" or record.get("family_source") != "file" or not record.get("family"):
+                continue
+            value = str(record["family"])
+            if self._receipts.get(name) == asset_id:
+                received[name] = {value}
+            elif name not in self._receipts:
+                received.setdefault(name, set()).add(value)
+        for name, values in received.items():
+            family[name] = (
+                f"{FAMILY_LABELS.get(next(iter(values)), next(iter(values)))} (file)"
+                if len(values) == 1 else "Unknown (conflicting receipts)"
+            )
+        return family
+
     def _render_loras(self) -> None:
+        labels = self.family_labels()
         self.page.loraList.clear()
         for item in self.loras:
-            text = f"{item.identifier} @ {item.weight}"
+            text = f"{item.identifier} @ {item.weight} · {labels.get(item.identifier, 'Unknown')}"
             if item.identifier in self._receipts:
                 text += f" [receipt {self._receipts[item.identifier][:8]}]"
             entry = QListWidgetItem(text)
@@ -221,6 +259,7 @@ class LoraAssetPanel:
             candidates=[name for name, _ in candidates],
             selected=self.loras,
             suggestions=dict(candidates),
+            families=self.family_labels(),
             callback=apply_selection,
         )
 
@@ -286,16 +325,20 @@ class LoraAssetPanel:
             if self._records.get((asset, name), {}).get("state") == "confirmed"
         }
         self._render_loras()
+        labels = self.family_labels()
         selected = self._selected_id()
         self.page.assetList.clear()
         for record in records:
             text = (
-                f"{record['identifier']} · {record['state']} ({record['evidence']}) · "
-                f"{record['sha256'][:8]} · {record['size']} B"
+                f"{record['identifier']} · {labels.get(record['identifier'], 'Unknown')} · "
+                f"{record['state']} ({record['evidence']}) · {record['sha256'][:8]} · {record['size']} B"
             )
             item = QListWidgetItem(text)
             item.setData(Qt.ItemDataRole.UserRole, (record["asset_id"], record["identifier"]))  # Qt.UserRole
-            item.setToolTip(f"Receipt {record['asset_id']} on {record['origin']}")
+            item.setToolTip(
+                f"LoRA family: {labels.get(record['identifier'], 'Unknown')}\n"
+                f"Receipt {record['asset_id']} on {record['origin']}"
+            )
             self.page.assetList.addItem(item)
             if (record["asset_id"], record["identifier"]) == selected:
                 self.page.assetList.setCurrentItem(item)
@@ -459,7 +502,8 @@ class LoraAssetPanel:
                 Presentation(
                     "ok" if record["state"] == "confirmed" else "warning",
                     "Receipt " + record["state"],
-                    f"{record['identifier']} ({record['evidence']}).",
+                    f"{record['identifier']} · {self.family_labels().get(record['identifier'], 'Unknown')} "
+                    f"({record['evidence']}).",
                 ),
             )
             if bind:
