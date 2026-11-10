@@ -144,6 +144,15 @@ def _clean_name(name: str | None) -> str | None:
     return value
 
 
+def _safe_alias(name: str | None, secret: str) -> str | None:
+    """Discard saved names containing their own credential before display or diagnostics."""
+    try:
+        alias = _clean_name(name)
+    except ValidationError:
+        return None
+    return alias if alias and secret not in alias else None
+
+
 class SavedCredentials:
     """Keys saved in Windows Credential Manager, with a credential-free index (names and the active choice).
 
@@ -237,14 +246,15 @@ class SavedCredentials:
             if not secret:
                 continue
             credential_id, hint = key_identity(secret)
-            name = item["name"] or key_label(hint, credential_id)
+            alias = _safe_alias(item["name"], secret)
+            name = alias or key_label(hint, credential_id)
             used[name] = used.get(name, 0) + 1
             if used[name] > 1:
                 name = f"{name} ({used[name]})"
             result.append(
                 SavedKey(
                     item["id"], name, credential_id, hint, item["id"] == active and not self._env(document),
-                    item["name"],
+                    alias,
                 )
             )
         return result
@@ -263,7 +273,7 @@ class SavedCredentials:
                 BackendFailure(ErrorCategory.CREDENTIALS, "empty_saved_key", "Selected saved credential is empty.")
             )
         alias = next((item["name"] for item in self._read()["keys"] if item["id"] == key_id), None)
-        return Credential("saved", value, alias)
+        return Credential("saved", value, _safe_alias(alias, value))
 
     def present(self) -> bool:
         return self.active_id() is not None
@@ -277,6 +287,8 @@ class SavedCredentials:
                 BackendFailure(ErrorCategory.CREDENTIALS, "empty_saved_key", "An empty API key cannot be saved.")
             )
         label = _clean_name(name)
+        if label and value in label:
+            raise ValidationError("A key name cannot contain the API key.")
         store = self._store()
         document = self._read()
         keys = self._ids(store, document)
@@ -310,6 +322,9 @@ class SavedCredentials:
         label = _clean_name(name)
         for item in keys:
             if item["id"] == key_id:
+                secret = self._secret(store, key_id)
+                if label and secret and secret in label:
+                    raise ValidationError("A key name cannot contain the API key.")
                 item["name"] = label
                 self._write({"active": document["active"], "keys": keys})
                 return
