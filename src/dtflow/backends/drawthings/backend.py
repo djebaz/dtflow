@@ -520,6 +520,11 @@ class DrawThingsBackend:
                             "unprepared_custom": sum(name not in listed for name in unprepared),
                             # Short content hashes name the LoRA files the request carries without logging file names.
                             "prepared_sha": [item.sha256[:8] for item in request.prepared_assets],
+                            "checkpoint_family": (spec or {}).get("version") or base_version or "unknown",
+                            "prepared_families": [
+                                {"sha": item.sha256[:8], "family": item.family or "unknown"}
+                                for item in request.prepared_assets
+                            ],
                             "override_sent": sent,
                             "override_reason": "sent"
                             if sent
