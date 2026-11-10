@@ -22,8 +22,9 @@ from dtflow.core.retry_policy import (
     AUTO_RETRY_DELAY,
     auto_retry_limit,
     auto_retry_request,
+    LoraStreak,
     auto_retryable,
-    server_ended_without_result,
+    refresh_failed,
 )
 from dtflow.core.models import (
     BackendError,
@@ -44,8 +45,6 @@ from dtflow.services.generation import GenerationService
 from dtflow.services.image_inputs import restore_image_inputs
 
 log = logging.getLogger(__name__)
-#: Items in a row that end with DT+'s generic error for the same LoRA before the queue pauses.
-LORA_FAILURE_PAUSE = 5
 
 RECORDED_BACKEND_EVENTS = {"preparing", "submission_possible", "artifact_received", "terminal"}
 
@@ -67,7 +66,7 @@ class QueueDispatcher:
         self._recovery_assets: frozenset[tuple[str, str, int]] = frozenset()
         self._queue_assets: tuple = ()
         # Consecutive items that ended with DT+'s generic error per LoRA, to stop a queue full of a broken file (#361).
-        self._lora_streak: dict[tuple[str, str, int], int] = {}
+        self._lora_streak = LoraStreak()
 
     async def run(self, queue_id: str) -> dict[str, Any]:
         """Dispatch until the queue is finished or cancelled.
@@ -235,25 +234,16 @@ class QueueDispatcher:
     async def _note_lora_outcome(
         self, queue_id: str, request: ResolvedGenerationRequest, failure: BackendFailure | None
     ) -> None:
-        """Count items that end with DT+'s generic error per custom LoRA; a success clears the count. After
-        ``LORA_FAILURE_PAUSE`` in a row the queue pauses, so a corrupt LoRA does not burn a whole queue."""
-        keys = {(item.identifier, item.sha256, item.size) for item in request.prepared_assets}
-        if failure is None or not server_ended_without_result(failure):
-            if failure is None:
-                for key in keys:
-                    self._lora_streak.pop(key, None)
+        """Pause the queue when a changed LoRA could not be refreshed, or when ``LORA_FAILURE_PAUSE`` items in a row
+        end with DT+'s generic error for the same LoRA; remaining items stay pending. A success clears the count."""
+        refresh = failure is not None and refresh_failed(failure)
+        if not self._lora_streak.note(request, failure) and not refresh:
             return
-        worst = 0
-        for key in keys:
-            self._lora_streak[key] = self._lora_streak.get(key, 0) + 1
-            worst = max(worst, self._lora_streak[key])
-        if worst >= LORA_FAILURE_PAUSE:
-            for key in keys:
-                self._lora_streak.pop(key, None)
-            diagnostic_event(log, "queue.lora_failure_pause", level=logging.WARNING, data={"count": worst})
-            await self._record_event(queue_id, "lora_failure_pause", {"count": worst})
-            await asyncio.to_thread(post_control, self.store.directory, queue_id, "pause")
-            await self.store.apply_controls(queue_id)
+        kind = "lora_refresh_pause" if refresh else "lora_failure_pause"
+        diagnostic_event(log, "queue." + kind, level=logging.WARNING, data={})
+        await self._record_event(queue_id, kind, {})
+        await asyncio.to_thread(post_control, self.store.directory, queue_id, "pause")
+        await self.store.apply_controls(queue_id)
 
     async def _record_event(
         self,

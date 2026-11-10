@@ -50,9 +50,11 @@ from dtflow.core.retry_policy import (
     AUTO_RETRY_DELAY,
     LORA_EXTRA_RETRIES,
     RETRY_STAGE,
+    LoraStreak,
     auto_retry_limit,
     auto_retry_request,
     auto_retryable,
+    refresh_failed,
 )
 from dtflow.core.tasks import settle
 from dtflow.core.workflows import (
@@ -376,6 +378,7 @@ class _Execution:
         self.recovery_attempted: set[tuple[str, str, int]] = set()
         self.recovery_assets: frozenset[tuple[str, str, int]] = frozenset()
         self.dirty = False
+        self.lora_streak = LoraStreak()
         # Each planned submission may get the shared automatic retry (#241): at most planned x 2 before any Retry.
         self.allowance = request.planned * (1 + AUTO_RETRIES + LORA_EXTRA_RETRIES)
         limit = runner.service.backend.capabilities.max_concurrency
@@ -896,6 +899,20 @@ class _Execution:
         self.asset_recovery = asyncio.create_task(repair())
         return await asyncio.shield(self.asset_recovery)
 
+    async def pause_for_lora(self, request, failure) -> None:
+        """Pause the run (steps not yet sent wait) when a changed LoRA could not be refreshed, or after
+        ``LORA_FAILURE_PAUSE`` steps in a row ended with DT+'s generic error for the same LoRA."""
+        refresh = refresh_failed(failure)
+        if self.lora_streak.note(request, failure) or refresh:
+            diagnostic_event(
+                log,
+                "workflow.lora_pause",
+                level=logging.WARNING,
+                data={"reason": "refresh_failed" if refresh else "repeated_failures"},
+            )
+            await asyncio.to_thread(post_control, self.runner.state, self.queue_id, "pause")
+            self.go.clear()
+
     async def submit(self, keys: list[Key], request, weight: int, prepared=None):
         """One generation for ``keys`` under the loop guard and a backend lane; None when it did not succeed (the
         steps then hold their end state)."""
@@ -997,6 +1014,7 @@ class _Execution:
                             layout=self.layout(keys),
                             **options,
                         )
+                        self.lora_streak.note(request, None)
                         break
                     except BackendError as exc:
                         restored = await self.recover_assets(keys, request, exc.failure)
@@ -1004,6 +1022,7 @@ class _Execution:
                         if auto_used >= auto_retry_limit(request, exc.failure) or (
                             not safe_repair_retry and not auto_retryable(exc.failure)
                         ):
+                            await self.pause_for_lora(request, exc.failure)
                             raise
                         first = exc
                     auto_used += 1

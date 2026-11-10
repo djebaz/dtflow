@@ -19,6 +19,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from dtflow.core.models import ValidationError
+from dtflow.diagnostics import event as diagnostic_event
 from dtflow.persistence.assets import _lock_file
 
 log = logging.getLogger(__name__)
@@ -55,6 +56,7 @@ def _hash(path: Path) -> tuple[str, int]:
 class LoraStore:
     def __init__(self, state: Path):
         self.directory = Path(state) / STORE_DIR
+        self._unreadable: set[str] = set()
 
     # -- index ----------------------------------------------------------------------------------------------------
 
@@ -267,8 +269,15 @@ class LoraStore:
                     "edge" not in stamp or self._edge(path, stat.st_size) == stamp["edge"]
                 ):
                     return None
-            except OSError:
+            except OSError as exc:
+                # A locked or unreadable source keeps the old receipt, but never silently.
+                if name not in self._unreadable:
+                    self._unreadable.add(name)
+                    diagnostic_event(
+                        log, "assets.source_unreadable", level=logging.WARNING, data={"reason": type(exc).__name__}
+                    )
                 return None
+            self._unreadable.discard(name)
             return path
         return None
 

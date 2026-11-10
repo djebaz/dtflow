@@ -30,7 +30,7 @@ from dtflow.core.models import (
     SubmissionStage,
     ValidationError,
 )
-from dtflow.core.retry_policy import server_ended_without_result
+from dtflow.core.retry_policy import REFRESH_FAILED_CODE, server_ended_without_result
 from dtflow.core.tasks import settle
 from dtflow.diagnostics import api_error_data, cloud_key_data, event as diagnostic_event
 from dtflow.persistence.assets import AssetRegistry, AssetsBusyError, newest_per_name
@@ -41,8 +41,8 @@ log = logging.getLogger(__name__)
 CHUNK = 1024 * 1024
 
 # One shielded operation per (origin, auth scope, content): identical concurrent prepares join it, anything else never does.
-#: Seconds a failed outdated-receipt refresh is not tried again: one pause per failure in a row.
-REFRESH_BACKOFF = (60.0, 120.0, 300.0, 900.0)
+#: Seconds an outdated-receipt refresh that hit a DT+ limit is not tried again.
+REFRESH_LIMIT_PAUSE = 900.0
 #: Seconds a read of the per-name current receipts is reused.
 NEWEST_TTL = 2.0
 _INFLIGHT: dict[tuple, asyncio.Task] = {}
@@ -136,8 +136,7 @@ class AssetService:
         self._recovery_checked: set[tuple[str, str, int]] = set()
         self._recovery_restored: set[tuple[str, str, int]] = set()
         # Outdated receipts already re-prepared from their changed file, shared by concurrent items (#361).
-        self._refreshed: dict[tuple, PreparedAsset] = {}
-        self._refresh_failed: dict[tuple, tuple[float, BackendFailure, int]] = {}
+        self._refresh_failed: dict[tuple, tuple[float, BackendFailure]] = {}
         self._newest_cache: tuple[float, dict[str, PreparedAsset]] | None = None
         # The UI can receive individual names without adding them to diagnostic records.
         self.on_resolution: Callable[[dict], None] | None = None
@@ -735,9 +734,6 @@ class AssetService:
         if self.store is None:
             return item
         identity = (credential, *self._identity(self._content(item)))
-        done = self._refreshed.get(identity)
-        if done is not None:
-            return done
         blocked = self._refresh_failed.get(identity)
         if blocked is not None and time.monotonic() < blocked[0]:
             raise BackendError(blocked[1])
@@ -745,6 +741,8 @@ class AssetService:
         if path is None:
             return item
         # Concurrent queue slots share one measurement, copy and upload, and the last one to leave cancels it.
+        # Nothing is cached on success: the source stamp and the current-version marker are re-written by the refresh,
+        # so the next look at the file answers from them, and putting an older file back is seen like any change.
         try:
             fresh = await self._shared(
                 "refresh", item, lambda: self._refresh(item, path, on_stage), scope_id=credential
@@ -754,34 +752,34 @@ class AssetService:
         except Exception as exc:
             raise self._refresh_failed_error(identity, item, exc) from None
         self._refresh_failed.pop(identity, None)
-        if fresh != item:
-            self._refreshed[identity] = fresh
         return fresh
 
     def _refresh_failed_error(self, identity: tuple, item: PreparedAsset, exc: Exception) -> BackendError:
-        """A refresh that did not finish: name it, remember it with a growing pause, and make the run fail visibly."""
+        """A refresh that did not finish: name the LoRA and fail the request (runners pause on this code).
+
+        A DT+ limit error is remembered for ``REFRESH_LIMIT_PAUSE`` so a long run does not hammer it; every other cause
+        (busy writer, connectivity, a locked file) is transient and is tried again on the next request."""
         if isinstance(exc, BackendError):
-            reason, terminal = exc.failure.code, exc.failure.category == ErrorCategory.RESOURCE_LIMIT
+            reason, limited = exc.failure.code, exc.failure.category == ErrorCategory.RESOURCE_LIMIT
         elif isinstance(exc, AssetsBusyError):
-            reason, terminal = "assets_busy", False
+            reason, limited = "assets_busy", False
         else:
-            reason, terminal = type(exc).__name__, False
-        count = self._refresh_failed.get(identity, (0.0, None, 0))[2] + 1
-        pause = float("inf") if terminal else REFRESH_BACKOFF[min(count - 1, len(REFRESH_BACKOFF) - 1)]
+            reason, limited = type(exc).__name__, False
         name = PureWindowsPath(item.identifier).name
         error = _failure(
             ErrorCategory.VALIDATION,
-            "prepared_asset_refresh_failed",
+            REFRESH_FAILED_CODE,
             f"LoRA {name} changed on disk but could not be prepared again ({reason}). Nothing was submitted; "
-            "run Prepare for it again.",
+            "the run pauses. Run Prepare for it again.",
             diagnostics=(("asset", name), ("cause", reason)),
         )
-        self._refresh_failed[identity] = (time.monotonic() + pause, error.failure, count)
+        if limited:
+            self._refresh_failed[identity] = (time.monotonic() + REFRESH_LIMIT_PAUSE, error.failure)
         diagnostic_event(
             log,
             "assets.outdated_refresh_failed",
             level=logging.WARNING,
-            data={"reason": reason, "attempt": count, "pause_s": None if terminal else pause},
+            data={"reason": reason, "limited": limited},
         )
         return error
 

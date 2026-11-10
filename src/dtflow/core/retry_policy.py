@@ -88,3 +88,42 @@ def auto_retry_request(request: ResolvedGenerationRequest) -> ResolvedGeneration
             (AUTO_RETRY_EVIDENCE, request.request_id),
         ),
     )
+
+
+#: Items or jobs in a row that end with DT+'s generic error for the same custom LoRA before a runner stops (#361).
+LORA_FAILURE_PAUSE = 5
+#: Failure code of an outdated LoRA whose refresh could not finish (``AssetService``); the request was not sent.
+REFRESH_FAILED_CODE = "prepared_asset_refresh_failed"
+
+
+def refresh_failed(failure: BackendFailure) -> bool:
+    """The request was stopped because a changed LoRA file could not be prepared again."""
+    return failure.code == REFRESH_FAILED_CODE
+
+
+class LoraStreak:
+    """Counts runs of final failures per custom LoRA so a corrupt file does not burn a whole queue, workflow or batch.
+
+    ``note(request, failure)`` records one finished request: a final DT+ generic error adds one for each LoRA it
+    carries, a success (``failure`` None) clears them. It returns True once a LoRA reaches ``LORA_FAILURE_PAUSE`` (and
+    resets that LoRA), when the runner should stop taking new work."""
+
+    def __init__(self, limit: int = LORA_FAILURE_PAUSE) -> None:
+        self.limit = limit
+        self._counts: dict[tuple[str, str, int], int] = {}
+
+    def note(self, request: ResolvedGenerationRequest, failure: BackendFailure | None) -> bool:
+        keys = {(item.identifier, item.sha256, item.size) for item in request.prepared_assets}
+        if failure is None:
+            for key in keys:
+                self._counts.pop(key, None)
+            return False
+        if not server_ended_without_result(failure):
+            return False
+        tripped = False
+        for key in keys:
+            self._counts[key] = self._counts.get(key, 0) + 1
+            if self._counts[key] >= self.limit:
+                tripped = True
+                self._counts.pop(key, None)
+        return tripped

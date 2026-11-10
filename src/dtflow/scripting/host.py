@@ -52,7 +52,9 @@ from dtflow.core.retry_policy import (
     AUTO_RETRY_DELAY,
     auto_retry_limit,
     auto_retry_request,
+    LoraStreak,
     auto_retryable,
+    refresh_failed,
 )
 from dtflow.core.tasks import settle
 from dtflow.persistence.script_items import RETRY_EVIDENCE
@@ -176,6 +178,7 @@ class ScriptHost:
         self.sandbox = Path(sandbox).resolve()
         self.sandbox.mkdir(parents=True, exist_ok=True)
         self.max_generations, self.prefix = max_generations, prefix
+        self._lora_streak = LoraStreak()
         self._answers = list(answers) if answers is not None else None
         self._record_answers = record_answers
         self._ask = ask  # set only for a run whose forms are answered interactively (a queue item)
@@ -788,9 +791,11 @@ class ScriptHost:
         auto_used = 0
         while True:
             try:
-                return await run_generation(
+                outcome = await run_generation(
                     self.service, request, prefix=self.prefix, attempt_id=attempt_id, layout=self._layout(request)
                 )
+                self._lora_streak.note(request, None)
+                return outcome
             except BackendError as exc:
                 repaired = await recover_assets(request, exc.failure)
                 safe_retry = repaired and exc.failure.remote_outcome == RemoteOutcome.NOT_STARTED
@@ -800,6 +805,10 @@ class ScriptHost:
                     and self.generations < self.max_generations
                     and not self.cancel.is_set()
                 ):
+                    if self._lora_streak.note(request, exc.failure) or refresh_failed(exc.failure):
+                        # A broken LoRA would fail every remaining job: stop the run instead of burning it.
+                        self._blocked = "Stopped: the same LoRA keeps failing, or a changed LoRA could not be prepared."
+                        self.cancel.set()
                     raise
                 first = exc
             auto_used += 1
