@@ -253,7 +253,11 @@ class SavedCredentials:
                 name = f"{name} ({used[name]})"
             result.append(
                 SavedKey(
-                    item["id"], name, credential_id, hint, item["id"] == active and not self._env(document),
+                    item["id"],
+                    name,
+                    credential_id,
+                    hint,
+                    item["id"] == active and not self._env(document),
                     alias,
                 )
             )
