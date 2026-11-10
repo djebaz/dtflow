@@ -47,7 +47,7 @@ from dtflow.persistence.original_io import (
 )
 from dtflow.services.cache_management import CATEGORIES, cache_usage, purge_cache
 from dtflow.services.catalogue import Catalogue, FAMILY_LABELS, import_user_loras
-from dtflow.services.lora_family import detect_lora_family
+from dtflow.services.lora_family import retained_families
 from dtflow.services.lora_store import LoraStore
 from dtflow.services.connection import Presentation, check_connection, present_failure, present_status
 from dtflow.services.cloud_usage import key_identity
@@ -1786,20 +1786,14 @@ class MainWindow:
         def read():
             store = LoraStore(self.state_dir)
             entries = store.entries()
+            identities = [
+                (entry["sha256"], entry["size"])
+                for entry in entries
+                if isinstance(entry.get("sha256"), str) and isinstance(entry.get("size"), int)
+            ]
+            found = retained_families(self.state_dir, identities)
             for entry in entries:
-                sha, size = entry.get("sha256"), entry.get("size")
-                if not isinstance(sha, str) or not isinstance(size, int):
-                    continue
-                try:
-                    retained = store.find(sha, size)
-                    if retained is not None:
-                        detected = detect_lora_family(retained.path)
-                        if detected.family is not None:
-                            store.verify(retained)
-                        entry["detected_family"] = detected
-                except (OSError, ValidationError):
-                    # A damaged or missing retained copy must not hide the other LoRAs.
-                    pass
+                entry["detected_family"] = found.get((entry.get("sha256"), entry.get("size")))
             return len(Catalogue(self.state_dir).user_loras()), entries, store.usage()
 
         self._read_summary("loras", read, self._custom_loras_read)
