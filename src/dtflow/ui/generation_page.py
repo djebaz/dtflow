@@ -913,6 +913,7 @@ class GenerationPage:
             "size": f"{page.widthSpinBox.value()}x{page.heightSpinBox.value()}",
             "prompt": page.promptEdit.toPlainText(),  # the template of a prompt variation
             "loras": dict(self.lora.all_choices()),  # identifier -> catalogue weight; unfiltered, models may differ
+            "lora_families": self.lora.family_labels(),  # display only; raw identifiers remain unchanged
             "receipts": self.lora.confirmed_receipts(),  # bound for LoRA sets that name a custom cloud LoRA
         }
 
