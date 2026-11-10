@@ -55,6 +55,7 @@ class LoraAssetPanel:
         backend_source: Callable[[], tuple[str, str | None]],
         saved_source: Callable,
         state_dir: Path,
+        catalogue: Catalogue | None = None,
         build_request: Callable[[], ResolvedGenerationRequest | None],
         is_busy: Callable[[], bool],
         set_busy: Callable[[bool], None],
@@ -78,7 +79,7 @@ class LoraAssetPanel:
         self._candidates: list[tuple[str, float | None]] = []
         self._records: dict[tuple[str, str], dict] = {}
         self._inventory_families: dict[str, str] = {}
-        self._catalogue = Catalogue(self._state)
+        self._catalogue = catalogue if catalogue is not None else Catalogue(self._state)
         self._bind_after_list: str | None = None  # identifier to bind once the registry list has been refreshed
         self._add_when_bound = False  # a Prepare also adds the LoRA to the list; a plain add never needs to
         page.addLoraButton.clicked.connect(self.add)
