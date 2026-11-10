@@ -186,19 +186,22 @@ class LoraAssetPanel:
         }
         for name, value in self._inventory_families.items():
             family.setdefault(name, f"{FAMILY_LABELS.get(value, value)} (provider)")
-        received: dict[str, set[str]] = {}
+        records: dict[str, list[dict]] = {}
         for (asset_id, name), record in self._records.items():
-            if record.get("state") != "confirmed" or record.get("family_source") != "file" or not record.get("family"):
+            if record.get("state") != "confirmed":
                 continue
-            value = str(record["family"])
-            if self._receipts.get(name) == asset_id:
-                received[name] = {value}
-            elif name not in self._receipts:
-                received.setdefault(name, set()).add(value)
-        for name, values in received.items():
+            if name in self._receipts and self._receipts[name] != asset_id:
+                continue
+            records.setdefault(name, []).append(record)
+        for name, entries in records.items():
+            values = {(record.get("family"), record.get("family_source")) for record in entries}
+            if len(values) != 1:
+                family[name] = "Unknown (conflicting receipts)"
+                continue
+            value, source = next(iter(values))
             family[name] = (
-                f"{FAMILY_LABELS.get(next(iter(values)), next(iter(values)))} (file)"
-                if len(values) == 1 else "Unknown (conflicting receipts)"
+                f"{FAMILY_LABELS.get(value, value)} (file)"
+                if value and source == "file" else "Unknown (file unclassified)"
             )
         return family
 
@@ -325,18 +328,23 @@ class LoraAssetPanel:
             if self._records.get((asset, name), {}).get("state") == "confirmed"
         }
         self._render_loras()
-        labels = self.family_labels()
         selected = self._selected_id()
         self.page.assetList.clear()
         for record in records:
+            value = record.get("family")
+            source = record.get("family_source")
+            family = (
+                f"{FAMILY_LABELS.get(value, value)} (file)"
+                if value and source == "file" else "Unknown (file unclassified)"
+            )
             text = (
-                f"{record['identifier']} · {labels.get(record['identifier'], 'Unknown')} · "
+                f"{record['identifier']} · {family} · "
                 f"{record['state']} ({record['evidence']}) · {record['sha256'][:8]} · {record['size']} B"
             )
             item = QListWidgetItem(text)
             item.setData(Qt.ItemDataRole.UserRole, (record["asset_id"], record["identifier"]))  # Qt.UserRole
             item.setToolTip(
-                f"LoRA family: {labels.get(record['identifier'], 'Unknown')}\n"
+                f"LoRA family: {family}\n"
                 f"Receipt {record['asset_id']} on {record['origin']}"
             )
             self.page.assetList.addItem(item)
