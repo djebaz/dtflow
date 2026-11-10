@@ -17,7 +17,6 @@ import sqlite3
 import struct
 from dataclasses import dataclass
 from pathlib import Path
-from urllib.parse import quote
 
 MAX_TENSORS = 20_000
 _SHAPE = re.compile(r"^\s*[\[(]\s*\d+(?:\s*,\s*\d+)*\s*[\])]\s*$")
@@ -62,7 +61,7 @@ def detect_lora_family(path: Path) -> LoraFamily:
     path = Path(path)
     if not path.is_file():
         return LoraFamily()
-    uri = "file:" + quote(str(path.resolve()), safe="/:") + "?mode=ro"
+    uri = path.resolve().as_uri() + "?mode=ro"
     try:
         with sqlite3.connect(uri, uri=True, timeout=1.0) as db:
             db.execute("PRAGMA query_only=ON")
