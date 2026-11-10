@@ -246,6 +246,9 @@ async def bind_prepared(
         if (item.receipt_id, identifier) in named
     )
     prepared = tuple(dict.fromkeys(resolved)) or prepared
+    # Alias resolution can replace the enriched base receipt with its old,
+    # unclassified named row. Reattach the same file evidence to the final names.
+    prepared = await _with_legacy_families(state, prepared)
     for item in prepared:
         if item.identifier not in selected:
             raise ValidationError(f"--asset {item.receipt_id[:8]} needs a matching --lora {item.identifier}:WEIGHT.")
