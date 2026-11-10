@@ -104,16 +104,19 @@ def custom_lora_override(request: ResolvedGenerationRequest, version: str | None
     are all required; an entry missing one is dropped without an error.
 
     The server cannot resolve a custom file from its name alone and appears to ignore it without an error, so each prepared
-    LoRA is described explicitly. ``version`` is the selected base model's own Draw Things version string; with no known
-    version nothing is sent rather than a guess.
+    LoRA is described explicitly. When the file's family was detected, ``version`` belongs to that LoRA;
+    unknown-family files retain the previous checkpoint-version fallback until the owner can classify them.
     """
-    prepared = {item.identifier for item in request.prepared_assets}
-    if not prepared or not version:
-        return b""
+    prepared = {item.identifier: item for item in request.prepared_assets}
     entries = [
-        {"name": item.identifier, "file": wire_lora_name(request, item.identifier), "prefix": "", "version": version}
+        {
+            "name": item.identifier,
+            "file": wire_lora_name(request, item.identifier),
+            "prefix": "",
+            "version": lora_version(prepared[item.identifier].family) or version,
+        }
         for item in request.loras
-        if item.identifier in prepared
+        if item.identifier in prepared and (prepared[item.identifier].family or version)
     ]
     return json.dumps(entries).encode() if entries else b""
 
