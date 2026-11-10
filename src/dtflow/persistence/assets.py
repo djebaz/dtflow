@@ -75,11 +75,17 @@ def _now() -> str:
     return datetime.now(UTC).isoformat()
 
 
-def newest_per_name(choices) -> tuple:
-    """One receipt per LoRA name: the one whose content was first seen last (``choices`` come oldest first)."""
+def newest_per_name(choices, current=None) -> tuple:
+    """One receipt per LoRA name.
+
+    ``current`` maps a name to the (sha256, size) most recently prepared on purpose; that content wins, so preparing
+    older bytes again is honoured. Otherwise the content first seen last wins (``choices`` come oldest first)."""
     newest = {}
     for item in choices:
         newest[item.identifier] = item
+    for item in choices:
+        if current and current.get(item.identifier) == (item.sha256, item.size):
+            newest[item.identifier] = item
     return tuple(newest.values())
 
 

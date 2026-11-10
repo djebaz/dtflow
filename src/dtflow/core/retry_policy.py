@@ -35,6 +35,8 @@ from dtflow.core.models import (
 
 #: Automatic retries per submission.
 AUTO_RETRIES = 1
+#: One more automatic try for a request with custom LoRAs that DT+ ended without a result (#361).
+LORA_EXTRA_RETRIES = 1
 #: Seconds to wait before an automatic retry.
 AUTO_RETRY_DELAY = 5.0
 #: Request evidence naming the request an automatic retry replaces (a manual Retry uses ``retry.of_request``).
@@ -72,7 +74,7 @@ def auto_retry_limit(request: ResolvedGenerationRequest, failure: BackendFailure
     (#361). The LoRA check and restore (``AssetService.recover_missing``) runs between the tries, and one try is not
     always enough while DT+ starts serving a LoRA it has just been told about."""
     if request.prepared_assets and server_ended_without_result(failure):
-        return AUTO_RETRIES + 1
+        return AUTO_RETRIES + LORA_EXTRA_RETRIES
     return AUTO_RETRIES
 
 

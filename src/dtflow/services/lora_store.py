@@ -26,6 +26,7 @@ STORE_DIR = "lora_files"
 INDEX_FILE = "index.json"
 INDEX_VERSION = 1
 CHUNK = 1024 * 1024
+EDGE = 64 * 1024
 _UNSAFE = re.compile(r'[<>:"/\\|?*\x00-\x1f]')
 
 
@@ -191,13 +192,36 @@ class LoraStore:
         finally:
             handle.close()
 
-    def record_origin(self, source: Path, sha256: str, size: int, name: str) -> None:
+    @staticmethod
+    def _edge(path: Path, size: int) -> str:
+        """Digest of the first and last 64 KB: catches a same-size replacement whose modification time was kept."""
+        digest = hashlib.sha256()
+        with path.open("rb") as handle:
+            digest.update(handle.read(EDGE))
+            if size > EDGE:
+                handle.seek(max(size - EDGE, EDGE))
+                digest.update(handle.read(EDGE))
+        return digest.hexdigest()[:16]
+
+    def record_origin(
+        self,
+        source: Path,
+        sha256: str,
+        size: int,
+        name: str,
+        stat: os.stat_result | None = None,
+        *,
+        mark: bool = True,
+    ) -> None:
         """Remember which file on disk this LoRA name was prepared from, so a later change under it is seen.
 
         Kept per logical name: identical bytes prepared under two names have two sources, and a change to one must
-        never refresh the other."""
+        never refresh the other. ``stat`` is the measurement taken with the hash, never a fresh one: a file replaced
+        after it was hashed must still read as changed. ``mark`` records an explicit Prepare (or a refresh), which makes
+        these bytes the name's current version even when older bytes were seen first."""
         try:
-            stat = Path(source).stat()
+            stat = stat or Path(source).stat()
+            edge = self._edge(Path(source), stat.st_size)
         except OSError:
             return
         handle = self._locked()
@@ -208,10 +232,13 @@ class LoraStore:
                     origins = item.get("origins")
                     if not isinstance(origins, dict):
                         origins = item["origins"] = {}
+                    previous = origins.get(name) if isinstance(origins.get(name), dict) else {}
                     stamp = {
                         "path": str(Path(source).absolute()),
                         "size": stat.st_size,
                         "mtime_ns": stat.st_mtime_ns,
+                        "edge": edge,
+                        "prepared_at": datetime.now(UTC).isoformat() if mark else previous.get("prepared_at", ""),
                     }
                     if origins.get(name) != stamp:
                         origins[name] = stamp
@@ -221,10 +248,9 @@ class LoraStore:
             handle.close()
 
     def changed_origin(self, sha256: str, size: int, name: str) -> Path | None:
-        """The file this LoRA name was prepared from when it now holds different bytes, else None.
+        """The file this LoRA name was prepared from when its size, modification time or edges changed, else None.
 
-        Size and modification time decide first; only a changed stamp costs a re-hash, and a touched but identical
-        file is stamped again so it is not hashed twice."""
+        Cheap: no full hash. The caller measures the file once and compares the digest."""
         for item in self._read():
             if item.get("sha256") != sha256 or item.get("size") != size:
                 continue
@@ -235,15 +261,33 @@ class LoraStore:
             path = Path(stamp["path"])
             try:
                 stat = path.stat()
-                if not path.is_file() or (stat.st_size, stat.st_mtime_ns) == (stamp.get("size"), stamp.get("mtime_ns")):
+                if not path.is_file():
                     return None
-                if stat.st_size == size and _hash(path)[0] == sha256:
-                    self.record_origin(path, sha256, size, name)
+                if (stat.st_size, stat.st_mtime_ns) == (stamp.get("size"), stamp.get("mtime_ns")) and (
+                    "edge" not in stamp or self._edge(path, stat.st_size) == stamp["edge"]
+                ):
                     return None
             except OSError:
                 return None
             return path
         return None
+
+    def current_by_name(self) -> dict[str, tuple[str, int]]:
+        """Per LoRA name, the bytes most recently prepared on purpose (explicit Prepare or a refresh)."""
+        latest: dict[str, tuple[str, str, int]] = {}
+        try:
+            files = self._read()
+        except ValidationError:
+            return {}
+        for item in files:
+            origins = item.get("origins")
+            if not isinstance(origins, dict):
+                continue
+            for name, stamp in origins.items():
+                moment = stamp.get("prepared_at") if isinstance(stamp, dict) else ""
+                if moment and (name not in latest or moment > latest[name][0]):
+                    latest[name] = (moment, item.get("sha256"), item.get("size"))
+        return {name: (sha, size) for name, (_, sha, size) in latest.items()}
 
     def usage(self) -> tuple[int, int]:
         """(file count, total bytes) of indexed files that still exist."""

@@ -409,7 +409,9 @@ class ScriptHost:
                     and possible_missing_asset(exc.failure)
                     and callable(getattr(assets, "recover_missing", None))
                 ):
-                    repaired = self._await(assets.recover_missing(request.prepared_assets), track=True)
+                    repaired = self._await(
+                        assets.recover_missing(request.prepared_assets, failure=exc.failure), track=True
+                    )
                     automatic = automatic or (repaired and exc.failure.remote_outcome == RemoteOutcome.NOT_STARTED)
             except Exception as exc:
                 kind, reason, automatic = "unknown", str(exc) or type(exc).__name__, False
@@ -613,7 +615,7 @@ class ScriptHost:
 
                 async def repair():
                     try:
-                        return await assets.recover_missing(pending)
+                        return await assets.recover_missing(pending, failure=failure)
                     finally:
                         asset_gate.set()
 

@@ -17,7 +17,7 @@ Execution model:
 - The loop guard counts submitted images (every Generate output and image step counts one). A submission that
   would pass the planned total plus the retry allowance is refused, the run stops and ends ``failed``. Each explicit
   Retry adds that step's own submission to the allowance; the shared automatic retry (``core.retry_policy``,
-  #241) adds ``AUTO_RETRIES`` per planned submission.
+  #241) adds ``AUTO_RETRIES`` (and ``LORA_EXTRA_RETRIES``) per planned submission.
 - A remote outcome that is not confirmed (attempt ``unknown``) makes its step ``unknown``: never a failure or a
   success, never replayed. Only an explicit Retry submits that step again (a new request identity), except the one
   case ``auto_retryable`` accepts (DT+ ended the call itself with no image). A definite transient failure gets the
@@ -48,6 +48,7 @@ from dtflow.core.output_layout import OutputLayout, group_name, slug
 from dtflow.core.retry_policy import (
     AUTO_RETRIES,
     AUTO_RETRY_DELAY,
+    LORA_EXTRA_RETRIES,
     RETRY_STAGE,
     auto_retry_limit,
     auto_retry_request,
@@ -376,7 +377,7 @@ class _Execution:
         self.recovery_assets: frozenset[tuple[str, str, int]] = frozenset()
         self.dirty = False
         # Each planned submission may get the shared automatic retry (#241): at most planned x 2 before any Retry.
-        self.allowance = request.planned * (1 + AUTO_RETRIES)
+        self.allowance = request.planned * (1 + AUTO_RETRIES + LORA_EXTRA_RETRIES)
         limit = runner.service.backend.capabilities.max_concurrency
         self.lanes = max(1, min(limit, 10))
         self.graph = None
@@ -875,7 +876,7 @@ class _Execution:
         async def repair():
             try:
                 return await assets.recover_missing(
-                    pending, on_stage=lambda stage: self.set_stage(keys, "Restoring LoRA on DT+")
+                    pending, on_stage=lambda stage: self.set_stage(keys, "Restoring LoRA on DT+"), failure=failure
                 )
             except asyncio.CancelledError:
                 raise

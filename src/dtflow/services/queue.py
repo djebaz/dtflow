@@ -23,6 +23,7 @@ from dtflow.core.retry_policy import (
     auto_retry_limit,
     auto_retry_request,
     auto_retryable,
+    server_ended_without_result,
 )
 from dtflow.core.models import (
     BackendError,
@@ -43,6 +44,8 @@ from dtflow.services.generation import GenerationService
 from dtflow.services.image_inputs import restore_image_inputs
 
 log = logging.getLogger(__name__)
+#: Items in a row that end with DT+'s generic error for the same LoRA before the queue pauses.
+LORA_FAILURE_PAUSE = 5
 
 RECORDED_BACKEND_EVENTS = {"preparing", "submission_possible", "artifact_received", "terminal"}
 
@@ -63,6 +66,8 @@ class QueueDispatcher:
         self._recovery_attempted: set[tuple[str, str, int]] = set()
         self._recovery_assets: frozenset[tuple[str, str, int]] = frozenset()
         self._queue_assets: tuple = ()
+        # Consecutive items that ended with DT+'s generic error per LoRA, to stop a queue full of a broken file (#361).
+        self._lora_streak: dict[tuple[str, str, int], int] = {}
 
     async def run(self, queue_id: str) -> dict[str, Any]:
         """Dispatch until the queue is finished or cancelled.
@@ -207,7 +212,7 @@ class QueueDispatcher:
             try:
                 progress("restoring_assets")
                 await self._record_event(queue_id, "asset_recovery_started", {"kind": "lora", "count": len(pending)})
-                restored = await assets.recover_missing(pending, on_stage=progress)
+                restored = await assets.recover_missing(pending, on_stage=progress, failure=failure)
                 await self._record_event(queue_id, "asset_recovery_finished", {"restored": restored})
                 return restored
             except Exception as exc:
@@ -226,6 +231,29 @@ class QueueDispatcher:
 
         self._asset_recovery = asyncio.create_task(recover())
         return await asyncio.shield(self._asset_recovery)
+
+    async def _note_lora_outcome(
+        self, queue_id: str, request: ResolvedGenerationRequest, failure: BackendFailure | None
+    ) -> None:
+        """Count items that end with DT+'s generic error per custom LoRA; a success clears the count. After
+        ``LORA_FAILURE_PAUSE`` in a row the queue pauses, so a corrupt LoRA does not burn a whole queue."""
+        keys = {(item.identifier, item.sha256, item.size) for item in request.prepared_assets}
+        if failure is None or not server_ended_without_result(failure):
+            if failure is None:
+                for key in keys:
+                    self._lora_streak.pop(key, None)
+            return
+        worst = 0
+        for key in keys:
+            self._lora_streak[key] = self._lora_streak.get(key, 0) + 1
+            worst = max(worst, self._lora_streak[key])
+        if worst >= LORA_FAILURE_PAUSE:
+            for key in keys:
+                self._lora_streak.pop(key, None)
+            diagnostic_event(log, "queue.lora_failure_pause", level=logging.WARNING, data={"count": worst})
+            await self._record_event(queue_id, "lora_failure_pause", {"count": worst})
+            await asyncio.to_thread(post_control, self.store.directory, queue_id, "pause")
+            await self.store.apply_controls(queue_id)
 
     async def _record_event(
         self,
@@ -350,6 +378,7 @@ class QueueDispatcher:
                 while True:
                     try:
                         saved = await self.service.generate(request, on_event=receive, layout=layout, **options)
+                        await self._note_lora_outcome(queue_id, request, None)
                         break
                     except BackendError as exc:
                         repaired = await self._try_asset_recovery(queue_id, item_id, request, exc.failure)
@@ -398,6 +427,7 @@ class QueueDispatcher:
                 evidence.put_nowait(("item_settled", {"item_id": item_id, "state": state}, None))
                 raise
             except BackendError as exc:
+                await self._note_lora_outcome(queue_id, request, exc.failure)
                 failure = {
                     "code": exc.failure.code,
                     # The original reason (same shape as the attempts table), so Queues shows what Generate shows.

@@ -41,8 +41,10 @@ log = logging.getLogger(__name__)
 CHUNK = 1024 * 1024
 
 # One shielded operation per (origin, auth scope, content): identical concurrent prepares join it, anything else never does.
-#: Seconds a failed outdated-receipt refresh is not tried again.
-REFRESH_RETRY_SECONDS = 60.0
+#: Seconds a failed outdated-receipt refresh is not tried again: one pause per failure in a row.
+REFRESH_BACKOFF = (60.0, 120.0, 300.0, 900.0)
+#: Seconds a read of the per-name current receipts is reused.
+NEWEST_TTL = 2.0
 _INFLIGHT: dict[tuple, asyncio.Task] = {}
 # Concurrent queue/workflow items needing the same restore or rebind join one operation, and distinct ones take
 # turns, because the asset writer lock admits a single writer per state directory.
@@ -134,8 +136,9 @@ class AssetService:
         self._recovery_checked: set[tuple[str, str, int]] = set()
         self._recovery_restored: set[tuple[str, str, int]] = set()
         # Outdated receipts already re-prepared from their changed file, shared by concurrent items (#361).
-        self._refreshed: dict[tuple[str, str, int], asyncio.Task] = {}
-        self._refresh_failed: dict[tuple[str, str, int], float] = {}
+        self._refreshed: dict[tuple, PreparedAsset] = {}
+        self._refresh_failed: dict[tuple, tuple[float, BackendFailure, int]] = {}
+        self._newest_cache: tuple[float, dict[str, PreparedAsset]] | None = None
         # The UI can receive individual names without adding them to diagnostic records.
         self.on_resolution: Callable[[dict], None] | None = None
 
@@ -162,10 +165,9 @@ class AssetService:
         content = AssetContent("lora", identifier or path.name, digest, stat.st_size, provenance)
         if self.store is not None:
             # Keep the durable copy first, so a failed or interrupted upload never costs the user the file.
-            kept = await asyncio.to_thread(self.store.retain, path, digest, stat.st_size)
-            await asyncio.to_thread(self.store.record_origin, path, digest, stat.st_size, content.identifier)
+            await asyncio.to_thread(self.store.retain, path, digest, stat.st_size)
             diagnostic_event(
-                log, "assets.copy_kept", level=logging.INFO, data={"size": stat.st_size, "name": kept.name}
+                log, "assets.copy_kept", level=logging.INFO, data={"size": stat.st_size, "sha": digest[:8]}
             )
         key = (
             self.backend.backend_id,
@@ -185,7 +187,12 @@ class AssetService:
             # Retrieve abandoned-waiter failures so they are never logged with provider detail.
             task.add_done_callback(lambda done: None if done.cancelled() else done.exception())
         # Cancelling this caller must not cancel an operation another caller still awaits.
-        return await asyncio.shield(task)
+        receipt = await asyncio.shield(task)
+        if self.store is not None and provenance != "auto_restore":
+            # Only a confirmed upload makes this file the name's source and current version.
+            await asyncio.to_thread(self.store.record_origin, path, digest, stat.st_size, content.identifier, stat)
+            self._newest_cache = None
+        return receipt
 
     async def _credential_id(self) -> str | None:
         """Real DT+ clients have a durable key identity; fixture backends retain their legacy path."""
@@ -484,7 +491,6 @@ class AssetService:
             # Stateless callers only validate exact remote references; they cannot retain or restore bytes.
             return tuple([await self._verify(item, on_stage, restoring=False) for item in prepared_assets])
 
-        prepared_assets = await self._current(prepared_assets)
         identities = {self._identity(self._content(item)): item for item in prepared_assets}
         outcomes: dict[tuple[str, str, int], str] = {}
         names = {key: PureWindowsPath(item.identifier).name for key, item in identities.items()}
@@ -493,6 +499,9 @@ class AssetService:
         outcome = "inconclusive"
         error_message = ""
         try:
+            prepared_assets = await self._current(prepared_assets, on_stage)
+            identities = {self._identity(self._content(item)): item for item in prepared_assets}
+            names = {key: PureWindowsPath(item.identifier).name for key, item in identities.items()}
             registry = AssetRegistry(self.state)
             await registry.open()
             try:
@@ -653,80 +662,155 @@ class AssetService:
                 except Exception:
                     log.warning("Asset resolution status could not be displayed.")
 
-    async def _current(self, prepared_assets: tuple[PreparedAsset, ...]) -> tuple[PreparedAsset, ...]:
-        """Swap each receipt for the current one of its name before anything is checked or sent (#361).
-
-        A LoRA converted again under the same name has new bytes, so its name must never resolve to the old hash:
-        the newest receipt of the name wins, and a receipt whose source file now holds different bytes is prepared
-        again from that file (a real upload when DT+ asks for one). Callers adopt the returned receipts."""
+    async def _newest_map(self) -> dict[str, PreparedAsset]:
+        """The current receipt of every LoRA name, read at most every ``NEWEST_TTL`` seconds."""
+        cached = self._newest_cache
+        if cached is not None and time.monotonic() - cached[0] < NEWEST_TTL:
+            return cached[1]
         registry = AssetRegistry(self.state)
         await registry.open()
         try:
-            newest = {item.identifier: item for item in newest_per_name(await registry.choices())}
+            choices = await registry.choices()
         finally:
             await registry.aclose()
+        current = await asyncio.to_thread(self.store.current_by_name) if self.store is not None else {}
+        newest = {item.identifier: item for item in newest_per_name(choices, current)}
+        self._newest_cache = (time.monotonic(), newest)
+        return newest
+
+    async def _current(
+        self, prepared_assets: tuple[PreparedAsset, ...], on_stage: Callable[[str], None] | None = None
+    ) -> tuple[PreparedAsset, ...]:
+        """Swap each receipt for the current one of its name before anything is checked or sent (#361).
+
+        A LoRA converted again under the same name has new bytes, so its name must never resolve to the old hash:
+        the receipt most recently prepared on purpose wins (else the content first seen last), and a receipt whose
+        source file now holds different bytes is prepared again from that file (a real upload when DT+ asks for
+        one). A refresh that cannot finish fails the request with the reason instead of sending the old bytes."""
+        newest = await self._newest_map()
+        credential = await self._credential_id()
         current = []
         for item in prepared_assets:
             latest = newest.get(item.identifier)
             if latest is not None and (latest.backend_id, latest.origin) == (item.backend_id, item.origin):
                 item = latest
-            current.append(await self._refreshed_from_source(item))
+            current.append(await self._refreshed_from_source(item, credential, on_stage))
         return tuple(current)
 
-    async def _refresh(self, item: PreparedAsset) -> PreparedAsset:
-        """One shared check of the item's source file; a changed file is prepared again and its new receipt returned."""
-        path = await asyncio.to_thread(self.store.changed_origin, item.sha256, item.size, item.identifier)
-        if path is None:
+    async def _refresh(self, item: PreparedAsset, path: Path, on_stage: Callable[[str], None] | None) -> PreparedAsset:
+        """Measure the changed source file once and, if its bytes differ, prepare them again under the item's name.
+
+        Runs under the exclusive asset writer like a restore, with its own registry, so Stop can cancel it."""
+        stat, digest = await asyncio.to_thread(_observe, path)
+        if (digest, stat.st_size) == (item.sha256, item.size):
+            # Touched but identical: stamp the measurement so the file is not read again.
+            await asyncio.to_thread(
+                self.store.record_origin, path, digest, stat.st_size, item.identifier, stat, mark=False
+            )
             return item
-        fresh = await self.prepare(path, item.identifier, provenance="outdated_refresh")
+        await asyncio.to_thread(self.store.retain, path, digest, stat.st_size)
+        if on_stage is not None:
+            on_stage("restoring_assets")
+        registry = AssetRegistry(self.state, writer=True)
+        try:
+            await settle(registry.open())
+            fresh = await AssetService(self.backend, registry)._prepare(
+                path, AssetContent("lora", item.identifier, digest, stat.st_size, "outdated_refresh"), stat
+            )
+        finally:
+            await settle(registry.aclose())
+        await asyncio.to_thread(self.store.record_origin, path, digest, stat.st_size, item.identifier, stat)
+        self._newest_cache = None
         diagnostic_event(
             log,
             "assets.outdated_receipt_refreshed",
             level=logging.INFO,
-            data={"old_sha": item.sha256[:8], "new_sha": fresh.sha256[:8]},
+            data={"old_sha": item.sha256[:8], "new_sha": fresh.sha256[:8], **self._key_diagnostics()},
         )
         return fresh
 
-    def _refresh_settled(self, identity: tuple[str, str, int], item: PreparedAsset):
-        def settled(task: asyncio.Task) -> None:
-            if task.cancelled():
-                self._refreshed.pop(identity, None)
-                return
-            error = task.exception()
-            if error is None:
-                if task.result() == item:  # nothing changed: the next request looks at the file again
-                    self._refreshed.pop(identity, None)
-                return
-            # Remember the failure for a while so every request of a long queue does not repeat it.
-            self._refreshed.pop(identity, None)
-            self._refresh_failed[identity] = time.monotonic()
-            diagnostic_event(
-                log,
-                "assets.outdated_refresh_failed",
-                level=logging.WARNING,
-                data={"reason": error.failure.code if isinstance(error, BackendError) else type(error).__name__},
-            )
-
-        return settled
-
-    async def _refreshed_from_source(self, item: PreparedAsset) -> PreparedAsset:
+    async def _refreshed_from_source(
+        self, item: PreparedAsset, credential: str | None, on_stage: Callable[[str], None] | None
+    ) -> PreparedAsset:
         if self.store is None:
             return item
-        identity = self._identity(self._content(item))
-        failed = self._refresh_failed.get(identity)
-        if failed is not None and time.monotonic() - failed < REFRESH_RETRY_SECONDS:
+        identity = (credential, *self._identity(self._content(item)))
+        done = self._refreshed.get(identity)
+        if done is not None:
+            return done
+        blocked = self._refresh_failed.get(identity)
+        if blocked is not None and time.monotonic() < blocked[0]:
+            raise BackendError(blocked[1])
+        path = await asyncio.to_thread(self.store.changed_origin, item.sha256, item.size, item.identifier)
+        if path is None:
             return item
-        # Registered before anything is read, so concurrent queue slots share one check and one hash.
-        task = self._refreshed.get(identity)
-        if task is None:
-            task = self._refreshed[identity] = asyncio.create_task(self._refresh(item))
-            task.add_done_callback(self._refresh_settled(identity, item))
+        # Concurrent queue slots share one measurement, copy and upload, and the last one to leave cancels it.
         try:
-            return await asyncio.shield(task)
-        except Exception:
-            return item  # the old receipt still works from its retained copy; the failure is logged once
+            fresh = await self._shared(
+                "refresh", item, lambda: self._refresh(item, path, on_stage), scope_id=credential
+            )
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            raise self._refresh_failed_error(identity, item, exc) from None
+        self._refresh_failed.pop(identity, None)
+        if fresh != item:
+            self._refreshed[identity] = fresh
+        return fresh
+
+    def _refresh_failed_error(self, identity: tuple, item: PreparedAsset, exc: Exception) -> BackendError:
+        """A refresh that did not finish: name it, remember it with a growing pause, and make the run fail visibly."""
+        if isinstance(exc, BackendError):
+            reason, terminal = exc.failure.code, exc.failure.category == ErrorCategory.RESOURCE_LIMIT
+        elif isinstance(exc, AssetsBusyError):
+            reason, terminal = "assets_busy", False
+        else:
+            reason, terminal = type(exc).__name__, False
+        count = self._refresh_failed.get(identity, (0.0, None, 0))[2] + 1
+        pause = float("inf") if terminal else REFRESH_BACKOFF[min(count - 1, len(REFRESH_BACKOFF) - 1)]
+        name = PureWindowsPath(item.identifier).name
+        error = _failure(
+            ErrorCategory.VALIDATION,
+            "prepared_asset_refresh_failed",
+            f"LoRA {name} changed on disk but could not be prepared again ({reason}). Nothing was submitted; "
+            "run Prepare for it again.",
+            diagnostics=(("asset", name), ("cause", reason)),
+        )
+        self._refresh_failed[identity] = (time.monotonic() + pause, error.failure, count)
+        diagnostic_event(
+            log,
+            "assets.outdated_refresh_failed",
+            level=logging.WARNING,
+            data={"reason": reason, "attempt": count, "pause_s": None if terminal else pause},
+        )
+        return error
 
     async def recover_missing(
+        self,
+        prepared_assets: tuple[PreparedAsset, ...],
+        on_stage: Callable[[str], None] | None = None,
+        *,
+        failure: BackendFailure | None = None,
+    ) -> bool:
+        """Check the LoRAs after a failed request. When that failure was DT+'s generic "unknown error processing
+        request" (not a missing-asset rejection), a check that itself fails is logged and ignored: the request then
+        gets its normal automatic retry instead of pausing a queue or hiding the original error (#361)."""
+        try:
+            return await self._recover_missing(prepared_assets, on_stage)
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            if failure is None or not server_ended_without_result(failure):
+                raise
+            diagnostic_event(
+                log,
+                "assets.recovery_check_failed",
+                level=logging.WARNING,
+                data={"reason": exc.failure.code if isinstance(exc, BackendError) else type(exc).__name__},
+            )
+            return False
+
+    async def _recover_missing(
         self, prepared_assets: tuple[PreparedAsset, ...], on_stage: Callable[[str], None] | None = None
     ) -> bool:
         """Bound each distinct key/LoRA to one check while sharing concurrent recovery work.
@@ -738,6 +822,8 @@ class AssetService:
         """
         if not prepared_assets or self.state is None or await self._credential_id() is None:
             return False
+        # The request still carries the receipts it was built with; the check and its bookkeeping use the current ones.
+        prepared_assets = await self._current(prepared_assets, on_stage)
         wanted = {self._identity(self._content(item)) for item in prepared_assets}
         while True:
             if wanted & self._recovery_restored:
