@@ -1,12 +1,12 @@
-"""Read-only, evidence-limited family detection for converted Draw Things LoRAs.
+"""Read-only family detection from converted Draw Things LoRA tensor headers.
 
-Only SQLite tensor *names* and optional shape metadata are inspected. Tensor
-payloads are never read. A missing or ambiguous fingerprint means unknown; a
-filename, upload receipt or current checkpoint never proves a LoRA's family.
+Only SQLite tensor names and shape metadata are inspected, never weights. A
+filename, current checkpoint, or generic hidden-size match is not proof of
+family. Unknown and ambiguous structures remain explicitly unknown.
 
-These conservative fingerprints cover the Z-Image and Krea 2 structures
-described by Draw Things' model importer. Extend them only after comparing
-real converted files with the upstream model definitions (#369).
+Z-Image and Krea 2 signatures are grounded in owner-provided converted CKPT
+reports (#369). Additional architectures require their own converted examples
+before their family can be used for a blocking check or a DT+ override.
 """
 
 from __future__ import annotations
@@ -24,7 +24,7 @@ from pathlib import Path
 
 MAX_TENSORS = 20_000
 _SHAPE = re.compile(r"^\s*[\[(]\s*\d+(?:\s*,\s*\d+)*\s*[\])]\s*$")
-_BLOCK = re.compile(r"(?:^|[._/\[-])(?:layers?|blocks)[._/\[-](\d+)(?:[._/\]-]|$)")
+_DIT_LORA_NAME = re.compile(r"^__dit__\[t-([^\]]+)\]__(?:up|down)__$")
 
 
 @dataclass(frozen=True, slots=True)
@@ -86,32 +86,45 @@ def detect_lora_family(path: Path) -> LoraFamily:
     if not rows or len(rows) > MAX_TENSORS:
         return LoraFamily()
 
-    names = [str(row[0]).lower() for row in rows if isinstance(row[0], str)]
+    names = [
+        str(row[0]).lower()
+        for row in rows
+        if isinstance(row[0], str)
+    ]
+    # A full checkpoint can expose the same tensor dimensions but is not an
+    # adapter. Inspect only converted Draw Things LoRA up/down tensor names.
+    modules = [
+        match.group(1)
+        for name in names
+        if (match := _DIT_LORA_NAME.fullmatch(name)) is not None
+    ]
+    if not modules:
+        return LoraFamily()
     dimensions = {
         dimension
         for row in rows
-        if len(row) > 1
+        if len(row) > 1 and isinstance(row[0], str)
+        and _DIT_LORA_NAME.fullmatch(row[0].lower())
         for dimension in _dimensions(row[1])
     }
-    # Converted Draw Things LoRAs use names such as
-    # __dit__[t-ffn-0-ffn_gate_proj-0-0]__up__, not layers.0/blocks.0.
-    # Some valid LoRAs adapt only a subset of modules (notably no ada_ln).
-    # Require multiple architectural clues, but not a particular final block.
-    # These two signatures are grounded in owner-provided converted CKPT
-    # metadata; other architectures and partial/ambiguous adapters stay unknown.
-    dit_names = [name for name in names if name.startswith("__dit__[t-")]
+
+    # The converted NNC names encode modules as "t-<module>-<layer>-...".
+    # Requiring "layers.29"/"blocks.27" misses *all* reported files; missing
+    # ada_ln also does not invalidate attention/FFN-only Z-Image adapters.
+    # Match combinations of independent module and width evidence, never
+    # only a model width or a filename.
     z_image = (
         3840 in dimensions
         and 10240 in dimensions
-        and any(re.match(r"__dit__\\[t-ffn-\\d+-ffn_(?:gate|down|up)_proj-", name) for name in dit_names)
-        and any(re.match(r"__dit__\\[t-(?:k|q|v|o)-\\d+-", name) for name in dit_names)
+        and any(re.fullmatch(r"ffn-\d+-ffn_(?:gate|down|up)_proj-\d+-\d+", m) for m in modules)
+        and any(re.fullmatch(r"(?:k|q|v|o)-\d+-\d+", m) for m in modules)
     )
     krea_2 = (
         6144 in dimensions
         and 1536 in dimensions
-        and any(re.match(r"__dit__\\[t-to_(?:gate|k|q|v|out)-\\d+-", name) for name in dit_names)
-        and any("text_fusion" in name or "txtfusion" in name or "textfusion" in name for name in dit_names)
-        and any("attn" in name or "attention" in name for name in dit_names)
+        and 16384 in dimensions
+        and any(re.fullmatch(r"to_(?:gate|k|q|v|out)-\d+-\d+", m) for m in modules)
+        and any(m.startswith(("text_fusion_", "textfusion_", "txtfusion_")) for m in modules)
     )
     if z_image != krea_2:
         return LoraFamily("z_image" if z_image else "krea_2", "file")
