@@ -1791,9 +1791,13 @@ class MainWindow:
                 sha, size = entry.get("sha256"), entry.get("size")
                 if not isinstance(sha, str) or not isinstance(size, int):
                     continue
-                retained = store.find(sha, size)
-                if retained is not None:
-                    families[(sha, size)] = detect_lora_family(retained.path)
+                try:
+                    retained = store.find(sha, size)
+                    if retained is not None:
+                        families[(sha, size)] = detect_lora_family(retained.path)
+                except (OSError, ValidationError):
+                    # A damaged or missing retained copy must not hide the other LoRAs.
+                    pass
             return len(Catalogue(self.state_dir).user_loras()), entries, store.usage(), families
 
         self._read_summary("loras", read, self._custom_loras_read)
