@@ -912,8 +912,9 @@ def _legacy_receipt_families(state: Path, records: list[dict]) -> None:
             try:
                 retained = store.find(*key)
                 if retained is not None:
-                    store.verify(retained)
                     result = detect_lora_family(retained.path)
+                    if result.family is not None:
+                        store.verify(retained)
             except (OSError, ValidationError):
                 pass
             cache[key] = result
