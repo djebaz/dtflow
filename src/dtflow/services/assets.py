@@ -35,6 +35,7 @@ from dtflow.core.tasks import settle
 from dtflow.diagnostics import api_error_data, cloud_key_data, event as diagnostic_event
 from dtflow.persistence.assets import AssetRegistry, AssetsBusyError, newest_per_name
 from dtflow.persistence.store import PersistenceError
+from dtflow.services.lora_family import LoraFamily, detect_lora_family
 from dtflow.services.lora_store import LoraStore
 
 log = logging.getLogger(__name__)
@@ -138,6 +139,7 @@ class AssetService:
         # Outdated receipts already re-prepared from their changed file, shared by concurrent items (#361).
         self._refresh_failed: dict[tuple, tuple[float, BackendFailure]] = {}
         self._newest_cache: tuple[float, dict[str, PreparedAsset]] | None = None
+        self._family_cache: dict[tuple[str, int], LoraFamily] = {}
         # The UI can receive individual names without adding them to diagnostic records.
         self.on_resolution: Callable[[dict], None] | None = None
 
@@ -162,9 +164,10 @@ class AssetService:
         path = Path(path)
         stat, digest = await asyncio.to_thread(_observe, path)
         content = AssetContent("lora", identifier or path.name, digest, stat.st_size, provenance)
+        retained = None
         if self.store is not None:
             # Keep the durable copy first, so a failed or interrupted upload never costs the user the file.
-            await asyncio.to_thread(self.store.retain, path, digest, stat.st_size)
+            retained = await asyncio.to_thread(self.store.retain, path, digest, stat.st_size)
             diagnostic_event(
                 log, "assets.copy_kept", level=logging.INFO, data={"size": stat.st_size, "sha": digest[:8]}
             )
@@ -178,7 +181,8 @@ class AssetService:
         )
         task = _INFLIGHT.get(key)
         if task is None or task.done():
-            task = asyncio.create_task(self._prepare(path, content, stat))
+            detected = await asyncio.to_thread(detect_lora_family, retained.path if retained else path)
+            task = asyncio.create_task(self._prepare(path, content, stat, detected=detected))
             _INFLIGHT[key] = task
             task.add_done_callback(
                 lambda done, key=key: _INFLIGHT.pop(key, None) if _INFLIGHT.get(key) is done else None
@@ -204,10 +208,15 @@ class AssetService:
         content: AssetContent,
         stat: os.stat_result,
         negotiation: AssetNegotiation | None = None,
+        detected: LoraFamily | None = None,
     ) -> PreparedAsset:
         backend = self.backend
         credential_id = await self._credential_id()
-        asset_id, operation = await self.registry.begin(content, backend.backend_id, backend.origin)
+        if detected is None:
+            detected = await asyncio.to_thread(detect_lora_family, path)
+        asset_id, operation = await self.registry.begin(
+            content, backend.backend_id, backend.origin, family=detected.family
+        )
         transferred = False
         try:
             negotiation = negotiation or await backend.negotiate_asset(content)
@@ -483,9 +492,10 @@ class AssetService:
         credential_id = await self._credential_id()
         if credential_id is None:
             # Existing fixture backends keep the historical validation contract.
-            return tuple(
+            verified = tuple(
                 [await self._verify(item, on_stage, restoring=self.state is not None) for item in prepared_assets]
             )
+            return await self._with_families(verified)
         if self.state is None:
             # Stateless callers only validate exact remote references; they cannot retain or restore bytes.
             return tuple([await self._verify(item, on_stage, restoring=False) for item in prepared_assets])
@@ -530,7 +540,7 @@ class AssetService:
             current = None
             if not missing:
                 outcome = "completed"
-                return tuple(existing)
+                return await self._with_families(tuple(existing))
 
             pending = tuple(dict.fromkeys(self._identity(self._content(item)) for _, item, _ in missing))
             contents = tuple(dict.fromkeys(self._content(item) for _, item, _ in missing))
@@ -586,7 +596,7 @@ class AssetService:
                     raise _failure(ErrorCategory.PROTOCOL, "asset_check_inconclusive", "DT+ asset status is unknown.")
                 current = None
             outcome = "completed"
-            return tuple(results)
+            return await self._with_families(tuple(results))
         except asyncio.CancelledError:
             outcome = "cancelled"
             raise
@@ -660,6 +670,34 @@ class AssetService:
                     receiver(report)
                 except Exception:
                     log.warning("Asset resolution status could not be displayed.")
+
+    async def _with_families(self, assets: tuple[PreparedAsset, ...]) -> tuple[PreparedAsset, ...]:
+        """Read old receipts' retained copies once per content identity, without network or upload.
+
+        The on-disk registry remains the write authority; #370 will migrate these lazily
+        discovered families into the unified record. Unknown evidence never blocks use.
+        """
+        if self.store is None:
+            return assets
+        resolved = []
+        for item in assets:
+            if item.family is not None:
+                resolved.append(item)
+                continue
+            key = (item.sha256, item.size)
+            detected = self._family_cache.get(key)
+            if detected is None:
+                detected = LoraFamily()
+                try:
+                    retained = await asyncio.to_thread(self.store.find, *key)
+                    if retained is not None:
+                        await asyncio.to_thread(self.store.verify, retained)
+                        detected = await asyncio.to_thread(detect_lora_family, retained.path)
+                except (OSError, ValidationError):
+                    pass  # Missing/unverifiable retained files are unknown, not guessed.
+                self._family_cache[key] = detected
+            resolved.append(replace(item, family=detected.family, family_source=detected.source))
+        return tuple(resolved)
 
     async def _newest_map(self) -> dict[str, PreparedAsset]:
         """The current receipt of every LoRA name, read at most every ``NEWEST_TTL`` seconds."""
