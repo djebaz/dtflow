@@ -32,7 +32,7 @@ from dtflow.core.models import (
 from dtflow.core.retry_policy import server_ended_without_result
 from dtflow.core.tasks import settle
 from dtflow.diagnostics import api_error_data, cloud_key_data, event as diagnostic_event
-from dtflow.persistence.assets import AssetRegistry, AssetsBusyError
+from dtflow.persistence.assets import AssetRegistry, AssetsBusyError, newest_per_name
 from dtflow.persistence.store import PersistenceError
 from dtflow.services.lora_store import LoraStore
 
@@ -130,6 +130,8 @@ class AssetService:
         self._recovery_waiters: dict[asyncio.Task, int] = {}
         self._recovery_checked: set[tuple[str, str, int]] = set()
         self._recovery_restored: set[tuple[str, str, int]] = set()
+        # Outdated receipts already re-prepared from their changed file, shared by concurrent items (#361).
+        self._refreshed: dict[tuple[str, str, int], asyncio.Task] = {}
         # The UI can receive individual names without adding them to diagnostic records.
         self.on_resolution: Callable[[dict], None] | None = None
 
@@ -157,6 +159,7 @@ class AssetService:
         if self.store is not None:
             # Keep the durable copy first, so a failed or interrupted upload never costs the user the file.
             kept = await asyncio.to_thread(self.store.retain, path, digest, stat.st_size)
+            await asyncio.to_thread(self.store.record_origin, path, digest, stat.st_size)
             diagnostic_event(
                 log, "assets.copy_kept", level=logging.INFO, data={"size": stat.st_size, "name": kept.name}
             )
@@ -477,6 +480,7 @@ class AssetService:
             # Stateless callers only validate exact remote references; they cannot retain or restore bytes.
             return tuple([await self._verify(item, on_stage, restoring=False) for item in prepared_assets])
 
+        prepared_assets = await self._current(prepared_assets)
         identities = {self._identity(self._content(item)): item for item in prepared_assets}
         outcomes: dict[tuple[str, str, int], str] = {}
         names = {key: PureWindowsPath(item.identifier).name for key, item in identities.items()}
@@ -644,6 +648,55 @@ class AssetService:
                     receiver(report)
                 except Exception:
                     log.warning("Asset resolution status could not be displayed.")
+
+    async def _current(self, prepared_assets: tuple[PreparedAsset, ...]) -> tuple[PreparedAsset, ...]:
+        """Swap each receipt for the current one of its name before anything is checked or sent (#361).
+
+        A LoRA converted again under the same name has new bytes, so its name must never resolve to the old hash:
+        the newest receipt of the name wins, and a receipt whose source file now holds different bytes is prepared
+        again from that file (a real upload when DT+ asks for one). Callers adopt the returned receipts."""
+        registry = AssetRegistry(self.state)
+        await registry.open()
+        try:
+            newest = {item.identifier: item for item in newest_per_name(await registry.choices())}
+        finally:
+            await registry.aclose()
+        current = []
+        for item in prepared_assets:
+            latest = newest.get(item.identifier)
+            if latest is not None and (latest.backend_id, latest.origin) == (item.backend_id, item.origin):
+                item = latest
+            current.append(await self._refreshed_from_source(item))
+        return tuple(current)
+
+    async def _refreshed_from_source(self, item: PreparedAsset) -> PreparedAsset:
+        if self.store is None:
+            return item
+        identity = self._identity(self._content(item))
+        task = self._refreshed.get(identity)
+        if task is None:
+            path = await asyncio.to_thread(self.store.changed_origin, item.sha256, item.size)
+            if path is None:
+                return item
+            task = self._refreshed.get(identity)
+            if task is None:
+                task = self._refreshed[identity] = asyncio.create_task(
+                    self.prepare(path, item.identifier, provenance="outdated_refresh")
+                )
+                task.add_done_callback(lambda done: None if done.cancelled() else done.exception())
+        try:
+            fresh = await asyncio.shield(task)
+        except BaseException:
+            if task.done():
+                self._refreshed.pop(identity, None)
+            raise
+        diagnostic_event(
+            log,
+            "assets.outdated_receipt_refreshed",
+            level=logging.INFO,
+            data={"old_sha": item.sha256[:8], "new_sha": fresh.sha256[:8]},
+        )
+        return fresh
 
     async def recover_missing(
         self, prepared_assets: tuple[PreparedAsset, ...], on_stage: Callable[[str], None] | None = None

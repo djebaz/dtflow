@@ -47,7 +47,13 @@ from dtflow.core.models import (
     Sampler,
 )
 from dtflow.core.output_layout import OutputLayout, group_name, prompt_label
-from dtflow.core.retry_policy import AUTO_RETRIES, AUTO_RETRY_DELAY, auto_retry_request, auto_retryable
+from dtflow.core.retry_policy import (
+    AUTO_RETRIES,
+    AUTO_RETRY_DELAY,
+    auto_retry_limit,
+    auto_retry_request,
+    auto_retryable,
+)
 from dtflow.core.tasks import settle
 from dtflow.persistence.script_items import RETRY_EVIDENCE
 from dtflow.scripting.models import (
@@ -366,8 +372,9 @@ class ScriptHost:
         self.generations += 1
         self.steps += 1
         step, retry_of = self.steps, None
-        auto_left = AUTO_RETRIES  # the shared automatic retry (#241), per submission
+        auto_used = 0  # the shared automatic retry (#241), per submission
         while True:
+            limit = AUTO_RETRIES
             if self.cancel.is_set():
                 raise ScriptCancelled()  # Stop landed while the Retry form closed: nothing more is linked
             attempt_id = uuid.uuid4().hex
@@ -394,6 +401,7 @@ class ScriptHost:
                 )
                 reason = exc.failure.message or exc.failure.code
                 automatic = auto_retryable(exc.failure)
+                limit = auto_retry_limit(request, exc.failure)
                 assets = getattr(self.service, "assets", None)
                 if (
                     assets is not None
@@ -410,9 +418,9 @@ class ScriptHost:
                 self._cleared = False  # a new generation fills the canvas again
                 self.attempt_outputs[attempt_id] = [str(path) for path in outcome.output_paths]
                 return
-            if automatic and auto_left > 0 and self.generations < self.max_generations:
+            if automatic and auto_used < limit and self.generations < self.max_generations:
                 # The one automatic retry: no form, counted as one of the run's generations like any retry.
-                auto_left -= 1
+                auto_used += 1
                 self._console(f"Step {step} {HEADLINES[kind]}: {reason} Retrying automatically.", 0)
                 if self.cancel.wait(AUTO_RETRY_DELAY):
                     raise ScriptCancelled()
@@ -423,7 +431,7 @@ class ScriptHost:
                 self._console(f"Step {step} {HEADLINES[kind]}: {reason}", 1)
                 return
             else:
-                auto_left = AUTO_RETRIES  # a manual Retry is a new submission with its own automatic retry
+                auto_used = 0  # a manual Retry is a new submission with its own automatic retry
             retry_of = attempt_id
             self.retries += 1
             self.generations += 1  # one limit: a retry counts like any other generation
@@ -775,7 +783,7 @@ class ScriptHost:
     ) -> GenerationOutcome:
         """One batch job's generation with the shared automatic retry (#241): a retry is a new child, linked before it
         is sent, counted as one of the run's generations. Stop during the wait raises the first try's failure."""
-        auto_left = AUTO_RETRIES
+        auto_used = 0
         while True:
             try:
                 return await run_generation(
@@ -785,14 +793,14 @@ class ScriptHost:
                 repaired = await recover_assets(request, exc.failure)
                 safe_retry = repaired and exc.failure.remote_outcome == RemoteOutcome.NOT_STARTED
                 if not (
-                    auto_left > 0
+                    auto_used < auto_retry_limit(request, exc.failure)
                     and (safe_retry or auto_retryable(exc.failure))
                     and self.generations < self.max_generations
                     and not self.cancel.is_set()
                 ):
                     raise
                 first = exc
-            auto_left -= 1
+            auto_used += 1
             self.generations += 1
             self.retries += 1
             deadline = asyncio.get_running_loop().time() + AUTO_RETRY_DELAY

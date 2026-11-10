@@ -1,6 +1,7 @@
 """The one automatic-retry rule shared by Generate, Queues, Scripts and Workflows (#220, #241).
 
-A submission is retried automatically at most ``AUTO_RETRIES`` times, after ``AUTO_RETRY_DELAY`` seconds, and only when
+A submission is retried automatically at most ``auto_retry_limit`` times (``AUTO_RETRIES``, plus one more for the
+LoRA case below), after ``AUTO_RETRY_DELAY`` seconds, and only when
 the first try definitely produced nothing:
 
 * a definite failure (nothing was started, or the backend reported the failure) of category connectivity, timeout or
@@ -9,10 +10,14 @@ the first try definitely produced nothing:
   (terminal status received, no image). Owner decision on #241: these come back within seconds, are not tied to the
   seed or the request, and cluster on the first submissions after Start.
 
+A request that carries custom LoRAs gets one extra try for that DT+ INTERNAL case, in every runner (#361); the LoRA
+check and restore runs between the tries. In Workflows and Scripts the extra try is also bounded by the run's own
+allowance and generation limit.
+
 Never retried automatically: any other unknown outcome (lost connection, timeout after sending, no terminal status),
 credentials/authentication/permission, quota/resource limit, validation, remote rejections, a result that was generated
 but not saved, and a user stop. Those keep the manual Retry. Each runner adds ``AUTO_RETRIES`` per planned submission to
-its existing loop bound, so a run never exceeds its planned submissions x 2. No other classifier exists.
+its existing loop bound, so a run stays within its planned submissions x 2, apart from the extra LoRA try above. No other classifier exists.
 """
 
 from __future__ import annotations

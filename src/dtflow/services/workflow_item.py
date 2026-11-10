@@ -45,7 +45,14 @@ from uuid import uuid4
 
 from dtflow.core.models import SEED_LIMIT, BackendError, BackendEvent, RemoteOutcome, ValidationError
 from dtflow.core.output_layout import OutputLayout, group_name, slug
-from dtflow.core.retry_policy import AUTO_RETRIES, AUTO_RETRY_DELAY, RETRY_STAGE, auto_retry_request, auto_retryable
+from dtflow.core.retry_policy import (
+    AUTO_RETRIES,
+    AUTO_RETRY_DELAY,
+    RETRY_STAGE,
+    auto_retry_limit,
+    auto_retry_request,
+    auto_retryable,
+)
 from dtflow.core.tasks import settle
 from dtflow.core.workflows import (
     DETECT_FACE,
@@ -969,7 +976,7 @@ class _Execution:
                         self.run["submitted"] -= weight
                         await self.end(keys, "cancelled", "Stopped before submission; nothing was sent.")
                         return None
-                auto_left = AUTO_RETRIES
+                auto_used = 0
                 while True:
                     while not self.asset_gate.is_set() and not self.stopping and not self.halted:
                         self.set_stage(keys, "Waiting for LoRA restoration")
@@ -993,10 +1000,12 @@ class _Execution:
                     except BackendError as exc:
                         restored = await self.recover_assets(keys, request, exc.failure)
                         safe_repair_retry = restored and exc.failure.remote_outcome == RemoteOutcome.NOT_STARTED
-                        if auto_left <= 0 or (not safe_repair_retry and not auto_retryable(exc.failure)):
+                        if auto_used >= auto_retry_limit(request, exc.failure) or (
+                            not safe_repair_retry and not auto_retryable(exc.failure)
+                        ):
                             raise
                         first = exc
-                    auto_left -= 1
+                    auto_used += 1
                     self.set_stage(keys, RETRY_STAGE)
                     diagnostic_event(
                         log,

@@ -2138,7 +2138,6 @@ class QueuePage:
             "count": count,
             "asset_ids": list(asset_ids),
         }
-        receipt_choices = dict(self._choices().get("receipts", {}))  # capture on the GUI thread
         # Add to queue during a single generation: remember the intent now, since the generation may end before the
         # new queue is saved (nothing then runs to follow, but the user still asked for it to start by itself).
         after_generation = quick and action == "add" and self._activity.generating
@@ -2157,7 +2156,6 @@ class QueuePage:
                 job,
                 up_next=action == "add",
                 composer_source=composer_source,
-                receipt_choices=receipt_choices,
             )
             status = (await read_queue_views(self._state, queue_id))[0]["status"] if action == "add" else None
             return queue_id, used, status
@@ -2512,7 +2510,6 @@ class QueuePage:
         *,
         up_next: bool = False,
         composer_source=None,
-        receipt_choices=None,
     ):
         request = await bind_prepared(self._state, backend["name"], request, asset_ids)
         receipts = ()

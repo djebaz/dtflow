@@ -46,7 +46,7 @@ from dtflow.core.retry_policy import (
 )
 from dtflow.core.tasks import settle
 from dtflow.diagnostics import event as diagnostic_event
-from dtflow.persistence.assets import AssetRegistry
+from dtflow.persistence.assets import AssetRegistry, newest_per_name
 from dtflow.persistence.gallery_snapshot import schedule_publish
 from dtflow.persistence.inventory_cache import load_inventory, save_inventory
 from dtflow.persistence.settings import load_cloud_concurrency
@@ -240,7 +240,7 @@ async def script_asset_choices(state: Path, backend_name: str) -> tuple[Prepared
     Local reads only. Actual dispatch still validates each selected receipt against
     the active backend/account; a confirmed historical record is not live consent.
 
-    One receipt per LoRA name, the most recently confirmed: a file converted again under the same name has a new hash,
+    One receipt per LoRA name, the one whose content was first seen last: a file converted again under the same name has a new hash,
     and the old receipt must never be bound for it, or the request names the old bytes (#361).
     """
     if backend_name != "cloud":
@@ -248,13 +248,9 @@ async def script_asset_choices(state: Path, backend_name: str) -> tuple[Prepared
     registry = AssetRegistry(state)
     await registry.open()
     try:
-        choices = await registry.choices()
+        return newest_per_name(await registry.choices())
     finally:
         await registry.aclose()
-    newest: dict[str, PreparedAsset] = {}
-    for item in sorted(choices, key=lambda item: item.confirmed_at_utc):
-        newest[item.identifier] = item
-    return tuple(newest.values())
 
 
 @asynccontextmanager
