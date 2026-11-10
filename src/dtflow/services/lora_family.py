@@ -14,6 +14,7 @@ from __future__ import annotations
 import json
 import re
 import sqlite3
+import struct
 from dataclasses import dataclass
 from pathlib import Path
 from urllib.parse import quote
@@ -32,14 +33,24 @@ class LoraFamily:
 
 
 def _dimensions(value: object) -> tuple[int, ...]:
-    """Parse an explicitly textual tensor shape without decoding weight data."""
-    if not isinstance(value, str) or not _SHAPE.fullmatch(value):
-        return ()
-    try:
-        values = json.loads(value.replace("(", "[").replace(")", "]"))
-        return tuple(values) if isinstance(values, list) and all(type(x) is int and x > 0 for x in values) else ()
-    except ValueError:
-        return ()
+    """Decode shape metadata only, never the tensor's weight payload.
+
+    Draw Things s4nnc stores dimensions as little-endian 32-bit integers in
+    the `dim` column; other converted SQLite files may use JSON text.
+    """
+    if isinstance(value, bytes):
+        if not value or len(value) > 64 or len(value) % 4:
+            return ()
+        values = struct.unpack(f"<{len(value) // 4}i", value)
+        return tuple(d for d in values if d > 0)
+    if isinstance(value, str) and _SHAPE.fullmatch(value):
+        try:
+            values = json.loads(value.replace("(", "[").replace(")", "]"))
+            if isinstance(values, list) and all(type(d) is int and d > 0 for d in values):
+                return tuple(values)
+        except ValueError:
+            pass
+    return ()
 
 
 def detect_lora_family(path: Path) -> LoraFamily:
@@ -61,7 +72,7 @@ def detect_lora_family(path: Path) -> LoraFamily:
                 return LoraFamily()
             columns = {row[1] for row in db.execute("PRAGMA table_info(tensors)")}
             name_column = next((c for c in ("name", "key", "tensor_name") if c in columns), None)
-            shape_column = next((c for c in ("shape", "dims", "dimensions") if c in columns), None)
+            shape_column = next((c for c in ("dim", "shape", "dims", "dimensions") if c in columns), None)
             if name_column is None:
                 return LoraFamily()
             # Names come from a fixed whitelist of schema columns, not from the DB.
@@ -95,7 +106,7 @@ def detect_lora_family(path: Path) -> LoraFamily:
     )
     krea_2 = (
         27 in blocks
-        and 2560 in dimensions
+        and 6144 in dimensions
         and any("txtfusion" in name or "text_fusion" in name for name in names)
         and any("attn" in name or "attention" in name for name in names)
     )
