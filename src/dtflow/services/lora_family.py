@@ -4,9 +4,9 @@ Only SQLite tensor names and shape metadata are inspected, never weights. A
 filename, current checkpoint, or generic hidden-size match is not proof of
 family. Unknown and ambiguous structures remain explicitly unknown.
 
-Z-Image and Krea 2 signatures are grounded in owner-provided converted CKPT
-reports (#369). Additional architectures require their own converted examples
-before their family can be used for a blocking check or a DT+ override.
+Z-Image, Krea 2, MOSS Image and a bounded SD 1.x signature are
+grounded in owner-provided converted CKPT reports and upstream Draw Things
+model definitions (#369). Unidentified or partial adapters stay unknown.
 """
 
 from __future__ import annotations
@@ -86,49 +86,79 @@ def detect_lora_family(path: Path) -> LoraFamily:
     if not rows or len(rows) > MAX_TENSORS:
         return LoraFamily()
 
-    names = [
-        str(row[0]).lower()
-        for row in rows
-        if isinstance(row[0], str)
-    ]
-    # A full checkpoint can expose the same tensor dimensions but is not an
-    # adapter. Inspect only converted Draw Things LoRA up/down tensor names.
-    modules = [
+    names = [str(row[0]).lower() for row in rows if isinstance(row[0], str)]
+    # A full model checkpoint may share its architecture's dimensions. Require
+    # actual adapter up/down tensors, and use only their names and shapes.
+    dit_modules = [
         match.group(1)
         for name in names
         if (match := _DIT_LORA_NAME.fullmatch(name)) is not None
     ]
-    if not modules:
-        return LoraFamily()
-    dimensions = {
-        dimension
-        for row in rows
-        if len(row) > 1 and isinstance(row[0], str)
-        and _DIT_LORA_NAME.fullmatch(row[0].lower())
-        for dimension in _dimensions(row[1])
-    }
 
-    # The converted NNC names encode modules as "t-<module>-<layer>-...".
-    # Requiring "layers.29"/"blocks.27" misses *all* reported files; missing
-    # ada_ln also does not invalidate attention/FFN-only Z-Image adapters.
-    # Match combinations of independent module and width evidence, never
-    # only a model width or a filename.
+    def adapter_dimensions(prefix: str) -> set[int]:
+        """Only dimensions of LoRA up/down tensors from this model namespace."""
+        return {
+            dimension
+            for row in rows
+            if len(row) > 1
+            and isinstance(row[0], str)
+            and row[0].lower().startswith(prefix)
+            and row[0].lower().endswith(("__up__", "__down__"))
+            for dimension in _dimensions(row[1])
+        }
+
+    dit_dimensions = adapter_dimensions("__dit__[t-")
+    unet_dimensions = adapter_dimensions("__unet__[t-")
+    text_dimensions = adapter_dimensions("__text_model__[t-")
+
+    # Draw Things encodes DiT module names as "t-<module>-<layer>-...".
+    # Do not require a specific last layer; a LoRA can adapt only a subset.
     z_image = (
-        3840 in dimensions
-        and 10240 in dimensions
-        and any(re.fullmatch(r"ffn-\d+-ffn_(?:gate|down|up)_proj-\d+-\d+", m) for m in modules)
-        and any(re.fullmatch(r"(?:k|q|v|o)-\d+-\d+", m) for m in modules)
+        3840 in dit_dimensions
+        and 10240 in dit_dimensions
+        and any(re.fullmatch(r"ffn-\d+-ffn_(?:gate|down|up)_proj-\d+-\d+", m) for m in dit_modules)
+        and any(re.fullmatch(r"(?:k|q|v|o)-\d+-\d+", m) for m in dit_modules)
     )
     krea_2 = (
-        6144 in dimensions
-        and 1536 in dimensions
-        and 16384 in dimensions
-        and any(re.fullmatch(r"to_(?:gate|k|q|v|out)-\d+-\d+", m) for m in modules)
-        and any(m.startswith(("text_fusion_", "textfusion_", "txtfusion_")) for m in modules)
+        6144 in dit_dimensions
+        and 1536 in dit_dimensions
+        and 16384 in dit_dimensions
+        and any(re.fullmatch(r"to_(?:gate|k|q|v|out)-\d+-\d+", m) for m in dit_modules)
+        and any(m.startswith(("text_fusion_", "textfusion_", "txtfusion_")) for m in dit_modules)
     )
-    if z_image != krea_2:
-        return LoraFamily("z_image" if z_image else "krea_2", "file")
-    return LoraFamily()
+    # The upstream MOSS Image LoRA blocks use these exact named projections,
+    # with 3072 hidden and 8192 FFN width. A generic width match is insufficient.
+    moss_image = (
+        3072 in dit_dimensions
+        and 8192 in dit_dimensions
+        and all(
+            any(re.fullmatch(rf"{module}-\d+-\d+", m) for m in dit_modules)
+            for module in ("ffn_down_proj", "ffn_up_proj", "ffn_gate_proj", "x_o")
+        )
+    )
+    # SD1.x and SDXL share U-Net channel widths (320/640/1280), and SDXL
+    # can include a 768-wide CLIP-L text model. Require 768 also in U-Net LoRA
+    # shapes (SD1.x cross-attention), plus absence of SD2/SDXL conditioning
+    # widths and the SDXL second text-encoder namespace. Deliberately leaves
+    # partial text-only or U-Net-only adapters as unknown.
+    sd_1 = (
+        768 in text_dimensions
+        and {320, 640, 1280, 768} <= unet_dimensions
+        and not ({1024, 2048} & unet_dimensions)
+        and not ({1024, 1280} & text_dimensions)
+        and not any(name.startswith("__te2__text_model__[") for name in names)
+    )
+    matches = [
+        family
+        for family, matched in (
+            ("z_image", z_image),
+            ("krea_2", krea_2),
+            ("moss_image", moss_image),
+            ("sd_1", sd_1),
+        )
+        if matched
+    ]
+    return LoraFamily(matches[0], "file") if len(matches) == 1 else LoraFamily()
 
 
 def retained_families(state: Path, identities: Iterable[tuple[str, int]]) -> dict[tuple[str, int], LoraFamily]:
