@@ -75,6 +75,20 @@ def _now() -> str:
     return datetime.now(UTC).isoformat()
 
 
+def newest_per_name(choices, current=None) -> tuple:
+    """One receipt per LoRA name.
+
+    ``current`` maps a name to the (sha256, size) most recently prepared on purpose; that content wins, so preparing
+    older bytes again is honoured. Otherwise the content first seen last wins (``choices`` come oldest first)."""
+    newest = {}
+    for item in choices:
+        newest[item.identifier] = item
+    for item in choices:
+        if current and current.get(item.identifier) == (item.sha256, item.size):
+            newest[item.identifier] = item
+    return tuple(newest.values())
+
+
 class AssetsBusyError(PersistenceError):
     """Another process holds the asset writer lock; nothing was prepared, uploaded or changed."""
 
@@ -456,6 +470,7 @@ class AssetRegistry:
                 "SELECT * FROM assets WHERE kind='lora' AND state='confirmed' AND remote_id IS NOT NULL"
             ).fetchall()
             by_name = {(row["asset_id"], row["identifier"]): self._prepared(row) for row in rows}
+            created = {row["asset_id"]: row["created_at_utc"] for row in rows}
             if db.execute("PRAGMA user_version").fetchone()[0] >= 2:
                 for row in db.execute(
                     "SELECT a.*, k.identifier AS logical_name, k.remote_id AS logical_remote, "
@@ -465,13 +480,16 @@ class AssetRegistry:
                 ):
                     from dataclasses import replace
 
+                    created[row["asset_id"]] = row["created_at_utc"]
                     by_name[(row["asset_id"], row["logical_name"])] = replace(
                         self._prepared(row),
                         identifier=row["logical_name"],
                         remote_id=row["logical_remote"],
                         confirmed_at_utc=row["logical_confirmed"],
                     )
-            return tuple(by_name.values())
+            # Oldest first by when the file's content was first seen. A relink or key switch re-stamps
+            # ``confirmed_at_utc`` on old content and must never make it look newer (#361).
+            return tuple(sorted(by_name.values(), key=lambda item: (created.get(item.receipt_id, ""), item.identifier)))
 
     async def get(self, asset_id: str) -> dict[str, Any] | None:
         return await self._run(self._get, asset_id)
