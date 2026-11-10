@@ -916,7 +916,7 @@ def _legacy_receipt_families(state: Path, records: list[dict]) -> None:
                     if result.family is not None:
                         store.verify(retained)
             except (OSError, ValidationError):
-                pass
+                result = LoraFamily()  # Do not expose evidence from an unverifiable copy.
             cache[key] = result
         result = cache[key]
         if result.family is not None:
