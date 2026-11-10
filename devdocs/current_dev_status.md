@@ -16,6 +16,8 @@ Updated: 2026-11-08 for 6.2.0 preparation. [6.2.0 notes](releases/v6.2.0.md) cov
 
 ## Delivered additions
 
+- **#341 DT+ key-switch refresh (PR pending):** Source implementation automatically checks a selected cloud key and refreshes its model inventory, coalescing rapid switches and clearing previous-key availability. Existing credential pinning and manual controls remain; Windows A → B → A verification is pending.
+
 - **Images slideshow (PR #323):** source implementation adds fullscreen Detail playback, 0.5–8 second dwell, filtered cross-batch looping, prompt/LoRA rail replacing the carousel and hover/focus-opaque controls with scoped wheel and arrow navigation. No local tests/renders or native acceptance claimed; see the [plan and remaining gates](plans/2026-11-08-images-slideshow.md).
 
 - **PR #306 — RAM diagnostics and unused previews:** dev-only workflow/detector/process-memory checkpoints and bounded post-execution observations use the existing JSONL sink. Queue-owned ordinary/workflow/script runs skip unused preview decode/encoding/forwarding, while direct Generate retains previews; network delivery remains unchanged without a verified upstream opt-out. Owner captures show counters and 72/72 preview payloads skipped, but source commits are unknown and no controlled performance or final-head acceptance is implied. [Development guide](guides/development.md#workflow-and-detector-memory-diagnostics). The owner-confirmed pre-existing Windows heap-corruption crash remains [#308](https://github.com/djebaz/dtflow/issues/308), not fixed by this PR.

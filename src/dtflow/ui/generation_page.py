@@ -267,6 +267,11 @@ class GenerationPage:
         self._inventory_memory = InventoryDisplayMemory()
         self._inventory_source: tuple[str, str | None] | None = None
         self._inventory_revision = 0
+        self._refresh_after_key_switch = False
+        self._key_refresh_timer = QTimer(page)
+        self._key_refresh_timer.setSingleShot(True)
+        self._key_refresh_timer.setInterval(300)
+        self._key_refresh_timer.timeout.connect(self._refresh_switched_key)
         self._cache_request = None
         self._inventory_how = ""
         self._inventory_notice = ""
@@ -853,6 +858,8 @@ class GenerationPage:
         self.page.refreshInventoryButton.setEnabled(not busy)
         self.lora.set_enabled(not busy)
         self._sync_generate()
+        if not busy and self._refresh_after_key_switch and not self._key_refresh_timer.isActive():
+            self._key_refresh_timer.start(0)
 
     def _sync_generate(self) -> None:
         """Only starting another run waits, for this generation or a page service call. While this window dispatches a
@@ -1398,9 +1405,20 @@ class GenerationPage:
             self.page.attemptIdentityLabel.setToolTip(f"Attempt {evidence.attempt_id}")
 
     # -- inventory -------------------------------------------------------------------------------------------------
-    def refresh(self) -> None:
-        if self._busy:
+    def _refresh_switched_key(self) -> None:
+        """Coalesce key switches and use the normal read-only model refresh once the page is free."""
+        if not self._refresh_after_key_switch or self._runner.closed:
             return
+        if self._backend()[0] != "cloud":
+            self._refresh_after_key_switch = False
+        elif not self._busy:
+            self.refresh()
+
+    def refresh(self) -> None:
+        if self._busy or self._runner.closed:
+            return
+        self._refresh_after_key_switch = False
+        self._key_refresh_timer.stop()
         name, endpoint = self._backend()
         self._set_busy(True)
         self._inventory_notice = "Refreshing models…"
@@ -1821,12 +1839,20 @@ class GenerationPage:
                 self._inventory_notice = self._inventory_error = ""
             self._show_inventory(snapshot, how)
 
-    def credentials_changed(self):
-        """Recheck the selected credential identity; saving the same key must not erase evidence."""
+    def credentials_changed(self, *, switched: bool = False) -> None:
+        """Revalidate cloud evidence; only an explicit key switch schedules a live inventory refresh."""
         self.lora.invalidate_prepare_ownership()
         if self._backend()[0] == "cloud":
             self._inventory_revision += 1
-            self.request_cached(revalidate=True)
+            if switched:
+                # Never show key A's models as key B's while a matching cached read is pending.
+                self._cache_request = None
+                self._inventory_notice = self._inventory_error = ""
+                self._clear_inventory()
+            self.request_cached(revalidate=not switched)
+            if switched:
+                self._refresh_after_key_switch = True
+                self._key_refresh_timer.start()
 
     # -- configuration ---------------------------------------------------------------------------------------------
     def save(self) -> None:
