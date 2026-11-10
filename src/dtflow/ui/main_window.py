@@ -1793,7 +1793,10 @@ class MainWindow:
                 try:
                     retained = store.find(sha, size)
                     if retained is not None:
-                        entry["detected_family"] = detect_lora_family(retained.path)
+                        detected = detect_lora_family(retained.path)
+                        if detected.family is not None:
+                            store.verify(retained)
+                        entry["detected_family"] = detected
                 except (OSError, ValidationError):
                     # A damaged or missing retained copy must not hide the other LoRAs.
                     pass
