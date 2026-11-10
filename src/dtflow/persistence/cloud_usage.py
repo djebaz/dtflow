@@ -40,7 +40,9 @@ def read_usage_records(state: Path, now: datetime, *, days: int = 3) -> tuple[Us
     until = (now + timedelta(days=days)).astimezone(UTC).strftime("%Y-%m-%dT00:00:00")
     stage = "opening saved history"
     try:
-        with reader(state, include_recycle=False) as db:
+        # The advisory counter runs off the Qt thread and may scan a legacy, unindexed store.
+        # Keep this startup read bounded without relaxing the gallery's short budget.
+        with reader(state, include_recycle=False, read_budget_seconds=15) as db:
             if db is None:
                 return ()
             stage = "checking key attribution"
