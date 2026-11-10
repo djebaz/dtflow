@@ -49,6 +49,7 @@ from dtflow.persistence.store import SQLiteAttempts, StateBusyError, state_is_ow
 from dtflow.persistence.workflow_items import KIND_WORKFLOW, is_workflow_record
 from dtflow.services import session
 from dtflow.services.assets import AssetService
+from dtflow.services.catalogue import Catalogue
 from dtflow.services.generation import GenerationService
 from dtflow.services.image_inputs import restore_image_inputs, snapshot_image_inputs
 from dtflow.services.planning import Plan, PlanError, expand_plan
@@ -554,6 +555,7 @@ async def _dispatch_one(store, state, queue_id, policy, saved, out, on_settle, o
             assets=session.asset_validator(backend, state),
             input_state=state if permits else None,
             preview_images=False,
+            catalogue=Catalogue(state),
         )
         if on_event is not None and isinstance(service.assets, AssetService):
 

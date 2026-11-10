@@ -85,8 +85,10 @@ class GenerationService:
         assets: AssetValidator | None = None,
         input_state: Path | None = None,
         preview_images: bool = True,
+        catalogue=None,
     ):
         self.assets = assets
+        self.catalogue = catalogue
         self.backend, self.store, self.output = backend, store, Path(output)
         self.timeouts = timeouts or TimeoutPolicy()
         self.saver = saver
@@ -145,7 +147,7 @@ class GenerationService:
 
     async def preflight(self, request: ResolvedGenerationRequest):
         """Structured LoRA diagnostics from the backend's current inventory; never dispatches anything."""
-        return preflight_loras(request, await self.get_inventory())
+        return preflight_loras(request, await self.get_inventory(), self.catalogue)
 
     async def generate(
         self,

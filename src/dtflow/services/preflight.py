@@ -23,8 +23,42 @@ BLOCKING = ("architecture_mismatch", "not_available")
 UNCONFIRMED = "application_unconfirmed"
 
 
-def preflight_loras(request: ResolvedGenerationRequest, snapshot: InventorySnapshot) -> tuple[PreflightDiagnostic, ...]:
-    """Return one diagnostic per selected LoRA, in selection order."""
+def preflight_loras(
+    request: ResolvedGenerationRequest, snapshot: InventorySnapshot, catalogue=None
+) -> tuple[PreflightDiagnostic, ...]:
+    """Return one diagnostic per selected LoRA, in selection order.
+
+    When the backend cannot confirm an architecture, the catalogue's recorded families (the bundled checkpoint
+    classification and the user's LoRA metadata) may still show a mismatch, which blocks like a confirmed one.
+    """
+    return _family_checked(request, _preflight_loras(request, snapshot), catalogue)
+
+
+def _family_checked(request, diagnostics, catalogue) -> tuple[PreflightDiagnostic, ...]:
+    if catalogue is None:
+        return diagnostics
+    checkpoint = catalogue.checkpoint(request.model_id, include_unavailable=True)
+    if checkpoint is None or not checkpoint.base_model:
+        return diagnostics
+    definitions = {entry.identifier: entry for entry in catalogue.lora_definitions()}
+    checked = []
+    for item in diagnostics:
+        recorded = definitions.get(item.identifier)
+        if (
+            item.architecture_match == "unknown"
+            and item.availability != "absent"
+            and recorded is not None
+            and recorded.base_model
+            and recorded.base_model != checkpoint.base_model
+        ):
+            item = replace(item, architecture_match="mismatch", code="architecture_mismatch")
+        checked.append(item)
+    return tuple(checked)
+
+
+def _preflight_loras(
+    request: ResolvedGenerationRequest, snapshot: InventorySnapshot
+) -> tuple[PreflightDiagnostic, ...]:
     by_id = {entry.identifier: entry for entry in snapshot.entries}
     prepared = {item.identifier for item in request.prepared_assets}
     model = by_id.get(request.model_id)

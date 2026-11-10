@@ -1660,6 +1660,8 @@ class GenerationPage:
             else None
         )
         self.lora.set_candidates(entries, prune_selected=prune_selected and entries is not None)
+        if entries is None and checkpoint:
+            self.lora.show_family_unknown()
 
     def _compute_units_estimate(self) -> ComputeUnitEstimate:
         """Read the same current form settings for the meter and explicit inspector."""

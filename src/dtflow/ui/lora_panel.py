@@ -253,6 +253,19 @@ class LoraAssetPanel:
         label = self.page.compatibilityStatusLabel
         self._show(label, present_generation_failure(failure) if failure else present_preflight(diagnostics))
 
+    def show_family_unknown(self) -> None:
+        """Selected LoRAs on a checkpoint whose family is not classified: nothing can confirm they match it."""
+        if self.loras:
+            self._show(
+                self.page.compatibilityStatusLabel,
+                Presentation(
+                    "warning",
+                    "Checkpoint family unknown",
+                    "This checkpoint is not classified, so DTFlow cannot tell whether the selected LoRAs match its "
+                    "base model. A LoRA of another family loads but has no effect.",
+                ),
+            )
+
     def show_diagnostics(self, diagnostics) -> None:
         if diagnostics:
             self._show(self.page.compatibilityStatusLabel, present_preflight(diagnostics))

@@ -47,6 +47,7 @@ from dtflow.persistence.inventory_cache import load_inventory, save_inventory
 from dtflow.persistence.settings import load_cloud_concurrency
 from dtflow.persistence.store import SQLiteAttempts
 from dtflow.services.assets import AssetService, possible_missing_asset
+from dtflow.services.catalogue import Catalogue
 from dtflow.services.credentials import EnvironmentCredentials, resolve_credentials
 from dtflow.services.generation import GenerationService
 from dtflow.services.image_inputs import restore_image_inputs
@@ -291,6 +292,7 @@ async def open_session(
             timeouts=policy,
             assets=asset_validator(backend, state),
             input_state=state if image_permits else None,
+            catalogue=Catalogue(state),
         )
     finally:
         try:
