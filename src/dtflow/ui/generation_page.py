@@ -277,6 +277,7 @@ class GenerationPage:
         self._inventory_notice = ""
         self._inventory_error = ""
         self._pending_family: str | None = None
+        self._key_switch_checkpoint: str | None = None
         self._catalogue = Catalogue(self._state)
         self._inventory_snapshot: InventorySnapshot | None = None
         self._updating_catalogue = False
@@ -1508,6 +1509,8 @@ class GenerationPage:
     def _catalogue_checkpoint_changed(self, *_args) -> None:
         self.page.checkpointDetailsButton.setEnabled(bool(self.page.modelCombo.currentText().strip()))
         if not self._updating_catalogue:
+            if self._key_switch_checkpoint is not None:
+                self._key_switch_checkpoint = self.page.modelCombo.currentText()
             # While previous/next stepping is in progress, keep selected LoRAs until it settles.
             self._filter_loras(prune_selected=not self._step_settle.isActive())
         self._filter_samplers()
@@ -1731,9 +1734,19 @@ class GenerationPage:
         self._inventory_how = how
         if self._inventory_error:
             self._inventory_notice = "Refresh failed · showing previous models"
+        checkpoint = self.page.modelCombo.currentText()
+        if self._key_switch_checkpoint is not None:
+            # Keep the user's choice across the cleared UI, never the old key's availability.
+            candidate = self._key_switch_checkpoint
+            checkpoint = (
+                candidate
+                if self._catalogue.checkpoint(candidate) is not None
+                or candidate in self._catalogue.view().unclassified_checkpoints
+                else ""
+            )
         self._rebuild_catalogue(
             preferred_family=self._pending_family,
-            preferred_checkpoint=self.page.modelCombo.currentText(),
+            preferred_checkpoint=checkpoint,
             restore_niche=True,
             preserve_selection=True,
         )
@@ -1774,6 +1787,7 @@ class GenerationPage:
     def _refreshed(self, snapshot, failure) -> None:
         self._set_busy(False)
         if failure is not None:
+            self._key_switch_checkpoint = None
             shown = present_generation_failure(failure)
             diagnostic_event(
                 log,
@@ -1790,6 +1804,7 @@ class GenerationPage:
         self._cache_request = None  # an older disk read must not replace this live observation
         self._inventory_notice = self._inventory_error = ""
         self._show_inventory(snapshot, "refreshed" if snapshot.refreshed else "as reported")
+        self._key_switch_checkpoint = None
 
     def request_cached(self, *, revalidate: bool = False) -> None:
         """Restore only matching last-successful evidence, including on return to a provider."""
@@ -1845,6 +1860,10 @@ class GenerationPage:
         if self._backend()[0] == "cloud":
             self._inventory_revision += 1
             if switched:
+                # Repeated switches retain the original choice while the dropdown is empty.
+                checkpoint = self.page.modelCombo.currentText()
+                if checkpoint or self._key_switch_checkpoint is None:
+                    self._key_switch_checkpoint = checkpoint
                 # Never show key A's models as key B's while a matching cached read is pending.
                 self._cache_request = None
                 self._inventory_notice = self._inventory_error = ""
