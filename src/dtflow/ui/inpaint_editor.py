@@ -370,7 +370,7 @@ class InpaintEditor(QObject):
 
     def _sync_button(self):
         button = self.page.generateButton
-        no_model = not self.page.modelCombo.currentText().strip()
+        no_model = self.controller is not None and self.controller._model_missing()
         if not self.active:
             button.setEnabled(not self._busy and not no_model)
             button.setToolTip("Choose a model first: Generate needs a checkpoint." if no_model else "")

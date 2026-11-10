@@ -479,6 +479,7 @@ class GenerationPage:
         if not name:
             return
         self.page.generationBackendCombo.setCurrentText(name)
+        self._sync_generate()  # the fake backend needs no model, the others do
         source = self._current_inventory_source()
         changed = source != self._inventory_source
         if changed:
@@ -866,13 +867,17 @@ class GenerationPage:
         if not busy and self._refresh_after_key_switch and not self._key_refresh_timer.isActive():
             self._key_refresh_timer.start(0)
 
+    def _model_missing(self) -> bool:
+        """No checkpoint chosen on a backend that needs one (the offline fake supplies its own)."""
+        return self._backend()[0] != "fake" and not self.page.modelCombo.currentText().strip()
+
     def _sync_generate(self) -> None:
         """Only starting another run waits, for this generation or a page service call. While this window dispatches a
         queue, Generate stays available and queues the request behind it (``queue_behind``)."""
         dispatching = self._activity.dispatching
         button = self.page.generateButton
         blocked = self._busy or self._generating
-        no_model = not self.page.modelCombo.currentText().strip()
+        no_model = self._model_missing()
         button.setEnabled(not blocked and not no_model)
         if hasattr(self, "retryButton"):
             self.retryButton.setEnabled(not blocked)
