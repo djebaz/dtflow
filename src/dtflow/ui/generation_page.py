@@ -327,6 +327,7 @@ class GenerationPage:
             backend_source=backend_source,
             saved_source=saved_source,
             state_dir=self._state,
+            catalogue=self._catalogue,
             build_request=self._request_for_check,
             is_busy=lambda: self._busy,
             set_busy=self._set_busy,
