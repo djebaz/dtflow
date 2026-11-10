@@ -645,9 +645,9 @@ class MainWindow:
             active_credential=self._active_credential_id,
             key_directory=self._key_directory,
             on_active=self._show_active_key,
+            on_unavailable=self._show_usage_unavailable,
         )
         self.workflow_defaults = WorkflowDefaultsPanel(form, self.runner, self.state_dir)
-        self.cloud_usage.refresh()  # the bottom bar names the active key on every view from startup
         self.activity.listen(self._usage_activity_changed)
         self._gui_heartbeat = GuiHeartbeat(
             form,
@@ -663,7 +663,7 @@ class MainWindow:
         )
         self.refresh_remembered_folders()
         self.refresh_presets(background=True)
-        self._workspace_changed(0)
+        self._workspace_changed(0)  # Starts the initial counter read; do not duplicate it above.
         self._responsive_workspace()
         # Readiness precedes reconciliation so an unsupported bridge gets one
         # startup notice, not duplicate warnings from concurrent startup tasks.
@@ -1387,6 +1387,16 @@ class MainWindow:
         pill.setAccessibleName(f"Local DT+ completed images today, active key / all keys: {text}")
         pill.setToolTip(tip)
         pill.setProperty("state", state)
+        pill.style().unpolish(pill)
+        pill.style().polish(pill)
+
+    def _show_usage_unavailable(self) -> None:
+        """Do not present stale or missing local counts as a fresh daily total."""
+        pill = self.usage_pill
+        pill.setText("\u2013/\u2013")
+        pill.setAccessibleName("Local DT+ completed image counts unavailable")
+        pill.setToolTip("Saved-image history could not be read. Return to Connection to refresh the local count.")
+        pill.setProperty("state", "warning")
         pill.style().unpolish(pill)
         pill.style().polish(pill)
 
