@@ -47,7 +47,15 @@ from dtflow.core.models import (
     Sampler,
 )
 from dtflow.core.output_layout import OutputLayout, group_name, prompt_label
-from dtflow.core.retry_policy import AUTO_RETRIES, AUTO_RETRY_DELAY, auto_retry_request, auto_retryable
+from dtflow.core.retry_policy import (
+    AUTO_RETRIES,
+    AUTO_RETRY_DELAY,
+    auto_retry_limit,
+    auto_retry_request,
+    LoraStreak,
+    auto_retryable,
+    refresh_failed,
+)
 from dtflow.core.tasks import settle
 from dtflow.persistence.script_items import RETRY_EVIDENCE
 from dtflow.scripting.models import (
@@ -170,6 +178,7 @@ class ScriptHost:
         self.sandbox = Path(sandbox).resolve()
         self.sandbox.mkdir(parents=True, exist_ok=True)
         self.max_generations, self.prefix = max_generations, prefix
+        self._lora_streak = LoraStreak()
         self._answers = list(answers) if answers is not None else None
         self._record_answers = record_answers
         self._ask = ask  # set only for a run whose forms are answered interactively (a queue item)
@@ -366,8 +375,9 @@ class ScriptHost:
         self.generations += 1
         self.steps += 1
         step, retry_of = self.steps, None
-        auto_left = AUTO_RETRIES  # the shared automatic retry (#241), per submission
+        auto_used = 0  # the shared automatic retry (#241), per submission
         while True:
+            limit = AUTO_RETRIES
             if self.cancel.is_set():
                 raise ScriptCancelled()  # Stop landed while the Retry form closed: nothing more is linked
             attempt_id = uuid.uuid4().hex
@@ -394,6 +404,7 @@ class ScriptHost:
                 )
                 reason = exc.failure.message or exc.failure.code
                 automatic = auto_retryable(exc.failure)
+                limit = auto_retry_limit(request, exc.failure)
                 assets = getattr(self.service, "assets", None)
                 if (
                     assets is not None
@@ -401,7 +412,9 @@ class ScriptHost:
                     and possible_missing_asset(exc.failure)
                     and callable(getattr(assets, "recover_missing", None))
                 ):
-                    repaired = self._await(assets.recover_missing(request.prepared_assets), track=True)
+                    repaired = self._await(
+                        assets.recover_missing(request.prepared_assets, failure=exc.failure), track=True
+                    )
                     automatic = automatic or (repaired and exc.failure.remote_outcome == RemoteOutcome.NOT_STARTED)
             except Exception as exc:
                 kind, reason, automatic = "unknown", str(exc) or type(exc).__name__, False
@@ -410,9 +423,9 @@ class ScriptHost:
                 self._cleared = False  # a new generation fills the canvas again
                 self.attempt_outputs[attempt_id] = [str(path) for path in outcome.output_paths]
                 return
-            if automatic and auto_left > 0 and self.generations < self.max_generations:
+            if automatic and auto_used < limit and self.generations < self.max_generations:
                 # The one automatic retry: no form, counted as one of the run's generations like any retry.
-                auto_left -= 1
+                auto_used += 1
                 self._console(f"Step {step} {HEADLINES[kind]}: {reason} Retrying automatically.", 0)
                 if self.cancel.wait(AUTO_RETRY_DELAY):
                     raise ScriptCancelled()
@@ -423,7 +436,7 @@ class ScriptHost:
                 self._console(f"Step {step} {HEADLINES[kind]}: {reason}", 1)
                 return
             else:
-                auto_left = AUTO_RETRIES  # a manual Retry is a new submission with its own automatic retry
+                auto_used = 0  # a manual Retry is a new submission with its own automatic retry
             retry_of = attempt_id
             self.retries += 1
             self.generations += 1  # one limit: a retry counts like any other generation
@@ -605,7 +618,7 @@ class ScriptHost:
 
                 async def repair():
                     try:
-                        return await assets.recover_missing(pending)
+                        return await assets.recover_missing(pending, failure=failure)
                     finally:
                         asset_gate.set()
 
@@ -775,24 +788,30 @@ class ScriptHost:
     ) -> GenerationOutcome:
         """One batch job's generation with the shared automatic retry (#241): a retry is a new child, linked before it
         is sent, counted as one of the run's generations. Stop during the wait raises the first try's failure."""
-        auto_left = AUTO_RETRIES
+        auto_used = 0
         while True:
             try:
-                return await run_generation(
+                outcome = await run_generation(
                     self.service, request, prefix=self.prefix, attempt_id=attempt_id, layout=self._layout(request)
                 )
+                self._lora_streak.note(request, None)
+                return outcome
             except BackendError as exc:
                 repaired = await recover_assets(request, exc.failure)
                 safe_retry = repaired and exc.failure.remote_outcome == RemoteOutcome.NOT_STARTED
                 if not (
-                    auto_left > 0
+                    auto_used < auto_retry_limit(request, exc.failure)
                     and (safe_retry or auto_retryable(exc.failure))
                     and self.generations < self.max_generations
                     and not self.cancel.is_set()
                 ):
+                    if self._lora_streak.note(request, exc.failure) or refresh_failed(exc.failure):
+                        # A broken LoRA would fail every remaining job: stop the run instead of burning it.
+                        self._blocked = "Stopped: the same LoRA keeps failing, or a changed LoRA could not be prepared."
+                        self.cancel.set()
                     raise
                 first = exc
-            auto_left -= 1
+            auto_used += 1
             self.generations += 1
             self.retries += 1
             deadline = asyncio.get_running_loop().time() + AUTO_RETRY_DELAY

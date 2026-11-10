@@ -38,10 +38,15 @@ from dtflow.core.models import (
     ValidationError,
 )
 from dtflow.core.output_layout import OutputLayout
-from dtflow.core.retry_policy import AUTO_RETRIES, AUTO_RETRY_DELAY, auto_retry_request, auto_retryable
+from dtflow.core.retry_policy import (
+    AUTO_RETRY_DELAY,
+    auto_retry_limit,
+    auto_retry_request,
+    auto_retryable,
+)
 from dtflow.core.tasks import settle
 from dtflow.diagnostics import event as diagnostic_event
-from dtflow.persistence.assets import AssetRegistry
+from dtflow.persistence.assets import AssetRegistry, newest_per_name
 from dtflow.persistence.gallery_snapshot import schedule_publish
 from dtflow.persistence.inventory_cache import load_inventory, save_inventory
 from dtflow.persistence.settings import load_cloud_concurrency
@@ -50,6 +55,7 @@ from dtflow.services.assets import AssetService, possible_missing_asset
 from dtflow.services.credentials import EnvironmentCredentials, resolve_credentials
 from dtflow.services.generation import GenerationService
 from dtflow.services.image_inputs import restore_image_inputs
+from dtflow.services.lora_store import LoraStore
 from dtflow.services.image_preparation import prepare_image_files, validate_prepared_inputs
 from dtflow.services.preflight import apply_trigger_prefixes
 
@@ -234,13 +240,17 @@ async def script_asset_choices(state: Path, backend_name: str) -> tuple[Prepared
 
     Local reads only. Actual dispatch still validates each selected receipt against
     the active backend/account; a confirmed historical record is not live consent.
+
+    One receipt per LoRA name, the one prepared on purpose last (else first seen last): a file converted again under the same
+    name has a new hash, and the old receipt must never be bound for it, or the request names the old bytes (#361).
     """
     if backend_name != "cloud":
         return ()
     registry = AssetRegistry(state)
     await registry.open()
     try:
-        return await registry.choices()
+        choices = await registry.choices()
+        return newest_per_name(choices, await asyncio.to_thread(LoraStore(state).current_by_name))
     finally:
         await registry.aclose()
 
@@ -360,13 +370,13 @@ async def run_generation(
                 and possible_missing_asset(failure)
                 and callable(getattr(assets, "recover_missing", None))
             ):
-                repaired = await assets.recover_missing(request.prepared_assets)
+                repaired = await assets.recover_missing(request.prepared_assets, failure=failure)
             # Named child attempts (Workflows/Scripts) own their own retry accounting.
             # A rejected/possibly submitted generation is never silently replayed.
             safe_repair_retry = repaired and failure.remote_outcome == RemoteOutcome.NOT_STARTED
             if (
                 attempt_id is not None
-                or retries >= AUTO_RETRIES
+                or retries >= auto_retry_limit(request, failure)
                 or (not safe_repair_retry and not auto_retryable(failure))
             ):
                 raise

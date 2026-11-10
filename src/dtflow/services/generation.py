@@ -270,17 +270,20 @@ class GenerationService:
                     for prepared in request.prepared_assets
                 ]
             if tuple(confirmed) != tuple(request.prepared_assets):
-                changed = [
-                    new.receipt_id for old, new in zip(request.prepared_assets, confirmed, strict=True) if old != new
+                pairs = list(zip(request.prepared_assets, confirmed, strict=True))
+                # A different hash means the name now resolves to other bytes than the request was built with (#361).
+                swapped = [f"{old.sha256[:8]}>{new.sha256[:8]}" for old, new in pairs if old.sha256 != new.sha256]
+                changed = [new.receipt_id for old, new in pairs if old != new and old.sha256 == new.sha256]
+                evidence = [
+                    pair for pair in request.resolution_evidence if not (swapped and pair[0] == "prepared_assets")
                 ]
-                request = replace(
-                    request,
-                    prepared_assets=tuple(confirmed),
-                    resolution_evidence=(
-                        *request.resolution_evidence,
-                        ("restored_assets", ",".join(receipt[:8] for receipt in changed)),
-                    ),
-                )
+                if swapped:
+                    evidence.append(("prepared_assets", ",".join(asset.receipt_id for asset in confirmed)))
+                    evidence.append(("receipts_updated", ",".join(swapped)))
+                    diagnostic_event(log, "assets.receipts_updated", level=logging.INFO, data={"count": len(swapped)})
+                if changed:
+                    evidence.append(("restored_assets", ",".join(receipt[:8] for receipt in changed)))
+                request = replace(request, prepared_assets=tuple(confirmed), resolution_evidence=tuple(evidence))
         if request.loras:
             preparation("checking_loras")
             # Confirmed incompatibility or absence must stop the request before any durable attempt exists.

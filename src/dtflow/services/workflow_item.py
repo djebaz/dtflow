@@ -17,7 +17,7 @@ Execution model:
 - The loop guard counts submitted images (every Generate output and image step counts one). A submission that
   would pass the planned total plus the retry allowance is refused, the run stops and ends ``failed``. Each explicit
   Retry adds that step's own submission to the allowance; the shared automatic retry (``core.retry_policy``,
-  #241) adds ``AUTO_RETRIES`` per planned submission.
+  #241) adds ``AUTO_RETRIES`` (and ``LORA_EXTRA_RETRIES``) per planned submission.
 - A remote outcome that is not confirmed (attempt ``unknown``) makes its step ``unknown``: never a failure or a
   success, never replayed. Only an explicit Retry submits that step again (a new request identity), except the one
   case ``auto_retryable`` accepts (DT+ ended the call itself with no image). A definite transient failure gets the
@@ -45,7 +45,17 @@ from uuid import uuid4
 
 from dtflow.core.models import SEED_LIMIT, BackendError, BackendEvent, RemoteOutcome, ValidationError
 from dtflow.core.output_layout import OutputLayout, group_name, slug
-from dtflow.core.retry_policy import AUTO_RETRIES, AUTO_RETRY_DELAY, RETRY_STAGE, auto_retry_request, auto_retryable
+from dtflow.core.retry_policy import (
+    AUTO_RETRIES,
+    AUTO_RETRY_DELAY,
+    LORA_EXTRA_RETRIES,
+    RETRY_STAGE,
+    LoraStreak,
+    auto_retry_limit,
+    auto_retry_request,
+    auto_retryable,
+    refresh_failed,
+)
 from dtflow.core.tasks import settle
 from dtflow.core.workflows import (
     DETECT_FACE,
@@ -368,8 +378,9 @@ class _Execution:
         self.recovery_attempted: set[tuple[str, str, int]] = set()
         self.recovery_assets: frozenset[tuple[str, str, int]] = frozenset()
         self.dirty = False
+        self.lora_streak = LoraStreak()
         # Each planned submission may get the shared automatic retry (#241): at most planned x 2 before any Retry.
-        self.allowance = request.planned * (1 + AUTO_RETRIES)
+        self.allowance = request.planned * (1 + AUTO_RETRIES + LORA_EXTRA_RETRIES)
         limit = runner.service.backend.capabilities.max_concurrency
         self.lanes = max(1, min(limit, 10))
         self.graph = None
@@ -868,7 +879,7 @@ class _Execution:
         async def repair():
             try:
                 return await assets.recover_missing(
-                    pending, on_stage=lambda stage: self.set_stage(keys, "Restoring LoRA on DT+")
+                    pending, on_stage=lambda stage: self.set_stage(keys, "Restoring LoRA on DT+"), failure=failure
                 )
             except asyncio.CancelledError:
                 raise
@@ -887,6 +898,20 @@ class _Execution:
 
         self.asset_recovery = asyncio.create_task(repair())
         return await asyncio.shield(self.asset_recovery)
+
+    async def pause_for_lora(self, request, failure) -> None:
+        """Pause the run (steps not yet sent wait) when a changed LoRA could not be refreshed, or after
+        ``LORA_FAILURE_PAUSE`` steps in a row ended with DT+'s generic error for the same LoRA."""
+        refresh = refresh_failed(failure)
+        if self.lora_streak.note(request, failure) or refresh:
+            diagnostic_event(
+                log,
+                "workflow.lora_pause",
+                level=logging.WARNING,
+                data={"reason": "refresh_failed" if refresh else "repeated_failures"},
+            )
+            await asyncio.to_thread(post_control, self.runner.state, self.queue_id, "pause")
+            self.go.clear()
 
     async def submit(self, keys: list[Key], request, weight: int, prepared=None):
         """One generation for ``keys`` under the loop guard and a backend lane; None when it did not succeed (the
@@ -969,7 +994,7 @@ class _Execution:
                         self.run["submitted"] -= weight
                         await self.end(keys, "cancelled", "Stopped before submission; nothing was sent.")
                         return None
-                auto_left = AUTO_RETRIES
+                auto_used = 0
                 while True:
                     while not self.asset_gate.is_set() and not self.stopping and not self.halted:
                         self.set_stage(keys, "Waiting for LoRA restoration")
@@ -989,14 +1014,18 @@ class _Execution:
                             layout=self.layout(keys),
                             **options,
                         )
+                        self.lora_streak.note(request, None)
                         break
                     except BackendError as exc:
                         restored = await self.recover_assets(keys, request, exc.failure)
                         safe_repair_retry = restored and exc.failure.remote_outcome == RemoteOutcome.NOT_STARTED
-                        if auto_left <= 0 or (not safe_repair_retry and not auto_retryable(exc.failure)):
+                        if auto_used >= auto_retry_limit(request, exc.failure) or (
+                            not safe_repair_retry and not auto_retryable(exc.failure)
+                        ):
+                            await self.pause_for_lora(request, exc.failure)
                             raise
                         first = exc
-                    auto_left -= 1
+                    auto_used += 1
                     self.set_stage(keys, RETRY_STAGE)
                     diagnostic_event(
                         log,
