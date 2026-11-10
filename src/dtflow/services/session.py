@@ -55,6 +55,7 @@ from dtflow.services.assets import AssetService, possible_missing_asset
 from dtflow.services.credentials import EnvironmentCredentials, resolve_credentials
 from dtflow.services.generation import GenerationService
 from dtflow.services.image_inputs import restore_image_inputs
+from dtflow.services.lora_family import LoraFamily, detect_lora_family
 from dtflow.services.lora_store import LoraStore
 from dtflow.services.image_preparation import prepare_image_files, validate_prepared_inputs
 from dtflow.services.preflight import apply_trigger_prefixes
@@ -891,12 +892,44 @@ async def reconcile_asset(
         return await service.reconcile(asset_id, identifier)
 
 
+def _legacy_receipt_families(state: Path, records: list[dict]) -> None:
+    """Enrich older receipt views from verified retained bytes, without a write or DT+ call.
+
+    This keeps old LoRAs visible and usable without another Prepare. New Prepare
+    already persists family on the existing receipt; #370 will consolidate the
+    remaining legacy read paths. Never infer a family from a filename or server.
+    """
+    store = LoraStore(state)
+    cache: dict[tuple[str, int], LoraFamily] = {}
+    for record in records:
+        if record.get("kind") != "lora" or record.get("family"):
+            continue
+        key = (record.get("sha256"), record.get("size"))
+        if not isinstance(key[0], str) or not isinstance(key[1], int):
+            continue
+        if key not in cache:
+            result = LoraFamily()
+            try:
+                retained = store.find(*key)
+                if retained is not None:
+                    store.verify(retained)
+                    result = detect_lora_family(retained.path)
+            except (OSError, ValidationError):
+                pass
+            cache[key] = result
+        result = cache[key]
+        if result.family is not None:
+            record["family"] = result.family
+            record["family_source"] = result.source
+
+
 async def list_assets(state: Path, *, named: bool = False) -> list[dict]:
     """Local receipt and unresolved-operation candidates; optionally expand logical LoRA names for Qt."""
     registry = AssetRegistry(state)
     await registry.open()
     try:
         records = await registry.list()
+        await asyncio.to_thread(_legacy_receipt_families, state, records)
         if not named:
             return [asset_view(record) for record in records]
         parents = {record["asset_id"]: record for record in records}
