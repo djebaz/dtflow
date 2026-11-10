@@ -167,6 +167,15 @@ class SQLiteAttempts(QueueMixin):
                     failure_json TEXT,
                     artifacts_json TEXT NOT NULL DEFAULT '[]'
                 )""")
+                # The local DT+ counter reads a narrow UTC window of completed attempts.
+                # Without this index, a large history can exhaust the gallery reader's
+                # five-second query budget during startup. It is derived SQLite structure,
+                # safe to add to existing schema-9 stores without changing saved records.
+                connection.execute(
+                    """CREATE INDEX IF NOT EXISTS idx_attempts_completed_usage
+                    ON attempts (backend_id, updated_at_utc)
+                    WHERE state='succeeded' AND remote_outcome='succeeded'"""
+                )
                 for statement in QUEUE_SCHEMA:
                     connection.execute(statement)
                 add_up_next(connection)
