@@ -52,6 +52,7 @@ TRANSFORMER_WIDTHS = {
     "ernie_image": (4096,),
     "ltx_2": (2048, 4096),
     "krea_2": (6144,),
+    "moss_image": (3072,),
 }
 UNET_WIDTHS = {"sd_1": (320, 640, 1280), "sd_2": (320, 640, 1280),
                "sdxl": (320, 640, 1280)}
@@ -90,8 +91,14 @@ def sample_shape(value: object) -> str:
     return str(value)[:64]
 
 
-def fingerprint_checks(modules: list[str], widths: set[int]) -> dict[str, dict[str, bool]]:
-    """Mirror the production Krea 2/Z-Image rules so a failed gate is visible."""
+def fingerprint_checks(
+    modules: list[str],
+    widths: set[int],
+    namespace_widths: dict[str, set[int]],
+) -> dict[str, dict[str, bool]]:
+    """Show each production family signature's independent structural evidence."""
+    unet = namespace_widths.get("__unet__", set())
+    text = namespace_widths.get("__text_model__", set())
     return {
         "z_image": {
             "width_3840": 3840 in widths,
@@ -116,8 +123,22 @@ def fingerprint_checks(modules: list[str], widths: set[int]) -> dict[str, dict[s
                 for m in modules
             ),
         },
+        "moss_image": {
+            "width_3072": 3072 in widths,
+            "ffn_8192": 8192 in widths,
+            "ffn_down_proj": any(re.fullmatch(r"ffn_down_proj-\d+-\d+", m) for m in modules),
+            "ffn_up_proj": any(re.fullmatch(r"ffn_up_proj-\d+-\d+", m) for m in modules),
+            "ffn_gate_proj": any(re.fullmatch(r"ffn_gate_proj-\d+-\d+", m) for m in modules),
+            "x_o": any(re.fullmatch(r"x_o-\d+-\d+", m) for m in modules),
+        },
+        "sd_1": {
+            "text_encoder_768": 768 in text,
+            "unet_320_640_1280_and_768": {320, 640, 1280, 768} <= unet,
+            "no_sd2_or_sdxl_unet_context": not ({1024, 2048} & unet),
+            "no_sd2_or_sdxl_text_width": not ({1024, 1280} & text),
+            "no_sdxl_second_text_encoder": "__te2__text_model__" not in namespace_widths,
+        },
     }
-
 
 def inspect(path: Path, sample_count: int) -> dict:
     """Inspect a SQLite checkpoint; preserve ambiguity and non-LoRA cases."""
@@ -153,6 +174,7 @@ def inspect(path: Path, sample_count: int) -> dict:
     modules: list[str] = []
     all_widths: Counter[int] = Counter()
     lora_widths: set[int] = set()
+    namespace_widths: dict[str, set[int]] = {}
     namespaces: Counter[str] = Counter()
     module_groups: Counter[str] = Counter()
     shape_encodings: Counter[str] = Counter()
@@ -176,12 +198,15 @@ def inspect(path: Path, sample_count: int) -> dict:
             index_match = MODULE_LAYER.match(module)
             if index_match:
                 layer_indices.add(int(index_match.group(1)))
-        if name.endswith(("__up__", "__down__")):
+        is_adapter = name.endswith(("__up__", "__down__"))
+        if is_adapter:
             lora_count += 1
 
         raw = row[1] if dim_col else None
         dims = dimensions(raw)
         all_widths.update(dims)
+        if is_adapter and name.startswith(namespace + "[t-"):
+            namespace_widths.setdefault(namespace, set()).update(dims)
         if match:
             lora_widths.update(dims)
         shape_encodings[describe_shape(raw)] += 1
@@ -199,7 +224,7 @@ def inspect(path: Path, sample_count: int) -> dict:
         elif len(informative) < sample_count and (match or any(m in name for m in MARKERS)):
             informative.append(example)
 
-    checks = fingerprint_checks(modules, lora_widths)
+    checks = fingerprint_checks(modules, lora_widths, namespace_widths)
     matches = [family for family, gates in checks.items() if all(gates.values())]
     detected = matches[0] if len(matches) == 1 else "unknown"
     # These candidates deliberately use SHAPE ONLY. They are useful to choose
@@ -216,6 +241,9 @@ def inspect(path: Path, sample_count: int) -> dict:
         "lora_tensor_count": lora_count,
         "dit_lora_tensor_count": len(modules),
         "namespaces": dict(namespaces),
+        "adapter_dimensions_by_namespace": {
+            namespace: sorted(dims) for namespace, dims in namespace_widths.items()
+        },
         "module_groups": module_groups.most_common(30),
         "marker_counts": dict(markers),
         "observed_layer_indices": sorted(layer_indices),
@@ -227,10 +255,11 @@ def inspect(path: Path, sample_count: int) -> dict:
         "current_detector_result": detected,
         "width_only_hints_not_classification": width_hints,
     })
-    if not modules:
+    if not modules and detected == "unknown":
         report["limitation"] = (
-            "No Draw Things __dit__ LoRA up/down tensors. Other families or "
-            "full checkpoint/encoder cannot be identified by these signatures."
+            "No Draw Things __dit__ LoRA up/down tensors. Only the guarded "
+            "SD 1.x UNet + text encoder signature is currently supported "
+            "without DiT tensors; other architectures remain unknown."
         )
     return report
 
@@ -246,6 +275,7 @@ def print_report(report: dict) -> None:
     print("Tensors:", report["tensor_rows_scanned"])
     print("LoRA up/down:", report["lora_tensor_count"], "DiT:", report["dit_lora_tensor_count"])
     print("Namespaces:", report["namespaces"])
+    print("Adapter dimensions by namespace:", report["adapter_dimensions_by_namespace"])
     print("Module groups:", report["module_groups"])
     print("Observed layer indices:", report["observed_layer_indices"])
     print("Dimension storage:", report["dimension_storage"])
