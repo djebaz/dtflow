@@ -65,3 +65,40 @@ async def test_optional_desktop_vault_discovery_is_deferred_and_off_caller_threa
         await resolve_credentials(EnvironmentCredentials({"DRAWTHINGS_API_KEY": "fixture-env"}), provider)
     ).source == "environment"
     assert len(probes) == 3 and all(thread != caller for thread in probes)
+
+
+@pytest.mark.asyncio
+async def test_saved_key_alias_never_exposes_its_credential():
+    """Reject secret-bearing names and ignore legacy unsafe aliases in diagnostics."""
+    from dtflow.core.models import ValidationError
+    from dtflow.diagnostics import cloud_key_data
+    from dtflow.services.cloud_usage import key_identity
+    from dtflow.services.credentials import SavedCredentials
+
+    class Vault:
+        passwords = {}
+
+        def get_password(self, service, account):
+            return self.passwords.get((service, account))
+
+        def set_password(self, service, account, value):
+            self.passwords[(service, account)] = value
+
+    secret = "FAKE-PRIVATE-CLOUD-CREDENTIAL"
+    saved = SavedCredentials(vault=Vault())
+    key_id = saved.save(secret, "Studio")
+    credential = await saved.get()
+    assert cloud_key_data(key_identity(secret), "saved", alias=credential.alias)["key_alias"] == "Studio"
+
+    with pytest.raises(ValidationError):
+        saved.save(secret, secret)
+    with pytest.raises(ValidationError):
+        saved.rename(key_id, secret)
+
+    saved._memory["keys"][0]["name"] = secret  # Simulate a pre-fix saved index.
+    entry = saved.entries()[0]
+    credential = await saved.get()
+    event = cloud_key_data(key_identity(secret), credential.source, alias=credential.alias)
+    assert entry.alias is None and credential.alias is None
+    assert event["key_alias"] == entry.name
+    assert secret not in entry.name and secret not in str(event)

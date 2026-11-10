@@ -112,6 +112,7 @@ class CloudAuth:
         self._key: str | None = None
         self._identity: tuple[str, str | None] | None = None
         self._source: str | None = None
+        self._alias: str | None = None
         self._token: str | None = None
         self._expires = 0.0
         self._margin = 0.0
@@ -138,6 +139,11 @@ class CloudAuth:
     def key_source(self) -> str | None:
         """Source pinned when this client resolved the key; never follows later UI selection."""
         return self._source
+
+    @property
+    def key_alias(self) -> str | None:
+        """Explicit saved name pinned when the credential was resolved."""
+        return self._alias
 
     async def token(self) -> str:
         if self._closed:
@@ -176,6 +182,7 @@ class CloudAuth:
             self._key = credential.secret.strip()
             self._identity = key_identity(self._key)
             self._source = credential.source
+            self._alias = credential.alias
         started = self._clock()
         reply = await self._post("/sdk/token", {"apiKey": self._key, "appCheckType": "none", "appCheckToken": None})
         try:
@@ -337,7 +344,7 @@ class CloudAuth:
                             "operation": path.strip("/").replace("/", "."),
                             "http_status": 200,
                             "elapsed_ms": elapsed(),
-                            **cloud_key_data(self._identity, self._source),
+                            **cloud_key_data(self._identity, self._source, alias=self._alias),
                         },
                     )
                     return _HTTPReply(bytes(body), tuple(response.headers.items()), elapsed())
