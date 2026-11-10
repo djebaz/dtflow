@@ -75,10 +75,12 @@ def lora_order(value: str) -> str:
 
 
 @contextmanager
-def reader(state: Path, *, include_recycle: bool = True):
+def reader(state: Path, *, include_recycle: bool = True, read_budget_seconds: float = 5):
     """Read existing execution state without initialization or the dispatch ownership lock.
 
     Only gallery availability queries need the separate image-recycling ledger.
+    Callers doing a background usage recount can allow a longer bounded read; gallery
+    navigation retains the short default budget.
     """
     path = Path(state).resolve() / "attempts.sqlite3"
     if not path.is_file():
@@ -98,7 +100,7 @@ def reader(state: Path, *, include_recycle: bool = True):
             raise PersistenceError("Unsupported execution-state schema; browsing made no migration or reset.")
         connection.create_function("fold", 1, lambda text: str(text or "").casefold(), deterministic=True)
         connection.create_function("lora_order", 1, lora_order, deterministic=True)
-        deadline = time.monotonic() + 5
+        deadline = time.monotonic() + read_budget_seconds
         connection.set_progress_handler(lambda: int(time.monotonic() > deadline), 10000)
         connection.execute("BEGIN")
         yield connection
