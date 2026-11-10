@@ -93,25 +93,25 @@ def detect_lora_family(path: Path) -> LoraFamily:
         if len(row) > 1
         for dimension in _dimensions(row[1])
     }
-    blocks = {
-        int(match.group(1))
-        for name in names
-        for match in _BLOCK.finditer(name)
-    }
-
-    # Both families have transformer blocks; a block count or hidden size
-    # alone is not a unique model fingerprint.
+    # Converted Draw Things LoRAs use names such as
+    # __dit__[t-ffn-0-ffn_gate_proj-0-0]__up__, not layers.0/blocks.0.
+    # Some valid LoRAs adapt only a subset of modules (notably no ada_ln).
+    # Require multiple architectural clues, but not a particular final block.
+    # These two signatures are grounded in owner-provided converted CKPT
+    # metadata; other architectures and partial/ambiguous adapters stay unknown.
+    dit_names = [name for name in names if name.startswith("__dit__[t-")]
     z_image = (
-        29 in blocks
-        and 3840 in dimensions
-        and any("ada_ln" in name for name in names)
-        and any("ffn_" in name and "proj" in name for name in names)
+        3840 in dimensions
+        and 10240 in dimensions
+        and any(re.match(r"__dit__\\[t-ffn-\\d+-ffn_(?:gate|down|up)_proj-", name) for name in dit_names)
+        and any(re.match(r"__dit__\\[t-(?:k|q|v|o)-\\d+-", name) for name in dit_names)
     )
     krea_2 = (
-        27 in blocks
-        and 6144 in dimensions
-        and any("txtfusion" in name or "textfusion" in name or "text_fusion" in name for name in names)
-        and any("attn" in name or "attention" in name for name in names)
+        6144 in dimensions
+        and 1536 in dimensions
+        and any(re.match(r"__dit__\\[t-to_(?:gate|k|q|v|out)-\\d+-", name) for name in dit_names)
+        and any("text_fusion" in name or "txtfusion" in name or "textfusion" in name for name in dit_names)
+        and any("attn" in name or "attention" in name for name in dit_names)
     )
     if z_image != krea_2:
         return LoraFamily("z_image" if z_image else "krea_2", "file")
