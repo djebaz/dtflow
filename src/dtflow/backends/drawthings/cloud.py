@@ -78,6 +78,11 @@ class DirectCloudBackend(DrawThingsBackend):
         """Source pinned to the authenticated backend, independent of subsequent UI key switches."""
         return self._auth.key_source
 
+    @property
+    def credential_alias(self) -> str | None:
+        """User-defined name pinned to this backend's credential, when present."""
+        return self._auth.key_alias
+
     async def negotiate_asset(self, content: AssetContent) -> AssetNegotiation:
         """Metadata-only BYOM negotiation for one converted LoRA; never transfers bytes."""
         return await negotiate_lora_asset(self._auth, content)

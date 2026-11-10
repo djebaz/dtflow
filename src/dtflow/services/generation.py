@@ -117,6 +117,7 @@ class GenerationService:
         return cloud_key_data(
             getattr(self.backend, "credential_usage", None),
             getattr(self.backend, "credential_source", None),
+            alias=getattr(self.backend, "credential_alias", None),
         )
 
     async def _attribute_credential(self, attempt_id: str) -> None:

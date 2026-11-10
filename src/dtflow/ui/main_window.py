@@ -645,9 +645,9 @@ class MainWindow:
             active_credential=self._active_credential_id,
             key_directory=self._key_directory,
             on_active=self._show_active_key,
+            on_unavailable=self._show_usage_unavailable,
         )
         self.workflow_defaults = WorkflowDefaultsPanel(form, self.runner, self.state_dir)
-        self.cloud_usage.refresh()  # the bottom bar names the active key on every view from startup
         self.activity.listen(self._usage_activity_changed)
         self._gui_heartbeat = GuiHeartbeat(
             form,
@@ -663,7 +663,7 @@ class MainWindow:
         )
         self.refresh_remembered_folders()
         self.refresh_presets(background=True)
-        self._workspace_changed(0)
+        self._workspace_changed(0)  # Starts the initial counter read; do not duplicate it above.
         self._responsive_workspace()
         # Readiness precedes reconciliation so an unsupported bridge gets one
         # startup notice, not duplicate warnings from concurrent startup tasks.
@@ -1390,6 +1390,16 @@ class MainWindow:
         pill.style().unpolish(pill)
         pill.style().polish(pill)
 
+    def _show_usage_unavailable(self) -> None:
+        """Do not present stale or missing local counts as a fresh daily total."""
+        pill = self.usage_pill
+        pill.setText("\u2013/\u2013")
+        pill.setAccessibleName("Local DT+ completed image counts unavailable")
+        pill.setToolTip("Saved-image history could not be read. Return to Connection to refresh the local count.")
+        pill.setProperty("state", "warning")
+        pill.style().unpolish(pill)
+        pill.style().polish(pill)
+
     def _usage_activity_changed(self) -> None:
         # The bottom-bar counter is global, even when the Connection card is hidden.
         self.cloud_usage.schedule_refresh()
@@ -1518,6 +1528,7 @@ class MainWindow:
             return
         source = "environment" if choice == ENVIRONMENT else "saved"
         status = getattr(self, "_credential_status_for_switch", {})
+        alias = None
         if source == "environment":
             environment = status.get("environment", {})
             identity = (
@@ -1526,11 +1537,12 @@ class MainWindow:
         else:
             selected = next((key for key in status.get("keys", ()) if key.id == choice), None)
             identity = (selected.credential_id, selected.hint) if selected is not None else None
+            alias = selected.alias if selected is not None else None
         diagnostic_event(
             log,
             "app.api_key_switched",
             level=logging.INFO,
-            data={"to": source, **cloud_key_data(identity, source)},
+            data={"to": source, **cloud_key_data(identity, source, alias=alias)},
         )
         self.refresh_credentials()
         self._selection_changed()

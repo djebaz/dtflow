@@ -75,8 +75,11 @@ def lora_order(value: str) -> str:
 
 
 @contextmanager
-def reader(state: Path):
-    """Read an existing supported store without initialization or the dispatch ownership lock."""
+def reader(state: Path, *, include_recycle: bool = True):
+    """Read existing execution state without initialization or the dispatch ownership lock.
+
+    Only gallery availability queries need the separate image-recycling ledger.
+    """
     path = Path(state).resolve() / "attempts.sqlite3"
     if not path.is_file():
         yield None
@@ -87,7 +90,8 @@ def reader(state: Path):
     try:
         connection = sqlite3.connect(path.as_uri() + "?mode=ro", uri=True, timeout=2)
         connection.row_factory = sqlite3.Row
-        attach_read_only(connection, state)
+        if include_recycle:
+            attach_read_only(connection, state)
         connection.execute("PRAGMA query_only=ON")
         version = connection.execute("PRAGMA user_version").fetchone()[0]
         if version not in (1, 2, 3, 4, 5, 6, 7, 8, SCHEMA_VERSION):
