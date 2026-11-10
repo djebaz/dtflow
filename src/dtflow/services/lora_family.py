@@ -130,11 +130,12 @@ def retained_families(state: Path, identities: Iterable[tuple[str, int]]) -> dic
     for sha256, size in dict.fromkeys(identities):
         try:
             retained = store.find(sha256, size)
-            result[(sha256, size)] = (
-                detect_lora_family(retained.path)
-                if retained is not None and retained.path.stat().st_size == size
-                else LoraFamily()
-            )
+            detected = LoraFamily()
+            if retained is not None and retained.path.stat().st_size == size:
+                detected = detect_lora_family(retained.path)
+                if detected.family is not None:
+                    store.verify(retained)
+            result[(sha256, size)] = detected
         except (OSError, ValidationError):
             result[(sha256, size)] = LoraFamily()
     return result
