@@ -23,20 +23,35 @@ BLOCKING = ("architecture_mismatch", "not_available")
 UNCONFIRMED = "application_unconfirmed"
 
 
-def preflight_loras(request: ResolvedGenerationRequest, snapshot: InventorySnapshot) -> tuple[PreflightDiagnostic, ...]:
+def preflight_loras(
+    request: ResolvedGenerationRequest,
+    snapshot: InventorySnapshot,
+    *,
+    checkpoint_family: str | None = None,
+) -> tuple[PreflightDiagnostic, ...]:
     """Return one diagnostic per selected LoRA, in selection order."""
     by_id = {entry.identifier: entry for entry in snapshot.entries}
-    prepared = {item.identifier for item in request.prepared_assets}
+    prepared = {item.identifier: item for item in request.prepared_assets}
     model = by_id.get(request.model_id)
+    base = model.architecture if model is not None and model.kind == "model" else checkpoint_family
     source = f"{snapshot.backend_id}:{snapshot.observed_at_utc}"
     diagnostics = []
     for selection in request.loras:
         entry = by_id.get(selection.identifier)
-        if (entry is None or entry.kind != "lora") and selection.identifier in prepared:
-            # A server-validated prepared reference is availability evidence; architecture stays unknown, never matched.
+        asset = prepared.get(selection.identifier)
+        if asset is not None:
+            # The converted file outranks any server or catalogue declaration. A prepared
+            # receipt proves availability, but not that the LoRA applied to the output.
+            if asset.family is not None and base is not None:
+                match = "match" if asset.family == base else "mismatch"
+                code = "ok" if match == "match" else "architecture_mismatch"
+            else:
+                match, code = "unknown", "architecture_unknown"
             diagnostics.append(
                 PreflightDiagnostic(
-                    selection.identifier, "unknown", "prepared", UNCONFIRMED, "architecture_unknown", source
+                    selection.identifier, match, "prepared", UNCONFIRMED, code,
+                    "file" if asset.family_source == "file" else source,
+                    model_family=base, lora_family=asset.family,
                 )
             )
             continue
@@ -62,14 +77,18 @@ def preflight_loras(request: ResolvedGenerationRequest, snapshot: InventorySnaps
                 PreflightDiagnostic(selection.identifier, "unknown", "absent", UNCONFIRMED, "not_available", source)
             )
             continue
-        base = model.architecture if model is not None and model.kind == "model" else None
         if entry.architecture is None or base is None:
             match, code = "unknown", "architecture_unknown"
         elif entry.architecture == base:
             match, code = "match", "ok"
         else:
             match, code = "mismatch", "architecture_mismatch"
-        diagnostics.append(PreflightDiagnostic(selection.identifier, match, "present", UNCONFIRMED, code, source))
+        diagnostics.append(
+            PreflightDiagnostic(
+                selection.identifier, match, "present", UNCONFIRMED, code, source,
+                model_family=base, lora_family=entry.architecture,
+            )
+        )
     return tuple(diagnostics)
 
 
@@ -84,7 +103,13 @@ def raise_if_blocked(request: ResolvedGenerationRequest, diagnostics: tuple[Pref
             BackendFailure(
                 ErrorCategory.VALIDATION,
                 "lora_preflight_failed",
-                "LoRA preflight rejected the request before dispatch.",
+                "LoRA preflight rejected the request before dispatch. " + "; ".join(
+                    f"{item.identifier}: LoRA family {item.lora_family} does not match "
+                    f"checkpoint family {item.model_family} ({request.model_id})."
+                    if item.code == "architecture_mismatch" and item.lora_family and item.model_family
+                    else f"{item.identifier}: {item.code}."
+                    for item in problems
+                ),
                 request.request_id,
                 diagnostics=tuple((item.identifier, item.code) for item in problems),
             )
