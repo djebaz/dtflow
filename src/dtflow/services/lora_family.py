@@ -16,6 +16,10 @@ import re
 import sqlite3
 import struct
 from dataclasses import dataclass
+from collections.abc import Iterable
+
+from dtflow.core.models import ValidationError
+from dtflow.services.lora_store import LoraStore
 from pathlib import Path
 
 MAX_TENSORS = 20_000
@@ -112,3 +116,25 @@ def detect_lora_family(path: Path) -> LoraFamily:
     if z_image != krea_2:
         return LoraFamily("z_image" if z_image else "krea_2", "file")
     return LoraFamily()
+
+
+def retained_families(state: Path, identities: Iterable[tuple[str, int]]) -> dict[tuple[str, int], LoraFamily]:
+    """Inspect legacy retained LoRAs locally, once per content identity; never upload.
+
+    Used only to enrich read-only lists and preflight. Dispatch separately
+    verifies the retained checksum before trusting these bytes for a request.
+    Missing or unreadable files stay Unknown without hiding other receipts.
+    """
+    store = LoraStore(state)
+    result: dict[tuple[str, int], LoraFamily] = {}
+    for sha256, size in dict.fromkeys(identities):
+        try:
+            retained = store.find(sha256, size)
+            result[(sha256, size)] = (
+                detect_lora_family(retained.path)
+                if retained is not None and retained.path.stat().st_size == size
+                else LoraFamily()
+            )
+        except (OSError, ValidationError):
+            result[(sha256, size)] = LoraFamily()
+    return result
