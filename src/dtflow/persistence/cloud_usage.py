@@ -9,6 +9,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from dtflow.core.models import ValidationError
 from dtflow.persistence.gallery import reader
+from dtflow.persistence.store import PersistenceError
 from dtflow.services.artifacts import atomic_write
 from dtflow.services.cloud_usage import CLOUD_BACKEND_ID, DEFAULT_TIMEZONE, UsageRecord
 
@@ -37,11 +38,17 @@ def read_usage_records(state: Path, now: datetime, *, days: int = 3) -> tuple[Us
     """
     since = (now - timedelta(days=days)).astimezone(UTC).strftime("%Y-%m-%dT00:00:00")
     until = (now + timedelta(days=days)).astimezone(UTC).strftime("%Y-%m-%dT00:00:00")
-    with reader(state) as db:
-        if db is None:
-            return ()
-        has_usage = db.execute("SELECT 1 FROM sqlite_master WHERE name='cloud_usage'").fetchone() is not None
-        rows = db.execute(_QUERY if has_usage else _LEGACY_QUERY, (CLOUD_BACKEND_ID, since, until)).fetchall()
+    stage = "opening saved history"
+    try:
+        with reader(state, include_recycle=False) as db:
+            if db is None:
+                return ()
+            stage = "checking key attribution"
+            has_usage = db.execute("SELECT 1 FROM sqlite_master WHERE name='cloud_usage'").fetchone() is not None
+            stage = "reading completed outputs"
+            rows = db.execute(_QUERY if has_usage else _LEGACY_QUERY, (CLOUD_BACKEND_ID, since, until)).fetchall()
+    except PersistenceError as exc:
+        raise PersistenceError(f"Local usage failed while {stage}: {exc}") from exc
     records = []
     for row in rows:
         try:
