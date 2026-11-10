@@ -49,6 +49,7 @@ FAMILY_LABELS = {
     "anima": "Anima",
     "ideogram_4": "Ideogram 4",
     "krea_2": "Krea 2",
+    "moss_image": "MOSS Image",
     "ernie_image": "ERNIE Image",
     "hunyuan_video": "Hunyuan Video",
     "svd": "SVD",
