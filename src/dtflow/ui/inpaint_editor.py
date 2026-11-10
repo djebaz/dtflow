@@ -177,6 +177,7 @@ class InpaintEditor(QObject):
         page.stepsSpinBox.valueChanged.connect(self._steps_note)
         page.modelCombo.currentTextChanged.connect(self._steps_note)
         page.modelCombo.currentTextChanged.connect(self.refresh_capability)
+        page.modelCombo.currentTextChanged.connect(lambda _text: self._sync_button())
         self.sync_mode()
 
     def attach(self, controller):
@@ -369,12 +370,15 @@ class InpaintEditor(QObject):
 
     def _sync_button(self):
         button = self.page.generateButton
+        no_model = not self.page.modelCombo.currentText().strip()
         if not self.active:
-            button.setEnabled(not self._busy)
-            button.setToolTip("")
+            button.setEnabled(not self._busy and not no_model)
+            button.setToolTip("Choose a model first: Generate needs a checkpoint." if no_model else "")
             return
-        button.setEnabled(self._ready() and not self._busy and not self._loading)
-        if self._source is None:
+        button.setEnabled(self._ready() and not self._busy and not self._loading and not no_model)
+        if no_model:
+            button.setToolTip("Choose a model first: Edit image needs a checkpoint.")
+        elif self._source is None:
             button.setToolTip("Choose a source image first.")
         elif self._coverage <= 0:
             button.setToolTip("Paint the area to change first.")

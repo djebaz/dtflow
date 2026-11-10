@@ -128,6 +128,7 @@ DISPATCH_REASON = (
     "A queue is running in this window: Generate adds this request behind it as a one-item queue, "
     "which starts by itself when the running queue ends."
 )
+NO_MODEL_REASON = "Choose a model first: Generate needs a checkpoint."
 SNAPSHOT_NOTE = "Running snapshot: later edits to the form apply only to the next request.\n\n"
 METADATA_LIMIT = 256_000
 WIRED_CONTROLS = (
@@ -303,6 +304,7 @@ class GenerationPage:
         self._stage_started = 0.0
         self._stage_seen: dict[str, float] = {}
         self._busy = False
+        self._sync_generate()  # no model yet: Generate starts disabled, with the reason as its tooltip
         self._config_name: str | None = None
         self._reuse_source_identity: str | None = None
         self._metadata_path: Path | None = None
@@ -346,6 +348,7 @@ class GenerationPage:
         page.includeNicheCheck.toggled.connect(self._catalogue_filter_changed)
         page.modelCombo.currentTextChanged.connect(self._catalogue_checkpoint_changed)
         page.modelCombo.currentTextChanged.connect(self._update_compute_units)
+        page.modelCombo.currentTextChanged.connect(lambda _text: self._sync_generate())
         for control in (page.widthSpinBox, page.heightSpinBox, page.stepsSpinBox, page.guidanceSpinBox):
             control.valueChanged.connect(self._update_compute_units)
         for control in (page.textToImageModeButton, page.inpaintModeButton):
@@ -869,16 +872,20 @@ class GenerationPage:
         dispatching = self._activity.dispatching
         button = self.page.generateButton
         blocked = self._busy or self._generating
-        button.setEnabled(not blocked)
+        no_model = not self.page.modelCombo.currentText().strip()
+        button.setEnabled(not blocked and not no_model)
         if hasattr(self, "retryButton"):
             self.retryButton.setEnabled(not blocked)
         # The Queue dropdown stays open during a generation: its Add to queue waits behind it (#135).
-        self.page.queueGenerateButton.setEnabled(not self._busy)
+        self.page.queueGenerateButton.setEnabled(not self._busy and not no_model)
+        self.page.queueGenerateButton.setToolTip(NO_MODEL_REASON if no_model else "")
         if hasattr(self, "inpaint"):
             self.inpaint.set_busy(blocked)  # Inpaint keeps its editor open and only gates Edit image
-        if dispatching:
+        if no_model:
+            button.setToolTip(NO_MODEL_REASON)
+        elif dispatching:
             button.setToolTip(DISPATCH_REASON)
-        elif button.toolTip() == DISPATCH_REASON:
+        elif button.toolTip() in (DISPATCH_REASON, NO_MODEL_REASON):
             button.setToolTip("")
 
     def _unlisten_activity(self) -> None:
