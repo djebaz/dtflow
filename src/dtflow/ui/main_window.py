@@ -1341,7 +1341,7 @@ class MainWindow:
         button.setProperty("state", presentation.level)
         button.setIcon(connection_icon(presentation.level))
         status = f"Connection ({self.form.backendCombo.currentText()}): {label.text()}"
-        button.setToolTip(f"Show connection workspace. Last explicit check: {status}")
+        button.setToolTip(f"Show connection workspace. Last check: {status}")
         button.setAccessibleName(status)
         button.style().unpolish(button)
         button.style().polish(button)
@@ -1546,7 +1546,9 @@ class MainWindow:
         )
         self.refresh_credentials()
         self._selection_changed()
-        self.generation.credentials_changed()
+        self.generation.credentials_changed(switched=True)
+        if self.form.backendCombo.currentText() == "cloud":
+            self.check()  # A key switch is an explicit request to check the newly selected connection.
 
     @staticmethod
     def _human_bytes(value: int) -> str:
