@@ -182,6 +182,14 @@ class AssetService:
         task = _INFLIGHT.get(key)
         if task is None or task.done():
             detected = await asyncio.to_thread(detect_lora_family, retained.path if retained else path)
+            diagnostic_event(
+                log, "assets.lora_family_detected", level=logging.INFO,
+                data={
+                    "sha": digest[:8],
+                    "family": detected.family or "unknown",
+                    "family_source": detected.source,
+                },
+            )
             task = asyncio.create_task(self._prepare(path, content, stat, detected=detected))
             _INFLIGHT[key] = task
             task.add_done_callback(
