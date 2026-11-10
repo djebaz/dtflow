@@ -242,7 +242,13 @@ class AssetService:
                         log,
                         "assets.prepared",
                         level=logging.INFO,
-                        data={"receipt": receipt.receipt_id, "source": "already_exists", **self._key_diagnostics()},
+                        data={
+                            "receipt": receipt.receipt_id,
+                            "source": "already_exists",
+                            "family": receipt.family or "unknown",
+                            "family_source": receipt.family_source,
+                            **self._key_diagnostics(),
+                        },
                     )
                 return receipt
             await self.registry.mark(
@@ -337,7 +343,13 @@ class AssetService:
                 log,
                 "assets.prepared",
                 level=logging.INFO,
-                data={"receipt": receipt.receipt_id, "source": "transfer", **self._key_diagnostics()},
+                data={
+                    "receipt": receipt.receipt_id,
+                    "source": "transfer",
+                    "family": receipt.family or "unknown",
+                    "family_source": receipt.family_source,
+                    **self._key_diagnostics(),
+                },
             )
         return receipt
 
