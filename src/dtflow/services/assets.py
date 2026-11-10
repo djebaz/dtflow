@@ -140,6 +140,7 @@ class AssetService:
         return cloud_key_data(
             getattr(self.backend, "credential_usage", None),
             getattr(self.backend, "credential_source", None),
+            alias=getattr(self.backend, "credential_alias", None),
         )
 
     # -- prepare --------------------------------------------------------------------------------------------------
