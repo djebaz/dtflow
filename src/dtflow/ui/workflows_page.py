@@ -1251,7 +1251,10 @@ class WorkflowsPage(QObject):
                 layout.addWidget(_label("Refresh models on Generate to list this backend's checkpoints.", "secondary"))
         elif param.kind == "loras":
             loras = choices.get("loras") or {}
-            text = ", ".join(f"{name} · {weight:g}" for name, weight in value) or "No LoRA"
+            families = choices.get("lora_families") or {}
+            text = ", ".join(
+                f"{name} · {weight:g} · {families.get(name, 'Unknown')}" for name, weight in value
+            ) or "No LoRA"
             summary = _label(text, "secondary")
             summary.setToolTip(text)
             button = QPushButton("Edit LoRAs…", host)
@@ -1267,6 +1270,7 @@ class WorkflowsPage(QObject):
                     candidates=candidates,
                     selected=selected,
                     suggestions=dict(loras),
+                    families=families,
                     title=f"LoRAs · node {node_id}",
                     callback=lambda chosen: self._set_loras(node_id, param, chosen),
                 )
