@@ -490,6 +490,8 @@ class PreflightDiagnostic:
     generation_evidence: str
     code: str
     source: str
+    model_family: str | None = None
+    lora_family: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
