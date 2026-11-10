@@ -1786,7 +1786,6 @@ class MainWindow:
         def read():
             store = LoraStore(self.state_dir)
             entries = store.entries()
-            families = {}
             for entry in entries:
                 sha, size = entry.get("sha256"), entry.get("size")
                 if not isinstance(sha, str) or not isinstance(size, int):
@@ -1794,11 +1793,11 @@ class MainWindow:
                 try:
                     retained = store.find(sha, size)
                     if retained is not None:
-                        families[(sha, size)] = detect_lora_family(retained.path)
+                        entry["detected_family"] = detect_lora_family(retained.path)
                 except (OSError, ValidationError):
                     # A damaged or missing retained copy must not hide the other LoRAs.
                     pass
-            return len(Catalogue(self.state_dir).user_loras()), entries, store.usage(), families
+            return len(Catalogue(self.state_dir).user_loras()), entries, store.usage()
 
         self._read_summary("loras", read, self._custom_loras_read)
 
@@ -1811,7 +1810,7 @@ class MainWindow:
             self.form.clearCustomLorasButton.setEnabled(False)
             self.form.removeRetainedLoraButton.setEnabled(False)
             return
-        count, entries, (stored_count, stored_bytes), families = result
+        count, entries, (stored_count, stored_bytes) = result
         self.form.customLorasStatusLabel.setText(
             f"{count} custom LoRA definition" + ("" if count == 1 else "s") + " imported."
             if count
@@ -1832,7 +1831,7 @@ class MainWindow:
             name, sha256, size = entry.get("name"), entry.get("sha256"), entry.get("size")
             if not isinstance(name, str) or not isinstance(sha256, str) or not isinstance(size, int):
                 continue
-            found = families.get((sha256, size))
+            found = entry.get("detected_family")
             family = FAMILY_LABELS.get(found.family, found.family) if found and found.family else "Unknown"
             item = QListWidgetItem(f"{name} · {family} · {self._human_bytes(size)}")
             item.setData(Qt.ItemDataRole.UserRole, (sha256, size))
