@@ -106,7 +106,7 @@ def detect_lora_family(path: Path) -> LoraFamily:
     krea_2 = (
         27 in blocks
         and 6144 in dimensions
-        and any("txtfusion" in name or "text_fusion" in name for name in names)
+        and any("txtfusion" in name or "textfusion" in name or "text_fusion" in name for name in names)
         and any("attn" in name or "attention" in name for name in names)
     )
     if z_image != krea_2:
