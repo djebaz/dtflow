@@ -18,7 +18,7 @@ from pathlib import Path
 from uuid import uuid4
 
 from dtflow.diagnostics import event as diagnostic_event
-from dtflow.persistence.cache_coordination import cache_access, category_path, check_path
+from dtflow.persistence.cache_coordination import CacheBusyError, cache_access, category_path, check_path
 from dtflow.persistence.original_io import recycle_batch_lock
 from dtflow.persistence.store import PersistenceError
 
@@ -381,12 +381,17 @@ def publish_if_changed(state: Path, *, reason="generation_session_end") -> bool:
         )
         return True
     except Exception as exc:
+        # Source-stage cache contention after generation affects only this
+        # optional snapshot publication, not the committed image or live gallery.
+        advisory_cache_contention = (
+            reason == "generation_session_end" and stage == "source" and isinstance(exc, CacheBusyError)
+        )
         # Publication is advisory and must not change successful generation,
         # invoke retries, expose private paths or delete the previous snapshot.
         diagnostic_event(
             log,
             "gallery.snapshot.not_published",
-            level=logging.WARNING,
+            level=logging.INFO if advisory_cache_contention else logging.WARNING,
             data={
                 "trigger": reason,
                 "stage": stage,
