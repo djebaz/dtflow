@@ -11,6 +11,7 @@ whose shape or datatype differ. Read-only; the files are never modified.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import sqlite3
 import struct
 import sys
@@ -54,6 +55,7 @@ def read_tensors(path: Path, verbose: bool) -> dict[str, dict]:
         want = [c for c in ("name", "type", "format", "datatype", "dim") if c in columns]
         query = f"select {', '.join(want)}, length(data), substr(data, 1, 8) from tensors"
         out: dict[str, dict] = {}
+        hashes = {n: hashlib.sha256(d or b"").hexdigest() for n, d in con.execute("select name, data from tensors")}
         for row in con.execute(query):
             rec = dict(zip(want, row[: len(want)], strict=True))
             size, head = row[len(want)], row[len(want) + 1]
@@ -65,6 +67,7 @@ def read_tensors(path: Path, verbose: bool) -> dict[str, dict]:
                 "type": rec.get("type"),
                 "bytes": size or 0,
                 "head": bytes(head).hex() if head else "",
+                "sha": hashes[rec["name"]],
             }
         return out
     finally:
@@ -107,6 +110,10 @@ def main() -> int:
         print(f"shared tensors with different shape/datatype: {len(diffs)}")
         for n in diffs[:50]:
             print(f"  {n}\n      A {describe(a[n])}\n      B {describe(b[n])}")
+        content = [n for n in sorted(set(a) & set(b)) if a[n]["sha"] != b[n]["sha"]]
+        print(f"shared tensors with different data bytes: {len(content)} of {len(set(a) & set(b))}")
+        for n in content[:20]:
+            print(f"  {n}: A head={a[n]['head']} B head={b[n]['head']}")
         print(f"tensor bytes A: {total}, B: {sum(t['bytes'] for t in b.values())}")
     return 0
 
