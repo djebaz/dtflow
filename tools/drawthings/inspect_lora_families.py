@@ -1,7 +1,11 @@
 """Inspect converted Draw Things .ckpt tensor metadata without reading weights.
 
 PowerShell:
+    python tools/drawthings/inspect_lora_families.py -d "C:\LoRAs" --json lora-report.json
     python tools/drawthings/inspect_lora_families.py "C:\LoRAs\zimage.ckpt" "C:\LoRAs\krea.ckpt" --json lora-report.json
+
+Directory mode reads all .ckpt files directly inside the directory, without
+recursing into subdirectories. Explicit file paths can be used alongside -d.
 
 This standard-library-only probe opens SQLite files read-only and extracts names,
 shapes and adapted module patterns. It mirrors #371's confirmed Z-Image/Krea 2
@@ -262,16 +266,42 @@ def print_report(report: dict) -> None:
 def main() -> int:
     """Inspect local converted files and optionally save JSON evidence."""
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument("files", nargs="+", type=Path, help="Local converted .ckpt paths.")
+    parser.add_argument("files", nargs="*", type=Path, help="Local converted .ckpt paths.")
+    parser.add_argument(
+        "-d", "--directory", type=Path,
+        help="Inspect all .ckpt files in this directory (non-recursive).",
+    )
     parser.add_argument("--sample", type=int, default=8, help="Tensor examples per group (0–100).")
     parser.add_argument("--json", type=Path, help="Write one metadata-only JSON report.")
     args = parser.parse_args()
     if not 0 <= args.sample <= 100:
         parser.error("--sample must be between 0 and 100.")
 
+    paths = list(args.files)
+    if args.directory is not None:
+        directory = args.directory.expanduser()
+        if not directory.is_dir():
+            parser.error(f"Not a directory: {directory}")
+        try:
+            paths.extend(sorted(
+                (item for item in directory.iterdir()
+                 if item.is_file() and item.suffix.lower() == ".ckpt"),
+                key=lambda item: item.name.casefold(),
+            ))
+        except OSError as exc:
+            parser.error(f"Cannot scan directory: {exc}")
+
+    if not paths:
+        parser.error("Provide .ckpt files or a directory containing .ckpt files with -d.")
+
     reports = []
     failed = False
-    for path in args.files:
+    seen: set[Path] = set()
+    for path in paths:
+        canonical = path.expanduser().resolve()
+        if canonical in seen:
+            continue
+        seen.add(canonical)
         try:
             report = inspect(path.expanduser(), args.sample)
             failed |= "error" in report
