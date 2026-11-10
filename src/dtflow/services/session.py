@@ -38,7 +38,12 @@ from dtflow.core.models import (
     ValidationError,
 )
 from dtflow.core.output_layout import OutputLayout
-from dtflow.core.retry_policy import AUTO_RETRIES, AUTO_RETRY_DELAY, auto_retry_request, auto_retryable
+from dtflow.core.retry_policy import (
+    AUTO_RETRY_DELAY,
+    auto_retry_limit,
+    auto_retry_request,
+    auto_retryable,
+)
 from dtflow.core.tasks import settle
 from dtflow.diagnostics import event as diagnostic_event
 from dtflow.persistence.assets import AssetRegistry
@@ -234,15 +239,22 @@ async def script_asset_choices(state: Path, backend_name: str) -> tuple[Prepared
 
     Local reads only. Actual dispatch still validates each selected receipt against
     the active backend/account; a confirmed historical record is not live consent.
+
+    One receipt per LoRA name, the most recently confirmed: a file converted again under the same name has a new hash,
+    and the old receipt must never be bound for it, or the request names the old bytes (#361).
     """
     if backend_name != "cloud":
         return ()
     registry = AssetRegistry(state)
     await registry.open()
     try:
-        return await registry.choices()
+        choices = await registry.choices()
     finally:
         await registry.aclose()
+    newest: dict[str, PreparedAsset] = {}
+    for item in sorted(choices, key=lambda item: item.confirmed_at_utc):
+        newest[item.identifier] = item
+    return tuple(newest.values())
 
 
 @asynccontextmanager
@@ -366,7 +378,7 @@ async def run_generation(
             safe_repair_retry = repaired and failure.remote_outcome == RemoteOutcome.NOT_STARTED
             if (
                 attempt_id is not None
-                or retries >= AUTO_RETRIES
+                or retries >= auto_retry_limit(request, failure)
                 or (not safe_repair_retry and not auto_retryable(failure))
             ):
                 raise

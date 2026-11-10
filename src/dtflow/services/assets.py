@@ -29,6 +29,7 @@ from dtflow.core.models import (
     SubmissionStage,
     ValidationError,
 )
+from dtflow.core.retry_policy import server_ended_without_result
 from dtflow.core.tasks import settle
 from dtflow.diagnostics import api_error_data, cloud_key_data, event as diagnostic_event
 from dtflow.persistence.assets import AssetRegistry, AssetsBusyError
@@ -77,8 +78,11 @@ _ASSET_REJECTION_CODES = {
 
 
 def possible_missing_asset(failure: BackendFailure) -> bool:
-    """Only a plausible missing-LoRA rejection may start a bounded metadata probe."""
-    return failure.code in _ASSET_REJECTION_CODES
+    """Only a plausible missing-LoRA rejection may start a bounded metadata probe.
+
+    DT+ also ends a request with its generic "unknown error processing request" when it cannot load a custom LoRA it was
+    just told about (#361). Callers only ask this for requests that carry prepared LoRAs."""
+    return failure.code in _ASSET_REJECTION_CODES or server_ended_without_result(failure)
 
 
 def _observe(path: Path) -> tuple[os.stat_result, str]:

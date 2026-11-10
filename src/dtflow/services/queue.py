@@ -17,7 +17,13 @@ from typing import Any
 
 from dtflow.core.output_layout import OutputLayout, group_name, prompt_label
 from dtflow.core.queue_eta import estimate_queue_seconds
-from dtflow.core.retry_policy import AUTO_RETRIES, AUTO_RETRY_DELAY, auto_retry_request, auto_retryable
+from dtflow.core.retry_policy import (
+    AUTO_RETRIES,
+    AUTO_RETRY_DELAY,
+    auto_retry_limit,
+    auto_retry_request,
+    auto_retryable,
+)
 from dtflow.core.models import (
     BackendError,
     BackendEvent,
@@ -353,7 +359,8 @@ class QueueDispatcher:
                             and exc.failure.remote_outcome == RemoteOutcome.NOT_STARTED
                             and retries < AUTO_RETRIES
                         )
-                        if not safe_replay and (retries >= AUTO_RETRIES or not auto_retryable(exc.failure)):
+                        limit = auto_retry_limit(request, exc.failure)
+                        if not safe_replay and (retries >= limit or not auto_retryable(exc.failure)):
                             raise
                         retries += 1
                         retry, first = auto_retry_request(request), exc.failure

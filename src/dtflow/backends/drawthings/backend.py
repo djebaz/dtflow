@@ -498,14 +498,27 @@ class DrawThingsBackend:
                         },
                     )
                 if request.loras:
+                    prepared_names = {item.identifier for item in request.prepared_assets}
+                    sent = bool(wire.message.override.loras) if wire.message.override else False
                     diagnostic_event(
                         log,
                         "backend.loras_selected",
-                        level=logging.DEBUG,
+                        level=logging.INFO,
                         data={
                             "lora_count": len(request.loras),
                             "base_version": base_version,
                             "prepared_count": len(request.prepared_assets),
+                            "unprepared_count": sum(item.identifier not in prepared_names for item in request.loras),
+                            # Short content hashes name the LoRA files the request carries without logging file names.
+                            "prepared_sha": [item.sha256[:8] for item in request.prepared_assets],
+                            "override_sent": sent,
+                            "override_reason": "sent"
+                            if sent
+                            else "no_prepared_lora"
+                            if not prepared_names
+                            else "unknown_base_version"
+                            if not base_version
+                            else "no_selected_lora_prepared",
                         },
                     )
                 emit("preparing", stage="wire_validated")

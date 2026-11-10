@@ -61,6 +61,15 @@ def auto_retryable(failure: BackendFailure) -> bool:
     return failure.category in _TRANSIENT and failure.remote_outcome in _DEFINITE
 
 
+def auto_retry_limit(request: ResolvedGenerationRequest, failure: BackendFailure) -> int:
+    """Automatic retries for this failure: one more when DT+ ended a request that carries custom LoRAs without a result
+    (#361). The LoRA check and restore (``AssetService.recover_missing``) runs between the tries, and one try is not
+    always enough while DT+ starts serving a LoRA it has just been told about."""
+    if request.prepared_assets and server_ended_without_result(failure):
+        return AUTO_RETRIES + 1
+    return AUTO_RETRIES
+
+
 def auto_retry_request(request: ResolvedGenerationRequest) -> ResolvedGenerationRequest:
     """The same request (same settings and seed) under a new request identity that names the try it replaces."""
     return replace(
