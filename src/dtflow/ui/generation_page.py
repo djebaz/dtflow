@@ -484,6 +484,7 @@ class GenerationPage:
                 self._forms[self._provider] = self._provider_form()
             self._inventory_source = source
             self._inventory_revision += 1
+            self._key_switch_checkpoint = None  # A backend/endpoint change ends the pending cloud-key choice.
             self._cache_request = None
             self._inventory_notice = self._inventory_error = ""
             self._clear_inventory()
