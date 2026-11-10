@@ -1736,14 +1736,9 @@ class GenerationPage:
             self._inventory_notice = "Refresh failed · showing previous models"
         checkpoint = self.page.modelCombo.currentText()
         if self._key_switch_checkpoint is not None:
-            # Keep the user's choice across the cleared UI, never the old key's availability.
+            # Restore the choice only if this key's inventory offers that model.
             candidate = self._key_switch_checkpoint
-            checkpoint = (
-                candidate
-                if self._catalogue.checkpoint(candidate) is not None
-                or candidate in self._catalogue.view().unclassified_checkpoints
-                else ""
-            )
+            checkpoint = candidate if candidate in eligible_model_ids(snapshot) else ""
         self._rebuild_catalogue(
             preferred_family=self._pending_family,
             preferred_checkpoint=checkpoint,
