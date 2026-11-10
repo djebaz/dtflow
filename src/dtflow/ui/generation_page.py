@@ -41,7 +41,7 @@ from dtflow.core.models import (
 )
 from dtflow.diagnostics import event as diagnostic_event
 from dtflow.logging_setup import dev_enabled
-from dtflow.services.catalogue import Catalogue
+from dtflow.services.catalogue import Catalogue, FAMILY_LABELS
 from dtflow.services.checkpoint_metadata import resolve_checkpoint_metadata
 from dtflow.services.connection import (
     Presentation,
@@ -1527,6 +1527,7 @@ class GenerationPage:
             # While previous/next stepping is in progress, keep selected LoRAs until it settles.
             self._filter_loras(prune_selected=not self._step_settle.isActive())
         self._filter_samplers()
+        self._write_inventory_stats()
 
     def _rebuild_catalogue(
         self,
@@ -1786,6 +1787,19 @@ class GenerationPage:
         lines = [counts, f"{self._inventory_how} · observed {observed}"]
         if self._inventory_notice:
             lines.append(self._inventory_notice)
+        selected = self.page.modelCombo.currentText().strip()
+        if selected:
+            entry = self._catalogue.checkpoint(selected, include_unavailable=True)
+            family = entry.base_model if entry else None
+            label_name = FAMILY_LABELS.get(family, family) if family else "unknown"
+            chosen_filter = self.page.baseModelCombo.currentData()
+            if family and chosen_filter not in (family, None):
+                displayed = FAMILY_LABELS.get(chosen_filter, chosen_filter)
+                lines.append(
+                    f"Checkpoint family: {label_name} (Base model filter: {displayed}; generation uses checkpoint)"
+                )
+            else:
+                lines.append(f"Checkpoint family: {label_name}")
         label.setText("\n".join(lines))
         label.setToolTip(
             f"{snapshot.backend_id} inventory {self._inventory_how}; observed {snapshot.observed_at_utc}.\n"
