@@ -17,7 +17,8 @@ allowance and generation limit.
 Never retried automatically: any other unknown outcome (lost connection, timeout after sending, no terminal status),
 credentials/authentication/permission, quota/resource limit, validation, remote rejections, a result that was generated
 but not saved, and a user stop. Those keep the manual Retry. Each runner adds ``AUTO_RETRIES`` per planned submission to
-its existing loop bound, so a run stays within its planned submissions x 2, apart from the extra LoRA try above. No other classifier exists.
+its existing loop bound, so a run stays within its planned submissions x 2, apart from the extra LoRA try above.
+No other classifier exists.
 """
 
 from __future__ import annotations

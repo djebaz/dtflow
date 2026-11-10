@@ -11,6 +11,7 @@ import asyncio
 import hashlib
 import logging
 import os
+import time
 from pathlib import Path, PureWindowsPath
 from collections.abc import Callable
 from dataclasses import replace
@@ -40,6 +41,8 @@ log = logging.getLogger(__name__)
 CHUNK = 1024 * 1024
 
 # One shielded operation per (origin, auth scope, content): identical concurrent prepares join it, anything else never does.
+#: Seconds a failed outdated-receipt refresh is not tried again.
+REFRESH_RETRY_SECONDS = 60.0
 _INFLIGHT: dict[tuple, asyncio.Task] = {}
 # Concurrent queue/workflow items needing the same restore or rebind join one operation, and distinct ones take
 # turns, because the asset writer lock admits a single writer per state directory.
@@ -132,6 +135,7 @@ class AssetService:
         self._recovery_restored: set[tuple[str, str, int]] = set()
         # Outdated receipts already re-prepared from their changed file, shared by concurrent items (#361).
         self._refreshed: dict[tuple[str, str, int], asyncio.Task] = {}
+        self._refresh_failed: dict[tuple[str, str, int], float] = {}
         # The UI can receive individual names without adding them to diagnostic records.
         self.on_resolution: Callable[[dict], None] | None = None
 
@@ -159,7 +163,7 @@ class AssetService:
         if self.store is not None:
             # Keep the durable copy first, so a failed or interrupted upload never costs the user the file.
             kept = await asyncio.to_thread(self.store.retain, path, digest, stat.st_size)
-            await asyncio.to_thread(self.store.record_origin, path, digest, stat.st_size)
+            await asyncio.to_thread(self.store.record_origin, path, digest, stat.st_size, content.identifier)
             diagnostic_event(
                 log, "assets.copy_kept", level=logging.INFO, data={"size": stat.st_size, "name": kept.name}
             )
@@ -669,27 +673,12 @@ class AssetService:
             current.append(await self._refreshed_from_source(item))
         return tuple(current)
 
-    async def _refreshed_from_source(self, item: PreparedAsset) -> PreparedAsset:
-        if self.store is None:
+    async def _refresh(self, item: PreparedAsset) -> PreparedAsset:
+        """One shared check of the item's source file; a changed file is prepared again and its new receipt returned."""
+        path = await asyncio.to_thread(self.store.changed_origin, item.sha256, item.size, item.identifier)
+        if path is None:
             return item
-        identity = self._identity(self._content(item))
-        task = self._refreshed.get(identity)
-        if task is None:
-            path = await asyncio.to_thread(self.store.changed_origin, item.sha256, item.size)
-            if path is None:
-                return item
-            task = self._refreshed.get(identity)
-            if task is None:
-                task = self._refreshed[identity] = asyncio.create_task(
-                    self.prepare(path, item.identifier, provenance="outdated_refresh")
-                )
-                task.add_done_callback(lambda done: None if done.cancelled() else done.exception())
-        try:
-            fresh = await asyncio.shield(task)
-        except BaseException:
-            if task.done():
-                self._refreshed.pop(identity, None)
-            raise
+        fresh = await self.prepare(path, item.identifier, provenance="outdated_refresh")
         diagnostic_event(
             log,
             "assets.outdated_receipt_refreshed",
@@ -697,6 +686,45 @@ class AssetService:
             data={"old_sha": item.sha256[:8], "new_sha": fresh.sha256[:8]},
         )
         return fresh
+
+    def _refresh_settled(self, identity: tuple[str, str, int], item: PreparedAsset):
+        def settled(task: asyncio.Task) -> None:
+            if task.cancelled():
+                self._refreshed.pop(identity, None)
+                return
+            error = task.exception()
+            if error is None:
+                if task.result() == item:  # nothing changed: the next request looks at the file again
+                    self._refreshed.pop(identity, None)
+                return
+            # Remember the failure for a while so every request of a long queue does not repeat it.
+            self._refreshed.pop(identity, None)
+            self._refresh_failed[identity] = time.monotonic()
+            diagnostic_event(
+                log,
+                "assets.outdated_refresh_failed",
+                level=logging.WARNING,
+                data={"reason": error.failure.code if isinstance(error, BackendError) else type(error).__name__},
+            )
+
+        return settled
+
+    async def _refreshed_from_source(self, item: PreparedAsset) -> PreparedAsset:
+        if self.store is None:
+            return item
+        identity = self._identity(self._content(item))
+        failed = self._refresh_failed.get(identity)
+        if failed is not None and time.monotonic() - failed < REFRESH_RETRY_SECONDS:
+            return item
+        # Registered before anything is read, so concurrent queue slots share one check and one hash.
+        task = self._refreshed.get(identity)
+        if task is None:
+            task = self._refreshed[identity] = asyncio.create_task(self._refresh(item))
+            task.add_done_callback(self._refresh_settled(identity, item))
+        try:
+            return await asyncio.shield(task)
+        except Exception:
+            return item  # the old receipt still works from its retained copy; the failure is logged once
 
     async def recover_missing(
         self, prepared_assets: tuple[PreparedAsset, ...], on_stage: Callable[[str], None] | None = None

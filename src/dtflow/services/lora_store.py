@@ -191,8 +191,11 @@ class LoraStore:
         finally:
             handle.close()
 
-    def record_origin(self, source: Path, sha256: str, size: int) -> None:
-        """Remember which file on disk these bytes were prepared from, so a later change under the same name is seen."""
+    def record_origin(self, source: Path, sha256: str, size: int, name: str) -> None:
+        """Remember which file on disk this LoRA name was prepared from, so a later change under it is seen.
+
+        Kept per logical name: identical bytes prepared under two names have two sources, and a change to one must
+        never refresh the other."""
         try:
             stat = Path(source).stat()
         except OSError:
@@ -202,39 +205,40 @@ class LoraStore:
             files = self._read()
             for item in files:
                 if item.get("sha256") == sha256 and item.get("size") == size:
-                    fields = {
-                        "origin": str(Path(source).absolute()),
-                        "origin_size": stat.st_size,
-                        "origin_mtime_ns": stat.st_mtime_ns,
+                    origins = item.get("origins")
+                    if not isinstance(origins, dict):
+                        origins = item["origins"] = {}
+                    stamp = {
+                        "path": str(Path(source).absolute()),
+                        "size": stat.st_size,
+                        "mtime_ns": stat.st_mtime_ns,
                     }
-                    if any(item.get(key) != value for key, value in fields.items()):
-                        item.update(fields)
+                    if origins.get(name) != stamp:
+                        origins[name] = stamp
                         self._write(files)
                     return
         finally:
             handle.close()
 
-    def changed_origin(self, sha256: str, size: int) -> Path | None:
-        """The file these bytes were prepared from when it now holds different bytes, else None.
+    def changed_origin(self, sha256: str, size: int, name: str) -> Path | None:
+        """The file this LoRA name was prepared from when it now holds different bytes, else None.
 
         Size and modification time decide first; only a changed stamp costs a re-hash, and a touched but identical
         file is stamped again so it is not hashed twice."""
         for item in self._read():
             if item.get("sha256") != sha256 or item.get("size") != size:
                 continue
-            origin = item.get("origin")
-            if not isinstance(origin, str):
+            origins = item.get("origins")
+            stamp = origins.get(name) if isinstance(origins, dict) else None
+            if not isinstance(stamp, dict) or not isinstance(stamp.get("path"), str):
                 return None
-            path = Path(origin)
+            path = Path(stamp["path"])
             try:
                 stat = path.stat()
-                if not path.is_file() or (stat.st_size, stat.st_mtime_ns) == (
-                    item.get("origin_size"),
-                    item.get("origin_mtime_ns"),
-                ):
+                if not path.is_file() or (stat.st_size, stat.st_mtime_ns) == (stamp.get("size"), stamp.get("mtime_ns")):
                     return None
                 if stat.st_size == size and _hash(path)[0] == sha256:
-                    self.record_origin(path, sha256, size)
+                    self.record_origin(path, sha256, size, name)
                     return None
             except OSError:
                 return None

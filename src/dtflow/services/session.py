@@ -240,8 +240,8 @@ async def script_asset_choices(state: Path, backend_name: str) -> tuple[Prepared
     Local reads only. Actual dispatch still validates each selected receipt against
     the active backend/account; a confirmed historical record is not live consent.
 
-    One receipt per LoRA name, the one whose content was first seen last: a file converted again under the same name has a new hash,
-    and the old receipt must never be bound for it, or the request names the old bytes (#361).
+    One receipt per LoRA name, the one whose content was first seen last: a file converted again under the same
+    name has a new hash, and the old receipt must never be bound for it, or the request names the old bytes (#361).
     """
     if backend_name != "cloud":
         return ()
