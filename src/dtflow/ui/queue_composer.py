@@ -126,6 +126,7 @@ class ValueChips(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self._values: list[str] = []
+        self._fit_pending = False
         self._kind = "search"
         self._title = ""
         self._options: Callable[[], list[str]] = list
@@ -153,6 +154,29 @@ class ValueChips(QWidget):
 
     def heightForWidth(self, width: int) -> int:
         return self._layout.heightForWidth(width)
+
+    def _fit_height(self) -> None:
+        """Hold the wrapped rows' height as a minimum, so the form row grows even where a style or platform does not
+        honour height-for-width (a chip field would otherwise show one line however many chips it has)."""
+        self._fit_pending = False
+        height = self._layout.heightForWidth(max(1, self.width()))
+        if height != self.minimumHeight():
+            self.setMinimumHeight(height)
+            self.updateGeometry()
+
+    def _schedule_fit(self) -> None:
+        if not self._fit_pending:
+            self._fit_pending = True
+            QTimer.singleShot(0, self._fit_height)
+
+    def resizeEvent(self, event) -> None:
+        super().resizeEvent(event)
+        self._fit_height()
+
+    def event(self, event) -> bool:
+        if event.type() in (QEvent.Type.ChildPolished, QEvent.Type.LayoutRequest, QEvent.Type.Polish):
+            self._schedule_fit()  # a chip's styled size is only known once polished
+        return super().event(event)
 
     @profile_slow_gui_callback("composer.value_chips_size_hint")
     def sizeHint(self) -> QSize:
@@ -306,6 +330,7 @@ class ValueChips(QWidget):
             for index, value in order:
                 self._add_chip(index, value, value)
         self.updateGeometry()
+        self._schedule_fit()
         self.textChanged.emit()
 
     def _add_chip(self, index: int, text: str, value: str) -> None:
