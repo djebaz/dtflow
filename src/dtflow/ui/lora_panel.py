@@ -18,6 +18,7 @@ from PySide6.QtWidgets import QListWidgetItem, QWidget
 from dtflow.ui.file_dialogs import QFileDialog
 from dtflow.core.models import BackendError, LoRASelection, RemoteOutcome, ResolvedGenerationRequest, ValidationError
 from dtflow.diagnostics import event as diagnostic_event
+from dtflow.logging_setup import development_mode
 from dtflow.services.catalogue import Catalogue, FAMILY_LABELS
 from dtflow.services.connection import (
     Presentation,
@@ -77,7 +78,6 @@ class LoraAssetPanel:
         self._prepare_files: tuple[str, ...] = ()
         self._prepare_index = 0
         self._prepare_counts = {"confirmed": 0, "failed": 0, "unresolved": 0}
-        self._prepare_issues: list[str] = []
         self._ownership_revision = 0
         self._last_backend = self._backend()
         self._prepare_backend = None
@@ -445,7 +445,6 @@ class LoraAssetPanel:
         self._prepare_files = tuple(dict.fromkeys(os.path.abspath(path) for path in chosen))
         self._prepare_index = 0
         self._prepare_counts = {"confirmed": 0, "failed": 0, "unresolved": 0}
-        self._prepare_issues = []
         self._prepare_backend, self._prepare_revision = backend, revision
         self._prepare_saved = self._saved()
         self._registry_generation += 1  # old list callbacks cannot replace newly prepared receipts
@@ -494,36 +493,49 @@ class LoraAssetPanel:
                 outcome = "confirmed" if state == "confirmed" else "failed" if state == "failed" else "unresolved"
             self._prepare_counts[outcome] += 1
             if outcome != "confirmed":
-                if failure is not None:
-                    explanation = present_asset_failure(failure)
-                else:
-                    explanation = Presentation(
-                        "warning", "Receipt not confirmed",
-                        f"State: {state or 'unavailable'}. Review the local receipt before trying again.",
+                data = {
+                    "outcome": outcome,
+                    "reason": "service_error" if failure is not None else "receipt_not_confirmed",
+                    "item": self._prepare_index + 1,
+                    "total": len(self._prepare_files),
+                    "remote_outcome": (
+                        failure.failure.remote_outcome.value if isinstance(failure, BackendError) else "unverified"
+                    ),
+                    "code": (
+                        failure.failure.code if isinstance(failure, BackendError)
+                        else type(failure).__name__ if failure is not None
+                        else state or "receipt_not_confirmed"
+                    ),
+                }
+                if development_mode():
+                    # User-selected basename and the public explanation belong in
+                    # development diagnostics, never a crowded batch status label.
+                    explanation = (
+                        present_asset_failure(failure)
+                        if failure is not None
+                        else Presentation(
+                            "warning",
+                            "Receipt not confirmed",
+                            f"State: {state or 'unavailable'}. Review the local receipt before trying again.",
+                        )
                     )
-                filename = Path(self._prepare_files[self._prepare_index]).name
-                self._prepare_issues.append(
-                    f"{self._prepare_index + 1}/{len(self._prepare_files)} {filename}: "
-                    f"{explanation.headline}. {explanation.detail}"
-                )
+                    data.update(
+                        filename=Path(self._prepare_files[self._prepare_index]).name,
+                        error_headline=explanation.headline,
+                        error_detail=explanation.detail,
+                    )
                 diagnostic_event(
                     log,
                     "ui.asset_prepare_incomplete",
                     level=logging.WARNING,
-                    data={
-                        "outcome": outcome,
-                        "reason": "service_error" if failure is not None else "receipt_not_confirmed",
-                        "item": self._prepare_index + 1,
-                        "total": len(self._prepare_files),
-                        "remote_outcome": (
-                            failure.failure.remote_outcome.value if isinstance(failure, BackendError) else "unverified"
-                        ),
-                        "code": (
-                            failure.failure.code if isinstance(failure, BackendError)
-                            else type(failure).__name__ if failure is not None
-                            else state or "receipt_not_confirmed"
-                        ),
-                    },
+                    data=data,
+                    # The existing sanitized diagnostic pipeline owns traceback
+                    # projection. Do not capture arbitrary provider exceptions.
+                    exc_info=(
+                        (type(failure), failure, failure.__traceback__)
+                        if development_mode() and isinstance(failure, ValidationError)
+                        else False
+                    ),
                 )
             if record is not None and failure is None:
                 self._records[(record["asset_id"], record["identifier"])] = record
@@ -558,8 +570,8 @@ class LoraAssetPanel:
             f"{counts['confirmed']} confirmed, {counts['failed']} failed, "
             f"{counts['unresolved']} unresolved, {total - done} unstarted. No automatic retries."
         )
-        if self._prepare_issues:
-            detail += "\n" + "\n".join(self._prepare_issues)
+        if (counts["failed"] or counts["unresolved"]) and development_mode():
+            detail += " See Logs for per-file details."
         state = "success" if counts["confirmed"] == total else "error" if counts["failed"] == total else "partial"
         activity_strip(self.page).complete("asset", "Cloud preparation finished", detail, state)
         level = "ok" if state == "success" else "error" if state == "error" else "warning"
