@@ -93,6 +93,18 @@ These are implementation requirements, not a claim that every feature exists tod
 - **Separated layers.** Keep UI, services, backend-neutral core, persistence and provider adapters separate. Provider types stay inside the integration boundary.
 - **Offline by default.** Ordinary tests must not submit real or potentially billable generation.
 
+## Inspecting converted Draw Things LoRAs
+
+From the repository root, summarize converted SQLite `.ckpt` LoRAs with the standalone, standard-library-only inspector:
+
+```powershell
+python tools/drawthings/head_lora.py -d "C:\LoRAs" --json report_head.json
+```
+
+The directory scan is non-recursive. Each result includes the file's basename, tensor counts, architecture-specific dimensions and `detected_family`; it does not read tensor weights. Run `tools/drawthings/inspect_lora_families.py` for more detailed matching-gate diagnostics. Both tools inspect metadata only and do not upload LoRAs or generate images. A corrupt or unsupported SQLite file is reported with an error and remains Unknown. A conversion sidecar, if present, is a **declaration**, not file-derived architectural proof. Remove private filenames before distributing a report.
+
+Eight converted-file signatures are currently implemented: `z_image`, `krea_2`, `moss_image`, `sd_1`, `sdxl` (SDXL Base), `flux_1`, `flux2_9b` (FLUX.2 Klein 9B) and `qwen_image_2.1`. The owner-provided 2026-11-11 report classified **11 of 11 valid files** across seven signatures; Z-Image had separate earlier examples. An additional 4 KB, owner-confirmed corrupt file contained no SQLite tables and remained unclassified. These results establish **standalone metadata recognition**, not Prepare, cloud LoRA application, native Windows UI or generation compatibility. Unknown and partial adapters remain Unknown; the [finalized architecture-selection contract](https://github.com/djebaz/dtflow/issues/373) requires explicit user declarations rather than a silent checkpoint-family fallback, which is not yet implemented in this PR.
+
 ## Environment and compatibility evidence
 
 Run project tools through `uv run` so they use the project environment. The lockfile records resolved dependencies. The current compatibility path pins NumPy 2.3.5 for the tested legacy Windows machine; see the [recorded dependency findings](../research/drawthings-grpc-proof.md#observed-compatibility-evidence). Source execution does not establish packaged Windows compatibility.
