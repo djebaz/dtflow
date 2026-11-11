@@ -29,7 +29,7 @@ import sqlite3
 import struct
 import sys
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 
 import numpy as np
@@ -218,6 +218,16 @@ Resolver = Callable[[str], "Target | None"]
 class Target:
     prefix: str  # "dit"
     names: tuple[str, ...]  # NNC parameter names, e.g. ("t-to_q-0-0",)
+    # Column offsets in the (fused) ``down`` tensor when the source layer fuses several INPUTS
+    # (Flux 1 single block linear2). Every target then gets the whole ``up`` and its slice of ``down``.
+    input_offsets: tuple[int, ...] | None = None
+    # Row offsets in the fused ``up`` tensor when the parts differ in size (Flux 1 single block linear1);
+    # None means equal parts.
+    output_offsets: tuple[int, ...] | None = None
+    # Exact shapes of the whole (fused) source tensors, when the family knows them:
+    # ``up`` rows and ``down`` columns. None skips the check.
+    up_rows: int | None = None
+    down_cols: int | None = None
 
 
 _KREA2_ATTN = {
@@ -321,51 +331,189 @@ def resolve_zimage(module: str) -> Target | None:
     return None
 
 
+# Flux 1 (dev/schnell): 19 double blocks then 38 single blocks, hidden size 3072. Draw Things numbers the
+# blocks in one sequence, so single block j is block 19 + j. Names follow Flux1.swift / Flux1Fixed:
+# ``t-<layer>-<block>-0`` with c_* (text stream) and x_* (image stream) layers.
+FLUX1_DOUBLE = 19
+FLUX1_SINGLE = 38
+FLUX1_HIDDEN = 3072
+
+_FLUX1_DOUBLE = re.compile(r"^(?:double_blocks|transformer_blocks)_(\d+)_(\w+)$")
+_FLUX1_SINGLE = re.compile(r"^(?:single_blocks|single_transformer_blocks)_(\d+)_(\w+)$")
+# leaf -> (stream, layer names) for the double blocks; original (BFL) names first, then diffusers.
+_FLUX1_DOUBLE_LEAVES: dict[str, tuple[str, ...]] = {
+    "img_attn_qkv": ("t-x_q", "t-x_k", "t-x_v"),
+    "txt_attn_qkv": ("t-c_q", "t-c_k", "t-c_v"),
+    "img_attn_proj": ("t-x_o",),
+    "txt_attn_proj": ("t-c_o",),
+    "img_mlp_0": ("t-x_linear1",),
+    "img_mlp_2": ("t-x_out_proj",),
+    "txt_mlp_0": ("t-c_linear1",),
+    "txt_mlp_2": ("t-c_out_proj",),
+    "img_mod_lin": tuple(f"t-x_ada_ln_{i}" for i in range(6)),
+    "txt_mod_lin": tuple(f"t-context_ada_ln_{i}" for i in range(6)),
+    "attn_to_q": ("t-x_q",),
+    "attn_to_k": ("t-x_k",),
+    "attn_to_v": ("t-x_v",),
+    "attn_add_q_proj": ("t-c_q",),
+    "attn_add_k_proj": ("t-c_k",),
+    "attn_add_v_proj": ("t-c_v",),
+    "attn_to_out_0": ("t-x_o",),
+    "attn_to_add_out": ("t-c_o",),
+    "ff_net_0_proj": ("t-x_linear1",),
+    "ff_net_2": ("t-x_out_proj",),
+    "ff_context_net_0_proj": ("t-c_linear1",),
+    "ff_context_net_2": ("t-c_out_proj",),
+    "norm1_linear": tuple(f"t-x_ada_ln_{i}" for i in range(6)),
+    "norm1_context_linear": tuple(f"t-context_ada_ln_{i}" for i in range(6)),
+}
+_FLUX1_SINGLE_LEAVES: dict[str, tuple[str, ...]] = {
+    "linear1": ("t-x_q", "t-x_k", "t-x_v", "t-x_linear1"),
+    "modulation_lin": tuple(f"t-x_ada_ln_{i}" for i in range(3)),
+    "attn_to_q": ("t-x_q",),
+    "attn_to_k": ("t-x_k",),
+    "attn_to_v": ("t-x_v",),
+    "proj_mlp": ("t-x_linear1",),
+    "norm_linear": tuple(f"t-x_ada_ln_{i}" for i in range(3)),
+}
+
+
+def _flux1_dims(names: tuple[str, ...], fused_inputs: bool) -> tuple[int, int]:
+    """(up rows, down columns) of the source tensor that feeds ``names`` (hidden size 3072)."""
+    rows = cols = 0
+    first_rows = first_cols = 0
+    for i, name in enumerate(names):
+        base = name.rsplit("-", 2)[0].removeprefix("t-")
+        out_dim, in_dim = FLUX1_HIDDEN, FLUX1_HIDDEN
+        if base.endswith("linear1"):
+            out_dim = 4 * FLUX1_HIDDEN
+        elif base.endswith("out_proj"):
+            in_dim = 4 * FLUX1_HIDDEN
+        if i == 0:
+            first_rows, first_cols = out_dim, in_dim
+        rows += out_dim
+        cols += in_dim
+    return (first_rows, cols) if fused_inputs else (rows, first_cols)
+
+
+def _with_flux1_shapes(target: Target) -> Target:
+    rows, cols = _flux1_dims(target.names, target.input_offsets is not None)
+    return replace(target, up_rows=rows, down_cols=cols)
+
+
+def resolve_flux1(module: str) -> Target | None:
+    target = _resolve_flux1(module)
+    return None if target is None else _with_flux1_shapes(target)
+
+
+def _resolve_flux1(module: str) -> Target | None:
+    """Flux 1 blocks, original (``double_blocks.N.img_attn.qkv``) and diffusers (``transformer_blocks.N.attn.to_q``) names."""
+    match = _FLUX1_DOUBLE.match(module)
+    if match:
+        index, leaf = int(match.group(1)), match.group(2)
+        names = _FLUX1_DOUBLE_LEAVES.get(leaf)
+        if names is None or index >= FLUX1_DOUBLE:
+            return None
+        return Target("dit", tuple(f"{name}-{index}-0" for name in names))
+    match = _FLUX1_SINGLE.match(module)
+    if match:
+        index, leaf = int(match.group(1)), match.group(2)
+        if index >= FLUX1_SINGLE:
+            return None
+        block = FLUX1_DOUBLE + index
+        if leaf in ("linear2", "proj_out"):
+            # linear2 fuses two inputs: attention output (3072 columns) and the MLP output (12288).
+            return Target(
+                "dit",
+                (f"t-x_o-{block}-0", f"t-x_out_proj-{block}-0"),
+                input_offsets=(0, FLUX1_HIDDEN),
+            )
+        names = _FLUX1_SINGLE_LEAVES.get(leaf)
+        if names is None:
+            return None
+        offsets = (0, FLUX1_HIDDEN, 2 * FLUX1_HIDDEN, 3 * FLUX1_HIDDEN) if leaf == "linear1" else None
+        return Target("dit", tuple(f"{name}-{block}-0" for name in names), output_offsets=offsets)
+    return None
+
+
 FAMILIES: dict[str, Resolver] = {
     "krea2": resolve_krea2,
     "zimage": resolve_zimage,
+    "flux1": resolve_flux1,
 }
 
 
 # --------------------------------------------------------------------------- fused targets
 
 
-def is_diagonal_up(up: np.ndarray, count: int) -> bool:
+def _row_bounds(rows: int, count: int, offsets: tuple[int, ...] | None) -> list[tuple[int, int]]:
+    starts = list(offsets) if offsets is not None else [i * (rows // count) for i in range(count)]
+    ends = [*starts[1:], rows]
+    return list(zip(starts, ends, strict=True))
+
+
+def is_diagonal_up(up: np.ndarray, count: int, offsets: tuple[int, ...] | None = None) -> bool:
     """True when ``up`` is block diagonal over ``count`` parts (off-diagonal blocks all zero bytes)."""
     if up.ndim != 2 or up.shape[1] % count != 0:
         return False
-    rows = up.shape[0] // count
     cols = up.shape[1] // count
     bits = up.view(np.uint16)
-    for i in range(count):
-        start = i * rows
-        end = (i + 1) * rows if i < count - 1 else up.shape[0]
+    for i, (start, end) in enumerate(_row_bounds(up.shape[0], count, offsets)):
         for j in range(count):
             if i != j and bits[start:end, j * cols : (j + 1) * cols].any():
                 return False
     return True
 
 
-def split_fused(up: np.ndarray, down: np.ndarray, count: int) -> list[tuple[np.ndarray, np.ndarray]]:
+def split_fused(
+    up: np.ndarray, down: np.ndarray, count: int, offsets: tuple[int, ...] | None = None
+) -> list[tuple[np.ndarray, np.ndarray]]:
     """Split one fused LoRA pair into ``count`` pairs, as the Swift ``ModelWeightElement.write`` does."""
     if count == 1:
         return [(up, down)]
-    if up.shape[0] % count != 0:
+    if offsets is None and up.shape[0] % count != 0:
         raise ConversionError(f"Cannot split {up.shape[0]} output rows into {count} equal parts. {COLAB_HINT}")
-    rows = up.shape[0] // count
-    if is_diagonal_up(up, count):
+    bounds = _row_bounds(up.shape[0], count, offsets)
+    if is_diagonal_up(up, count, offsets):
         cols = up.shape[1] // count
         if down.shape[0] % count != 0:
             raise ConversionError(f"Cannot split {down.shape[0]} rank rows into {count} parts. {COLAB_HINT}")
         down_rows = down.shape[0] // count
         return [
             (
-                up[i * rows : (i + 1) * rows, i * cols : (i + 1) * cols],
+                up[start:end, i * cols : (i + 1) * cols],
                 down[i * down_rows : (i + 1) * down_rows],
             )
-            for i in range(count)
+            for i, (start, end) in enumerate(bounds)
         ]
-    return [(up[i * rows : (i + 1) * rows], down) for i in range(count)]
+    return [(up[start:end], down) for start, end in bounds]
+
+
+def split_fused_inputs(
+    up: np.ndarray, down: np.ndarray, offsets: tuple[int, ...]
+) -> list[tuple[np.ndarray, np.ndarray]]:
+    """Split a LoRA over a layer that fuses several INPUTS (Swift ``ModelWeightElement`` with format ``.I``).
+
+    ``up`` goes unchanged to every target, ``down`` is cut by columns at ``offsets``.
+    """
+    if down.shape[1] <= offsets[-1]:
+        raise ConversionError(f"Cannot split {down.shape[1]} input columns at {list(offsets)}. {COLAB_HINT}")
+    count = len(offsets)
+    # Swift treats a block diagonal ``down`` specially (it then slices the rank rows too); that needs
+    # a redefine step that is not ported, so refuse it instead of writing something different.
+    rank_rows = down.shape[0] // count
+    bits = down.view(np.uint16)
+    if down.shape[0] % count == 0 and down.shape[1] % count == 0:
+        bounds = [*offsets[1:], down.shape[1]]
+        off_diagonal = False
+        for i in range(count):
+            for j in range(count):
+                if i != j and bits[i * rank_rows : (i + 1) * rank_rows, offsets[j] : bounds[j]].any():
+                    off_diagonal = True
+        if not off_diagonal:
+            raise ConversionError(f"A block diagonal down tensor over fused inputs is not supported. {COLAB_HINT}")
+    ends = [*offsets[1:], down.shape[1]]
+    return [(up, down[:, begin:end]) for begin, end in zip(offsets, ends, strict=True)]
 
 
 # --------------------------------------------------------------------------- float16
@@ -999,7 +1147,15 @@ def _convert_open(
         down = st.read_f16(roles["down"].key)
         if up.ndim != 2 or down.ndim != 2 or up.shape[1] != down.shape[0]:
             raise ConversionError(f"{module}: unexpected shapes up {up.shape} and down {down.shape}. {COLAB_HINT}")
-        pieces = split_fused(up, down, len(target.names))
+        if target.up_rows is not None and (up.shape[0] != target.up_rows or down.shape[1] != target.down_cols):
+            raise ConversionError(
+                f"{module}: expected up with {target.up_rows} rows and down with {target.down_cols} columns, "
+                f"got up {up.shape} and down {down.shape}. A different model size or variant? {COLAB_HINT}"
+            )
+        if target.input_offsets is not None:
+            pieces = split_fused_inputs(up, down, target.input_offsets)
+        else:
+            pieces = split_fused(up, down, len(target.names), target.output_offsets)
         for name, (piece_up, piece_down) in zip(target.names, pieces, strict=True):
             # The rank used for alpha scaling is the one of the whole fused tensor, as in Swift.
             out[f"__{target.prefix}__[{name}]__up__"] = scale_up(piece_up, alpha, scale, rank=up.shape[1])
