@@ -30,7 +30,7 @@ _DIT_LORA_NAME = re.compile(r"^__dit__\[t-([^\]]+)\]__(?:up|down)__$")
 
 @dataclass(frozen=True, slots=True)
 class LoraFamily:
-    """Family supported by file evidence, or None when not established."""
+    """Exact Draw Things version supported by file evidence, or None if unknown."""
 
     family: str | None = None
     source: str = "unknown"
@@ -58,7 +58,7 @@ def _dimensions(value: object) -> tuple[int, ...]:
 
 
 def detect_lora_family(path: Path) -> LoraFamily:
-    """Inspect converted SQLite metadata only; never guess from its file name.
+    """Detect the exact Draw Things version from converted SQLite metadata.
 
     A family is returned only when independent architectural landmarks agree.
     Unknown or unsupported formats remain valid LoRAs for existing workflows.
@@ -223,11 +223,11 @@ def detect_lora_family(path: Path) -> LoraFamily:
             ("z_image", z_image),
             ("krea_2", krea_2),
             ("moss_image", moss_image),
-            ("flux_1", flux_1),
+            ("flux1", flux_1),
             ("flux2_9b", flux2_9b),
             ("qwen_image_2.1", qwen_image_2_1),
-            ("sd_1", sd_1),
-            ("sdxl", sdxl),
+            ("v1", sd_1),
+            ("sdxl_base_v0.9", sdxl),
         )
         if matched
     ]
