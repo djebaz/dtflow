@@ -53,6 +53,7 @@ from dtflow.services.image_preparation import prepare_edit_inputs
 from dtflow.services.image_quality import assess_file
 from dtflow.services.lora_naming import relabel_text
 from dtflow.services.preflight import checkpoint_exact_version
+from dtflow.services import lora_relink
 from dtflow.services.presets import apply_preset, builtin_presets, load_presets, save_preset
 from dtflow.services.session import (
     InventoryDisplayMemory,
@@ -283,6 +284,8 @@ class GenerationPage:
         self._key_switch_checkpoint: str | None = None
         self._catalogue = Catalogue(self._state)
         self._inventory_snapshot: InventorySnapshot | None = None
+        self._relink_pending = False  # imported LoRA names are being matched; Generate waits for the result
+        self._relink_swaps: dict[str, str] = {}  # imported name -> prepared name, recorded on the next request
         self._updating_catalogue = False
         self._step_settle = QTimer(page)
         self._step_settle.setSingleShot(True)
@@ -1010,6 +1013,13 @@ class GenerationPage:
             return False
         if self._busy or self._generating:
             return False
+        if self._relink_pending:
+            self._status(
+                Presentation(
+                    "warning", "Checking LoRA names", "Imported LoRA names are still being matched. Try again."
+                )
+            )
+            return False
         images = self.page.imagesSpinBox.value()
         if edit is None and images > 1 and self.queue_images is not None:
             # One total: every picture is its own single-image queue item (Repeat expansion), so it has a row,
@@ -1025,6 +1035,7 @@ class GenerationPage:
         try:
             request = build_request(self._values(), backend=name, config_name=self._config_name, random_seed=True)
             request = self._with_reuse_lineage(self._allow_local_bridge_model(request))
+            request = self._with_relink_evidence(request)
         except FormError as exc:
             self._mark(exc.widget)
             diagnostic_event(
@@ -1991,6 +2002,7 @@ class GenerationPage:
         self._apply(values)
         if "loras" in application.values:
             self.lora.set_loras(application.values["loras"], loaded=True)
+            self._relink_loaded(application.values["loras"], f"Preset {preset['name']}")
         self._config_name = f"preset:{preset['name']}"
         self._reuse_source_identity = None
         # A native preset can carry dozens of unsupported fields; keep the status short and list them in the tooltip.
@@ -2007,6 +2019,48 @@ class GenerationPage:
         )
         if count:
             self.page.generationStatusLabel.setToolTip("Preserved-only fields: " + ", ".join(application.preserved))
+
+    def _with_relink_evidence(self, request):
+        """Record the imported-name swaps that this request still carries."""
+        names = {item.identifier for item in request.loras}
+        swaps = {old: new for old, new in self._relink_swaps.items() if new in names}
+        if not swaps or any(key == lora_relink.RELINK_EVIDENCE for key, _ in request.resolution_evidence):
+            return request
+        return replace(request, resolution_evidence=(*request.resolution_evidence, lora_relink.evidence_pair(swaps)))
+
+    def _relink_loaded(self, loras, source: str) -> None:
+        """Match the LoRA names a loaded preset or configuration carries to what was prepared here, and say what is left.
+
+        Names DT+ lists itself are left alone; a candidate prepared for another architecture than the selected
+        checkpoint is not offered. Generate waits for the result so a run never starts with the unmatched names."""
+        self._relink_swaps = {}
+        backend, _ = self._backend()
+        if not loras or backend != "cloud":
+            return
+        names = tuple(item.identifier for item in loras)
+        snapshot = self._inventory_snapshot
+        listed = tuple(entry.identifier for entry in snapshot.entries if entry.kind == "lora") if snapshot else ()
+        family = checkpoint_exact_version(self.page.modelCombo.currentText().strip(), snapshot)
+        self._relink_pending = True
+
+        def done(matches, failure) -> None:
+            self._relink_pending = False
+            if failure is not None or tuple(item.identifier for item in self.lora.loras) != names:
+                return  # the selection changed meanwhile; never overwrite the user's newer choice
+            relinked, swaps, dropped = lora_relink.relink_selection(self.lora.loras, matches)
+            if relinked != self.lora.loras:
+                self.lora.set_loras(relinked, loaded=True)
+            self._relink_swaps = swaps
+            text = lora_relink.summary(matches, dropped)
+            if text:
+                shown = Presentation(
+                    "warning" if lora_relink.problems(matches) or dropped else "ok",
+                    "LoRA names checked",
+                    f"{source}: {text}.",
+                )
+                self._status(shown)
+
+        self._runner.submit(lora_relink.resolve_names(self._state, backend, names, listed=listed, family=family), done)
 
     def save_preset(self) -> None:
         def save(name):
@@ -2048,6 +2102,7 @@ class GenerationPage:
         self._reuse_source_identity = None
         self._apply(values_from_request(request))
         self.lora.set_loras(request.loras, loaded=True)
+        self._relink_loaded(request.loras, path.name)
         name, endpoint = self._backend()
         self.page.effectiveRequestBrowser.setPlainText(describe_request(request, name, endpoint))
         detail = f"{path.name} applied; values come from the file, with defaults only where it is silent."

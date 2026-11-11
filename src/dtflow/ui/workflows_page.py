@@ -50,6 +50,7 @@ from dtflow.core.output_layout import identity_from_path
 from dtflow.core.models import LoRASelection, ValidationError
 from dtflow.services.lora_naming import display_label, lora_offer, relabel_text
 from dtflow.services import workflow_library as library
+from dtflow.services import lora_relink
 from dtflow.ui.activity_strip import activity_strip
 from dtflow.ui.inline_feedback import InlineNotice, confirm_action, edit_text, feedback
 from dtflow.ui.prompt_tags import style_prompt_tags
@@ -627,6 +628,32 @@ class WorkflowsPage(QObject):
         self.open_graph(graph, path)
         self.refresh_library()
 
+    def _imported(self, result, failure) -> None:
+        self._opened(result, failure, title="Workflow import refused")
+        if failure is not None:
+            return
+        backend = (self.choices_source() or {}).get("backend")
+        names = tuple(
+            dict.fromkeys(
+                str(item[0])
+                for node in result[1].nodes
+                for item in node.params.get("loras") or ()
+                if isinstance(item, (list, tuple)) and item
+            )
+        )
+        if backend != "cloud" or not names:
+            return
+
+        listed = tuple((self.choices_source() or {}).get("listed_loras") or ())
+
+        def done(matches, problem) -> None:
+            text = lora_relink.summary(matches) if problem is None else ""
+            if text:
+                state = "warning" if lora_relink.problems(matches) else "success"
+                activity_strip(self.workspace).complete("workflow-loras", "Workflow LoRAs checked", text + ".", state)
+
+        self._submit(lora_relink.resolve_names(self.state, backend, names, listed=listed), done)
+
     def open_graph(self, graph: wf.Graph, path: Path | None, name: str | None = None) -> None:
         canvas = self.ensure_canvas()
         self.path = Path(path) if path is not None else None
@@ -747,7 +774,7 @@ class WorkflowsPage(QObject):
             self._busy = True
             self._submit(
                 asyncio.to_thread(library.import_workflow, self.state, Path(source)),
-                lambda result, failure: self._opened(result, failure, title="Workflow import refused"),
+                lambda result, failure: self._imported(result, failure),
             )
 
         self._guard(self.context.importWorkflowButton, pick)
@@ -1747,7 +1774,7 @@ class WorkflowsPage(QObject):
         for step in running[:3]:
             lines.append(f"{step_name(step)} · {step['branch_label']} · {step.get('stage') or 'Running'}")
         if run.get("message"):
-            lines.append(run["message"])
+            lines.append(relabel_text(run["message"]))
         failed = [step for step in steps if step["state"] in ("failed", "unknown")]
         for step in failed[:3]:
             text = f"{step_name(step)} · {step['branch_label']}"
@@ -1763,7 +1790,7 @@ class WorkflowsPage(QObject):
         lines.extend(list(warnings.values())[:6])
         if len(warnings) > 6:
             lines.append(f"{len(warnings) - 6} more node warning(s); select a node for details.")
-        w.workflowOutputText.setText("\n".join(lines))
+        w.workflowOutputText.setText(relabel_text("\n".join(lines)))  # steps store identifiers, never labels
         w.stopWorkflowButton.setVisible(state in LIVE_RUN)
         w.stopWorkflowButton.setEnabled(self.queue_id is not None)
         self._set_results(run.get("results", []))
