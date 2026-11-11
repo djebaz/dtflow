@@ -468,84 +468,6 @@
             </widget>
            </item>
            <item>
-            <widget class="QGroupBox" name="customLorasBox">
-             <property name="title"><string /></property>
-             <property name="role" stdset="0"><string>sectionCard</string></property>
-             <property name="accessibleName"><string>Custom LoRAs</string></property>
-             <layout class="QVBoxLayout" name="customLorasBoxCardLayout">
-              <property name="leftMargin"><number>0</number></property>
-              <property name="topMargin"><number>0</number></property>
-              <property name="rightMargin"><number>0</number></property>
-              <property name="bottomMargin"><number>0</number></property>
-              <property name="spacing"><number>0</number></property>
-              <item>
-               <widget class="QFrame" name="customLorasBoxHeader">
-                <property name="role" stdset="0"><string>sectionHeader</string></property>
-                <layout class="QHBoxLayout" name="customLorasBoxHeaderLayout">
-                 <property name="leftMargin"><number>10</number></property>
-                 <property name="topMargin"><number>7</number></property>
-                 <property name="rightMargin"><number>10</number></property>
-                 <property name="bottomMargin"><number>7</number></property>
-                 <item>
-                  <widget class="QLabel" name="customLorasBoxHeading">
-                   <property name="text"><string>Custom LoRAs</string></property>
-                   <property name="textRole" stdset="0"><string>panelHeading</string></property>
-                  </widget>
-                 </item>
-                </layout>
-               </widget>
-              </item>
-              <item>
-               <widget class="QWidget" name="customLorasBoxContents">
-                <property name="role" stdset="0"><string>sectionContents</string></property>
-                <layout class="QVBoxLayout" name="customLorasLayout">
-                 <property name="leftMargin"><number>10</number></property>
-                 <property name="topMargin"><number>8</number></property>
-                 <property name="rightMargin"><number>10</number></property>
-                 <property name="bottomMargin"><number>10</number></property>
-                 <property name="spacing"><number>8</number></property>
-                 <item>
-                  <widget class="QLabel" name="customLorasStatusLabel">
-                   <property name="text"><string>No custom LoRA definitions imported.</string></property>
-                   <property name="wordWrap"><bool>true</bool></property>
-                   <property name="role" stdset="0"><string>secondary</string></property>
-                  </widget>
-                 </item>
-                 <item>
-                  <layout class="QHBoxLayout" name="customLorasButtons">
-                   <property name="spacing"><number>6</number></property>
-                   <item><widget class="QPushButton" name="importCustomLorasButton"><property name="text"><string>Import JSON…</string></property></widget></item>
-                   <item><widget class="QPushButton" name="clearCustomLorasButton"><property name="text"><string>Clear</string></property></widget></item>
-                  </layout>
-                 </item>
-                 <item>
-                  <widget class="QLabel" name="retainedLorasStatusLabel">
-                   <property name="text"><string>No locally retained LoRAs.</string></property>
-                   <property name="wordWrap"><bool>true</bool></property>
-                   <property name="role" stdset="0"><string>secondary</string></property>
-                  </widget>
-                 </item>
-                 <item>
-                  <widget class="QListWidget" name="retainedLorasList">
-                   <property name="toolTip"><string>Local retained copies only. Select a file and press Delete to remove it.</string></property>
-                   <property name="maximumHeight"><number>112</number></property>
-                   <property name="selectionMode"><enum>QAbstractItemView::SingleSelection</enum></property>
-                  </widget>
-                 </item>
-                 <item>
-                  <widget class="QPushButton" name="removeRetainedLoraButton">
-                   <property name="text"><string>Remove selected</string></property>
-                   <property name="toolTip"><string>Delete the selected retained copy only. Original files, DT+ assets and saved results are unchanged.</string></property>
-                   <property name="enabled"><bool>false</bool></property>
-                  </widget>
-                 </item>
-                </layout>
-               </widget>
-              </item>
-             </layout>
-            </widget>
-           </item>
-           <item>
             <widget class="QGroupBox" name="rememberedFoldersBox">
              <property name="sizePolicy"><sizepolicy hsizetype="Preferred" vsizetype="Maximum"/></property>
              <property name="title"><string /></property>
@@ -790,6 +712,81 @@
                  </spacer>
                 </item>
                </layout>
+              </item>
+             </layout>
+            </widget>
+           </item>
+           <item>
+            <widget class="QGroupBox" name="customLorasBox"><property name="sizePolicy"><sizepolicy hsizetype="Preferred" vsizetype="Maximum"/></property>
+             <property name="title"><string /></property>
+             <property name="role" stdset="0"><string>sectionCard</string></property>
+             <property name="accessibleName"><string>Custom LoRAs</string></property>
+             <layout class="QVBoxLayout" name="customLorasBoxCardLayout">
+              <property name="leftMargin"><number>0</number></property>
+              <property name="topMargin"><number>0</number></property>
+              <property name="rightMargin"><number>0</number></property>
+              <property name="bottomMargin"><number>0</number></property>
+              <property name="spacing"><number>0</number></property>
+              <item>
+               <widget class="QFrame" name="customLorasBoxHeader">
+                <property name="role" stdset="0"><string>sectionHeader</string></property>
+                <layout class="QHBoxLayout" name="customLorasBoxHeaderLayout">
+                 <property name="leftMargin"><number>10</number></property>
+                 <property name="topMargin"><number>7</number></property>
+                 <property name="rightMargin"><number>10</number></property>
+                 <property name="bottomMargin"><number>7</number></property>
+                 <item>
+                  <widget class="QToolButton" name="customLorasDisclosure"><property name="text"><string>Custom LoRAs</string></property><property name="arrowType"><enum>Qt::RightArrow</enum></property><property name="toolButtonStyle"><enum>Qt::ToolButtonTextBesideIcon</enum></property><property name="checkable"><bool>true</bool></property><property name="checked"><bool>false</bool></property><property name="autoRaise"><bool>true</bool></property><property name="accessibleName"><string>Show custom LoRAs</string></property><property name="toolTip"><string>Expand to manage locally known custom LoRAs and retained files.</string></property></widget>
+                 </item>
+                </layout>
+               </widget>
+              </item>
+              <item>
+               <widget class="QWidget" name="customLorasBoxContents"><property name="visible"><bool>false</bool></property>
+                <property name="role" stdset="0"><string>sectionContents</string></property>
+                <layout class="QVBoxLayout" name="customLorasLayout">
+                 <property name="leftMargin"><number>10</number></property>
+                 <property name="topMargin"><number>8</number></property>
+                 <property name="rightMargin"><number>10</number></property>
+                 <property name="bottomMargin"><number>10</number></property>
+                 <property name="spacing"><number>8</number></property>
+                 <item>
+                  <widget class="QLabel" name="customLorasStatusLabel">
+                   <property name="text"><string>No custom LoRA definitions imported.</string></property>
+                   <property name="wordWrap"><bool>true</bool></property>
+                   <property name="role" stdset="0"><string>secondary</string></property>
+                  </widget>
+                 </item>
+                 <item>
+                  <layout class="QHBoxLayout" name="customLorasButtons">
+                   <property name="spacing"><number>6</number></property>
+                   <item><widget class="QPushButton" name="importCustomLorasButton"><property name="text"><string>Import JSON…</string></property></widget></item>
+                   <item><widget class="QPushButton" name="clearCustomLorasButton"><property name="text"><string>Clear</string></property></widget></item>
+                  </layout>
+                 </item>
+                 <item>
+                  <widget class="QLabel" name="retainedLorasStatusLabel">
+                   <property name="text"><string>No locally retained LoRAs.</string></property>
+                   <property name="wordWrap"><bool>true</bool></property>
+                   <property name="role" stdset="0"><string>secondary</string></property>
+                  </widget>
+                 </item>
+                 <item>
+                  <widget class="QListWidget" name="retainedLorasList">
+                   <property name="toolTip"><string>Local retained copies only. Select a file and press Delete to remove it.</string></property>
+                   <property name="maximumHeight"><number>112</number></property>
+                   <property name="selectionMode"><enum>QAbstractItemView::SingleSelection</enum></property>
+                  </widget>
+                 </item>
+                 <item>
+                  <widget class="QPushButton" name="removeRetainedLoraButton">
+                   <property name="text"><string>Remove selected</string></property>
+                   <property name="toolTip"><string>Delete the selected retained copy only. Original files, DT+ assets and saved results are unchanged.</string></property>
+                   <property name="enabled"><bool>false</bool></property>
+                  </widget>
+                 </item>
+                </layout>
+               </widget>
               </item>
              </layout>
             </widget>

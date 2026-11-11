@@ -533,6 +533,8 @@ class MainWindow:
         form.saveKeyButton.clicked.connect(self.save_key)
         form.removeKeyButton.clicked.connect(self.remove_key)
         form.keySelectCombo.currentIndexChanged.connect(self.key_selected)
+        form.customLorasBoxContents.setVisible(False)
+        form.customLorasDisclosure.toggled.connect(self._toggle_custom_loras)
         form.importCustomLorasButton.clicked.connect(self.import_custom_loras)
         form.clearCustomLorasButton.clicked.connect(self.clear_custom_loras)
         form.removeRetainedLoraButton.clicked.connect(self.remove_retained_lora)
@@ -1841,6 +1843,16 @@ class MainWindow:
             if (sha256, size) == identity:
                 listing.setCurrentItem(item)
         self._retained_lora_selection_changed()
+
+    def _toggle_custom_loras(self, expanded: bool) -> None:
+        """Expand the existing Connections LoRA library only when needed."""
+        self.form.customLorasBoxContents.setVisible(expanded)
+        self.form.customLorasDisclosure.setArrowType(
+            Qt.ArrowType.DownArrow if expanded else Qt.ArrowType.RightArrow
+        )
+        self.form.customLorasDisclosure.setAccessibleName(
+            "Hide custom LoRAs" if expanded else "Show custom LoRAs"
+        )
 
     def _retained_lora_selection_changed(self) -> None:
         self.form.removeRetainedLoraButton.setEnabled(

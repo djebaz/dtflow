@@ -2623,3 +2623,15 @@ QWidget#loraSelectionRow[checkedSelection="true"] {
   border-left: 3px solid ${color.accentEdge};
   border-bottom: 1px solid ${color.selectionBorder};
 }
+
+/* Collapsible LoRA management in the existing Connections center column. */
+QToolButton#customLorasDisclosure {
+  background: transparent;
+  border: 0;
+  color: ${color.text};
+  font-size: ${type.small};
+  font-weight: ${type.weightEmphasis};
+  padding: 0;
+  text-align: left;
+}
+QToolButton#customLorasDisclosure:hover { color: ${color.focus}; }
