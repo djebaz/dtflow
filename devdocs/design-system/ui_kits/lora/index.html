@@ -85,17 +85,15 @@ nav.views{display:flex;gap:7px;align-items:center;flex-wrap:wrap;padding:12px ma
 .action.primary:disabled{background:var(--color-button);border-color:var(--color-disabled-border);color:var(--color-disabled)}
 .note{padding:12px 15px;border-left:3px solid var(--color-focus);background:var(--color-host);color:var(--color-secondary);font-size:var(--font-size-small);line-height:1.55;margin-top:16px;border-radius:4px}
 .note strong{color:var(--color-text)}
-/* The same batch table becomes cards; no second editor implementation. */
-.force-compact .data-head{display:none}
-.force-compact .table-scroll{overflow:visible}
-.force-compact .prepare-row{min-width:0;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:var(--lora-card-gap);padding:var(--lora-card-padding);background:var(--color-item-surface);border:1px solid var(--color-section-border);border-radius:8px;margin:7px}
-.force-compact .prepare-row.selected{background:var(--color-selection)}
-.force-compact .prepare-row>.cell:first-child{grid-column:1/-1}
-.force-compact .mobile-label{display:block;font-size:8pt;font-weight:600;color:var(--color-secondary);margin-bottom:3px}
-.force-compact .file-name .file-start{flex:0 1 auto}
-.force-compact .file-name{max-width:100%}
-.force-compact .preview-box{align-items:flex-start}
-.force-compact .batch-footer{position:sticky;bottom:0;z-index:3}
+/* Compact layout stays a table: one horizontal row per LoRA, never stacked cards. */
+.force-compact .data-head,.force-compact .prepare-row{
+  grid-template-columns:var(--lora-compact-columns);
+  min-width:var(--lora-compact-table-min-width);
+  gap:var(--lora-compact-column-gap);
+  padding:6px 8px;
+}
+.force-compact .editor-input{font-size:9pt}
+.force-compact .status{font-size:9pt}
 .force-compact .surface{max-width:760px;margin:0 auto}
 .force-compact .screen-heading{max-width:760px;margin-left:auto;margin-right:auto}
 .force-compact .note{max-width:760px;margin:16px auto}
@@ -130,18 +128,20 @@ nav.views{display:flex;gap:7px;align-items:center;flex-wrap:wrap;padding:12px ma
 .toggle:checked:before{background:var(--color-on-accent);transform:translateX(16px)}
 footer.study-footer{text-align:center;margin-top:20px;color:var(--color-secondary);font-size:8pt}
 @media(max-width:1000px){
-  .data-head{display:none}
-  .table-scroll{overflow:visible}
-  .prepare-row{min-width:0;grid-template-columns:repeat(2,minmax(0,1fr));gap:var(--lora-card-gap);padding:var(--lora-card-padding);border:1px solid var(--color-section-border);border-radius:8px;margin:7px;background:var(--color-item-surface)}
-  .prepare-row>.cell:first-child{grid-column:1/-1}
-  .mobile-label{display:block;font-size:8pt;font-weight:600;color:var(--color-secondary);margin-bottom:3px}
+  /* Small viewports preserve the table and scroll only if the columns cannot fit. */
+  .data-head,.prepare-row{
+    grid-template-columns:var(--lora-compact-columns);
+    min-width:var(--lora-compact-table-min-width);
+    gap:var(--lora-compact-column-gap);
+    padding:6px 8px;
+  }
+  .prepare-row .editor-input{font-size:9pt}
+  .prepare-row .status{font-size:9pt}
   .picker-wrap,.metadata-grid,.preferences{grid-template-columns:1fr}
 }
 @media(max-width:600px){
   header.site-head{padding:12px}.prototype-flag{white-space:normal}
   .study{padding:17px 10px}
-  .prepare-row,.force-compact .prepare-row{grid-template-columns:1fr}
-  .prepare-row>.cell:first-child{grid-column:auto}
   .metadata-form .field-grid{grid-template-columns:1fr}
   .batch-footer{position:sticky;bottom:0;z-index:3}
   .batch-footer .actions{width:100%}.batch-footer .action.primary{flex:1}
@@ -164,7 +164,7 @@ footer.study-footer{text-align:center;margin-top:20px;color:var(--color-secondar
 <section class="screen active" id="screen-prepare">
   <div class="screen-heading"><div><div class="page-label">Assets / batch preparation</div><h1>Prepare LoRAs</h1><p>Complete metadata before preparing on DT+. Files stay local until you choose Prepare.</p></div><div class="side-meta"><span class="soft-tag">5 selected files</span><div style="margin-top:12px">Design fixture · names and architectures illustrative</div></div></div>
   <div class="surface" id="batch-surface">
-    <div class="toolbar"><span class="hint">Only ready rows are included. Incomplete rows stay editable while other files are preparing.</span><label class="compact-toggle"><input type="checkbox" id="compact-toggle"> Compact layout</label></div>
+    <div class="toolbar"><span class="hint">Only ready rows are included. Incomplete rows stay editable while other files are preparing.</span><label class="compact-toggle"><input type="checkbox" id="compact-toggle"> Compact width</label></div>
     <div class="table-scroll" id="prepare-table">
       <div class="data-head"><div>Source file</div><div>Architecture</div><div>Short name</div><div>Quantization</div><div>Trigger words</div><div>Status</div></div>
       <div class="prepare-row selected" data-file="portrait_8e62d922f3a4c82b1aef990108a2fae9_lora_f16.ckpt">
