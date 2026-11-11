@@ -40,10 +40,20 @@ class _ToggleRow(QObject):
 
     def __init__(self, row: QWidget):
         super().__init__(row)
+        self._row = row
         self._checkbox = row.loraSelectionCheck
+        self._slider = row.loraSelectionSlider
+
+    def _on_slider(self, event) -> bool:
+        """A release that lands over the weight slider (groove or handle) belongs to the slider, never the row."""
+        origin = self._slider.mapTo(self._row, self._slider.rect().topLeft())
+        area = self._slider.rect().translated(origin).adjusted(-4, -4, 4, 4)
+        return area.contains(event.position().toPoint())
 
     def eventFilter(self, watched, event):
         if event.type() == QEvent.Type.MouseButtonRelease and event.button() == Qt.MouseButton.LeftButton:
+            if self._on_slider(event):
+                return False
             self._checkbox.click()
             return True
         return False
