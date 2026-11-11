@@ -77,7 +77,7 @@ def _split(filename: str) -> tuple[list[list[str]], str | None, int]:
             if VERSION.fullmatch(lower):
                 version = "V" + lower[1:].split(".")[0]
                 continue
-            if lower in PACKAGING or lower in ARCHITECTURE or TRAINING.fullmatch(lower):
+            if lower in PACKAGING or TRAINING.fullmatch(lower):
                 discarded += 1
                 continue
             if lower in GENERIC:
