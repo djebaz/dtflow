@@ -470,6 +470,9 @@ def render_lora_prepare_states(shell, out):
 
     shell.form.generationNavigationButton.click()
     shell.form.resize(1600, 1000)
+    # Navigation can queue a dismiss of the previous inline editor. Settle it
+    # before opening this editor, or an otherwise valid capture shows only Generate.
+    QTest.qWait(120)
     paths = [
         "portrait_8e62d922f3a4c82b1aef990108a2fae9_lora_f16.ckpt",
         "cinematic_20261109_f3e817d0a432bf_lora_q8p.ckpt",
@@ -491,6 +494,8 @@ def render_lora_prepare_states(shell, out):
     )
     # No file bytes are accessed, no provider client is opened, and Prepare is never clicked.
     QTest.qWait(80)
+    if not editor.active() or not shell.inline.form.isVisible():
+        raise RuntimeError("Canonical LoRA Prepare overlay was dismissed before capture")
     save(shell.form, out, "lora-prepare-wide")
     shell.form.resize(1080, 860)
     QTest.qWait(80)
