@@ -16,6 +16,7 @@ from PySide6.QtWidgets import (
     QComboBox,
     QHBoxLayout,
     QLabel,
+    QHeaderView,
     QListWidgetItem,
     QTableWidgetItem,
     QLineEdit,
@@ -545,7 +546,10 @@ class MainWindow:
         form.removeRetainedLoraButton.clicked.connect(self.remove_retained_lora)
         table = form.retainedLorasTable
         table.verticalHeader().setVisible(False)
-        table.horizontalHeader().setStretchLastSection(True)
+        header = table.horizontalHeader()
+        for column in (0, 1, 2, 4):
+            header.setSectionResizeMode(column, QHeaderView.ResizeMode.ResizeToContents)
+        header.setSectionResizeMode(3, QHeaderView.ResizeMode.Stretch)
         table.itemSelectionChanged.connect(self._retained_lora_selection_changed)
         table.itemDoubleClicked.connect(lambda _item: self.edit_lora_metadata())
         form.editLoraMetadataButton.clicked.connect(self.edit_lora_metadata)
@@ -1889,7 +1893,6 @@ class MainWindow:
                 table.setItem(row, column, item)
             if (sha256, size) == identity:
                 table.selectRow(row)
-        table.resizeColumnsToContents()
         self._retained_lora_selection_changed()
 
     def _selected_lora_identity(self) -> tuple[str, int] | None:

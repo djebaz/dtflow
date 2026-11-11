@@ -68,10 +68,6 @@ class LoraMetadataOverlay(QObject):
         self.overlay.setVisible(False)
         layout = QVBoxLayout(self.overlay)
         self.form = _load_form()
-        self.form.setAutoFillBackground(True)
-        self.form.setStyleSheet(
-            "#loraMetadataCard { background-color: palette(window); border: 1px solid palette(mid); border-radius: 6px; }"
-        )
         layout.addStretch(1)
         layout.addWidget(self.form, 0, Qt.AlignmentFlag.AlignHCenter)
         layout.addStretch(1)
