@@ -29,7 +29,7 @@ import sqlite3
 import struct
 import sys
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 
 import numpy as np
@@ -224,6 +224,10 @@ class Target:
     # Row offsets in the fused ``up`` tensor when the parts differ in size (Flux 1 single block linear1);
     # None means equal parts.
     output_offsets: tuple[int, ...] | None = None
+    # Exact shapes of the whole (fused) source tensors, when the family knows them:
+    # ``up`` rows and ``down`` columns. None skips the check.
+    up_rows: int | None = None
+    down_cols: int | None = None
 
 
 _KREA2_ATTN = {
@@ -374,7 +378,35 @@ _FLUX1_SINGLE_LEAVES: dict[str, tuple[str, ...]] = {
 }
 
 
+def _flux1_dims(names: tuple[str, ...], fused_inputs: bool) -> tuple[int, int]:
+    """(up rows, down columns) of the source tensor that feeds ``names`` (hidden size 3072)."""
+    rows = cols = 0
+    first_rows = first_cols = 0
+    for i, name in enumerate(names):
+        base = name.rsplit("-", 2)[0].removeprefix("t-")
+        out_dim, in_dim = FLUX1_HIDDEN, FLUX1_HIDDEN
+        if base.endswith("linear1"):
+            out_dim = 4 * FLUX1_HIDDEN
+        elif base.endswith("out_proj"):
+            in_dim = 4 * FLUX1_HIDDEN
+        if i == 0:
+            first_rows, first_cols = out_dim, in_dim
+        rows += out_dim
+        cols += in_dim
+    return (first_rows, cols) if fused_inputs else (rows, first_cols)
+
+
+def _with_flux1_shapes(target: Target) -> Target:
+    rows, cols = _flux1_dims(target.names, target.input_offsets is not None)
+    return replace(target, up_rows=rows, down_cols=cols)
+
+
 def resolve_flux1(module: str) -> Target | None:
+    target = _resolve_flux1(module)
+    return None if target is None else _with_flux1_shapes(target)
+
+
+def _resolve_flux1(module: str) -> Target | None:
     """Flux 1 blocks, original (``double_blocks.N.img_attn.qkv``) and diffusers (``transformer_blocks.N.attn.to_q``) names."""
     match = _FLUX1_DOUBLE.match(module)
     if match:
@@ -1115,6 +1147,11 @@ def _convert_open(
         down = st.read_f16(roles["down"].key)
         if up.ndim != 2 or down.ndim != 2 or up.shape[1] != down.shape[0]:
             raise ConversionError(f"{module}: unexpected shapes up {up.shape} and down {down.shape}. {COLAB_HINT}")
+        if target.up_rows is not None and (up.shape[0] != target.up_rows or down.shape[1] != target.down_cols):
+            raise ConversionError(
+                f"{module}: expected up with {target.up_rows} rows and down with {target.down_cols} columns, "
+                f"got up {up.shape} and down {down.shape}. A different model size or variant? {COLAB_HINT}"
+            )
         if target.input_offsets is not None:
             pieces = split_fused_inputs(up, down, target.input_offsets)
         else:
