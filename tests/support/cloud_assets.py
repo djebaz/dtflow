@@ -3,6 +3,9 @@
 import asyncio
 import hashlib
 import json
+import sqlite3
+import struct
+from contextlib import closing
 from pathlib import Path
 
 import httpx
@@ -106,8 +109,26 @@ class DtPlus:
 
 
 def lora_file(directory: Path, name: str = "style.ckpt", data: bytes | None = None) -> Path:
+    """Create a tiny valid SQLite LoRA container with dummy tensor bytes, not trained weights.
+
+    Its one up/down pair satisfies local checkpoint validation, but its
+    architecture remains Unknown. The optional data controls the tensor
+    payload so upload/changed-content tests can vary size and identity.
+    """
     path = directory / name
-    path.write_bytes(data if data is not None else bytes(range(256)) * 20)  # 5120 bytes: five 1 KiB chunks
+    path.unlink(missing_ok=True)
+    payload = data if data is not None else bytes(range(256)) * 10
+    dimensions = struct.pack("<2i", 4, 4)
+    with closing(sqlite3.connect(path)) as db:
+        with db:
+            db.execute("CREATE TABLE tensors (name TEXT NOT NULL, dim BLOB NOT NULL, data BLOB NOT NULL)")
+            db.executemany(
+                "INSERT INTO tensors (name, dim, data) VALUES (?, ?, ?)",
+                (
+                    ("__dit__[t-fixture-0]__up__", dimensions, payload),
+                    ("__dit__[t-fixture-0]__down__", dimensions, payload),
+                ),
+            )
     return path
 
 
