@@ -38,6 +38,19 @@
 
 **Before → after:** two permanent LoRA-looking lists and a management section squeezed into a side rail become one on-demand management section in Connections' center, plus a focused selection summary in Generate. The extra disclosure click is intentional for infrequent metadata edits; it keeps everyday connection/readiness controls visible without allocating a large permanent LoRA surface.
 
+## Qt Designer design references (2026-11-11)
+
+The [five editable `.ui` design forms](ui_kits/lora/qt/README.md) now supplement the
+interactive HTML mockup: Connections, Generate, Batch Prepare, selected-first picker,
+and a single-record metadata editor. They use standard Qt Widgets and the existing
+DTFlow stylesheet when rendered, with a local-only capture command documented alongside
+the forms. Connections defaults to the compact collapsed library, with an optional
+expanded capture; Prepare retains its six-column horizontal table at compact widths.
+They are **standalone design references**, not a change to canonical runtime
+`src/dtflow/ui/forms/` files and not evidence of a working Qt feature.
+The owner explicitly authorized Designer/render work on 2026-11-11; native Windows
+and provider checks still remain separate.
+
 ## Token and render ownership
 
 [LoRA prototype tokens](tokens/lora.css) alias the **existing** shared charcoal/blue/color/typography values and add proposed UI measurements. They are prototype-scoped, **not** additions to runtime \`tokens.json\`. Promote only values needed by a later native Qt implementation; native authority remains \`DESIGN.md\`, Designer forms and shared QSS.
