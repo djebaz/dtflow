@@ -2134,8 +2134,14 @@ class QueuePage:
             request, name, endpoint, asset_ids = (
                 self._request_source() if quick and count is not None else self._composer_request()
             )
-            if not (quick and count is not None) and self.templates.loaded is not None:
-                asset_ids = self.templates.validate_use(request, name, endpoint)
+            if not (quick and count is not None):
+                if (name, endpoint) != self._backend():
+                    raise ValidationError(
+                        "The connection changed since this Queue draft was captured. "
+                        "Use Generate settings or reload a template for the current backend before creating a queue."
+                    )
+                if self.templates.loaded is not None:
+                    asset_ids = self.templates.validate_use(request, name, endpoint)
         except ValidationError as exc:
             # From another tab the marked field is out of sight, so say where it is.
             report(Presentation("error", "Queue not created", f"On Generate: {exc}" if quick else str(exc)))
@@ -2562,8 +2568,9 @@ class QueuePage:
                 )
                 # Read the latest locally confirmed receipt for each effective name,
                 # without binding an unused receipt or contacting DT+ before Start.
-                candidates = await script_asset_choices(self._state, "cloud")
-                receipts = tuple(item for item in candidates if item.identifier in names)
+                if names:
+                    candidates = await script_asset_choices(self._state, "cloud")
+                    receipts = tuple(item for item in candidates if item.identifier in names)
         if job is not None:
             # An Inpaint edit: stage the prepared source and mask once; nothing is sent until Start.
             selection = await asyncio.to_thread(
