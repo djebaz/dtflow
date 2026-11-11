@@ -13,6 +13,8 @@
   --lora-cell-padding: 6px;
   --lora-panel-padding: var(--space-md);
   --lora-picker-row-min-height: 38px;
+  --lora-placement-gap: var(--space-md);
+  --lora-library-max-height: 260px; /* prototype-only; center table scrolls when expanded */
   --lora-border: var(--color-section-border);
   --lora-row-background: var(--color-item-surface);
   --lora-preview-background: var(--color-host);
