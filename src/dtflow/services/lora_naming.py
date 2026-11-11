@@ -501,7 +501,7 @@ def allocate_batch_names(
             if (canonical.exact_architecture, canonical.format_code) != (item.exact_architecture, item.format_code):
                 results.append(NameAllocation(name, conflict="content_metadata_conflict"))
                 continue
-            if canonical.short_name.casefold() != name.casefold():
+            if canonical.short_name != name:
                 if item.manually_edited:
                     if not item.replace_existing:
                         results.append(NameAllocation(name, conflict="content_already_named"))
