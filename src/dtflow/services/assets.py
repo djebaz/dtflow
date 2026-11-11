@@ -170,6 +170,7 @@ class AssetService:
     ) -> PreparedAsset:
         """Explicit Prepare; derive a usable managed name before provider negotiation."""
         path = Path(path)
+        managed_name = None
         if metadata is not None:
             try:
                 selected_identifier = metadata.identifier
@@ -177,29 +178,32 @@ class AssetService:
                 raise ValidationError(str(exc)) from exc
             if identifier is not None and identifier != selected_identifier:
                 raise ValidationError("Prepare identifier disagrees with the selected managed LoRA name.")
-            identifier = selected_identifier
+            identifier = managed_name = selected_identifier
         stat, digest = await asyncio.to_thread(_observe, path)
         await asyncio.to_thread(validate_converted_lora, path)
-        retained = None
-        if self.store is not None:
-            # Keep the durable copy first, so a failed or interrupted upload never costs the user the file.
-            retained = await asyncio.to_thread(self.store.retain, path, digest, stat.st_size)
-            diagnostic_event(
-                log, "assets.copy_kept", level=logging.INFO, data={"size": stat.st_size, "sha": digest[:8]}
-            )
-        detected = await asyncio.to_thread(detect_lora_family, retained.path if retained else path)
+        # Decide the technical filename before retaining bytes. Never create an
+        # original-name copy merely to link it under the accepted name later.
+        detected = await asyncio.to_thread(detect_lora_family, path)
         if metadata is None and identifier is None:
             saved = await self.registry.lora_metadata(digest, stat.st_size)
             accepted = saved.get("managed_identifier") if saved else None
             if isinstance(accepted, str):
-                # Re-Prepare preserves the exact accepted technical name, including
-                # existing uppercase suffixes and their account-scoped receipts.
-                identifier = accepted
+                # Re-Prepare preserves the accepted technical identifier and receipts.
+                identifier = managed_name = accepted
             else:
                 metadata = await auto_prepare_metadata(self.registry, path.name, digest, stat.st_size, detected.family)
                 if metadata is not None:
-                    identifier = metadata.identifier
+                    identifier = managed_name = metadata.identifier
         content = AssetContent("lora", identifier or path.name, digest, stat.st_size, provenance)
+        retained = None
+        if self.store is not None:
+            # One verified copy with its chosen name, indexed before any provider call.
+            retained = await asyncio.to_thread(
+                self.store.retain, path, digest, stat.st_size, managed_name=managed_name
+            )
+            diagnostic_event(
+                log, "assets.copy_kept", level=logging.INFO, data={"size": stat.st_size, "sha": digest[:8]}
+            )
         key = (
             self.backend.backend_id,
             self.backend.origin,
@@ -221,7 +225,12 @@ class AssetService:
                     "family_source": detected.source,
                 },
             )
-            task = asyncio.create_task(self._prepare(path, content, stat, detected=detected, metadata=metadata))
+            task = asyncio.create_task(
+                self._prepare(
+                    path, content, stat, detected=detected, metadata=metadata,
+                    retained_name=retained.name if retained is not None else None,
+                )
+            )
             _INFLIGHT[key] = task
             task.add_done_callback(
                 lambda done, key=key: _INFLIGHT.pop(key, None) if _INFLIGHT.get(key) is done else None
@@ -249,6 +258,7 @@ class AssetService:
         negotiation: AssetNegotiation | None = None,
         detected: LoraFamily | None = None,
         metadata: LoraPrepareMetadata | None = None,
+        retained_name: str | None = None,
     ) -> PreparedAsset:
         backend = self.backend
         credential_id = await self._credential_id()
@@ -264,7 +274,8 @@ class AssetService:
         )
         transferred = False
         try:
-            if metadata is not None and self.store is not None:
+            if metadata is not None and self.store is not None and retained_name != content.identifier:
+                # Only previously retained copies can need an in-place name change.
                 await asyncio.to_thread(self.store.rename_accepted, content.sha256, content.size, content.identifier)
             negotiation = negotiation or await backend.negotiate_asset(content)
             if negotiation.status == "exists":
