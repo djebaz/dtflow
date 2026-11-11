@@ -36,6 +36,7 @@ from dtflow.diagnostics import api_error_data, cloud_key_data, event as diagnost
 from dtflow.persistence.assets import AssetRegistry, AssetsBusyError, newest_per_name
 from dtflow.persistence.store import PersistenceError
 from dtflow.services.lora_family import LoraFamily, detect_lora_family, validate_converted_lora
+from dtflow.services.lora_auto_naming import auto_prepare_metadata
 from dtflow.services.lora_naming import LoraPrepareMetadata
 from dtflow.services.lora_store import LoraStore
 
@@ -167,7 +168,7 @@ class AssetService:
         provenance: str = "",
         metadata: LoraPrepareMetadata | None = None,
     ) -> PreparedAsset:
-        """Explicit Prepare; accept a managed name before any provider negotiation."""
+        """Explicit Prepare; derive a usable managed name before provider negotiation."""
         path = Path(path)
         if metadata is not None:
             try:
@@ -179,7 +180,6 @@ class AssetService:
             identifier = selected_identifier
         stat, digest = await asyncio.to_thread(_observe, path)
         await asyncio.to_thread(validate_converted_lora, path)
-        content = AssetContent("lora", identifier or path.name, digest, stat.st_size, provenance)
         retained = None
         if self.store is not None:
             # Keep the durable copy first, so a failed or interrupted upload never costs the user the file.
@@ -187,6 +187,12 @@ class AssetService:
             diagnostic_event(
                 log, "assets.copy_kept", level=logging.INFO, data={"size": stat.st_size, "sha": digest[:8]}
             )
+        detected = await asyncio.to_thread(detect_lora_family, retained.path if retained else path)
+        if metadata is None and identifier is None:
+            metadata = await auto_prepare_metadata(self.registry, path.name, digest, stat.st_size, detected.family)
+            if metadata is not None:
+                identifier = metadata.identifier
+        content = AssetContent("lora", identifier or path.name, digest, stat.st_size, provenance)
         key = (
             self.backend.backend_id,
             self.backend.origin,
@@ -198,7 +204,6 @@ class AssetService:
         )
         task = _INFLIGHT.get(key)
         if task is None or task.done():
-            detected = await asyncio.to_thread(detect_lora_family, retained.path if retained else path)
             diagnostic_event(
                 log,
                 "assets.lora_family_detected",
