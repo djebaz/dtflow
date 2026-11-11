@@ -17,6 +17,8 @@ Changes through 6.2.0 are consolidated in [DTFlow 6.2.0](v6.2.0.md); its publish
 
 ## Changed
 
+- Queue Pair/Cross creation now binds confirmed LoRA receipts per effective item, including weight sweeps, rather than validating unused Generate LoRAs. The existing live preview displays the full effective LoRA stack and weights; the Queue draft keeps its original suggestions when Generate changes. Source-reviewed; Windows/DT+ Queue acceptance pending.
+
 - Switching a saved/environment DT+ API key on Connection now automatically checks that connection and reloads its model/LoRA inventory through the existing refresh path. Previous-key availability is cleared immediately; rapid switches coalesce refreshes and stale asynchronous results are discarded. Manual Check and Reload Models remain available; no generation, uploads or billing operations are added. Source-reviewed; Windows/key-switch smoke pending.
 
 - Generation-end gallery snapshot publication now reports a short-lived shared-cache lock miss as INFO rather than WARNING. The diagnostic event remains available; app-close or other publication failures still warn. No retry, image persistence or Images fallback behavior changed. Source-reviewed only; Windows contention/freshness acceptance remains open.
