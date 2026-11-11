@@ -708,7 +708,7 @@ class LoraAssetPanel:
             else Presentation(
                 "ok" if record["state"] == "confirmed" else "warning",
                 "Receipt " + record["state"],
-                f"{record['identifier']} ({record['evidence']}).",
+                f"{display_label(record['identifier'])} ({record['evidence']}).",
             )
         )
         strip.complete(
@@ -726,7 +726,7 @@ class LoraAssetPanel:
                 Presentation(
                     "ok" if record["state"] == "confirmed" else "warning",
                     "Receipt " + record["state"],
-                    f"{record['identifier']} · {self.family_labels().get(record['identifier'], 'Unknown')} "
+                    f"{display_label(record['identifier'])} · {self.family_labels().get(record['identifier'], 'Unknown')} "
                     f"({record['evidence']}).",
                 ),
             )
@@ -784,7 +784,9 @@ class LoraAssetPanel:
                 if announce:
                     self._show(
                         self.page.assetStatusLabel,
-                        Presentation("ok", "Receipt bound", f"{identifier} uses its confirmed cloud receipt."),
+                        Presentation(
+                            "ok", "Receipt bound", f"{display_label(identifier)} uses its confirmed cloud receipt."
+                        ),
                     )
                 return True
         return False

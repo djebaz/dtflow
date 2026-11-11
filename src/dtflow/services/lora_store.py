@@ -21,6 +21,7 @@ from pathlib import Path
 from dtflow.core.models import ValidationError
 from dtflow.diagnostics import event as diagnostic_event
 from dtflow.persistence.assets import _lock_file
+from dtflow.services.lora_naming import display_label
 
 log = logging.getLogger(__name__)
 STORE_DIR = "lora_files"
@@ -117,9 +118,11 @@ class LoraStore:
         try:
             digest, total = _hash(retained.path)
         except OSError as exc:
-            raise ValidationError(f"Retained LoRA {retained.name} could not be read.") from exc
+            raise ValidationError(f"Retained LoRA {display_label(retained.name)} could not be read.") from exc
         if (digest, total) != (retained.sha256, retained.size):
-            raise ValidationError(f"Retained LoRA {retained.name} no longer matches its recorded checksum.")
+            raise ValidationError(
+                f"Retained LoRA {display_label(retained.name)} no longer matches its recorded checksum."
+            )
 
     def retain(self, source: Path, sha256: str, size: int, *, managed_name: str | None = None) -> RetainedFile:
         """Copy new content directly to its managed name, keeping one indexed copy per hash."""

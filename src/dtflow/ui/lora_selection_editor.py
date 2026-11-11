@@ -200,7 +200,7 @@ def edit_lora_selection(
         )
         weights[name] = weight
         slider.setValue(max(slider.minimum(), min(slider.maximum(), round(weight * WEIGHT_STEPS))))
-        slider.setAccessibleName(f"{name} weight")
+        slider.setAccessibleName(f"{_display_label(name)} weight")
         label.setText(format_weight(weight))
 
         def moved(value: int) -> None:
@@ -215,7 +215,7 @@ def edit_lora_selection(
         if multi_weight:
             extra[name] = list(collected[name]) if len(collected.get(name, ())) > 1 else []
             row.loraSelectionAddWeightButton.setVisible(True)
-            row.loraSelectionAddWeightButton.setAccessibleName(f"Add weight for {name}")
+            row.loraSelectionAddWeightButton.setAccessibleName(f"Add weight for {_display_label(name)}")
 
             def render_chips() -> None:
                 host = row.loraSelectionWeightChipsHost
@@ -230,7 +230,7 @@ def edit_lora_selection(
                     chip.setProperty("role", "valueChip")
                     chip.setMinimumHeight(CHIP_HEIGHT)  # the row would otherwise squeeze it to an empty bar
                     chip.setToolTip(f"Remove weight {format_weight(value)}")
-                    chip.setAccessibleName(f"Remove weight {format_weight(value)} for {name}")
+                    chip.setAccessibleName(f"Remove weight {format_weight(value)} for {_display_label(name)}")
                     chip.clicked.connect(lambda _=False, i=index: drop(i))
                     chips.insertWidget(index, chip)
                 host.setMinimumHeight(CHIP_HEIGHT + 2 if extra[name] else 0)

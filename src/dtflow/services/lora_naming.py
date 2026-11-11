@@ -617,6 +617,20 @@ def display_label(identifier: str) -> str:
     return f"{match['short']}[{match['tag']}]" if match else identifier
 
 
+_EMBEDDED_MANAGED = re.compile(r"(?i)(?<![A-Za-z0-9_])[A-Za-z0-9_]{1,20}_[A-Za-z0-9]+_lora_(?:f16|q8p)\.ckpt")
+
+
+def relabel_text(text: str) -> str:
+    """``text`` with every LoRA filename in it shown as its label. For display only: stored messages, warnings and
+    logs keep the exact filename, and only the managed-filename shape or a saved short name is replaced."""
+    if not text:
+        return text
+    for identifier in sorted(_LABEL_OVERRIDES, key=len, reverse=True):
+        if identifier in text:
+            text = text.replace(identifier, _LABEL_OVERRIDES[identifier])
+    return _EMBEDDED_MANAGED.sub(lambda match: display_label(match.group(0)), text)
+
+
 def lora_offer(loras: dict, lora_versions: dict, model_versions: Sequence[str | None]) -> dict:
     """The LoRAs to offer for the chosen checkpoints: those whose exact family matches one of the checkpoints'.
 

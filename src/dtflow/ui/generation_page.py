@@ -51,6 +51,7 @@ from dtflow.services.connection import (
 )
 from dtflow.services.image_preparation import prepare_edit_inputs
 from dtflow.services.image_quality import assess_file
+from dtflow.services.lora_naming import relabel_text
 from dtflow.services.preflight import checkpoint_exact_version
 from dtflow.services.presets import apply_preset, builtin_presets, load_presets, save_preset
 from dtflow.services.session import (
@@ -1220,7 +1221,9 @@ class GenerationPage:
                 "assets_failed": "error",
                 "assets_inconclusive": "warning",
             }
-            activity_strip(self.page).complete(event.kind, titles[event.kind], event.stage, states[event.kind])
+            activity_strip(self.page).complete(
+                event.kind, titles[event.kind], relabel_text(event.stage), states[event.kind]
+            )
             return
         if event.kind == "preparing" and event.stage == "retrying" and self._request is not None:
             # The one automatic retry (#241) runs under a new request identity; Stop reads that attempt's evidence.

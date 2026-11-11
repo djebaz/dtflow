@@ -28,7 +28,7 @@ from dtflow.persistence.settings import SettingsError, load_cloud_concurrency, v
 from dtflow.persistence.store import StateBusyError
 from dtflow.services.connection import Presentation, present_generation_failure
 from dtflow.services.dynamic_prompts import decode_runs
-from dtflow.services.lora_naming import display_label, lora_offer
+from dtflow.services.lora_naming import display_label, lora_offer, relabel_text
 from dtflow.services.image_preparation import prepare_edit_inputs
 from dtflow.services.plan_errors import PlanError
 from dtflow.services.planning import Plan, PlanTable, describe_plan, expand_plan, new_rng_seed, plan_size, resolve_plan
@@ -2477,7 +2477,7 @@ class QueuePage:
         if failure is not None:
             if isinstance(failure, PlanError | FormError):
                 self._plan_failed(failure)
-                self._quick_report(Presentation("error", "Queue not created", sentence(str(failure))))
+                self._quick_report(Presentation("error", "Queue not created", sentence(relabel_text(str(failure)))))
                 return
             self._quick_report(present_generation_failure(failure))
             return
@@ -2813,7 +2813,7 @@ class QueuePage:
         """One place for a planning error: beside the plan, with the owning field marked."""
         error = plan_error(exc)
         self._mark_plan(error.widget)
-        self._show(self.page.planCountLabel, "error", sentence(str(error)))
+        self._show(self.page.planCountLabel, "error", sentence(relabel_text(str(error))))
         self.page.startQueueButton.setText("Start now")
         self.plan_model.clear()
         self._sync_preview_table_visibility()
@@ -2822,7 +2822,7 @@ class QueuePage:
         if failure is not None:
             if isinstance(failure, PlanError | FormError):
                 self._plan_failed(failure)
-                self._message(Presentation("error", "Queue not created", sentence(str(failure))))
+                self._message(Presentation("error", "Queue not created", sentence(relabel_text(str(failure)))))
                 return
             self._message(present_generation_failure(failure))
             return
@@ -2873,7 +2873,7 @@ class QueuePage:
                 activity_strip(self.page).complete(
                     f"queue-assets:{wrapped.queue_id}:{event.kind}",
                     titles[event.kind],
-                    event.stage,
+                    relabel_text(event.stage),
                     state[event.kind],
                 )
             return

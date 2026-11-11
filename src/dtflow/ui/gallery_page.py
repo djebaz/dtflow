@@ -436,6 +436,7 @@ class GalleryPage(QObject):
     """Bind saved-output services to the existing Designer gallery without owning generation."""
 
     grid_position_changed = Signal(int, int)
+    _facet_models: tuple[str, ...] = ()
 
     def __init__(
         self,
@@ -700,7 +701,9 @@ class GalleryPage(QObject):
 
         self.prompt.setToolTip("Case-insensitive literal search in recorded positive prompts.")
         self.model.setToolTip("Exact recorded model identifier; the list is a bounded convenience facet.")
-        self.lora.setToolTip("Exact recorded LoRA identifier; the list is a bounded convenience facet.")
+        self.lora.setToolTip(
+            "Pick a LoRA by its short name, or type a recorded filename; the list is a bounded convenience facet."
+        )
         self.date_filter.setToolTip("Local calendar date or range. Examples: 2026-10-06 or 2026-10-01..2026-10-06.")
         self.dimensions.setToolTip(
             "Small under 400 px, Medium under 600, Large under 1200, Big 1200 and up (longer side); typing exact dimensions such as 1024 × 1024 also works."
@@ -1373,7 +1376,7 @@ class GalleryPage(QObject):
         filters = document.get("filters", {}) if isinstance(document.get("filters"), dict) else {}
         self.prompt.setText(str(filters.get("prompt", stored_query.prompt)))
         self.model.setCurrentText(str(filters.get("model", stored_query.model or "All models")))
-        self.lora.setCurrentText(str(filters.get("lora", stored_query.lora or "All LoRAs")))
+        self._set_lora_filter(str(filters.get("lora", stored_query.lora or "All LoRAs")))
         self.date_filter.setCurrentText(str(filters.get("date", "All time")))
         dimensions = filters.get("dimensions")
         if dimensions is None and stored_query.width and stored_query.height:
@@ -1736,7 +1739,7 @@ class GalleryPage(QObject):
             lowered = ratio_text.casefold()
             ratio = lowered if lowered in ("square", "portrait", "landscape") else ratio_text.replace("×", ":")
         model = self.model.currentText().strip()
-        lora = self.lora.currentText().strip()
+        lora = self._lora_identifier()
         sort = SORT_LABELS.get(self.sort.currentText(), "newest")
         return GalleryQuery(
             prompt=self.prompt.text(),
@@ -2138,12 +2141,62 @@ class GalleryPage(QObject):
         )
         strip.status(key, text, self._dismiss_snapshot_warning)
 
+    def _lora_labels(self, identifiers: tuple[str, ...]) -> tuple[str, ...]:
+        """Shown names for the LoRA filter: ShortName[Tag], with the filename added where two would read the same."""
+        labels = [display_label(identifier) for identifier in identifiers]
+        return tuple(
+            label if labels.count(label) == 1 else f"{label} ({identifier})"
+            for label, identifier in zip(labels, identifiers, strict=True)
+        )
+
+    def _lora_identifier(self) -> str:
+        """The recorded identifier the filter means: the picked item's data, else a unique shown name, else the text."""
+        combo = self.lora
+        text = combo.currentText().strip()
+        index = combo.currentIndex()
+        if index >= 0 and combo.itemText(index) == combo.currentText():
+            data = combo.itemData(index)
+            return str(data) if data else text
+        matches = [
+            combo.itemData(i)
+            for i in range(1, combo.count())
+            if combo.itemText(i).casefold() == text.casefold() and combo.itemData(i)
+        ]
+        return str(matches[0]) if len(matches) == 1 else text
+
+    def _set_lora_filter(self, identifier: str) -> None:
+        index = self.lora.findData(identifier) if identifier else -1
+        if index >= 0:
+            self.lora.setCurrentIndex(index)
+        else:
+            self.lora.setCurrentText(identifier)
+
+    def refresh_lora_labels(self) -> None:
+        """Re-show the LoRA filter names after the saved short names arrive, keeping the chosen identifier."""
+        identifiers = tuple(str(self.lora.itemData(i)) for i in range(1, self.lora.count()) if self.lora.itemData(i))
+        if identifiers:
+            self._populate_facets(self._facet_models, identifiers)
+
     def _populate_facets(self, models: tuple[str, ...], loras: tuple[str, ...]) -> None:
+        self._facet_models = models
+        labels = self._lora_labels(loras)
         for combo, placeholder, values in (
             (self.model, "All models", models),
-            (self.lora, "All LoRAs", loras),
+            (self.lora, "All LoRAs", labels),
             (self.dimensions, "Any size", tuple(SIZE_CLASS_LABELS)),
         ):
+            if combo is self.lora:
+                current = self._lora_identifier()
+                if tuple(combo.itemText(i) for i in range(combo.count())) == (placeholder, *values):
+                    continue
+                combo.blockSignals(True)
+                combo.clear()
+                combo.addItem(placeholder)
+                for label, identifier in zip(values, loras, strict=True):
+                    combo.addItem(label, identifier)
+                self._set_lora_filter(current if current and current != placeholder else placeholder)
+                combo.blockSignals(False)
+                continue
             current = combo.currentText()
             if tuple(combo.itemText(i) for i in range(combo.count())) == (placeholder, *values):
                 continue
@@ -3040,7 +3093,10 @@ class GalleryPage(QObject):
             cell.setToolTip(f"<p style='white-space:pre-wrap'>{tagged_html(item.prompt, runs)}</p>")
 
     def _entry_fields(self, item):
-        loras = "; ".join(f"{identifier} · {weight:g} · Unknown" for identifier, weight in item.loras) or "None"
+        loras = (
+            "; ".join(f"{display_label(identifier)} · {weight:g} · Unknown" for identifier, weight in item.loras)
+            or "None"
+        )
         return (
             "",
             "",
@@ -3513,7 +3569,11 @@ class GalleryPage(QObject):
             self._widget("galleryLoRALabel", QLabel).setText("LoRAs · none")
             return
         self._widget("galleryLoRALabel", QLabel).setText("LoRAs")
-        full = "; ".join(f"{identifier} · {weight:g}" for identifier, weight in item.loras)
+        full = "\n".join(
+            f"{display_label(identifier)} · {weight:g}"
+            + (f"  ({identifier})" if display_label(identifier) != identifier else "")
+            for identifier, weight in item.loras
+        )
         first = item.loras[0]
         chips[0].show()
         self._widget("galleryLoRAName1", QLabel).setText(display_label(first[0]))
@@ -4405,7 +4465,7 @@ class GalleryPage(QObject):
             "filters": {
                 "prompt": self.prompt.text(),
                 "model": self.model.currentText(),
-                "lora": self.lora.currentText(),
+                "lora": self._lora_identifier(),
                 "date": self.date_filter.currentText(),
                 "dimensions": self.dimensions.currentText(),
                 "ratio": self.ratio.currentText(),

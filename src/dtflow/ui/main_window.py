@@ -1881,6 +1881,8 @@ class MainWindow:
         self._lora_records = records
         set_label_overrides(label_overrides(records.values()))
         self.generation.lora.refresh_labels()
+        self.gallery.refresh_lora_labels()
+        self.queue_page.queueItemsView.viewport().update()  # painted LoRA names follow the saved short names
         self._render_lora_table()
 
     def _render_lora_table(self) -> None:

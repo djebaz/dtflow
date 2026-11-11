@@ -48,7 +48,7 @@ from dtflow.ui.file_dialogs import QFileDialog
 from dtflow.core import workflows as wf
 from dtflow.core.output_layout import identity_from_path
 from dtflow.core.models import LoRASelection, ValidationError
-from dtflow.services.lora_naming import display_label, lora_offer
+from dtflow.services.lora_naming import display_label, lora_offer, relabel_text
 from dtflow.services import workflow_library as library
 from dtflow.ui.activity_strip import activity_strip
 from dtflow.ui.inline_feedback import InlineNotice, confirm_action, edit_text, feedback
@@ -103,7 +103,7 @@ RECENT_RUNS = 20
 
 
 def step_message(step: dict) -> str:
-    return "\n".join(filter(None, (step.get("message"), *step.get("warnings", ()))))
+    return relabel_text("\n".join(filter(None, (step.get("message"), *step.get("warnings", ())))))
 
 
 def _repolish(widget: QWidget, **properties) -> None:
@@ -1267,7 +1267,7 @@ class WorkflowsPage(QObject):
                 or "No LoRA"
             )
             summary = _label(text, "secondary")
-            summary.setToolTip(text)
+            summary.setToolTip("\n".join(f"{display_label(name)}\n{name}" for name, _ in value) or text)
             button = QPushButton("Edit LoRAs…", host)
             button.setAccessibleName(f"Edit LoRAs for node {node_id}")
 
@@ -1704,7 +1704,7 @@ class WorkflowsPage(QObject):
                 key = (step["node_id"], warning)
                 if key not in self._warning_seen:
                     self._warning_seen.add(key)
-                    fresh.append(f"{step_name(step)}: {warning}")
+                    fresh.append(f"{step_name(step)}: {relabel_text(warning)}")
         if fresh:
             text = "\n".join(fresh[:2])
             if len(fresh) > 2:
