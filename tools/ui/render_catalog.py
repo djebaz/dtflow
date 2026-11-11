@@ -12,7 +12,7 @@ import os
 from dataclasses import dataclass
 from pathlib import Path
 
-CATEGORY_ORDER = ("shell", "connection", "generate", "inpaint", "queues", "scripts", "workflows", "images", "logs")
+CATEGORY_ORDER = ("shell", "connection", "generate", "lora", "inpaint", "queues", "scripts", "workflows", "images", "logs")
 STAGE_ORDER = ("empty", "setup", "ready", "running", "results", "failure", "recovery", "layout")
 CATALOG_PATH = Path(__file__).with_suffix(".json")
 
@@ -22,6 +22,7 @@ CATALOG_PATH = Path(__file__).with_suffix(".json")
 WORKER_FIXTURES = {
     "connection": ("connection-setup", "connection-management", "connection-usage", "connection-outcomes"),
     "generate": ("generate-configuration",),
+    "lora": ("lora-prepare",),
     "queues": ("active-queue", "item-table", "queue-template"),
     "main": ("generation-flow", "queue", "shell", "inpaint", "logs"),
     "scripts": ("scripts",),
@@ -34,6 +35,7 @@ WORKER_ORDER = (
     "workspace",
     "connection",
     "generate",
+    "lora",
     "queues",
     "gallery",
     "main",
@@ -48,6 +50,7 @@ WORKER_COST = {
     "workspace": (6.0, 0.40),
     "connection": (3.0, 0.41),
     "generate": (3.0, 0.37),
+    "lora": (3.0, 0.35),  # Canonical Prepare overlay; no provider work.
     "queues": (3.0, 0.42),
     "main": (6.0, 0.41),
     "scripts": (6.0, 0.90),

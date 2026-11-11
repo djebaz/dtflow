@@ -23,6 +23,7 @@
       "connection-28-export-idle",
       "connection-46-usage-per-key-thresholds"
     ],
+    "page.lora": ["lora-prepare-wide", "lora-prepare-compact"],
     "page.generate": [
       "generate-20-local-controls",
       "generate-02-portrait",

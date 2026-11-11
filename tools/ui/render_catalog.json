@@ -1,6 +1,8 @@
 {
   "schema_version": 2,
   "states": [
+    {"id": "lora-prepare-wide", "category": "lora", "subcategory": "prepare", "fixture": "lora-prepare", "stage": "ready", "level": "f", "path": "lora-prepare-wide.png"},
+    {"id": "lora-prepare-compact", "category": "lora", "subcategory": "prepare", "fixture": "lora-prepare", "stage": "layout", "level": "f", "path": "lora-prepare-compact.png"},
     {"id": "shell-30-startup-splash", "category": "shell", "subcategory": "startup", "fixture": "startup-splash", "stage": "empty", "level": "m", "path": "shell-30-startup-splash.png"},
     {"id": "shell-01-about", "category": "shell", "subcategory": "feedback", "fixture": "shell", "stage": "setup", "level": "f", "path": "shell-01-about.png"},
     {"id": "shell-05-reconciliation-deferred", "category": "shell", "subcategory": "feedback", "fixture": "shell", "stage": "setup", "level": "m", "path": "shell-05-reconciliation-deferred.png"},

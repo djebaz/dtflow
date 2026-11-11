@@ -140,6 +140,7 @@ FLOW_FOLLOWERS = ("queue", "shell", "inpaint", "logs")  # later fixtures in the 
 WORKSPACE_GROUPS = {
     "connection": ("connection-setup", "connection-outcomes", "connection-management", "connection-usage"),
     "generate": ("generate-configuration",),
+    "lora": ("lora-prepare",),
     "queues": ("active-queue", "item-table", "queue-template"),
     "images": ("gallery-composition",),
 }
@@ -447,6 +448,8 @@ def render_workspace_states(app, state, out):
             render_connection_usage_states(shell, out)
         if wants("generate"):
             render_generate_configuration_states(shell, out)
+        if wants("lora"):
+            render_lora_prepare_states(shell, out)
         if wants("queues"):
             render_active_queue_states(shell, out)
             render_item_table_states(shell, out, state)
@@ -456,6 +459,43 @@ def render_workspace_states(app, state, out):
     finally:
         shell.runner.shutdown()
         dispose_window(app, shell.form)
+
+
+
+@fixture("lora-prepare")
+def render_lora_prepare_states(shell, out):
+    """Capture only the canonical in-window Prepare UI using synthetic LoRA metadata."""
+    from dtflow.services.lora_family import LoraFamily
+    from dtflow.ui.prepare_lora_editor import PrepareBatchEditor
+
+    shell.form.generationNavigationButton.click()
+    shell.form.resize(1600, 1000)
+    paths = [
+        "portrait_8e62d922f3a4c82b1aef990108a2fae9_lora_f16.ckpt",
+        "cinematic_20261109_f3e817d0a432bf_lora_q8p.ckpt",
+        "detail_boost_ep12_3a32f30bc9e7821d_911f.ckpt",
+        "nak_lora_f16.ckpt",
+        "portrait_77ad2a_lora_f16.ckpt",
+    ]
+    editor = PrepareBatchEditor(shell.generation_page, paths, on_prepare=lambda _batch: None)
+    editor.set_inspection(
+        (
+            LoraFamily("krea_2", "file"),
+            LoraFamily("z_image", "file"),
+            LoraFamily(),
+            LoraFamily("krea_2", "file"),
+            LoraFamily("krea_2", "file"),
+        ),
+        ("krea_2", "z_image", "flux1"),
+        (),
+    )
+    # No file bytes are accessed, no provider client is opened, and Prepare is never clicked.
+    QTest.qWait(80)
+    save(shell.form, out, "lora-prepare-wide")
+    shell.form.resize(1080, 860)
+    QTest.qWait(80)
+    save(shell.form, out, "lora-prepare-compact")
+    shell.inline.dismiss()
 
 
 @fixture("connection-outcomes")
