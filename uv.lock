@@ -203,7 +203,7 @@ dev = [
 mask-poc = [
     { name = "numpy", specifier = "==2.3.5" },
     { name = "onnxruntime", specifier = ">=1.31.1,<2" },
-    { name = "pillow", specifier = ">=12.1,<13" },
+    { name = "pillow", specifier = ">=13.0.0,<14" },
 ]
 
 [[package]]
