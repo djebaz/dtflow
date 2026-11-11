@@ -16,6 +16,7 @@ import json
 import re
 import sqlite3
 import struct
+from contextlib import closing
 from dataclasses import dataclass
 from collections.abc import Iterable
 
@@ -68,7 +69,7 @@ def detect_lora_family(path: Path) -> LoraFamily:
         return LoraFamily()
     uri = path.resolve().as_uri() + "?mode=ro"
     try:
-        with sqlite3.connect(uri, uri=True, timeout=1.0) as db:
+        with closing(sqlite3.connect(uri, uri=True, timeout=1.0)) as db:
             db.execute("PRAGMA query_only=ON")
             if not db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='tensors'").fetchone():
                 return LoraFamily()
@@ -216,6 +217,48 @@ def detect_lora_family(path: Path) -> LoraFamily:
         if matched
     ]
     return LoraFamily(matches[0], "file") if len(matches) == 1 else LoraFamily()
+
+
+def validate_converted_lora(path: Path) -> None:
+    """Reject malformed converted LoRA containers before retention or cloud negotiation.
+
+    Container validity is separate from architecture classification: a genuine
+    sparse adapter can be structurally sound even when its family is Unknown.
+    Only SQLite metadata and blob lengths are read, never tensor weight bytes.
+    """
+    path = Path(path)
+    uri = path.resolve().as_uri() + "?mode=ro"
+    try:
+        with closing(sqlite3.connect(uri, uri=True, timeout=1.0)) as db:
+            db.execute("PRAGMA query_only=ON")
+            columns = {row[1] for row in db.execute("PRAGMA table_info(tensors)")}
+            name_column = next((name for name in ("name", "key", "tensor_name") if name in columns), None)
+            shape_column = next((name for name in ("dim", "shape", "dims", "dimensions") if name in columns), None)
+            if not name_column or not shape_column or "data" not in columns:
+                raise ValidationError("Not a converted Draw Things LoRA: tensor metadata is missing.")
+            # Names/shape columns are drawn exclusively from the fixed allowlists.
+            rows = db.execute(
+                f"SELECT {name_column}, {shape_column}, length(data), typeof(data) FROM tensors LIMIT ?",
+                (MAX_TENSORS + 1,),
+            ).fetchall()
+    except (OSError, sqlite3.Error, ValueError) as exc:
+        raise ValidationError("Not a readable Draw Things LoRA checkpoint.") from exc
+    if not rows or len(rows) > MAX_TENSORS:
+        raise ValidationError("Converted LoRA has no usable tensor entries.")
+
+    pairs: dict[str, set[str]] = {}
+    for name, shape, length, storage in rows:
+        if not isinstance(name, str):
+            raise ValidationError("Converted LoRA has an invalid tensor entry.")
+        suffix = "up" if name.endswith("__up__") else "down" if name.endswith("__down__") else None
+        if suffix is None or not name.startswith("__"):
+            continue
+        if storage != "blob" or not isinstance(length, int) or length <= 0 or not _dimensions(shape):
+            raise ValidationError("Converted LoRA has missing or invalid tensor data.")
+        stem = name[: -len(suffix) - 4]
+        pairs.setdefault(stem, set()).add(suffix)
+    if not any(parts == {"up", "down"} for parts in pairs.values()):
+        raise ValidationError("Converted LoRA has no complete up/down tensor pair.")
 
 
 def retained_families(state: Path, identities: Iterable[tuple[str, int]]) -> dict[tuple[str, int], LoraFamily]:
