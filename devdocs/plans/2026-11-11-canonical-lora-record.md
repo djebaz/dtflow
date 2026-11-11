@@ -56,6 +56,17 @@ Store `short_name` and `format_code` separately; `FamilyTag` is a derived shortc
 
 **The #370/naming integration branch supplies the local naming service, canonical occupied-name snapshot, atomic managed identifier + intent, and optional explicit Prepare metadata handoff.** #373 still owns the actual batch editor, row lifecycle, labels, partial batch authorization, trigger-prefix toggles and optional DT+ metadata sync. The existing desktop file-picker path is not yet the approved batch editor.
 
+## Local managed-copy naming follow-up (#383)
+
+The owner approved service-side automatic first-time naming for **new and previously retained** LoRAs without a separate approval action (2026-11-11). This approval is **local naming only** and does not authorize changes to the still-design-only Prepare editor in PR #382. Existing managed identifiers remain stable; a later explicit Re-Prepare is required to change an accepted identity.
+
+- During an ordinary already-authorized Prepare, the shared naming service proposes a short name, uses only the independently detected or saved user-declared exact architecture, and selects the stored F16/Q8P format or the approved filename hint/default. If all required information is available, the new managed identifier is accepted in the existing Prepare intent transaction before DT+ negotiation. An unknown architecture or unusable short-name proposal is not silently guessed.
+- Previously retained files with no accepted managed identifier receive a **first local assignment** on asset/Connection refresh when their canonical content row has a reliable detected architecture or a user declaration. Proposals reuse the canonical occupied-name snapshot, preserve saved short names/formats, and pass the case-insensitive uniqueness check in a local SQLite writer transaction. This one-time assignment is not a migration between schema versions and requires no provider call or Prepare receipt.
+- The physical copy in `.dtflow/lora_files/` adopts the accepted `ShortName_Tag_LoRA_Format.ckpt` filename using content-verified no-overwrite filesystem operations and a durably updated retained-file index. Existing receipts, account-scoped remote identifiers, original external filenames and source stamps do not change. Accepted names with mismatched physical copy names are aligned the same way.
+- Unknown architecture, missing/weak name suggestion, conflicts with protected user edits and unsafe physical collisions remain unresolved for the later editor; no automatic overwrite or remote upload is attempted. Previously accepted names are never reallocated.
+
+This is a deliberate, narrow exception to the rule that metadata-only edits do not rename assets: the automatic backfill assigns **only previously null** managed identifiers, then synchronizes the retained copy's local basename. The runtime Prepare UI and its authorization contract remain unchanged pending PR #382.
+
 ## Trigger and provider boundary
 
 Save user trigger words locally. `override.loras[].prefix` transmission and independent Generate/Queue/Workflow/Script prompt-insertion settings remain #373 work; the existing wire override currently transmits an empty prefix. DT+ Cloud Asset metadata-write support is **unverified**. Never invent a field on `/get_byom_urls`, mutate signed PUTs, imply that remote metadata was saved, or block successful file preparation because optional remote sync is absent.
