@@ -241,6 +241,14 @@ class PrepareBatchEditor:
                 for label in (row.widget.prepareRowStatus, row.widget.prepareStatusDot):
                     label.style().unpolish(label)
                     label.style().polish(label)
+                source_note = row.widget.prepareFileEvidence
+                source_note.setText(
+                    "Inspecting file…"
+                    if not self.inspected
+                    else "Detected from file"
+                    if row.detected
+                    else "Unknown inspection"
+                )
                 family_note = row.widget.prepareArchitectureSource
                 if not self.inspected:
                     family_note.setText("Inspecting file…")
