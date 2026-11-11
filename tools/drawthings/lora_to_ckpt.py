@@ -207,9 +207,93 @@ def resolve_krea2(module: str) -> Target | None:
     return None
 
 
+_ZIMAGE_BLOCK = re.compile(r"^(layers|noise_refiner|context_refiner)_(\d+)_(\w+)$")
+_ZIMAGE_COUNTS = {"layers": 30, "noise_refiner": 2, "context_refiner": 2}
+_ZIMAGE_LEAVES = {
+    "attention_to_q": "q",
+    "attention_to_k": "k",
+    "attention_to_v": "v",
+    "attention_to_out_0": "o",
+    "attention_to_out": "o",
+    "attention_out": "o",
+    "feed_forward_w1": "ffn_gate_proj",
+    "feed_forward_w3": "ffn_up_proj",
+    "feed_forward_w2": "ffn_down_proj",
+}
+
+
+def resolve_zimage(module: str) -> Target | None:
+    """Z Image (Turbo): 30 main layers plus 2 noise refiner and 2 context refiner blocks.
+
+    Names follow the Swift model: ``t-<group>_<layer>-<block index>-0`` with an empty group
+    for the main layers. Fused sources (``attention.qkv`` and ``adaLN_modulation.0``) map
+    to several targets and are split by ``split_fused``.
+    """
+    match = _ZIMAGE_BLOCK.match(module)
+    if match is None:
+        return None
+    group, index, leaf = match.group(1), int(match.group(2)), match.group(3)
+    if index >= _ZIMAGE_COUNTS[group]:
+        return None
+    prefix = "" if group == "layers" else f"{group}_"
+
+    def name(layer: str) -> str:
+        return f"t-{prefix}{layer}-{index}-0"
+
+    if leaf in _ZIMAGE_LEAVES:
+        return Target("dit", (name(_ZIMAGE_LEAVES[leaf]),))
+    if leaf == "attention_qkv":
+        return Target("dit", (name("q"), name("k"), name("v")))
+    if leaf == "adaLN_modulation_0" and group != "context_refiner":
+        return Target("dit", tuple(name(f"ada_ln_{k}") for k in range(4)))
+    return None
+
+
 FAMILIES: dict[str, Resolver] = {
     "krea2": resolve_krea2,
+    "zimage": resolve_zimage,
 }
+
+
+# --------------------------------------------------------------------------- fused targets
+
+
+def is_diagonal_up(up: np.ndarray, count: int) -> bool:
+    """True when ``up`` is block diagonal over ``count`` parts (off-diagonal blocks all zero bytes)."""
+    if up.ndim != 2 or up.shape[1] % count != 0:
+        return False
+    rows = up.shape[0] // count
+    cols = up.shape[1] // count
+    bits = up.view(np.uint16)
+    for i in range(count):
+        start = i * rows
+        end = (i + 1) * rows if i < count - 1 else up.shape[0]
+        for j in range(count):
+            if i != j and bits[start:end, j * cols : (j + 1) * cols].any():
+                return False
+    return True
+
+
+def split_fused(up: np.ndarray, down: np.ndarray, count: int) -> list[tuple[np.ndarray, np.ndarray]]:
+    """Split one fused LoRA pair into ``count`` pairs, as the Swift ``ModelWeightElement.write`` does."""
+    if count == 1:
+        return [(up, down)]
+    if up.shape[0] % count != 0:
+        raise ConversionError(f"Cannot split {up.shape[0]} output rows into {count} equal parts. {COLAB_HINT}")
+    rows = up.shape[0] // count
+    if is_diagonal_up(up, count):
+        cols = up.shape[1] // count
+        if down.shape[0] % count != 0:
+            raise ConversionError(f"Cannot split {down.shape[0]} rank rows into {count} parts. {COLAB_HINT}")
+        down_rows = down.shape[0] // count
+        return [
+            (
+                up[i * rows : (i + 1) * rows, i * cols : (i + 1) * cols],
+                down[i * down_rows : (i + 1) * down_rows],
+            )
+            for i in range(count)
+        ]
+    return [(up[i * rows : (i + 1) * rows], down) for i in range(count)]
 
 
 # --------------------------------------------------------------------------- scaling
@@ -219,9 +303,9 @@ def _scalar(array: np.ndarray) -> np.float32:
     return np.float32(np.asarray(array, dtype=np.float32).reshape(-1)[0])
 
 
-def scale_up(tensor_f16: np.ndarray, alpha: np.float32 | None, scale: float) -> np.ndarray:
+def scale_up(tensor_f16: np.ndarray, alpha: np.float32 | None, scale: float, rank: int) -> np.ndarray:
     """Same arithmetic as the Swift importer for ``lora_up`` tensors."""
-    rank = np.float32(tensor_f16.shape[1])
+    rank = np.float32(rank)
     if alpha is not None and abs(float(alpha) - float(rank)) > 1e-5:
         factor = np.float32(float(alpha / rank) * math.sqrt(scale))
     elif scale != 1:
@@ -321,11 +405,11 @@ def convert(
         down = st.read(roles["down"].key).astype(np.float16)
         if up.ndim != 2 or down.ndim != 2 or up.shape[1] != down.shape[0]:
             raise ConversionError(f"{module}: unexpected shapes up {up.shape} and down {down.shape}. {COLAB_HINT}")
-        up = scale_up(up, alpha, scale)
-        down = scale_down(down, scale)
-        for name in target.names:
-            out[f"__{target.prefix}__[{name}]__up__"] = up
-            out[f"__{target.prefix}__[{name}]__down__"] = down
+        pieces = split_fused(up, down, len(target.names))
+        for name, (piece_up, piece_down) in zip(target.names, pieces, strict=True):
+            # The rank used for alpha scaling is the one of the whole fused tensor, as in Swift.
+            out[f"__{target.prefix}__[{name}]__up__"] = scale_up(piece_up, alpha, scale, rank=up.shape[1])
+            out[f"__{target.prefix}__[{name}]__down__"] = scale_down(piece_down, scale)
     if unmatched:
         sample = ", ".join(unmatched[:5])
         raise ConversionError(
