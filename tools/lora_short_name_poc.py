@@ -89,44 +89,43 @@ def _label(tokens: list[str], version: str | None) -> str:
 
 
 def _candidates(groups: list[list[str]], version: str | None) -> list[tuple[str, float]]:
-    words = [word for group in groups for word in group]
+    # Keep the first descriptive word as the anchor. A word that is itself
+    # too long is skipped intact; never truncate it or favor trailing numbers.
+    words: list[str] = []
+    group_ends: set[int] = set()
+    for group in groups:
+        for word in group:
+            if len(_format_token(word)) <= MAX_SHORT_NAME:
+                words.append(word)
+        if words:
+            group_ends.add(len(words))
+    while words and not any(character.isalpha() for character in words[0]):
+        words.pop(0)
+        group_ends = {end - 1 for end in group_ends if end > 1}
     if not words:
         return []
-    found: dict[str, tuple[str, float]] = {}
 
-    def add(tokens: list[str], start: int, *, group_bonus: float = 0.0) -> None:
-        if not tokens:
-            return
+    found: dict[str, tuple[str, float]] = {}
+    for end in range(1, len(words) + 1):
+        tokens = words[:end]
         label = _label(tokens, version)
+        if len(label) > MAX_SHORT_NAME:
+            # Optional version tags are dropped before any descriptive word.
+            label = _label(tokens, None)
         if not PORTABLE.fullmatch(label):
-            return
-        # Prefer meaningful contiguous phrases, not abrupt character truncations.
+            break
         score = 2.7 * len(tokens) + min(len(label), 16) * 0.12
         score -= max(0, len(label) - 16) * 0.3
-        score -= start * 1.1
-        score += group_bonus
-        if version:
+        if end in group_ends:
+            score += 2.0
+        if version and label.casefold().endswith(version.casefold()):
             score += 1.2
         if len(tokens) == 1 and tokens[0].casefold() in WEAK:
             score -= 5
         if len(tokens) == 1 and len(tokens[0]) < 4:
             score -= 3
-        if label.casefold() not in found or found[label.casefold()][1] < score:
-            found[label.casefold()] = (label, score)
+        found[label.casefold()] = (label, score)
 
-    # Whole descriptive chunks are often better than merging all descriptions.
-    offset = 0
-    for group in groups:
-        add(group, offset, group_bonus=2.0)
-        offset += len(group)
-    for start in range(len(words)):
-        for end in range(start + 1, len(words) + 1):
-            label = _label(words[start:end], version)
-            if len(label) > MAX_SHORT_NAME:
-                break
-            add(words[start:end], start)
-
-    # Preserve the original spelling for labels whose identity is deliberate.
     return sorted(found.values(), key=lambda item: (-item[1], item[0]))
 
 
