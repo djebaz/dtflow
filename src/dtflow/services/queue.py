@@ -39,6 +39,8 @@ from dtflow.core.tasks import settle
 from dtflow.diagnostics import event as diagnostic_event
 from dtflow.persistence.queues import QueueError, post_control, read_queue_requests
 from dtflow.services.preflight import apply_trigger_prefixes
+from dtflow.services import lora_run_notes as notes
+from dtflow.services.lora_naming import log_label
 from dtflow.persistence.store import PersistenceError, SQLiteAttempts
 from dtflow.core.request_records import request_from_record
 from dtflow.services.assets import possible_missing_asset
@@ -66,6 +68,8 @@ class QueueDispatcher:
         self._asset_recovery: asyncio.Task | None = None
         self._recovery_active = False
         self._recovery_attempted: set[tuple[str, str, int]] = set()
+        self._unprepared_noted: set[str] = set()
+        self._unprepared_unavailable = False  # the advisory check failed once; later items skip it
         self._recovery_assets: frozenset[tuple[str, str, int]] = frozenset()
         self._queue_assets: tuple = ()
         # Consecutive items that ended with DT+'s generic error per LoRA, to stop a queue full of a broken file (#361).
@@ -222,9 +226,14 @@ class QueueDispatcher:
                     log,
                     "queue.asset_recovery_failed",
                     level=logging.WARNING,
-                    data={"reason": type(exc).__name__},
+                    data={
+                        "reason": type(exc).__name__,
+                        "lora": [log_label(item.identifier, item.sha256) for item in pending],
+                    },
                 )
-                await self._record_event(queue_id, "asset_recovery_failed", {"reason": "restore_failed"})
+                await self._record_event(
+                    queue_id, notes.RECOVERY_FAILED, notes.recovery_failed_detail([i.identifier for i in pending], exc)
+                )
                 await asyncio.to_thread(post_control, self.store.directory, queue_id, "pause")
                 await self.store.apply_controls(queue_id)
                 return False
@@ -234,6 +243,34 @@ class QueueDispatcher:
         self._asset_recovery = asyncio.create_task(recover())
         return await asyncio.shield(self._asset_recovery)
 
+    async def _warn_unprepared(self, queue_id: str, item_id: str, request: ResolvedGenerationRequest) -> None:
+        """Say once per queue and LoRA that a selected cloud LoRA has no prepared receipt, so DT+ application stays
+        unconfirmed. Reads the cached inventory only; it never blocks, retries or sends anything (#388)."""
+        if (
+            not request.loras
+            or self._unprepared_unavailable
+            or (request.prepared_assets and len(request.prepared_assets) == len(request.loras))
+        ):
+            return
+        try:
+            diagnostics = await self.service.preflight(request)
+            fresh = [i for i in notes.unprepared_loras(request, diagnostics) if i not in self._unprepared_noted]
+            if not fresh:
+                return
+            self._unprepared_noted.update(fresh)
+            diagnostic_event(
+                log,
+                "queue.lora_unprepared",
+                level=logging.WARNING,
+                data={"lora": [log_label(identifier) for identifier in fresh]},
+            )
+            await self._record_event(queue_id, notes.UNPREPARED, {"item_id": item_id, "loras": fresh})
+        except Exception as exc:  # advisory only; one failure is enough, later items do not repeat the wait
+            self._unprepared_unavailable = True
+            diagnostic_event(
+                log, "queue.lora_unprepared_check_failed", level=logging.WARNING, data={"reason": type(exc).__name__}
+            )
+
     async def _note_lora_outcome(
         self, queue_id: str, request: ResolvedGenerationRequest, failure: BackendFailure | None
     ) -> None:
@@ -242,9 +279,14 @@ class QueueDispatcher:
         refresh = failure is not None and refresh_failed(failure)
         if not self._lora_streak.note(request, failure) and not refresh:
             return
-        kind = "lora_refresh_pause" if refresh else "lora_failure_pause"
-        diagnostic_event(log, "queue." + kind, level=logging.WARNING, data={})
-        await self._record_event(queue_id, kind, {})
+        kind = notes.REFRESH_PAUSE if refresh else notes.FAILURE_PAUSE
+        diagnostic_event(
+            log,
+            "queue." + kind,
+            level=logging.WARNING,
+            data={"lora": [log_label(item.identifier, item.sha256) for item in request.prepared_assets]},
+        )
+        await self._record_event(queue_id, kind, {"loras": notes.request_identifiers(request)})
         await asyncio.to_thread(post_control, self.store.directory, queue_id, "pause")
         await self.store.apply_controls(queue_id)
 
@@ -369,6 +411,7 @@ class QueueDispatcher:
                 layout = OutputLayout(group_name("queue", queue_id), prompt_label(request.prompt))
                 if self._trigger_prefix is not None and request.loras and self._trigger_prefix():
                     request = apply_trigger_prefixes(request, await self.service.get_inventory(refresh=True))
+                await self._warn_unprepared(queue_id, item_id, request)
                 retries = 0
                 while True:
                     try:

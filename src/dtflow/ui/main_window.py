@@ -68,6 +68,7 @@ from dtflow.services.credentials import (
     credential_status,
     resolve_credentials,
 )
+from dtflow.services import lora_relink
 from dtflow.services.presets import export_presets, import_presets, load_presets
 from dtflow.ui.activity import Activity
 from dtflow.ui.activity_strip import ActivityStrip, activity_strip
@@ -790,6 +791,7 @@ class MainWindow:
             "models": models,
             "loras": choices.get("loras", {}),
             "lora_families": choices.get("lora_families", {}),
+            "listed_loras": tuple(e.identifier for e in snapshot.entries if e.kind == "lora") if snapshot else (),
             "lora_versions": choices.get("lora_versions", {}),
             "model_versions": {model: checkpoint_exact_version(model, snapshot) for model in models},
             "backend": self.form.backendCombo.currentText(),
@@ -1649,6 +1651,7 @@ class MainWindow:
             self.refresh_presets()
             self.generation.refresh_presets()
             self.form.statusBar().showMessage(f"Imported {count} Draw Things preset(s).", 5000)
+            self._check_preset_loras()
 
         confirm_action(
             self.form,
@@ -1657,6 +1660,41 @@ class MainWindow:
             "Importing replaces the entire durable preset library, including presets saved from Generate. Continue?",
             proceed,
         )
+
+    def _check_preset_loras(self) -> None:
+        """After an import, say which LoRAs the imported presets name that have no prepared match here (cloud only).
+
+        An import replaces the whole preset library, so every saved preset is an imported one. Names DT+ lists itself
+        are never a problem."""
+        backend = self.generation._backend()[0]
+        if backend != "cloud":
+            return
+        names = tuple(
+            dict.fromkeys(
+                item["file"]
+                for preset in load_presets(self.state_dir)
+                for item in preset["configuration"].get("loras") or ()
+                if isinstance(item, dict) and isinstance(item.get("file"), str)
+            )
+        )
+        if not names:
+            return
+        snapshot = self.generation._inventory_snapshot
+        listed = tuple(entry.identifier for entry in snapshot.entries if entry.kind == "lora") if snapshot else ()
+
+        def done(matches, failure) -> None:
+            if failure is not None:
+                return
+            missing = lora_relink.problems(matches)
+            if missing:
+                self.form.statusBar().showMessage(
+                    f"Imported presets name {len(missing)} LoRA(s) with no prepared match or several: "
+                    "Prepare them, or pick one when you load the preset. "
+                    + ", ".join(lora_relink.imported_label(item.requested) for item in missing[:5]),
+                    15000,
+                )
+
+        self.runner.submit(lora_relink.resolve_names(self.state_dir, backend, names, listed=listed), done)
 
     def export_presets(self) -> None:
         chosen, _ = QFileDialog.getSaveFileName(
