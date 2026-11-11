@@ -194,7 +194,7 @@ def _quantization(entry: dict[str, Any]) -> tuple[str | None, str]:
     """Identify the LoRA format from the suffix, or use the converter's CKPT default."""
     filename = _basename(str(entry.get("file", "")))
     stem = Path(filename).stem
-    matches = re.findall(r"(?i)(?:^|[_\\s.\\-])(?:lora[_\\s.\\-]+)?(f16|fp16|q8p)(?=$|[_\\s.\\-])", stem)
+    matches = re.findall(r"(?i)(?:^|[_\s.-])(?:lora[_\s.-]+)?(f16|fp16|q8p)(?=$|[_\s.-])", stem)
     if matches:
         code = matches[-1].upper()
         return ("F16" if code == "FP16" else code), "filename_hint"
