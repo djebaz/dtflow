@@ -177,6 +177,32 @@ def _is_probably_lora(entry: dict[str, Any]) -> bool:
     return False
 
 
+def _model_family(entry: dict[str, Any]) -> str | None:
+    """Use reported architecture evidence, never infer compatibility from a filename."""
+    family = entry.get("detected_family")
+    if not isinstance(family, str) or not family.strip():
+        metadata = entry.get("metadata")
+        family = metadata.get("ss_base_model_version") if isinstance(metadata, dict) else None
+    if not isinstance(family, str) or not family.strip():
+        return None
+    aliases = {"krea2": "krea_2"}
+    normalized = family.strip().casefold()
+    return aliases.get(normalized, normalized)
+
+
+def _quantization(entry: dict[str, Any]) -> tuple[str | None, str]:
+    """Identify the LoRA format from the suffix, or use the converter's CKPT default."""
+    filename = _basename(str(entry.get("file", "")))
+    stem = Path(filename).stem
+    matches = re.findall(r"(?i)(?:^|[_\\s.\\-])(?:lora[_\\s.\\-]+)?(f16|fp16|q8p)(?=$|[_\\s.\\-])", stem)
+    if matches:
+        code = matches[-1].upper()
+        return ("F16" if code == "FP16" else code), "filename_hint"
+    if filename.casefold().endswith(".ckpt"):
+        return "F16", "converter_default"
+    return None, "unknown"
+
+
 def analyze(entries: list[dict[str, Any]], *, include_other: bool = False) -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
     for entry in entries:
@@ -186,32 +212,44 @@ def analyze(entries: list[dict[str, Any]], *, include_other: bool = False) -> li
         if not include_other and not entry.get("_manual_name") and not _is_probably_lora(entry):
             continue
         result = suggest(filename)
+        family = _model_family(entry)
+        quantization, source = _quantization(entry)
         result["detected_family_evidence"] = entry.get("detected_family")
+        result["model_family"] = family
+        result["quantization"] = quantization
+        result["quantization_source"] = source
+        # A missing architecture/format cannot establish collision-free managed names.
+        if family is None or quantization is None:
+            result["needs_review"] = True
+            result["collision_scope_incomplete"] = True
         # Structural classification is context, never a suggestion of compatibility.
         result["likely_lora"] = _is_probably_lora(entry)
         rows.append(result)
 
-    # Suggestions are only proposals. The actual Prepare editor still requires
-    # explicit approval and never silently resolves managed-file collisions.
-    # Reserve unsuffixed proposals so an earlier suffix does not claim a later
-    # file's original suggested name.
+    # A managed filename includes architecture and format, so only identical
+    # (short name, resolved family, quantization) tuples compete for suffixes.
+    # This still only proposes names: Prepare requires user approval and checks
+    # exact managed-file/content collisions before any upload.
+    def scoped_key(row: dict[str, Any], name: str) -> tuple[str | None, str | None, str]:
+        return (row["model_family"], row["quantization"], name.casefold())
+
     reserved = {
-        row["suggestion"].casefold()
+        scoped_key(row, row["suggestion"])
         for row in rows
         if row["suggestion"] is not None
     }
-    assigned: set[str] = set()
+    assigned: set[tuple[str | None, str | None, str]] = set()
     for row in rows:
         base = row["suggestion"]
         if base is None:
             continue
-        if base.casefold() not in assigned:
-            assigned.add(base.casefold())
+        base_key = scoped_key(row, base)
+        if base_key not in assigned:
+            assigned.add(base_key)
             continue
 
         groups, version, _ = _split(row["source_file"])
-        # Prefer the full candidate; if the suffix would exceed 20 characters,
-        # fall back to a shorter *whole-word* prefix, never sliced characters.
+        # Preserve the first whole word; never truncate a word for "_2".
         prefixes = [base] + [
             name for name, _ in _candidates(groups, version)
             if base.startswith(name) and name != base
@@ -227,20 +265,20 @@ def analyze(entries: list[dict[str, Any]], *, include_other: bool = False) -> li
             )
             if proposed is None:
                 break
-            key = proposed.casefold()
+            key = scoped_key(row, proposed)
             if key in assigned or key in reserved:
                 continue
             row["suggestion"] = proposed
             row["collision_suffix"] = number
             row["needs_review"] = True
-            row["reason"] = "Duplicate proposed short name; review the numbered suggestion."
+            row["reason"] = "Same short name, model family and quantization; review the numbered suggestion."
             assigned.add(key)
             resolved = True
             break
         if not resolved:
             row["suggestion"] = None
             row["needs_review"] = True
-            row["reason"] = "No complete-word candidate leaves room for a unique numeric suffix."
+            row["reason"] = "No complete-word candidate leaves room for a scoped numeric suffix."
     return rows
 
 
