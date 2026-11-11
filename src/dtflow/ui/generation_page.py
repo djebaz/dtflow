@@ -1528,7 +1528,7 @@ class GenerationPage:
             if self._key_switch_checkpoint is not None:
                 self._key_switch_checkpoint = self.page.modelCombo.currentText()
             # While previous/next stepping is in progress, keep selected LoRAs until it settles.
-            self._filter_loras(prune_selected=not self._step_settle.isActive())
+            self._filter_loras()
         self._filter_samplers()
         self._write_inventory_stats()
 
@@ -1633,13 +1633,13 @@ class GenerationPage:
                 page.modelCombo.setCurrentText("")
         finally:
             self._updating_catalogue = False
-        self._filter_loras(prune_selected=not preserve_selection and self._inventory_snapshot is not None)
+        self._filter_loras()
 
     def reload_custom_loras(self) -> None:
         """Re-resolve LoRA candidates after user-owned catalogue metadata changes."""
         self._filter_loras()
 
-    def _filter_loras(self, *, prune_selected: bool = True) -> None:
+    def _filter_loras(self) -> None:
         checkpoint = self.page.modelCombo.currentText().strip()
         include_cloud = self._backend()[0] == "local" and self.page.includeCloudCheck.isChecked()
         model = self._catalogue.checkpoint(checkpoint, include_unavailable=include_cloud)
