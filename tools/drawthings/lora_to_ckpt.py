@@ -23,6 +23,7 @@ import argparse
 import functools
 import json
 import math
+import os
 import re
 import sqlite3
 import struct
@@ -35,20 +36,6 @@ import numpy as np
 
 MIN_NUMPY = (1, 21)
 
-
-def _check_numpy() -> None:
-    try:
-        major, minor = (int(part) for part in np.__version__.split(".")[:2])
-    except ValueError:
-        return
-    if (major, minor) < MIN_NUMPY:
-        raise SystemExit(
-            f"numpy {np.__version__} is too old, this converter needs numpy >= {MIN_NUMPY[0]}.{MIN_NUMPY[1]} "
-            "(pip install --upgrade numpy)."
-        )
-
-
-_check_numpy()
 
 COLAB_HINT = (
     "Use the Colab notebook instead: tools/colab/dtflow_lora_minimal_convert.ipynb "
@@ -68,22 +55,62 @@ class ConversionError(Exception):
     """Raised for anything the converter refuses to do."""
 
 
+def _check_numpy() -> None:
+    try:
+        major, minor = (int(part) for part in np.__version__.split(".")[:2])
+    except ValueError:
+        return
+    if (major, minor) < MIN_NUMPY:
+        raise ConversionError(
+            f"numpy {np.__version__} is too old, this converter needs numpy >= {MIN_NUMPY[0]}.{MIN_NUMPY[1]} "
+            "(pip install --upgrade numpy)."
+        )
+
+
 # --------------------------------------------------------------------------- reading
 
 
 class SafeTensors:
-    """Minimal read-only safetensors reader (memory mapped)."""
+    """Minimal read-only safetensors reader.
+
+    Use it as a context manager: the file is closed on exit, because on Windows an open
+    file cannot be deleted or moved. Tensors are read one at a time (no memory mapping).
+    """
 
     def __init__(self, path: Path) -> None:
         self.path = path
-        with path.open("rb") as handle:
-            (header_len,) = struct.unpack("<Q", handle.read(8))
-            if header_len > 100 * 1024 * 1024:
-                raise ConversionError(f"{path.name}: not a safetensors file (header too large).")
-            header = json.loads(handle.read(header_len))
-        self._base = 8 + header_len
-        self.entries = {k: v for k, v in header.items() if k != "__metadata__"}
-        self._map = np.memmap(path, dtype=np.uint8, mode="r")
+        self._file = None
+        try:
+            size = path.stat().st_size
+            if size < 8:
+                raise ConversionError(f"{path.name}: not a safetensors file (too small).")
+            with path.open("rb") as handle:
+                (header_len,) = struct.unpack("<Q", handle.read(8))
+                if header_len > 100 * 1024 * 1024 or 8 + header_len > size:
+                    raise ConversionError(f"{path.name}: not a safetensors file (bad header size).")
+                header = json.loads(handle.read(header_len))
+            if not isinstance(header, dict):
+                raise ConversionError(f"{path.name}: not a safetensors file (bad header).")
+            self._base = 8 + header_len
+            self.entries = {k: v for k, v in header.items() if k != "__metadata__"}
+            for key, entry in self.entries.items():
+                begin, end = entry["data_offsets"]
+                if not 0 <= begin <= end <= size - self._base:
+                    raise ConversionError(f"{path.name}: {key} points outside the file (truncated?).")
+        except (OSError, struct.error, ValueError, KeyError, TypeError) as error:
+            raise ConversionError(f"{path.name}: cannot read this safetensors file ({error}).") from error
+        self._file = path.open("rb")
+
+    def close(self) -> None:
+        handle, self._file = self._file, None
+        if handle is not None:
+            handle.close()
+
+    def __enter__(self) -> SafeTensors:
+        return self
+
+    def __exit__(self, *exc: object) -> None:
+        self.close()
 
     def keys(self) -> list[str]:
         return list(self.entries)
@@ -91,13 +118,23 @@ class SafeTensors:
     def shape(self, key: str) -> tuple[int, ...]:
         return tuple(self.entries[key]["shape"])
 
-    def _raw(self, key: str) -> tuple[str, tuple[int, ...], np.ndarray]:
+    def _raw(self, key: str) -> tuple[str, tuple[int, ...], bytes]:
         entry = self.entries[key]
         begin, end = entry["data_offsets"]
         dtype = entry["dtype"]
         if dtype != "BF16" and dtype not in _SAFETENSORS_DTYPES:
             raise ConversionError(f"{key}: unsupported dtype {dtype}. {COLAB_HINT}")
-        return dtype, tuple(entry["shape"]), self._map[self._base + begin : self._base + end]
+        if self._file is None:
+            raise ConversionError(f"{self.path.name}: the file was already closed.")
+        shape = tuple(entry["shape"])
+        width = {"F16": 2, "BF16": 2, "F32": 4}[dtype]
+        if (end - begin) != width * math.prod(shape):
+            raise ConversionError(f"{key}: data size does not match shape {shape} (corrupt file?).")
+        self._file.seek(self._base + begin)
+        raw = self._file.read(end - begin)
+        if len(raw) != end - begin:
+            raise ConversionError(f"{key}: the file ended early (truncated?).")
+        return dtype, shape, raw
 
     def read(self, key: str) -> np.ndarray:
         """The tensor as float32 (exact for F16 and BF16)."""
@@ -517,7 +554,7 @@ def write_ckpt(path: Path, tensors: dict[str, np.ndarray]) -> None:
     if path.exists():
         raise ConversionError(f"{path} already exists; refusing to overwrite.")
     path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_name(path.name + ".part")
+    tmp = path.with_name(f"{path.name}.{os.getpid()}.part")
     tmp.unlink(missing_ok=True)
     done = False
     try:
@@ -543,8 +580,12 @@ def write_ckpt(path: Path, tensors: dict[str, np.ndarray]) -> None:
             con.commit()
         finally:
             con.close()
-        tmp.replace(path)
+        if path.exists():  # appeared while we were writing: never overwrite
+            raise ConversionError(f"{path} already exists; refusing to overwrite.")
+        tmp.rename(path)  # fails on Windows if the target exists; on POSIX it was checked above
         done = True
+    except OSError as error:
+        raise ConversionError(f"Cannot write {path}: {error}") from error
     except sqlite3.Error as error:
         raise ConversionError(f"Cannot write {path}: {error}") from error
     finally:
@@ -681,7 +722,7 @@ def _expand_text(mapping: dict[str, tuple[str, ...]]) -> dict[str, tuple[str, ..
     return out
 
 
-def _normalize_state(keys: list[str]) -> dict[str, str]:
+def _normalize_state(keys: list[str], te1_tag: str = "te") -> dict[str, str]:
     """The Swift importer's key fix-ups: returns normalized key -> real key in the file."""
     state = {k: k for k in keys}
 
@@ -754,6 +795,13 @@ def _normalize_state(keys: list[str]) -> dict[str, str]:
     for key in keys:
         if key.startswith("lora_unet__"):
             state[key[11:]] = key
+    # Diffusers/PEFT text encoder names -> the kohya spelling the tables are keyed on:
+    # text_encoder_2_* is the second encoder (te2), text_encoder_* the first (te / te1).
+    for key in list(state):
+        for prefix, tag in (("text_encoder_2_", "te2"), ("text_encoder_", te1_tag)):
+            if key.startswith(prefix):
+                state[f"lora_{tag}_{key[len(prefix) :]}"] = state.pop(key)
+                break
     return state
 
 
@@ -829,7 +877,17 @@ def convert_tables(
     fixed_map = _expand_unet(_with_diffusers_names(fixed_table, partials, resnets)) if fixed_table else {}
     te1_map, te2_map = _expand_text(te1_map), _expand_text(te2_map)
 
-    state = _normalize_state(st.keys())
+    state = _normalize_state(st.keys(), "te1" if family == "sdxl" else "te")
+    # Every file key must be an up, down or alpha tensor (Draw Things drops the rest silently).
+    stray = sorted(k for k in st.keys() if split_key(k) is None)
+    if stray and not ignore_unmatched:
+        raise ConversionError(
+            f"{len(stray)} tensors are not plain LoRA up/down/alpha keys (for example {', '.join(stray[:4])}); "
+            f"DoRA, bias and other extra keys are not supported. Pass --ignore-unmatched to skip them, "
+            f"or {COLAB_HINT}"
+        )
+    if stray:
+        log(f"warning: skipped {len(stray)} tensors that are not up/down/alpha keys (for example {stray[0]}).")
     for key in state:
         if (
             any(tag in key for tag in ("hada_", "lokr_", "::diff"))
@@ -951,6 +1009,19 @@ def convert_tables(
         prefix = "__te2__text_model__" if is_te2 else "__text_model__"
         out[f"{prefix}[{names[0]}]__down__"] = scale_down(st.read_f16(state[key]), scale)
 
+    for name, array in sorted(out.items()):
+        if not name.endswith("__up__"):
+            continue
+        down = out.get(name[: -len("__up__")] + "__down__")
+        if down is None:
+            raise ConversionError(f"{name[:-6]}: has an up tensor but no down tensor in the file. {COLAB_HINT}")
+        if array.ndim != down.ndim or array.shape[1] != down.shape[0]:
+            raise ConversionError(
+                f"{name[:-6]}: rank mismatch, up {array.shape} does not fit down {down.shape}. {COLAB_HINT}"
+            )
+    for name in sorted(out):
+        if name.endswith("__down__") and name[: -len("__down__")] + "__up__" not in out:
+            raise ConversionError(f"{name[:-8]}: has a down tensor but no up tensor in the file. {COLAB_HINT}")
     if unmatched:
         sample = ", ".join(sorted(set(unmatched))[:4])
         message = f"{len(set(unmatched))} LoRA tensors have no place in the {family} layers (for example {sample})."
@@ -972,14 +1043,22 @@ def convert(
     scale: float = 1.0,
     log: Callable[[str], None] = print,
     ignore_unmatched: bool = False,
+    allow_experimental: bool = False,
 ) -> int:
     """Convert ``source`` to ``destination``. Returns the number of tensors written."""
     if scale <= 0:
         raise ConversionError("The scale must be greater than 0.")
     if family in EXPERIMENTAL_FAMILIES:
+        if not allow_experimental:
+            raise ConversionError(
+                f"{family} is experimental: its output has not been compared with Draw Things yet. "
+                "Pass --experimental to convert anyway, or " + COLAB_HINT
+            )
         log(f"warning: {family} is experimental, its output has not been compared with Draw Things yet.")
     if family in TABLE_FAMILIES:
-        tensors = convert_tables(SafeTensors(source), family, scale, ignore_unmatched, log)
+        _check_numpy()
+        with SafeTensors(source) as st:
+            tensors = convert_tables(st, family, scale, ignore_unmatched, log)
         if not tensors:
             raise ConversionError("No LoRA tensors found in the file.")
         write_ckpt(destination, tensors)
@@ -988,8 +1067,19 @@ def convert(
     resolver = FAMILIES.get(family)
     if resolver is None:
         raise ConversionError(f"Family {family!r} is not supported by the Python converter. {COLAB_HINT}")
-    st = SafeTensors(source)
+    _check_numpy()
+    with SafeTensors(source) as st:
+        return _convert_open(st, destination, family, resolver, scale, log)
 
+
+def _convert_open(
+    st: SafeTensors,
+    destination: Path,
+    family: str,
+    resolver: Resolver,
+    scale: float,
+    log: Callable[[str], None],
+) -> int:
     parts: dict[str, dict[str, LoraKey]] = {}
     unknown: list[str] = []
     for key in st.keys():
@@ -997,7 +1087,13 @@ def convert(
         if parsed is None:
             unknown.append(key)
             continue
-        parts.setdefault(parsed.module, {})[parsed.role] = parsed
+        roles = parts.setdefault(parsed.module, {})
+        if parsed.role in roles:
+            raise ConversionError(
+                f"{key} and {roles[parsed.role].key} are both the {parsed.role} of the same module "
+                f"({parsed.module}). {COLAB_HINT}"
+            )
+        roles[parsed.role] = parsed
     if unknown:
         sample = ", ".join(unknown[:5])
         raise ConversionError(
@@ -1052,9 +1148,21 @@ def main() -> int:
         action="store_true",
         help="sd1 and sdxl only: skip LoRA tensors that have no place in the model, as Draw Things does",
     )
+    ap.add_argument(
+        "--experimental",
+        action="store_true",
+        help="allow families that are not verified against Draw Things yet (sdxl)",
+    )
     args = ap.parse_args()
     try:
-        convert(args.source, args.destination, args.family, args.scale, ignore_unmatched=args.ignore_unmatched)
+        convert(
+            args.source,
+            args.destination,
+            args.family,
+            args.scale,
+            ignore_unmatched=args.ignore_unmatched,
+            allow_experimental=args.experimental,
+        )
     except ConversionError as error:
         print(f"error: {error}", file=sys.stderr)
         return 2
