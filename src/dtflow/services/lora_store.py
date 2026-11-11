@@ -121,9 +121,15 @@ class LoraStore:
         if (digest, total) != (retained.sha256, retained.size):
             raise ValidationError(f"Retained LoRA {retained.name} no longer matches its recorded checksum.")
 
-    def retain(self, source: Path, sha256: str, size: int) -> RetainedFile:
-        """Keep verified source bytes, deduplicated by digest/size; repair a damaged managed copy if possible."""
+    def retain(
+        self, source: Path, sha256: str, size: int, *, managed_name: str | None = None
+    ) -> RetainedFile:
+        """Copy new content directly to its managed name, keeping one indexed copy per hash."""
         source = Path(source)
+        if managed_name is not None and (
+            _safe_name(managed_name) != managed_name or not managed_name.endswith(".ckpt")
+        ):
+            raise ValidationError("The managed LoRA filename is not portable.")
         handle = self._locked()
         try:
             files = self._read()
@@ -149,12 +155,18 @@ class LoraStore:
                 original = _safe_name(source.name)
                 stem, suffix = os.path.splitext(original)
                 taken = {str(item.get("name", "")).casefold() for item in files}
-                name = original
-                counter = 0
-                while name.casefold() in taken or os.path.lexists(self.directory / name):
-                    counter += 1
-                    end = f"-{sha256[:8]}" + (f"-{counter}" if counter > 1 else "")
-                    name = f"{stem}{end}{suffix}"
+                name = managed_name or original
+                if managed_name is not None:
+                    # The canonical allocator decides managed-name collisions.
+                    # Never silently append a hash or overwrite another copy.
+                    if name.casefold() in taken or os.path.lexists(self.directory / name):
+                        raise ValidationError("The managed LoRA filename already exists; no copy was overwritten.")
+                else:
+                    counter = 0
+                    while name.casefold() in taken or os.path.lexists(self.directory / name):
+                        counter += 1
+                        end = f"-{sha256[:8]}" + (f"-{counter}" if counter > 1 else "")
+                        name = f"{stem}{end}{suffix}"
                 target = self.directory / name
 
             temporary = None
