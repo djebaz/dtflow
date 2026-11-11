@@ -64,21 +64,20 @@ async def auto_prepare_metadata(
     architecture is never filled from filename, checkpoint or catalogue.
     """
     saved = await registry.lora_metadata(sha256, size) or {}
-    architecture = saved.get("declared_version") or detected_version
-    # A newly read file with unknown evidence cannot borrow an old detection
-    # unless the user explicitly declared an architecture.
-    candidate = _candidate(
-        {**saved, "detected_version": architecture if not saved.get("declared_version") else detected_version},
-        source_name,
-        sha256,
-        size,
-    )
+    # Never borrow an earlier file detection if the present bytes do not
+    # classify. An explicit user declaration remains independent evidence.
+    candidate = _candidate({**saved, "detected_version": detected_version}, source_name, sha256, size)
     if candidate is None:
         return None
     request, format_source = candidate
     occupied = occupied_from_snapshot(await registry.lora_name_snapshot())
     allocation = allocate_batch_names((request,), occupied)[0]
     if not allocation.ready:
+        if saved.get("managed_identifier"):
+            raise ValidationError(
+                "This LoRA already has an accepted managed name but its architecture or naming "
+                "metadata has changed. Review it before Re-Prepare."
+            )
         return None
     return LoraPrepareMetadata(
         short_name=allocation.short_name,
