@@ -1,4 +1,4 @@
-"""Independent durable registry of locally known cloud assets (``<state>/assets.sqlite3``, schema version 4).
+"""Independent durable registry of locally known cloud assets (``<state>/assets.sqlite3``, schema version 5).
 
 A row is a *local candidate*, not remote inventory: it records what this machine measured and what a server once
 acknowledged. It never stores raw credentials, signed URLs or file contents. A version-3 side table records per-key and per-name references
@@ -26,7 +26,7 @@ from dtflow.core.models import PREPARATION_STATES, AssetContent, PreparedAsset, 
 from dtflow.persistence import store
 from dtflow.persistence.store import PersistenceError
 
-SCHEMA_VERSION = 4
+SCHEMA_VERSION = 5
 UNRESOLVED = ("intent", "transferring")
 SOURCES = ("transfer", "already_exists", "reconciled")
 
@@ -37,8 +37,6 @@ SCHEMA = (
         identifier TEXT NOT NULL,
         sha256 TEXT NOT NULL,
         size INTEGER NOT NULL,
-        family TEXT,
-        family_source TEXT NOT NULL DEFAULT 'unknown',
         backend_id TEXT NOT NULL,
         origin TEXT NOT NULL,
         remote_id TEXT,
@@ -69,6 +67,22 @@ SCHEMA = (
         confirmed_at_utc TEXT NOT NULL,
         updated_at_utc TEXT NOT NULL,
         PRIMARY KEY(asset_id, credential_id, identifier)
+    )""",
+    """CREATE TABLE IF NOT EXISTS lora_records (
+        sha256 TEXT NOT NULL,
+        size INTEGER NOT NULL,
+        detected_version TEXT,
+        detected_source TEXT NOT NULL DEFAULT 'unknown',
+        declared_version TEXT,
+        short_name TEXT,
+        format_code TEXT,
+        format_source TEXT,
+        trigger_words TEXT NOT NULL DEFAULT '',
+        updated_at_utc TEXT NOT NULL,
+        PRIMARY KEY (sha256, size),
+        CHECK (detected_source IN ('unknown', 'file')),
+        CHECK (format_code IS NULL OR format_code IN ('F16', 'Q8P')),
+        CHECK ((format_code IS NULL) = (format_source IS NULL))
     )""",
 )
 
@@ -181,30 +195,18 @@ class AssetRegistry:
 
     def _check_version(self, db: sqlite3.Connection, *, create: bool) -> None:
         version = db.execute("PRAGMA user_version").fetchone()[0]
-        if version not in (0, 1, 2, 3, SCHEMA_VERSION):
-            raise PersistenceError("Unsupported asset-registry schema; no reset or migration was performed.")
+        if version not in (0, SCHEMA_VERSION):
+            raise PersistenceError(
+                "This pre-release asset database uses an incompatible schema. "
+                "Close DTFlow and manually reset the .dtflow state directory before continuing; "
+                "no state was deleted or migrated."
+            )
         if create:
             db.execute("PRAGMA journal_mode=WAL")
             db.execute("BEGIN IMMEDIATE")
             try:
-                if version == 2:
-                    # Keep every v2 receipt, its opaque credential identity and history, while allowing
-                    # distinct LoRA filenames with identical content to coexist within the same key.
-                    db.execute("ALTER TABLE asset_key_receipts RENAME TO asset_key_receipts_v2")
                 for statement in SCHEMA:
                     db.execute(statement)
-                if 0 < version < 4:
-                    # Existing receipts retain all references; a kept file can supply the family lazily.
-                    db.execute("ALTER TABLE assets ADD COLUMN family TEXT")
-                    db.execute("ALTER TABLE assets ADD COLUMN family_source TEXT NOT NULL DEFAULT 'unknown'")
-                if version == 2:
-                    db.execute(
-                        "INSERT INTO asset_key_receipts "
-                        "(asset_id, credential_id, identifier, remote_id, state, confirmed_at_utc, updated_at_utc) "
-                        "SELECT asset_id, credential_id, identifier, remote_id, state, "
-                        "confirmed_at_utc, updated_at_utc FROM asset_key_receipts_v2"
-                    )
-                    db.execute("DROP TABLE asset_key_receipts_v2")
                 db.execute(f"PRAGMA user_version={SCHEMA_VERSION}")
                 db.execute("COMMIT")
             except BaseException:
