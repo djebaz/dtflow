@@ -51,6 +51,7 @@ from dtflow.services.connection import (
 )
 from dtflow.services.image_preparation import prepare_edit_inputs
 from dtflow.services.image_quality import assess_file
+from dtflow.services.preflight import checkpoint_exact_version
 from dtflow.services.presets import apply_preset, builtin_presets, load_presets, save_preset
 from dtflow.services.session import (
     InventoryDisplayMemory,
@@ -1642,14 +1643,17 @@ class GenerationPage:
         checkpoint = self.page.modelCombo.currentText().strip()
         include_cloud = self._backend()[0] == "local" and self.page.includeCloudCheck.isChecked()
         model = self._catalogue.checkpoint(checkpoint, include_unavailable=include_cloud)
+        version = checkpoint_exact_version(checkpoint, self._inventory_snapshot)
         entries = (
             self._catalogue.compatible_loras(
                 checkpoint, domain=self._catalogue_domain(), include_unavailable=include_cloud
             )
-            if model is not None and model.base_model is not None
+            if version is not None and model is not None and model.base_model is not None
             else None
         )
-        self.lora.set_candidates(entries, prune_selected=prune_selected and entries is not None)
+        # Filter new choices only. Saved selections remain visible, and shared
+        # preflight will reject a confirmed mismatch even if the UI is bypassed.
+        self.lora.set_candidates(entries, checkpoint_version=version)
 
     def _compute_units_estimate(self) -> ComputeUnitEstimate:
         """Read the same current form settings for the meter and explicit inspector."""
