@@ -499,7 +499,8 @@ class LoraAssetPanel:
                     present_asset_failure(failure)
                     if failure is not None
                     else Presentation(
-                        "warning", "Receipt not confirmed",
+                        "warning",
+                        "Receipt not confirmed",
                         f"State: {state or 'unavailable'}. Review the local receipt before trying again.",
                     )
                 )
@@ -517,8 +518,10 @@ class LoraAssetPanel:
                         failure.failure.remote_outcome.value if isinstance(failure, BackendError) else "unverified"
                     ),
                     "code": (
-                        failure.failure.code if isinstance(failure, BackendError)
-                        else type(failure).__name__ if failure is not None
+                        failure.failure.code
+                        if isinstance(failure, BackendError)
+                        else type(failure).__name__
+                        if failure is not None
                         else state or "receipt_not_confirmed"
                     ),
                 }
