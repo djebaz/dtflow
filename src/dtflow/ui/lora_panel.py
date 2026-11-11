@@ -572,7 +572,7 @@ class LoraAssetPanel:
         )
         if (counts["failed"] or counts["unresolved"]) and development_mode():
             detail += " See Logs for per-file details."
-        state = "success" if counts["confirmed"] == total else "error" if counts["failed"] == total else "partial"
+        state = "error" if counts["failed"] else "success" if counts["confirmed"] == total else "partial"
         activity_strip(self.page).complete("asset", "Cloud preparation finished", detail, state)
         level = "ok" if state == "success" else "error" if state == "error" else "warning"
         self._show(self.page.assetStatusLabel, Presentation(level, "Cloud preparation finished", detail))
