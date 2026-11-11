@@ -89,7 +89,7 @@ from dtflow.persistence.queues import QueueError, post_control
 from dtflow.persistence.settings import trigger_prefix_enabled
 from dtflow.persistence.store import PersistenceError, SQLiteAttempts
 from dtflow.persistence.workflow_items import BAD_STEP_STATES, WorkflowRequest
-from dtflow.services import session
+from dtflow.services import lora_relink, session
 from dtflow.services.assets import possible_missing_asset
 from dtflow.services import lora_run_notes as notes
 from dtflow.services.lora_naming import log_label
@@ -993,11 +993,17 @@ class _Execution:
                     self.runner.on_event(self.item_id, event)
 
             options = {"prepared_inputs": prepared} if prepared is not None else {}
+            matches: dict = {}
             try:
                 if self.request.backend == "cloud" and request.loras:
                     # Workflow files carry names/weights only. Bind existing local receipts at dispatch,
                     # independently of Generate; the generation service still validates their account/scope.
                     choices = await session.script_asset_choices(self.runner.state, self.request.backend)
+                    # A name carried by an imported file may be the original filename of a LoRA prepared here under a
+                    # managed name: relink an unambiguous match before binding; never guess between several.
+                    evidence = await lora_relink.load_evidence(self.runner.state, self.request.backend, choices)
+                    matches = lora_relink.match_names((lora.identifier for lora in request.loras), evidence)
+                    request = lora_relink.relink_request(request, matches)
                     selected = {lora.identifier for lora in request.loras}
                     request = await session.bind_prepared(
                         self.runner.state,
@@ -1092,8 +1098,14 @@ class _Execution:
                     }
                     for item in outcome.diagnostics
                 ]
+                ambiguous = {name: match for name, match in matches.items() if match.status == lora_relink.AMBIGUOUS}
                 warnings = [
-                    notes.unprepared_message(identifier)
+                    (
+                        f"{identifier}: matches several prepared LoRAs "
+                        f"({', '.join(ambiguous[identifier].candidates)}); it was not applied. Pick one in the workflow."
+                        if identifier in ambiguous
+                        else notes.unprepared_message(identifier)
+                    )
                     for identifier in notes.unprepared_loras(outcome.request, outcome.diagnostics)
                 ]
                 for key in keys:

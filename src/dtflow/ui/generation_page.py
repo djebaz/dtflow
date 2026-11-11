@@ -53,6 +53,7 @@ from dtflow.services.image_preparation import prepare_edit_inputs
 from dtflow.services.image_quality import assess_file
 from dtflow.services.lora_naming import relabel_text
 from dtflow.services.preflight import checkpoint_exact_version
+from dtflow.services import lora_relink
 from dtflow.services.presets import apply_preset, builtin_presets, load_presets, save_preset
 from dtflow.services.session import (
     InventoryDisplayMemory,
@@ -1991,6 +1992,7 @@ class GenerationPage:
         self._apply(values)
         if "loras" in application.values:
             self.lora.set_loras(application.values["loras"], loaded=True)
+            self._relink_loaded(application.values["loras"], f"Preset {preset['name']}")
         self._config_name = f"preset:{preset['name']}"
         self._reuse_source_identity = None
         # A native preset can carry dozens of unsupported fields; keep the status short and list them in the tooltip.
@@ -2007,6 +2009,30 @@ class GenerationPage:
         )
         if count:
             self.page.generationStatusLabel.setToolTip("Preserved-only fields: " + ", ".join(application.preserved))
+
+    def _relink_loaded(self, loras, source: str) -> None:
+        """Match the LoRA names a loaded preset or configuration carries to what was prepared here, and say what is left."""
+        backend, _ = self._backend()
+        if not loras or backend != "cloud":
+            return
+        names = tuple(item.identifier for item in loras)
+
+        def done(matches, failure) -> None:
+            if failure is not None or tuple(item.identifier for item in self.lora.loras) != names:
+                return  # the selection changed meanwhile; never overwrite the user's newer choice
+            relinked, _ = lora_relink.relink_selection(self.lora.loras, matches)
+            if relinked != self.lora.loras:
+                self.lora.set_loras(relinked, loaded=True)
+            text = lora_relink.summary(matches)
+            if text:
+                self.page.compatibilityStatusLabel.setText(f"{source}: {text}.")
+                self._status(
+                    Presentation(
+                        "warning" if lora_relink.problems(matches) else "ok", "LoRA names checked", f"{source}: {text}."
+                    )
+                )
+
+        self._runner.submit(lora_relink.resolve_names(self._state, backend, names), done)
 
     def save_preset(self) -> None:
         def save(name):
@@ -2048,6 +2074,7 @@ class GenerationPage:
         self._reuse_source_identity = None
         self._apply(values_from_request(request))
         self.lora.set_loras(request.loras, loaded=True)
+        self._relink_loaded(request.loras, path.name)
         name, endpoint = self._backend()
         self.page.effectiveRequestBrowser.setPlainText(describe_request(request, name, endpoint))
         detail = f"{path.name} applied; values come from the file, with defaults only where it is silent."
