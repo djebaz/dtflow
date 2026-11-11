@@ -180,6 +180,11 @@ async def prepared_request(tmp_path, cloud: DtPlus) -> tuple[ResolvedGenerationR
 async def test_generation_and_queue_carry_the_exact_reference_and_block_stale_ones_before_submission(tmp_path):
     cloud = DtPlus()
     request, prepared = await prepared_request(tmp_path, cloud)
+    # The upload fixture contains arbitrary bytes, not a converted LoRA. Supply
+    # matching architecture evidence for the fake backend's "fixture" model;
+    # this test is about receipt identity and stale-reference refusal.
+    prepared = dataclasses.replace(prepared, family="fixture", family_source="file")
+    request = dataclasses.replace(request, prepared_assets=(prepared,))
     puts = len(cloud.puts)
     store, backend = SQLiteAttempts(tmp_path / "state"), CloudLikeFake()
     validator_backend = cloud.backend()

@@ -17,7 +17,7 @@ from dtflow.core.models import (
 from dtflow.persistence.store import SQLiteAttempts
 from dtflow.services.config import ConfigError, export_config, load_config, parse_document, resolve_request
 from dtflow.services.generation import GenerationService
-from dtflow.services.preflight import apply_trigger_prefixes, blocked, preflight_loras
+from dtflow.services.preflight import apply_trigger_prefixes, blocked, checkpoint_exact_version, preflight_loras
 
 
 def entry(identifier, kind, architecture=None, **extra):
@@ -212,9 +212,14 @@ async def run_service(tmp_path, backend, request):
 
 @pytest.mark.asyncio
 async def test_confirmed_incompatibility_creates_no_attempt_and_never_dispatches(tmp_path):
-    backend = LoraFake((entry("l.ckpt", "lora", "arch-b"),))
-    request = base_request(model_id="fake-fixture", loras=(LoRASelection("l.ckpt", 0.8),))
+    # This exact Z-Image file has no published version or Echo model entry, but
+    # its bundled family is one unambiguous DT+ architecture.
+    model = "z_image_turbo_1.0_q8p.ckpt"
+    backend = LoraFake((entry("l.ckpt", "lora", "krea_2"),))
+    backend._capabilities = replace(backend.capabilities, model_ids=(model,))
+    request = base_request(model_id=model, loras=(LoRASelection("l.ckpt", 0.8),))
     saved, error, attempts = await run_service(tmp_path, backend, request)
+    assert checkpoint_exact_version(model) == "z_image"
     assert saved is None and error.failure.code == "lora_preflight_failed"
     assert dict(error.failure.diagnostics) == {"l.ckpt": "architecture_mismatch"}
     assert backend.dispatched == [] and attempts == () and not (tmp_path / "out").exists()
@@ -222,6 +227,7 @@ async def test_confirmed_incompatibility_creates_no_attempt_and_never_dispatches
 
 @pytest.mark.asyncio
 async def test_unknown_architecture_proceeds_unchanged_and_metadata_keeps_exact_selection(tmp_path):
+    assert checkpoint_exact_version("custom_unclassified.ckpt") is None
     backend = LoraFake((entry("l.ckpt", "lora", None),))
     selection = (LoRASelection("l.ckpt", 0.35),)
     request = base_request(model_id="fake-fixture", loras=selection)

@@ -224,6 +224,7 @@ def present_preflight(diagnostics) -> Presentation:
         return Presentation("unknown", "No LoRAs selected", "Compatibility is not checked.")
     lines = [
         f"{item.identifier}: architecture {item.architecture_match}, {item.availability} ({item.code}); "
+        f"LoRA family {item.lora_family or 'unknown'}, checkpoint family {item.model_family or 'unknown'}; "
         f"application {item.generation_evidence.removeprefix('application_')}"
         for item in diagnostics
     ]
@@ -231,6 +232,8 @@ def present_preflight(diagnostics) -> Presentation:
         level, headline = "error", "Blocked before dispatch"
     elif all(item.architecture_match == "match" for item in diagnostics):
         level, headline = "ok", "Architecture matches"
+    elif any(item.availability == "prepared" and item.lora_family is None for item in diagnostics):
+        level, headline = "unknown", "LoRA family unknown"
     else:
         level, headline = "unknown", "Compatibility not confirmed"
     return Presentation(level, headline, "\n".join(lines))

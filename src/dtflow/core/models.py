@@ -164,6 +164,8 @@ class PreparedAsset:
     size: int
     receipt_id: str
     confirmed_at_utc: str
+    family: str | None = None  # Exact Draw Things LoRA version from file evidence, not the chosen checkpoint.
+    family_source: str = "unknown"
 
     def __post_init__(self) -> None:
         for name in ("backend_id", "origin", "receipt_id", "confirmed_at_utc"):
@@ -172,6 +174,12 @@ class PreparedAsset:
         _asset_reference(self.remote_id, "Remote asset identifier")
         _asset_digest(self.sha256)
         _asset_size(self.size)
+        if self.family is not None and (not isinstance(self.family, str) or not self.family):
+            raise ValidationError("LoRA family must be a non-empty string or unknown.")
+        if self.family_source not in ("unknown", "file"):
+            raise ValidationError("Unsupported LoRA family evidence.")
+        if (self.family is None) != (self.family_source == "unknown"):
+            raise ValidationError("LoRA family and its evidence must agree.")
 
 
 @dataclass(frozen=True, slots=True)
@@ -482,6 +490,8 @@ class PreflightDiagnostic:
     generation_evidence: str
     code: str
     source: str
+    model_family: str | None = None
+    lora_family: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
