@@ -1,0 +1,80 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ui version="4.0">
+ <class>LoraPrepareRow</class>
+ <widget class="QWidget" name="loraPrepareRow">
+  <layout class="QVBoxLayout" name="loraPrepareRowLayout">
+   <property name="leftMargin"><number>4</number></property>
+   <property name="topMargin"><number>4</number></property>
+   <property name="rightMargin"><number>4</number></property>
+   <property name="bottomMargin"><number>4</number></property>
+   <property name="spacing"><number>5</number></property>
+   <item>
+    <layout class="QHBoxLayout" name="loraPrepareSourceLayout">
+     <item>
+      <widget class="QLabel" name="loraPrepareSource">
+       <property name="text"><string>Source LoRA</string></property>
+       <property name="sizePolicy"><sizepolicy hsizetype="Expanding" vsizetype="Preferred"/></property>
+      </widget>
+     </item>
+     <item>
+      <widget class="QPushButton" name="loraPrepareCopySource">
+       <property name="text"><string>Copy name</string></property>
+       <property name="toolTip"><string>Copy the original filename.</string></property>
+      </widget>
+     </item>
+    </layout>
+   </item>
+   <item>
+    <layout class="QGridLayout" name="loraPrepareFields">
+     <property name="horizontalSpacing"><number>8</number></property>
+     <property name="verticalSpacing"><number>4</number></property>
+     <item row="0" column="0"><widget class="QLabel" name="loraPrepareArchitectureLabel"><property name="text"><string>Architecture</string></property></widget></item>
+     <item row="0" column="1"><widget class="QLabel" name="loraPrepareNameLabel"><property name="text"><string>Short name</string></property></widget></item>
+     <item row="0" column="2"><widget class="QLabel" name="loraPrepareFormatLabel"><property name="text"><string>Quantization</string></property></widget></item>
+     <item row="1" column="0">
+      <widget class="QComboBox" name="loraPrepareArchitecture">
+       <property name="minimumSize"><size><width>145</width><height>0</height></size></property>
+       <property name="accessibleName"><string>Exact LoRA architecture</string></property>
+      </widget>
+     </item>
+     <item row="1" column="1">
+      <widget class="QLineEdit" name="loraPrepareShortName">
+       <property name="maximumSize"><size><width>210</width><height>16777215</height></size></property>
+       <property name="maxLength"><number>64</number></property>
+       <property name="placeholderText"><string>Required</string></property>
+       <property name="accessibleName"><string>LoRA short name</string></property>
+      </widget>
+     </item>
+     <item row="1" column="2">
+      <widget class="QComboBox" name="loraPrepareFormat">
+       <property name="accessibleName"><string>LoRA quantization</string></property>
+      </widget>
+     </item>
+     <item row="2" column="0"><widget class="QLabel" name="loraPrepareTriggerLabel"><property name="text"><string>Trigger words (optional)</string></property></widget></item>
+     <item row="2" column="1" colspan="2">
+      <widget class="QLineEdit" name="loraPrepareTriggers">
+       <property name="placeholderText"><string>Comma-separated phrases</string></property>
+       <property name="accessibleName"><string>LoRA trigger words</string></property>
+      </widget>
+     </item>
+    </layout>
+   </item>
+   <item>
+    <widget class="QLabel" name="loraPreparePreview">
+     <property name="text"><string>Managed filename: waiting for metadata</string></property>
+     <property name="wordWrap"><bool>true</bool></property>
+     <property name="role" stdset="0"><string>secondary</string></property>
+    </widget>
+   </item>
+   <item>
+    <widget class="QLabel" name="loraPrepareRowStatus">
+     <property name="text"><string>Inspecting file…</string></property>
+     <property name="wordWrap"><bool>true</bool></property>
+     <property name="role" stdset="0"><string>secondary</string></property>
+    </widget>
+   </item>
+  </layout>
+ </widget>
+ <resources/>
+ <connections/>
+</ui>
