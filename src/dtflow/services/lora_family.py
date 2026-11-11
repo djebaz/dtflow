@@ -16,6 +16,7 @@ import json
 import re
 import sqlite3
 import struct
+from contextlib import closing
 from dataclasses import dataclass
 from collections.abc import Iterable
 
@@ -68,7 +69,7 @@ def detect_lora_family(path: Path) -> LoraFamily:
         return LoraFamily()
     uri = path.resolve().as_uri() + "?mode=ro"
     try:
-        with sqlite3.connect(uri, uri=True, timeout=1.0) as db:
+        with closing(sqlite3.connect(uri, uri=True, timeout=1.0)) as db:
             db.execute("PRAGMA query_only=ON")
             if not db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='tensors'").fetchone():
                 return LoraFamily()
@@ -228,7 +229,7 @@ def validate_converted_lora(path: Path) -> None:
     path = Path(path)
     uri = path.resolve().as_uri() + "?mode=ro"
     try:
-        with sqlite3.connect(uri, uri=True, timeout=1.0) as db:
+        with closing(sqlite3.connect(uri, uri=True, timeout=1.0)) as db:
             db.execute("PRAGMA query_only=ON")
             columns = {row[1] for row in db.execute("PRAGMA table_info(tensors)")}
             name_column = next((name for name in ("name", "key", "tensor_name") if name in columns), None)
