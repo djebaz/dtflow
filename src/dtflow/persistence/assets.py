@@ -646,10 +646,11 @@ class AssetRegistry:
             return _record(row)
 
     async def lora_name_snapshot(self) -> tuple[dict[str, Any], ...]:
-        """Read canonical LoRA metadata once for the editable Prepare batch.
+        """Read accepted content-level managed names once for a Prepare batch.
 
-        Only non-null managed identifiers are occupied filenames; historical
-        account-scoped receipts are never reservations. begin() rechecks.
+        Historical asset identifiers and account receipts are intentionally not
+        reservations. Preview users should fetch this once per editor batch;
+        begin() repeats the collision check inside the writer transaction.
         """
         return await self._run(self._lora_name_snapshot)
 
@@ -658,8 +659,7 @@ class AssetRegistry:
             return ()
         with closing(self._connect()) as db:
             rows = db.execute(
-                "SELECT sha256, size, managed_identifier, short_name, declared_version, "
-                "format_code, format_source, trigger_words FROM lora_records"
+                "SELECT sha256, size, managed_identifier FROM lora_records WHERE managed_identifier IS NOT NULL"
             ).fetchall()
         return tuple(dict(row) for row in rows)
 
