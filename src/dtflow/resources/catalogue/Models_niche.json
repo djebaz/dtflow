@@ -1586,6 +1586,14 @@
     ]
   },
   {
+    "file": "anima_aesthetic_1.1_i8x.ckpt",
+    "base_model": "anima",
+    "modes": [
+      "t2i",
+      "i2i"
+    ]
+  },
+  {
     "file": "anima_aesthetic_1.1_q8p.ckpt",
     "base_model": "anima",
     "modes": [
@@ -1595,6 +1603,14 @@
   },
   {
     "file": "anima_base_1.0_f16.ckpt",
+    "base_model": "anima",
+    "modes": [
+      "t2i",
+      "i2i"
+    ]
+  },
+  {
+    "file": "anima_base_1.0_i8x.ckpt",
     "base_model": "anima",
     "modes": [
       "t2i",
@@ -1627,6 +1643,14 @@
   },
   {
     "file": "anima_turbo_1.0_f16.ckpt",
+    "base_model": "anima",
+    "modes": [
+      "t2i",
+      "i2i"
+    ]
+  },
+  {
+    "file": "anima_turbo_1.0_i8x.ckpt",
     "base_model": "anima",
     "modes": [
       "t2i",
@@ -2468,6 +2492,13 @@
     ]
   },
   {
+    "file": "fasth3_omni_i4x.ckpt",
+    "base_model": "minimax_h3",
+    "modes": [
+      "i2v"
+    ]
+  },
+  {
     "file": "five_stars_illustrious_1.0_1398525_f16.ckpt",
     "base_model": "sdxl",
     "modes": [
@@ -2809,6 +2840,14 @@
     ]
   },
   {
+    "file": "ideogram_4_fast_i8x.ckpt",
+    "base_model": "ideogram_4",
+    "modes": [
+      "t2i",
+      "i2i"
+    ]
+  },
+  {
     "file": "ideogram_4_fast_q6p.ckpt",
     "base_model": "ideogram_4",
     "modes": [
@@ -2818,6 +2857,22 @@
   },
   {
     "file": "ideogram_4_fast_q8p.ckpt",
+    "base_model": "ideogram_4",
+    "modes": [
+      "t2i",
+      "i2i"
+    ]
+  },
+  {
+    "file": "ideogram_4_i8x.ckpt",
+    "base_model": "ideogram_4",
+    "modes": [
+      "t2i",
+      "i2i"
+    ]
+  },
+  {
+    "file": "ideogram_4_instant_i8x.ckpt",
     "base_model": "ideogram_4",
     "modes": [
       "t2i",
@@ -3236,6 +3291,20 @@
     "modes": [
       "t2i",
       "i2i"
+    ]
+  },
+  {
+    "file": "minimax_h3_fl2va_i4x.ckpt",
+    "base_model": "minimax_h3",
+    "modes": [
+      "i2v"
+    ]
+  },
+  {
+    "file": "minimax_h3_ref2va_i4x.ckpt",
+    "base_model": "minimax_h3",
+    "modes": [
+      "i2v"
     ]
   },
   {
