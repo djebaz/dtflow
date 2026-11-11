@@ -98,8 +98,16 @@ def test_lora_weights_that_the_library_rounds_on_decode_still_verify(weight):
 def test_prepared_loras_are_named_by_their_sha256_on_the_wire():
     digest = "ab" * 32
     prepared = PreparedAsset(
-        "cloud", "origin", "mine_lora_f16.ckpt", "mine_lora_f16.ckpt", digest, 10, "r1", "2026-10-06T00:00:00Z",
-        family="z_image", family_source="file",
+        "cloud",
+        "origin",
+        "mine_lora_f16.ckpt",
+        "mine_lora_f16.ckpt",
+        digest,
+        10,
+        "r1",
+        "2026-10-06T00:00:00Z",
+        family="z_image",
+        family_source="file",
     )
     selections = (LoRASelection("mine_lora_f16.ckpt", 0.5), LoRASelection("builtin_lora_f16.ckpt", 1.0))
     wire = build_generation_message(request(loras=selections, prepared_assets=(prepared,)), None)
@@ -112,13 +120,23 @@ def test_prepared_custom_loras_use_own_exact_version_and_refuse_unknown():
     from dataclasses import replace
 
     asset = PreparedAsset(
-        "cloud", "o", "mine_lora_f16.ckpt", "ref", "a" * 64, 1, "rc", "2026-01-01T00:00:00+00:00",
-        family="flux1", family_source="file",
+        "cloud",
+        "o",
+        "mine_lora_f16.ckpt",
+        "ref",
+        "a" * 64,
+        1,
+        "rc",
+        "2026-01-01T00:00:00+00:00",
+        family="flux1",
+        family_source="file",
     )
     selections = (LoRASelection("mine_lora_f16.ckpt", 1.0), LoRASelection("other_lora_f16.ckpt", 1.0))
     # Neither the selected checkpoint family nor its exact description may override the LoRA's own version.
     sent = build_generation_message(
-        request(loras=selections, prepared_assets=(asset,)), None, "flux_2",
+        request(loras=selections, prepared_assets=(asset,)),
+        None,
+        "flux_2",
         {"version": "flux2_9b", "file": "model.ckpt"},
     )
     assert json.loads(sent.message.override.loras) == [
