@@ -34,24 +34,24 @@ on:
         required: false
         default: ""
         type: string
-  push:
-    branches: [main]
-    # Avoid launching the full suite for documentation-only merges.
-    paths-ignore:
-      - '**/*.md'
-      - '**/*.rst'
-      - 'LICENSE*'
-      - 'NOTICE*'
-      - '.github/ISSUE_TEMPLATE/**'
-  pull_request:
-     types: [opened, synchronize, reopened, ready_for_review]
-     # Native filtering allocates no runner for an entirely documentation-only PR.
-     paths-ignore:
-       - '**/*.md'
-       - '**/*.rst'
-       - 'LICENSE*'
-       - 'NOTICE*'
-       - '.github/ISSUE_TEMPLATE/**'
+  # push:
+    # branches: [main]
+    Avoid launching the full suite for documentation-only merges.
+    # paths-ignore:
+      # - '**/*.md'
+      # - '**/*.rst'
+      # - 'LICENSE*'
+      # - 'NOTICE*'
+      # - '.github/ISSUE_TEMPLATE/**'
+  # pull_request:
+     # types: [opened, synchronize, reopened, ready_for_review]
+     Native filtering allocates no runner for an entirely documentation-only PR.
+     # paths-ignore:
+       # - '**/*.md'
+       # - '**/*.rst'
+       # - 'LICENSE*'
+       # - 'NOTICE*'
+       # - '.github/ISSUE_TEMPLATE/**'
 
 permissions:
   contents: read
