@@ -65,6 +65,10 @@ def _populate_canonical_prepare(window) -> None:
         if family:
             row.prepareArchitecture.setCurrentText(family)
         row.prepareArchitectureSource.setText(provenance)
+        row.prepareFileEvidence.setText((
+            "Detected from file", "Detected from file", "Unknown inspection",
+            "Declared by user", "Distinct-content fixture",
+        )[index])
         row.prepareShortName.setText(short)
         row.prepareFormat.setCurrentText(fmt)
         row.prepareTriggerWords.setText(trigger)
