@@ -56,6 +56,7 @@ from dtflow.services.credentials import EnvironmentCredentials, resolve_credenti
 from dtflow.services.generation import GenerationService
 from dtflow.services.image_inputs import restore_image_inputs
 from dtflow.services.lora_store import LoraStore
+from dtflow.services.lora_auto_naming import normalize_previous_retained
 from dtflow.services.lora_naming import LoraPrepareMetadata, ManagedName, occupied_from_snapshot
 from dtflow.services.image_preparation import prepare_image_files, validate_prepared_inputs
 from dtflow.services.preflight import apply_trigger_prefixes
@@ -916,7 +917,16 @@ async def reconcile_asset(
 
 
 async def list_assets(state: Path, *, named: bool = False) -> list[dict]:
-    """Local receipt and unresolved-operation candidates; optionally expand logical LoRA names for Qt."""
+    """List assets, first aligning eligible retained names locally without provider calls."""
+    try:
+        normalized = await normalize_previous_retained(state)
+        if normalized:
+            diagnostic_event(log, "assets.retained_auto_named", data={"count": normalized})
+    except (OSError, ValidationError) as exc:
+        diagnostic_event(
+            log, "assets.retained_auto_naming_unavailable", level=logging.WARNING,
+            data={"reason": type(exc).__name__},
+        )
     registry = AssetRegistry(state)
     await registry.open()
     try:
