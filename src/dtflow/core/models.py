@@ -176,7 +176,7 @@ class PreparedAsset:
         _asset_size(self.size)
         if self.family is not None and (not isinstance(self.family, str) or not self.family):
             raise ValidationError("LoRA family must be a non-empty string or unknown.")
-        if self.family_source not in ("unknown", "file"):
+        if self.family_source not in ("unknown", "file", "user"):
             raise ValidationError("Unsupported LoRA family evidence.")
         if (self.family is None) != (self.family_source == "unknown"):
             raise ValidationError("LoRA family and its evidence must agree.")
