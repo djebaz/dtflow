@@ -3297,6 +3297,7 @@
     "file": "minimax_h3_fl2va_i4x.ckpt",
     "base_model": "minimax_h3",
     "modes": [
+      "t2v",
       "i2v"
     ]
   },
