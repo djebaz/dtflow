@@ -79,6 +79,7 @@ class LoraAssetPanel:
         self._candidates: list[tuple[str, float | None]] = []
         self._records: dict[tuple[str, str], dict] = {}
         self._inventory_families: dict[str, str] = {}
+        self._checkpoint_version: str | None = None
         self._catalogue = catalogue if catalogue is not None else Catalogue(self._state)
         self._bind_after_list: str | None = None  # identifier to bind once the registry list has been refreshed
         self._add_when_bound = False  # a Prepare also adds the LoRA to the list; a plain add never needs to
@@ -145,18 +146,40 @@ class LoraAssetPanel:
         )
         self._candidates = list(self._inventory_candidates)
 
-    def set_candidates(self, entries, *, prune_selected: bool = False) -> None:
-        """Use compatible catalogue LoRAs, or raw inventory suggestions when the checkpoint is unclassified."""
+    def set_candidates(self, entries, *, checkpoint_version: str | None = None) -> None:
+        """Offer only known-compatible LoRAs; keep selected mismatches visible for correction."""
+        self._checkpoint_version = checkpoint_version
         if entries is None:
             self._candidates = list(getattr(self, "_inventory_candidates", ()))
-            return
-        weights = {name: weight for name, weight in getattr(self, "_inventory_candidates", self._candidates)}
-        self._candidates = [(entry.identifier, weights.get(entry.identifier)) for entry in entries]
-        if prune_selected:
-            allowed = {entry.identifier for entry in entries}
-            kept = tuple(item for item in self.loras if item.identifier in allowed)
-            if kept != self.loras:
-                self.set_loras(kept)
+        else:
+            weights = {name: weight for name, weight in getattr(self, "_inventory_candidates", self._candidates)}
+            self._candidates = [(entry.identifier, weights.get(entry.identifier)) for entry in entries]
+        self._render_loras()
+        if any(not self._candidate_compatible(item.identifier) for item in self.loras):
+            self._show(
+                self.page.compatibilityStatusLabel,
+                Presentation("warning", "Incompatible LoRA selected", "Remove it or choose a matching checkpoint."),
+            )
+
+    def _candidate_family(self, name: str) -> str | None:
+        """Prefer the selected receipt, then unambiguous confirmed file evidence, then Echo."""
+        receipt = self._receipts.get(name)
+        if receipt is not None:
+            record = self._records.get((receipt, name))
+            if record is not None and record.get("state") == "confirmed":
+                return record.get("family")
+        versions = {
+            record.get("family")
+            for record in self._records.values()
+            if record["identifier"] == name and record["state"] == "confirmed"
+        }
+        if versions:
+            return next(iter(versions)) if len(versions) == 1 else None
+        return self._inventory_families.get(name)
+
+    def _candidate_compatible(self, name: str) -> bool:
+        candidate = self._candidate_family(name)
+        return self._checkpoint_version is None or candidate is None or candidate == self._checkpoint_version
 
     # -- selection -------------------------------------------------------------------------------------------------
     def receipts(self) -> dict[str, str]:
@@ -216,6 +239,8 @@ class LoraAssetPanel:
         self.page.loraList.clear()
         for item in self.loras:
             text = f"{item.identifier} @ {item.weight} · {labels.get(item.identifier, 'Unknown')}"
+            if not self._candidate_compatible(item.identifier):
+                text += f" · incompatible with {self._checkpoint_version}"
             if item.identifier in self._receipts:
                 text += f" [receipt {self._receipts[item.identifier][:8]}]"
             entry = QListWidgetItem(text)
@@ -224,10 +249,12 @@ class LoraAssetPanel:
 
     def choices(self) -> list[tuple[str, float | None]]:
         """(identifier, catalogue weight) of every LoRA offered for selection, custom-LoRA records included."""
-        candidates = list(self._candidates)
+        candidates = [(name, weight) for name, weight in self._candidates if self._candidate_compatible(name)]
         known = {name for name, _ in candidates}
         return candidates + [
-            (record["identifier"], None) for record in self._records.values() if record["identifier"] not in known
+            (record["identifier"], None)
+            for record in self._records.values()
+            if record["identifier"] not in known and self._candidate_compatible(record["identifier"])
         ]
 
     def all_choices(self) -> list[tuple[str, float | None]]:
