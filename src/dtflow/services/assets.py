@@ -36,6 +36,7 @@ from dtflow.diagnostics import api_error_data, cloud_key_data, event as diagnost
 from dtflow.persistence.assets import AssetRegistry, AssetsBusyError, newest_per_name
 from dtflow.persistence.store import PersistenceError
 from dtflow.services.lora_family import LoraFamily, detect_lora_family
+from dtflow.services.lora_naming import LoraPrepareMetadata
 from dtflow.services.lora_store import LoraStore
 
 log = logging.getLogger(__name__)
@@ -158,9 +159,24 @@ class AssetService:
 
     # -- prepare --------------------------------------------------------------------------------------------------
 
-    async def prepare(self, path: Path, identifier: str | None = None, *, provenance: str = "") -> PreparedAsset:
-        """Explicit, potentially network-writing preparation of one converted LoRA file."""
+    async def prepare(
+        self,
+        path: Path,
+        identifier: str | None = None,
+        *,
+        provenance: str = "",
+        metadata: LoraPrepareMetadata | None = None,
+    ) -> PreparedAsset:
+        """Explicit Prepare; accept a managed name before any provider negotiation."""
         path = Path(path)
+        if metadata is not None:
+            try:
+                selected_identifier = metadata.identifier
+            except ValueError as exc:
+                raise ValidationError(str(exc)) from exc
+            if identifier is not None and identifier != selected_identifier:
+                raise ValidationError("Prepare identifier disagrees with the selected managed LoRA name.")
+            identifier = selected_identifier
         stat, digest = await asyncio.to_thread(_observe, path)
         content = AssetContent("lora", identifier or path.name, digest, stat.st_size, provenance)
         retained = None
@@ -177,6 +193,7 @@ class AssetService:
             content.identifier,
             content.sha256,
             content.size,
+            metadata,
         )
         task = _INFLIGHT.get(key)
         if task is None or task.done():
@@ -191,7 +208,7 @@ class AssetService:
                     "family_source": detected.source,
                 },
             )
-            task = asyncio.create_task(self._prepare(path, content, stat, detected=detected))
+            task = asyncio.create_task(self._prepare(path, content, stat, detected=detected, metadata=metadata))
             _INFLIGHT[key] = task
             task.add_done_callback(
                 lambda done, key=key: _INFLIGHT.pop(key, None) if _INFLIGHT.get(key) is done else None
@@ -218,13 +235,15 @@ class AssetService:
         stat: os.stat_result,
         negotiation: AssetNegotiation | None = None,
         detected: LoraFamily | None = None,
+        metadata: LoraPrepareMetadata | None = None,
     ) -> PreparedAsset:
         backend = self.backend
         credential_id = await self._credential_id()
         if detected is None:
             detected = await asyncio.to_thread(detect_lora_family, path)
         asset_id, operation = await self.registry.begin(
-            content, backend.backend_id, backend.origin, family=detected.family
+            content, backend.backend_id, backend.origin, family=detected.family,
+            lora_metadata=metadata,
         )
         transferred = False
         try:
