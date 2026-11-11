@@ -202,39 +202,31 @@ async def load_prepared(
 async def bind_prepared(
     state: Path, backend_name: str, request: ResolvedGenerationRequest, asset_ids: list[str] | tuple[str, ...] | None
 ) -> ResolvedGenerationRequest:
-    """Attach confirmed local receipts to the request; reads only the local registry and never uploads."""
+    """Bind exact selected LoRA names to local content metadata and existing receipts, without uploads."""
     if not asset_ids:
         return request
-    prepared = await load_prepared(state, backend_name, asset_ids)
+    if backend_name != "cloud":
+        raise ValidationError("--asset applies to the cloud backend only.")
     selected = {item.identifier for item in request.loras}
-    # A receipt ID identifies local content; a distinct logical LoRA name may share its bytes.
-    # Preserve the explicitly selected names rather than silently replacing them with the
-    # global asset row's first filename.
     registry = AssetRegistry(state)
     await registry.open()
     try:
-        candidates = await registry.choices()
-    finally:
-        await registry.aclose()
-    ids = {item.receipt_id for item in prepared}
-    named = {
-        (item.receipt_id, item.identifier): item
-        for item in candidates
-        if item.receipt_id in ids and item.identifier in selected
-    }
-    resolved = tuple(
-        named.get((item.receipt_id, identifier))
-        for item in prepared
-        for identifier in (lora.identifier for lora in request.loras)
-        if (item.receipt_id, identifier) in named
-    )
-    prepared = tuple(dict.fromkeys(resolved)) or prepared
-    # Alias resolution can replace the enriched base receipt with its old,
-    # unclassified named row. Reattach the same file evidence to the final names.
-    registry = AssetRegistry(state)
-    await registry.open()
-    try:
-        prepared = await registry.resolve_prepared(prepared)
+        prepared = tuple([await registry.prepared(asset_id) for asset_id in asset_ids])
+        # A receipt ID identifies content; keep the logical name that was selected.
+        choices = await registry.choices()
+        ids = {item.receipt_id for item in prepared}
+        named = {
+            (item.receipt_id, item.identifier): item
+            for item in choices
+            if item.receipt_id in ids and item.identifier in selected
+        }
+        resolved = tuple(
+            named[(item.receipt_id, identifier)]
+            for item in prepared
+            for identifier in (lora.identifier for lora in request.loras)
+            if (item.receipt_id, identifier) in named
+        )
+        prepared = await registry.resolve_prepared(tuple(dict.fromkeys(resolved)) or prepared)
     finally:
         await registry.aclose()
     for item in prepared:
