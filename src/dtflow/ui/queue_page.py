@@ -261,6 +261,7 @@ class QueuePage:
         self._choices = self._composer_choices
         self._reuse_hook = reuse_hook
         self._draft = None  # immutable request/backend/receipts snapshot; Generate is only an explicit copy source
+        self._draft_choices: dict = {}  # initial inventory suggestions, not a live view of later Generate edits
         self._draft_job = None
         self._template_cap = False  # a loaded recipe's cap is local authoring state, never the shared cloud default
         self._authoring_reconstructed = False
@@ -1570,6 +1571,10 @@ class QueuePage:
 
     def _set_draft(self, request, name, endpoint, asset_ids, job) -> None:
         self._draft = request, name, endpoint, tuple(asset_ids)
+        # Generate is an explicit one-way source, including its offered LoRA/model choices.
+        # Keeping these plain dict/list snapshots avoids changing an existing draft when
+        # Generate changes checkpoint, key or inventory.
+        self._draft_choices = self._live_choices()
         self._draft_job = job
         edit = self.page.composerPromptEdit
         edit.blockSignals(True)
@@ -1577,10 +1582,10 @@ class QueuePage:
         edit.blockSignals(False)
 
     def _composer_choices(self) -> dict:
-        choices = self._live_choices()
         if self._draft is None:
-            return choices
+            return self._live_choices()
         request, name, endpoint, _ = self._draft
+        choices = self._draft_choices
         if self._backend() != (name, endpoint):
             # Inventory and account-bound receipt choices cannot migrate to a different captured backend.
             choices = {
@@ -1589,8 +1594,18 @@ class QueuePage:
                 "loras": {item.identifier: item.weight for item in request.loras},
                 "receipts": {},
             }
+        # Keep exact, imported or now-unlisted choices visible for editing the draft;
+        # their presence here does not prove provider availability or authorize uploads.
+        models = list(choices.get("models", ()))
+        if request.model_id not in models:
+            models.append(request.model_id)
+        loras = dict(choices.get("loras", {}))
+        for item in request.loras:
+            loras.setdefault(item.identifier, item.weight)
         return {
             **choices,
+            "models": models,
+            "loras": loras,
             "prompt": self.page.composerPromptEdit.toPlainText(),
             "size": f"{request.width_px}x{request.height_px}",
         }
