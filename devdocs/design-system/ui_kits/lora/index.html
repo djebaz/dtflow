@@ -384,7 +384,7 @@ footer.study-footer{text-align:center;margin-top:20px;color:var(--color-secondar
   };
   let selectedLibraryId="portrait";
   let metadataReturnFocus=null;
-  const libraryRows=$("#connection-library-details tbody tr[data-lora-id]");
+  const libraryRows=$$("#connection-library-details tbody tr[data-lora-id]");
   const selectLibraryRow=id=>{
     selectedLibraryId=id;
     libraryRows.forEach(row=>row.setAttribute("aria-selected",String(row.dataset.loraId===id)));
@@ -430,15 +430,15 @@ footer.study-footer{text-align:center;margin-top:20px;color:var(--color-secondar
   $("#metadata-backdrop").addEventListener("keydown",event=>{
     if(event.key==="Escape"){event.preventDefault();closeMetadata();return;}
     if(event.key!=="Tab")return;
-    const controls=$('input:not(:disabled),select:not(:disabled),button:not(:disabled)',$("#metadata-dialog"));
+    const controls=$$('input:not(:disabled),select:not(:disabled),button:not(:disabled)',$("#metadata-dialog"));
     if(!controls.length)return;
     const first=controls[0],last=controls[controls.length-1];
     if(event.shiftKey&&document.activeElement===first){event.preventDefault();last.focus();}
     else if(!event.shiftKey&&document.activeElement===last){event.preventDefault();first.focus();}
   });
   // Synchronize the illustrated switches across Connections, Generate and the reference view.
-  $("[data-trigger-scope]").forEach(control=>control.addEventListener("change",()=>{
-    $('[data-trigger-scope="'+control.dataset.triggerScope+'"]').forEach(peer=>{peer.checked=control.checked;});
+  $$("[data-trigger-scope]").forEach(control=>control.addEventListener("change",()=>{
+    $$('[data-trigger-scope="'+control.dataset.triggerScope+'"]').forEach(peer=>{peer.checked=control.checked;});
   }));
   $("#save-metadata").addEventListener("click",()=>{
     closeMetadata();
