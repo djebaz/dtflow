@@ -10,7 +10,8 @@ Supports safetensors, Draw Things SQLite .ckpt and conversion-manifest JSON.
 Output is a concise summary, not a dump of tensor names or shapes. Converted
 CKPT files do not embed the model version. A matching JSON sidecar can provide
 a *declared*, unverified version; it is never treated as file-derived evidence.
-Read-only, non-recursive, standard-library only.
+Read-only, non-recursive, standard-library only. Directory mode includes
+conversion *_lora_f16.json manifests and custom_lora.json, not arbitrary JSON.
 """
 
 from __future__ import annotations
@@ -198,11 +199,14 @@ def main() -> int:
             for item in candidates:
                 if not item.is_file() or item.suffix.lower() not in INPUT_EXTENSIONS:
                     continue
-                if item.suffix.lower() == ".json" and any(
-                    item.with_suffix(extension).is_file()
-                    for extension in (".safetensors", ".ckpt")
-                ):
-                    continue
+                if item.suffix.lower() == ".json":
+                    # Skip arbitrary JSON files, including previous reports.
+                    # Conversion manifests can also be passed explicitly.
+                    if item.name.lower() != "custom_lora.json" and not item.stem.lower().endswith("_lora_f16"):
+                        continue
+                    if any(item.with_suffix(extension).is_file()
+                           for extension in (".safetensors", ".ckpt")):
+                        continue
                 paths.append(item)
         except OSError as exc:
             parser.error(f"Could not scan directory: {exc}")
