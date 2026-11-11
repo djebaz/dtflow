@@ -237,9 +237,12 @@ class LoraStore:
             self._write(files)
             try:
                 original.unlink()
-            except OSError:
-                # An extra unindexed copy is safer than losing the canonical one.
-                diagnostic_event(log, "assets.retained_old_name_left", level=logging.WARNING, data={"sha": sha256[:8]})
+            except OSError as exc:
+                # An extra unindexed hard link is safer than losing the canonical one.
+                diagnostic_event(
+                    log, "assets.retained_old_name_left", level=logging.WARNING,
+                    data={"sha": sha256[:8], "reason": type(exc).__name__},
+                )
             return RetainedFile(accepted_name, sha256, size, target)
         finally:
             handle.close()
