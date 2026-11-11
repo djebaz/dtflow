@@ -220,7 +220,10 @@ class AssetRegistry:
 
     def _check_version(self, db: sqlite3.Connection, *, create: bool) -> None:
         version = db.execute("PRAGMA user_version").fetchone()[0]
-        if version not in (0, SCHEMA_VERSION):
+        empty_database = not db.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'"
+        ).fetchone()
+        if version != SCHEMA_VERSION and not (create and version == 0 and empty_database):
             raise PersistenceError(
                 "This pre-release asset database uses an incompatible schema. "
                 "Close DTFlow and manually reset the .dtflow state directory before continuing; "
