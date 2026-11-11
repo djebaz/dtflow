@@ -14,6 +14,8 @@ on:
       - 'src/dtflow/ui/lora_panel.py'
       - 'src/dtflow/ui/lora_selection_editor.py'
       - 'src/dtflow/ui/forms/lora_selection_*.ui'
+      - 'src/dtflow/ui/forms/main_window.ui'
+      - 'src/dtflow/ui/main_window.py'
       - 'tools/ui/render_states.py'
       - 'tools/ui/render_catalog.py'
       - 'tools/ui/render_catalog.json'
@@ -66,8 +68,8 @@ jobs:
             .venv/bin/python tools/ui/render_states.py \
               --category lora --fast --jobs 1 --out tmp/lora-ui
           count=$(find tmp/lora-ui -maxdepth 1 -name 'lora-*.png' -type f | wc -l)
-          [ "$count" -eq 3 ] || { echo "::error::Expected 3 LoRA captures, got $count."; exit 1; }
-          echo "Captured native LoRA Prepare wide/compact and shared picker." >> "$GITHUB_STEP_SUMMARY"
+          [ "$count" -eq 5 ] || { echo "::error::Expected 5 LoRA captures, got $count."; exit 1; }
+          echo "Captured LoRA Prepare wide/compact, shared picker, and Connections collapsed/expanded." >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upload GitHub screenshot artifact
         if: steps.capture.outcome == 'success'
@@ -117,7 +119,7 @@ jobs:
           names = sorted(path.name for path in Path("tmp/lora-ui").glob("lora-*.png"))
           lines = [
               "<!-- dtflow-lora-designer-renders -->",
-              "## Canonical LoRA Prepare and picker — 3 captures",
+              "## Canonical LoRA views — 5 captures",
               "",
               f"[GitHub Actions run and PNG artifact]({os.environ['RUN_URL']})",
               "",
