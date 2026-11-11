@@ -68,6 +68,11 @@ async def auto_prepare_metadata(
     # classify. An explicit user declaration remains independent evidence.
     candidate = _candidate({**saved, "detected_version": detected_version}, source_name, sha256, size)
     if candidate is None:
+        if saved.get("managed_identifier"):
+            raise ValidationError(
+                "This LoRA already has an accepted managed name, but its exact architecture "
+                "could not be verified for Re-Prepare."
+            )
         return None
     request, format_source = candidate
     occupied = occupied_from_snapshot(await registry.lora_name_snapshot())
