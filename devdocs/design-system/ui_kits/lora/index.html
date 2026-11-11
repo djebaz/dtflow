@@ -128,7 +128,7 @@ nav.views{display:flex;gap:7px;align-items:center;flex-wrap:wrap;padding:12px ma
 .toggle:checked:before{background:var(--color-on-accent);transform:translateX(16px)}
 
 /* Placement study: Connections keeps its three existing zones and hides the library by default. */
-.connection-layout,.generate-layout{display:grid;grid-template-columns:minmax(175px,23%) minmax(0,1fr) minmax(205px,25%);gap:var(--lora-placement-gap);align-items:start}
+.connection-layout,.generate-layout{display:grid;grid-template-columns:minmax(170px,21%) minmax(0,1fr) minmax(240px,28%);gap:var(--lora-placement-gap);align-items:start}
 .workspace-pane{min-width:0;display:grid;gap:var(--lora-placement-gap)}
 .workspace-card{padding:12px}
 .workspace-card h2{font-size:var(--font-size-section);margin:0 0 10px}
@@ -137,7 +137,24 @@ nav.views{display:flex;gap:7px;align-items:center;flex-wrap:wrap;padding:12px ma
 .workspace-status{color:var(--color-success);font-size:var(--font-size-small)}
 .workspace-note{color:var(--color-secondary);font-size:var(--font-size-small);line-height:1.5;margin:8px 0 0}
 .workspace-card .action{padding:6px 10px;min-height:30px}
-.workspace-card .setting-row{padding:4px 0}
+.workspace-card .setting-row{padding:6px 0}
+.trigger-group-title{font-size:var(--font-size-small);font-weight:650;color:var(--color-secondary);margin:12px 0 5px}
+.trigger-setting{cursor:pointer;display:flex;gap:10px;align-items:center;justify-content:space-between;margin:0;font-weight:400}
+.trigger-setting strong{font-size:var(--font-size-small)}
+.trigger-setting .description{font-weight:400}
+.trigger-setting .toggle{margin-left:auto}
+.trigger-setting:focus-within{outline:2px solid var(--lora-focus);outline-offset:1px}
+.trigger-setting .toggle:focus-visible{outline:0}
+.library-table tbody tr{cursor:pointer}
+.library-table tbody tr:hover{background:var(--color-button-hover)}
+.library-table tbody tr:focus-visible{outline:2px solid var(--lora-focus);outline-offset:-2px}
+.metadata-backdrop{position:fixed;inset:0;z-index:100;background:var(--color-editor-scrim,rgba(0,0,0,.75));display:grid;place-items:center;padding:16px}
+.metadata-backdrop[hidden]{display:none}
+.metadata-dialog{width:min(960px,100%);max-height:min(90vh,800px);overflow-y:auto;background:var(--color-surface);border:1px solid var(--color-panel-edge);border-radius:var(--radius-panel);padding:16px}
+.metadata-dialog .metadata-grid{grid-template-columns:minmax(0,1fr) 245px}
+.metadata-dialog .screen-heading{margin-bottom:14px}
+@media(max-width:780px){.metadata-dialog .metadata-grid{grid-template-columns:1fr}}
+
 .library-heading{width:100%;display:flex;align-items:center;gap:9px;text-align:left;background:var(--color-section-header);color:var(--color-text);border:0;padding:11px 12px;font-weight:600}
 .library-heading:hover{background:var(--color-button-hover)}
 .library-heading .soft-tag{margin-left:auto}
@@ -189,11 +206,11 @@ footer.study-footer{text-align:center;margin-top:20px;color:var(--color-secondar
   <div class="prototype-flag">Concept render · #373 · Offline / no uploads</div>
 </header>
 <nav class="views" aria-label="Design screen">
-<button class="view-btn" data-view="connections" type="button">Connections placement</button>
+<button class="view-btn active" data-view="connections" type="button">Connections placement</button>
 <button class="view-btn" data-view="generate" type="button">Generate placement</button>
-<button class="view-btn active" data-view="prepare" type="button">Batch Prepare</button>
+<button class="view-btn" data-view="prepare" type="button">Batch Prepare</button>
 <button class="view-btn" data-view="picker" type="button">LoRA picker</button>
-<button class="view-btn" data-view="metadata" type="button">Edit metadata</button>
+<button class="view-btn" id="open-metadata-from-nav" type="button">Edit metadata overlay</button>
 <button class="view-btn" data-view="triggers" type="button">Trigger behavior</button>
 </nav>
 <main class="study">
@@ -209,19 +226,30 @@ footer.study-footer{text-align:center;margin-top:20px;color:var(--color-secondar
         <div class="library-contents" id="connection-library-details" hidden>
           <p class="workspace-note" style="margin:0 0 10px">One canonical metadata library; locally retained copies and preparation receipts remain distinct.</p>
           <div class="library-toolbar"><button class="action primary" id="connection-edit-metadata" type="button">Edit metadata</button><button class="action" type="button" disabled title="No file operations in this prototype">Remove retained copy · preview</button><button class="action" type="button" disabled title="No file operations in this prototype">Import JSON · preview</button></div>
-          <div class="library-table-wrap"><table class="library-table"><thead><tr><th>Short name</th><th>Architecture</th><th>Format</th><th>Trigger words</th><th>Status</th></tr></thead><tbody>
-          <tr aria-selected="true"><td>PortraitV2</td><td>Kr2</td><td>F16</td><td>portrait style</td><td>Ready</td></tr>
-          <tr><td>Cinematic</td><td>ZiT</td><td>Q8P</td><td>cinematic lighting</td><td>Ready</td></tr>
-          <tr><td>DetailBoost</td><td>Unknown</td><td>F16</td><td>—</td><td>Needs architecture</td></tr>
-          <tr><td>Realism</td><td>F1</td><td>F16</td><td>—</td><td>Ready</td></tr>
+          <div class="library-table-wrap"><table class="library-table" aria-label="Custom LoRAs, select one row for metadata editing"><thead><tr><th>Short name</th><th>Architecture</th><th>Format</th><th>Trigger words</th><th>Status</th></tr></thead><tbody>
+          <tr data-lora-id="portrait" tabindex="0" aria-selected="true"><td>PortraitV2</td><td>Kr2</td><td>F16</td><td>portrait style</td><td>Ready</td></tr>
+          <tr data-lora-id="cinematic" tabindex="0" aria-selected="false"><td>Cinematic</td><td>ZiT</td><td>Q8P</td><td>cinematic lighting</td><td>Ready</td></tr>
+          <tr data-lora-id="detail" tabindex="0" aria-selected="false"><td>DetailBoost</td><td>Unknown</td><td>F16</td><td>—</td><td>Needs architecture</td></tr>
+          <tr data-lora-id="realism" tabindex="0" aria-selected="false"><td>Realism</td><td>F1</td><td>F16</td><td>—</td><td>Ready</td></tr>
           </tbody></table></div>
-          <p class="workspace-note">Full filenames, file hashes and remote receipt details remain inspectable. Remove retained copy affects local bytes only.</p>
+          <p class="workspace-note">Select a single row for Edit metadata. Full filenames, file hashes and remote receipt details remain inspectable. Remove retained copy affects local bytes only.</p><p class="workspace-note" id="connection-metadata-feedback" role="status" hidden></p>
         </div>
       </section>
       <section class="surface workspace-card"><h2>Draw Things presets</h2><p class="workspace-note">Existing import/export controls and status stay here.</p></section>
       <section class="surface workspace-card"><h2>Disposable cache</h2><p class="workspace-note">Existing cache status and cleanup actions stay here.</p></section>
     </div>
-    <aside class="workspace-pane"><section class="surface workspace-card"><h2>Global settings</h2><div class="setting-row"><div><strong>Use LoRA trigger prefixes</strong><p class="description">Default for newly created execution configurations.</p></div><input class="toggle" type="checkbox" aria-label="Application default for new LoRA trigger-prefix configurations"></div><p class="workspace-note">This is a default, not a master switch. Existing Generate, Queue, Workflow and Script choices remain unchanged.</p></section><section class="surface workspace-card"><h2>Existing global controls</h2><p class="workspace-note">Other app-wide preferences keep their current placement.</p></section></aside>
+    <aside class="workspace-pane"><section class="surface workspace-card">
+      <h2>LoRA trigger prefixes</h2>
+      <p class="workspace-note">Configure defaults and inspect each independently saved execution choice here.</p>
+      <div class="trigger-group-title">Application default</div>
+      <label class="setting-row trigger-setting"><span><strong>New configurations</strong><span class="description">Starting value only</span></span><input class="toggle" data-trigger-scope="default" type="checkbox" aria-label="Default LoRA trigger prefixes for new configurations"></label>
+      <div class="trigger-group-title">Execution contexts</div>
+      <label class="setting-row trigger-setting"><span><strong>Generate</strong><span class="description">Generate settings</span></span><input class="toggle" data-trigger-scope="generate" type="checkbox" checked aria-label="Generate LoRA trigger prefixes"></label>
+      <label class="setting-row trigger-setting"><span><strong>Queues</strong><span class="description">Queue plans and templates</span></span><input class="toggle" data-trigger-scope="queues" type="checkbox" aria-label="Queues LoRA trigger prefixes"></label>
+      <label class="setting-row trigger-setting"><span><strong>Workflows</strong><span class="description">Workflow configurations</span></span><input class="toggle" data-trigger-scope="workflows" type="checkbox" checked aria-label="Workflows LoRA trigger prefixes"></label>
+      <label class="setting-row trigger-setting"><span><strong>Scripts</strong><span class="description">Script executions</span></span><input class="toggle" data-trigger-scope="scripts" type="checkbox" aria-label="Scripts LoRA trigger prefixes"></label>
+      <p class="workspace-note">Each switch is independent. The application default never overwrites existing choices. Prototype changes are temporary.</p>
+    </section><section class="surface workspace-card"><h2>Existing global controls</h2><p class="workspace-note">Other app-wide preferences keep their current placement.</p></section></aside>
   </div>
   <div class="note"><strong>Design-only placement:</strong> expand Custom LoRAs to manage metadata; close it to recover the center workspace. No local files, metadata or provider state is changed by this illustration.</div>
 </section>
@@ -230,11 +258,11 @@ footer.study-footer{text-align:center;margin-top:20px;color:var(--color-secondar
   <div class="generate-layout">
     <aside class="workspace-pane"><div class="surface workspace-card"><h2>Parameters</h2><span class="workspace-label">Checkpoint</span><div class="workspace-value">Krea 2 (example)</div><p class="workspace-note">Existing generation parameters remain on the left.</p></div></aside>
     <div class="workspace-pane"><section class="surface workspace-card"><h2>Generate workspace</h2><span class="workspace-label">Prompt</span><div class="workspace-value">Portrait with cinematic lighting…</div><div class="mini-preview" style="margin-top:10px">Existing image preview</div><p class="workspace-note">Prompt and image preview remain in the flexible center.</p></section></div>
-    <aside class="workspace-pane"><section class="surface workspace-card"><h2>Selected LoRAs <span class="soft-tag" id="generate-count">2</span></h2><div class="generate-selected" id="generate-selected"></div><button class="action primary" type="button" id="generate-edit-selection">Add / Edit LoRAs</button><div class="setting-row"><div><strong>Use LoRA trigger prefixes</strong><p class="description">Generate only</p></div><input type="checkbox" class="toggle" checked aria-label="Generate LoRA trigger prefixes"></div><p class="workspace-note">The shared selection picker opens on demand. There are no metadata-management actions here.</p></section></aside>
+    <aside class="workspace-pane"><section class="surface workspace-card"><h2>Selected LoRAs <span class="soft-tag" id="generate-count">2</span></h2><div class="generate-selected" id="generate-selected"></div><button class="action primary" type="button" id="generate-edit-selection">Add / Edit LoRAs</button><div class="setting-row"><div><strong>Use LoRA trigger prefixes</strong><p class="description">Generate only</p></div><input type="checkbox" class="toggle" checked data-trigger-scope="generate" aria-label="Generate LoRA trigger prefixes"></div><p class="workspace-note">The shared selection picker opens on demand. There are no metadata-management actions here.</p></section></aside>
   </div>
   <div class="note"><strong>Design-only placement:</strong> visual selections are examples, and the picker is interactive only within this offline fixture. No generation request is sent.</div>
 </section>
-<section class="screen active" id="screen-prepare">
+<section class="screen" id="screen-prepare">
   <div class="screen-heading"><div><div class="page-label">Assets / batch preparation</div><h1>Prepare LoRAs</h1><p>Complete metadata before preparing on DT+. Files stay local until you choose Prepare.</p></div><div class="side-meta"><span class="soft-tag">5 selected files</span><div style="margin-top:12px">Design fixture · names and architectures illustrative</div></div></div>
   <div class="surface" id="batch-surface">
     <div class="toolbar"><span class="hint">Only ready rows are included. Incomplete rows stay editable while other files are preparing.</span><label class="compact-toggle"><input type="checkbox" id="compact-toggle"> Compact width</label></div>
@@ -296,30 +324,35 @@ footer.study-footer{text-align:center;margin-top:20px;color:var(--color-secondar
     <aside class="readout"><h2>Effective LoRA order</h2><p>Preserved independently of the visual picker sort.</p><div id="effective-order" class="code" style="margin:15px 0"></div><p>Identifiers and weights are unchanged by a short-name edit. New selections append to execution order even when the list re-sorts.</p><hr style="border:0;border-top:1px solid var(--color-section-border);margin:15px 0"><strong style="color:var(--color-text)">Display pattern</strong><div class="code" style="margin-top:9px">PortraitV2[Kr2] @ 0.8</div><p style="margin-top:10px">Exact managed ID is disclosed in item details, not substituted into backend requests.</p></aside>
   </div>
 </section>
-<section class="screen" id="screen-metadata">
-  <div class="screen-heading"><div><div class="page-label">Connections / Custom LoRAs / Edit metadata</div><h1>Edit LoRA metadata</h1><p>Existing prepared files will not be uploaded or renamed.</p></div><span class="soft-tag">Metadata-only mode</span></div>
+</main>
+<div class="metadata-backdrop" id="metadata-backdrop" hidden>
+<section class="metadata-dialog" id="metadata-dialog" role="dialog" aria-modal="true" aria-labelledby="metadata-dialog-title">
+
+  <div class="screen-heading"><div><div class="page-label">Connections / Custom LoRAs / Edit metadata</div><h1 id="metadata-dialog-title">Edit LoRA metadata</h1><p>Existing prepared files will not be uploaded or renamed.</p></div><span class="soft-tag">Metadata-only mode</span></div>
   <div class="metadata-grid">
-    <div class="surface metadata-form"><h2 class="section-small">PortraitV2[Kr2]</h2><div class="field-grid">
-      <div class="wide"><label>Original / prepared identifier (read-only)</label><input class="editor-input code" disabled value="portrait_8e62d922f3a4c82b1aef990108a2fae9_lora_f16.ckpt"></div>
-      <div><label>Architecture</label><select class="editor-input"><option selected>Krea 2</option><option>Z-Image Turbo</option></select><div class="field-note">File detected: Krea 2 · user declaration separate</div></div>
-      <div><label>Short name</label><input class="editor-input" value="PortraitV2"></div>
-      <div><label>Quantization</label><select class="editor-input"><option selected>F16</option><option>Q8P</option></select><div class="field-note">Existing saved selection retained</div></div>
-      <div><label>Trigger words (optional)</label><input class="editor-input" value="portrait style"></div>
-      <div class="wide" style="padding:12px;border:1px solid var(--color-section-border);background:var(--color-host);border-radius:6px"><div class="preview-title">Managed identifier remains unchanged</div><div class="code">portrait_8e62d922f3a4c82b1aef990108a2fae9_lora_f16.ckpt</div></div>
-    </div><div class="batch-footer"><div class="description">No upload or rename occurs for metadata-only edits.</div><div class="actions"><button class="action">Cancel</button><button class="action primary" id="save-metadata">Save metadata (preview)</button></div></div></div>
-    <aside class="readout"><h2>Source and identity</h2><div>Short label<br><span class="code">PortraitV2[Kr2]</span></div><div style="margin-top:12px">Architecture source<br><span class="code">Detected from file</span></div><div style="margin-top:12px">Original retained file<br><span class="code">…a9_lora_f16.ckpt</span></div><div style="margin-top:12px">Technical receipt<br><span class="code">Unchanged</span></div><div style="margin-top:20px;color:var(--color-warning)">A family conflict would appear here in plain text, keeping both detected and declared evidence.</div></aside>
+    <div class="surface metadata-form"><h2 class="section-small" id="metadata-name">PortraitV2[Kr2]</h2><div class="field-grid">
+      <div class="wide"><label>Original / prepared identifier (read-only)</label><input class="editor-input code" id="metadata-identifier" disabled value="portrait_8e62d922f3a4c82b1aef990108a2fae9_lora_f16.ckpt"></div>
+      <div><label>Architecture</label><select class="editor-input" id="metadata-architecture"><option value="">Unknown / select…</option><option selected value="Kr2">Krea 2</option><option value="ZiT">Z-Image Turbo</option><option value="F1">FLUX.1</option></select><div class="field-note" id="metadata-architecture-note">File detected: Krea 2 · user declaration separate</div></div>
+      <div><label>Short name</label><input class="editor-input" id="metadata-short" value="PortraitV2"></div>
+      <div><label>Quantization</label><select class="editor-input" id="metadata-format"><option selected>F16</option><option>Q8P</option></select><div class="field-note">Existing saved selection retained</div></div>
+      <div><label>Trigger words (optional)</label><input class="editor-input" id="metadata-trigger" value="portrait style"></div>
+      <div class="wide" style="padding:12px;border:1px solid var(--color-section-border);background:var(--color-host);border-radius:6px"><div class="preview-title">Managed identifier remains unchanged</div><div class="code" id="metadata-managed-id">portrait_8e62d922f3a4c82b1aef990108a2fae9_lora_f16.ckpt</div></div>
+    </div><div class="batch-footer"><div class="description">No upload or rename occurs for metadata-only edits.</div><div class="actions"><button class="action" type="button" id="cancel-metadata">Cancel</button><button class="action primary" type="button" id="save-metadata">Save metadata (preview)</button></div></div></div>
+    <aside class="readout"><h2>Source and identity</h2><div>Short label<br><span class="code" id="metadata-readout-label">PortraitV2[Kr2]</span></div><div style="margin-top:12px">Architecture source<br><span class="code" id="metadata-readout-source">Detected from file</span></div><div style="margin-top:12px">Original retained file<br><span class="code" id="metadata-readout-original">…a9_lora_f16.ckpt</span></div><div style="margin-top:12px">Technical receipt<br><span class="code">Unchanged</span></div><div style="margin-top:20px;color:var(--color-warning)">A family conflict would appear here in plain text, keeping both detected and declared evidence.</div></aside>
   </div>
-  <div class="note">This view represents the metadata editor only. It does not validate a local database, existing receipt or provider capability.</div>
+  <div class="note">One selected LoRA only. This overlay edits an illustrative local record; no file, database, receipt or provider data is changed.</div>
 </section>
+</div>
+<main class="study">
 <section class="screen" id="screen-triggers">
-  <div class="screen-heading"><div><div class="page-label">Reference only / no separate Settings page</div><h1>Use LoRA trigger prefixes</h1><p>The default belongs in Connections’ right rail; execution choices belong in their own Generate, Queues, Workflows and Scripts controls. This screen is a behavior reference, not a fifth settings page.</p></div><span class="soft-tag">Illustrative settings</span></div>
+  <div class="screen-heading"><div><div class="page-label">Reference only / no separate Settings page</div><h1>Use LoRA trigger prefixes</h1><p>All five switches are shown together in the Connections right panel. Execution choices remain independently saved, and Generate, Queues, Workflows and Scripts can expose their own corresponding controls. This is a behavior reference, not a separate Settings page.</p></div><span class="soft-tag">Illustrative settings</span></div>
   <div class="preferences">
-    <div class="surface setting-panel"><h2 class="section-small">Application default</h2><div class="setting-row"><div><strong>Default for new configurations</strong><p class="description">Changing this choice does not retroactively overwrite settings already saved in Generate, Queues, Workflows or Scripts.</p></div><input type="checkbox" class="toggle" aria-label="Default for new configurations"></div><div class="note" style="margin-top:16px">The default is a starting value, not a live master switch.</div></div>
+    <div class="surface setting-panel"><h2 class="section-small">Application default</h2><div class="setting-row"><div><strong>Default for new configurations</strong><p class="description">Changing this choice does not retroactively overwrite settings already saved in Generate, Queues, Workflows or Scripts.</p></div><input type="checkbox" class="toggle" data-trigger-scope="default" aria-label="Default for new configurations"></div><div class="note" style="margin-top:16px">The default is a starting value, not a live master switch.</div></div>
     <div class="surface setting-panel"><h2 class="section-small">Independent execution settings</h2>
-      <div class="setting-row"><div><strong>Generate</strong><p class="description">Saved with Generate settings.</p></div><input class="toggle" type="checkbox" checked aria-label="Generate trigger prefixes"></div>
-      <div class="setting-row"><div><strong>Queues</strong><p class="description">Captured with plans, templates and retries.</p></div><input class="toggle" type="checkbox" aria-label="Queues trigger prefixes"></div>
-      <div class="setting-row"><div><strong>Workflows</strong><p class="description">Preserved with each saved workflow configuration.</p></div><input class="toggle" type="checkbox" checked aria-label="Workflows trigger prefixes"></div>
-      <div class="setting-row"><div><strong>Scripts</strong><p class="description">Independent script Setup / execution preference.</p></div><input class="toggle" type="checkbox" aria-label="Scripts trigger prefixes"></div>
+      <div class="setting-row"><div><strong>Generate</strong><p class="description">Saved with Generate settings.</p></div><input class="toggle" type="checkbox" checked data-trigger-scope="generate" aria-label="Generate trigger prefixes"></div>
+      <div class="setting-row"><div><strong>Queues</strong><p class="description">Captured with plans, templates and retries.</p></div><input class="toggle" type="checkbox" data-trigger-scope="queues" aria-label="Queues trigger prefixes"></div>
+      <div class="setting-row"><div><strong>Workflows</strong><p class="description">Preserved with each saved workflow configuration.</p></div><input class="toggle" type="checkbox" checked data-trigger-scope="workflows" aria-label="Workflows trigger prefixes"></div>
+      <div class="setting-row"><div><strong>Scripts</strong><p class="description">Independent script Setup / execution preference.</p></div><input class="toggle" type="checkbox" data-trigger-scope="scripts" aria-label="Scripts trigger prefixes"></div>
     </div>
   </div>
   <div class="note"><strong>Provider boundary:</strong> local prompt insertion is controlled by each path's saved setting. Cloud Asset trigger metadata-write support remains unverified; the visual toggle does not prove provider transmission, persistence or duplicate avoidance.</div>
@@ -331,7 +364,7 @@ footer.study-footer{text-align:center;margin-top:20px;color:var(--color-secondar
   "use strict";
   const $ = (selector, root = document) => root.querySelector(selector);
   const $$ = (selector, root = document) => Array.from(root.querySelectorAll(selector));
-  const screens = ["connections", "generate", "prepare", "picker", "metadata", "triggers"];
+  const screens = ["connections", "generate", "prepare", "picker", "triggers"];
   const setView = (name) => {
     if (!screens.includes(name)) return;
     $$(".screen").forEach(el => el.classList.toggle("active", el.id === "screen-" + name));
@@ -344,10 +377,81 @@ footer.study-footer{text-align:center;margin-top:20px;color:var(--color-secondar
     libraryToggle.setAttribute("aria-expanded", String(!isOpen));
     $("#connection-library-details").hidden = isOpen;
   });
-  $("#connection-edit-metadata").addEventListener("click", () => setView("metadata"));
+  // Connection table metadata editing is intentionally single-item only.
+  const loRAFixtures = {
+    portrait:{name:"PortraitV2",tag:"Kr2",family:"Kr2",format:"F16",trigger:"portrait style",file:"portrait_8e62d922f3a4c82b1aef990108a2fae9_lora_f16.ckpt",source:"Detected from file"},
+    cinematic:{name:"Cinematic",tag:"ZiT",family:"ZiT",format:"Q8P",trigger:"cinematic lighting",file:"cinematic_20261111_lora_q8p.ckpt",source:"Detected from file"},
+    detail:{name:"DetailBoost",tag:"?",family:"",format:"F16",trigger:"",file:"detail_boost_ep12_lora_f16.ckpt",source:"Unknown — manual selection required"},
+    realism:{name:"Realism",tag:"F1",family:"F1",format:"F16",trigger:"",file:"realism_lora_f16.ckpt",source:"Detected from file"}
+  };
+  let selectedLibraryId="portrait";
+  let metadataReturnFocus=null;
+  const libraryRows=$("#connection-library-details tbody tr[data-lora-id]");
+  const selectLibraryRow=id=>{
+    selectedLibraryId=id;
+    libraryRows.forEach(row=>row.setAttribute("aria-selected",String(row.dataset.loraId===id)));
+  };
+  libraryRows.forEach(row=>{
+    row.addEventListener("click",()=>selectLibraryRow(row.dataset.loraId));
+    row.addEventListener("keydown",event=>{
+      if(event.key==="Enter"||event.key===" "){event.preventDefault();selectLibraryRow(row.dataset.loraId);}
+    });
+  });
+  const closeMetadata=()=>{
+    $("#metadata-backdrop").hidden=true;
+    metadataReturnFocus?.focus();
+  };
+  const openMetadata=()=>{
+    const item=loRAFixtures[selectedLibraryId];
+    metadataReturnFocus=document.activeElement;
+    $("#metadata-name").textContent=item.name+"["+item.tag+"]";
+    $("#metadata-identifier").value=item.file;
+    $("#metadata-architecture").value=item.family;
+    $("#metadata-architecture-note").textContent=item.source;
+    $("#metadata-short").value=item.name;
+    $("#metadata-format").value=item.format;
+    $("#metadata-trigger").value=item.trigger;
+    $("#metadata-managed-id").textContent=item.file;
+    $("#metadata-readout-label").textContent=item.name+"["+item.tag+"]";
+    $("#metadata-readout-source").textContent=item.source;
+    $("#metadata-readout-original").textContent=item.file;
+    $("#metadata-backdrop").hidden=false;
+    $("#metadata-short").focus();
+  };
+  $("#connection-edit-metadata").addEventListener("click",openMetadata);
+  $("#open-metadata-from-nav").addEventListener("click",()=>{
+    setView("connections");
+    if(libraryToggle.getAttribute("aria-expanded")==="false")libraryToggle.click();
+    selectLibraryRow("portrait");
+    openMetadata();
+  });
+  $("#cancel-metadata").addEventListener("click",closeMetadata);
+  $("#metadata-backdrop").addEventListener("click",event=>{
+    if(event.target===$("#metadata-backdrop"))closeMetadata();
+  });
+  $("#metadata-backdrop").addEventListener("keydown",event=>{
+    if(event.key==="Escape"){event.preventDefault();closeMetadata();return;}
+    if(event.key!=="Tab")return;
+    const controls=$('input:not(:disabled),select:not(:disabled),button:not(:disabled)',$("#metadata-dialog"));
+    if(!controls.length)return;
+    const first=controls[0],last=controls[controls.length-1];
+    if(event.shiftKey&&document.activeElement===first){event.preventDefault();last.focus();}
+    else if(!event.shiftKey&&document.activeElement===last){event.preventDefault();first.focus();}
+  });
+  // Synchronize the illustrated switches across Connections, Generate and the reference view.
+  $("[data-trigger-scope]").forEach(control=>control.addEventListener("change",()=>{
+    $('[data-trigger-scope="'+control.dataset.triggerScope+'"]').forEach(peer=>{peer.checked=control.checked;});
+  }));
+  $("#save-metadata").addEventListener("click",()=>{
+    closeMetadata();
+    const feedback=$("#connection-metadata-feedback");
+    feedback.hidden=false;
+    feedback.textContent="Preview only: no metadata was saved for "+loRAFixtures[selectedLibraryId].name+".";
+  });
   $("#generate-edit-selection").addEventListener("click", () => setView("picker"));
   const params = new URLSearchParams(window.location.search);
-  setView(params.get("view") || "prepare");
+  setView(params.get("view")==="metadata" ? "connections" : (params.get("view") || "connections"));
+  if(params.get("view")==="metadata")$("#open-metadata-from-nav").click();
   const compact = $("#compact-toggle");
   const updateCompact = () => $("#screen-prepare").classList.toggle("force-compact", compact.checked);
   compact.addEventListener("change", updateCompact);
@@ -479,7 +583,7 @@ footer.study-footer{text-align:center;margin-top:20px;color:var(--color-secondar
   };
   $("#picker-search").addEventListener("input",pickerRender);
   pickerRender();
-  $("#save-metadata").addEventListener("click",()=>{$("#save-metadata").textContent="Preview only · nothing saved";});
+
 })();
 </script>
 </body>
