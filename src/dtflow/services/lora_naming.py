@@ -14,7 +14,6 @@ import re
 from collections.abc import Collection, Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
 
 
 @dataclass(frozen=True, slots=True)
@@ -336,54 +335,38 @@ def _candidates(groups: list[list[str]], version: str | None) -> list[tuple[str,
     return sorted(found.values(), key=lambda item: (-item[1], item[0]))
 
 
-def _suggest(filename: str) -> dict[str, Any]:
+def suggest_short_name(filename: str) -> NameSuggestion:
+    """Suggest an editable name from filename text without file I/O or inference."""
     groups, version, discarded = _split(filename)
     candidates = _candidates(groups, version)
     words = [word for group in groups for word in group]
     if not candidates:
-        return {
-            "source_file": _basename(filename),
-            "suggestion": None,
-            "alternatives": [],
-            "confidence": "none",
-            "needs_review": True,
-            "reason": "No usable descriptive tokens remain after removing technical naming noise.",
-        }
+        return NameSuggestion(
+            name=None,
+            needs_review=True,
+            reason="No usable descriptive tokens remain after removing technical naming noise.",
+        )
+
     primary = candidates[0][0]
     alternatives = [name for name, _ in candidates[1:] if name != primary][:3]
     low_signal = (
-        not words
-        or all(token.casefold() in WEAK for token in words)
+        all(token.casefold() in WEAK for token in words)
         or (len(words) == 1 and bool(re.fullmatch(r"[a-z]{1,4}\d+", words[0], re.I)))
     )
     shortened = len(_label(words, version)) > MAX_SHORT_NAME
     confidence = "low" if low_signal else "medium" if shortened or len(words) == 1 else "high"
-    return {
-        "source_file": _basename(filename),
-        "suggestion": None if low_signal else primary,
-        "alternatives": ([primary] + alternatives)[:3] if low_signal else alternatives,
-        "confidence": confidence,
-        "needs_review": low_signal or shortened,
-        "reason": (
+    return NameSuggestion(
+        name=None if low_signal else primary,
+        alternatives=tuple(([primary] + alternatives)[:3] if low_signal else alternatives),
+        confidence=confidence,
+        needs_review=low_signal or shortened,
+        reason=(
             "Not enough descriptive information; inspect alternatives or name manually."
             if low_signal
             else "Long filename compressed at word boundaries; verify meaning."
             if shortened
             else f"Removed {discarded} technical token(s); filename-derived guess only."
         ),
-    }
-
-
-
-def suggest_short_name(filename: str) -> NameSuggestion:
-    """Suggest a name from text only, without file I/O or model inference."""
-    result = _suggest(filename)
-    return NameSuggestion(
-        name=result["suggestion"],
-        alternatives=tuple(result["alternatives"]),
-        needs_review=result["needs_review"],
-        confidence=result["confidence"],
-        reason=result["reason"],
     )
 
 
@@ -413,7 +396,8 @@ def _scope(architecture: str, format_code: str, name: str) -> tuple[str, str, st
 
 def _prefixes(name: str, alternatives: tuple[str, ...]) -> tuple[str, ...]:
     """Offer only complete candidate phrases; never trim arbitrary characters."""
-    candidates = {name, *(alt for alt in alternatives if name.casefold().startswith(alt.casefold()))}
+    candidates = {name}
+    candidates.update(alt for alt in alternatives if name.casefold().startswith(alt.casefold()))
     return tuple(sorted((value for value in candidates if PORTABLE.fullmatch(value)), key=lambda v: (-len(v), v)))
 
 
@@ -492,9 +476,10 @@ def allocate_batch_names(
             # occupied/claimed names, without an unbounded suffix search.
             limit = len(claimed) + len(reserved_manual) + len(requests) + 2
             replacement = None
+            prefixes = _prefixes(name, item.alternatives)
             for number in range(2, limit):
                 suffix = f"_{number}"
-                for prefix in _prefixes(name, item.alternatives):
+                for prefix in prefixes:
                     proposed = prefix + suffix
                     if len(proposed) > MAX_SHORT_NAME:
                         continue
