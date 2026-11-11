@@ -218,6 +218,10 @@ class LoraStore:
                 self.verify(RetainedFile(original.name, sha256, size, original))
                 return RetainedFile(original.name, sha256, size, original)
             self.verify(RetainedFile(original.name, sha256, size, original))
+            if original.name.casefold() == accepted_name.casefold():
+                # On case-insensitive filesystems both names refer to one file;
+                # unlinking the old spelling would delete the accepted copy.
+                raise ValidationError("A case-only retained LoRA rename needs explicit handling.")
             for other in files:
                 if other is not item and str(other.get("name", "")).casefold() == accepted_name.casefold():
                     raise ValidationError("Another retained LoRA already uses the accepted filename.")
