@@ -26,14 +26,19 @@ from dtflow.services.connection import (
     present_preflight,
     present_reconciliation,
 )
-from dtflow.services.session import check_loras, list_assets, prepare_asset, reconcile_asset, selection_for
+from dtflow.services.lora_family import detect_lora_family
+from dtflow.services.lora_naming import LoraPrepareMetadata
+from dtflow.services.session import (
+    check_loras, list_assets, occupied_managed_lora_names, prepare_asset, reconcile_asset, selection_for,
+)
 from dtflow.ui.activity_strip import activity_strip
 from dtflow.ui.runner import AsyncRunner
 from dtflow.ui.lora_selection_editor import edit_lora_selection
+from dtflow.ui.prepare_lora_editor import PrepareBatchEditor
 
 UPLOAD_NOTICE = (
-    "Prepare accepts multiple converted LoRA files and may upload each to DT+ if the server does not already have it. "
-    "Uploading does not consume credits, but a later generation using this LoRA may."
+    "Select converted LoRA files, review their metadata, then explicitly Prepare ready rows. "
+    "Preparing may upload to DT+ without consuming credits; later generation may consume credits."
 )
 DEFAULT_LORA_WEIGHT = 1.0
 CLOUD_ONLY = "Asset actions need the cloud provider (choose it on the Connection page)."
@@ -75,6 +80,8 @@ class LoraAssetPanel:
         self._state, self._build, self._is_busy, self._set_busy = Path(state_dir), build_request, is_busy, set_busy
         self.choose_asset_file = _choose_asset_file
         self._prepare_files: tuple[str, ...] = ()
+        self._prepare_metadata: dict[str, LoraPrepareMetadata] = {}
+        self._prepare_editor: PrepareBatchEditor | None = None
         self._prepare_index = 0
         self._prepare_counts = {"confirmed": 0, "failed": 0, "unresolved": 0}
         self._ownership_revision = 0
@@ -427,31 +434,84 @@ class LoraAssetPanel:
         return item.data(Qt.ItemDataRole.UserRole) if item is not None else None
 
     def prepare(self) -> None:
+        """File selection opens the actual in-window metadata editor; no upload occurs yet."""
         if self.preparing or self._is_busy() or self._runner.closed:
             return
         backend = self._backend()
         if backend[0] != "cloud":
             return
         revision = self._ownership_revision
-        # The shared file dialog opens at the folder remembered for this picker, else at the state directory.
         chosen = self.choose_asset_file(self.page, self._state)
         if isinstance(chosen, str):
-            chosen = [chosen] if chosen else []  # retain injected single-file picker compatibility
+            chosen = [chosen] if chosen else []
         if not chosen:
             return
         if self._runner.closed or self._is_busy() or self._backend() != backend or revision != self._ownership_revision:
-            return  # Cancelled picker or backend/ownership changed while choosing.
-        self._prepare_files = tuple(dict.fromkeys(os.path.abspath(path) for path in chosen))
-        self._prepare_index = 0
-        self._prepare_counts = {"confirmed": 0, "failed": 0, "unresolved": 0}
-        self._prepare_backend, self._prepare_revision = backend, revision
-        self._prepare_saved = self._saved()
-        self._registry_generation += 1  # old list callbacks cannot replace newly prepared receipts
-        self._set_busy(True)
-        activity_strip(self.page).start(
-            "asset", "Preparing cloud assets", detail="May upload each selected file; waiting for receipts."
+            return
+        paths = tuple(dict.fromkeys(os.path.abspath(path) for path in chosen))
+        self._prepare_editor = PrepareBatchEditor(self.page, paths, on_prepare=self._authorize_prepare)
+        editor = self._prepare_editor
+        # The provider's current LoRA inventory is the only authority for selectable
+        # architectures. A catalogue label or filename is never support evidence.
+        eligible = tuple(dict.fromkeys(self._inventory_families.values()))
+        self._runner.submit(
+            self._inspect_prepare_files(paths),
+            lambda result, failure: self._inspected_prepare_editor(editor, eligible, result, failure),
         )
-        self._prepare_next()
+
+    async def _inspect_prepare_files(self, paths: tuple[str, ...]):
+        """Inspect file headers off the GUI thread and read existing canonical name reservations."""
+        evidence = await asyncio.to_thread(lambda: tuple(detect_lora_family(Path(p)) for p in paths))
+        occupied = await occupied_managed_lora_names(self._state)
+        return evidence, occupied
+
+    def _inspected_prepare_editor(self, editor, eligible, result, failure) -> None:
+        if self._runner.closed or not editor.active() or editor is not self._prepare_editor:
+            return
+        if failure is not None:
+            self._show(
+                self.page.assetStatusLabel,
+                Presentation("error", "Could not inspect selected LoRAs", str(failure)),
+            )
+            return
+        if result is not None:
+            evidence, occupied = result
+            editor.set_inspection(evidence, eligible, occupied)
+
+    def _authorize_prepare(self, chosen: list[tuple[Path, LoraPrepareMetadata]]) -> None:
+        """Admit only explicitly approved, metadata-complete rows under the existing owner."""
+        if not chosen or self._runner.closed:
+            return
+        backend = self._backend()
+        if backend[0] != "cloud" or (self._is_busy() and not self.preparing):
+            return
+        if self.preparing and (
+            backend != self._prepare_backend
+            or self._ownership_revision != self._prepare_revision
+            or self._saved() is not self._prepare_saved
+        ):
+            return
+        selected = {name: metadata for path, metadata in chosen if (name := str(path)) not in self._prepare_metadata}
+        if not selected:
+            return
+        if self.preparing:
+            self._prepare_files += tuple(selected)
+            self._prepare_metadata.update(selected)
+        else:
+            self._prepare_files = tuple(selected)
+            self._prepare_metadata = dict(selected)
+            self._prepare_index = 0
+            self._prepare_counts = {"confirmed": 0, "failed": 0, "unresolved": 0}
+            self._prepare_backend, self._prepare_revision = backend, self._ownership_revision
+            self._prepare_saved = self._saved()
+            self._registry_generation += 1
+            self._set_busy(True)
+            activity_strip(self.page).start(
+                "asset", "Preparing cloud assets", detail="Only approved ready rows were admitted."
+            )
+            self._prepare_next()
+        if self._prepare_editor is not None:
+            self._prepare_editor.admitted([Path(p) for p in selected])
 
     def invalidate_prepare_ownership(self) -> None:
         """Credential/backend changes stop admission after the currently admitted file settles."""
@@ -474,7 +534,11 @@ class LoraAssetPanel:
         activity_strip(self.page).update("asset", 0, 0, detail=detail)
         self._runner.submit(
             prepare_asset(
-                self._state, Path(self._prepare_files[self._prepare_index]), provenance="gui", saved=self._prepare_saved
+                self._state,
+                Path(self._prepare_files[self._prepare_index]),
+                provenance="gui",
+                saved=self._prepare_saved,
+                metadata=self._prepare_metadata[self._prepare_files[self._prepare_index]],
             ),
             self._prepared,
         )
@@ -491,6 +555,11 @@ class LoraAssetPanel:
             else:
                 outcome = "confirmed" if state == "confirmed" else "failed" if state == "failed" else "unresolved"
             self._prepare_counts[outcome] += 1
+            if self._prepare_editor is not None:
+                self._prepare_editor.completed(
+                    Path(self._prepare_files[self._prepare_index]),
+                    "Prepared" if outcome == "confirmed" else "Failed" if outcome == "failed" else "Outcome unknown",
+                )
             if outcome != "confirmed":
                 diagnostic_event(
                     log,
@@ -529,6 +598,7 @@ class LoraAssetPanel:
     def _finish_prepare(self) -> None:
         total, done = len(self._prepare_files), self._prepare_index
         self._prepare_files = ()
+        self._prepare_metadata = {}
         self._prepare_saved = None
         self._set_busy(False)
         if total == 1 and done == 1:
