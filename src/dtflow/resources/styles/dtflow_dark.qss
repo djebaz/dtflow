@@ -2628,10 +2628,10 @@ QWidget#loraSelectionRow[checkedSelection="true"] {
 QToolButton#customLorasDisclosure {
   background: transparent;
   border: 0;
-  color: ${color.text};
-  font-size: ${type.small};
-  font-weight: ${type.weightEmphasis};
-  padding: 0;
-  text-align: left;
+  border-radius: ${size.radius};
+  padding: 2px;
+  min-width: 20px;
+  min-height: 20px;
 }
-QToolButton#customLorasDisclosure:hover { color: ${color.focus}; }
+QToolButton#customLorasDisclosure:hover { background: ${color.buttonHover}; }
+QToolButton#customLorasDisclosure:focus { border: 1px solid ${color.focus}; }

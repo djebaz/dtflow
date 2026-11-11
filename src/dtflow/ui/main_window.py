@@ -544,6 +544,7 @@ class MainWindow:
         form.keySelectCombo.currentIndexChanged.connect(self.key_selected)
         form.customLorasBoxContents.setVisible(False)
         form.customLorasDisclosure.toggled.connect(self._toggle_custom_loras)
+        self._set_lora_disclosure_icon(False)
         form.importCustomLorasButton.clicked.connect(self.import_custom_loras)
         form.clearCustomLorasButton.clicked.connect(self.clear_custom_loras)
         form.removeRetainedLoraButton.clicked.connect(self.remove_retained_lora)
@@ -1981,10 +1982,16 @@ class MainWindow:
         self.form.statusBar().showMessage("LoRA metadata saved locally. Files and receipts unchanged.", 5000)
         self.refresh_custom_loras(background=True)
 
+    def _set_lora_disclosure_icon(self, expanded: bool) -> None:
+        """Shared chevrons (right = collapsed, down = expanded) instead of the platform arrow."""
+        images = Path(__file__).parents[1] / "resources" / "images"
+        name = "controls/chevron-down.svg" if expanded else "gallery/chevron-right.svg"
+        self.form.customLorasDisclosure.setIcon(QIcon(str(images / name)))
+
     def _toggle_custom_loras(self, expanded: bool) -> None:
         """Expand the existing Connections LoRA library only when needed."""
         self.form.customLorasBoxContents.setVisible(expanded)
-        self.form.customLorasDisclosure.setArrowType(Qt.ArrowType.DownArrow if expanded else Qt.ArrowType.RightArrow)
+        self._set_lora_disclosure_icon(expanded)
         self.form.customLorasDisclosure.setAccessibleName("Hide custom LoRAs" if expanded else "Show custom LoRAs")
 
     def _retained_lora_selection_changed(self) -> None:
