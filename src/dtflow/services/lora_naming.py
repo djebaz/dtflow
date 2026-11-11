@@ -169,58 +169,60 @@ ARCHITECTURE_TAGS = {
 _TAG_ARCHITECTURES = {tag.casefold(): version for version, tag in ARCHITECTURE_TAGS.items()}
 
 # Additional POC #377 filename-cleaning aliases (not evidence of compatibility).
-_ARCHITECTURE_ALIASES = frozenset({
-    "cosmos",
-    "cosmos2_5_2_9b",
-    "cosmos2_5_2b",
-    "cosmos25",
-    "ernie",
-    "ernieimage",
-    "ernieImage",
-    "flux",
-    "flux3",
-    "fluxklein",
-    "hidream",
-    "hiDreamI1",
-    "hunyuan",
-    "hunyuanVideo",
-    "ideogram",
-    "ideogram4",
-    "illus",
-    "krea",
-    "krea2",
-    "ltx",
-    "ltx2_3",
-    "minimax",
-    "minimaxh3",
-    "minimaxH3",
-    "mossimage",
-    "mossImage",
-    "qwen",
-    "qwenimage",
-    "qwenImage",
-    "qwenImage2_1",
-    "qwenimage21",
-    "schnell",
-    "sd3Large",
-    "sdxl",
-    "sdxl_base",
-    "sdxl_refiner",
-    "sdxlBase",
-    "sdxlRefiner",
-    "ssd1b",
-    "wan",
-    "wan21",
-    "wan21_1_3b",
-    "wan21_14b",
-    "wan22",
-    "wan22_5b",
-    "zbase",
-    "zi",
-    "zimage",
-    "zImage",
-    "zimg",
-})
+_ARCHITECTURE_ALIASES = frozenset(
+    {
+        "cosmos",
+        "cosmos2_5_2_9b",
+        "cosmos2_5_2b",
+        "cosmos25",
+        "ernie",
+        "ernieimage",
+        "ernieImage",
+        "flux",
+        "flux3",
+        "fluxklein",
+        "hidream",
+        "hiDreamI1",
+        "hunyuan",
+        "hunyuanVideo",
+        "ideogram",
+        "ideogram4",
+        "illus",
+        "krea",
+        "krea2",
+        "ltx",
+        "ltx2_3",
+        "minimax",
+        "minimaxh3",
+        "minimaxH3",
+        "mossimage",
+        "mossImage",
+        "qwen",
+        "qwenimage",
+        "qwenImage",
+        "qwenImage2_1",
+        "qwenimage21",
+        "schnell",
+        "sd3Large",
+        "sdxl",
+        "sdxl_base",
+        "sdxl_refiner",
+        "sdxlBase",
+        "sdxlRefiner",
+        "ssd1b",
+        "wan",
+        "wan21",
+        "wan21_1_3b",
+        "wan21_14b",
+        "wan22",
+        "wan22_5b",
+        "zbase",
+        "zi",
+        "zimage",
+        "zImage",
+        "zimg",
+    }
+)
 # Preserve free-standing V1/V2 as possible *subject* versions.
 ARCHITECTURE_MARKERS = frozenset(
     (ARCHITECTURE_TAGS.keys() - {"v1", "v2"}) | set(ARCHITECTURE_TAGS.values()) | _ARCHITECTURE_ALIASES
@@ -356,9 +358,8 @@ def suggest_short_name(filename: str) -> NameSuggestion:
 
     primary = candidates[0][0]
     alternatives = [name for name, _ in candidates[1:] if name != primary][:3]
-    low_signal = (
-        all(token.casefold() in WEAK for token in words)
-        or (len(words) == 1 and bool(re.fullmatch(r"[a-z]{1,4}\d+", words[0], re.I)))
+    low_signal = all(token.casefold() in WEAK for token in words) or (
+        len(words) == 1 and bool(re.fullmatch(r"[a-z]{1,4}\d+", words[0], re.I))
     )
     shortened = len(_label(words, version)) > MAX_SHORT_NAME
     confidence = "low" if low_signal else "medium" if shortened or len(words) == 1 else "high"
@@ -388,7 +389,6 @@ def architecture_shortcode(exact_architecture: str) -> str | None:
     return ARCHITECTURE_TAGS.get(exact_architecture)
 
 
-
 def managed_filename(short_name: str, family_tag: str, format_code: str) -> str:
     """Build a managed technical filename from validated presentation metadata."""
     if not PORTABLE.fullmatch(short_name):
@@ -402,7 +402,11 @@ def managed_filename(short_name: str, family_tag: str, format_code: str) -> str:
 
 def _identity(sha256: str | None, size: int | None) -> tuple[str, int] | None:
     """Only caller-supplied measured digests can establish content reuse."""
-    return (sha256, size) if isinstance(sha256, str) and _SHA256.fullmatch(sha256) and isinstance(size, int) and size > 0 else None
+    return (
+        (sha256, size)
+        if isinstance(sha256, str) and _SHA256.fullmatch(sha256) and isinstance(size, int) and size > 0
+        else None
+    )
 
 
 def _scope(architecture: str, format_code: str, name: str) -> tuple[str, str, str]:
@@ -435,7 +439,9 @@ def occupied_from_snapshot(records: Sequence[Mapping[str, object]]) -> tuple[Man
         size = record.get("size")
         occupied.append(
             ManagedName(
-                match["name"], architecture, match["fmt"].upper(),
+                match["name"],
+                architecture,
+                match["fmt"].upper(),
                 sha if isinstance(sha, str) else None,
                 size if isinstance(size, int) else None,
             )
@@ -512,9 +518,7 @@ def allocate_batch_names(
 
         key = _scope(item.exact_architecture, item.format_code, name)
         existing = claimed.get(key)
-        reuses = existing is not None and identity is not None and identity == _identity(
-            existing.sha256, existing.size
-        )
+        reuses = existing is not None and identity is not None and identity == _identity(existing.sha256, existing.size)
         collision = (existing is not None and not reuses) or (
             not item.manually_edited and key in reserved_manual and existing is None
         )

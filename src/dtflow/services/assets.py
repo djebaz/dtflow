@@ -242,7 +242,10 @@ class AssetService:
         if detected is None:
             detected = await asyncio.to_thread(detect_lora_family, path)
         asset_id, operation = await self.registry.begin(
-            content, backend.backend_id, backend.origin, family=detected.family,
+            content,
+            backend.backend_id,
+            backend.origin,
+            family=detected.family,
             lora_metadata=metadata,
         )
         transferred = False

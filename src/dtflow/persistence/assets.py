@@ -26,6 +26,7 @@ from uuid import uuid4
 from dtflow.core.models import PREPARATION_STATES, AssetContent, PreparedAsset, ValidationError
 from dtflow.persistence import store
 from dtflow.persistence.store import PersistenceError
+
 if TYPE_CHECKING:
     from dtflow.services.lora_naming import LoraPrepareMetadata
 
@@ -353,18 +354,14 @@ class AssetRegistry:
                 if declared is not None and declared != lora_metadata.exact_architecture:
                     raise ValidationError("Declared architecture must match the selected exact architecture.")
                 existing = db.execute(
-                    "SELECT managed_identifier, declared_version FROM lora_records "
-                    "WHERE sha256=? AND size=?", (content.sha256, content.size)
+                    "SELECT managed_identifier, declared_version FROM lora_records WHERE sha256=? AND size=?",
+                    (content.sha256, content.size),
                 ).fetchone()
                 effective = declared or existing["declared_version"] or family
                 if effective != lora_metadata.exact_architecture:
                     raise ValidationError("Choose a verified or explicitly declared exact LoRA architecture.")
                 previous = existing["managed_identifier"]
-                if (
-                    previous is not None
-                    and previous != identifier
-                    and not lora_metadata.replace_existing
-                ):
+                if previous is not None and previous != identifier and not lora_metadata.replace_existing:
                     raise ValidationError(
                         "This content already has an accepted managed filename. "
                         "Choose explicit Re-Prepare to change it."
@@ -385,9 +382,15 @@ class AssetRegistry:
                     "format_code=?, format_source=?, trigger_words=?, updated_at_utc=? "
                     "WHERE sha256=? AND size=?",
                     (
-                        lora_metadata.short_name, identifier, declared,
-                        lora_metadata.format_code, lora_metadata.format_source,
-                        lora_metadata.trigger_words, now, content.sha256, content.size,
+                        lora_metadata.short_name,
+                        identifier,
+                        declared,
+                        lora_metadata.format_code,
+                        lora_metadata.format_source,
+                        lora_metadata.trigger_words,
+                        now,
+                        content.sha256,
+                        content.size,
                     ),
                 )
         row = db.execute(
@@ -656,8 +659,7 @@ class AssetRegistry:
             return ()
         with closing(self._connect()) as db:
             rows = db.execute(
-                "SELECT sha256, size, managed_identifier FROM lora_records "
-                "WHERE managed_identifier IS NOT NULL"
+                "SELECT sha256, size, managed_identifier FROM lora_records WHERE managed_identifier IS NOT NULL"
             ).fetchall()
         return tuple(dict(row) for row in rows)
 
