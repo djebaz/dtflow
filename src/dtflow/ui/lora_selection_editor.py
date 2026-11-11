@@ -155,9 +155,30 @@ def edit_lora_selection(
         for index, (_identifier, row) in enumerate(ordered):
             rows_layout.insertWidget(index, row)
 
+    current_order = list(dict.fromkeys(item.identifier for item in selected))
+
+    def effective_names() -> list[str]:
+        """Existing request order first; new selections follow candidate order."""
+        return [
+            name
+            for name in (*current_order, *(name for name in rows if name not in current))
+            if name in rows and rows[name].loraSelectionCheck.isChecked()
+        ]
+
+    def update_order_summary() -> None:
+        """Show effective execution order without using visual picker positions."""
+        lines = []
+        for index, name in enumerate(effective_names(), 1):
+            values = extra.get(name)
+            weights_for_name = values if values else [weights[name]]
+            values_text = ", ".join(format_weight(v) for v in weights_for_name)
+            lines.append(f"{index}. {_display_label(name)} @ {values_text}")
+        editor.loraSelectionOrderSummary.setText("\\n".join(lines) if lines else "No LoRAs selected")
+
     def update_count() -> None:
         count = sum(row.loraSelectionCheck.isChecked() for row in rows.values())
         editor.loraSelectionCount.setText(f"{count} selected")
+        update_order_summary()
         reorder_rows()
 
     def add_row(name: str, *, checked: bool, weight: float, top: bool = False) -> QWidget:
@@ -182,6 +203,7 @@ def edit_lora_selection(
             weights[name] = round(value / WEIGHT_STEPS, 2)
             label.setText(format_weight(weights[name]))
             check.setChecked(True)  # weighing a LoRA means using it
+            update_order_summary()
 
         slider.valueChanged.connect(moved)
         slider.installEventFilter(wheel_step)
@@ -215,17 +237,26 @@ def edit_lora_selection(
                 if not extra[name]:
                     check.setChecked(False)  # dropping the last collected weight drops the LoRA
                 render_chips()
+                update_order_summary()
 
             def add_weight() -> None:
                 if weights[name] not in extra[name]:
                     extra[name].append(weights[name])
                 check.setChecked(True)
                 render_chips()
+                update_order_summary()
 
             row.loraSelectionAddWeightButton.clicked.connect(add_weight)
             slider.installEventFilter(_ClickToAdd(row, add_weight))
             render_chips()  # several loaded weights start as chips
-        check.toggled.connect(lambda _checked: update_count())
+        def toggle_row(checked: bool) -> None:
+            row.setProperty("checkedSelection", checked)
+            row.style().unpolish(row)
+            row.style().polish(row)
+            update_count()
+
+        row.setProperty("checkedSelection", checked)
+        check.toggled.connect(toggle_row)
         # Rows sit before the "no matches" label and the trailing spacer.
         rows_layout.insertWidget(0 if top else len(rows), row)
         rows[name] = row
@@ -272,12 +303,9 @@ def edit_lora_selection(
         if editor.loraSelectionCustomIdentifier.text().strip():
             add_custom()  # an identifier typed but not yet added is part of the selection
         # Visual A–Z sorting must never reorder existing effective requests or weights.
-        effective_order = list(dict.fromkeys(item.identifier for item in selected))
-        new_names = [name for name in rows if name not in current]
         chosen = [
             (name, value)
-            for name in (*effective_order, *new_names)
-            if name in rows and rows[name].loraSelectionCheck.isChecked()
+            for name in effective_names()
             for value in (extra.get(name) or [weights[name]])
         ]
         panel.dismiss()

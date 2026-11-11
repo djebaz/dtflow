@@ -2614,3 +2614,12 @@ QFrame#prepareBatchHeading QLabel[textRole="panelHeading"] {
   background: transparent;
   color: ${color.secondary};
 }
+
+/* Existing shared LoRA picker: selected rows use DTFlow selection tokens. */
+QWidget#loraSelectionRow { background: transparent; border: 1px solid transparent; }
+QWidget#loraSelectionRow:hover { background-color: ${color.buttonHover}; }
+QWidget#loraSelectionRow[checkedSelection="true"] {
+  background-color: ${color.selection};
+  border-left: 3px solid ${color.accentEdge};
+  border-bottom: 1px solid ${color.selectionBorder};
+}

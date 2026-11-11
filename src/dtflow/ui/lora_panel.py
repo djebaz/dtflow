@@ -33,7 +33,7 @@ from dtflow.services.session import (
 )
 from dtflow.ui.activity_strip import activity_strip
 from dtflow.ui.runner import AsyncRunner
-from dtflow.ui.lora_selection_editor import edit_lora_selection
+from dtflow.ui.lora_selection_editor import _display_label, edit_lora_selection
 from dtflow.ui.prepare_lora_editor import PrepareBatchEditor
 
 UPLOAD_NOTICE = (
@@ -254,13 +254,14 @@ class LoraAssetPanel:
         labels = self.family_labels()
         self.page.loraList.clear()
         for item in self.loras:
-            text = f"{item.identifier} @ {item.weight} · {labels.get(item.identifier, 'Unknown')}"
+            text = f"{_display_label(item.identifier)} @ {item.weight:g}"
             if not self._candidate_compatible(item.identifier):
                 text += f" · incompatible with {self._checkpoint_version}"
-            if item.identifier in self._receipts:
-                text += f" [receipt {self._receipts[item.identifier][:8]}]"
             entry = QListWidgetItem(text)
-            entry.setToolTip(text)  # a long name is elided in the narrow rail
+            detail = f"{item.identifier}\nWeight: {item.weight:g}\nArchitecture: {labels.get(item.identifier, 'Unknown')}"
+            if item.identifier in self._receipts:
+                detail += f"\nConfirmed receipt: {self._receipts[item.identifier]}"
+            entry.setToolTip(detail)  # precise identifiers remain available on hover
             self.page.loraList.addItem(entry)
 
     def choices(self) -> list[tuple[str, float | None]]:
