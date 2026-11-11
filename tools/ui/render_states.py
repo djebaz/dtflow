@@ -840,7 +840,7 @@ def render_connection_management(shell, out):
             None,
         )
         shell._presets_read(0, None)
-        shell._custom_loras_read(0, None)
+        shell._custom_loras_read((0, [], (0, 0)), None)
         snap("connection-42-startup-unconfigured")
         shell._credentials_read(None, OSError())
         shell._presets_read(None, OSError())

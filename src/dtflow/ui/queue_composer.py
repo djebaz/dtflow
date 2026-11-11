@@ -162,7 +162,10 @@ class ValueChips(QWidget):
         """Hold the wrapped rows' height as a minimum, so the form row grows even where a style or platform does not
         honour height-for-width (a chip field would otherwise show one line however many chips it has)."""
         self._fit_pending = False
-        height = self._layout.heightForWidth(max(1, self.width()))
+        try:
+            height = self._layout.heightForWidth(max(1, self.width()))
+        except RuntimeError:
+            return  # the field was deleted before the deferred fit ran
         if height != self.minimumHeight():
             self.setMinimumHeight(height)
             self.updateGeometry()
