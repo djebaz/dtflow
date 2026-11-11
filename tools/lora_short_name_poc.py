@@ -18,10 +18,32 @@ PACKAGING = {
     "adamw", "adamw8bit", "s4000", "s3400", "r16", "r32", "r64", "colab",
     "ios", "512", "1024", "2048",
 }
-ARCHITECTURE = {
-    "krea2", "krea", "zimage", "zimg", "zit", "zi", "zbase", "flux", "flux1",
-    "flux2", "sdxl", "sd1", "sd2", "qwen", "moss", "illus", "schnell",
+# Complete architecture and shortcode vocabulary follows issue #373.
+# The tokens below are filename-cleaning hints only, never family evidence.
+ARCHITECTURE_MARKERS = {
+    "C25x29B", "C25x2B", "cosmos", "cosmos2_5_2_9b", "cosmos2_5_2b", "cosmos2.5_2.9b",
+    "cosmos2.5_2b", "cosmos25", "Erni", "ernie", "ernie_image", "ernieimage", "ernieImage", "F1",
+    "F2", "F2x4B", "F2x9B", "F3x5B", "flux", "flux1", "flux2", "flux2_4b", "flux2_9b", "flux3",
+    "flux3_5b", "fluxklein", "HDI1", "hidream", "hidream_i1", "hiDreamI1", "hunyuan",
+    "hunyuan_video", "hunyuanVideo", "HYV", "ID4", "ideogram", "ideogram_4", "ideogram4", "illus",
+    "Kr2", "krea", "krea_2", "krea2", "ltx", "ltx2", "ltx2_3", "ltx2.3", "ltx23", "miniH3",
+    "minimax", "minimax_h3", "minimaxh3", "minimaxH3", "moss", "Moss", "moss_image", "mossimage",
+    "mossImage", "Pix", "pixart", "qwen", "qwen_image", "qwen_image_2.1", "qwenimage", "qwenImage",
+    "qwenImage2_1", "qwenimage21", "Qwn", "Qwn21", "schnell", "sd1", "SD1", "sd2", "SD2", "sd3",
+    "SD3", "sd3_large", "SD3L", "sd3Large", "sdxl", "sdxl_base", "sdxl_base_v0.9", "sdxl_refiner",
+    "sdxl_refiner_v0.9", "sdxlBase", "sdxlRefiner", "SSD", "ssd_1b", "ssd1b", "W21x13B", "W21x14B",
+    "W22x5B", "wan", "wan_v2.1_1.3b", "wan_v2.1_14b", "wan_v2.2_5b", "wan21", "wan21_1_3b",
+    "wan21_14b", "wan22", "wan22_5b", "XL", "XLRef", "z_image", "zbase", "zi", "zimage", "zImage",
+    "zimg", "ZiT",
 }
+_ARCHITECTURE_PATTERN = re.compile(
+    r"(?i)(?<![a-z0-9])(?:"
+    + "|".join(
+        r"[_\s.-]*".join(re.escape(part) for part in re.split(r"[_\s.-]+", marker))
+        for marker in sorted(ARCHITECTURE_MARKERS, key=len, reverse=True)
+    )
+    + r")(?![a-z0-9])"
+)
 GENERIC = {"model", "checkpoint", "base", "new", "copy", "converted", "trained"}
 WEAK = {"test", "draft", "colab", "ios", "foo", "small", "large", "final"}
 ACRONYMS = {"nsfw": "NSFW", "xl": "XL", "gf": "GF", "hm": "HM", "4k": "4K"}
@@ -38,6 +60,7 @@ def _basename(filename: str) -> str:
 def _split(filename: str) -> tuple[list[list[str]], str | None, int]:
     stem = Path(_basename(filename)).stem
     stem = FORMAT_SUFFIX.sub("", stem)
+    stem = _ARCHITECTURE_PATTERN.sub("", stem)
     stem = re.sub(r"(?i)(?<![a-z0-9])v(\d+)\.\d+(?=[_\s.-]|$)", r"v\1", stem)
     stem = re.sub(r"(?<=[a-z0-9])(?=[A-Z])", "_", stem)
     # A double underscore in converted names often separates alternate descriptions.
