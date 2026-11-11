@@ -526,7 +526,11 @@ class DrawThingsBackend:
                                 for item in request.prepared_assets
                             ],
                             "override_sent": sent,
-                            "override_reason": "sent" if sent else "none_prepared" if not prepared_names else "not_sent",
+                            "override_reason": "sent"
+                            if sent
+                            else "none_prepared"
+                            if not prepared_names
+                            else "not_sent",
                         },
                     )
                 emit("preparing", stage="wire_validated")

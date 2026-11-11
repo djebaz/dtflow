@@ -1252,9 +1252,10 @@ class WorkflowsPage(QObject):
         elif param.kind == "loras":
             loras = choices.get("loras") or {}
             families = choices.get("lora_families") or {}
-            text = ", ".join(
-                f"{name} · {weight:g} · {families.get(name, 'Unknown')}" for name, weight in value
-            ) or "No LoRA"
+            text = (
+                ", ".join(f"{name} · {weight:g} · {families.get(name, 'Unknown')}" for name, weight in value)
+                or "No LoRA"
+            )
             summary = _label(text, "secondary")
             summary.setToolTip(text)
             button = QPushButton("Edit LoRAs…", host)

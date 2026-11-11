@@ -53,9 +53,14 @@ def preflight_loras(
                 match, code = "unknown", "architecture_unknown"
             diagnostics.append(
                 PreflightDiagnostic(
-                    selection.identifier, match, "prepared", UNCONFIRMED, code,
+                    selection.identifier,
+                    match,
+                    "prepared",
+                    UNCONFIRMED,
+                    code,
                     "file" if asset.family_source == "file" else source,
-                    model_family=base, lora_family=asset.family,
+                    model_family=base,
+                    lora_family=asset.family,
                 )
             )
             continue
@@ -89,8 +94,14 @@ def preflight_loras(
             match, code = "mismatch", "architecture_mismatch"
         diagnostics.append(
             PreflightDiagnostic(
-                selection.identifier, match, "present", UNCONFIRMED, code, source,
-                model_family=base, lora_family=entry.architecture,
+                selection.identifier,
+                match,
+                "present",
+                UNCONFIRMED,
+                code,
+                source,
+                model_family=base,
+                lora_family=entry.architecture,
             )
         )
     return tuple(diagnostics)
@@ -107,7 +118,8 @@ def raise_if_blocked(request: ResolvedGenerationRequest, diagnostics: tuple[Pref
             BackendFailure(
                 ErrorCategory.VALIDATION,
                 "lora_preflight_failed",
-                "LoRA preflight rejected the request before dispatch. " + "; ".join(
+                "LoRA preflight rejected the request before dispatch. "
+                + "; ".join(
                     f"{item.identifier}: LoRA family {item.lora_family} does not match "
                     f"checkpoint family {item.model_family} ({request.model_id})."
                     if item.code == "architecture_mismatch" and item.lora_family and item.model_family

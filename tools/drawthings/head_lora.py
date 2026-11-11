@@ -60,8 +60,7 @@ def safetensors_summary(path: Path) -> dict:
     useful_metadata = {
         key: metadata[key]
         for key in METADATA_KEYS
-        if key in metadata and isinstance(metadata[key], (str, int, float, bool))
-        and len(str(metadata[key])) <= 240
+        if key in metadata and isinstance(metadata[key], (str, int, float, bool)) and len(str(metadata[key])) <= 240
     }
 
     counts: Counter[str] = Counter()
@@ -107,9 +106,7 @@ def ckpt_summary(path: Path) -> dict:
             "family_evidence": "unknown",
             "error": report["error"],
             "sqlite_tables": report.get("tables", []),
-            "tensor_columns": [
-                column["name"] for column in report.get("tensor_columns", [])
-            ],
+            "tensor_columns": [column["name"] for column in report.get("tensor_columns", [])],
         }
     family = report["current_detector_result"]
     result = {
@@ -137,8 +134,7 @@ def ckpt_summary(path: Path) -> dict:
 def manifest_summary(payload: object) -> dict:
     """Extract useful declared fields without claiming source-file verification."""
     if isinstance(payload, dict) and "model_family" in payload:
-        fields = ("name", "input", "output", "model_family", "scale",
-                  "trigger_word", "sha256", "input_sha256")
+        fields = ("name", "input", "output", "model_family", "scale", "trigger_word", "sha256", "input_sha256")
         result = {key: payload[key] for key in fields if key in payload}
         return {"format": "conversion_manifest", "declaration": result}
     if isinstance(payload, list):
@@ -147,15 +143,14 @@ def manifest_summary(payload: object) -> dict:
             "format": "lora_registry",
             "entry_count": len(payload),
             "entries": [
-                {key: value for key in ("name", "file", "version", "prefix")
-                 if (value := entry.get(key)) is not None}
-                for entry in payload if isinstance(entry, dict)
+                {key: value for key in ("name", "file", "version", "prefix") if (value := entry.get(key)) is not None}
+                for entry in payload
+                if isinstance(entry, dict)
             ],
         }
     if isinstance(payload, dict):
         fields = ("name", "file", "version", "prefix", "model_family", "output")
-        return {"format": "json_metadata",
-                "fields": {key: payload[key] for key in fields if key in payload}}
+        return {"format": "json_metadata", "fields": {key: payload[key] for key in fields if key in payload}}
     raise ValueError("Unsupported JSON metadata document.")
 
 
@@ -179,8 +174,7 @@ def extract(path: Path) -> dict:
             if isinstance(payload, dict):
                 name_matches = payload.get("output") == path.name if "output" in payload else None
                 size_matches = (
-                    payload["size_bytes"] == path.stat().st_size
-                    if type(payload.get("size_bytes")) is int else None
+                    payload["size_bytes"] == path.stat().st_size if type(payload.get("size_bytes")) is int else None
                 )
                 result["conversion_manifest"] = {
                     "file": sidecar.name,
@@ -216,8 +210,7 @@ def main() -> int:
                     # Conversion manifests can also be passed explicitly.
                     if item.name.lower() != "custom_lora.json" and not item.stem.lower().endswith("_lora_f16"):
                         continue
-                    if any(item.with_suffix(extension).is_file()
-                           for extension in (".safetensors", ".ckpt")):
+                    if any(item.with_suffix(extension).is_file() for extension in (".safetensors", ".ckpt")):
                         continue
                 paths.append(item)
         except OSError as exc:

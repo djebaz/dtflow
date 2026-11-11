@@ -30,9 +30,23 @@ MAX_TENSORS = 20_000
 SHAPE_TEXT = re.compile(r"^\s*[\[(]\s*\d+(?:\s*,\s*\d+)*\s*[\])]\s*$")
 DIT_LORA = re.compile(r"^__dit__\[t-([^\]]+)\]__(?:up|down)__$")
 MODULE_LAYER = re.compile(r"^(?:ffn|ada_ln_\d+|[kqvo]|to_(?:gate|k|q|v|out))-(\d+)-")
-MARKERS = ("ada_ln", "ffn_", "proj", "text_fusion", "txtfusion", "textfusion", "attn",
-           "attention", "cross_attn", "double_stream", "single_stream", "double_blocks",
-           "single_blocks", "transformer", "diffusion_model")
+MARKERS = (
+    "ada_ln",
+    "ffn_",
+    "proj",
+    "text_fusion",
+    "txtfusion",
+    "textfusion",
+    "attn",
+    "attention",
+    "cross_attn",
+    "double_stream",
+    "single_stream",
+    "double_blocks",
+    "single_blocks",
+    "transformer",
+    "diffusion_model",
+)
 
 # Architectural *width clues* transcribed from Draw Things LoRAImporter.swift.
 # Not exhaustive, not necessarily exposed by an individual LoRA and not unique
@@ -55,8 +69,7 @@ TRANSFORMER_WIDTHS = {
     "krea_2": (6144,),
     "moss_image": (3072,),
 }
-UNET_WIDTHS = {"v1": (320, 640, 1280), "v2": (320, 640, 1280),
-               "sdxl_base_v0.9": (320, 640, 1280)}
+UNET_WIDTHS = {"v1": (320, 640, 1280), "v2": (320, 640, 1280), "sdxl_base_v0.9": (320, 640, 1280)}
 
 
 def dimensions(value: object) -> tuple[int, ...]:
@@ -106,29 +119,18 @@ def fingerprint_checks(
         "z_image": {
             "width_3840": 3840 in widths,
             "ffn_10240": 10240 in widths,
-            "ffn_modules": any(
-                re.fullmatch(r"ffn-\d+-ffn_(?:gate|down|up)_proj-\d+-\d+", m)
-                for m in modules
-            ),
+            "ffn_modules": any(re.fullmatch(r"ffn-\d+-ffn_(?:gate|down|up)_proj-\d+-\d+", m) for m in modules),
             "attention_or_modulation_modules": (
                 any(re.fullmatch(r"(?:k|q|v|o)-\d+-\d+", m) for m in modules)
-                or all(
-                    any(re.fullmatch(rf"ada_ln_{index}-\d+-\d+", m) for m in modules)
-                    for index in range(4)
-                )
+                or all(any(re.fullmatch(rf"ada_ln_{index}-\d+-\d+", m) for m in modules) for index in range(4))
             ),
         },
         "krea_2": {
             "width_6144": 6144 in widths,
             "key_value_1536": 1536 in widths,
             "mlp_16384": 16384 in widths,
-            "attention_modules": any(
-                re.fullmatch(r"to_(?:gate|k|q|v|out)-\d+-\d+", m) for m in modules
-            ),
-            "text_fusion": any(
-                m.startswith(("text_fusion_", "textfusion_", "txtfusion_"))
-                for m in modules
-            ),
+            "attention_modules": any(re.fullmatch(r"to_(?:gate|k|q|v|out)-\d+-\d+", m) for m in modules),
+            "text_fusion": any(m.startswith(("text_fusion_", "textfusion_", "txtfusion_")) for m in modules),
         },
         "moss_image": {
             "width_3072": 3072 in widths,
@@ -146,8 +148,7 @@ def fingerprint_checks(
                 for name in ("x_q", "x_k", "x_v", "x_o", "x_linear1", "x_out_proj")
             ),
             "all_19_joint_block_modulation_pairs": all(
-                sum(module.startswith(f"x_ada_ln_{index}-") for module in modules) == 2 * 19
-                for index in (3, 4, 5)
+                sum(module.startswith(f"x_ada_ln_{index}-") for module in modules) == 2 * 19 for index in (3, 4, 5)
             ),
         },
         "flux2_9b": {
@@ -158,8 +159,7 @@ def fingerprint_checks(
                 for name in ("x_q", "x_k", "x_v", "x_o")
             ),
             "all_24_single_block_ffn_pairs": all(
-                sum(module.startswith(f"{name}-") for module in modules) == 2 * 24
-                for name in ("x_w1", "x_w2", "x_w3")
+                sum(module.startswith(f"{name}-") for module in modules) == 2 * 24 for name in ("x_w1", "x_w2", "x_w3")
             ),
             "all_8_joint_block_projections": all(
                 sum(module.startswith(f"{name}-") for module in modules) == 2 * 8
@@ -190,6 +190,7 @@ def fingerprint_checks(
         },
     }
 
+
 def inspect(path: Path, sample_count: int) -> dict:
     """Inspect a SQLite checkpoint; preserve ambiguity and non-LoRA cases."""
     if not path.is_file():
@@ -198,12 +199,9 @@ def inspect(path: Path, sample_count: int) -> dict:
     with sqlite3.connect(path.resolve().as_uri() + "?mode=ro", uri=True, timeout=2.0) as db:
         db.execute("PRAGMA query_only=ON")
         report["tables"] = [
-            row[0] for row in db.execute(
-                "SELECT name FROM sqlite_master WHERE type='table' ORDER BY name"
-            )
+            row[0] for row in db.execute("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name")
         ]
-        columns = [{"name": row[1], "type": row[2]}
-                   for row in db.execute("PRAGMA table_info(tensors)")]
+        columns = [{"name": row[1], "type": row[2]} for row in db.execute("PRAGMA table_info(tensors)")]
         report["tensor_columns"] = columns
         available = {column["name"] for column in columns}
         name_col = next((x for x in ("name", "key", "tensor_name") if x in available), None)
@@ -280,31 +278,37 @@ def inspect(path: Path, sample_count: int) -> dict:
     # These candidates deliberately use SHAPE ONLY. They are useful to choose
     # the next real file to smoke, but must never become receipt evidence.
     width_refs = TRANSFORMER_WIDTHS if modules else UNET_WIDTHS
-    width_hints = [
-        {"family": family, "matching_widths": sorted(all_widths.keys() & set(expected))}
-        for family, expected in width_refs.items()
-        if all_widths.keys() & set(expected)
-    ] if lora_count else []
+    width_hints = (
+        [
+            {"family": family, "matching_widths": sorted(all_widths.keys() & set(expected))}
+            for family, expected in width_refs.items()
+            if all_widths.keys() & set(expected)
+        ]
+        if lora_count
+        else []
+    )
 
-    report.update({
-        "tensor_names_read": sum(namespaces.values()),
-        "lora_tensor_count": lora_count,
-        "dit_lora_tensor_count": len(modules),
-        "namespaces": dict(namespaces),
-        "adapter_dimensions_by_namespace": {
-            namespace: sorted(dims) for namespace, dims in namespace_widths.items()
-        },
-        "module_groups": module_groups.most_common(30),
-        "marker_counts": dict(markers),
-        "observed_layer_indices": sorted(layer_indices),
-        "dimension_storage": dict(shape_encodings),
-        "most_common_dimensions": all_widths.most_common(25),
-        "first_tensors": samples,
-        "other_tensors": informative,
-        "fingerprint_checks": checks,
-        "current_detector_result": detected,
-        "width_only_hints_not_classification": width_hints,
-    })
+    report.update(
+        {
+            "tensor_names_read": sum(namespaces.values()),
+            "lora_tensor_count": lora_count,
+            "dit_lora_tensor_count": len(modules),
+            "namespaces": dict(namespaces),
+            "adapter_dimensions_by_namespace": {
+                namespace: sorted(dims) for namespace, dims in namespace_widths.items()
+            },
+            "module_groups": module_groups.most_common(30),
+            "marker_counts": dict(markers),
+            "observed_layer_indices": sorted(layer_indices),
+            "dimension_storage": dict(shape_encodings),
+            "most_common_dimensions": all_widths.most_common(25),
+            "first_tensors": samples,
+            "other_tensors": informative,
+            "fingerprint_checks": checks,
+            "current_detector_result": detected,
+            "width_only_hints_not_classification": width_hints,
+        }
+    )
     if not modules and detected == "unknown":
         report["limitation"] = (
             "No Draw Things __dit__ LoRA up/down tensors. Only the guarded "
@@ -348,7 +352,9 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("files", nargs="*", type=Path, help="Local converted .ckpt paths.")
     parser.add_argument(
-        "-d", "--directory", type=Path,
+        "-d",
+        "--directory",
+        type=Path,
         help="Inspect all .ckpt files in this directory (non-recursive).",
     )
     parser.add_argument("--sample", type=int, default=8, help="Tensor examples per group (0–100).")
@@ -363,11 +369,12 @@ def main() -> int:
         if not directory.is_dir():
             parser.error(f"Not a directory: {directory}")
         try:
-            paths.extend(sorted(
-                (item for item in directory.iterdir()
-                 if item.is_file() and item.suffix.lower() == ".ckpt"),
-                key=lambda item: item.name.casefold(),
-            ))
+            paths.extend(
+                sorted(
+                    (item for item in directory.iterdir() if item.is_file() and item.suffix.lower() == ".ckpt"),
+                    key=lambda item: item.name.casefold(),
+                )
+            )
         except OSError as exc:
             parser.error(f"Cannot scan directory: {exc}")
 

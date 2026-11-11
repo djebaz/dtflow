@@ -90,9 +90,7 @@ class GenerationService:
     ):
         self.assets = assets
         self.catalogue = (
-            Catalogue(assets.state)
-            if isinstance(assets, AssetService) and assets.state is not None
-            else None
+            Catalogue(assets.state) if isinstance(assets, AssetService) and assets.state is not None else None
         )
         self.backend, self.store, self.output = backend, store, Path(output)
         self.timeouts = timeouts or TimeoutPolicy()

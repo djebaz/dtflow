@@ -131,11 +131,15 @@ class LoraAssetPanel:
 
     def set_inventory(self, snapshot) -> None:
         """Remember raw backend LoRAs until the catalogue controller supplies a compatible candidate set."""
-        self._inventory_families = {
-            entry.identifier: entry.architecture
-            for entry in snapshot.entries
-            if entry.kind == "lora" and entry.architecture
-        } if snapshot else {}
+        self._inventory_families = (
+            {
+                entry.identifier: entry.architecture
+                for entry in snapshot.entries
+                if entry.kind == "lora" and entry.architecture
+            }
+            if snapshot
+            else {}
+        )
         self._inventory_candidates = (
             [(e.identifier, e.default_weight) for e in snapshot.entries if e.kind == "lora"] if snapshot else []
         )
@@ -202,7 +206,8 @@ class LoraAssetPanel:
             value, source = next(iter(values))
             family[name] = (
                 f"{FAMILY_LABELS.get(value, value)} (file)"
-                if value and source == "file" else "Unknown (file unclassified)"
+                if value and source == "file"
+                else "Unknown (file unclassified)"
             )
         return family
 
@@ -336,7 +341,8 @@ class LoraAssetPanel:
             source = record.get("family_source")
             family = (
                 f"{FAMILY_LABELS.get(value, value)} (file)"
-                if value and source == "file" else "Unknown (file unclassified)"
+                if value and source == "file"
+                else "Unknown (file unclassified)"
             )
             text = (
                 f"{record['identifier']} · {family} · "
@@ -344,10 +350,7 @@ class LoraAssetPanel:
             )
             item = QListWidgetItem(text)
             item.setData(Qt.ItemDataRole.UserRole, (record["asset_id"], record["identifier"]))  # Qt.UserRole
-            item.setToolTip(
-                f"LoRA family: {family}\n"
-                f"Receipt {record['asset_id']} on {record['origin']}"
-            )
+            item.setToolTip(f"LoRA family: {family}\nReceipt {record['asset_id']} on {record['origin']}")
             self.page.assetList.addItem(item)
             if (record["asset_id"], record["identifier"]) == selected:
                 self.page.assetList.setCurrentItem(item)

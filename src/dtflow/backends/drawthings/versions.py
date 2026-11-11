@@ -26,5 +26,3 @@ def _bundled_versions() -> dict[str, str]:
 def bundled_base_version(model_id: str) -> str | None:
     """The bundled catalogue's base family for a checkpoint file; evidence-light, so only a fallback."""
     return _bundled_versions().get(model_id)
-
-

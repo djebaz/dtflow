@@ -264,7 +264,9 @@ class AssetRegistry:
         return await self._run(self._write, self._begin, content, backend_id, origin, action, family)
 
     @staticmethod
-    def _begin(db, content: AssetContent, backend_id: str, origin: str, action: str, family: str | None) -> tuple[str, str]:
+    def _begin(
+        db, content: AssetContent, backend_id: str, origin: str, action: str, family: str | None
+    ) -> tuple[str, str]:
         now, operation = _now(), uuid4().hex
         row = db.execute(
             "SELECT asset_id, state FROM assets WHERE kind=? AND backend_id=? AND origin=? AND sha256=? AND size=?",

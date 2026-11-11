@@ -211,7 +211,8 @@ async def _with_legacy_families(state: Path, prepared: tuple[PreparedAsset, ...]
         detected = found.get((item.sha256, item.size))
         resolved.append(
             replace(item, family=detected.family, family_source=detected.source)
-            if item.family is None and detected is not None and detected.family else item
+            if item.family is None and detected is not None and detected.family
+            else item
         )
     return tuple(resolved)
 
@@ -918,8 +919,10 @@ def _legacy_receipt_families(state: Path, records: list[dict]) -> None:
     unknown = [
         (record["sha256"], record["size"])
         for record in records
-        if record.get("kind") == "lora" and record.get("family") is None
-        and isinstance(record.get("sha256"), str) and isinstance(record.get("size"), int)
+        if record.get("kind") == "lora"
+        and record.get("family") is None
+        and isinstance(record.get("sha256"), str)
+        and isinstance(record.get("size"), int)
     ]
     found = retained_families(state, unknown)
     for record in records:
@@ -927,6 +930,7 @@ def _legacy_receipt_families(state: Path, records: list[dict]) -> None:
         if record.get("family") is None and detected is not None and detected.family:
             record["family"] = detected.family
             record["family_source"] = detected.source
+
 
 async def list_assets(state: Path, *, named: bool = False) -> list[dict]:
     """Local receipt and unresolved-operation candidates; optionally expand logical LoRA names for Qt."""

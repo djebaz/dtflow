@@ -70,9 +70,7 @@ def detect_lora_family(path: Path) -> LoraFamily:
     try:
         with sqlite3.connect(uri, uri=True, timeout=1.0) as db:
             db.execute("PRAGMA query_only=ON")
-            if not db.execute(
-                "SELECT 1 FROM sqlite_master WHERE type='table' AND name='tensors'"
-            ).fetchone():
+            if not db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='tensors'").fetchone():
                 return LoraFamily()
             columns = {row[1] for row in db.execute("PRAGMA table_info(tensors)")}
             name_column = next((c for c in ("name", "key", "tensor_name") if c in columns), None)
@@ -90,11 +88,7 @@ def detect_lora_family(path: Path) -> LoraFamily:
     names = [str(row[0]).lower() for row in rows if isinstance(row[0], str)]
     # A full model checkpoint may share its architecture's dimensions. Require
     # actual adapter up/down tensors, and use only their names and shapes.
-    dit_modules = [
-        match.group(1)
-        for name in names
-        if (match := _DIT_LORA_NAME.fullmatch(name)) is not None
-    ]
+    dit_modules = [match.group(1) for name in names if (match := _DIT_LORA_NAME.fullmatch(name)) is not None]
 
     def adapter_dimensions(prefix: str) -> set[int]:
         """Only dimensions of LoRA up/down tensors from this model namespace."""
@@ -126,10 +120,7 @@ def detect_lora_family(path: Path) -> LoraFamily:
         and any(re.fullmatch(r"ffn-\d+-ffn_(?:gate|down|up)_proj-\d+-\d+", m) for m in dit_modules)
         and (
             any(re.fullmatch(r"(?:k|q|v|o)-\d+-\d+", m) for m in dit_modules)
-            or all(
-                any(re.fullmatch(rf"ada_ln_{index}-\d+-\d+", m) for m in dit_modules)
-                for index in range(4)
-            )
+            or all(any(re.fullmatch(rf"ada_ln_{index}-\d+-\d+", m) for m in dit_modules) for index in range(4))
         )
     )
     krea_2 = (
@@ -159,10 +150,7 @@ def detect_lora_family(path: Path) -> LoraFamily:
             sum(module.startswith(f"{name}-") for module in dit_modules) == 2 * (19 + 38)
             for name in ("x_q", "x_k", "x_v", "x_o", "x_linear1", "x_out_proj")
         )
-        and all(
-            sum(module.startswith(f"x_ada_ln_{index}-") for module in dit_modules) == 2 * 19
-            for index in (3, 4, 5)
-        )
+        and all(sum(module.startswith(f"x_ada_ln_{index}-") for module in dit_modules) == 2 * 19 for index in (3, 4, 5))
     )
     # FLUX.2 Klein 9B has 8 double-stream and 24 single-stream blocks,
     # hidden width 4096 and 3x feed-forward width 12288. The projection
@@ -175,8 +163,7 @@ def detect_lora_family(path: Path) -> LoraFamily:
             for name in ("x_q", "x_k", "x_v", "x_o")
         )
         and all(
-            sum(module.startswith(f"{name}-") for module in dit_modules) == 2 * 24
-            for name in ("x_w1", "x_w2", "x_w3")
+            sum(module.startswith(f"{name}-") for module in dit_modules) == 2 * 24 for name in ("x_w1", "x_w2", "x_w3")
         )
         and all(
             sum(module.startswith(f"{name}-") for module in dit_modules) == 2 * 8
@@ -187,12 +174,9 @@ def detect_lora_family(path: Path) -> LoraFamily:
     # 3x feed-forward width 12288. The converted LoRA sample adapts these
     # five projections in all 32 blocks; a partial adapter stays unknown.
     # Qwen Image (original) uses a different 3072-wide, 60-layer model.
-    qwen_image_2_1 = (
-        {4096, 12288} <= dit_dimensions
-        and all(
-            sum(module.startswith(f"{name}-") for module in dit_modules) == 2 * 32
-            for name in ("x_q", "x_k", "x_v", "x_o", "ffn_down_proj")
-        )
+    qwen_image_2_1 = {4096, 12288} <= dit_dimensions and all(
+        sum(module.startswith(f"{name}-") for module in dit_modules) == 2 * 32
+        for name in ("x_q", "x_k", "x_v", "x_o", "ffn_down_proj")
     )
     # SD1.x and SDXL share U-Net channel widths (320/640/1280), and SDXL
     # can include a 768-wide CLIP-L text model. Require 768 also in U-Net LoRA
