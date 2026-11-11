@@ -389,7 +389,7 @@ def architecture_shortcode(exact_architecture: str) -> str | None:
     return ARCHITECTURE_TAGS.get(exact_architecture)
 
 
-_CONVERTED_FORMAT_SUFFIX = re.compile(r"(?i)(?:^|[_\\s.-])(?:lora[_\\s.-]*)?(q8p|f16|fp16)\\.ckpt$")
+_CONVERTED_FORMAT_SUFFIX = re.compile(r"(?i)(?:^|[_\s.-])(?:lora[_\s.-]*)?(q8p|f16|fp16)\.ckpt$")
 
 
 def suggested_lora_format(filename: str) -> tuple[str, str]:
