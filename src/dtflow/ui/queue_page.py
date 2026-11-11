@@ -1727,6 +1727,7 @@ class QueuePage:
             weights=self._offered_loras,
             families=lambda: self._choices().get("lora_families", {}),
             convert=self._lora_set_chip,
+            label=self._lora_set_label,
             initial=self._generate_loras,
             edit_chip=lambda chip: tuple(LoRASelection(name, weight) for name, weight in parse_lora_set(chip)),
             editor_title="LoRA set",
@@ -1801,6 +1802,12 @@ class QueuePage:
         """The weight chips as the planner's lines: one ``IDENTIFIER: w1; w2`` per LoRA, in the order first added."""
         grouped = self._lora_weight_groups()
         return "\n".join(f"{key}: {'; '.join(values)}" if values != [""] else key for key, values in grouped.items())
+
+    @staticmethod
+    def _lora_set_label(chip: str) -> str:
+        """A LoRA-set chip as ``ShortName[Tag] 0.8 + Other[Tag] 0.4``; anything unreadable shows as written."""
+        pairs = parse_lora_set(chip)
+        return " + ".join(f"{display_label(name)} {weight:g}" for name, weight in pairs) if pairs else chip
 
     def _lora_set_chip(self, chosen) -> str:
         """The checked (identifier, weight) pairs as one LoRA-set chip; none checked is the set without LoRAs."""

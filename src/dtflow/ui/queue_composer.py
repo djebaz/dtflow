@@ -47,6 +47,7 @@ def _noun(title: str) -> str:
     return title[:1].lower() + title[1:] if title[1:2].islower() else title
 
 
+CHIP_TEXT_WIDTH = 420  # px a long value chip (a LoRA set) may use before it is elided
 GROUP_NAME_WIDTH = 320  # a grouped chip row's name is elided to this width
 
 
@@ -138,6 +139,7 @@ class ValueChips(QWidget):
         self._edit_chip: Callable[[str], Sequence[LoRASelection]] | None = None
         self._lead = 0
         self._group: Callable[[str], tuple[str, str]] | None = None
+        self._label: Callable[[str], str] | None = None
         self._replace_all = False
         self._layout = FlowLayout(self)
         self._chips: list[QPushButton] = []
@@ -207,6 +209,7 @@ class ValueChips(QWidget):
         edit_chip: Callable[[str], Sequence[LoRASelection]] | None = None,
         replace_all: bool = False,
         group: Callable[[str], tuple[str, str]] | None = None,
+        label: Callable[[str], str] | None = None,
     ) -> None:
         """``search`` opens the shared searchable editor; ``choice`` is an editable list; ``int``/``float`` a box.
 
@@ -214,11 +217,13 @@ class ValueChips(QWidget):
         checked ``(identifier, weight)`` pairs go to ``convert``, which returns the chip value (or several).
         With ``edit_chip`` each chip opens that editor on its parsed LoRAs and Apply replaces the chip (a separate **×**
         removes it); with ``replace_all`` **Edit…** opens the editor on every chip and Apply replaces them all.
+        With ``label`` a chip shows that shorter text (elided to fit; the tooltip keeps the full value).
         With ``group`` each value splits into (group name, chip text): one line per group, its name then small chips.
         """
         self._kind, self._title, self._options, self._custom = kind, title, options, custom
         self._weights, self._families, self._convert, self._initial = weights, families, convert, initial
         self._edit_chip, self._replace_all, self._group = edit_chip, replace_all, group
+        self._label = label
         self._lead = 1 if group is not None else 0  # a grouped row keeps its button first, above the LoRA lines
         self._editor_title, self._editor_hint, self._multi_weight = editor_title, editor_hint, multi_weight
         if self._input is not None:
@@ -337,6 +342,9 @@ class ValueChips(QWidget):
 
     def _add_chip(self, index: int, text: str, value: str) -> None:
         """One chip for ``values[index]``: its text and ×, or (with ``edit_chip``) an edit button plus a separate ×."""
+        if self._label is not None and text == value:
+            text = self._label(value)
+            text = self.fontMetrics().elidedText(text, Qt.TextElideMode.ElideRight, CHIP_TEXT_WIDTH)
         if self._edit_chip is not None:
             edit = QPushButton(text, self)
             edit.setProperty("role", "valueChip")
