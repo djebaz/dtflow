@@ -4,7 +4,7 @@ Only SQLite tensor names and shape metadata are inspected, never weights. A
 filename, current checkpoint, or generic hidden-size match is not proof of
 family. Unknown and ambiguous structures remain explicitly unknown.
 
-Z-Image, Krea 2, MOSS Image and a bounded SD 1.x signature are
+Z-Image, Krea 2, MOSS Image, bounded SD 1.x and SDXL Base signatures are
 grounded in owner-provided converted CKPT reports and upstream Draw Things
 model definitions (#369). Unidentified or partial adapters stay unknown.
 """
@@ -110,6 +110,8 @@ def detect_lora_family(path: Path) -> LoraFamily:
     dit_dimensions = adapter_dimensions("__dit__[t-")
     unet_dimensions = adapter_dimensions("__unet__[t-")
     text_dimensions = adapter_dimensions("__text_model__[t-")
+    te2_dimensions = adapter_dimensions("__te2__text_model__[t-")
+    fixed_unet_dimensions = adapter_dimensions("__unet_fixed__[t-")
 
     # Draw Things encodes DiT module names as "t-<module>-<layer>-...".
     # Do not require a specific last layer; a LoRA can adapt only a subset.
@@ -148,6 +150,17 @@ def detect_lora_family(path: Path) -> LoraFamily:
         and not ({1024, 1280} & text_dimensions)
         and not any(name.startswith("__te2__text_model__[") for name in names)
     )
+    # SDXL Base has CLIP-L (768) and OpenCLIP-G (1280) adapters plus
+    # a fixed UNet conditioning path (2048). Refiner uses different UNet
+    # widths and no separate CLIP-L encoder. Only classify adapters with
+    # all these independent landmarks; partial SDXL LoRAs stay unknown.
+    sdxl = (
+        768 in text_dimensions
+        and 1280 in te2_dimensions
+        and {640, 1280} <= unet_dimensions
+        and 2048 in fixed_unet_dimensions
+        and not ({384, 1536} & unet_dimensions)
+    )
     matches = [
         family
         for family, matched in (
@@ -155,6 +168,7 @@ def detect_lora_family(path: Path) -> LoraFamily:
             ("krea_2", krea_2),
             ("moss_image", moss_image),
             ("sd_1", sd_1),
+            ("sdxl", sdxl),
         )
         if matched
     ]
