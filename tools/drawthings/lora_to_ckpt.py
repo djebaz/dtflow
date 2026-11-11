@@ -296,6 +296,29 @@ def split_fused(up: np.ndarray, down: np.ndarray, count: int) -> list[tuple[np.n
     return [(up[i * rows : (i + 1) * rows], down) for i in range(count)]
 
 
+# --------------------------------------------------------------------------- float16
+
+
+def to_f16(values: np.ndarray) -> np.ndarray:
+    """Convert to float16 the way Draw Things (ccv) does: truncate toward zero, no rounding.
+
+    numpy rounds to nearest. The two only differ when bits are lost, which for BF16 sources
+    means the float16 subnormal range (below about 6e-5), where Draw Things drops the last bit
+    that numpy would round up.
+    """
+    x = np.asarray(values, dtype=np.float32)
+    rounded = x.astype(np.float16)
+    too_big = np.abs(rounded.astype(np.float32)) > np.abs(x)
+    bits = rounded.view(np.uint16)
+    # Sign-magnitude: one less in the magnitude bits is one step toward zero.
+    fix = too_big & ((bits & 0x7FFF) != 0)
+    bits = np.where(fix, bits - 1, bits).astype(np.uint16)
+    # Finite values above the float16 range round to infinity; truncation saturates instead.
+    overflow = np.isinf(rounded) & np.isfinite(x)
+    bits = np.where(overflow, (bits & 0x8000) | 0x7BFF, bits).astype(np.uint16)
+    return bits.view(np.float16)
+
+
 # --------------------------------------------------------------------------- scaling
 
 
@@ -312,13 +335,13 @@ def scale_up(tensor_f16: np.ndarray, alpha: np.float32 | None, scale: float, ran
         factor = np.float32(math.sqrt(scale))
     else:
         return tensor_f16
-    return (tensor_f16.astype(np.float32) * factor).astype(np.float16)
+    return to_f16(tensor_f16.astype(np.float32) * factor)
 
 
 def scale_down(tensor_f16: np.ndarray, scale: float) -> np.ndarray:
     if scale == 1:
         return tensor_f16
-    return (tensor_f16.astype(np.float32) * np.float32(math.sqrt(scale))).astype(np.float16)
+    return to_f16(tensor_f16.astype(np.float32) * np.float32(math.sqrt(scale)))
 
 
 # --------------------------------------------------------------------------- writing
@@ -407,8 +430,8 @@ def convert(
         if "up" not in roles or "down" not in roles:
             raise ConversionError(f"{module}: needs both an up and a down tensor.")
         alpha = _scalar(st.read(roles["alpha"].key)) if "alpha" in roles else None
-        up = st.read(roles["up"].key).astype(np.float16)
-        down = st.read(roles["down"].key).astype(np.float16)
+        up = to_f16(st.read(roles["up"].key))
+        down = to_f16(st.read(roles["down"].key))
         if up.ndim != 2 or down.ndim != 2 or up.shape[1] != down.shape[0]:
             raise ConversionError(f"{module}: unexpected shapes up {up.shape} and down {down.shape}. {COLAB_HINT}")
         pieces = split_fused(up, down, len(target.names))
