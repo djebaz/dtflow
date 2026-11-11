@@ -145,6 +145,22 @@ def fingerprint_checks(
                 for index in (3, 4, 5)
             ),
         },
+        "flux2_9b": {
+            "hidden_4096": 4096 in widths,
+            "feed_forward_12288": 12288 in widths,
+            "all_32_block_qkvo_pairs": all(
+                sum(module.startswith(f"{name}-") for module in modules) == 2 * (8 + 24)
+                for name in ("x_q", "x_k", "x_v", "x_o")
+            ),
+            "all_24_single_block_ffn_pairs": all(
+                sum(module.startswith(f"{name}-") for module in modules) == 2 * 24
+                for name in ("x_w1", "x_w2", "x_w3")
+            ),
+            "all_8_joint_block_projections": all(
+                sum(module.startswith(f"{name}-") for module in modules) == 2 * 8
+                for name in ("x_gate_proj", "x_up_proj", "x_down_proj", "c_q", "c_o")
+            ),
+        },
         "sd_1": {
             "text_encoder_768": 768 in text,
             "unet_320_640_1280_and_768": {320, 640, 1280, 768} <= unet,
