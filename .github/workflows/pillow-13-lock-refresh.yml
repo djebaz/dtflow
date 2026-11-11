@@ -1,4 +1,5 @@
 name: Temporary Pillow 13 lockfile refresh
+# Final pass after aligning the optional mask-poc dependency group.
 
 on:
   push:
