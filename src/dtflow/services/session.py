@@ -842,6 +842,8 @@ def asset_view(record: dict) -> dict:
     keys = (
         "asset_id", "kind", "identifier", "state", "evidence", "source", "sha256", "size", "backend_id", "origin",
         "remote_id", "created_at_utc", "confirmed_at_utc", "updated_at_utc", "family", "family_source",
+        "detected_version", "detected_source", "declared_version", "architecture_conflict",
+        "short_name", "format_code", "format_source",
     )  # fmt: skip
     view = {key: record.get(key) for key in keys}
     if "operations" in record:
