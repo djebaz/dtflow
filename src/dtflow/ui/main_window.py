@@ -555,6 +555,7 @@ class MainWindow:
         table.itemDoubleClicked.connect(lambda _item: self.edit_lora_metadata())
         form.editLoraMetadataButton.clicked.connect(self.edit_lora_metadata)
         self._lora_records: dict[tuple[str, int], dict] = {}
+        self._lora_entries: list[dict] = []
         self._lora_names: dict[tuple[str, int], str] = {}
         self.lora_metadata_overlay = LoraMetadataOverlay(
             form.connectionWorkspaceScroll,
@@ -1825,11 +1826,7 @@ class MainWindow:
             found = retained_families(self.state_dir, identities)
             for entry in entries:
                 entry["detected_family"] = found.get((entry.get("sha256"), entry.get("size")))
-            try:
-                records = asyncio.run(read_lora_rows(self.state_dir))
-            except Exception:  # noqa: BLE001 - the table still lists retained files without local metadata
-                records = {}
-            return len(Catalogue(self.state_dir).user_loras()), entries, store.usage(), records
+            return len(Catalogue(self.state_dir).user_loras()), entries, store.usage()
 
         self._read_summary("loras", read, self._custom_loras_read)
 
@@ -1843,7 +1840,7 @@ class MainWindow:
             self.form.removeRetainedLoraButton.setEnabled(False)
             self.form.editLoraMetadataButton.setEnabled(False)
             return
-        count, entries, (stored_count, stored_bytes), records = result
+        count, entries, (stored_count, stored_bytes) = result
         self.form.customLorasStatusLabel.setText(
             f"{count} custom LoRA definition" + ("" if count == 1 else "s") + " imported."
             if count
@@ -1856,11 +1853,33 @@ class MainWindow:
             if stored_count
             else "No locally retained LoRAs."
         )
-        table = self.form.retainedLorasTable
-        identity = self._selected_lora_identity()
-        self._lora_records, self._lora_names = records, {}
+        self._lora_entries = entries
+        self._render_lora_table()  # the retained files show at once; metadata columns follow from a separate read
+        self._read_summary("lora_records", self._read_lora_records, self._lora_records_read)
+
+    @staticmethod
+    def _read_lora_records_sync(state_dir):
+        async def read():
+            return await asyncio.wait_for(read_lora_rows(state_dir), 20)
+
+        return asyncio.run(read())
+
+    def _read_lora_records(self):
+        return self._read_lora_records_sync(self.state_dir)
+
+    def _lora_records_read(self, records, error) -> None:
+        if error is not None or records is None:
+            return  # the table keeps showing the retained files without local metadata
+        self._lora_records = records
         set_label_overrides(label_overrides(records.values()))
         self.generation.lora.refresh_labels()
+        self._render_lora_table()
+
+    def _render_lora_table(self) -> None:
+        records, entries = self._lora_records, self._lora_entries
+        table = self.form.retainedLorasTable
+        identity = self._selected_lora_identity()
+        self._lora_names = {}
         rows = []
         for entry in sorted(entries, key=lambda item: str(item.get("name", "")).casefold()):
             name, sha256, size = entry.get("name"), entry.get("sha256"), entry.get("size")
