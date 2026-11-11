@@ -50,4 +50,5 @@ COMPONENTS = (
     "dtflow.ui.queue_thumbnails",
     "dtflow.ui.workflow_defaults_panel",
     "dtflow.ui.workflows_page",
+    "httpx",
 )
