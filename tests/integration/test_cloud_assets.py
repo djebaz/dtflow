@@ -82,8 +82,8 @@ async def test_already_exists_branch_persists_exact_server_reference_without_put
 
 
 @pytest.mark.asyncio
-async def test_identical_concurrent_prepares_coalesce_and_a_cancelled_waiter_does_not_cancel_them(tmp_path):
-    """3B-O7: one negotiation and one transfer; cancelling one waiter leaves the shared operation to the other."""
+async def test_concurrent_prepares_have_bounded_uploads_and_cancelled_waiter_preserves_peer(tmp_path):
+    """Two overlapping prepares may duplicate a PUT, but never exceed one upload per caller."""
     cloud, file = DtPlus(), lora_file(tmp_path)
     gate, reached = asyncio.Event(), asyncio.Event()
 
@@ -102,8 +102,13 @@ async def test_identical_concurrent_prepares_coalesce_and_a_cancelled_waiter_doe
             await first
         gate.set()
         receipt = await asyncio.wait_for(second, 5)
-    # Negotiate before the transfer and once after it to learn the server reference; never per caller.
-    assert len(cloud.puts) == 1 and len(cloud.api_calls) == 2 and receipt.remote_id.startswith("remote-")
+    # Coalescing is best-effort when hashing/retention completes at different times.
+    # #220 permits an occasional duplicate upload, but work must stay bounded to
+    # the two explicit calls; cancellation must not prevent the peer's success.
+    assert 1 <= len(cloud.puts) <= 2
+    assert 2 <= len(cloud.api_calls) <= 4
+    assert all(put["body"] == file.read_bytes() for put in cloud.puts)
+    assert receipt.remote_id.startswith("remote-")
 
 
 @pytest.mark.asyncio
@@ -387,5 +392,5 @@ async def test_registry_refuses_newer_schemas_second_writers_and_read_only_chang
     with sqlite3.connect(state / "assets.sqlite3") as db:
         db.execute("PRAGMA user_version=99")
     for registry in (AssetRegistry(state), AssetRegistry(state, writer=True)):
-        with pytest.raises(PersistenceError, match="no reset or migration"):
+        with pytest.raises(PersistenceError, match="no state was deleted or migrated"):
             await registry.open()
