@@ -110,8 +110,12 @@ def fingerprint_checks(
                 re.fullmatch(r"ffn-\d+-ffn_(?:gate|down|up)_proj-\d+-\d+", m)
                 for m in modules
             ),
-            "attention_modules": any(
-                re.fullmatch(r"(?:k|q|v|o)-\d+-\d+", m) for m in modules
+            "attention_or_modulation_modules": (
+                any(re.fullmatch(r"(?:k|q|v|o)-\d+-\d+", m) for m in modules)
+                or all(
+                    any(re.fullmatch(rf"ada_ln_{index}-\d+-\d+", m) for m in modules)
+                    for index in range(4)
+                )
             ),
         },
         "krea_2": {
