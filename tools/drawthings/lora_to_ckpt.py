@@ -444,7 +444,7 @@ def write_ckpt(path: Path, tensors: dict[str, np.ndarray]) -> None:
 # (kohya ``lora_unet_...``, diffusers, PEFT) all go through the same fuzzy matching.
 
 TABLE_FAMILIES = ("sd1", "sdxl")
-EXPERIMENTAL_FAMILIES = ("zimage", "sd1", "sdxl")
+EXPERIMENTAL_FAMILIES = ("sdxl",)
 FORMAT_NCHW = 0x02  # assumed for 4-D (convolution) tensors, not checked against a reference
 
 
