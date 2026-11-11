@@ -1,6 +1,6 @@
 name: LoRA Prepare UI renders
 
-# Render only the canonical Prepare overlay with synthetic data; no network or uploads.
+# Render canonical LoRA editors with synthetic data; no network or uploads.
 # A PR synchronize affecting Prepare triggers this scoped category automatically, without labels.
 run-name: >-
   LoRA Prepare · PR #${{ github.event.pull_request.number }}
@@ -12,6 +12,8 @@ on:
       - 'src/dtflow/ui/prepare_lora_editor.py'
       - 'src/dtflow/ui/forms/prepare_lora_*.ui'
       - 'src/dtflow/ui/lora_panel.py'
+      - 'src/dtflow/ui/lora_selection_editor.py'
+      - 'src/dtflow/ui/forms/lora_selection_*.ui'
       - 'tools/ui/render_states.py'
       - 'tools/ui/render_catalog.py'
       - 'tools/ui/render_catalog.json'
@@ -34,7 +36,7 @@ env:
 
 jobs:
   capture:
-    name: Capture canonical LoRA Prepare
+    name: Capture canonical LoRA views
     if: github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-24.04
     timeout-minutes: 10
@@ -57,22 +59,22 @@ jobs:
       - name: Sync environment
         run: uv sync --locked
 
-      - name: Render canonical Prepare (wide + compact)
+      - name: Render canonical LoRA Prepare and shared picker
         id: capture
         run: |
           timeout --signal=ABRT --kill-after=10s 150s \
             .venv/bin/python tools/ui/render_states.py \
               --category lora --fast --jobs 1 --out tmp/lora-ui
-          count=$(find tmp/lora-ui -maxdepth 1 -name 'lora-prepare-*.png' -type f | wc -l)
-          [ "$count" -eq 2 ] || { echo "::error::Expected 2 captures, got $count."; exit 1; }
-          echo "Captured two canonical LoRA Prepare states." >> "$GITHUB_STEP_SUMMARY"
+          count=$(find tmp/lora-ui -maxdepth 1 -name 'lora-*.png' -type f | wc -l)
+          [ "$count" -eq 3 ] || { echo "::error::Expected 3 LoRA captures, got $count."; exit 1; }
+          echo "Captured native LoRA Prepare wide/compact and shared picker." >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upload GitHub screenshot artifact
         if: steps.capture.outcome == 'success'
         uses: actions/upload-artifact@v7.0.2
         with:
           name: lora-runtime-pr${{ github.event.pull_request.number }}-${{ github.event.pull_request.head.sha }}
-          path: tmp/lora-ui/lora-prepare-*.png
+          path: tmp/lora-ui/lora-*.png
           if-no-files-found: error
           retention-days: 14
 
@@ -112,10 +114,10 @@ jobs:
           path = Path("tmp/lora-ui-drive.json")
           data = json.loads(path.read_text(encoding="utf-8")) if path.exists() else {}
           by_name = {item["relative_path"]: item for item in data.get("files", [])}
-          names = sorted(path.name for path in Path("tmp/lora-ui").glob("lora-prepare-*.png"))
+          names = sorted(path.name for path in Path("tmp/lora-ui").glob("lora-*.png"))
           lines = [
               "<!-- dtflow-lora-designer-renders -->",
-              "## Canonical LoRA Prepare — 2 captures",
+              "## Canonical LoRA Prepare and picker — 3 captures",
               "",
               f"[GitHub Actions run and PNG artifact]({os.environ['RUN_URL']})",
               "",

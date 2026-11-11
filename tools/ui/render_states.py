@@ -514,6 +514,39 @@ def render_lora_prepare_states(shell, out):
     save(shell.form, out, "lora-prepare-compact")
     shell.inline.dismiss()
 
+    # The existing shared picker is used by Generate, Queue plans and Workflow nodes.
+    # Render that actual selector rather than maintaining a second design-only picker.
+    from dtflow.core.models import LoRASelection
+    from dtflow.ui.lora_selection_editor import edit_lora_selection
+
+    shell.form.resize(1480, 920)
+    QTest.qWait(90)
+    edit_lora_selection(
+        shell.generation_page,
+        candidates=(
+            "PortraitV2_Kr2_lora_f16.ckpt",
+            "Cinematic_ZiT_lora_q8p.ckpt",
+            "DetailBoost_Kr2_lora_f16.ckpt",
+            "Realism_F1_lora_f16.ckpt",
+        ),
+        selected=(
+            LoRASelection("PortraitV2_Kr2_lora_f16.ckpt", 0.8),
+            LoRASelection("Cinematic_ZiT_lora_q8p.ckpt", 1.0),
+        ),
+        families={
+            "PortraitV2_Kr2_lora_f16.ckpt": "Krea 2",
+            "Cinematic_ZiT_lora_q8p.ckpt": "Z-Image Turbo",
+            "DetailBoost_Kr2_lora_f16.ckpt": "Krea 2",
+            "Realism_F1_lora_f16.ckpt": "FLUX.1",
+        },
+        callback=lambda _selection: None,
+    )
+    QTest.qWait(80)
+    if not shell.inline.form.isVisible():
+        raise RuntimeError("The shared LoRA selector overlay was dismissed before capture")
+    save(shell.form, out, "lora-picker")
+    shell.inline.dismiss()
+
 
 @fixture("connection-outcomes")
 def render_connection_outcomes(shell, out):
