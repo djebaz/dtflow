@@ -98,7 +98,8 @@ def test_lora_weights_that_the_library_rounds_on_decode_still_verify(weight):
 def test_prepared_loras_are_named_by_their_sha256_on_the_wire():
     digest = "ab" * 32
     prepared = PreparedAsset(
-        "cloud", "origin", "mine_lora_f16.ckpt", "mine_lora_f16.ckpt", digest, 10, "r1", "2026-10-06T00:00:00Z"
+        "cloud", "origin", "mine_lora_f16.ckpt", "mine_lora_f16.ckpt", digest, 10, "r1", "2026-10-06T00:00:00Z",
+        family="z_image", family_source="file",
     )
     selections = (LoRASelection("mine_lora_f16.ckpt", 0.5), LoRASelection("builtin_lora_f16.ckpt", 1.0))
     wire = build_generation_message(request(loras=selections, prepared_assets=(prepared,)), None)
@@ -106,28 +107,30 @@ def test_prepared_loras_are_named_by_their_sha256_on_the_wire():
     assert [x["file"] for x in decoded["loras"]] == [digest, "builtin_lora_f16.ckpt"]
 
 
-def test_prepared_custom_loras_are_described_in_the_override_with_the_base_version():
+def test_prepared_custom_loras_use_own_exact_version_and_refuse_unknown():
     import json
+    from dataclasses import replace
 
-    from dtflow.core.models import PreparedAsset
-
-    asset = PreparedAsset("cloud", "o", "mine_lora_f16.ckpt", "ref", "a" * 64, 1, "rc", "2026-01-01T00:00:00+00:00")
-    selections = (LoRASelection("mine_lora_f16.ckpt", 1.0), LoRASelection("other_lora_f16.ckpt", 1.0))
-    sent = build_generation_message(request(loras=selections, prepared_assets=(asset,)), None, "z_image")
-    assert json.loads(sent.message.override.loras) == [
-        {"name": "mine_lora_f16.ckpt", "file": "a" * 64, "prefix": "", "version": "z_image"}
-    ]
-    assert not build_generation_message(
-        request(loras=selections, prepared_assets=(asset,)), None
-    ).message.override.loras
-    # The catalogue's family name is mapped to Draw Things' version string; an exact description's version wins.
-    flux = build_generation_message(request(loras=selections, prepared_assets=(asset,)), None, "flux_1")
-    assert json.loads(flux.message.override.loras)[0]["version"] == "flux1"
-    exact = build_generation_message(
-        request(loras=selections, prepared_assets=(asset,)), None, "flux_2", {"version": "flux2_9b", "file": "x"}
+    asset = PreparedAsset(
+        "cloud", "o", "mine_lora_f16.ckpt", "ref", "a" * 64, 1, "rc", "2026-01-01T00:00:00+00:00",
+        family="flux1", family_source="file",
     )
-    assert json.loads(exact.message.override.loras)[0]["version"] == "flux2_9b"
+    selections = (LoRASelection("mine_lora_f16.ckpt", 1.0), LoRASelection("other_lora_f16.ckpt", 1.0))
+    # Neither the selected checkpoint family nor its exact description may override the LoRA's own version.
+    sent = build_generation_message(
+        request(loras=selections, prepared_assets=(asset,)), None, "flux_2",
+        {"version": "flux2_9b", "file": "model.ckpt"},
+    )
+    assert json.loads(sent.message.override.loras) == [
+        {"name": "mine_lora_f16.ckpt", "file": "a" * 64, "prefix": "", "version": "flux1"}
+    ]
     assert not build_generation_message(request(loras=selections), None, "z_image").message.override.loras
+
+    unknown = replace(asset, family=None, family_source="unknown")
+    with pytest.raises(BackendError) as caught:
+        build_generation_message(request(loras=selections, prepared_assets=(unknown,)), None, "z_image")
+    assert caught.value.failure.code == "prepared_lora_architecture_unknown"
+    assert caught.value.failure.submission_stage.value == "not_submitted"
 
 
 def test_bundled_catalogue_supplies_a_base_version_when_inventory_has_none():
