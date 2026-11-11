@@ -309,7 +309,8 @@ class AssetRegistry:
                 "THEN excluded.detected_version ELSE lora_records.detected_version END, "
                 "detected_source=CASE WHEN excluded.detected_version IS NOT NULL "
                 "THEN 'file' ELSE lora_records.detected_source END, "
-                "updated_at_utc=excluded.updated_at_utc",
+                "updated_at_utc=CASE WHEN excluded.detected_version IS NOT NULL "
+                "THEN excluded.updated_at_utc ELSE lora_records.updated_at_utc END",
                 (content.sha256, content.size, family, "file" if family else "unknown", now),
             )
         row = db.execute(
@@ -564,8 +565,7 @@ class AssetRegistry:
             ).fetchone()
             if row is None:
                 return None
-            result = _record(row)
-            return result
+            return _record(row)
 
     async def update_lora_metadata(self, sha256: str, size: int, **changes) -> dict[str, Any]:
         """Atomically change local LoRA metadata without renaming, uploading, or altering receipts.
@@ -637,12 +637,15 @@ class AssetRegistry:
         records = {(row["sha256"], row["size"]): row for row in rows}
         from dataclasses import replace
 
-        return tuple(
-            replace(item, family=_effective_version(records[(item.sha256, item.size)])[0],
-                    family_source=_effective_version(records[(item.sha256, item.size)])[1])
-            if (item.sha256, item.size) in records else item
-            for item in prepared
-        )
+        resolved = []
+        for item in prepared:
+            row = records.get((item.sha256, item.size))
+            if row is None:
+                resolved.append(item)
+            else:
+                version, source = _effective_version(row)
+                resolved.append(replace(item, family=version, family_source=source))
+        return tuple(resolved)
 
     async def get(self, asset_id: str) -> dict[str, Any] | None:
         return await self._run(self._get, asset_id)
