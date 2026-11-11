@@ -192,21 +192,56 @@ def analyze(entries: list[dict[str, Any]], *, include_other: bool = False) -> li
         result["likely_lora"] = _is_probably_lora(entry)
         rows.append(result)
 
-    # Never manufacture a hash, numeric suffix or supposedly unique saved name.
-    # Converted F16/Q8P variants of the *same* original stem can share a label.
-    by_suggestion: dict[str, list[int]] = defaultdict(list)
-    for index, row in enumerate(rows):
-        if row["suggestion"]:
-            by_suggestion[row["suggestion"].casefold()].append(index)
-    for indexes in by_suggestion.values():
-        if len(indexes) < 2:
+    # Suggestions are only proposals. The actual Prepare editor still requires
+    # explicit approval and never silently resolves managed-file collisions.
+    # Reserve unsuffixed proposals so an earlier suffix does not claim a later
+    # file's original suggested name.
+    reserved = {
+        row["suggestion"].casefold()
+        for row in rows
+        if row["suggestion"] is not None
+    }
+    assigned: set[str] = set()
+    for row in rows:
+        base = row["suggestion"]
+        if base is None:
             continue
-        sources = {FORMAT_SUFFIX.sub("", Path(rows[i]["source_file"]).stem).casefold() for i in indexes}
-        if len(sources) == 1:
+        if base.casefold() not in assigned:
+            assigned.add(base.casefold())
             continue
-        for i in indexes:
-            rows[i]["shared_suggestion_with"] = [rows[j]["source_file"] for j in indexes if i != j]
-            rows[i]["needs_review"] = True
+
+        groups, version, _ = _split(row["source_file"])
+        # Prefer the full candidate; if the suffix would exceed 20 characters,
+        # fall back to a shorter *whole-word* prefix, never sliced characters.
+        prefixes = [base] + [
+            name for name, _ in _candidates(groups, version)
+            if base.startswith(name) and name != base
+        ]
+        prefixes = sorted(set(prefixes), key=len, reverse=True)
+        for number in range(2, len(rows) + 2):
+            suffix = f"_{number}"
+            proposed = next(
+                (name + suffix for name in prefixes
+                 if len(name) + len(suffix) <= MAX_SHORT_NAME),
+                None,
+            )
+            if proposed is None:
+                break
+            key = proposed.casefold()
+            if key in assigned or key in reserved:
+                continue
+            row["suggestion"] = proposed
+            row["collision_suffix"] = number
+            row["needs_review"] = True
+            row["reason"] = "Duplicate proposed short name; review the numbered suggestion."
+            assigned.add(key)
+            break
+        else:
+            proposed = None
+        if proposed is None:
+            row["suggestion"] = None
+            row["needs_review"] = True
+            row["reason"] = "No complete-word candidate leaves room for a unique numeric suffix."
     return rows
 
 
