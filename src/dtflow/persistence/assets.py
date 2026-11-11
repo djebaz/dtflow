@@ -306,13 +306,16 @@ class AssetRegistry:
                 "INSERT INTO lora_records "
                 "(sha256, size, detected_version, detected_source, updated_at_utc) "
                 "VALUES (?,?,?,?,?) ON CONFLICT(sha256, size) DO UPDATE SET "
-                "detected_version=CASE WHEN excluded.detected_version IS NOT NULL "
-                "THEN excluded.detected_version ELSE lora_records.detected_version END, "
-                "detected_source=CASE WHEN excluded.detected_version IS NOT NULL "
-                "THEN 'file' ELSE lora_records.detected_source END, "
-                "updated_at_utc=CASE WHEN excluded.detected_version IS NOT NULL "
-                "THEN excluded.updated_at_utc ELSE lora_records.updated_at_utc END",
-                (content.sha256, content.size, family, "file" if family else "unknown", now),
+                "detected_version=CASE WHEN ? THEN excluded.detected_version "
+                "ELSE lora_records.detected_version END, "
+                "detected_source=CASE WHEN ? THEN excluded.detected_source "
+                "ELSE lora_records.detected_source END, "
+                "updated_at_utc=CASE WHEN ? THEN excluded.updated_at_utc "
+                "ELSE lora_records.updated_at_utc END",
+                (
+                    content.sha256, content.size, family, "file" if family else "unknown", now,
+                    action == "prepare", action == "prepare", action == "prepare",
+                ),
             )
         row = db.execute(
             "SELECT asset_id, state FROM assets WHERE kind=? AND backend_id=? AND origin=? AND sha256=? AND size=?",
