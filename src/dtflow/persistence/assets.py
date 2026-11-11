@@ -20,13 +20,14 @@ import sqlite3
 from contextlib import closing
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 from uuid import uuid4
 
 from dtflow.core.models import PREPARATION_STATES, AssetContent, PreparedAsset, ValidationError
 from dtflow.persistence import store
 from dtflow.persistence.store import PersistenceError
-from dtflow.services.lora_naming import LoraPrepareMetadata
+if TYPE_CHECKING:
+    from dtflow.services.lora_naming import LoraPrepareMetadata
 
 SCHEMA_VERSION = 6
 UNRESOLVED = ("intent", "transferring")
