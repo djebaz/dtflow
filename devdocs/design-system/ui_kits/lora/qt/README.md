@@ -39,12 +39,19 @@ synthetic design evidence, **not** runtime behavior or Windows acceptance.
 
 Add the exact **`lora:render`** label to a pull request to run
 [`LoRA design renders`](../../../../../../.github/workflows/lora-design-render.yml).
-The label persists across subsequent pushes and rerenders only these standalone
-Designer forms (seven PNGs, including expanded Connections and compact Prepare).
+The label persists across subsequent pushes and rerenders only these seven
+LoRA views (including the canonical runtime Prepare form, expanded Connections
+and compact Prepare).
 The dedicated job uploads a downloadable GitHub Actions artifact and, when
 configured, Google Drive images with links in an updated PR review comment.
 The broad UI fixture renderer is deliberately **not invoked** by this LoRA label;
 it retains its original scope and change gate.
+
+Alternatively, open the general **UI renders** workflow, choose **Run workflow**,
+set **category = lora** (and PR number when applicable), and run only these same
+seven LoRA captures. The `all` category keeps its existing behavior and does
+not implicitly include the separate LoRA design screens. The dedicated label
+workflow remains the quickest option for frequent PR design iterations.
 
 ## Integration boundary
 
