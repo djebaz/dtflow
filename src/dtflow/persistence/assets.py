@@ -1,9 +1,9 @@
-"""Independent durable registry of locally known cloud assets (``<state>/assets.sqlite3``, schema version 4).
+"""Independent durable registry of locally known cloud assets (``<state>/assets.sqlite3``, schema version 5).
 
-A row is a *local candidate*, not remote inventory: it records what this machine measured and what a server once
-acknowledged. It never stores raw credentials, signed URLs or file contents. A version-3 side table records per-key and per-name references
-under the stable opaque credential identity; schema-1 receipts remain historical, unassigned evidence until checked
-under a selected key. Confirmed per-key receipts are reused without routine network checks.
+A receipt row is a *local candidate*, not remote inventory. The content-keyed
+``lora_records`` table owns file-detected and user-declared exact architecture plus local
+editable metadata. Account/name-scoped DT+ receipts remain separate. No legacy schema
+migration is provided for disposable pre-release state; incompatible state is never deleted.
 
 Writers (``prepare`` and ``reconcile``) hold an exclusive ``assets.lock`` for their lifetime; opening as a writer
 turns any leftover ``intent``/``transferring`` operation of an interrupted process into explicit ``unknown`` evidence.
@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import asyncio
 import os
+import re
 import sqlite3
 from contextlib import closing
 from datetime import UTC, datetime
@@ -26,7 +27,7 @@ from dtflow.core.models import PREPARATION_STATES, AssetContent, PreparedAsset, 
 from dtflow.persistence import store
 from dtflow.persistence.store import PersistenceError
 
-SCHEMA_VERSION = 4
+SCHEMA_VERSION = 5
 UNRESOLVED = ("intent", "transferring")
 SOURCES = ("transfer", "already_exists", "reconciled")
 
@@ -37,8 +38,6 @@ SCHEMA = (
         identifier TEXT NOT NULL,
         sha256 TEXT NOT NULL,
         size INTEGER NOT NULL,
-        family TEXT,
-        family_source TEXT NOT NULL DEFAULT 'unknown',
         backend_id TEXT NOT NULL,
         origin TEXT NOT NULL,
         remote_id TEXT,
@@ -69,6 +68,22 @@ SCHEMA = (
         confirmed_at_utc TEXT NOT NULL,
         updated_at_utc TEXT NOT NULL,
         PRIMARY KEY(asset_id, credential_id, identifier)
+    )""",
+    """CREATE TABLE IF NOT EXISTS lora_records (
+        sha256 TEXT NOT NULL,
+        size INTEGER NOT NULL,
+        detected_version TEXT,
+        detected_source TEXT NOT NULL DEFAULT 'unknown',
+        declared_version TEXT,
+        short_name TEXT,
+        format_code TEXT,
+        format_source TEXT,
+        trigger_words TEXT NOT NULL DEFAULT '',
+        updated_at_utc TEXT NOT NULL,
+        PRIMARY KEY (sha256, size),
+        CHECK (detected_source IN ('unknown', 'file')),
+        CHECK (format_code IS NULL OR format_code IN ('F16', 'Q8P')),
+        CHECK ((format_code IS NULL) = (format_source IS NULL))
     )""",
 )
 
@@ -117,8 +132,33 @@ def _lock_file(path: Path):
     return handle
 
 
+_LORA_COLUMNS = (
+    "r.detected_version, r.detected_source, r.declared_version, r.short_name, "
+    "r.format_code, r.format_source, r.trigger_words"
+)
+_LORA_JOIN = " LEFT JOIN lora_records r ON r.sha256=a.sha256 AND r.size=a.size"
+
+
+def _effective_version(row) -> tuple[str | None, str]:
+    """An explicit user declaration wins without replacing file-derived evidence."""
+    if row["declared_version"]:
+        return row["declared_version"], "user"
+    if row["detected_version"]:
+        return row["detected_version"], "file"
+    return None, "unknown"
+
+
 def _record(row: sqlite3.Row) -> dict[str, Any]:
-    return {key: row[key] for key in row.keys()}
+    value = {key: row[key] for key in row.keys()}
+    if "detected_version" not in value:
+        return value  # Operation rows contain no LoRA metadata.
+    value["family"], value["family_source"] = _effective_version(value)
+    value["architecture_conflict"] = bool(
+        value["declared_version"]
+        and value["detected_version"]
+        and value["declared_version"] != value["detected_version"]
+    )
+    return value
 
 
 class AssetRegistry:
@@ -181,30 +221,21 @@ class AssetRegistry:
 
     def _check_version(self, db: sqlite3.Connection, *, create: bool) -> None:
         version = db.execute("PRAGMA user_version").fetchone()[0]
-        if version not in (0, 1, 2, 3, SCHEMA_VERSION):
-            raise PersistenceError("Unsupported asset-registry schema; no reset or migration was performed.")
+        empty_database = not db.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'"
+        ).fetchone()
+        if version != SCHEMA_VERSION and not (create and version == 0 and empty_database):
+            raise PersistenceError(
+                "This pre-release asset database uses an incompatible schema. "
+                "Close DTFlow and manually reset the .dtflow state directory before continuing; "
+                "no state was deleted or migrated."
+            )
         if create:
             db.execute("PRAGMA journal_mode=WAL")
             db.execute("BEGIN IMMEDIATE")
             try:
-                if version == 2:
-                    # Keep every v2 receipt, its opaque credential identity and history, while allowing
-                    # distinct LoRA filenames with identical content to coexist within the same key.
-                    db.execute("ALTER TABLE asset_key_receipts RENAME TO asset_key_receipts_v2")
                 for statement in SCHEMA:
                     db.execute(statement)
-                if 0 < version < 4:
-                    # Existing receipts retain all references; a kept file can supply the family lazily.
-                    db.execute("ALTER TABLE assets ADD COLUMN family TEXT")
-                    db.execute("ALTER TABLE assets ADD COLUMN family_source TEXT NOT NULL DEFAULT 'unknown'")
-                if version == 2:
-                    db.execute(
-                        "INSERT INTO asset_key_receipts "
-                        "(asset_id, credential_id, identifier, remote_id, state, confirmed_at_utc, updated_at_utc) "
-                        "SELECT asset_id, credential_id, identifier, remote_id, state, "
-                        "confirmed_at_utc, updated_at_utc FROM asset_key_receipts_v2"
-                    )
-                    db.execute("DROP TABLE asset_key_receipts_v2")
                 db.execute(f"PRAGMA user_version={SCHEMA_VERSION}")
                 db.execute("COMMIT")
             except BaseException:
@@ -268,6 +299,30 @@ class AssetRegistry:
         db, content: AssetContent, backend_id: str, origin: str, action: str, family: str | None
     ) -> tuple[str, str]:
         now, operation = _now(), uuid4().hex
+        if content.kind == "lora":
+            # Content metadata and the preparation intent commit together. Refresh
+            # file evidence on re-Prepare without resetting user edits.
+            db.execute(
+                "INSERT INTO lora_records "
+                "(sha256, size, detected_version, detected_source, updated_at_utc) "
+                "VALUES (?,?,?,?,?) ON CONFLICT(sha256, size) DO UPDATE SET "
+                "detected_version=CASE WHEN ? THEN excluded.detected_version "
+                "ELSE lora_records.detected_version END, "
+                "detected_source=CASE WHEN ? THEN excluded.detected_source "
+                "ELSE lora_records.detected_source END, "
+                "updated_at_utc=CASE WHEN ? THEN excluded.updated_at_utc "
+                "ELSE lora_records.updated_at_utc END",
+                (
+                    content.sha256,
+                    content.size,
+                    family,
+                    "file" if family else "unknown",
+                    now,
+                    action == "prepare",
+                    action == "prepare",
+                    action == "prepare",
+                ),
+            )
         row = db.execute(
             "SELECT asset_id, state FROM assets WHERE kind=? AND backend_id=? AND origin=? AND sha256=? AND size=?",
             (content.kind, backend_id, origin, content.sha256, content.size),
@@ -275,21 +330,14 @@ class AssetRegistry:
         if row is None:
             asset_id = uuid4().hex
             db.execute(
-                "INSERT INTO assets (asset_id, kind, identifier, sha256, size, family, family_source,"
-                " backend_id, origin, state, evidence, provenance, created_at_utc, updated_at_utc)"
-                " VALUES (?,?,?,?,?,?,?,?,?,'intent','intent_recorded',?,?,?)",
+                "INSERT INTO assets (asset_id, kind, identifier, sha256, size, "
+                "backend_id, origin, state, evidence, provenance, created_at_utc, updated_at_utc)"
+                " VALUES (?,?,?,?,?,?,?,'intent','intent_recorded',?,?,?)",
                 (asset_id, content.kind, content.identifier, content.sha256, content.size,
-                 family, "file" if family else "unknown", backend_id, origin, content.provenance, now, now),
+                 backend_id, origin, content.provenance, now, now),
             )  # fmt: skip
         else:
             asset_id = row["asset_id"]
-            if family:
-                # Re-Prepare may refresh an earlier detected broad ID with the
-                # current file-derived exact version, without changing the receipt.
-                db.execute(
-                    "UPDATE assets SET family=?, family_source='file' WHERE asset_id=?",
-                    (family, asset_id),
-                )
             if action == "prepare" and row["state"] != "confirmed":
                 db.execute(
                     "UPDATE assets SET state='intent', evidence='intent_recorded', updated_at_utc=? WHERE asset_id=?",
@@ -388,7 +436,9 @@ class AssetRegistry:
                 "UPDATE asset_operations SET state='confirmed', evidence=?, updated_at_utc=? WHERE operation_id=?",
                 ("confirmed_" + source, now, operation_id),
             )
-        row = db.execute("SELECT * FROM assets WHERE asset_id=?", (asset_id,)).fetchone()
+        row = db.execute(
+            f"SELECT a.*, {_LORA_COLUMNS} FROM assets a{_LORA_JOIN} WHERE a.asset_id=?", (asset_id,)
+        ).fetchone()
         if credential_id is not None:
             db.execute(
                 "INSERT INTO asset_key_receipts "
@@ -419,12 +469,10 @@ class AssetRegistry:
         if not self.path.exists():
             return None
         with closing(self._connect()) as db:
-            if db.execute("PRAGMA user_version").fetchone()[0] < 2:
-                return None
             row = db.execute(
-                "SELECT a.*, k.identifier AS scoped_identifier, k.remote_id AS scoped_remote, "
-                "k.confirmed_at_utc AS scoped_confirmed FROM assets a "
-                "JOIN asset_key_receipts k ON k.asset_id=a.asset_id "
+                f"SELECT a.*, {_LORA_COLUMNS}, k.identifier AS scoped_identifier, "
+                "k.remote_id AS scoped_remote, k.confirmed_at_utc AS scoped_confirmed "
+                f"FROM assets a{_LORA_JOIN} JOIN asset_key_receipts k ON k.asset_id=a.asset_id "
                 "WHERE a.asset_id=? AND k.credential_id=? AND k.identifier=? AND k.state='confirmed'",
                 (asset_id, credential_id, identifier),
             ).fetchone()
@@ -475,8 +523,7 @@ class AssetRegistry:
             row["size"],
             row["asset_id"],
             row["confirmed_at_utc"],
-            row["family"] if "family" in row.keys() else None,
-            row["family_source"] if "family_source" in row.keys() else "unknown",
+            *_effective_version(row),
         )
 
     async def choices(self) -> tuple[PreparedAsset, ...]:
@@ -491,29 +538,121 @@ class AssetRegistry:
             return ()
         with closing(self._connect()) as db:
             rows = db.execute(
-                "SELECT * FROM assets WHERE kind='lora' AND state='confirmed' AND remote_id IS NOT NULL"
+                f"SELECT a.*, {_LORA_COLUMNS} FROM assets a{_LORA_JOIN} "
+                "WHERE a.kind='lora' AND a.state='confirmed' AND a.remote_id IS NOT NULL"
             ).fetchall()
             by_name = {(row["asset_id"], row["identifier"]): self._prepared(row) for row in rows}
             created = {row["asset_id"]: row["created_at_utc"] for row in rows}
-            if db.execute("PRAGMA user_version").fetchone()[0] >= 2:
-                for row in db.execute(
-                    "SELECT a.*, k.identifier AS logical_name, k.remote_id AS logical_remote, "
-                    "k.confirmed_at_utc AS logical_confirmed FROM assets a "
-                    "JOIN asset_key_receipts k ON a.asset_id=k.asset_id "
-                    "WHERE a.kind='lora' AND k.state='confirmed'"
-                ):
-                    from dataclasses import replace
+            for row in db.execute(
+                f"SELECT a.*, {_LORA_COLUMNS}, k.identifier AS logical_name, "
+                "k.remote_id AS logical_remote, k.confirmed_at_utc AS logical_confirmed "
+                f"FROM assets a{_LORA_JOIN} JOIN asset_key_receipts k ON a.asset_id=k.asset_id "
+                "WHERE a.kind='lora' AND k.state='confirmed'"
+            ):
+                from dataclasses import replace
 
-                    created[row["asset_id"]] = row["created_at_utc"]
-                    by_name[(row["asset_id"], row["logical_name"])] = replace(
-                        self._prepared(row),
-                        identifier=row["logical_name"],
-                        remote_id=row["logical_remote"],
-                        confirmed_at_utc=row["logical_confirmed"],
-                    )
+                created[row["asset_id"]] = row["created_at_utc"]
+                by_name[(row["asset_id"], row["logical_name"])] = replace(
+                    self._prepared(row),
+                    identifier=row["logical_name"],
+                    remote_id=row["logical_remote"],
+                    confirmed_at_utc=row["logical_confirmed"],
+                )
             # Oldest first by when the file's content was first seen. A relink or key switch re-stamps
             # ``confirmed_at_utc`` on old content and must never make it look newer (#361).
             return tuple(sorted(by_name.values(), key=lambda item: (created.get(item.receipt_id, ""), item.identifier)))
+
+    async def lora_metadata(self, sha256: str, size: int) -> dict[str, Any] | None:
+        """Read canonical local content metadata; no provider or filesystem operation."""
+        return await self._run(self._lora_metadata, sha256, size)
+
+    def _lora_metadata(self, sha256: str, size: int) -> dict[str, Any] | None:
+        if not self.path.exists():
+            return None
+        with closing(self._connect()) as db:
+            row = db.execute("SELECT * FROM lora_records WHERE sha256=? AND size=?", (sha256, size)).fetchone()
+            if row is None:
+                return None
+            return _record(row)
+
+    async def update_lora_metadata(self, sha256: str, size: int, **changes) -> dict[str, Any]:
+        """Atomically change local LoRA metadata without renaming, uploading, or altering receipts.
+
+        Accepted keys: declared_version, short_name, format_code, format_source, trigger_words.
+        Omitted values are unchanged; None explicitly clears optional metadata.
+        """
+        allowed = {"declared_version", "short_name", "format_code", "format_source", "trigger_words"}
+        if not changes or any(key not in allowed for key in changes):
+            raise ValidationError("Only canonical LoRA metadata fields may be edited.")
+        for key, value in changes.items():
+            if (
+                key == "declared_version"
+                and value is not None
+                and (not isinstance(value, str) or not re.fullmatch(r"[a-z0-9_.-]+", value))
+            ):
+                raise ValidationError("Choose an exact Draw Things architecture version.")
+            if (
+                key == "short_name"
+                and value is not None
+                and (not isinstance(value, str) or not re.fullmatch(r"[A-Za-z0-9_]{1,20}", value))
+            ):
+                raise ValidationError("Short name must be 1-20 ASCII letters, digits, or underscores.")
+            if key == "format_code" and value not in (None, "F16", "Q8P"):
+                raise ValidationError("LoRA format must be F16 or Q8P.")
+            if key == "format_source" and value not in (None, "converter_default", "filename_hint", "user"):
+                raise ValidationError("LoRA format source must be a known provenance.")
+            if key == "trigger_words" and not isinstance(value, str):
+                raise ValidationError("LoRA trigger words must be text.")
+        if not isinstance(sha256, str) or not re.fullmatch(r"[0-9a-f]{64}", sha256):
+            raise ValidationError("A measured SHA-256 is required.")
+        if not isinstance(size, int) or size < 1:
+            raise ValidationError("A measured positive byte size is required.")
+        return await self._run(self._write, self._update_lora_metadata, sha256, size, changes)
+
+    @staticmethod
+    def _update_lora_metadata(db, sha256: str, size: int, changes: dict) -> dict[str, Any]:
+        row = db.execute("SELECT * FROM lora_records WHERE sha256=? AND size=?", (sha256, size)).fetchone()
+        if row is None:
+            raise ValidationError("No measured LoRA content record exists; Prepare the file first.")
+        updated = {key: row[key] for key in row.keys()}
+        updated.update(changes)
+        if (updated["format_code"] is None) != (updated["format_source"] is None):
+            raise ValidationError("LoRA format and provenance must be set or cleared together.")
+        assignments = ", ".join(f"{key}=?" for key in changes)
+        db.execute(
+            f"UPDATE lora_records SET {assignments}, updated_at_utc=? WHERE sha256=? AND size=?",
+            (*changes.values(), _now(), sha256, size),
+        )
+        record = db.execute("SELECT * FROM lora_records WHERE sha256=? AND size=?", (sha256, size)).fetchone()
+        return _record(record)
+
+    async def resolve_prepared(self, prepared: tuple[PreparedAsset, ...]) -> tuple[PreparedAsset, ...]:
+        """Enrich selected receipts from one local canonical read, preserving IDs and order."""
+        if not prepared:
+            return prepared
+        return await self._run(self._resolve_prepared, prepared)
+
+    def _resolve_prepared(self, prepared: tuple[PreparedAsset, ...]) -> tuple[PreparedAsset, ...]:
+        if not self.path.exists():
+            return prepared
+        hashes = tuple(dict.fromkeys(item.sha256 for item in prepared))
+        with closing(self._connect()) as db:
+            rows = db.execute(
+                "SELECT * FROM lora_records WHERE sha256 IN (" + ",".join("?" for _ in hashes) + ")",
+                hashes,
+            ).fetchall()
+        records = {(row["sha256"], row["size"]): row for row in rows}
+        from dataclasses import replace
+
+        resolved = []
+        for item in prepared:
+            row = records.get((item.sha256, item.size))
+            if row is None:
+                resolved.append(item)
+            else:
+                version, source = _effective_version(row)
+                resolved.append(replace(item, family=version, family_source=source))
+        return tuple(resolved)
 
     async def get(self, asset_id: str) -> dict[str, Any] | None:
         return await self._run(self._get, asset_id)
@@ -522,7 +661,9 @@ class AssetRegistry:
         if not self.path.exists():
             return None
         with closing(self._connect()) as db:
-            row = db.execute("SELECT * FROM assets WHERE asset_id=?", (asset_id,)).fetchone()
+            row = db.execute(
+                f"SELECT a.*, {_LORA_COLUMNS} FROM assets a{_LORA_JOIN} WHERE a.asset_id=?", (asset_id,)
+            ).fetchone()
             if row is None:
                 return None
             record = _record(row)
@@ -543,7 +684,12 @@ class AssetRegistry:
         if not self.path.exists():
             return []
         with closing(self._connect()) as db:
-            return [_record(x) for x in db.execute("SELECT * FROM assets ORDER BY created_at_utc, asset_id")]
+            return [
+                _record(x)
+                for x in db.execute(
+                    f"SELECT a.*, {_LORA_COLUMNS} FROM assets a{_LORA_JOIN} ORDER BY a.created_at_utc, a.asset_id"
+                )
+            ]
 
     async def prepared(self, asset_id: str) -> PreparedAsset:
         """The immutable reference of a *confirmed* local receipt; anything else is refused before dispatch."""
@@ -551,9 +697,8 @@ class AssetRegistry:
         if record is None:
             raise ValidationError("No local asset receipt has that identifier.")
         if record["state"] != "confirmed" or not record["remote_id"]:
-            # Earlier schema-2 versions could mark the shared content row unknown after a
-            # different API key failed, despite preserving another key's confirmed receipt.
-            # Recover that *candidate* without guessing a key; dispatch resolves its scope.
+            # Another key's validation can leave a shared row unconfirmed.
+            # Keep valid key-scoped candidates without pretending to know the active key.
             alternatives = [item for item in await self.choices() if item.receipt_id == asset_id]
             if alternatives:
                 return alternatives[0]

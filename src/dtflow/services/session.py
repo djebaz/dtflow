@@ -55,7 +55,6 @@ from dtflow.services.assets import AssetService, possible_missing_asset
 from dtflow.services.credentials import EnvironmentCredentials, resolve_credentials
 from dtflow.services.generation import GenerationService
 from dtflow.services.image_inputs import restore_image_inputs
-from dtflow.services.lora_family import retained_families
 from dtflow.services.lora_store import LoraStore
 from dtflow.services.image_preparation import prepare_image_files, validate_prepared_inputs
 from dtflow.services.preflight import apply_trigger_prefixes
@@ -195,61 +194,41 @@ async def load_prepared(
     await registry.open()
     try:
         prepared = tuple([await registry.prepared(asset_id) for asset_id in asset_ids])
+        return await registry.resolve_prepared(prepared)
     finally:
         await registry.aclose()
-    return await _with_legacy_families(state, prepared)
-
-
-async def _with_legacy_families(state: Path, prepared: tuple[PreparedAsset, ...]) -> tuple[PreparedAsset, ...]:
-    """Make old receipts' family available to preflight without Prepare or upload."""
-    unknown = [(item.sha256, item.size) for item in prepared if item.family is None]
-    if not unknown:
-        return prepared
-    found = await asyncio.to_thread(retained_families, state, unknown)
-    resolved = []
-    for item in prepared:
-        detected = found.get((item.sha256, item.size))
-        resolved.append(
-            replace(item, family=detected.family, family_source=detected.source)
-            if item.family is None and detected is not None and detected.family
-            else item
-        )
-    return tuple(resolved)
 
 
 async def bind_prepared(
     state: Path, backend_name: str, request: ResolvedGenerationRequest, asset_ids: list[str] | tuple[str, ...] | None
 ) -> ResolvedGenerationRequest:
-    """Attach confirmed local receipts to the request; reads only the local registry and never uploads."""
+    """Bind exact selected LoRA names to local content metadata and existing receipts, without uploads."""
     if not asset_ids:
         return request
-    prepared = await load_prepared(state, backend_name, asset_ids)
+    if backend_name != "cloud":
+        raise ValidationError("--asset applies to the cloud backend only.")
     selected = {item.identifier for item in request.loras}
-    # A receipt ID identifies local content; a distinct logical LoRA name may share its bytes.
-    # Preserve the explicitly selected names rather than silently replacing them with the
-    # global asset row's first filename.
     registry = AssetRegistry(state)
     await registry.open()
     try:
-        candidates = await registry.choices()
+        prepared = tuple([await registry.prepared(asset_id) for asset_id in asset_ids])
+        # A receipt ID identifies content; keep the logical name that was selected.
+        choices = await registry.choices()
+        ids = {item.receipt_id for item in prepared}
+        named = {
+            (item.receipt_id, item.identifier): item
+            for item in choices
+            if item.receipt_id in ids and item.identifier in selected
+        }
+        resolved = tuple(
+            named[(item.receipt_id, identifier)]
+            for item in prepared
+            for identifier in (lora.identifier for lora in request.loras)
+            if (item.receipt_id, identifier) in named
+        )
+        prepared = await registry.resolve_prepared(tuple(dict.fromkeys(resolved)) or prepared)
     finally:
         await registry.aclose()
-    ids = {item.receipt_id for item in prepared}
-    named = {
-        (item.receipt_id, item.identifier): item
-        for item in candidates
-        if item.receipt_id in ids and item.identifier in selected
-    }
-    resolved = tuple(
-        named.get((item.receipt_id, identifier))
-        for item in prepared
-        for identifier in (lora.identifier for lora in request.loras)
-        if (item.receipt_id, identifier) in named
-    )
-    prepared = tuple(dict.fromkeys(resolved)) or prepared
-    # Alias resolution can replace the enriched base receipt with its old,
-    # unclassified named row. Reattach the same file evidence to the final names.
-    prepared = await _with_legacy_families(state, prepared)
     for item in prepared:
         if item.identifier not in selected:
             raise ValidationError(f"--asset {item.receipt_id[:8]} needs a matching --lora {item.identifier}:WEIGHT.")
@@ -273,7 +252,7 @@ async def script_asset_choices(state: Path, backend_name: str) -> tuple[Prepared
     try:
         choices = await registry.choices()
         selected = newest_per_name(choices, await asyncio.to_thread(LoraStore(state).current_by_name))
-        return await _with_legacy_families(state, selected)
+        return await registry.resolve_prepared(selected)
     finally:
         await registry.aclose()
 
@@ -855,6 +834,8 @@ def asset_view(record: dict) -> dict:
     keys = (
         "asset_id", "kind", "identifier", "state", "evidence", "source", "sha256", "size", "backend_id", "origin",
         "remote_id", "created_at_utc", "confirmed_at_utc", "updated_at_utc", "family", "family_source",
+        "detected_version", "detected_source", "declared_version", "architecture_conflict",
+        "short_name", "format_code", "format_source",
     )  # fmt: skip
     view = {key: record.get(key) for key in keys}
     if "operations" in record:
@@ -914,31 +895,12 @@ async def reconcile_asset(
         return await service.reconcile(asset_id, identifier)
 
 
-def _legacy_receipt_families(state: Path, records: list[dict]) -> None:
-    """Enrich old receipt views from verified local bytes, without writes or DT+ calls."""
-    unknown = [
-        (record["sha256"], record["size"])
-        for record in records
-        if record.get("kind") == "lora"
-        and record.get("family") is None
-        and isinstance(record.get("sha256"), str)
-        and isinstance(record.get("size"), int)
-    ]
-    found = retained_families(state, unknown)
-    for record in records:
-        detected = found.get((record.get("sha256"), record.get("size")))
-        if record.get("family") is None and detected is not None and detected.family:
-            record["family"] = detected.family
-            record["family_source"] = detected.source
-
-
 async def list_assets(state: Path, *, named: bool = False) -> list[dict]:
     """Local receipt and unresolved-operation candidates; optionally expand logical LoRA names for Qt."""
     registry = AssetRegistry(state)
     await registry.open()
     try:
         records = await registry.list()
-        await asyncio.to_thread(_legacy_receipt_families, state, records)
         if not named:
             return [asset_view(record) for record in records]
         parents = {record["asset_id"]: record for record in records}

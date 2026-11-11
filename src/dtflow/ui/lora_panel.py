@@ -46,6 +46,16 @@ def _choose_asset_file(parent: QWidget, directory: Path) -> list[str]:
     ]
 
 
+def _family_evidence_label(value: str | None, source: str | None, *, conflict: bool = False) -> str:
+    """Display the effective architecture's provenance without claiming file verification."""
+    if not value:
+        return "Unknown (file unclassified)"
+    label = FAMILY_LABELS.get(value, value)
+    if source == "user":
+        return f"{label} (user selected, conflicts with file)" if conflict else f"{label} (user selected)"
+    return f"{label} (file)" if source == "file" else f"{label} (unverified)"
+
+
 class LoraAssetPanel:
     def __init__(
         self,
@@ -204,8 +214,8 @@ class LoraAssetPanel:
     def family_labels(self) -> dict[str, str]:
         """Family evidence for display only; actual identifiers remain unchanged in requests.
 
-        Prepared file evidence takes priority over declarations. Conflicting prepared
-        receipts without a selected binding are shown as Unknown, not guessed.
+        A user-selected exact version takes precedence for dispatch, while detection
+        conflicts remain visible. Differing receipts without a binding stay Unknown.
         """
         family = {
             entry.identifier: f"{FAMILY_LABELS.get(entry.base_model, entry.base_model)} (catalogue)"
@@ -227,10 +237,8 @@ class LoraAssetPanel:
                 family[name] = "Unknown (conflicting receipts)"
                 continue
             value, source = next(iter(values))
-            family[name] = (
-                f"{FAMILY_LABELS.get(value, value)} (file)"
-                if value and source == "file"
-                else "Unknown (file unclassified)"
+            family[name] = _family_evidence_label(
+                value, source, conflict=any(record.get("architecture_conflict") for record in entries)
             )
         return family
 
@@ -388,18 +396,20 @@ class LoraAssetPanel:
         for record in records:
             value = record.get("family")
             source = record.get("family_source")
-            family = (
-                f"{FAMILY_LABELS.get(value, value)} (file)"
-                if value and source == "file"
-                else "Unknown (file unclassified)"
-            )
+            family = _family_evidence_label(value, source, conflict=bool(record.get("architecture_conflict")))
             text = (
                 f"{record['identifier']} · {family} · "
                 f"{record['state']} ({record['evidence']}) · {record['sha256'][:8]} · {record['size']} B"
             )
             item = QListWidgetItem(text)
             item.setData(Qt.ItemDataRole.UserRole, (record["asset_id"], record["identifier"]))  # Qt.UserRole
-            item.setToolTip(f"LoRA family: {family}\nReceipt {record['asset_id']} on {record['origin']}")
+            evidence = (
+                f"\nDetected: {record.get('detected_version') or 'Unknown'}"
+                f"\nUser selected: {record.get('declared_version') or 'None'}"
+            )
+            item.setToolTip(
+                f"LoRA architecture: {family}{evidence}\nReceipt {record['asset_id']} on {record['origin']}"
+            )
             self.page.assetList.addItem(item)
             if (record["asset_id"], record["identifier"]) == selected:
                 self.page.assetList.setCurrentItem(item)
