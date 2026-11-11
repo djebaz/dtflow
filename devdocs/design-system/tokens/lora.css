@@ -3,15 +3,15 @@
   --lora-editor-max-width: 1120px;
   --lora-table-min-width: 950px;
   --lora-row-min-height: 52px;
-  --lora-compact-card-min-width: 310px;
+  --lora-compact-table-min-width: 720px;
+  --lora-compact-columns: minmax(155px, 1fr) 128px 116px 60px 105px 116px;
+  --lora-compact-column-gap: 5px;
   --lora-file-column-min-width: 220px;
   --lora-input-min-height: 30px;
   --lora-footer-min-height: 56px;
   --lora-cell-gap: 8px;
   --lora-cell-padding: 6px;
   --lora-panel-padding: var(--space-md);
-  --lora-card-gap: 8px;
-  --lora-card-padding: 10px;
   --lora-picker-row-min-height: 38px;
   --lora-border: var(--color-section-border);
   --lora-row-background: var(--color-item-surface);
