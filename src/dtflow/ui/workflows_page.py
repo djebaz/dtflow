@@ -48,7 +48,7 @@ from dtflow.ui.file_dialogs import QFileDialog
 from dtflow.core import workflows as wf
 from dtflow.core.output_layout import identity_from_path
 from dtflow.core.models import LoRASelection, ValidationError
-from dtflow.services.lora_naming import display_label
+from dtflow.services.lora_naming import display_label, lora_offer
 from dtflow.services import workflow_library as library
 from dtflow.ui.activity_strip import activity_strip
 from dtflow.ui.inline_feedback import InlineNotice, confirm_action, edit_text, feedback
@@ -899,6 +899,9 @@ class WorkflowsPage(QObject):
         layout = i.workflowParamsHost.layout()
         _clear(layout)
         choices = self.choices_source() or {}
+        checkpoint = next((params.get(p.name) for p in spec.params if p.kind == "checkpoint"), None)
+        if checkpoint:
+            choices = {**choices, "node_model": str(checkpoint)}
         if spec.type == wf.DETECT_FACE:
             self._add_face_params(layout, node_id, node, params)
         else:
@@ -1252,6 +1255,10 @@ class WorkflowsPage(QObject):
                 layout.addWidget(_label("Refresh models on Generate to list this backend's checkpoints.", "secondary"))
         elif param.kind == "loras":
             loras = choices.get("loras") or {}
+            if (node_model := choices.get("node_model")) and not str(node_model).startswith(PLACEHOLDER):
+                loras = lora_offer(
+                    loras, choices.get("lora_versions") or {}, [(choices.get("model_versions") or {}).get(node_model)]
+                )
             families = choices.get("lora_families") or {}
             text = (
                 ", ".join(

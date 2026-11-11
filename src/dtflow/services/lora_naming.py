@@ -615,3 +615,19 @@ def display_label(identifier: str) -> str:
         return saved
     match = _MANAGED_LABEL.fullmatch(identifier)
     return f"{match['short']}[{match['tag']}]" if match else identifier
+
+
+def lora_offer(loras: dict, lora_versions: dict, model_versions: Sequence[str | None]) -> dict:
+    """The LoRAs to offer for the chosen checkpoints: those whose exact family matches one of the checkpoints'.
+
+    Like Generate's picker, nothing is hidden on a guess: with no checkpoint, or one whose family is unknown, every
+    LoRA stays; a LoRA whose family is unknown also stays. Saved selections are kept visible by the editors.
+    """
+    if not model_versions or any(version is None for version in model_versions):
+        return dict(loras)
+    wanted = set(model_versions)
+    return {
+        name: weight
+        for name, weight in loras.items()
+        if (version := lora_versions.get(name)) is None or version in wanted
+    }

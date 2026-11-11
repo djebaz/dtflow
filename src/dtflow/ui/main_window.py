@@ -53,6 +53,7 @@ from dtflow.services.lora_family import retained_families
 from dtflow.services.lora_auto_naming import normalize_previous_retained
 from dtflow.services.lora_metadata_edit import read_lora_rows
 from dtflow.services.lora_naming import label_overrides, set_label_overrides
+from dtflow.services.preflight import checkpoint_exact_version
 from dtflow.services.lora_store import LoraStore
 from dtflow.services.connection import Presentation, check_connection, present_failure, present_status
 from dtflow.services.cloud_usage import key_identity
@@ -782,7 +783,14 @@ class MainWindow:
         choices = self.generation.plan_choices()
         snapshot = self.generation._inventory_snapshot
         models = list(eligible_model_ids(snapshot)) if snapshot is not None else list(choices.get("models", ()))
-        return {"models": models, "loras": choices.get("loras", {}), "backend": self.form.backendCombo.currentText()}
+        return {
+            "models": models,
+            "loras": choices.get("loras", {}),
+            "lora_families": choices.get("lora_families", {}),
+            "lora_versions": choices.get("lora_versions", {}),
+            "model_versions": {model: checkpoint_exact_version(model, snapshot) for model in models},
+            "backend": self.form.backendCombo.currentText(),
+        }
 
     def _cycle_workspace(self) -> None:
         """Cycle the ordinary workspaces without changing gallery follow or admitting work."""

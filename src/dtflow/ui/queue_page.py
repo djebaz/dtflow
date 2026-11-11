@@ -28,6 +28,7 @@ from dtflow.persistence.settings import SettingsError, load_cloud_concurrency, v
 from dtflow.persistence.store import StateBusyError
 from dtflow.services.connection import Presentation, present_generation_failure
 from dtflow.services.dynamic_prompts import decode_runs
+from dtflow.services.lora_naming import lora_offer
 from dtflow.services.image_preparation import prepare_edit_inputs
 from dtflow.services.plan_errors import PlanError
 from dtflow.services.planning import Plan, PlanTable, describe_plan, expand_plan, new_rng_seed, plan_size, resolve_plan
@@ -1699,6 +1700,17 @@ class QueuePage:
             if label is not None and field is not None:
                 label.setContentsMargins(0, 6 if isinstance(field, QPlainTextEdit) else 3, 0, 0)
 
+    def _offered_loras(self) -> dict:
+        """LoRA choices for the models this plan uses (Generate's checkpoint when none is chosen), as on Generate."""
+        choices = self._choices()
+        models = [m for m in self.page.planModelsEdit.values() if m] or [choices.get("model") or ""]
+        versions = choices.get("model_versions", {})
+        return lora_offer(
+            choices.get("loras", {}),
+            choices.get("lora_versions", {}),
+            [versions.get(model) for model in models if model],
+        )
+
     def _configure_dimensions(self) -> None:
         page = self.page
         page.planModelsEdit.configure(
@@ -1712,7 +1724,7 @@ class QueuePage:
         page.planLoraSetsEdit.configure(
             "search",
             "LoRA",
-            weights=lambda: self._choices().get("loras", {}),
+            weights=self._offered_loras,
             families=lambda: self._choices().get("lora_families", {}),
             convert=self._lora_set_chip,
             initial=self._generate_loras,
@@ -1722,7 +1734,7 @@ class QueuePage:
         page.planLorasEdit.configure(
             "search",
             "LoRA weight",
-            weights=lambda: self._choices().get("loras", {}),
+            weights=self._offered_loras,
             families=lambda: self._choices().get("lora_families", {}),
             initial=self._lora_weight_selection,
             convert=self._lora_weight_chips,
