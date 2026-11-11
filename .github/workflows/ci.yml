@@ -36,7 +36,7 @@ on:
         type: string
   # push:
     # branches: [main]
-    Avoid launching the full suite for documentation-only merges.
+    # Avoid launching the full suite for documentation-only merges.
     # paths-ignore:
       # - '**/*.md'
       # - '**/*.rst'
@@ -45,7 +45,7 @@ on:
       # - '.github/ISSUE_TEMPLATE/**'
   # pull_request:
      # types: [opened, synchronize, reopened, ready_for_review]
-     Native filtering allocates no runner for an entirely documentation-only PR.
+     # Native filtering allocates no runner for an entirely documentation-only PR.
      # paths-ignore:
        # - '**/*.md'
        # - '**/*.rst'
