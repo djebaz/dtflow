@@ -218,7 +218,6 @@ def detect_lora_family(path: Path) -> LoraFamily:
     return LoraFamily(matches[0], "file") if len(matches) == 1 else LoraFamily()
 
 
-
 def validate_converted_lora(path: Path) -> None:
     """Reject malformed converted LoRA containers before retention or cloud negotiation.
 
@@ -238,8 +237,7 @@ def validate_converted_lora(path: Path) -> None:
                 raise ValidationError("Not a converted Draw Things LoRA: tensor metadata is missing.")
             # Names/shape columns are drawn exclusively from the fixed allowlists.
             rows = db.execute(
-                f"SELECT {name_column}, {shape_column}, length(data), typeof(data) "
-                "FROM tensors LIMIT ?",
+                f"SELECT {name_column}, {shape_column}, length(data), typeof(data) FROM tensors LIMIT ?",
                 (MAX_TENSORS + 1,),
             ).fetchall()
     except (OSError, sqlite3.Error, ValueError) as exc:

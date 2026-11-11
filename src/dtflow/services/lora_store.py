@@ -194,7 +194,6 @@ class LoraStore:
         finally:
             handle.close()
 
-
     def rename_accepted(self, sha256: str, size: int, accepted_name: str) -> RetainedFile | None:
         """Give existing verified retained bytes their accepted canonical filename.
 
@@ -207,9 +206,7 @@ class LoraStore:
         handle = self._locked()
         try:
             files = self._read()
-            item = next(
-                (row for row in files if (row.get("sha256"), row.get("size")) == (sha256, size)), None
-            )
+            item = next((row for row in files if (row.get("sha256"), row.get("size")) == (sha256, size)), None)
             if item is None:
                 return None
             original = self._path(item)

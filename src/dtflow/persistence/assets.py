@@ -674,9 +674,7 @@ class AssetRegistry:
             rows = db.execute("SELECT * FROM lora_records ORDER BY sha256, size").fetchall()
         return tuple(_record(row) for row in rows)
 
-    async def accept_local_managed_name(
-        self, sha256: str, size: int, metadata: LoraPrepareMetadata
-    ) -> bool:
+    async def accept_local_managed_name(self, sha256: str, size: int, metadata: LoraPrepareMetadata) -> bool:
         """Accept a first managed name for previously prepared content, with no Prepare or provider call."""
         return await self._run(self._write, self._accept_local_managed_name, sha256, size, metadata)
 
@@ -684,9 +682,7 @@ class AssetRegistry:
     def _accept_local_managed_name(db, sha256: str, size: int, metadata: LoraPrepareMetadata) -> bool:
         from dtflow.services.lora_naming import architecture_shortcode, managed_filename
 
-        row = db.execute(
-            "SELECT * FROM lora_records WHERE sha256=? AND size=?", (sha256, size)
-        ).fetchone()
+        row = db.execute("SELECT * FROM lora_records WHERE sha256=? AND size=?", (sha256, size)).fetchone()
         if row is None:
             raise ValidationError("The measured LoRA record no longer exists.")
         expected_version = row["declared_version"] or row["detected_version"]

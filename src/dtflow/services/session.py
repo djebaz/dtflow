@@ -924,7 +924,9 @@ async def list_assets(state: Path, *, named: bool = False) -> list[dict]:
             diagnostic_event(log, "assets.retained_auto_named", data={"count": normalized})
     except (OSError, ValidationError) as exc:
         diagnostic_event(
-            log, "assets.retained_auto_naming_unavailable", level=logging.WARNING,
+            log,
+            "assets.retained_auto_naming_unavailable",
+            level=logging.WARNING,
             data={"reason": type(exc).__name__},
         )
     registry = AssetRegistry(state)

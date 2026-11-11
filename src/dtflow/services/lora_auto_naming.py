@@ -132,16 +132,16 @@ async def normalize_previous_retained(state: Path) -> int:
                         await asyncio.to_thread(store.rename_accepted, sha, size, accepted)
                     except (ValidationError, OSError) as exc:
                         diagnostic_event(
-                            log, "assets.retained_name_sync_failed", level=logging.WARNING,
+                            log,
+                            "assets.retained_name_sync_failed",
+                            level=logging.WARNING,
                             data={"sha": sha[:8], "reason": type(exc).__name__},
                         )
                 continue
             candidate = _candidate(record, str(retained.get("name") or ""), sha, size)
             if candidate is not None:
                 pending.append((record, candidate))
-        allocations = allocate_batch_names(
-            tuple(candidate[0] for _, candidate in pending), occupied
-        )
+        allocations = allocate_batch_names(tuple(candidate[0] for _, candidate in pending), occupied)
         assigned = 0
         for (record, (request, format_source)), allocation in zip(pending, allocations, strict=True):
             if not allocation.ready:
@@ -166,7 +166,9 @@ async def normalize_previous_retained(state: Path) -> int:
                     assigned += 1
             except (ValidationError, OSError, PersistenceError) as exc:
                 diagnostic_event(
-                    log, "assets.retained_auto_name_failed", level=logging.WARNING,
+                    log,
+                    "assets.retained_auto_name_failed",
+                    level=logging.WARNING,
                     data={"sha": sha[:8], "reason": type(exc).__name__},
                 )
         return assigned

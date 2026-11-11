@@ -307,7 +307,9 @@ class AssetService:
             )
             raise
         except ValidationError:
-            await settle(self.registry.mark(asset_id, operation, "failed", "retained_name_failed", protect_confirmed=True))
+            await settle(
+                self.registry.mark(asset_id, operation, "failed", "retained_name_failed", protect_confirmed=True)
+            )
             raise
         except BackendError as exc:
             failure = exc.failure
