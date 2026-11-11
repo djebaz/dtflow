@@ -41,7 +41,7 @@ MARKERS = ("ada_ln", "ffn_", "proj", "text_fusion", "txtfusion", "textfusion", "
 TRANSFORMER_WIDTHS = {
     "pixart": (1152,),
     "sd3": (1536, 2432),
-    "flux_1": (3072,),
+    "flux_1": (3072, 12288),
     "flux_2": (3072, 4096, 6144),
     "hunyuan_video": (3072,),
     "wan_2_1": (1536, 5120),
@@ -132,6 +132,18 @@ def fingerprint_checks(
             "ffn_up_proj": any(re.fullmatch(r"ffn_up_proj-\d+-\d+", m) for m in modules),
             "ffn_gate_proj": any(re.fullmatch(r"ffn_gate_proj-\d+-\d+", m) for m in modules),
             "x_o": any(re.fullmatch(r"x_o-\d+-\d+", m) for m in modules),
+        },
+        "flux_1": {
+            "hidden_3072": 3072 in widths,
+            "feed_forward_12288": 12288 in widths,
+            "all_57_block_projection_pairs": all(
+                sum(module.startswith(f"{name}-") for module in modules) == 2 * (19 + 38)
+                for name in ("x_q", "x_k", "x_v", "x_o", "x_linear1", "x_out_proj")
+            ),
+            "all_19_joint_block_modulation_pairs": all(
+                sum(module.startswith(f"x_ada_ln_{index}-") for module in modules) == 2 * 19
+                for index in (3, 4, 5)
+            ),
         },
         "sd_1": {
             "text_encoder_768": 768 in text,
