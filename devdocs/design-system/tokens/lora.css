@@ -4,7 +4,7 @@
   --lora-table-min-width: 950px;
   --lora-row-min-height: 52px;
   --lora-compact-table-min-width: 720px;
-  --lora-compact-columns: minmax(155px, 1fr) 128px 116px 60px 105px 116px;
+  --lora-compact-columns: minmax(154px, 1fr) 128px 116px 60px 105px 116px;
   --lora-compact-column-gap: 5px;
   --lora-file-column-min-width: 220px;
   --lora-input-min-height: 30px;
