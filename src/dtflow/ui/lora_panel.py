@@ -82,6 +82,7 @@ class LoraAssetPanel:
         self._prepare_files: tuple[str, ...] = ()
         self._prepare_metadata: dict[str, LoraPrepareMetadata] = {}
         self._prepare_editor: PrepareBatchEditor | None = None
+        self._prepare_editor_context = None
         self._prepare_index = 0
         self._prepare_counts = {"confirmed": 0, "failed": 0, "unresolved": 0}
         self._ownership_revision = 0
@@ -451,6 +452,7 @@ class LoraAssetPanel:
         paths = tuple(dict.fromkeys(os.path.abspath(path) for path in chosen))
         self._prepare_editor = PrepareBatchEditor(self.page, paths, on_prepare=self._authorize_prepare)
         editor = self._prepare_editor
+        self._prepare_editor_context = (backend, revision, self._saved())
         # The provider's current LoRA inventory is the only authority for selectable
         # architectures. A catalogue label or filename is never support evidence.
         eligible = tuple(dict.fromkeys(self._inventory_families.values()))
@@ -483,7 +485,15 @@ class LoraAssetPanel:
         if not chosen or self._runner.closed:
             return
         backend = self._backend()
-        if backend[0] != "cloud" or (self._is_busy() and not self.preparing):
+        editor_context = self._prepare_editor_context
+        if (
+            backend[0] != "cloud"
+            or editor_context is None
+            or backend != editor_context[0]
+            or self._ownership_revision != editor_context[1]
+            or self._saved() is not editor_context[2]
+            or (self._is_busy() and not self.preparing)
+        ):
             return
         if self.preparing and (
             backend != self._prepare_backend
