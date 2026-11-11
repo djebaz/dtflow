@@ -262,6 +262,10 @@ class LoraAssetPanel:
         """Include every provider and local LoRA for multi-checkpoint queue composition."""
         listed = list(getattr(self, "_inventory_candidates", ()))
         known = {name for name, _ in listed}
+        for name, weight in self._candidates:
+            if name not in known:
+                listed.append((name, weight))
+                known.add(name)
         for record in self._records.values():
             name = record["identifier"]
             if name not in known:
