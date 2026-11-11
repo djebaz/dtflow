@@ -606,7 +606,7 @@ def _expand_text(mapping: dict[str, tuple[str, ...]]) -> dict[str, tuple[str, ..
     return out
 
 
-def _normalize_state(keys: list[str]) -> dict[str, str]:
+def _normalize_state(keys: list[str], te1_tag: str = "te") -> dict[str, str]:
     """The Swift importer's key fix-ups: returns normalized key -> real key in the file."""
     state = {k: k for k in keys}
 
@@ -679,6 +679,13 @@ def _normalize_state(keys: list[str]) -> dict[str, str]:
     for key in keys:
         if key.startswith("lora_unet__"):
             state[key[11:]] = key
+    # Diffusers/PEFT text encoder names -> the kohya spelling the tables are keyed on:
+    # text_encoder_2_* is the second encoder (te2), text_encoder_* the first (te / te1).
+    for key in list(state):
+        for prefix, tag in (("text_encoder_2_", "te2"), ("text_encoder_", te1_tag)):
+            if key.startswith(prefix):
+                state[f"lora_{tag}_{key[len(prefix) :]}"] = state.pop(key)
+                break
     return state
 
 
@@ -754,7 +761,17 @@ def convert_tables(
     fixed_map = _expand_unet(_with_diffusers_names(fixed_table, partials, resnets)) if fixed_table else {}
     te1_map, te2_map = _expand_text(te1_map), _expand_text(te2_map)
 
-    state = _normalize_state(st.keys())
+    state = _normalize_state(st.keys(), "te1" if family == "sdxl" else "te")
+    # Every file key must be an up, down or alpha tensor (Draw Things drops the rest silently).
+    stray = sorted(k for k in st.keys() if split_key(k) is None)
+    if stray and not ignore_unmatched:
+        raise ConversionError(
+            f"{len(stray)} tensors are not plain LoRA up/down/alpha keys (for example {', '.join(stray[:4])}); "
+            f"DoRA, bias and other extra keys are not supported. Pass --ignore-unmatched to skip them, "
+            f"or {COLAB_HINT}"
+        )
+    if stray:
+        log(f"warning: skipped {len(stray)} tensors that are not up/down/alpha keys (for example {stray[0]}).")
     for key in state:
         if (
             any(tag in key for tag in ("hada_", "lokr_", "::diff"))
@@ -876,6 +893,19 @@ def convert_tables(
         prefix = "__te2__text_model__" if is_te2 else "__text_model__"
         out[f"{prefix}[{names[0]}]__down__"] = scale_down(st.read_f16(state[key]), scale)
 
+    for name, array in sorted(out.items()):
+        if not name.endswith("__up__"):
+            continue
+        down = out.get(name[: -len("__up__")] + "__down__")
+        if down is None:
+            raise ConversionError(f"{name[:-6]}: has an up tensor but no down tensor in the file. {COLAB_HINT}")
+        if array.ndim != down.ndim or array.shape[1] != down.shape[0]:
+            raise ConversionError(
+                f"{name[:-6]}: rank mismatch, up {array.shape} does not fit down {down.shape}. {COLAB_HINT}"
+            )
+    for name in sorted(out):
+        if name.endswith("__down__") and name[: -len("__down__")] + "__up__" not in out:
+            raise ConversionError(f"{name[:-8]}: has a down tensor but no up tensor in the file. {COLAB_HINT}")
     if unmatched:
         sample = ", ".join(sorted(set(unmatched))[:4])
         message = f"{len(set(unmatched))} LoRA tensors have no place in the {family} layers (for example {sample})."
@@ -897,11 +927,17 @@ def convert(
     scale: float = 1.0,
     log: Callable[[str], None] = print,
     ignore_unmatched: bool = False,
+    allow_experimental: bool = False,
 ) -> int:
     """Convert ``source`` to ``destination``. Returns the number of tensors written."""
     if scale <= 0:
         raise ConversionError("The scale must be greater than 0.")
     if family in EXPERIMENTAL_FAMILIES:
+        if not allow_experimental:
+            raise ConversionError(
+                f"{family} is experimental: its output has not been compared with Draw Things yet. "
+                "Pass --experimental to convert anyway, or " + COLAB_HINT
+            )
         log(f"warning: {family} is experimental, its output has not been compared with Draw Things yet.")
     if family in TABLE_FAMILIES:
         _check_numpy()
@@ -993,9 +1029,21 @@ def main() -> int:
         action="store_true",
         help="sd1 and sdxl only: skip LoRA tensors that have no place in the model, as Draw Things does",
     )
+    ap.add_argument(
+        "--experimental",
+        action="store_true",
+        help="allow families that are not verified against Draw Things yet (sdxl)",
+    )
     args = ap.parse_args()
     try:
-        convert(args.source, args.destination, args.family, args.scale, ignore_unmatched=args.ignore_unmatched)
+        convert(
+            args.source,
+            args.destination,
+            args.family,
+            args.scale,
+            ignore_unmatched=args.ignore_unmatched,
+            allow_experimental=args.experimental,
+        )
     except ConversionError as error:
         print(f"error: {error}", file=sys.stderr)
         return 2
