@@ -139,7 +139,6 @@ class AssetService:
         # Outdated receipts already re-prepared from their changed file, shared by concurrent items (#361).
         self._refresh_failed: dict[tuple, tuple[float, BackendFailure]] = {}
         self._newest_cache: tuple[float, dict[str, PreparedAsset]] | None = None
-        self._family_cache: dict[tuple[str, int], LoraFamily] = {}
         # The UI can receive individual names without adding them to diagnostic records.
         self.on_resolution: Callable[[dict], None] | None = None
 
@@ -694,32 +693,15 @@ class AssetService:
                     log.warning("Asset resolution status could not be displayed.")
 
     async def _with_families(self, assets: tuple[PreparedAsset, ...]) -> tuple[PreparedAsset, ...]:
-        """Read old receipts' retained copies once per content identity, without network or upload.
-
-        The on-disk registry remains the write authority; #370 will migrate these lazily
-        discovered families into the unified record. Unknown evidence never blocks use.
-        """
-        if self.store is None:
+        """Resolve effective architecture from the same local content record used by all execution paths."""
+        if not assets or self.state is None:
             return assets
-        resolved = []
-        for item in assets:
-            if item.family is not None:
-                resolved.append(item)
-                continue
-            key = (item.sha256, item.size)
-            detected = self._family_cache.get(key)
-            if detected is None:
-                detected = LoraFamily()
-                try:
-                    retained = await asyncio.to_thread(self.store.find, *key)
-                    if retained is not None:
-                        await asyncio.to_thread(self.store.verify, retained)
-                        detected = await asyncio.to_thread(detect_lora_family, retained.path)
-                except (OSError, ValidationError):
-                    pass  # Missing/unverifiable retained files are unknown, not guessed.
-                self._family_cache[key] = detected
-            resolved.append(replace(item, family=detected.family, family_source=detected.source))
-        return tuple(resolved)
+        registry = AssetRegistry(self.state)
+        await registry.open()
+        try:
+            return await registry.resolve_prepared(assets)
+        finally:
+            await registry.aclose()
 
     async def _newest_map(self) -> dict[str, PreparedAsset]:
         """The current receipt of every LoRA name, read at most every ``NEWEST_TTL`` seconds."""
