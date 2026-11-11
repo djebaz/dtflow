@@ -131,8 +131,30 @@ def _lock_file(path: Path):
     return handle
 
 
+_LORA_COLUMNS = (
+    "r.detected_version, r.detected_source, r.declared_version, r.short_name, "
+    "r.format_code, r.format_source, r.trigger_words"
+)
+_LORA_JOIN = " LEFT JOIN lora_records r ON r.sha256=a.sha256 AND r.size=a.size"
+
+
+def _effective_version(row) -> tuple[str | None, str]:
+    """An explicit user declaration wins without replacing file-derived evidence."""
+    if row["declared_version"]:
+        return row["declared_version"], "user"
+    if row["detected_version"]:
+        return row["detected_version"], "file"
+    return None, "unknown"
+
+
 def _record(row: sqlite3.Row) -> dict[str, Any]:
-    return {key: row[key] for key in row.keys()}
+    value = {key: row[key] for key in row.keys()}
+    value["family"], value["family_source"] = _effective_version(value)
+    value["architecture_conflict"] = bool(
+        value["declared_version"] and value["detected_version"]
+        and value["declared_version"] != value["detected_version"]
+    )
+    return value
 
 
 class AssetRegistry:
@@ -270,6 +292,20 @@ class AssetRegistry:
         db, content: AssetContent, backend_id: str, origin: str, action: str, family: str | None
     ) -> tuple[str, str]:
         now, operation = _now(), uuid4().hex
+        if content.kind == "lora":
+            # Content metadata and the preparation intent commit together. Refresh
+            # file evidence on re-Prepare without resetting user edits.
+            db.execute(
+                "INSERT INTO lora_records "
+                "(sha256, size, detected_version, detected_source, updated_at_utc) "
+                "VALUES (?,?,?,?,?) ON CONFLICT(sha256, size) DO UPDATE SET "
+                "detected_version=CASE WHEN excluded.detected_version IS NOT NULL "
+                "THEN excluded.detected_version ELSE lora_records.detected_version END, "
+                "detected_source=CASE WHEN excluded.detected_version IS NOT NULL "
+                "THEN 'file' ELSE lora_records.detected_source END, "
+                "updated_at_utc=excluded.updated_at_utc",
+                (content.sha256, content.size, family, "file" if family else "unknown", now),
+            )
         row = db.execute(
             "SELECT asset_id, state FROM assets WHERE kind=? AND backend_id=? AND origin=? AND sha256=? AND size=?",
             (content.kind, backend_id, origin, content.sha256, content.size),
@@ -277,21 +313,14 @@ class AssetRegistry:
         if row is None:
             asset_id = uuid4().hex
             db.execute(
-                "INSERT INTO assets (asset_id, kind, identifier, sha256, size, family, family_source,"
-                " backend_id, origin, state, evidence, provenance, created_at_utc, updated_at_utc)"
-                " VALUES (?,?,?,?,?,?,?,?,?,'intent','intent_recorded',?,?,?)",
+                "INSERT INTO assets (asset_id, kind, identifier, sha256, size, "
+                "backend_id, origin, state, evidence, provenance, created_at_utc, updated_at_utc)"
+                " VALUES (?,?,?,?,?,?,?,'intent','intent_recorded',?,?,?)",
                 (asset_id, content.kind, content.identifier, content.sha256, content.size,
-                 family, "file" if family else "unknown", backend_id, origin, content.provenance, now, now),
+                 backend_id, origin, content.provenance, now, now),
             )  # fmt: skip
         else:
             asset_id = row["asset_id"]
-            if family:
-                # Re-Prepare may refresh an earlier detected broad ID with the
-                # current file-derived exact version, without changing the receipt.
-                db.execute(
-                    "UPDATE assets SET family=?, family_source='file' WHERE asset_id=?",
-                    (family, asset_id),
-                )
             if action == "prepare" and row["state"] != "confirmed":
                 db.execute(
                     "UPDATE assets SET state='intent', evidence='intent_recorded', updated_at_utc=? WHERE asset_id=?",
