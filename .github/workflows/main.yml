@@ -5,7 +5,7 @@ name: UI renders
 # Mapped selection uses render_changes.py, render_coverage.json and render_dependencies.json.
 # "render-all", or a manual all-category dispatch without "changed_only", renders every state.
 # tools/ui/render_states.py uses offline fixtures and a network guard; no provider traffic, generation or secrets.
-# The manual LoRA category invokes the same canonical-form renderer as the dedicated lora:render workflow.
+# The manual LoRA category captures only the canonical Prepare editor, as does the targeted PR render job.
 run-name: >-
   UI renders · ${{ github.event_name == 'pull_request' && format('PR #{0} · {1}', github.event.pull_request.number, github.event.pull_request.title)
   || inputs.pr != '' && format('PR #{0}', inputs.pr) || format('branch {0}', github.ref_name) }}

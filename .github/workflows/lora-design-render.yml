@@ -1,13 +1,21 @@
-name: LoRA design renders
+name: LoRA Prepare UI renders
 
-# Only the approved standalone LoRA Designer references; never starts DTFlow or providers.
-# Add "lora:render" to a PR to request captures. Subsequent pushes refresh its previews.
+# Render only the canonical Prepare overlay with synthetic data; no network or uploads.
+# PRs touching this UI trigger automatically, without labels or unrelated categories.
 run-name: >-
-  LoRA design · PR #${{ github.event.pull_request.number }}
+  LoRA Prepare · PR #${{ github.event.pull_request.number }}
 
 on:
   pull_request:
-    types: [labeled, synchronize, reopened]
+    types: [synchronize, reopened]
+    paths:
+      - 'src/dtflow/ui/prepare_lora_editor.py'
+      - 'src/dtflow/ui/forms/prepare_lora_*.ui'
+      - 'src/dtflow/ui/lora_panel.py'
+      - 'tools/ui/render_states.py'
+      - 'tools/ui/render_catalog.py'
+      - 'tools/ui/render_catalog.json'
+      - '.github/workflows/lora-design-render.yml'
 
 permissions:
   contents: read
@@ -15,7 +23,7 @@ permissions:
   pull-requests: write
 
 concurrency:
-  group: lora-design-${{ github.event.pull_request.number }}
+  group: lora-prepare-${{ github.event.pull_request.number }}
   cancel-in-progress: true
 
 env:
@@ -26,11 +34,8 @@ env:
 
 jobs:
   capture:
-    name: Capture LoRA Designer forms
-    if: >-
-      github.event.pull_request.head.repo.full_name == github.repository
-      && contains(github.event.pull_request.labels.*.name, 'lora:render')
-      && (github.event.action != 'labeled' || github.event.label.name == 'lora:render')
+    name: Capture canonical LoRA Prepare
+    if: github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
@@ -52,22 +57,22 @@ jobs:
       - name: Sync environment
         run: uv sync --locked
 
-      - name: Render LoRA design forms
+      - name: Render canonical Prepare (wide + compact)
         id: capture
         run: |
-          timeout --signal=ABRT --kill-after=10s 180s \
-            .venv/bin/python tools/ui/render_lora_design.py \
-              --out tmp/lora-design --connections-expanded --compact-prepare
-          count=$(find tmp/lora-design -maxdepth 1 -name '*.png' -type f | wc -l)
-          [ "$count" -eq 7 ] || { echo "::error::Expected 7 captures, got $count."; exit 1; }
-          echo "Captured 7 LoRA design states." >> "$GITHUB_STEP_SUMMARY"
+          timeout --signal=ABRT --kill-after=10s 150s \
+            .venv/bin/python tools/ui/render_states.py \
+              --category lora --fast --jobs 1 --out tmp/lora-ui
+          count=$(find tmp/lora-ui -maxdepth 1 -name 'lora-prepare-*.png' -type f | wc -l)
+          [ "$count" -eq 2 ] || { echo "::error::Expected 2 captures, got $count."; exit 1; }
+          echo "Captured two canonical LoRA Prepare states." >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upload GitHub screenshot artifact
         if: steps.capture.outcome == 'success'
         uses: actions/upload-artifact@v7.0.2
         with:
-          name: lora-design-pr${{ github.event.pull_request.number }}-${{ github.event.pull_request.head.sha }}
-          path: tmp/lora-design/*.png
+          name: lora-runtime-pr${{ github.event.pull_request.number }}-${{ github.event.pull_request.head.sha }}
+          path: tmp/lora-ui/lora-prepare-*.png
           if-no-files-found: error
           retention-days: 14
 
@@ -84,13 +89,13 @@ jobs:
         run: |
           [ -n "$REFRESH_TOKEN" ] && [ -n "$CLIENT_ID" ] && [ -n "$CLIENT_SECRET" ] \
             || { echo "::warning::Drive credentials are unavailable; GitHub artifact remains available."; exit 1; }
-          folder="lora-pr${PR_NUMBER}-$(date -u +%Y%m%dT%H%M%SZ)-${SHORT_SHA:0:7}"
+          folder="lora-runtime-pr${PR_NUMBER}-$(date -u +%Y%m%dT%H%M%SZ)-${SHORT_SHA:0:7}"
           uv run python tools/ci/upload_ui_renders_to_drive.py \
-            --source tmp/lora-design --mode images \
+            --source tmp/lora-ui --mode images \
             --refresh-token "$REFRESH_TOKEN" \
             --client-id "$CLIENT_ID" \
             --client-secret "$CLIENT_SECRET" \
-            --run-folder "$folder" --manifest tmp/lora-design-drive.json
+            --run-folder "$folder" --manifest tmp/lora-ui-drive.json
 
       - name: Publish review links to PR
         if: always() && steps.capture.outcome == 'success'
@@ -104,13 +109,13 @@ jobs:
           import os
           from pathlib import Path
 
-          path = Path("tmp/lora-design-drive.json")
+          path = Path("tmp/lora-ui-drive.json")
           data = json.loads(path.read_text(encoding="utf-8")) if path.exists() else {}
           by_name = {item["relative_path"]: item for item in data.get("files", [])}
-          names = sorted(path.name for path in Path("tmp/lora-design").glob("*.png"))
+          names = sorted(path.name for path in Path("tmp/lora-ui").glob("lora-prepare-*.png"))
           lines = [
               "<!-- dtflow-lora-designer-renders -->",
-              "## LoRA Designer renders — 7 captures",
+              "## Canonical LoRA Prepare — 2 captures",
               "",
               f"[GitHub Actions run and PNG artifact]({os.environ['RUN_URL']})",
               "",
@@ -123,7 +128,7 @@ jobs:
                   lines.extend([f"**{name}**", "", f"[![{name}]({item['content_url']})]({item['view_url']})", ""])
               else:
                   lines.append(f"- {name} (see GitHub artifact)")
-          lines.extend(["", "_Synthetic offline Qt design reference; not Windows or runtime acceptance._", ""])
+          lines.extend(["", "_Canonical Qt editor with synthetic offline rows; not Windows or provider acceptance._", ""])
           note = "\n".join(lines)
           Path("tmp/lora-render-note.md").write_text(note, encoding="utf-8")
           with Path(os.environ["GITHUB_STEP_SUMMARY"]).open("a", encoding="utf-8") as stream:

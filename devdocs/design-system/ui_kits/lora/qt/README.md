@@ -37,21 +37,17 @@ synthetic design evidence, **not** runtime behavior or Windows acceptance.
 
 ## Fast PR rendering
 
-Add the exact **`lora:render`** label to a pull request to run
-[`LoRA design renders`](../../../../../../.github/workflows/lora-design-render.yml).
-The label persists across subsequent pushes and rerenders only these seven
-LoRA views (including the canonical runtime Prepare form, expanded Connections
-and compact Prepare).
-The dedicated job uploads a downloadable GitHub Actions artifact and, when
-configured, Google Drive images with links in an updated PR review comment.
-The broad UI fixture renderer is deliberately **not invoked** by this LoRA label;
-it retains its original scope and change gate.
+The [LoRA Prepare UI workflow](../../../../../../.github/workflows/lora-design-render.yml)
+runs automatically for PRs changing the canonical Prepare UI or its targeted renderer.
+**No label is required.** It captures two real in-window Prepare states (wide and
+compact) with synthetic data and DTFlow's global Qt stylesheet. A GitHub Actions
+artifact and, when configured, Drive screenshots are linked in the PR.
 
-Alternatively, open the general **UI renders** workflow, choose **Run workflow**,
-set **category = lora** (and PR number when applicable), and run only these same
-seven LoRA captures. The `all` category keeps its existing behavior and does
-not implicitly include the separate LoRA design screens. The dedicated label
-workflow remains the quickest option for frequent PR design iterations.
+For an explicit targeted rerun, select `category: lora` in the existing
+[UI renders workflow](../../../../../../.github/workflows/main.yml). The broad
+Generate/Connection fixtures and seven standalone Designer references are not run
+by this targeted category. Those standalone forms remain manually previewable
+through `tools/ui/render_lora_design.py`.
 
 ## Integration boundary
 
