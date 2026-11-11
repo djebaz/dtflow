@@ -251,18 +251,23 @@ class LoraAssetPanel:
         """(identifier, catalogue weight) of every LoRA offered for selection, custom-LoRA records included."""
         candidates = [(name, weight) for name, weight in self._candidates if self._candidate_compatible(name)]
         known = {name for name, _ in candidates}
-        return candidates + [
-            (record["identifier"], None)
-            for record in self._records.values()
-            if record["identifier"] not in known and self._candidate_compatible(record["identifier"])
-        ]
+        for record in self._records.values():
+            name = record["identifier"]
+            if name not in known and self._candidate_compatible(name):
+                candidates.append((name, None))
+                known.add(name)
+        return candidates
 
     def all_choices(self) -> list[tuple[str, float | None]]:
-        """Like ``choices`` but every LoRA the backend reports, not only those compatible with the checkpoint (a
-        queue may cross several checkpoints, so the composer cannot filter by one)."""
+        """Include every provider and local LoRA for multi-checkpoint queue composition."""
         listed = list(getattr(self, "_inventory_candidates", ()))
         known = {name for name, _ in listed}
-        return listed + [(name, weight) for name, weight in self.choices() if name not in known]
+        for record in self._records.values():
+            name = record["identifier"]
+            if name not in known:
+                listed.append((name, None))
+                known.add(name)
+        return listed
 
     def confirmed_receipts(self) -> dict[str, str]:
         """Identifier -> confirmed local receipt id of the custom LoRAs that can be bound (cloud only)."""
