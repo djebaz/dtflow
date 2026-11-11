@@ -23,6 +23,7 @@ import argparse
 import functools
 import json
 import math
+import os
 import re
 import sqlite3
 import struct
@@ -35,20 +36,6 @@ import numpy as np
 
 MIN_NUMPY = (1, 21)
 
-
-def _check_numpy() -> None:
-    try:
-        major, minor = (int(part) for part in np.__version__.split(".")[:2])
-    except ValueError:
-        return
-    if (major, minor) < MIN_NUMPY:
-        raise SystemExit(
-            f"numpy {np.__version__} is too old, this converter needs numpy >= {MIN_NUMPY[0]}.{MIN_NUMPY[1]} "
-            "(pip install --upgrade numpy)."
-        )
-
-
-_check_numpy()
 
 COLAB_HINT = (
     "Use the Colab notebook instead: tools/colab/dtflow_lora_minimal_convert.ipynb "
@@ -68,22 +55,62 @@ class ConversionError(Exception):
     """Raised for anything the converter refuses to do."""
 
 
+def _check_numpy() -> None:
+    try:
+        major, minor = (int(part) for part in np.__version__.split(".")[:2])
+    except ValueError:
+        return
+    if (major, minor) < MIN_NUMPY:
+        raise ConversionError(
+            f"numpy {np.__version__} is too old, this converter needs numpy >= {MIN_NUMPY[0]}.{MIN_NUMPY[1]} "
+            "(pip install --upgrade numpy)."
+        )
+
+
 # --------------------------------------------------------------------------- reading
 
 
 class SafeTensors:
-    """Minimal read-only safetensors reader (memory mapped)."""
+    """Minimal read-only safetensors reader.
+
+    Use it as a context manager: the file is closed on exit, because on Windows an open
+    file cannot be deleted or moved. Tensors are read one at a time (no memory mapping).
+    """
 
     def __init__(self, path: Path) -> None:
         self.path = path
-        with path.open("rb") as handle:
-            (header_len,) = struct.unpack("<Q", handle.read(8))
-            if header_len > 100 * 1024 * 1024:
-                raise ConversionError(f"{path.name}: not a safetensors file (header too large).")
-            header = json.loads(handle.read(header_len))
-        self._base = 8 + header_len
-        self.entries = {k: v for k, v in header.items() if k != "__metadata__"}
-        self._map = np.memmap(path, dtype=np.uint8, mode="r")
+        self._file = None
+        try:
+            size = path.stat().st_size
+            if size < 8:
+                raise ConversionError(f"{path.name}: not a safetensors file (too small).")
+            with path.open("rb") as handle:
+                (header_len,) = struct.unpack("<Q", handle.read(8))
+                if header_len > 100 * 1024 * 1024 or 8 + header_len > size:
+                    raise ConversionError(f"{path.name}: not a safetensors file (bad header size).")
+                header = json.loads(handle.read(header_len))
+            if not isinstance(header, dict):
+                raise ConversionError(f"{path.name}: not a safetensors file (bad header).")
+            self._base = 8 + header_len
+            self.entries = {k: v for k, v in header.items() if k != "__metadata__"}
+            for key, entry in self.entries.items():
+                begin, end = entry["data_offsets"]
+                if not 0 <= begin <= end <= size - self._base:
+                    raise ConversionError(f"{path.name}: {key} points outside the file (truncated?).")
+        except (OSError, struct.error, ValueError, KeyError, TypeError) as error:
+            raise ConversionError(f"{path.name}: cannot read this safetensors file ({error}).") from error
+        self._file = path.open("rb")
+
+    def close(self) -> None:
+        handle, self._file = self._file, None
+        if handle is not None:
+            handle.close()
+
+    def __enter__(self) -> SafeTensors:
+        return self
+
+    def __exit__(self, *exc: object) -> None:
+        self.close()
 
     def keys(self) -> list[str]:
         return list(self.entries)
@@ -91,13 +118,23 @@ class SafeTensors:
     def shape(self, key: str) -> tuple[int, ...]:
         return tuple(self.entries[key]["shape"])
 
-    def _raw(self, key: str) -> tuple[str, tuple[int, ...], np.ndarray]:
+    def _raw(self, key: str) -> tuple[str, tuple[int, ...], bytes]:
         entry = self.entries[key]
         begin, end = entry["data_offsets"]
         dtype = entry["dtype"]
         if dtype != "BF16" and dtype not in _SAFETENSORS_DTYPES:
             raise ConversionError(f"{key}: unsupported dtype {dtype}. {COLAB_HINT}")
-        return dtype, tuple(entry["shape"]), self._map[self._base + begin : self._base + end]
+        if self._file is None:
+            raise ConversionError(f"{self.path.name}: the file was already closed.")
+        shape = tuple(entry["shape"])
+        width = {"F16": 2, "BF16": 2, "F32": 4}[dtype]
+        if (end - begin) != width * math.prod(shape):
+            raise ConversionError(f"{key}: data size does not match shape {shape} (corrupt file?).")
+        self._file.seek(self._base + begin)
+        raw = self._file.read(end - begin)
+        if len(raw) != end - begin:
+            raise ConversionError(f"{key}: the file ended early (truncated?).")
+        return dtype, shape, raw
 
     def read(self, key: str) -> np.ndarray:
         """The tensor as float32 (exact for F16 and BF16)."""
@@ -401,7 +438,7 @@ def write_ckpt(path: Path, tensors: dict[str, np.ndarray]) -> None:
     if path.exists():
         raise ConversionError(f"{path} already exists; refusing to overwrite.")
     path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_name(path.name + ".part")
+    tmp = path.with_name(f"{path.name}.{os.getpid()}.part")
     tmp.unlink(missing_ok=True)
     done = False
     try:
@@ -427,8 +464,12 @@ def write_ckpt(path: Path, tensors: dict[str, np.ndarray]) -> None:
             con.commit()
         finally:
             con.close()
-        tmp.replace(path)
+        if path.exists():  # appeared while we were writing: never overwrite
+            raise ConversionError(f"{path} already exists; refusing to overwrite.")
+        tmp.rename(path)  # fails on Windows if the target exists; on POSIX it was checked above
         done = True
+    except OSError as error:
+        raise ConversionError(f"Cannot write {path}: {error}") from error
     except sqlite3.Error as error:
         raise ConversionError(f"Cannot write {path}: {error}") from error
     finally:
@@ -863,7 +904,9 @@ def convert(
     if family in EXPERIMENTAL_FAMILIES:
         log(f"warning: {family} is experimental, its output has not been compared with Draw Things yet.")
     if family in TABLE_FAMILIES:
-        tensors = convert_tables(SafeTensors(source), family, scale, ignore_unmatched, log)
+        _check_numpy()
+        with SafeTensors(source) as st:
+            tensors = convert_tables(st, family, scale, ignore_unmatched, log)
         if not tensors:
             raise ConversionError("No LoRA tensors found in the file.")
         write_ckpt(destination, tensors)
@@ -872,8 +915,19 @@ def convert(
     resolver = FAMILIES.get(family)
     if resolver is None:
         raise ConversionError(f"Family {family!r} is not supported by the Python converter. {COLAB_HINT}")
-    st = SafeTensors(source)
+    _check_numpy()
+    with SafeTensors(source) as st:
+        return _convert_open(st, destination, family, resolver, scale, log)
 
+
+def _convert_open(
+    st: SafeTensors,
+    destination: Path,
+    family: str,
+    resolver: Resolver,
+    scale: float,
+    log: Callable[[str], None],
+) -> int:
     parts: dict[str, dict[str, LoraKey]] = {}
     unknown: list[str] = []
     for key in st.keys():
@@ -881,7 +935,13 @@ def convert(
         if parsed is None:
             unknown.append(key)
             continue
-        parts.setdefault(parsed.module, {})[parsed.role] = parsed
+        roles = parts.setdefault(parsed.module, {})
+        if parsed.role in roles:
+            raise ConversionError(
+                f"{key} and {roles[parsed.role].key} are both the {parsed.role} of the same module "
+                f"({parsed.module}). {COLAB_HINT}"
+            )
+        roles[parsed.role] = parsed
     if unknown:
         sample = ", ".join(unknown[:5])
         raise ConversionError(
