@@ -4,7 +4,7 @@ Only SQLite tensor names and shape metadata are inspected, never weights. A
 filename, current checkpoint, or generic hidden-size match is not proof of
 family. Unknown and ambiguous structures remain explicitly unknown.
 
-Z-Image, Krea 2, MOSS Image, bounded SD 1.x and SDXL Base signatures are
+Z-Image, Krea 2, MOSS Image, FLUX.1, bounded SD 1.x and SDXL Base signatures are
 grounded in owner-provided converted CKPT reports and upstream Draw Things
 model definitions (#369). Unidentified or partial adapters stay unknown.
 """
@@ -138,6 +138,21 @@ def detect_lora_family(path: Path) -> LoraFamily:
             for module in ("ffn_down_proj", "ffn_up_proj", "ffn_gate_proj", "x_o")
         )
     )
+    # The converted FLUX.1 LoRA mapping uses 19 joint + 38 single blocks,
+    # hidden width 3072 and 4x feed-forward width 12288. Require the complete
+    # block counts to distinguish it from other 3072-wide dual-stream models,
+    # including HunyuanVideo (20 + 40 blocks). Partial adapters remain unknown.
+    flux_1 = (
+        {3072, 12288} <= dit_dimensions
+        and all(
+            sum(module.startswith(f"{name}-") for module in dit_modules) == 2 * (19 + 38)
+            for name in ("x_q", "x_k", "x_v", "x_o", "x_linear1", "x_out_proj")
+        )
+        and all(
+            sum(module.startswith(f"x_ada_ln_{index}-") for module in dit_modules) == 2 * 19
+            for index in (3, 4, 5)
+        )
+    )
     # SD1.x and SDXL share U-Net channel widths (320/640/1280), and SDXL
     # can include a 768-wide CLIP-L text model. Require 768 also in U-Net LoRA
     # shapes (SD1.x cross-attention), plus absence of SD2/SDXL conditioning
@@ -167,6 +182,7 @@ def detect_lora_family(path: Path) -> LoraFamily:
             ("z_image", z_image),
             ("krea_2", krea_2),
             ("moss_image", moss_image),
+            ("flux_1", flux_1),
             ("sd_1", sd_1),
             ("sdxl", sdxl),
         )
