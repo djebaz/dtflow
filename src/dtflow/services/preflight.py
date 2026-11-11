@@ -6,13 +6,11 @@ not labeled compatible. The official engine's base/refiner and Kandinsky/SD-v1 e
 service does not model them: every selection is a whole-model (``All``) LoRA on a base model.
 """
 
-from dataclasses import replace
 import logging
+from dataclasses import replace
 
 from dtflow.backends.drawthings.versions import bundled_exact_version
 from dtflow.core.model_profiles import exact_model_spec
-from dtflow.diagnostics import event as diagnostic_event
-
 from dtflow.core.models import (
     BackendError,
     BackendFailure,
@@ -21,6 +19,7 @@ from dtflow.core.models import (
     PreflightDiagnostic,
     ResolvedGenerationRequest,
 )
+from dtflow.diagnostics import event as diagnostic_event
 from dtflow.services.dynamic_prompts import PROMPT_TAGS_KEY, decode_runs, encode_runs
 
 BLOCKING = ("architecture_mismatch", "not_available", "prepared_architecture_unknown")
@@ -135,18 +134,19 @@ def blocked(diagnostics: tuple[PreflightDiagnostic, ...]) -> tuple[PreflightDiag
 
 def raise_if_blocked(request: ResolvedGenerationRequest, diagnostics: tuple[PreflightDiagnostic, ...]) -> None:
     problems = blocked(diagnostics)
-    for item in problems:
-        diagnostic_event(
-            log,
-            "lora.compatibility_blocked",
-            level=logging.WARNING,
-            data={
-                "reason": item.code,
-                "checkpoint_version": item.model_family or "unknown",
-                "lora_version": item.lora_family or "unknown",
-                "outcome": "not_submitted",
-            },
-        )
+    for item in diagnostics:
+        if item.code in BLOCKING or item.code == "architecture_unknown":
+            diagnostic_event(
+                log,
+                "lora.compatibility_blocked" if item.code in BLOCKING else "lora.compatibility_unknown",
+                level=logging.WARNING,
+                data={
+                    "reason": item.code,
+                    "checkpoint_version": item.model_family or "unknown",
+                    "lora_version": item.lora_family or "unknown",
+                    "outcome": "not_submitted" if item.code in BLOCKING else "unverified",
+                },
+            )
     if problems:
         raise BackendError(
             BackendFailure(
