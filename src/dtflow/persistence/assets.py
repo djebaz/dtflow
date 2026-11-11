@@ -361,7 +361,7 @@ class AssetRegistry:
                 previous = existing["managed_identifier"]
                 if (
                     previous is not None
-                    and previous.casefold() != identifier.casefold()
+                    and previous != identifier
                     and not lora_metadata.replace_existing
                 ):
                     raise ValidationError(
