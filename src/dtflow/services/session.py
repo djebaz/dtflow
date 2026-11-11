@@ -56,6 +56,7 @@ from dtflow.services.credentials import EnvironmentCredentials, resolve_credenti
 from dtflow.services.generation import GenerationService
 from dtflow.services.image_inputs import restore_image_inputs
 from dtflow.services.lora_store import LoraStore
+from dtflow.services.lora_naming import LoraPrepareMetadata, ManagedName, occupied_from_snapshot
 from dtflow.services.image_preparation import prepare_image_files, validate_prepared_inputs
 from dtflow.services.preflight import apply_trigger_prefixes
 
@@ -835,7 +836,7 @@ def asset_view(record: dict) -> dict:
         "asset_id", "kind", "identifier", "state", "evidence", "source", "sha256", "size", "backend_id", "origin",
         "remote_id", "created_at_utc", "confirmed_at_utc", "updated_at_utc", "family", "family_source",
         "detected_version", "detected_source", "declared_version", "architecture_conflict",
-        "short_name", "format_code", "format_source",
+        "short_name", "managed_identifier", "format_code", "format_source",
     )  # fmt: skip
     view = {key: record.get(key) for key in keys}
     if "operations" in record:
@@ -871,10 +872,15 @@ async def prepare_asset(
     *,
     provenance: str,
     saved: CredentialProvider | None = None,
+    metadata: LoraPrepareMetadata | None = None,
 ) -> dict:
-    """Explicitly prepare a converted LoRA and retain its local copy for later bounded recovery."""
+    """Explicitly Prepare using accepted naming metadata and a stable technical identifier.
+
+    The editor supplies metadata only after authorization; the registry accepts
+    its final managed identifier in the same transaction as the Prepare intent.
+    """
     async with open_assets(state, saved=saved) as service:
-        prepared = await service.prepare(file, name, provenance=provenance)
+        prepared = await service.prepare(file, name, provenance=provenance, metadata=metadata)
         record = await service.registry.get(prepared.receipt_id)
         # The historical content row can have another filename/key. Present this
         # exact successful preparation, rather than the first name to share its bytes.
@@ -885,6 +891,20 @@ async def prepare_asset(
             state="confirmed",
         )
         return record
+
+
+async def occupied_managed_lora_names(state: Path) -> tuple[ManagedName, ...]:
+    """Read content-scoped accepted managed names once per batch, without provider calls.
+
+    This is advisory preview data. An explicit Prepare always rechecks uniqueness
+    under the existing registry writer's SQLite transaction.
+    """
+    registry = AssetRegistry(state)
+    await registry.open()
+    try:
+        return occupied_from_snapshot(await registry.lora_name_snapshot())
+    finally:
+        await registry.aclose()
 
 
 async def reconcile_asset(
