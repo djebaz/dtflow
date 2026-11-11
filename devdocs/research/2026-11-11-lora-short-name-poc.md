@@ -1,10 +1,10 @@
 # LoRA short-name suggestions — standalone POC
 
-**Status:** Standalone POC; owner-approved naming baseline for issue #373 (2026-11-11), **not integrated** into DTFlow. **Related:** [#373](https://github.com/djebaz/dtflow/issues/373), [PR #377](https://github.com/djebaz/dtflow/pull/377).
+**Status:** Standalone POC with shared production naming logic extracted in draft PR #380; approved naming baseline for issue #373 (2026-11-11), **not integrated into the Prepare UI**. **Related:** [#373](https://github.com/djebaz/dtflow/issues/373), [PR #377](https://github.com/djebaz/dtflow/pull/377).
 
 ## Purpose
 
-Explore filename-derived, editable short-name **suggestions** for the approved future Prepare LoRAs editor without changing its runtime behavior yet. The prototype is the standalone, standard-library script [`tools/lora_short_name_poc.py`](../../tools/lora_short_name_poc.py). The owner supplied a real JSON catalog for review; the catalog is not committed.
+Explore filename-derived, editable short-name **suggestions** for the approved future Prepare LoRAs editor without changing its runtime behavior yet. The prototype CLI is [`tools/lora_short_name_poc.py`](../../tools/lora_short_name_poc.py), now a consumer of the pure, standard-library [`services/lora_naming.py`](../../src/dtflow/services/lora_naming.py) module on PR #380. The owner supplied a real JSON catalog for review; the catalog is not committed.
 
 ## Current POC rules
 
@@ -36,3 +36,10 @@ The owner has updated [issue #373](https://github.com/djebaz/dtflow/issues/373):
 This POC implements **advisory output only**, not UI prefill, persistence or actual managed-asset collision safety. Before integrating its naming function, check stored content identity, existing managed filenames, user-declared architecture and format, and reserved batch names. Never silently overwrite prepared identifiers, rename existing assets, alter a user-edited name or present filename-derived architecture words as verified compatibility. The real editor must still reject unsafe collisions at Prepare.
 
 **Validation:** Source inspection only for this documentation update; no automated tests, renders, model inference, DT+ operations, or Windows checks were run.
+
+## Production extraction (#379 / draft PR #380)
+
+- The Qt-free, I/O-free naming module provides `suggest_short_name`, `allocate_batch_names` and `managed_filename`.
+- The POC CLI imports the same naming implementation instead of maintaining a second algorithm. It retains its exploratory JSON-catalog input and output formatting.
+- Allocation receives exact architecture and F16/Q8P from the caller, never from filename parsing; collision proposals are advisory and do not reserve database names or authorize Prepare.
+- Canonical occupied-name reads, final write-time collision checks and user-edit-aware Qt Prepare integration remain dependent on #370/#373. No provider or Windows acceptance is claimed.
