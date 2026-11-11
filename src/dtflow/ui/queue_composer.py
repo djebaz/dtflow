@@ -144,7 +144,7 @@ class ValueChips(QWidget):
         self._add.setObjectName("valueChipsAddButton")
         self._add.clicked.connect(self._add_clicked)
         self._layout.addWidget(self._add)
-        policy = QSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
+        policy = QSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Minimum)
         policy.setHeightForWidth(True)
         self.setSizePolicy(policy)
 
