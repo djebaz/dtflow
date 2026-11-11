@@ -38,19 +38,25 @@ from dtflow.core.models import (
     ValidationError,
 )
 from dtflow.core.output_layout import OutputLayout
-from dtflow.core.retry_policy import AUTO_RETRIES, AUTO_RETRY_DELAY, auto_retry_request, auto_retryable
+from dtflow.core.retry_policy import (
+    AUTO_RETRY_DELAY,
+    auto_retry_limit,
+    auto_retry_request,
+    auto_retryable,
+)
 from dtflow.core.tasks import settle
 from dtflow.diagnostics import event as diagnostic_event
-from dtflow.persistence.assets import AssetRegistry
+from dtflow.persistence.assets import AssetRegistry, newest_per_name
 from dtflow.persistence.gallery_snapshot import schedule_publish
 from dtflow.persistence.inventory_cache import load_inventory, save_inventory
 from dtflow.persistence.settings import load_cloud_concurrency
 from dtflow.persistence.store import SQLiteAttempts
 from dtflow.services.assets import AssetService, possible_missing_asset
-from dtflow.services.catalogue import Catalogue
 from dtflow.services.credentials import EnvironmentCredentials, resolve_credentials
 from dtflow.services.generation import GenerationService
 from dtflow.services.image_inputs import restore_image_inputs
+from dtflow.services.lora_family import retained_families
+from dtflow.services.lora_store import LoraStore
 from dtflow.services.image_preparation import prepare_image_files, validate_prepared_inputs
 from dtflow.services.preflight import apply_trigger_prefixes
 
@@ -188,9 +194,27 @@ async def load_prepared(
     registry = AssetRegistry(state)
     await registry.open()
     try:
-        return tuple([await registry.prepared(asset_id) for asset_id in asset_ids])
+        prepared = tuple([await registry.prepared(asset_id) for asset_id in asset_ids])
     finally:
         await registry.aclose()
+    return await _with_legacy_families(state, prepared)
+
+
+async def _with_legacy_families(state: Path, prepared: tuple[PreparedAsset, ...]) -> tuple[PreparedAsset, ...]:
+    """Make old receipts' family available to preflight without Prepare or upload."""
+    unknown = [(item.sha256, item.size) for item in prepared if item.family is None]
+    if not unknown:
+        return prepared
+    found = await asyncio.to_thread(retained_families, state, unknown)
+    resolved = []
+    for item in prepared:
+        detected = found.get((item.sha256, item.size))
+        resolved.append(
+            replace(item, family=detected.family, family_source=detected.source)
+            if item.family is None and detected is not None and detected.family
+            else item
+        )
+    return tuple(resolved)
 
 
 async def bind_prepared(
@@ -223,6 +247,9 @@ async def bind_prepared(
         if (item.receipt_id, identifier) in named
     )
     prepared = tuple(dict.fromkeys(resolved)) or prepared
+    # Alias resolution can replace the enriched base receipt with its old,
+    # unclassified named row. Reattach the same file evidence to the final names.
+    prepared = await _with_legacy_families(state, prepared)
     for item in prepared:
         if item.identifier not in selected:
             raise ValidationError(f"--asset {item.receipt_id[:8]} needs a matching --lora {item.identifier}:WEIGHT.")
@@ -235,13 +262,18 @@ async def script_asset_choices(state: Path, backend_name: str) -> tuple[Prepared
 
     Local reads only. Actual dispatch still validates each selected receipt against
     the active backend/account; a confirmed historical record is not live consent.
+
+    One receipt per LoRA name, the one prepared on purpose last (else first seen last): a file converted again under the same
+    name has a new hash, and the old receipt must never be bound for it, or the request names the old bytes (#361).
     """
     if backend_name != "cloud":
         return ()
     registry = AssetRegistry(state)
     await registry.open()
     try:
-        return await registry.choices()
+        choices = await registry.choices()
+        selected = newest_per_name(choices, await asyncio.to_thread(LoraStore(state).current_by_name))
+        return await _with_legacy_families(state, selected)
     finally:
         await registry.aclose()
 
@@ -292,7 +324,6 @@ async def open_session(
             timeouts=policy,
             assets=asset_validator(backend, state),
             input_state=state if image_permits else None,
-            catalogue=Catalogue(state),
         )
     finally:
         try:
@@ -362,13 +393,13 @@ async def run_generation(
                 and possible_missing_asset(failure)
                 and callable(getattr(assets, "recover_missing", None))
             ):
-                repaired = await assets.recover_missing(request.prepared_assets)
+                repaired = await assets.recover_missing(request.prepared_assets, failure=failure)
             # Named child attempts (Workflows/Scripts) own their own retry accounting.
             # A rejected/possibly submitted generation is never silently replayed.
             safe_repair_retry = repaired and failure.remote_outcome == RemoteOutcome.NOT_STARTED
             if (
                 attempt_id is not None
-                or retries >= AUTO_RETRIES
+                or retries >= auto_retry_limit(request, failure)
                 or (not safe_repair_retry and not auto_retryable(failure))
             ):
                 raise
@@ -823,7 +854,7 @@ async def check_loras(
 def asset_view(record: dict) -> dict:
     keys = (
         "asset_id", "kind", "identifier", "state", "evidence", "source", "sha256", "size", "backend_id", "origin",
-        "remote_id", "created_at_utc", "confirmed_at_utc", "updated_at_utc",
+        "remote_id", "created_at_utc", "confirmed_at_utc", "updated_at_utc", "family", "family_source",
     )  # fmt: skip
     view = {key: record.get(key) for key in keys}
     if "operations" in record:
@@ -883,12 +914,31 @@ async def reconcile_asset(
         return await service.reconcile(asset_id, identifier)
 
 
+def _legacy_receipt_families(state: Path, records: list[dict]) -> None:
+    """Enrich old receipt views from verified local bytes, without writes or DT+ calls."""
+    unknown = [
+        (record["sha256"], record["size"])
+        for record in records
+        if record.get("kind") == "lora"
+        and record.get("family") is None
+        and isinstance(record.get("sha256"), str)
+        and isinstance(record.get("size"), int)
+    ]
+    found = retained_families(state, unknown)
+    for record in records:
+        detected = found.get((record.get("sha256"), record.get("size")))
+        if record.get("family") is None and detected is not None and detected.family:
+            record["family"] = detected.family
+            record["family_source"] = detected.source
+
+
 async def list_assets(state: Path, *, named: bool = False) -> list[dict]:
     """Local receipt and unresolved-operation candidates; optionally expand logical LoRA names for Qt."""
     registry = AssetRegistry(state)
     await registry.open()
     try:
         records = await registry.list()
+        await asyncio.to_thread(_legacy_receipt_families, state, records)
         if not named:
             return [asset_view(record) for record in records]
         parents = {record["asset_id"]: record for record in records}

@@ -1,4 +1,4 @@
-"""Independent durable registry of locally known cloud assets (``<state>/assets.sqlite3``, schema version 3).
+"""Independent durable registry of locally known cloud assets (``<state>/assets.sqlite3``, schema version 4).
 
 A row is a *local candidate*, not remote inventory: it records what this machine measured and what a server once
 acknowledged. It never stores raw credentials, signed URLs or file contents. A version-3 side table records per-key and per-name references
@@ -26,7 +26,7 @@ from dtflow.core.models import PREPARATION_STATES, AssetContent, PreparedAsset, 
 from dtflow.persistence import store
 from dtflow.persistence.store import PersistenceError
 
-SCHEMA_VERSION = 3
+SCHEMA_VERSION = 4
 UNRESOLVED = ("intent", "transferring")
 SOURCES = ("transfer", "already_exists", "reconciled")
 
@@ -37,6 +37,8 @@ SCHEMA = (
         identifier TEXT NOT NULL,
         sha256 TEXT NOT NULL,
         size INTEGER NOT NULL,
+        family TEXT,
+        family_source TEXT NOT NULL DEFAULT 'unknown',
         backend_id TEXT NOT NULL,
         origin TEXT NOT NULL,
         remote_id TEXT,
@@ -73,6 +75,20 @@ SCHEMA = (
 
 def _now() -> str:
     return datetime.now(UTC).isoformat()
+
+
+def newest_per_name(choices, current=None) -> tuple:
+    """One receipt per LoRA name.
+
+    ``current`` maps a name to the (sha256, size) most recently prepared on purpose; that content wins, so preparing
+    older bytes again is honoured. Otherwise the content first seen last wins (``choices`` come oldest first)."""
+    newest = {}
+    for item in choices:
+        newest[item.identifier] = item
+    for item in choices:
+        if current and current.get(item.identifier) == (item.sha256, item.size):
+            newest[item.identifier] = item
+    return tuple(newest.values())
 
 
 class AssetsBusyError(PersistenceError):
@@ -165,7 +181,7 @@ class AssetRegistry:
 
     def _check_version(self, db: sqlite3.Connection, *, create: bool) -> None:
         version = db.execute("PRAGMA user_version").fetchone()[0]
-        if version not in (0, 1, 2, SCHEMA_VERSION):
+        if version not in (0, 1, 2, 3, SCHEMA_VERSION):
             raise PersistenceError("Unsupported asset-registry schema; no reset or migration was performed.")
         if create:
             db.execute("PRAGMA journal_mode=WAL")
@@ -177,6 +193,10 @@ class AssetRegistry:
                     db.execute("ALTER TABLE asset_key_receipts RENAME TO asset_key_receipts_v2")
                 for statement in SCHEMA:
                     db.execute(statement)
+                if 0 < version < 4:
+                    # Existing receipts retain all references; a kept file can supply the family lazily.
+                    db.execute("ALTER TABLE assets ADD COLUMN family TEXT")
+                    db.execute("ALTER TABLE assets ADD COLUMN family_source TEXT NOT NULL DEFAULT 'unknown'")
                 if version == 2:
                     db.execute(
                         "INSERT INTO asset_key_receipts "
@@ -232,13 +252,21 @@ class AssetRegistry:
                 raise
 
     async def begin(
-        self, content: AssetContent, backend_id: str, origin: str, action: str = "prepare"
+        self,
+        content: AssetContent,
+        backend_id: str,
+        origin: str,
+        action: str = "prepare",
+        *,
+        family: str | None = None,
     ) -> tuple[str, str]:
         """Persist intent (before any negotiation or transfer) and return ``(asset_id, operation_id)``."""
-        return await self._run(self._write, self._begin, content, backend_id, origin, action)
+        return await self._run(self._write, self._begin, content, backend_id, origin, action, family)
 
     @staticmethod
-    def _begin(db, content: AssetContent, backend_id: str, origin: str, action: str) -> tuple[str, str]:
+    def _begin(
+        db, content: AssetContent, backend_id: str, origin: str, action: str, family: str | None
+    ) -> tuple[str, str]:
         now, operation = _now(), uuid4().hex
         row = db.execute(
             "SELECT asset_id, state FROM assets WHERE kind=? AND backend_id=? AND origin=? AND sha256=? AND size=?",
@@ -247,13 +275,21 @@ class AssetRegistry:
         if row is None:
             asset_id = uuid4().hex
             db.execute(
-                "INSERT INTO assets (asset_id, kind, identifier, sha256, size, backend_id, origin, state, evidence,"
-                " provenance, created_at_utc, updated_at_utc) VALUES (?,?,?,?,?,?,?,'intent','intent_recorded',?,?,?)",
-                (asset_id, content.kind, content.identifier, content.sha256, content.size, backend_id, origin,
-                 content.provenance, now, now),
+                "INSERT INTO assets (asset_id, kind, identifier, sha256, size, family, family_source,"
+                " backend_id, origin, state, evidence, provenance, created_at_utc, updated_at_utc)"
+                " VALUES (?,?,?,?,?,?,?,?,?,'intent','intent_recorded',?,?,?)",
+                (asset_id, content.kind, content.identifier, content.sha256, content.size,
+                 family, "file" if family else "unknown", backend_id, origin, content.provenance, now, now),
             )  # fmt: skip
         else:
             asset_id = row["asset_id"]
+            if family:
+                # Re-Prepare may refresh an earlier detected broad ID with the
+                # current file-derived exact version, without changing the receipt.
+                db.execute(
+                    "UPDATE assets SET family=?, family_source='file' WHERE asset_id=?",
+                    (family, asset_id),
+                )
             if action == "prepare" and row["state"] != "confirmed":
                 db.execute(
                     "UPDATE assets SET state='intent', evidence='intent_recorded', updated_at_utc=? WHERE asset_id=?",
@@ -439,6 +475,8 @@ class AssetRegistry:
             row["size"],
             row["asset_id"],
             row["confirmed_at_utc"],
+            row["family"] if "family" in row.keys() else None,
+            row["family_source"] if "family_source" in row.keys() else "unknown",
         )
 
     async def choices(self) -> tuple[PreparedAsset, ...]:
@@ -456,6 +494,7 @@ class AssetRegistry:
                 "SELECT * FROM assets WHERE kind='lora' AND state='confirmed' AND remote_id IS NOT NULL"
             ).fetchall()
             by_name = {(row["asset_id"], row["identifier"]): self._prepared(row) for row in rows}
+            created = {row["asset_id"]: row["created_at_utc"] for row in rows}
             if db.execute("PRAGMA user_version").fetchone()[0] >= 2:
                 for row in db.execute(
                     "SELECT a.*, k.identifier AS logical_name, k.remote_id AS logical_remote, "
@@ -465,13 +504,16 @@ class AssetRegistry:
                 ):
                     from dataclasses import replace
 
+                    created[row["asset_id"]] = row["created_at_utc"]
                     by_name[(row["asset_id"], row["logical_name"])] = replace(
                         self._prepared(row),
                         identifier=row["logical_name"],
                         remote_id=row["logical_remote"],
                         confirmed_at_utc=row["logical_confirmed"],
                     )
-            return tuple(by_name.values())
+            # Oldest first by when the file's content was first seen. A relink or key switch re-stamps
+            # ``confirmed_at_utc`` on old content and must never make it look newer (#361).
+            return tuple(sorted(by_name.values(), key=lambda item: (created.get(item.receipt_id, ""), item.identifier)))
 
     async def get(self, asset_id: str) -> dict[str, Any] | None:
         return await self._run(self._get, asset_id)
@@ -525,4 +567,6 @@ class AssetRegistry:
             record["size"],
             record["asset_id"],
             record["confirmed_at_utc"],
+            record.get("family"),
+            record.get("family_source", "unknown"),
         )

@@ -41,7 +41,7 @@ from dtflow.core.models import (
 )
 from dtflow.diagnostics import event as diagnostic_event
 from dtflow.logging_setup import dev_enabled
-from dtflow.services.catalogue import Catalogue
+from dtflow.services.catalogue import Catalogue, FAMILY_LABELS
 from dtflow.services.checkpoint_metadata import resolve_checkpoint_metadata
 from dtflow.services.connection import (
     Presentation,
@@ -51,6 +51,7 @@ from dtflow.services.connection import (
 )
 from dtflow.services.image_preparation import prepare_edit_inputs
 from dtflow.services.image_quality import assess_file
+from dtflow.services.preflight import checkpoint_exact_version
 from dtflow.services.presets import apply_preset, builtin_presets, load_presets, save_preset
 from dtflow.services.session import (
     InventoryDisplayMemory,
@@ -128,6 +129,7 @@ DISPATCH_REASON = (
     "A queue is running in this window: Generate adds this request behind it as a one-item queue, "
     "which starts by itself when the running queue ends."
 )
+NO_MODEL_REASON = "Choose a model first: Generate needs a checkpoint."
 SNAPSHOT_NOTE = "Running snapshot: later edits to the form apply only to the next request.\n\n"
 METADATA_LIMIT = 256_000
 WIRED_CONTROLS = (
@@ -303,6 +305,7 @@ class GenerationPage:
         self._stage_started = 0.0
         self._stage_seen: dict[str, float] = {}
         self._busy = False
+        self._sync_generate()  # no model yet: Generate starts disabled, with the reason as its tooltip
         self._config_name: str | None = None
         self._reuse_source_identity: str | None = None
         self._metadata_path: Path | None = None
@@ -325,6 +328,7 @@ class GenerationPage:
             backend_source=backend_source,
             saved_source=saved_source,
             state_dir=self._state,
+            catalogue=self._catalogue,
             build_request=self._request_for_check,
             is_busy=lambda: self._busy,
             set_busy=self._set_busy,
@@ -346,6 +350,7 @@ class GenerationPage:
         page.includeNicheCheck.toggled.connect(self._catalogue_filter_changed)
         page.modelCombo.currentTextChanged.connect(self._catalogue_checkpoint_changed)
         page.modelCombo.currentTextChanged.connect(self._update_compute_units)
+        page.modelCombo.currentTextChanged.connect(lambda _text: self._sync_generate())
         for control in (page.widthSpinBox, page.heightSpinBox, page.stepsSpinBox, page.guidanceSpinBox):
             control.valueChanged.connect(self._update_compute_units)
         for control in (page.textToImageModeButton, page.inpaintModeButton):
@@ -476,6 +481,7 @@ class GenerationPage:
         if not name:
             return
         self.page.generationBackendCombo.setCurrentText(name)
+        self._sync_generate()  # the fake backend needs no model, the others do
         source = self._current_inventory_source()
         changed = source != self._inventory_source
         if changed:
@@ -863,22 +869,30 @@ class GenerationPage:
         if not busy and self._refresh_after_key_switch and not self._key_refresh_timer.isActive():
             self._key_refresh_timer.start(0)
 
+    def _model_missing(self) -> bool:
+        """No checkpoint chosen on a backend that needs one (the offline fake supplies its own)."""
+        return self._backend()[0] != "fake" and not self.page.modelCombo.currentText().strip()
+
     def _sync_generate(self) -> None:
         """Only starting another run waits, for this generation or a page service call. While this window dispatches a
         queue, Generate stays available and queues the request behind it (``queue_behind``)."""
         dispatching = self._activity.dispatching
         button = self.page.generateButton
         blocked = self._busy or self._generating
-        button.setEnabled(not blocked)
+        no_model = self._model_missing()
+        button.setEnabled(not blocked and not no_model)
         if hasattr(self, "retryButton"):
             self.retryButton.setEnabled(not blocked)
         # The Queue dropdown stays open during a generation: its Add to queue waits behind it (#135).
-        self.page.queueGenerateButton.setEnabled(not self._busy)
+        self.page.queueGenerateButton.setEnabled(not self._busy and not no_model)
+        self.page.queueGenerateButton.setToolTip(NO_MODEL_REASON if no_model else "")
         if hasattr(self, "inpaint"):
             self.inpaint.set_busy(blocked)  # Inpaint keeps its editor open and only gates Edit image
-        if dispatching:
+        if no_model:
+            button.setToolTip(NO_MODEL_REASON)
+        elif dispatching:
             button.setToolTip(DISPATCH_REASON)
-        elif button.toolTip() == DISPATCH_REASON:
+        elif button.toolTip() in (DISPATCH_REASON, NO_MODEL_REASON):
             button.setToolTip("")
 
     def _unlisten_activity(self) -> None:
@@ -901,6 +915,7 @@ class GenerationPage:
             "size": f"{page.widthSpinBox.value()}x{page.heightSpinBox.value()}",
             "prompt": page.promptEdit.toPlainText(),  # the template of a prompt variation
             "loras": dict(self.lora.all_choices()),  # identifier -> catalogue weight; unfiltered, models may differ
+            "lora_families": self.lora.family_labels(),  # display only; raw identifiers remain unchanged
             "receipts": self.lora.confirmed_receipts(),  # bound for LoRA sets that name a custom cloud LoRA
         }
 
@@ -1513,8 +1528,9 @@ class GenerationPage:
             if self._key_switch_checkpoint is not None:
                 self._key_switch_checkpoint = self.page.modelCombo.currentText()
             # While previous/next stepping is in progress, keep selected LoRAs until it settles.
-            self._filter_loras(prune_selected=not self._step_settle.isActive())
+            self._filter_loras()
         self._filter_samplers()
+        self._write_inventory_stats()
 
     def _rebuild_catalogue(
         self,
@@ -1593,8 +1609,8 @@ class GenerationPage:
         current = preferred_checkpoint if preferred_checkpoint is not None else page.modelCombo.currentText()
         family = page.baseModelCombo.currentData()
         include_cloud = self._backend()[0] == "local" and page.includeCloudCheck.isChecked()
-        # The family chooses LoRA versions through the checkpoint, so a kept checkpoint decides the family shown:
-        # the two selectors never silently disagree (restored sessions, preserved selections, no inventory yet).
+        # The family selector is a browsing filter, not an exact compatibility version.
+        # A restored classified checkpoint should determine the filter shown beside it.
         kept = self._catalogue.checkpoint(current, include_unavailable=True) if current else None
         if follow_checkpoint and kept is not None and kept.base_model and family != kept.base_model:
             index = page.baseModelCombo.findData(kept.base_model)
@@ -1623,6 +1639,8 @@ class GenerationPage:
             self._fill_models(selectable)
             # Preserve an explicit raw identifier even when provider discovery is incomplete (for example,
             # a local Draw Things endpoint bridging to DT+). Known classified checkpoints still obey the filters.
+            # An explicit switch to a different browsing family must not retain
+            # a known incompatible checkpoint, even when inventory is not loaded.
             outside = (
                 not preserve_selection
                 and kept is not None
@@ -1642,26 +1660,29 @@ class GenerationPage:
                 page.modelCombo.setCurrentText("")
         finally:
             self._updating_catalogue = False
-        self._filter_loras(prune_selected=not preserve_selection and self._inventory_snapshot is not None)
+        self._filter_loras()
 
     def reload_custom_loras(self) -> None:
         """Re-resolve LoRA candidates after user-owned catalogue metadata changes."""
         self._filter_loras()
 
-    def _filter_loras(self, *, prune_selected: bool = True) -> None:
+    def _filter_loras(self) -> None:
         checkpoint = self.page.modelCombo.currentText().strip()
         include_cloud = self._backend()[0] == "local" and self.page.includeCloudCheck.isChecked()
         model = self._catalogue.checkpoint(checkpoint, include_unavailable=include_cloud)
+        version = checkpoint_exact_version(checkpoint, self._inventory_snapshot)
         entries = (
             self._catalogue.compatible_loras(
                 checkpoint, domain=self._catalogue_domain(), include_unavailable=include_cloud
             )
-            if model is not None and model.base_model is not None
+            if version is not None and model is not None and model.base_model is not None
             else None
         )
-        self.lora.set_candidates(entries, prune_selected=prune_selected and entries is not None)
-        if entries is None and checkpoint:
-            self.lora.show_family_unknown()
+        # Filter new choices only. Saved selections remain visible, and shared
+        # preflight will reject a confirmed mismatch even if the UI is bypassed.
+        self.lora.set_candidates(entries, checkpoint_version=version)
+        if checkpoint and version is None:
+            self.lora.show_checkpoint_architecture_unknown()
 
     def _compute_units_estimate(self) -> ComputeUnitEstimate:
         """Read the same current form settings for the meter and explicit inspector."""
@@ -1801,6 +1822,19 @@ class GenerationPage:
         lines = [counts, f"{self._inventory_how} · observed {observed}"]
         if self._inventory_notice:
             lines.append(self._inventory_notice)
+        selected = self.page.modelCombo.currentText().strip()
+        if selected:
+            entry = self._catalogue.checkpoint(selected, include_unavailable=True)
+            family = entry.base_model if entry else None
+            label_name = FAMILY_LABELS.get(family, family) if family else "unknown"
+            chosen_filter = self.page.baseModelCombo.currentData()
+            if family and chosen_filter not in (family, None):
+                displayed = FAMILY_LABELS.get(chosen_filter, chosen_filter)
+                lines.append(
+                    f"Checkpoint family: {label_name} (Base model filter: {displayed}; generation uses checkpoint)"
+                )
+            else:
+                lines.append(f"Checkpoint family: {label_name}")
         label.setText("\n".join(lines))
         label.setToolTip(
             f"{snapshot.backend_id} inventory {self._inventory_how}; observed {snapshot.observed_at_utc}.\n"

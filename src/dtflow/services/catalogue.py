@@ -13,6 +13,7 @@ import logging
 import os
 import re
 from dataclasses import dataclass
+from functools import cache
 from pathlib import Path
 from tempfile import NamedTemporaryFile
 
@@ -36,6 +37,7 @@ FAMILY_LABELS = {
     "sd3": "SD3",
     "flux_1": "FLUX.1",
     "flux_2": "FLUX.2",
+    "flux_3": "FLUX.3",
     "z_image": "Z-Image",
     "qwen_image": "Qwen Image",
     "wan_2_1": "WAN 2.1",
@@ -49,6 +51,8 @@ FAMILY_LABELS = {
     "anima": "Anima",
     "ideogram_4": "Ideogram 4",
     "krea_2": "Krea 2",
+    "moss_image": "MOSS Image",
+    "minimax_h3": "MiniMax H3",
     "ernie_image": "ERNIE Image",
     "hunyuan_video": "Hunyuan Video",
     "svd": "SVD",
@@ -124,6 +128,27 @@ def _records(path: Path) -> list[dict]:
         )
         return []
     return [item for item in document if isinstance(item, dict)]
+
+
+# These bundled family names are also exact Draw Things model version IDs.
+# Broad catalogue groups (SDXL, FLUX.2, Qwen Image) are not exact versions.
+_EXACT_BUNDLED_FAMILIES = frozenset(("z_image", "krea_2", "moss_image"))
+
+
+@cache
+def _bundled_exact_versions() -> dict[str, str]:
+    versions: dict[str, str] = {}
+    for name in ("Models_prime.json", "Models_niche.json"):
+        for item in _records(CATALOGUE_DIR / name):
+            family, filename = item.get("base_model"), item.get("file")
+            if family in _EXACT_BUNDLED_FAMILIES and isinstance(filename, str):
+                versions.setdefault(filename, family)
+    return versions
+
+
+def bundled_exact_version(model_id: str) -> str | None:
+    """Exact version for known unambiguous bundled checkpoints; otherwise Unknown."""
+    return _bundled_exact_versions().get(model_id)
 
 
 def _entry(record: dict, *, kind: str, tier: str | None = None, source: str = "bundled") -> CatalogueEntry | None:

@@ -92,6 +92,7 @@ def edit_lora_selection(
     selected: Sequence[LoRASelection],
     callback: Callable[[list[tuple[str, float]]], None],
     suggestions: dict[str, float | None] | None = None,
+    families: dict[str, str] | None = None,
     title: str = "Edit LoRAs",
     hint: str | None = None,
     multi_weight: bool = False,
@@ -112,6 +113,7 @@ def edit_lora_selection(
     rows_layout = editor.loraSelectionRowsLayout
     empty = editor.loraSelectionEmpty
     suggestions = suggestions or {}
+    families = families or {}
     weights: dict[str, float] = {}
     extra: dict[str, list[float]] = {}  # multi_weight: the weights collected per LoRA
     rows: dict[str, QWidget] = {}
@@ -124,11 +126,15 @@ def edit_lora_selection(
         row = _load("lora_selection_row.ui", editor.loraSelectionRows)
         row.setProperty("identifier", name)
         check, slider, label = row.loraSelectionCheck, row.loraSelectionSlider, row.loraSelectionWeight
-        check.setText(name)
+        family = families.get(name, "Unknown")
+        check.setText(f"{name} · {family}")
         check.setChecked(checked)
-        check.setAccessibleName(f"Use {name}")
+        check.setAccessibleName(f"Use {name}, family {family}")
         suggestion = suggestions.get(name)
-        check.setToolTip(name if suggestion is None else f"{name}\nCatalogue suggests weight {suggestion:g}.")
+        check.setToolTip(
+            f"{name}\nFamily: {family}"
+            + (f"\nCatalogue suggests weight {suggestion:g}." if suggestion is not None else "")
+        )
         weights[name] = weight
         slider.setValue(max(slider.minimum(), min(slider.maximum(), round(weight * WEIGHT_STEPS))))
         slider.setAccessibleName(f"{name} weight")
@@ -201,7 +207,7 @@ def edit_lora_selection(
         needle = query.casefold().strip()
         shown = 0
         for name, row in rows.items():
-            visible = not needle or needle in name.casefold()
+            visible = not needle or needle in name.casefold() or needle in families.get(name, "Unknown").casefold()
             row.setVisible(visible)
             shown += visible
         empty.setText("No LoRA matches this search." if rows else "No LoRAs offered for this checkpoint.")

@@ -1698,6 +1698,7 @@ class QueuePage:
             "search",
             "LoRA",
             weights=lambda: self._choices().get("loras", {}),
+            families=lambda: self._choices().get("lora_families", {}),
             convert=self._lora_set_chip,
             initial=self._generate_loras,
             edit_chip=lambda chip: tuple(LoRASelection(name, weight) for name, weight in parse_lora_set(chip)),
@@ -1707,6 +1708,7 @@ class QueuePage:
             "search",
             "LoRA weight",
             weights=lambda: self._choices().get("loras", {}),
+            families=lambda: self._choices().get("lora_families", {}),
             initial=self._lora_weight_selection,
             convert=self._lora_weight_chips,
             editor_title="Edit LoRA weights",
@@ -2059,7 +2061,11 @@ class QueuePage:
         name, endpoint = self._draft[1:3] if self._draft is not None and self._composing else self._backend()
         page.composerSummaryBackendLabel.setText(f"{name} · {endpoint}" if endpoint else name)
         page.composerSummaryModelLabel.setText(request.model_id)
-        loras = loras or "\n".join(lora_text(lora.identifier, lora.weight) for lora in request.loras)
+        labels = self._choices().get("lora_families", {})
+        loras = loras or "\n".join(
+            f"{lora_text(lora.identifier, lora.weight)} · {labels.get(lora.identifier, 'Unknown')}"
+            for lora in request.loras
+        )
         page.composerSummaryLorasLabel.setText(loras or "None")
         page.composerSummaryItemsLabel.setText("—" if count is None else str(count))
         page.composerSummaryVariesLabel.setText(varies)
@@ -2138,7 +2144,6 @@ class QueuePage:
             "count": count,
             "asset_ids": list(asset_ids),
         }
-        receipt_choices = dict(self._choices().get("receipts", {}))  # capture on the GUI thread
         # Add to queue during a single generation: remember the intent now, since the generation may end before the
         # new queue is saved (nothing then runs to follow, but the user still asked for it to start by itself).
         after_generation = quick and action == "add" and self._activity.generating
@@ -2157,7 +2162,6 @@ class QueuePage:
                 job,
                 up_next=action == "add",
                 composer_source=composer_source,
-                receipt_choices=receipt_choices,
             )
             status = (await read_queue_views(self._state, queue_id))[0]["status"] if action == "add" else None
             return queue_id, used, status
@@ -2512,7 +2516,6 @@ class QueuePage:
         *,
         up_next: bool = False,
         composer_source=None,
-        receipt_choices=None,
     ):
         request = await bind_prepared(self._state, backend["name"], request, asset_ids)
         receipts = ()
@@ -2521,17 +2524,12 @@ class QueuePage:
         weighted = [name.partition(".")[2] for name in dimensions if name.startswith("lora_weight.")]  # chip order
         if (sets or weighted) and backend["name"] == "cloud":
             # LoRA sets and weights may name custom cloud LoRAs that are not on Generate: bind their receipts too.
-            known = receipt_choices or {}
             named = {identifier for chosen in sets or () for identifier, _ in chosen} | set(weighted)
             named -= {x.identifier for x in request.loras}
-            # Same retained bytes can be prepared under several logical filenames. Bind
-            # the named candidate selected in the composer, not the parent asset's first name.
+            # The newest receipt of each name: the composer's remembered receipt can be older than a LoRA prepared
+            # again under the same name, and a name without a receipt is sent without its LoRA (#361).
             candidates = await script_asset_choices(self._state, "cloud")
-            receipts = tuple(
-                item
-                for item in candidates
-                if item.identifier in named and known.get(item.identifier) == item.receipt_id
-            )
+            receipts = tuple(item for item in candidates if item.identifier in named)
         request = self._with_weighted_loras(request, weighted)
         if job is not None:
             # An Inpaint edit: stage the prepared source and mask once; nothing is sent until Start.

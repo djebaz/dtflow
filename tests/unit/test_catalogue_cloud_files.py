@@ -9,9 +9,26 @@ def _snapshot(names):
     )
 
 
-def test_metadata_less_cloud_files_are_models_only_with_community_evidence(tmp_path):
+def test_metadata_less_cloud_files_use_explicit_checkpoint_classification(tmp_path):
     catalogue = Catalogue(tmp_path)
-    catalogue.set_inventory(_snapshot(["flux_2_dev_i8x.ckpt", "some_vae_f16.ckpt", "unknown_lora_f16.ckpt"]))
+    catalogue.set_inventory(
+        _snapshot(
+            [
+                "flux_2_dev_i8x.ckpt",
+                "flux_3_klein_i8x.ckpt",
+                "moss_image_sft_i8x.ckpt",
+                "fasth3_omni_i4x.ckpt",
+                "some_vae_f16.ckpt",
+                "unknown_lora_f16.ckpt",
+            ]
+        )
+    )
     view = catalogue.view()
-    assert view.unclassified_checkpoints == ("flux_2_dev_i8x.ckpt",)
-    assert view.other_files == ("unknown_lora_f16.ckpt",)  # the VAE is a hidden companion file
+    assert {entry.identifier: entry.base_model for entry in view.checkpoints} == {
+        "flux_2_dev_i8x.ckpt": "flux_2",
+        "flux_3_klein_i8x.ckpt": "flux_3",
+        "moss_image_sft_i8x.ckpt": "moss_image",
+        "fasth3_omni_i4x.ckpt": "minimax_h3",
+    }
+    assert not view.unclassified_checkpoints
+    assert view.other_files == ("unknown_lora_f16.ckpt",)  # The VAE is a hidden companion file.

@@ -498,14 +498,39 @@ class DrawThingsBackend:
                         },
                     )
                 if request.loras:
+                    prepared_names = {item.identifier for item in request.prepared_assets}
+                    listed = (
+                        {e.identifier for e in self._inventory.entries if e.kind == "lora"}
+                        if self._inventory
+                        else set()
+                    )
+                    unprepared = [item.identifier for item in request.loras if item.identifier not in prepared_names]
+                    sent = bool(wire.message.override.loras) if wire.message.override else False
                     diagnostic_event(
                         log,
                         "backend.loras_selected",
-                        level=logging.DEBUG,
+                        level=logging.INFO,
                         data={
                             "lora_count": len(request.loras),
                             "base_version": base_version,
                             "prepared_count": len(request.prepared_assets),
+                            # Listed by the server (official): nothing to send. Not listed and no receipt: a custom
+                            # LoRA that goes out without its override, which is what an operator must be able to spot.
+                            "unprepared_listed": sum(name in listed for name in unprepared),
+                            "unprepared_custom": sum(name not in listed for name in unprepared),
+                            # Short content hashes name the LoRA files the request carries without logging file names.
+                            "prepared_sha": [item.sha256[:8] for item in request.prepared_assets],
+                            "checkpoint_family": (spec or {}).get("version") or base_version or "unknown",
+                            "prepared_families": [
+                                {"sha": item.sha256[:8], "family": item.family or "unknown"}
+                                for item in request.prepared_assets
+                            ],
+                            "override_sent": sent,
+                            "override_reason": "sent"
+                            if sent
+                            else "none_prepared"
+                            if not prepared_names
+                            else "not_sent",
                         },
                     )
                 emit("preparing", stage="wire_validated")

@@ -41,10 +41,11 @@ from dtflow.core.output_layout import OutputLayout
 from dtflow.services.artifacts import save_artifacts, validate_result
 from dtflow.services.assets import AssetService, AssetValidator
 from dtflow.services.budget import BufferBudget
+from dtflow.services.catalogue import Catalogue
 from dtflow.services.events import EventBuffer
 from dtflow.services.image_artifacts import save_image_artifacts
 from dtflow.services.image_inputs import snapshot_image_inputs
-from dtflow.services.preflight import preflight_loras, raise_if_blocked
+from dtflow.services.preflight import checkpoint_exact_version, preflight_loras, raise_if_blocked
 
 log = logging.getLogger(__name__)
 
@@ -85,10 +86,11 @@ class GenerationService:
         assets: AssetValidator | None = None,
         input_state: Path | None = None,
         preview_images: bool = True,
-        catalogue=None,
     ):
         self.assets = assets
-        self.catalogue = catalogue
+        self.catalogue = (
+            Catalogue(assets.state) if isinstance(assets, AssetService) and assets.state is not None else None
+        )
         self.backend, self.store, self.output = backend, store, Path(output)
         self.timeouts = timeouts or TimeoutPolicy()
         self.saver = saver
@@ -147,7 +149,12 @@ class GenerationService:
 
     async def preflight(self, request: ResolvedGenerationRequest):
         """Structured LoRA diagnostics from the backend's current inventory; never dispatches anything."""
-        return preflight_loras(request, await self.get_inventory(), self.catalogue)
+        snapshot = await self.get_inventory()
+        return preflight_loras(
+            request,
+            snapshot,
+            checkpoint_version=checkpoint_exact_version(request.model_id, snapshot),
+        )
 
     async def generate(
         self,
@@ -272,17 +279,20 @@ class GenerationService:
                     for prepared in request.prepared_assets
                 ]
             if tuple(confirmed) != tuple(request.prepared_assets):
-                changed = [
-                    new.receipt_id for old, new in zip(request.prepared_assets, confirmed, strict=True) if old != new
+                pairs = list(zip(request.prepared_assets, confirmed, strict=True))
+                # A different hash means the name now resolves to other bytes than the request was built with (#361).
+                swapped = [f"{old.sha256[:8]}>{new.sha256[:8]}" for old, new in pairs if old.sha256 != new.sha256]
+                changed = [new.receipt_id for old, new in pairs if old != new and old.sha256 == new.sha256]
+                evidence = [
+                    pair for pair in request.resolution_evidence if not (swapped and pair[0] == "prepared_assets")
                 ]
-                request = replace(
-                    request,
-                    prepared_assets=tuple(confirmed),
-                    resolution_evidence=(
-                        *request.resolution_evidence,
-                        ("restored_assets", ",".join(receipt[:8] for receipt in changed)),
-                    ),
-                )
+                if swapped:
+                    evidence.append(("prepared_assets", ",".join(asset.receipt_id for asset in confirmed)))
+                    evidence.append(("receipts_updated", ",".join(swapped)))
+                    diagnostic_event(log, "assets.receipts_updated", level=logging.INFO, data={"count": len(swapped)})
+                if changed:
+                    evidence.append(("restored_assets", ",".join(receipt[:8] for receipt in changed)))
+                request = replace(request, prepared_assets=tuple(confirmed), resolution_evidence=tuple(evidence))
         if request.loras:
             preparation("checking_loras")
             # Confirmed incompatibility or absence must stop the request before any durable attempt exists.
