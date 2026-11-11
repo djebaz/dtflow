@@ -22,7 +22,6 @@ from drawthings_py.generated.dt_grpc.config_generated import (
 
 from dtflow.backends.drawthings.errors import error
 from dtflow.backends.drawthings.image_inputs import encode_image_inputs
-from dtflow.backends.drawthings.versions import lora_version
 from dtflow.core.image_inputs import ImageInputSnapshot, PreparedImageInputs
 from dtflow.core.image_operations import ImageOperationPermit
 from dtflow.core.model_profiles import exact_model_description_digest, exact_model_spec, profile_for
@@ -97,27 +96,32 @@ def validate_supported(request: ResolvedGenerationRequest, *, image_permitted: b
         raise _reject(request, "unsupported_sampler", "Sampler is not supported by this adapter.")
 
 
-def custom_lora_override(request: ResolvedGenerationRequest, version: str | None) -> bytes:
-    """Metadata for user-prepared cloud LoRAs, in the Echo ``override.loras`` JSON shape (``name``, ``file``, ``prefix``, ``version``).
+def custom_lora_override(request: ResolvedGenerationRequest) -> bytes:
+    """Describe prepared cloud LoRAs with their own exact Draw Things versions.
 
-    The server decodes each entry as a Draw Things LoRA specification whose ``name``, ``file``, ``prefix`` and ``version``
-    are all required; an entry missing one is dropped without an error.
-
-    The server cannot resolve a custom file from its name alone and appears to ignore it without an error, so each prepared
-    LoRA is described explicitly. When the file's family was detected, ``version`` belongs to that LoRA;
-    unknown-family files retain the previous checkpoint-version fallback until the owner can classify them.
+    Echo silently drops an override entry without a ``version``. Reject unknown
+    prepared files rather than inferring the selected checkpoint's architecture.
     """
     prepared = {item.identifier: item for item in request.prepared_assets}
-    entries = [
-        {
-            "name": item.identifier,
-            "file": wire_lora_name(request, item.identifier),
-            "prefix": "",
-            "version": lora_version(prepared[item.identifier].family) or version,
-        }
-        for item in request.loras
-        if item.identifier in prepared and (prepared[item.identifier].family or version)
-    ]
+    entries = []
+    for item in request.loras:
+        asset = prepared.get(item.identifier)
+        if asset is None:
+            continue
+        if not asset.family:
+            raise _reject(
+                request,
+                "prepared_lora_architecture_unknown",
+                f"Prepared LoRA {item.identifier} has no detected architecture; it cannot be sent to DT+.",
+            )
+        entries.append(
+            {
+                "name": item.identifier,
+                "file": asset.sha256,
+                "prefix": "",
+                "version": asset.family,
+            }
+        )
     return json.dumps(entries).encode() if entries else b""
 
 
@@ -202,7 +206,7 @@ def build_generation_message(
         configuration=configuration,
         user=CLIENT_NAME,
     )
-    override = custom_lora_override(request, lora_version(base_version, model_spec))
+    override = custom_lora_override(request)
     if override or model_spec:
         message.override = image_service.MetadataOverride(
             loras=override, models=json.dumps([model_spec]).encode() if model_spec else b""
