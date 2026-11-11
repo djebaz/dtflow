@@ -1581,7 +1581,9 @@ class GenerationPage:
             )
         finally:
             self._updating_catalogue = False
-        self._rebuild_checkpoints(preferred_checkpoint=preferred_checkpoint, preserve_selection=preserve_selection)
+        self._rebuild_checkpoints(
+            preferred_checkpoint=preferred_checkpoint, preserve_selection=preserve_selection, follow_checkpoint=True
+        )
         view = self._catalogue.view()
         unknown, other = view.unclassified_checkpoints, view.other_files
         page.unclassifiedModelsButton.setVisible(bool(unknown or other))
@@ -1597,12 +1599,28 @@ class GenerationPage:
             )
 
     def _rebuild_checkpoints(
-        self, *, preferred_checkpoint: str | None = None, preserve_selection: bool = False
+        self,
+        *,
+        preferred_checkpoint: str | None = None,
+        preserve_selection: bool = False,
+        follow_checkpoint: bool = False,
     ) -> None:
         page = self.page
         current = preferred_checkpoint if preferred_checkpoint is not None else page.modelCombo.currentText()
         family = page.baseModelCombo.currentData()
         include_cloud = self._backend()[0] == "local" and page.includeCloudCheck.isChecked()
+        # The family selector is a browsing filter, not an exact compatibility version.
+        # A restored classified checkpoint should determine the filter shown beside it.
+        kept = self._catalogue.checkpoint(current, include_unavailable=True) if current else None
+        if follow_checkpoint and kept is not None and kept.base_model and family != kept.base_model:
+            index = page.baseModelCombo.findData(kept.base_model)
+            if index >= 0:
+                self._updating_catalogue = True
+                try:
+                    page.baseModelCombo.setCurrentIndex(index)
+                finally:
+                    self._updating_catalogue = False
+                family = kept.base_model
         unclassified = set(self._catalogue.view().unclassified_checkpoints)
         if family == UNCLASSIFIED_FAMILY:
             entries = ()
@@ -1621,7 +1639,16 @@ class GenerationPage:
             self._fill_models(selectable)
             # Preserve an explicit raw identifier even when provider discovery is incomplete (for example,
             # a local Draw Things endpoint bridging to DT+). Known classified checkpoints still obey the filters.
-            if (
+            # An explicit switch to a different browsing family must not retain
+            # a known incompatible checkpoint, even when inventory is not loaded.
+            outside = (
+                not preserve_selection
+                and kept is not None
+                and kept.base_model is not None
+                and isinstance(family, str)
+                and kept.base_model != family
+            )
+            if not outside and (
                 preserve_selection
                 or self._inventory_snapshot is None
                 or current in allowed
@@ -1654,6 +1681,8 @@ class GenerationPage:
         # Filter new choices only. Saved selections remain visible, and shared
         # preflight will reject a confirmed mismatch even if the UI is bypassed.
         self.lora.set_candidates(entries, checkpoint_version=version)
+        if checkpoint and version is None:
+            self.lora.show_checkpoint_architecture_unknown()
 
     def _compute_units_estimate(self) -> ComputeUnitEstimate:
         """Read the same current form settings for the meter and explicit inspector."""

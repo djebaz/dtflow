@@ -337,6 +337,19 @@ class LoraAssetPanel:
         label = self.page.compatibilityStatusLabel
         self._show(label, present_generation_failure(failure) if failure else present_preflight(diagnostics))
 
+    def show_checkpoint_architecture_unknown(self) -> None:
+        """Warn when selected LoRAs have no exact checkpoint version to compare against."""
+        if self.loras:
+            self._show(
+                self.page.compatibilityStatusLabel,
+                Presentation(
+                    "warning",
+                    "Checkpoint architecture unknown",
+                    "DTFlow cannot verify whether the selected LoRAs match this checkpoint. "
+                    "Prepared LoRAs with unknown architectures are rejected.",
+                ),
+            )
+
     def show_diagnostics(self, diagnostics) -> None:
         if diagnostics:
             self._show(self.page.compatibilityStatusLabel, present_preflight(diagnostics))
