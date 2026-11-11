@@ -17,14 +17,17 @@ Explore whether converted LoRA/checkpoint filenames can provide useful, editable
 
 ### Illustrative collisions
 
+The following short names are arbitrary, fictional examples, not suggestions from the supplied catalog.
+
 | Short-name suggestion | Family | Format | Outcome |
 | --- | --- | --- | --- |
-| `Bigdickdredd` | SDXL | F16 | Keep |
-| `Bigdickdredd` | SDXL | Q8P | Keep |
-| `RealisticNudesV1` | Krea 2 | F16 | Keep |
-| `RealisticNudesV1` | MOSS | F16 | Keep |
-| `Turbo` | Z-Image | F16 | Keep for first occurrence |
-| `Turbo` | Z-Image | F16 | Propose `Turbo_2` for the next |
+| `CopperLark` | SDXL | F16 | Keep |
+| `CopperLark` | SDXL | Q8P | Keep — different quantization |
+| `PebbleArc` | Krea 2 | F16 | Keep |
+| `PebbleArc` | MOSS | F16 | Keep — different family |
+| `MoonQuill` | Z-Image | F16 | Keep for first occurrence |
+| `MoonQuill` | Z-Image | F16 | Propose `MoonQuill_2` |
+| `MoonQuill` | Z-Image | F16 | Propose `MoonQuill_3` |
 
 ## Boundary and next decision
 
