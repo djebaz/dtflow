@@ -117,7 +117,7 @@ def ckpt_summary(path: Path) -> dict:
         "fixed_unet": "__unet_fixed__" in report["namespaces"],
     }
     positive = [key for key, present in markers.items() if present]
-    if positive:
+    if positive and family == "unknown":
         result["structural_clues_not_classification"] = positive
     return result
 
