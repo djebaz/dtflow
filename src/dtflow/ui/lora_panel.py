@@ -19,7 +19,8 @@ from dtflow.ui.file_dialogs import QFileDialog
 from dtflow.core.models import BackendError, LoRASelection, RemoteOutcome, ResolvedGenerationRequest, ValidationError
 from dtflow.diagnostics import event as diagnostic_event
 from dtflow.logging_setup import development_mode
-from dtflow.services.catalogue import Catalogue, FAMILY_LABELS
+from dtflow.services.catalogue import Catalogue, FAMILY_LABELS, bundled_exact_version
+from dtflow.services.lora_family import DETECTABLE_FAMILIES
 from dtflow.services.connection import (
     Presentation,
     present_asset_failure,
@@ -104,6 +105,7 @@ class LoraAssetPanel:
         self._candidates: list[tuple[str, float | None]] = []
         self._records: dict[tuple[str, str], dict] = {}
         self._inventory_families: dict[str, str] = {}
+        self._inventory_checkpoints: tuple[str, ...] = ()
         self._checkpoint_version: str | None = None
         self._catalogue = catalogue if catalogue is not None else Catalogue(self._state)
         self._bind_after_list: str | None = None  # identifier to bind once the registry list has been refreshed
@@ -166,14 +168,24 @@ class LoraAssetPanel:
             if snapshot
             else {}
         )
+        self._inventory_checkpoints = (
+            tuple(entry.identifier for entry in snapshot.entries if entry.kind == "model") if snapshot else ()
+        )
         self._inventory_candidates = (
             [(e.identifier, e.default_weight) for e in snapshot.entries if e.kind == "lora"] if snapshot else []
         )
         self._candidates = list(self._inventory_candidates)
 
     def eligible_architectures(self) -> tuple[str, ...]:
-        """Exact architectures the active backend lists LoRAs for; a filename or catalogue label is never evidence."""
-        return tuple(dict.fromkeys(self._inventory_families.values()))
+        """Exact architectures offered for a LoRA: everything DTFlow's file detector can recognise plus what the
+        active backend lists. A filename or broad catalogue label is never evidence."""
+        versions = [*DETECTABLE_FAMILIES, *self._inventory_families.values()]
+        versions += [
+            version
+            for identifier in self._inventory_checkpoints
+            if (version := bundled_exact_version(identifier)) is not None
+        ]
+        return tuple(dict.fromkeys(versions))
 
     def set_candidates(self, entries, *, checkpoint_version: str | None = None) -> None:
         """Offer only known-compatible LoRAs; keep selected mismatches visible for correction."""
@@ -469,7 +481,7 @@ class LoraAssetPanel:
         self._prepare_editor_context = (backend, revision, self._saved())
         # The provider's current LoRA inventory is the only authority for selectable
         # architectures. A catalogue label or filename is never support evidence.
-        eligible = tuple(dict.fromkeys(self._inventory_families.values()))
+        eligible = self.eligible_architectures()
         self._runner.submit(
             self._inspect_prepare_files(paths),
             lambda result, failure: self._inspected_prepare_editor(editor, eligible, result, failure),

@@ -96,7 +96,11 @@ class LoraMetadataOverlay(QObject):
         combo.clear()
         combo.addItem("Not declared (use file detection)", None)
         declared = record.get("declared_version")
-        offered = tuple(dict.fromkeys(v for v in (*architectures, declared) if v and architecture_shortcode(v)))
+        offered = tuple(
+            dict.fromkeys(
+                v for v in (*architectures, record.get("detected_version"), declared) if v and architecture_shortcode(v)
+            )
+        )
         for version in offered:
             combo.addItem(FAMILY_LABELS.get(version, version), version)
         combo.setCurrentIndex(max(0, combo.findData(declared)))
@@ -108,8 +112,6 @@ class LoraMetadataOverlay(QObject):
         )
         if declared and detected and declared != detected:
             evidence += " Your declaration wins for dispatch and the conflict stays recorded."
-        if not architectures:
-            evidence += " Connect to list the architectures the backend supports."
         form.loraMetadataArchitectureEvidence.setText(evidence)
         form.loraMetadataShortName.setText(record.get("short_name") or "")
         form.loraMetadataFormat.setCurrentIndex(

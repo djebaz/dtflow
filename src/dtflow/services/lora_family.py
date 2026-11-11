@@ -25,6 +25,17 @@ from dtflow.services.lora_store import LoraStore
 from pathlib import Path
 
 MAX_TENSORS = 20_000
+# Exact Draw Things architectures ``detect_lora_family`` can recognise from a file (keep in step with its matches).
+DETECTABLE_FAMILIES = (
+    "z_image",
+    "krea_2",
+    "moss_image",
+    "flux1",
+    "flux2_9b",
+    "qwen_image_2.1",
+    "v1",
+    "sdxl_base_v0.9",
+)
 _SHAPE = re.compile(r"^\s*[\[(]\s*\d+(?:\s*,\s*\d+)*\s*[\])]\s*$")
 _DIT_LORA_NAME = re.compile(r"^__dit__\[t-([^\]]+)\]__(?:up|down)__$")
 
@@ -204,15 +215,10 @@ def detect_lora_family(path: Path) -> LoraFamily:
     )
     matches = [
         family
-        for family, matched in (
-            ("z_image", z_image),
-            ("krea_2", krea_2),
-            ("moss_image", moss_image),
-            ("flux1", flux_1),
-            ("flux2_9b", flux2_9b),
-            ("qwen_image_2.1", qwen_image_2_1),
-            ("v1", sd_1),
-            ("sdxl_base_v0.9", sdxl),
+        for family, matched in zip(
+            DETECTABLE_FAMILIES,
+            (z_image, krea_2, moss_image, flux_1, flux2_9b, qwen_image_2_1, sd_1, sdxl),
+            strict=True,
         )
         if matched
     ]
