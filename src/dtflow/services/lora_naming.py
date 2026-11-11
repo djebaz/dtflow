@@ -380,7 +380,7 @@ def suggest_short_name(filename: str) -> NameSuggestion:
 
 _TAG = re.compile(r"^[A-Za-z0-9]+$")
 _FORMATS = frozenset({"F16", "Q8P"})
-_MANAGED_NAME = re.compile(r"(?i)^(?P<name>[A-Za-z0-9_]{1,20})_(?P<tag>[A-Za-z0-9]+)_LoRA_(?P<fmt>F16|Q8P)\\.ckpt$")
+_MANAGED_NAME = re.compile(r"(?i)^(?P<name>[A-Za-z0-9_]{1,20})_(?P<tag>[A-Za-z0-9]+)_LoRA_(?P<fmt>F16|Q8P)\.ckpt$")
 _SHA256 = re.compile(r"^[0-9a-f]{64}$")
 
 
@@ -504,7 +504,11 @@ def allocate_batch_names(
         identity = _identity(item.sha256, item.size)
         canonical = known_content.get(identity) if identity is not None else None
         if canonical is not None:
-            if (canonical.exact_architecture, canonical.format_code) != (item.exact_architecture, item.format_code):
+            if (
+                (canonical.exact_architecture, canonical.format_code)
+                != (item.exact_architecture, item.format_code)
+                and not item.replace_existing
+            ):
                 results.append(NameAllocation(name, conflict="content_metadata_conflict"))
                 continue
             if canonical.short_name != name:
@@ -512,7 +516,7 @@ def allocate_batch_names(
                     if not item.replace_existing:
                         results.append(NameAllocation(name, conflict="content_already_named"))
                         continue
-                else:
+                elif not item.replace_existing:
                     # Re-selecting the same verified bytes retains accepted metadata.
                     name = canonical.short_name
 

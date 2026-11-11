@@ -148,7 +148,8 @@ def prepare(window, qtbot, file, *, choose=True):
     assert page.prepareAssetButton.text() == original
     assert not page.prepareAssetButton.property("confirmationPending")
     if choose:
-        qtbot.waitUntil(lambda: page.generateButton.isEnabled(), timeout=5000)
+        # Prepare completion is independent of whether a checkpoint enables Generate.
+        qtbot.waitUntil(lambda: not panel.preparing and page.prepareAssetButton.isEnabled(), timeout=5000)
     return asked
 
 

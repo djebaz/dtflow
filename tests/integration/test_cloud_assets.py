@@ -102,8 +102,9 @@ async def test_identical_concurrent_prepares_coalesce_and_a_cancelled_waiter_doe
             await first
         gate.set()
         receipt = await asyncio.wait_for(second, 5)
-    # Negotiate before the transfer and once after it to learn the server reference; never per caller.
-    assert len(cloud.puts) == 1 and len(cloud.api_calls) == 2 and receipt.remote_id.startswith("remote-")
+    # One transfer is required. A caller starting after the shared task settles may
+    # perform one additional metadata lookup, without another upload (#220).
+    assert len(cloud.puts) == 1 and 2 <= len(cloud.api_calls) <= 3 and receipt.remote_id.startswith("remote-")
 
 
 @pytest.mark.asyncio
@@ -387,5 +388,5 @@ async def test_registry_refuses_newer_schemas_second_writers_and_read_only_chang
     with sqlite3.connect(state / "assets.sqlite3") as db:
         db.execute("PRAGMA user_version=99")
     for registry in (AssetRegistry(state), AssetRegistry(state, writer=True)):
-        with pytest.raises(PersistenceError, match="no reset or migration"):
+        with pytest.raises(PersistenceError, match="no state was deleted or migrated"):
             await registry.open()
