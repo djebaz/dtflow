@@ -1959,11 +1959,12 @@ class QueuePage:
         if self._plan_form().variation != "Off" and not self._runner.closed:
             self._preview_in_background(request)
             return
-        plan = self._plan_for(request)
-        if plan is None:
+        planned = self._plan_for(request)
+        if planned is None:
             self._show_summary(request, None, "—", "—")
             return
-        self._summarize(request, plan, self.plan_model.rowCount())
+        plan, table = planned
+        self._summarize(request, plan, table.total, table)
 
     @staticmethod
     def _request_key(request):
@@ -2032,9 +2033,9 @@ class QueuePage:
         plan, table = result
         self._show_table(table)
         self._show(self.page.planCountLabel, "ok", summary_text(table))
-        self._summarize(request, plan, table.total)
+        self._summarize(request, plan, table.total, table)
 
-    def _summarize(self, request, plan: Plan, total: int) -> None:
+    def _summarize(self, request, plan: Plan, total: int, table: PlanTable) -> None:
         varies = (
             ", ".join(_dimension_text(name, len(values)) for name, values in plan.dimensions if len(values) > 1)
             or "Nothing"
@@ -2046,14 +2047,15 @@ class QueuePage:
             if any(name == "seed" for name, _ in plan.dimensions)
             else "fixed"
         )
-        sets = dict(plan.dimensions).get("loras")
-        self._show_summary(
-            request,
-            total,
-            varies,
-            sentence(SEED_POLICY_TEXT[policy]),
-            loras=None if sets is None else f"{len(sets)} LoRA set{'s' if len(sets) != 1 else ''}, per item",
+        stacks = tuple(dict.fromkeys(table.lora_stacks))
+        loras = (
+            ("None" if stacks[0] == "none" else stacks[0])
+            if len(stacks) == 1
+            else f"Varies by item ({len(stacks)} LoRA combinations); see preview"
+            if stacks
+            else None
         )
+        self._show_summary(request, total, varies, sentence(SEED_POLICY_TEXT[policy]), loras=loras)
 
     def _show_summary(self, request, count: int | None, varies: str, seeds: str, *, loras: str | None = None) -> None:
         """The right column while composing: what the queue being built will be, before anything is saved."""
@@ -2128,11 +2130,12 @@ class QueuePage:
             if self._plan_form().variation != "Off":
                 resolving = self._plan_inputs(request)  # prompt sampling runs on the worker, with the creation
             else:
-                plan = self._plan_for(request)
-                if plan is None:
+                planned = self._plan_for(request)
+                if planned is None:
                     error = self.page.planCountLabel.text()
                     report(Presentation("error", "Queue not created", error))
                     return
+                plan, _table = planned
         source_form = PlanForm("Repeat") if quick and count is not None else self._plan_form()
         count, cap = count or self.page.queueCountSpinBox.value(), self.page.newQueueCapSpinBox.value()
         backend = {"name": name, "endpoint": endpoint, "scenario": "success", **self._simulation()}
@@ -2645,12 +2648,22 @@ class QueuePage:
 
     def _show_table(self, table: PlanTable) -> None:
         self.plan_model.clear()
-        self.plan_model.setHorizontalHeaderLabels([self._column_title(name) for name in table.columns])
-        for column, name in enumerate(table.columns):
-            self.plan_model.setHeaderData(column, Qt.Orientation.Horizontal, name, Qt.ItemDataRole.ToolTipRole)
+        # The planner provides each item's full effective stack; fixed LoRAs must not
+        # disappear from the preview just because only another LoRA's weight varies.
+        show_stack = "loras" not in table.columns and any(stack != "none" for stack in table.lora_stacks)
+        columns = (*table.columns, *(("Effective LoRAs",) if show_stack else ()))
+        self.plan_model.setHorizontalHeaderLabels([self._column_title(name) for name in columns])
+        for column, name in enumerate(columns):
+            self.plan_model.setHeaderData(
+                column,
+                Qt.Orientation.Horizontal,
+                "All effective LoRAs and weights" if name == "Effective LoRAs" else name,
+                Qt.ItemDataRole.ToolTipRole,
+            )
         prompt_column = table.columns.index("prompt") if "prompt" in table.columns else None
         for number, row in enumerate(table.rows):
-            cells = [QStandardItem(cell) for cell in row]
+            values = (*row, table.lora_stacks[number]) if show_stack else row
+            cells = [QStandardItem(cell) for cell in values]
             for item in cells:
                 item.setToolTip(item.text())  # the cells elide to the panel width
             if prompt_column is not None and number < len(table.prompt_runs):
@@ -2666,7 +2679,7 @@ class QueuePage:
         header = view.horizontalHeader()
         header.setMinimumSectionSize(40)
         header.setTextElideMode(Qt.TextElideMode.ElideRight)
-        for column in range(len(table.columns)):
+        for column in range(len(columns)):
             header.setSectionResizeMode(
                 column,
                 header.ResizeMode.ResizeToContents if column == 0 else header.ResizeMode.Stretch,
@@ -2688,7 +2701,7 @@ class QueuePage:
         view.setMaximumHeight(height)
         self._sync_preview_table_visibility()
 
-    def _plan_for(self, request) -> Plan | None:
+    def _plan_for(self, request) -> tuple[Plan, PlanTable] | None:
         """Build and fully validate the plan against the form's request; shows the preview table.
 
         Wildcard files are read only when the template names them, and again only when they change on disk.
@@ -2701,7 +2714,7 @@ class QueuePage:
             return None
         self._show_table(table)
         self._show(self.page.planCountLabel, "ok", summary_text(table))
-        return plan
+        return plan, table
 
     def _plan_inputs(self, request) -> tuple:
         """Everything the pure planning step needs, read on the GUI thread so a worker can run it."""

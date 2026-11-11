@@ -139,6 +139,7 @@ class PlanTable:
     rows: tuple[tuple[str, ...], ...]
     rng_seed: int | None = None
     prompt_runs: tuple[str, ...] = ()  # per row: the prompt's variation runs as ``dynamic_prompts.encode_runs`` text
+    lora_stacks: tuple[str, ...] = ()  # complete effective LoRAs per item; display-only, never a new request source
 
 
 def seed_range(start: int, count: int) -> tuple[int, ...]:
@@ -428,9 +429,10 @@ def expand_plan(
     # Current plan receipts supersede inherited bindings for the same logical LoRA.
     pool = {asset.identifier: asset for asset in (*base.prepared_assets, *receipts)}
     varies_loras = LORA_SETS in varied or any(name.startswith(LORA_WEIGHT) for name in varied)
+    bind_receipts = varies_loras or bool(receipts)
     # A planned item must not claim receipts from a superseded selection.
     base_evidence = tuple(
-        pair for pair in base.resolution_evidence if not (varies_loras and pair[0] == "prepared_assets")
+        pair for pair in base.resolution_evidence if not (bind_receipts and pair[0] == "prepared_assets")
     )
     prompt_tags = dict(plan.prompt_tags)
     items = []
@@ -449,9 +451,9 @@ def expand_plan(
                 evidence.append((f"plan.dimension.{name}", lora_set_text(loras) if name == LORA_SETS else text))
                 if name == "prompt" and value in prompt_tags:
                     evidence.append((dynamic_prompts.PROMPT_TAGS_KEY, prompt_tags[value]))
-            if varies_loras:
-                # Both whole-set replacement and weight-only sweeps bind the effective selection.
-                # A None set carries no LoRAs and therefore no inherited receipts.
+            if bind_receipts:
+                # Bind the effective selection even if the plan varies only models or prompts.
+                # Whole-set replacement and weight sweeps also discard unrelated receipts.
                 bound = tuple(pool[item.identifier] for item in loras if item.identifier in pool)
                 changes["prepared_assets"] = bound
                 if bound:
@@ -489,7 +491,16 @@ def describe_plan(base: ResolvedGenerationRequest, plan: Plan, *, edit: bool = F
         for index, item in enumerate(items, 1)
     )
     runs = tuple(dict(item.resolution_evidence).get(dynamic_prompts.PROMPT_TAGS_KEY, "") for item in items)
-    return PlanTable(plan.mode, plan.effective_seed_policy, len(items), columns, rows, plan.rng_seed, runs)
+    return PlanTable(
+        plan.mode,
+        plan.effective_seed_policy,
+        len(items),
+        columns,
+        rows,
+        plan.rng_seed,
+        runs,
+        tuple(lora_set_text(item.loras) for item in items),
+    )
 
 
 def _lora_sets(value: Any) -> tuple[tuple[tuple[str, Any], ...], ...]:
