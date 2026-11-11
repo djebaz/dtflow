@@ -419,7 +419,9 @@ class AssetRegistry:
                 "UPDATE asset_operations SET state='confirmed', evidence=?, updated_at_utc=? WHERE operation_id=?",
                 ("confirmed_" + source, now, operation_id),
             )
-        row = db.execute("SELECT * FROM assets WHERE asset_id=?", (asset_id,)).fetchone()
+        row = db.execute(
+            f"SELECT a.*, {_LORA_COLUMNS} FROM assets a{_LORA_JOIN} WHERE a.asset_id=?", (asset_id,)
+        ).fetchone()
         if credential_id is not None:
             db.execute(
                 "INSERT INTO asset_key_receipts "
@@ -453,9 +455,9 @@ class AssetRegistry:
             if db.execute("PRAGMA user_version").fetchone()[0] < 2:
                 return None
             row = db.execute(
-                "SELECT a.*, k.identifier AS scoped_identifier, k.remote_id AS scoped_remote, "
-                "k.confirmed_at_utc AS scoped_confirmed FROM assets a "
-                "JOIN asset_key_receipts k ON k.asset_id=a.asset_id "
+                f"SELECT a.*, {_LORA_COLUMNS}, k.identifier AS scoped_identifier, "
+                "k.remote_id AS scoped_remote, k.confirmed_at_utc AS scoped_confirmed "
+                f"FROM assets a{_LORA_JOIN} JOIN asset_key_receipts k ON k.asset_id=a.asset_id "
                 "WHERE a.asset_id=? AND k.credential_id=? AND k.identifier=? AND k.state='confirmed'",
                 (asset_id, credential_id, identifier),
             ).fetchone()
@@ -506,8 +508,7 @@ class AssetRegistry:
             row["size"],
             row["asset_id"],
             row["confirmed_at_utc"],
-            row["family"] if "family" in row.keys() else None,
-            row["family_source"] if "family_source" in row.keys() else "unknown",
+            *_effective_version(row),
         )
 
     async def choices(self) -> tuple[PreparedAsset, ...]:
@@ -522,17 +523,17 @@ class AssetRegistry:
             return ()
         with closing(self._connect()) as db:
             rows = db.execute(
-                "SELECT * FROM assets WHERE kind='lora' AND state='confirmed' AND remote_id IS NOT NULL"
+                f"SELECT a.*, {_LORA_COLUMNS} FROM assets a{_LORA_JOIN} "
+                "WHERE a.kind='lora' AND a.state='confirmed' AND a.remote_id IS NOT NULL"
             ).fetchall()
             by_name = {(row["asset_id"], row["identifier"]): self._prepared(row) for row in rows}
             created = {row["asset_id"]: row["created_at_utc"] for row in rows}
-            if db.execute("PRAGMA user_version").fetchone()[0] >= 2:
-                for row in db.execute(
-                    "SELECT a.*, k.identifier AS logical_name, k.remote_id AS logical_remote, "
-                    "k.confirmed_at_utc AS logical_confirmed FROM assets a "
-                    "JOIN asset_key_receipts k ON a.asset_id=k.asset_id "
-                    "WHERE a.kind='lora' AND k.state='confirmed'"
-                ):
+            for row in db.execute(
+                f"SELECT a.*, {_LORA_COLUMNS}, k.identifier AS logical_name, "
+                "k.remote_id AS logical_remote, k.confirmed_at_utc AS logical_confirmed "
+                f"FROM assets a{_LORA_JOIN} JOIN asset_key_receipts k ON a.asset_id=k.asset_id "
+                "WHERE a.kind='lora' AND k.state='confirmed'"
+            ):
                     from dataclasses import replace
 
                     created[row["asset_id"]] = row["created_at_utc"]
@@ -553,7 +554,9 @@ class AssetRegistry:
         if not self.path.exists():
             return None
         with closing(self._connect()) as db:
-            row = db.execute("SELECT * FROM assets WHERE asset_id=?", (asset_id,)).fetchone()
+            row = db.execute(
+                f"SELECT a.*, {_LORA_COLUMNS} FROM assets a{_LORA_JOIN} WHERE a.asset_id=?", (asset_id,)
+            ).fetchone()
             if row is None:
                 return None
             record = _record(row)
@@ -574,7 +577,12 @@ class AssetRegistry:
         if not self.path.exists():
             return []
         with closing(self._connect()) as db:
-            return [_record(x) for x in db.execute("SELECT * FROM assets ORDER BY created_at_utc, asset_id")]
+            return [
+                _record(x) for x in db.execute(
+                    f"SELECT a.*, {_LORA_COLUMNS} FROM assets a{_LORA_JOIN} "
+                    "ORDER BY a.created_at_utc, a.asset_id"
+                )
+            ]
 
     async def prepared(self, asset_id: str) -> PreparedAsset:
         """The immutable reference of a *confirmed* local receipt; anything else is refused before dispatch."""
