@@ -116,11 +116,21 @@ def detect_lora_family(path: Path) -> LoraFamily:
 
     # Draw Things encodes DiT module names as "t-<module>-<layer>-...".
     # Do not require a specific last layer; a LoRA can adapt only a subset.
+    # Some Z-Image adapters target feed-forward layers and the fixed
+    # modulation path, but no attention projections. Both are valid layouts
+    # in the upstream Z-Image model; require all four modulation groups when
+    # attention modules are absent to keep this a structural signature.
     z_image = (
         3840 in dit_dimensions
         and 10240 in dit_dimensions
         and any(re.fullmatch(r"ffn-\d+-ffn_(?:gate|down|up)_proj-\d+-\d+", m) for m in dit_modules)
-        and any(re.fullmatch(r"(?:k|q|v|o)-\d+-\d+", m) for m in dit_modules)
+        and (
+            any(re.fullmatch(r"(?:k|q|v|o)-\d+-\d+", m) for m in dit_modules)
+            or all(
+                any(re.fullmatch(rf"ada_ln_{index}-\d+-\d+", m) for m in dit_modules)
+                for index in range(4)
+            )
+        )
     )
     krea_2 = (
         6144 in dit_dimensions
