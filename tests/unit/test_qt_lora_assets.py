@@ -137,6 +137,12 @@ def cloud(window, monkeypatch):
 MANAGED = "Style_ZiT_lora_f16.ckpt"  # what Prepare names style.ckpt once its short name and architecture are approved
 
 
+def receipt_bound(page):
+    """The selection's first row names a confirmed receipt in its tooltip (the list is briefly empty while redrawn)."""
+    item = page.loraList.item(0)
+    return item is not None and "Confirmed receipt" in item.toolTip()
+
+
 def prepare(window, qtbot, file, *, choose=True):
     panel, page = window.generation.lora, window.generation_page
     asked = []
@@ -182,7 +188,7 @@ def test_prepare_starts_after_file_selection_and_lists_a_local_receipt(window, c
     page.removeLoraButton.click()
     add_lora(window, qtbot, MANAGED, 0.8)
     qtbot.waitUntil(
-        lambda: "Confirmed receipt" in page.loraList.item(0).toolTip() and page.prepareAssetButton.isEnabled(),
+        lambda: receipt_bound(page) and page.prepareAssetButton.isEnabled(),
         timeout=5000,
     )
     cloud.stored.clear()  # the server lost the file: the receipt goes stale and reconcile still never uploads
@@ -223,16 +229,13 @@ def test_prepare_adds_and_binds_the_lora_and_adding_it_again_reconciles_and_bind
     page = window.generation_page
     prepare(window, qtbot, lora_file(tmp_path))
     qtbot.waitUntil(lambda: page.loraList.count() == 1, timeout=5000)  # Prepare adds the LoRA and binds its receipt
-    assert (
-        page.assetStatusLabel.text().startswith("Receipt bound")
-        and "Confirmed receipt" in page.loraList.item(0).toolTip()
-    )
+    assert page.assetStatusLabel.text().startswith("Receipt bound") and receipt_bound(page)
     assert len(window.generation.lora.receipt_ids()) == 1
     page.loraList.setCurrentRow(0)
     page.removeLoraButton.click()
     assert window.generation.lora.receipt_ids() == ()  # removing the LoRA drops its binding
     add_lora(window, qtbot, MANAGED, 0.8)
-    qtbot.waitUntil(lambda: "Confirmed receipt" in page.loraList.item(0).toolTip(), timeout=5000)
+    qtbot.waitUntil(lambda: receipt_bound(page), timeout=5000)
     assert len(window.generation.lora.receipt_ids()) == 1
     window.form.backendCombo.setCurrentText("fake")  # receipts are cloud-only; actions are disabled elsewhere
     assert not page.prepareAssetButton.isEnabled() and page.assetStatusLabel.text().startswith("Cloud only")
