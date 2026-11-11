@@ -16,7 +16,7 @@ FORMS = ROOT / "devdocs" / "design-system" / "ui_kits" / "lora" / "qt"
 FORM_SIZES = {
     "connections": ("connections_lora.ui", (1190, 720)),
     "generate": ("generate_lora.ui", (1170, 720)),
-    "prepare": ("prepare_lora_batch.ui", (1180, 570)),
+    "prepare": ("prepare_lora_batch.ui", (1180, 650)),
     "picker": ("lora_picker.ui", (950, 610)),
     "metadata": ("lora_metadata_editor.ui", (810, 490)),
 }
@@ -42,9 +42,9 @@ def parse_args() -> argparse.Namespace:
 
 def capture(app, name: str, target: Path, *, expanded: bool = False, compact: bool = False) -> None:
     """Load one design-only Designer form and capture its native Qt widget appearance."""
-    from PySide6.QtCore import QFile, QIODevice, Qt
+    from PySide6.QtCore import QFile, QIODevice, QPoint, Qt
     from PySide6.QtUiTools import QUiLoader
-    from PySide6.QtWidgets import QLabel, QToolButton, QWidget
+    from PySide6.QtWidgets import QLabel, QScrollArea, QToolButton, QWidget
 
     filename, size = FORM_SIZES[name]
     file = QFile(str(FORMS / filename))
@@ -89,10 +89,28 @@ def capture(app, name: str, target: Path, *, expanded: bool = False, compact: bo
                 label.fontMetrics().elidedText(
                     source_name,
                     Qt.TextElideMode.ElideMiddle,
-                    max(48, label.contentsRect().width() - 8),
+                    max(32, label.contentsRect().width() - 6),
                 )
             )
+            copy = window.findChild(QToolButton, f"copySource{index}")
+            if copy is None:
+                raise RuntimeError(f"Prepare design lacks copySource{index}")
+            copy.clicked.connect(lambda _checked=False, filename=source_name: app.clipboard().setText(filename))
+            if compact:
+                copy.setText("Copy")
         app.processEvents()
+
+        if compact:
+            # The key metadata/status column must remain on-screen at the 760-pixel review width.
+            scroll = window.findChild(QScrollArea, "batchTableScroll")
+            status = window.findChild(QLabel, "rowStatus0")
+            if scroll is None or status is None:
+                raise RuntimeError("Prepare design lacks status column or table viewport")
+            far_edge = status.mapTo(scroll.viewport(), QPoint(status.width(), 0)).x()
+            if far_edge > scroll.viewport().width():
+                raise RuntimeError(
+                    f"Compact Prepare status column is clipped: {far_edge}px > {scroll.viewport().width()}px"
+                )
 
     image = window.grab()
     if image.isNull() or not image.save(str(target), "PNG"):
