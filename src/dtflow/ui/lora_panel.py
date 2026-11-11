@@ -403,7 +403,13 @@ class LoraAssetPanel:
             )
             item = QListWidgetItem(text)
             item.setData(Qt.ItemDataRole.UserRole, (record["asset_id"], record["identifier"]))  # Qt.UserRole
-            item.setToolTip(f"LoRA family: {family}\nReceipt {record['asset_id']} on {record['origin']}")
+            evidence = (
+                f"\nDetected: {record.get('detected_version') or 'Unknown'}"
+                f"\nUser selected: {record.get('declared_version') or 'None'}"
+            )
+            item.setToolTip(
+                f"LoRA architecture: {family}{evidence}\nReceipt {record['asset_id']} on {record['origin']}"
+            )
             self.page.assetList.addItem(item)
             if (record["asset_id"], record["identifier"]) == selected:
                 self.page.assetList.setCurrentItem(item)
