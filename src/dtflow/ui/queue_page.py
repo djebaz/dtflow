@@ -2517,20 +2517,35 @@ class QueuePage:
         up_next: bool = False,
         composer_source=None,
     ):
-        request = await bind_prepared(self._state, backend["name"], request, asset_ids)
         receipts = ()
-        dimensions = dict(plan.dimensions) if plan is not None else {}
-        sets = dimensions.get("loras")
-        weighted = [name.partition(".")[2] for name in dimensions if name.startswith("lora_weight.")]  # chip order
-        if (sets or weighted) and backend["name"] == "cloud":
-            # LoRA sets and weights may name custom cloud LoRAs that are not on Generate: bind their receipts too.
-            named = {identifier for chosen in sets or () for identifier, _ in chosen} | set(weighted)
-            named -= {x.identifier for x in request.loras}
-            # The newest receipt of each name: the composer's remembered receipt can be older than a LoRA prepared
-            # again under the same name, and a name without a receipt is sent without its LoRA (#361).
-            candidates = await script_asset_choices(self._state, "cloud")
-            receipts = tuple(item for item in candidates if item.identifier in named)
-        request = self._with_weighted_loras(request, weighted)
+        if plan is None:
+            # A simple Repeat preserves the explicit Generate/Queue receipt selection.
+            request = await bind_prepared(self._state, backend["name"], request, asset_ids)
+        else:
+            dimensions = dict(plan.dimensions)
+            sets = dimensions.get("loras")
+            weighted = [name.partition(".")[2] for name in dimensions if name.startswith("lora_weight.")]
+            request = self._with_weighted_loras(request, weighted)
+            # Resolve only the receipts used by effective Pair/Cross items. A removed
+            # Generate LoRA must not block a C/None plan through an unrelated stale receipt.
+            request = replace(
+                request,
+                prepared_assets=(),
+                resolution_evidence=tuple(
+                    pair for pair in request.resolution_evidence if pair[0] != "prepared_assets"
+                ),
+            )
+            if backend["name"] == "cloud":
+                # LoRA sets replace the draft; weight sweeps add to its fixed LoRAs.
+                names = (
+                    {identifier for chosen in sets for identifier, _ in chosen}
+                    if sets is not None
+                    else {item.identifier for item in request.loras}
+                )
+                # Read the latest locally confirmed receipt for each effective name,
+                # without binding an unused receipt or contacting DT+ before Start.
+                candidates = await script_asset_choices(self._state, "cloud")
+                receipts = tuple(item for item in candidates if item.identifier in names)
         if job is not None:
             # An Inpaint edit: stage the prepared source and mask once; nothing is sent until Start.
             selection = await asyncio.to_thread(
