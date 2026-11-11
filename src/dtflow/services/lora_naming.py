@@ -623,6 +623,15 @@ def display_label(identifier: str) -> str:
     return f"{legacy['short']} (legacy name)" if legacy else identifier
 
 
+def log_label(identifier: str, sha256: str | None = None) -> str:
+    """Privacy-safe LoRA identity for diagnostic logs: the first two letters of the short name, the architecture
+    tag and the first 8 hash characters (``Po[Kr2] 1a2b3c4d``). Never the full short name or the filename."""
+    label = display_label(identifier)
+    short, bracket, tag = label.partition("[")
+    shown = short.strip()[:2] + (bracket + tag if bracket and tag.endswith("]") else "")
+    return f"{shown} {sha256[:8]}" if sha256 else shown
+
+
 _EMBEDDED_MANAGED = re.compile(r"(?i)(?<![A-Za-z0-9_])[A-Za-z0-9_]{1,20}_[A-Za-z0-9]+_lora_(?:f16|q8p)\.ckpt")
 
 

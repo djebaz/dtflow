@@ -91,6 +91,8 @@ from dtflow.persistence.store import PersistenceError, SQLiteAttempts
 from dtflow.persistence.workflow_items import BAD_STEP_STATES, WorkflowRequest
 from dtflow.services import session
 from dtflow.services.assets import possible_missing_asset
+from dtflow.services import lora_run_notes as notes
+from dtflow.services.lora_naming import log_label
 from dtflow.services.generation import GenerationService
 from dtflow.services.workflow_prompts import prompt_counts, resolve as resolve_prompt
 from dtflow.services.workflow_queue import (
@@ -889,10 +891,17 @@ class _Execution:
                     log,
                     "workflow.asset_recovery_failed",
                     level=logging.WARNING,
-                    data={"reason": type(exc).__name__},
+                    data={
+                        "reason": type(exc).__name__,
+                        "lora": [log_label(item.identifier, item.sha256) for item in pending],
+                    },
                 )
+                detail = notes.recovery_failed_detail([item.identifier for item in pending], exc)
+                await self.runner._record(self.queue_id, notes.RECOVERY_FAILED, detail)
+                self.run["message"] = notes.recovery_failed_message(detail["loras"], detail["detail"])
                 await asyncio.to_thread(post_control, self.runner.state, self.queue_id, "pause")
                 self.go.clear()
+                await self.flush()
                 return False
             finally:
                 self.asset_gate.set()
@@ -909,10 +918,18 @@ class _Execution:
                 log,
                 "workflow.lora_pause",
                 level=logging.WARNING,
-                data={"reason": "refresh_failed" if refresh else "repeated_failures"},
+                data={
+                    "reason": "refresh_failed" if refresh else "repeated_failures",
+                    "lora": [log_label(item.identifier, item.sha256) for item in request.prepared_assets],
+                },
             )
+            kind = notes.REFRESH_PAUSE if refresh else notes.FAILURE_PAUSE
+            identifiers = notes.request_identifiers(request)
+            await self.runner._record(self.queue_id, kind, {"loras": identifiers})
+            self.run["message"] = notes.pause_message(kind, identifiers)
             await asyncio.to_thread(post_control, self.runner.state, self.queue_id, "pause")
             self.go.clear()
+            await self.flush()
 
     async def submit(self, keys: list[Key], request, weight: int, prepared=None):
         """One generation for ``keys`` under the loop guard and a backend lane; None when it did not succeed (the
@@ -1076,9 +1093,8 @@ class _Execution:
                     for item in outcome.diagnostics
                 ]
                 warnings = [
-                    f"{item.identifier}: DT+ availability unconfirmed (no prepared receipt). If this is a custom LoRA, use Prepare."
-                    for item in outcome.diagnostics
-                    if item.code == "availability_unknown" and item.identifier not in bound
+                    notes.unprepared_message(identifier)
+                    for identifier in notes.unprepared_loras(outcome.request, outcome.diagnostics)
                 ]
                 for key in keys:
                     self.steps[key].update(warnings=list(warnings), lora_preflight=copy.deepcopy(preflight))

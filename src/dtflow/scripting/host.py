@@ -28,6 +28,7 @@ import base64
 import concurrent.futures
 import hashlib
 import json
+import logging
 import re
 import secrets
 import threading
@@ -68,8 +69,13 @@ from dtflow.scripting.models import (
 from dtflow.scripting.runner import ScriptCancelled
 from dtflow.scripting.forms import initial_answers as _initial_answers
 from dtflow.scripting.forms import validate_answers, validate_components
+from dtflow.diagnostics import event as diagnostic_event
 from dtflow.services.assets import possible_missing_asset
+from dtflow.services import lora_run_notes as notes
+from dtflow.services.lora_naming import log_label, relabel_text
 from dtflow.services.session import GenerationOutcome, run_generation
+
+log = logging.getLogger(__name__)
 
 #: Upstream ``SamplerType`` numbers (vendored JS) <-> DTFlow sampler ids.
 SAMPLER_NUMBERS: dict[int, Sampler] = {
@@ -204,6 +210,7 @@ class ScriptHost:
         self.steps = 0  # generateImage calls; a retry stays the same step
         self.retries = 0
         self._blocked: str | None = None
+        self._unprepared_noted: set[str] = set()
         # Virtual canvas for text-to-image scripts: geometry bookkeeping only, no pixels (layers and masks are #116).
         self._zoom = 1.0
         self._origin = (0, 0)
@@ -413,15 +420,21 @@ class ScriptHost:
                     and possible_missing_asset(exc.failure)
                     and callable(getattr(assets, "recover_missing", None))
                 ):
-                    repaired = self._await(
-                        assets.recover_missing(request.prepared_assets, failure=exc.failure), track=True
-                    )
+                    try:
+                        repaired = self._await(
+                            assets.recover_missing(request.prepared_assets, failure=exc.failure), track=True
+                        )
+                    except Exception as recovery:
+                        if not isinstance(recovery, ScriptCancelled):
+                            self._note_recovery_failed(request.prepared_assets, recovery)
+                        raise
                     automatic = automatic or (repaired and exc.failure.remote_outcome == RemoteOutcome.NOT_STARTED)
             except Exception as exc:
                 kind, reason, automatic = "unknown", str(exc) or type(exc).__name__, False
             else:
                 self.last = outcome
                 self._cleared = False  # a new generation fills the canvas again
+                self._note_unprepared(outcome)
                 self.attempt_outputs[attempt_id] = [str(path) for path in outcome.output_paths]
                 return
             if automatic and auto_used < limit and self.generations < self.max_generations:
@@ -449,6 +462,36 @@ class ScriptHost:
                     (RETRY_EVIDENCE, retry_of),
                 ),
             )
+
+    def _note_unprepared(self, outcome: GenerationOutcome) -> None:
+        """Warn once per run and LoRA that a selected cloud LoRA has no prepared receipt: DT+ application stays
+        unconfirmed even though the image was saved (#388). Advisory; it never blocks or retries."""
+        try:
+            fresh = [
+                name
+                for name in notes.unprepared_loras(outcome.request, outcome.diagnostics)
+                if name not in self._unprepared_noted
+            ]
+            for name in fresh:
+                self._unprepared_noted.add(name)
+                self._console("Warning: " + relabel_text(notes.unprepared_message(name)), 0)
+                diagnostic_event(log, "script.lora_unprepared", level=logging.WARNING, data={"lora": log_label(name)})
+        except Exception as exc:  # advisory only
+            diagnostic_event(
+                log, "script.lora_unprepared_check_failed", level=logging.WARNING, data={"reason": type(exc).__name__}
+            )
+
+    def _note_recovery_failed(self, assets: Sequence, exc: BaseException) -> None:
+        """Name the LoRA and the backend's reason when a recovery check itself fails."""
+        identifiers = [item.identifier for item in assets]
+        diagnostic_event(
+            log,
+            "script.asset_recovery_failed",
+            level=logging.WARNING,
+            data={"reason": type(exc).__name__, "lora": [log_label(item.identifier, item.sha256) for item in assets]},
+        )
+        detail = notes.recovery_failure_text(exc)
+        self._console(relabel_text(notes.recovery_failed_message(identifiers, detail)), 1)
 
     def _retry_step(self, step: int, reason: str, *, kind: str) -> bool:
         """Ask the person whether to retry a step that failed or has no confirmed outcome.
@@ -620,6 +663,11 @@ class ScriptHost:
                 async def repair():
                     try:
                         return await assets.recover_missing(pending, failure=failure)
+                    except asyncio.CancelledError:
+                        raise
+                    except Exception as recovery:
+                        self._note_recovery_failed(pending, recovery)
+                        raise
                     finally:
                         asset_gate.set()
 
@@ -719,6 +767,7 @@ class ScriptHost:
                     else:
                         self.last = outcome
                         self._cleared = False
+                        self._note_unprepared(outcome)
                         paths = [str(path) for path in outcome.output_paths]
                         self.attempt_outputs[attempt_id] = paths
                         saved_path = None

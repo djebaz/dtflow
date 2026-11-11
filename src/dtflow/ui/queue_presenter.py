@@ -14,7 +14,8 @@ from dtflow.core.output_layout import identity_from_path, is_metadata_name
 from dtflow.core.queue_eta import estimate_queue_seconds
 from dtflow.services.connection import failure_reason, local_time
 from dtflow.services.dynamic_prompts import decode_runs
-from dtflow.services.lora_naming import display_label
+from dtflow.services import lora_run_notes as run_notes
+from dtflow.services.lora_naming import display_label, relabel_text
 
 MIN_ETA_SAMPLES = 1
 
@@ -1075,8 +1076,19 @@ def event_lines(view: dict) -> str:
             summary = f"{item_label(detail)} submitted"
         elif kind == "workflow_warning":
             summary = (
-                f"Warning · node #{detail.get('node_id')} · {detail.get('branch', '')}: {detail.get('message', '')}"
+                f"Warning · node #{detail.get('node_id')} · {detail.get('branch', '')}: "
+                f"{relabel_text(str(detail.get('message', '')))}"
             )
+        elif kind == run_notes.UNPREPARED:
+            summary = "Warning · " + " ".join(
+                relabel_text(run_notes.unprepared_message(name)) for name in detail.get("loras", ())
+            )
+        elif kind == run_notes.RECOVERY_FAILED:
+            summary = relabel_text(
+                run_notes.recovery_failed_message(detail.get("loras", ()), str(detail.get("detail", "")))
+            )
+        elif kind in (run_notes.REFRESH_PAUSE, run_notes.FAILURE_PAUSE):
+            summary = relabel_text(run_notes.pause_message(kind, detail.get("loras", ())))
         elif kind == "timing_snapshot":
             elapsed = detail.get("elapsed_seconds")
             eta = detail.get("eta_seconds")

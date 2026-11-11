@@ -1747,7 +1747,7 @@ class WorkflowsPage(QObject):
         for step in running[:3]:
             lines.append(f"{step_name(step)} · {step['branch_label']} · {step.get('stage') or 'Running'}")
         if run.get("message"):
-            lines.append(run["message"])
+            lines.append(relabel_text(run["message"]))
         failed = [step for step in steps if step["state"] in ("failed", "unknown")]
         for step in failed[:3]:
             text = f"{step_name(step)} · {step['branch_label']}"

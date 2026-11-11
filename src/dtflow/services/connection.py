@@ -229,8 +229,17 @@ def present_preflight(diagnostics) -> Presentation:
         f"application {item.generation_evidence.removeprefix('application_')}"
         for item in diagnostics
     ]
+    unprepared = [item for item in diagnostics if item.code == "availability_unknown"]
+    if unprepared:
+        # No prepared receipt and not listed by DT+: no custom file is sent, so application stays unconfirmed (#388).
+        lines += [
+            f"{display_label(item.identifier)}: not prepared. If this is a custom LoRA, use Prepare."
+            for item in unprepared
+        ]
     if blocked(diagnostics):
         level, headline = "error", "Blocked before dispatch"
+    elif unprepared:
+        level, headline = "warning", "LoRA not prepared: application unconfirmed"
     elif all(item.architecture_match == "match" for item in diagnostics):
         level, headline = "ok", "Architecture matches"
     elif any(item.availability == "prepared" and item.lora_family is None for item in diagnostics):
