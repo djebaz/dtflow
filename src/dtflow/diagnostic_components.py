@@ -43,6 +43,7 @@ COMPONENTS = (
     "dtflow.ui.image_export_panel",
     "dtflow.ui.image_recycle_panel",
     "dtflow.ui.lora_panel",
+    "dtflow.ui.lora_trigger_panel",
     "dtflow.ui.main_window",
     "dtflow.ui.performance",
     "dtflow.ui.queue_page",

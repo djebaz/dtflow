@@ -140,6 +140,7 @@ FLOW_FOLLOWERS = ("queue", "shell", "inpaint", "logs")  # later fixtures in the 
 WORKSPACE_GROUPS = {
     "connection": ("connection-setup", "connection-outcomes", "connection-management", "connection-usage"),
     "generate": ("generate-configuration",),
+    "lora": ("lora-prepare",),
     "queues": ("active-queue", "item-table", "queue-template"),
     "images": ("gallery-composition",),
 }
@@ -447,6 +448,8 @@ def render_workspace_states(app, state, out):
             render_connection_usage_states(shell, out)
         if wants("generate"):
             render_generate_configuration_states(shell, out)
+        if wants("lora"):
+            render_lora_prepare_states(shell, out)
         if wants("queues"):
             render_active_queue_states(shell, out)
             render_item_table_states(shell, out, state)
@@ -456,6 +459,126 @@ def render_workspace_states(app, state, out):
     finally:
         shell.runner.shutdown()
         dispose_window(app, shell.form)
+
+
+@fixture("lora-prepare")
+def render_lora_prepare_states(shell, out):
+    """Capture only the canonical in-window Prepare UI using synthetic LoRA metadata."""
+    from dtflow.services.lora_family import LoraFamily
+    from dtflow.ui.prepare_lora_editor import PrepareBatchEditor
+
+    shell.form.generationNavigationButton.click()
+    shell.form.resize(1600, 1000)
+    # Navigation can queue a dismiss of the previous inline editor. Settle it
+    # before opening this editor, or an otherwise valid capture shows only Generate.
+    QTest.qWait(120)
+    paths = [
+        "portrait_8e62d922f3a4c82b1aef990108a2fae9_lora_f16.ckpt",
+        "cinematic_20261109_f3e817d0a432bf_lora_q8p.ckpt",
+        "detail_boost_ep12_3a32f30bc9e7821d_911f.ckpt",
+        "nak_lora_f16.ckpt",
+        "portrait_77ad2a_lora_f16.ckpt",
+    ]
+    editor = PrepareBatchEditor(shell.generation_page, paths, on_prepare=lambda _batch: None)
+    editor.set_inspection(
+        (
+            LoraFamily("krea_2", "file"),
+            LoraFamily("z_image", "file"),
+            LoraFamily(),
+            LoraFamily(),
+            LoraFamily(),
+        ),
+        ("krea_2", "z_image", "flux1"),
+        (),
+    )
+    # Show the mockup's text and partial-batch states with synthetic editable values.
+    # These are presentation examples, never file or provider evidence.
+    editor.rows[0].widget.prepareShortName.setText("PortraitV2")
+    editor.rows[0].widget.prepareTriggerWords.setText("portrait style")
+    editor.rows[1].widget.prepareTriggerWords.setText("cinematic lighting")
+    editor.rows[4].widget.prepareShortName.setText("PortraitV2")
+    # Illustrate a user declaration separately from file inspection.
+    for row in (editor.rows[3], editor.rows[4]):
+        row.widget.prepareArchitecture.setCurrentIndex(row.widget.prepareArchitecture.findData("krea_2"))
+    editor._select(editor.rows[0])  # Match the HTML reference's first-row preview.
+    # No file bytes are accessed, no provider client is opened, and Prepare is never clicked.
+    QTest.qWait(80)
+    if not editor.active() or not shell.inline.form.isVisible():
+        raise RuntimeError("Canonical LoRA Prepare overlay was dismissed before capture")
+    save(shell.form, out, "lora-prepare-wide")
+    shell.form.resize(1080, 860)
+    QTest.qWait(80)
+    save(shell.form, out, "lora-prepare-compact")
+    shell.inline.dismiss()
+
+    # The existing shared picker is used by Generate, Queue plans and Workflow nodes.
+    # Render that actual selector rather than maintaining a second design-only picker.
+    from dtflow.core.models import LoRASelection
+    from dtflow.ui.lora_selection_editor import edit_lora_selection
+
+    shell.form.resize(1480, 920)
+    QTest.qWait(90)
+    edit_lora_selection(
+        shell.generation_page,
+        candidates=(
+            "PortraitV2_Kr2_lora_f16.ckpt",
+            "Cinematic_ZiT_lora_q8p.ckpt",
+            "DetailBoost_Kr2_lora_f16.ckpt",
+            "Realism_F1_lora_f16.ckpt",
+        ),
+        selected=(
+            LoRASelection("PortraitV2_Kr2_lora_f16.ckpt", 0.8),
+            LoRASelection("Cinematic_ZiT_lora_q8p.ckpt", 1.0),
+        ),
+        families={
+            "PortraitV2_Kr2_lora_f16.ckpt": "Krea 2",
+            "Cinematic_ZiT_lora_q8p.ckpt": "Z-Image Turbo",
+            "DetailBoost_Kr2_lora_f16.ckpt": "Krea 2",
+            "Realism_F1_lora_f16.ckpt": "FLUX.1",
+        },
+        callback=lambda _selection: None,
+    )
+    QTest.qWait(80)
+    if not shell.inline.form.isVisible():
+        raise RuntimeError("The shared LoRA selector overlay was dismissed before capture")
+    save(shell.form, out, "lora-picker")
+    shell.inline.dismiss()
+
+    # The genuine Connections library is collapsed in the central workspace.
+    # Add only illustrative list rows for the expanded screenshot; no store writes.
+    shell.form.connectionNavigationButton.click()
+    QTest.qWait(110)
+    shell.form.customLorasDisclosure.setChecked(False)
+    save(shell.form, out, "lora-connections-collapsed")
+    # Synthetic rows go through the real table fill; no store or registry is written.
+    rows = (
+        ("Portrait_Kr2_lora_f16.ckpt", "PortraitV2", "krea2", "F16", "portrait style"),
+        ("Cinematic_ZiT_lora_q8p.ckpt", "Cinematic", "z_image_turbo", "Q8P", "cinematic lighting"),
+        ("detail_boost_ep12.ckpt", None, None, None, ""),
+        ("Realism_F1_lora_f16.ckpt", "Realism", "flux1", "F16", ""),
+    )
+    entries, records = [], {}
+    for index, (name, short, version, quantization, triggers) in enumerate(rows):
+        sha = f"{index:064x}"
+        entries.append({"name": name, "sha256": sha, "size": 1_000_000 + index, "detected_family": None})
+        records[(sha, 1_000_000 + index)] = {
+            "family": version,
+            "family_source": "file",
+            "short_name": short,
+            "format_code": quantization,
+            "trigger_words": triggers,
+            "architecture_conflict": False,
+        }
+    shell._custom_loras_read((0, entries, (len(rows), 4_000_000)), None)
+    shell._summary_reads.pop("lora_records", None)  # ignore the real read started by the call above
+    shell._lora_records_read(records, None)
+    shell.form.retainedLorasTable.selectRow(0)
+    shell.form.customLorasStatusLabel.setText("4 illustrative locally known LoRAs.")
+    shell.form.retainedLorasStatusLabel.setText("4 illustrative local entries · no files loaded.")
+    shell.form.customLorasDisclosure.setChecked(True)
+    QTest.qWait(70)
+    save(shell.form, out, "lora-connections-expanded")
+    shell.form.customLorasDisclosure.setChecked(False)
 
 
 @fixture("connection-outcomes")
@@ -717,7 +840,7 @@ def render_connection_management(shell, out):
             None,
         )
         shell._presets_read(0, None)
-        shell._custom_loras_read(0, None)
+        shell._custom_loras_read((0, [], (0, 0)), None)
         snap("connection-42-startup-unconfigured")
         shell._credentials_read(None, OSError())
         shell._presets_read(None, OSError())

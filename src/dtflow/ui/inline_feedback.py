@@ -217,6 +217,9 @@ class InlineFeedback(QObject):
         button.style().unpolish(button)
         button.style().polish(button)
         button.setText(text)
+        button.setEnabled(
+            True
+        )  # the footer button is shared: an earlier editor (Prepare, templates) may have left it off
         button.show()
         button.clicked.connect(callback)
         self.strip._position()

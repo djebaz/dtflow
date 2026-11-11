@@ -45,6 +45,7 @@ from dtflow.persistence.queues import (
 )
 from dtflow.persistence.script_items import is_script_record, script_record, store_source
 from dtflow.persistence.settings import load_cloud_concurrency, save_cloud_concurrency, validate_concurrency
+from dtflow.persistence.settings import trigger_prefix_enabled
 from dtflow.persistence.store import SQLiteAttempts, StateBusyError, state_is_owned
 from dtflow.persistence.workflow_items import KIND_WORKFLOW, is_workflow_record
 from dtflow.services import session
@@ -604,7 +605,13 @@ async def _dispatch_one(store, state, queue_id, policy, saved, out, on_settle, o
             return await WorkflowItemRunner(
                 store, service, state, on_settle=on_settle, permits=scoped, on_event=on_event
             ).run(queue_id)
-        return await QueueDispatcher(store, service, on_settle=on_settle, on_event=on_event).run(queue_id)
+        return await QueueDispatcher(
+            store,
+            service,
+            on_settle=on_settle,
+            on_event=on_event,
+            trigger_prefix=lambda: trigger_prefix_enabled(state, "queues"),
+        ).run(queue_id)
     finally:
         if backend is not None:
             async with asyncio.timeout(policy.cleanup):

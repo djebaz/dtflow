@@ -17,6 +17,7 @@ from dtflow.core.models import (
 )
 from dtflow.persistence.assets import AssetsBusyError
 from dtflow.persistence.store import PersistenceError, StateBusyError
+from dtflow.services.lora_naming import display_label, relabel_text
 from dtflow.services.preflight import blocked
 
 
@@ -120,7 +121,7 @@ def failure_reason(failure) -> str:
     except (TypeError, IndexError, KeyError):
         details = {}
     text = details.get("interpretation_message") or details.get("server_message") or message or code
-    return str(text or "").strip()
+    return relabel_text(str(text or "").strip())  # display only; the stored failure keeps the filename
 
 
 def _api_explanation(failure) -> str:
@@ -146,7 +147,7 @@ def present_generation_failure(exc: Exception) -> Presentation:
         if failure.code.startswith("prepared_asset_"):
             asset = dict(failure.diagnostics).get("asset")
             if api and asset:
-                detail = f"LoRA {asset}: {detail}"
+                detail = f"LoRA {display_label(str(asset))}: {detail}"
             return Presentation(
                 "error",
                 "Prepared asset not validated",
@@ -223,7 +224,7 @@ def present_preflight(diagnostics) -> Presentation:
     if not diagnostics:
         return Presentation("unknown", "No LoRAs selected", "Compatibility is not checked.")
     lines = [
-        f"{item.identifier}: architecture {item.architecture_match}, {item.availability} ({item.code}); "
+        f"{display_label(item.identifier)}: architecture {item.architecture_match}, {item.availability} ({item.code}); "
         f"LoRA family {item.lora_family or 'unknown'}, checkpoint family {item.model_family or 'unknown'}; "
         f"application {item.generation_evidence.removeprefix('application_')}"
         for item in diagnostics

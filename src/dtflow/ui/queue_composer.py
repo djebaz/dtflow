@@ -23,6 +23,7 @@ from PySide6.QtWidgets import (
 )
 
 from dtflow.core.models import LoRASelection
+from dtflow.services.lora_naming import display_label
 from dtflow.ui.lora_selection_editor import edit_lora_selection
 from dtflow.ui.performance import profile_slow_gui_callback
 from dtflow.ui.search_select import choose_searchable
@@ -46,6 +47,7 @@ def _noun(title: str) -> str:
     return title[:1].lower() + title[1:] if title[1:2].islower() else title
 
 
+CHIP_TEXT_WIDTH = 420  # px a long value chip (a LoRA set) may use before it is elided
 GROUP_NAME_WIDTH = 320  # a grouped chip row's name is elided to this width
 
 
@@ -126,6 +128,7 @@ class ValueChips(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
         self._values: list[str] = []
+        self._fit_pending = False
         self._kind = "search"
         self._title = ""
         self._options: Callable[[], list[str]] = list
@@ -136,6 +139,7 @@ class ValueChips(QWidget):
         self._edit_chip: Callable[[str], Sequence[LoRASelection]] | None = None
         self._lead = 0
         self._group: Callable[[str], tuple[str, str]] | None = None
+        self._label: Callable[[str], str] | None = None
         self._replace_all = False
         self._layout = FlowLayout(self)
         self._chips: list[QPushButton] = []
@@ -144,7 +148,7 @@ class ValueChips(QWidget):
         self._add.setObjectName("valueChipsAddButton")
         self._add.clicked.connect(self._add_clicked)
         self._layout.addWidget(self._add)
-        policy = QSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Fixed)
+        policy = QSizePolicy(QSizePolicy.Policy.Preferred, QSizePolicy.Policy.Minimum)
         policy.setHeightForWidth(True)
         self.setSizePolicy(policy)
 
@@ -153,6 +157,32 @@ class ValueChips(QWidget):
 
     def heightForWidth(self, width: int) -> int:
         return self._layout.heightForWidth(width)
+
+    def _fit_height(self) -> None:
+        """Hold the wrapped rows' height as a minimum, so the form row grows even where a style or platform does not
+        honour height-for-width (a chip field would otherwise show one line however many chips it has)."""
+        self._fit_pending = False
+        try:
+            height = self._layout.heightForWidth(max(1, self.width()))
+        except RuntimeError:
+            return  # the field was deleted before the deferred fit ran
+        if height != self.minimumHeight():
+            self.setMinimumHeight(height)
+            self.updateGeometry()
+
+    def _schedule_fit(self) -> None:
+        if not self._fit_pending:
+            self._fit_pending = True
+            QTimer.singleShot(0, self._fit_height)
+
+    def resizeEvent(self, event) -> None:
+        super().resizeEvent(event)
+        self._fit_height()
+
+    def event(self, event) -> bool:
+        if event.type() in (QEvent.Type.ChildPolished, QEvent.Type.LayoutRequest, QEvent.Type.Polish):
+            self._schedule_fit()  # a chip's styled size is only known once polished
+        return super().event(event)
 
     @profile_slow_gui_callback("composer.value_chips_size_hint")
     def sizeHint(self) -> QSize:
@@ -182,6 +212,7 @@ class ValueChips(QWidget):
         edit_chip: Callable[[str], Sequence[LoRASelection]] | None = None,
         replace_all: bool = False,
         group: Callable[[str], tuple[str, str]] | None = None,
+        label: Callable[[str], str] | None = None,
     ) -> None:
         """``search`` opens the shared searchable editor; ``choice`` is an editable list; ``int``/``float`` a box.
 
@@ -189,11 +220,13 @@ class ValueChips(QWidget):
         checked ``(identifier, weight)`` pairs go to ``convert``, which returns the chip value (or several).
         With ``edit_chip`` each chip opens that editor on its parsed LoRAs and Apply replaces the chip (a separate **×**
         removes it); with ``replace_all`` **Edit…** opens the editor on every chip and Apply replaces them all.
+        With ``label`` a chip shows that shorter text (elided to fit; the tooltip keeps the full value).
         With ``group`` each value splits into (group name, chip text): one line per group, its name then small chips.
         """
         self._kind, self._title, self._options, self._custom = kind, title, options, custom
         self._weights, self._families, self._convert, self._initial = weights, families, convert, initial
         self._edit_chip, self._replace_all, self._group = edit_chip, replace_all, group
+        self._label = label
         self._lead = 1 if group is not None else 0  # a grouped row keeps its button first, above the LoRA lines
         self._editor_title, self._editor_hint, self._multi_weight = editor_title, editor_hint, multi_weight
         if self._input is not None:
@@ -296,8 +329,9 @@ class ValueChips(QWidget):
                 label.setObjectName("valueChipsGroupName")
                 label.setProperty("lineBreak", True)
                 label.setMaximumWidth(GROUP_NAME_WIDTH)
-                label.setText(label.fontMetrics().elidedText(name, Qt.TextElideMode.ElideMiddle, GROUP_NAME_WIDTH))
-                label.setToolTip(name)
+                shown = display_label(name)  # ShortName[Tag] like every picker; the full identifier stays on hover
+                label.setText(label.fontMetrics().elidedText(shown, Qt.TextElideMode.ElideMiddle, GROUP_NAME_WIDTH))
+                label.setToolTip(f"{shown}\n{name}" if shown != name else name)
                 self._layout.insertWidget(self._lead + len(self._chips), label)
                 self._chips.append(label)
                 for index, short in members:
@@ -306,21 +340,27 @@ class ValueChips(QWidget):
             for index, value in order:
                 self._add_chip(index, value, value)
         self.updateGeometry()
+        self._schedule_fit()
         self.textChanged.emit()
 
     def _add_chip(self, index: int, text: str, value: str) -> None:
         """One chip for ``values[index]``: its text and ×, or (with ``edit_chip``) an edit button plus a separate ×."""
+        hint = value
+        if self._label is not None and text == value:
+            full = self._label(value)
+            hint = f"{full}\n{value}" if full != value else value  # label first, the exact filename(s) below
+            text = self.fontMetrics().elidedText(full, Qt.TextElideMode.ElideRight, CHIP_TEXT_WIDTH)
         if self._edit_chip is not None:
             edit = QPushButton(text, self)
             edit.setProperty("role", "valueChip")
-            edit.setToolTip(f"Edit {value}")
+            edit.setToolTip(f"Edit {hint}")
             edit.setAccessibleName(f"Edit {_noun(self._title)} {value}")
             edit.clicked.connect(lambda _=False, i=index: self._edit_clicked(i))
             self._layout.insertWidget(self._lead + len(self._chips), edit)
             self._chips.append(edit)
         chip = QPushButton("×" if self._edit_chip is not None else f"{text}  ×", self)
         chip.setProperty("role", "valueChip")
-        chip.setToolTip(f"Remove {value}")
+        chip.setToolTip(f"Remove {hint}")
         chip.setAccessibleName(f"Remove {_noun(self._title)} {value}")
         chip.clicked.connect(lambda _=False, i=index: self.remove_value(i))
         self._layout.insertWidget(self._lead + len(self._chips), chip)

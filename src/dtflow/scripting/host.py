@@ -58,6 +58,7 @@ from dtflow.core.retry_policy import (
 )
 from dtflow.core.tasks import settle
 from dtflow.persistence.script_items import RETRY_EVIDENCE
+from dtflow.persistence.settings import trigger_prefix_enabled
 from dtflow.scripting.models import (
     CONFIGURATION_FIELDS,
     decode_configuration,
@@ -1159,6 +1160,7 @@ def script_hooks(
             cancel=context.cancel,
             sandbox=Path(state) / "script_files" / context.run_id,
             max_generations=max_generations,
+            prefix=trigger_prefix_enabled(Path(state), "scripts"),
             answers=answers,
             record_answers=context.record_answers,
             ask=context.ask if interactive else None,
