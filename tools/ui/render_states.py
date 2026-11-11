@@ -569,7 +569,9 @@ def render_lora_prepare_states(shell, out):
             "trigger_words": triggers,
             "architecture_conflict": False,
         }
-    shell._custom_loras_read((0, entries, (len(rows), 4_000_000), records), None)
+    shell._custom_loras_read((0, entries, (len(rows), 4_000_000)), None)
+    shell._summary_reads.pop("lora_records", None)  # ignore the real read started by the call above
+    shell._lora_records_read(records, None)
     shell.form.retainedLorasTable.selectRow(0)
     shell.form.customLorasStatusLabel.setText("4 illustrative locally known LoRAs.")
     shell.form.retainedLorasStatusLabel.setText("4 illustrative local entries · no files loaded.")
