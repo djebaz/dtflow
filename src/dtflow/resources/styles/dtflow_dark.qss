@@ -2608,3 +2608,9 @@ QFrame#preparePreviewPanel {
 }
 QLabel#prepareManagedFilename { color: ${color.selectionText}; }
 QFrame#prepareBatchHeading { border-radius: 0; }
+
+/* The LoRA Prepare table has one continuous section heading; reserve contrast for fields. */
+QFrame#prepareBatchHeading QLabel[textRole="panelHeading"] {
+  background: transparent;
+  color: ${color.secondary};
+}
