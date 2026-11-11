@@ -26,22 +26,23 @@ nav.views{display:flex;gap:7px;align-items:center;flex-wrap:wrap;padding:12px ma
 .view-btn{border:1px solid transparent;border-radius:var(--radius-button);background:transparent;padding:9px 13px;color:var(--color-secondary)}
 .view-btn:hover{background:var(--color-button-hover);color:var(--color-text)}
 .view-btn.active{background:var(--color-selection);border-color:var(--color-selection-border);color:var(--color-selection-text);font-weight:600}
-.study{max-width:1420px;margin:0 auto;padding:26px 20px 60px}
+.study{max-width:1420px;margin:0 auto;padding:18px 16px 40px}
 .screen{display:none}.screen.active{display:block}
+#screen-prepare.active{max-width:var(--lora-editor-max-width);margin-inline:auto}
 .surface{background:var(--color-surface);border:1px solid var(--color-panel-edge);border-radius:var(--radius-panel);overflow:hidden}
-.screen-heading{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap;margin-bottom:17px}
+.screen-heading{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap;margin-bottom:11px}
 .screen-heading h1{font-size:var(--font-size-title);font-weight:650;margin:0 0 5px}
 .screen-heading p,.description{font-size:var(--font-size-small);color:var(--color-secondary);margin:0;line-height:1.55}
 .screen-heading .side-meta{text-align:right;color:var(--color-secondary);font-size:var(--font-size-small)}
 .page-label{font-size:var(--font-size-small);color:var(--color-eyebrow);font-weight:600;text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px}
 .soft-tag{font-size:var(--font-size-small);font-weight:500;color:var(--color-secondary);border:1px solid var(--color-button-border);border-radius:5px;padding:5px 8px}
-.toolbar{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;padding:12px 16px;border-bottom:1px solid var(--lora-border)}
+.toolbar{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;padding:8px 12px;border-bottom:1px solid var(--lora-border)}
 .toolbar .hint{font-size:var(--font-size-small);color:var(--color-secondary)}
 .compact-toggle{display:flex;align-items:center;gap:8px;font-size:var(--font-size-small)}
 .compact-toggle input{accent-color:var(--color-accent)}
 .table-scroll{overflow-x:auto}
-.data-head,.prepare-row{display:grid;grid-template-columns:minmax(220px,1.45fr) minmax(170px,1fr) minmax(145px,.9fr) 96px minmax(150px,1fr) 128px;gap:var(--lora-cell-gap);align-items:start;padding:10px 14px;min-width:var(--lora-table-min-width)}
-.data-head{background:var(--color-section-header);color:var(--color-secondary);font-size:var(--font-size-small);font-weight:600;padding-top:11px;padding-bottom:11px}
+.data-head,.prepare-row{display:grid;grid-template-columns:minmax(195px,1fr) minmax(130px,158px) minmax(135px,158px) 86px minmax(140px,178px) 115px;gap:var(--lora-cell-gap);align-items:start;padding:6px 10px;min-width:var(--lora-table-min-width)}
+.data-head{background:var(--color-section-header);color:var(--color-secondary);font-size:var(--font-size-small);font-weight:600;padding-top:7px;padding-bottom:7px}
 .prepare-row{border-top:1px solid var(--lora-border);min-height:var(--lora-row-min-height);transition:background .1s}
 .prepare-row:first-of-type{border-top:0}
 .prepare-row:hover{background:var(--color-button-hover)}
@@ -52,26 +53,28 @@ nav.views{display:flex;gap:7px;align-items:center;flex-wrap:wrap;padding:12px ma
 .file-name .file-start{overflow:hidden;text-overflow:clip;white-space:nowrap;flex:1;direction:ltr}
 .file-name .file-end{flex:none;color:var(--color-text)}
 .file-name .ellipsis{flex:none;color:var(--color-secondary)}
-.subline{display:flex;gap:7px;align-items:center;margin-top:7px;font-size:8pt;color:var(--color-secondary);flex-wrap:wrap}
+.subline{display:flex;gap:7px;align-items:center;margin-top:3px;font-size:8pt;color:var(--color-secondary);flex-wrap:wrap}
 .copy{border:0;padding:0;background:none;color:var(--color-eyebrow);font-size:8pt;text-decoration:underline;text-underline-offset:2px}
-.editor-input{width:100%;min-height:var(--lora-input-min-height);border:1px solid var(--color-border);border-radius:var(--radius-input);background:var(--color-input);color:var(--color-input-text);padding:6px 9px;min-width:0}
+.editor-input{width:100%;min-height:var(--lora-input-min-height);border:1px solid var(--color-border);border-radius:var(--radius-input);background:var(--color-input);color:var(--color-input-text);padding:4px 7px;min-width:0}
 .editor-input:hover{border-color:var(--color-input-border-hover)}
 .editor-input::placeholder{color:var(--color-placeholder)}
 .editor-input.invalid{border-color:var(--lora-invalid)}
 .editor-input:disabled{background:var(--color-button);color:var(--color-disabled)}
-.field-note{font-size:8pt;color:var(--color-secondary);margin-top:5px;min-height:12px}
+.field-note{font-size:8pt;color:var(--color-secondary);margin-top:3px}
+/* Keep architecture provenance/errors, but remove repeated helper lines from ordinary rows. */
+.prepare-row>.cell:nth-child(3) .field-note,.prepare-row>.cell:nth-child(4) .field-note,.prepare-row>.cell:nth-child(5) .field-note{display:none}
 .field-note.error{color:var(--lora-invalid)}
-.status{display:inline-flex;align-items:center;gap:6px;font-size:var(--font-size-small);line-height:1.45;padding-top:7px}
+.status{display:inline-flex;align-items:center;gap:6px;font-size:var(--font-size-small);line-height:1.35;padding-top:5px}
 .dot{display:inline-block;flex:none;width:7px;height:7px;border-radius:50%;background:var(--color-secondary)}
 .status.ready .dot{background:var(--lora-ready)}
 .status.warn .dot{background:var(--lora-unready)}
 .status.error .dot{background:var(--lora-invalid)}
 .status.busy .dot{background:var(--color-accent-hover)}
-.preview-box{display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:15px;background:var(--lora-preview-background);padding:13px 16px;border-top:1px solid var(--lora-border)}
+.preview-box{display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;background:var(--lora-preview-background);padding:9px 12px;border-top:1px solid var(--lora-border)}
 .preview-title{font-size:8pt;color:var(--color-secondary);margin-bottom:5px}
 .code{font-family:var(--font-family-mono);font-size:var(--font-size-small);overflow-wrap:anywhere}
 .filename-preview{color:var(--color-selection-text)}
-.batch-footer{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;min-height:var(--lora-footer-min-height);padding:14px 16px;background:var(--color-surface);border-top:1px solid var(--lora-border)}
+.batch-footer{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;min-height:var(--lora-footer-min-height);padding:9px 12px;background:var(--color-surface);border-top:1px solid var(--lora-border)}
 .counts{display:flex;gap:18px;flex-wrap:wrap;color:var(--color-secondary);font-size:var(--font-size-small)}
 .counts strong{color:var(--color-text)}
 .actions{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
@@ -85,10 +88,10 @@ nav.views{display:flex;gap:7px;align-items:center;flex-wrap:wrap;padding:12px ma
 /* The same batch table becomes cards; no second editor implementation. */
 .force-compact .data-head{display:none}
 .force-compact .table-scroll{overflow:visible}
-.force-compact .prepare-row{min-width:0;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;background:var(--color-item-surface);border:1px solid var(--color-section-border);border-radius:8px;margin:10px}
+.force-compact .prepare-row{min-width:0;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:var(--lora-card-gap);padding:var(--lora-card-padding);background:var(--color-item-surface);border:1px solid var(--color-section-border);border-radius:8px;margin:7px}
 .force-compact .prepare-row.selected{background:var(--color-selection)}
 .force-compact .prepare-row>.cell:first-child{grid-column:1/-1}
-.force-compact .mobile-label{display:block;font-size:8pt;font-weight:600;color:var(--color-secondary);margin-bottom:5px}
+.force-compact .mobile-label{display:block;font-size:8pt;font-weight:600;color:var(--color-secondary);margin-bottom:3px}
 .force-compact .file-name .file-start{flex:0 1 auto}
 .force-compact .file-name{max-width:100%}
 .force-compact .preview-box{align-items:flex-start}
@@ -96,11 +99,12 @@ nav.views{display:flex;gap:7px;align-items:center;flex-wrap:wrap;padding:12px ma
 .force-compact .surface{max-width:760px;margin:0 auto}
 .force-compact .screen-heading{max-width:760px;margin-left:auto;margin-right:auto}
 .force-compact .note{max-width:760px;margin:16px auto}
-.picker-wrap{display:grid;grid-template-columns:minmax(0,1fr) 290px;gap:18px}
-.picker-list{padding:14px}
-.picker-search{width:100%;margin-bottom:14px}
-.picker-row{display:grid;grid-template-columns:22px minmax(0,1fr) 112px 112px;gap:12px;align-items:center;border-bottom:1px solid var(--color-section-border);padding:13px 9px}
+.picker-wrap{display:grid;grid-template-columns:minmax(0,1fr) 260px;gap:12px}
+.picker-list{padding:9px}
+.picker-search{width:100%;margin-bottom:8px}
+.picker-row{display:grid;grid-template-columns:20px minmax(0,1fr) 94px 94px;gap:8px;align-items:center;border-bottom:1px solid var(--color-section-border);padding:6px 8px;min-height:var(--lora-picker-row-min-height);cursor:pointer}
 .picker-row:hover{background:var(--color-button-hover)}
+.picker-row:focus-within{outline:2px solid var(--lora-focus);outline-offset:-2px}
 .picker-row.selected{background:var(--color-selection)}
 .picker-row input[type=checkbox]{accent-color:var(--color-accent);width:16px;height:16px}
 .picker-label{font-weight:600;font-size:var(--font-size-body)}
@@ -109,14 +113,14 @@ nav.views{display:flex;gap:7px;align-items:center;flex-wrap:wrap;padding:12px ma
 .readout h2{font-size:var(--font-size-section);color:var(--color-text);margin:0 0 12px}
 .readout .code{color:var(--color-text)}
 .metadata-grid{display:grid;grid-template-columns:minmax(0,1fr) 290px;gap:16px}
-.metadata-form{padding:18px}
-.metadata-form .field-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px}
-.metadata-form label,.preferences label{display:block;font-size:var(--font-size-small);color:var(--color-secondary);font-weight:600;margin-bottom:6px}
+.metadata-form{padding:12px}
+.metadata-form .field-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.metadata-form label,.preferences label{display:block;font-size:var(--font-size-small);color:var(--color-secondary);font-weight:600;margin-bottom:4px}
 .metadata-form .wide{grid-column:1/-1}
 .section-small{font-size:var(--font-size-section);font-weight:600;margin:0 0 14px}
 .preferences{display:grid;grid-template-columns:1fr 1fr;gap:16px}
-.setting-panel{padding:18px}
-.setting-row{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:13px 0;border-bottom:1px solid var(--color-section-border)}
+.setting-panel{padding:12px}
+.setting-row{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:9px 0;border-bottom:1px solid var(--color-section-border)}
 .setting-row:last-child{border-bottom:0}
 .setting-row strong{display:block;font-size:var(--font-size-body);margin-bottom:4px}
 .setting-row .description{max-width:490px}
@@ -128,9 +132,9 @@ footer.study-footer{text-align:center;margin-top:20px;color:var(--color-secondar
 @media(max-width:1000px){
   .data-head{display:none}
   .table-scroll{overflow:visible}
-  .prepare-row{min-width:0;grid-template-columns:repeat(2,minmax(0,1fr));border:1px solid var(--color-section-border);border-radius:8px;margin:10px;background:var(--color-item-surface)}
+  .prepare-row{min-width:0;grid-template-columns:repeat(2,minmax(0,1fr));gap:var(--lora-card-gap);padding:var(--lora-card-padding);border:1px solid var(--color-section-border);border-radius:8px;margin:7px;background:var(--color-item-surface)}
   .prepare-row>.cell:first-child{grid-column:1/-1}
-  .mobile-label{display:block;font-size:8pt;font-weight:600;color:var(--color-secondary);margin-bottom:5px}
+  .mobile-label{display:block;font-size:8pt;font-weight:600;color:var(--color-secondary);margin-bottom:3px}
   .picker-wrap,.metadata-grid,.preferences{grid-template-columns:1fr}
 }
 @media(max-width:600px){
@@ -141,7 +145,7 @@ footer.study-footer{text-align:center;margin-top:20px;color:var(--color-secondar
   .metadata-form .field-grid{grid-template-columns:1fr}
   .batch-footer{position:sticky;bottom:0;z-index:3}
   .batch-footer .actions{width:100%}.batch-footer .action.primary{flex:1}
-  .picker-row{grid-template-columns:22px minmax(0,1fr) 72px;gap:7px}.picker-row .weight-value{display:none}
+  .picker-row{grid-template-columns:20px minmax(0,1fr) 72px;gap:7px}.picker-row .weight-value{display:none}
 }
 </style>
 </head>
@@ -166,7 +170,7 @@ footer.study-footer{text-align:center;margin-top:20px;color:var(--color-secondar
       <div class="prepare-row selected" data-file="portrait_8e62d922f3a4c82b1aef990108a2fae9_lora_f16.ckpt">
         <div class="cell"><span class="mobile-label">Source file</span><div class="file-name" title="portrait_8e62d922f3a4c82b1aef990108a2fae9_lora_f16.ckpt"><span class="file-start">portrait_8e62d922f3a4c82b1</span><span class="ellipsis">…</span><span class="file-end">_lora_f16.ckpt</span></div><div class="subline"><button class="copy" type="button">Copy original</button><span>Detected from file</span></div></div>
         <div class="cell"><label class="mobile-label">Architecture</label><select class="editor-input family"><option value="">Select architecture…</option><option selected value="Kr2">Krea 2</option><option value="ZiT">Z-Image Turbo</option><option value="F1">FLUX.1</option></select><div class="field-note">File-derived evidence</div></div>
-        <div class="cell"><label class="mobile-label">Short name</label><input class="editor-input short" value="PortraitV2" maxlength="32"><div class="field-note">Editable suggestion</div></div>
+        <div class="cell"><label class="mobile-label">Short name</label><input class="editor-input short" value="PortraitV2" maxlength="20"><div class="field-note">Editable suggestion</div></div>
         <div class="cell"><label class="mobile-label">Quantization</label><select class="editor-input quant"><option selected>F16</option><option>Q8P</option></select><div class="field-note">Filename hint</div></div>
         <div class="cell"><label class="mobile-label">Trigger words</label><input class="editor-input trigger" value="portrait style" placeholder="Optional"><div class="field-note">Stored locally</div></div>
         <div class="cell"><span class="mobile-label">Status</span><span class="status ready"><span class="dot"></span><span class="status-text">Ready</span></span></div>
@@ -174,7 +178,7 @@ footer.study-footer{text-align:center;margin-top:20px;color:var(--color-secondar
       <div class="prepare-row" data-file="cinematic_20261109_f3e817d0a432bf_lora_q8p.ckpt">
         <div class="cell"><span class="mobile-label">Source file</span><div class="file-name" title="cinematic_20261109_f3e817d0a432bf_lora_q8p.ckpt"><span class="file-start">cinematic_20261109_f3e817</span><span class="ellipsis">…</span><span class="file-end">_lora_q8p.ckpt</span></div><div class="subline"><button class="copy" type="button">Copy original</button><span>Detected from file</span></div></div>
         <div class="cell"><label class="mobile-label">Architecture</label><select class="editor-input family"><option value="">Select architecture…</option><option value="Kr2">Krea 2</option><option selected value="ZiT">Z-Image Turbo</option><option value="F1">FLUX.1</option></select><div class="field-note">File-derived evidence</div></div>
-        <div class="cell"><label class="mobile-label">Short name</label><input class="editor-input short" value="Cinematic" maxlength="32"><div class="field-note">Editable suggestion</div></div>
+        <div class="cell"><label class="mobile-label">Short name</label><input class="editor-input short" value="Cinematic" maxlength="20"><div class="field-note">Editable suggestion</div></div>
         <div class="cell"><label class="mobile-label">Quantization</label><select class="editor-input quant"><option>F16</option><option selected>Q8P</option></select><div class="field-note">Filename hint</div></div>
         <div class="cell"><label class="mobile-label">Trigger words</label><input class="editor-input trigger" value="cinematic lighting" placeholder="Optional"><div class="field-note">Stored locally</div></div>
         <div class="cell"><span class="mobile-label">Status</span><span class="status ready"><span class="dot"></span><span class="status-text">Ready</span></span></div>
@@ -182,7 +186,7 @@ footer.study-footer{text-align:center;margin-top:20px;color:var(--color-secondar
       <div class="prepare-row" data-file="detail_boost_ep12_3a32f30bc9e7821d_911f.ckpt">
         <div class="cell"><span class="mobile-label">Source file</span><div class="file-name" title="detail_boost_ep12_3a32f30bc9e7821d_911f.ckpt"><span class="file-start">detail_boost_ep12_3a32f30</span><span class="ellipsis">…</span><span class="file-end">_911f.ckpt</span></div><div class="subline"><button class="copy" type="button">Copy original</button><span>Unknown inspection</span></div></div>
         <div class="cell"><label class="mobile-label">Architecture</label><select class="editor-input family"><option selected value="">Select architecture…</option><option value="Kr2">Krea 2</option><option value="ZiT">Z-Image Turbo</option><option value="F1">FLUX.1</option></select><div class="field-note error">Required · not file-detected</div></div>
-        <div class="cell"><label class="mobile-label">Short name</label><input class="editor-input short" value="DetailBoost" maxlength="32"><div class="field-note">Editable suggestion</div></div>
+        <div class="cell"><label class="mobile-label">Short name</label><input class="editor-input short" value="DetailBoost" maxlength="20"><div class="field-note">Editable suggestion</div></div>
         <div class="cell"><label class="mobile-label">Quantization</label><select class="editor-input quant"><option selected>F16</option><option>Q8P</option></select><div class="field-note">Converter default</div></div>
         <div class="cell"><label class="mobile-label">Trigger words</label><input class="editor-input trigger" placeholder="Optional"><div class="field-note">Not required</div></div>
         <div class="cell"><span class="mobile-label">Status</span><span class="status warn"><span class="dot"></span><span class="status-text">Needs architecture</span></span></div>
@@ -190,7 +194,7 @@ footer.study-footer{text-align:center;margin-top:20px;color:var(--color-secondar
       <div class="prepare-row" data-file="nak_lora_f16.ckpt">
         <div class="cell"><span class="mobile-label">Source file</span><div class="file-name" title="nak_lora_f16.ckpt"><span class="file-start">nak</span><span class="file-end">_lora_f16.ckpt</span></div><div class="subline"><button class="copy" type="button">Copy original</button><span>Declared by user</span></div></div>
         <div class="cell"><label class="mobile-label">Architecture</label><select class="editor-input family"><option value="">Select architecture…</option><option selected value="Kr2">Krea 2</option><option value="ZiT">Z-Image Turbo</option><option value="F1">FLUX.1</option></select><div class="field-note">User-declared, unverified</div></div>
-        <div class="cell"><label class="mobile-label">Short name</label><input class="editor-input short" value="Nak" maxlength="32"><div class="field-note">Short word is valid</div></div>
+        <div class="cell"><label class="mobile-label">Short name</label><input class="editor-input short" value="Nak" maxlength="20"><div class="field-note">Short word is valid</div></div>
         <div class="cell"><label class="mobile-label">Quantization</label><select class="editor-input quant"><option selected>F16</option><option>Q8P</option></select><div class="field-note">Filename hint</div></div>
         <div class="cell"><label class="mobile-label">Trigger words</label><input class="editor-input trigger" placeholder="Optional"><div class="field-note">Not required</div></div>
         <div class="cell"><span class="mobile-label">Status</span><span class="status ready"><span class="dot"></span><span class="status-text">Ready</span></span></div>
@@ -198,7 +202,7 @@ footer.study-footer{text-align:center;margin-top:20px;color:var(--color-secondar
       <div class="prepare-row" data-file="portrait_77ad2a_lora_f16.ckpt">
         <div class="cell"><span class="mobile-label">Source file</span><div class="file-name" title="portrait_77ad2a_lora_f16.ckpt"><span class="file-start">portrait_77ad2a</span><span class="file-end">_lora_f16.ckpt</span></div><div class="subline"><button class="copy" type="button">Copy original</button><span>Distinct-content fixture</span></div></div>
         <div class="cell"><label class="mobile-label">Architecture</label><select class="editor-input family"><option value="">Select architecture…</option><option selected value="Kr2">Krea 2</option><option value="ZiT">Z-Image Turbo</option><option value="F1">FLUX.1</option></select><div class="field-note">User-declared</div></div>
-        <div class="cell"><label class="mobile-label">Short name</label><input class="editor-input short" value="PortraitV2_2" maxlength="32"><div class="field-note">Scoped collision proposal</div></div>
+        <div class="cell"><label class="mobile-label">Short name</label><input class="editor-input short" value="PortraitV2_2" maxlength="20"><div class="field-note">Scoped collision proposal</div></div>
         <div class="cell"><label class="mobile-label">Quantization</label><select class="editor-input quant"><option selected>F16</option><option>Q8P</option></select><div class="field-note">Converter default</div></div>
         <div class="cell"><label class="mobile-label">Trigger words</label><input class="editor-input trigger" placeholder="Optional"><div class="field-note">Not required</div></div>
         <div class="cell"><span class="mobile-label">Status</span><span class="status ready"><span class="dot"></span><span class="status-text">Ready</span></span></div>
@@ -366,7 +370,7 @@ footer.study-footer{text-align:center;margin-top:20px;color:var(--color-secondar
     sorted.forEach(item=>{
       const g=selected.includes(item.id)?"Selected":"Available";
       if(group!==g){group=g;const heading=document.createElement("div");heading.className="group-label";heading.textContent=g;host.appendChild(heading);}
-      const row=document.createElement("div");row.className="picker-row"+(selected.includes(item.id)?" selected":"");
+      const row=document.createElement("label");row.className="picker-row"+(selected.includes(item.id)?" selected":"");
       const cb=document.createElement("input");cb.type="checkbox";cb.checked=selected.includes(item.id);cb.setAttribute("aria-label","Select "+item.name+"["+item.family+"]");
       cb.addEventListener("change",()=>{const index=selected.indexOf(item.id);if(cb.checked&&index<0)selected.push(item.id);if(!cb.checked&&index>=0)selected.splice(index,1);pickerRender();});
       const name=document.createElement("span");name.className="picker-label";name.textContent=item.name+"["+item.family+"]";
