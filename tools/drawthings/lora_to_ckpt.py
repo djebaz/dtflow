@@ -32,6 +32,23 @@ from pathlib import Path
 
 import numpy as np
 
+MIN_NUMPY = (1, 21)
+
+
+def _check_numpy() -> None:
+    try:
+        major, minor = (int(part) for part in np.__version__.split(".")[:2])
+    except ValueError:
+        return
+    if (major, minor) < MIN_NUMPY:
+        raise SystemExit(
+            f"numpy {np.__version__} is too old, this converter needs numpy >= {MIN_NUMPY[0]}.{MIN_NUMPY[1]} "
+            "(pip install --upgrade numpy)."
+        )
+
+
+_check_numpy()
+
 COLAB_HINT = (
     "Use the Colab notebook instead: tools/colab/dtflow_lora_minimal_convert.ipynb "
     "(it supports every Draw Things family)."
@@ -43,7 +60,7 @@ FORMAT_NHWC = 0x01  # what Draw Things writes for these 2-D weights (checked on 
 TYPE_CPU = 0x01
 MAX_DIM_ALLOC = 12
 
-_SAFETENSORS_DTYPES = {"F16": np.float16, "F32": np.float32, "F64": np.float64}
+_SAFETENSORS_DTYPES = {"F16": "<f2", "F32": "<f4"}
 
 
 class ConversionError(Exception):
@@ -73,18 +90,28 @@ class SafeTensors:
     def shape(self, key: str) -> tuple[int, ...]:
         return tuple(self.entries[key]["shape"])
 
-    def read(self, key: str) -> np.ndarray:
+    def _raw(self, key: str) -> tuple[str, tuple[int, ...], np.ndarray]:
         entry = self.entries[key]
         begin, end = entry["data_offsets"]
-        raw = self._map[self._base + begin : self._base + end]
         dtype = entry["dtype"]
-        shape = tuple(entry["shape"])
-        if dtype == "BF16":
-            bits = np.frombuffer(raw, dtype=np.uint16).astype(np.uint32) << 16
-            return bits.view(np.float32).reshape(shape)
-        if dtype not in _SAFETENSORS_DTYPES:
+        if dtype != "BF16" and dtype not in _SAFETENSORS_DTYPES:
             raise ConversionError(f"{key}: unsupported dtype {dtype}. {COLAB_HINT}")
-        return np.frombuffer(raw, dtype=_SAFETENSORS_DTYPES[dtype]).reshape(shape)
+        return dtype, tuple(entry["shape"]), self._map[self._base + begin : self._base + end]
+
+    def read(self, key: str) -> np.ndarray:
+        """The tensor as float32 (exact for F16 and BF16)."""
+        dtype, shape, raw = self._raw(key)
+        if dtype == "BF16":
+            bits = np.frombuffer(raw, dtype="<u2").astype("<u4") << np.uint32(16)
+            return bits.astype("<u4").view("<f4").reshape(shape)
+        return np.frombuffer(raw, dtype=_SAFETENSORS_DTYPES[dtype]).astype("<f4").reshape(shape)
+
+    def read_f16(self, key: str) -> np.ndarray:
+        """The tensor as float16 the way Draw Things converts it (F16 is kept as it is)."""
+        dtype, shape, raw = self._raw(key)
+        if dtype == "F16":
+            return np.frombuffer(raw, dtype="<f2").reshape(shape)
+        return to_f16(self.read(key))
 
 
 # --------------------------------------------------------------------------- key handling
@@ -299,24 +326,34 @@ def split_fused(up: np.ndarray, down: np.ndarray, count: int) -> list[tuple[np.n
 # --------------------------------------------------------------------------- float16
 
 
-def to_f16(values: np.ndarray) -> np.ndarray:
-    """Convert to float16 the way Draw Things (ccv) does: truncate toward zero, no rounding.
+def f32_to_f16_bits(values: np.ndarray) -> np.ndarray:
+    """float32 to float16 bit patterns (uint16), truncating toward zero, integer arithmetic only.
 
-    numpy rounds to nearest. The two only differ when bits are lost, which for BF16 sources
-    means the float16 subnormal range (below about 6e-5), where Draw Things drops the last bit
-    that numpy would round up.
+    This is the conversion Draw Things (ccv) does: no rounding, so tiny values (the float16
+    subnormal range, below about 6e-5) lose their last bit instead of rounding up. Doing it with
+    explicit bit operations keeps the result independent of the numpy version and the CPU.
+    Infinity stays infinity, NaN becomes a quiet NaN, finite values above 65504 saturate to 65504.
     """
-    x = np.asarray(values, dtype=np.float32)
-    rounded = x.astype(np.float16)
-    too_big = np.abs(rounded.astype(np.float32)) > np.abs(x)
-    bits = rounded.view(np.uint16)
-    # Sign-magnitude: one less in the magnitude bits is one step toward zero.
-    fix = too_big & ((bits & 0x7FFF) != 0)
-    bits = np.where(fix, bits - 1, bits).astype(np.uint16)
-    # Finite values above the float16 range round to infinity; truncation saturates instead.
-    overflow = np.isinf(rounded) & np.isfinite(x)
-    bits = np.where(overflow, (bits & 0x8000) | 0x7BFF, bits).astype(np.uint16)
-    return bits.view(np.float16)
+    bits = np.ascontiguousarray(values, dtype="<f4").view("<u4").astype(np.uint32)
+    sign = ((bits >> np.uint32(16)) & np.uint32(0x8000)).astype(np.uint32)
+    exponent = ((bits >> np.uint32(23)) & np.uint32(0xFF)).astype(np.int32)
+    mantissa = (bits & np.uint32(0x7FFFFF)).astype(np.uint32)
+    e = exponent - 112  # rebias from 127 to 15
+    normal = (e << 10).astype(np.uint32) | (mantissa >> np.uint32(13))
+    shift = np.clip(14 - e, 0, 31).astype(np.uint32)
+    subnormal = np.where((e <= 0) & (e > -10), (mantissa | np.uint32(0x800000)) >> shift, np.uint32(0)).astype(
+        np.uint32
+    )
+    magnitude = np.where(e >= 1, normal, subnormal).astype(np.uint32)
+    magnitude = np.where(e >= 31, np.uint32(0x7BFF), magnitude)
+    special = exponent == 255
+    magnitude = np.where(special, np.where(mantissa != 0, np.uint32(0x7E00), np.uint32(0x7C00)), magnitude)
+    return (sign | magnitude).astype("<u2")
+
+
+def to_f16(values: np.ndarray) -> np.ndarray:
+    """float32 array to a float16 array using the Draw Things truncating conversion."""
+    return f32_to_f16_bits(values).view("<f2")
 
 
 # --------------------------------------------------------------------------- scaling
@@ -430,8 +467,8 @@ def convert(
         if "up" not in roles or "down" not in roles:
             raise ConversionError(f"{module}: needs both an up and a down tensor.")
         alpha = _scalar(st.read(roles["alpha"].key)) if "alpha" in roles else None
-        up = to_f16(st.read(roles["up"].key))
-        down = to_f16(st.read(roles["down"].key))
+        up = st.read_f16(roles["up"].key)
+        down = st.read_f16(roles["down"].key)
         if up.ndim != 2 or down.ndim != 2 or up.shape[1] != down.shape[0]:
             raise ConversionError(f"{module}: unexpected shapes up {up.shape} and down {down.shape}. {COLAB_HINT}")
         pieces = split_fused(up, down, len(target.names))
