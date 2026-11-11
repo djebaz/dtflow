@@ -408,7 +408,7 @@ def managed_filename(short_name: str, family_tag: str, format_code: str) -> str:
         raise ValueError("Architecture shortcode must contain ASCII letters and digits.")
     if format_code not in _FORMATS:
         raise ValueError("LoRA format must be F16 or Q8P.")
-    return f"{short_name}_{family_tag}_LoRA_{format_code}.ckpt"
+    return f"{short_name}_{family_tag}_lora_{format_code.lower()}.ckpt"
 
 
 def _identity(sha256: str | None, size: int | None) -> tuple[str, int] | None:
