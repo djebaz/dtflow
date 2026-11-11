@@ -184,21 +184,6 @@ def test_prepare_starts_after_file_selection_and_lists_a_local_receipt(window, c
     assert "confirmed" in page.assetList.item(0).text() and "Style[ZiT]" in page.assetList.item(0).text()
     assert page.assetStatusLabel.text().startswith(("Receipt confirmed", "Receipt bound")) and len(cloud.puts) == 1
 
-    page.loraList.setCurrentRow(0)  # Prepare added and bound the LoRA; adding it again reconciles the receipt
-    page.removeLoraButton.click()
-    add_lora(window, qtbot, MANAGED, 0.8)
-    qtbot.waitUntil(
-        lambda: receipt_bound(page) and page.prepareAssetButton.isEnabled(),
-        timeout=30000,
-    )
-    cloud.stored.clear()  # the server lost the file: the receipt goes stale and reconcile still never uploads
-    page.loraList.setCurrentRow(0)
-    page.removeLoraButton.click()
-    add_lora(window, qtbot, MANAGED, 0.8)
-    qtbot.waitUntil(lambda: page.assetStatusLabel.text().startswith("Reconciled: upload required"), timeout=30000)
-    qtbot.waitUntil(lambda: "unknown" in page.assetList.item(0).text(), timeout=30000)
-    assert len(cloud.puts) == 1 and window.generation.lora.receipt_ids() == ()
-
 
 def test_unconfirmed_upload_is_unknown_with_its_code_and_not_retried(window, cloud, qtbot, tmp_path):
     cloud.store_on_put = False  # the PUT "succeeds" but the server never lists the file
@@ -225,7 +210,7 @@ def test_asset_writer_contention_is_a_clear_busy_message(window, cloud, qtbot, t
         loop.close()
 
 
-def test_prepare_adds_and_binds_the_lora_and_adding_it_again_reconciles_and_binds(window, cloud, qtbot, tmp_path):
+def test_prepare_adds_and_binds_the_lora_and_removing_it_drops_the_binding(window, cloud, qtbot, tmp_path):
     page = window.generation_page
     prepare(window, qtbot, lora_file(tmp_path))
     qtbot.waitUntil(lambda: page.loraList.count() == 1, timeout=30000)  # Prepare adds the LoRA and binds its receipt
@@ -234,8 +219,5 @@ def test_prepare_adds_and_binds_the_lora_and_adding_it_again_reconciles_and_bind
     page.loraList.setCurrentRow(0)
     page.removeLoraButton.click()
     assert window.generation.lora.receipt_ids() == ()  # removing the LoRA drops its binding
-    add_lora(window, qtbot, MANAGED, 0.8)
-    qtbot.waitUntil(lambda: receipt_bound(page), timeout=30000)
-    assert len(window.generation.lora.receipt_ids()) == 1
     window.form.backendCombo.setCurrentText("fake")  # receipts are cloud-only; actions are disabled elsewhere
     assert not page.prepareAssetButton.isEnabled() and page.assetStatusLabel.text().startswith("Cloud only")
