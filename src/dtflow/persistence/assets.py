@@ -282,8 +282,10 @@ class AssetRegistry:
         else:
             asset_id = row["asset_id"]
             if family:
+                # Re-Prepare may refresh an earlier detected broad ID with the
+                # current file-derived exact version, without changing the receipt.
                 db.execute(
-                    "UPDATE assets SET family=?, family_source='file' WHERE asset_id=? AND family_source='unknown'",
+                    "UPDATE assets SET family=?, family_source='file' WHERE asset_id=?",
                     (family, asset_id),
                 )
             if action == "prepare" and row["state"] != "confirmed":
