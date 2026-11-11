@@ -42,9 +42,9 @@ def parse_args() -> argparse.Namespace:
 
 def capture(app, name: str, target: Path, *, expanded: bool = False, compact: bool = False) -> None:
     """Load one design-only Designer form and capture its native Qt widget appearance."""
-    from PySide6.QtCore import QFile, QIODevice
+    from PySide6.QtCore import QFile, QIODevice, Qt
     from PySide6.QtUiTools import QUiLoader
-    from PySide6.QtWidgets import QWidget
+    from PySide6.QtWidgets import QLabel, QToolButton, QWidget
 
     filename, size = FORM_SIZES[name]
     file = QFile(str(FORMS / filename))
@@ -62,9 +62,11 @@ def capture(app, name: str, target: Path, *, expanded: bool = False, compact: bo
         if library is None:
             raise RuntimeError("Connections design lacks customLorasDetails")
         library.setVisible(expanded)
-        disclosure = window.findChild(QWidget, "customLorasDisclosure")
+        disclosure = window.findChild(QToolButton, "customLorasDisclosure")
         if disclosure is not None:
-            disclosure.setProperty("checked", expanded)
+            disclosure.setChecked(expanded)
+            disclosure.setArrowType(Qt.ArrowType.DownArrow if expanded else Qt.ArrowType.RightArrow)
+            disclosure.setAccessibleName(f"Custom LoRAs, {'expanded' if expanded else 'collapsed'}")
 
     width, height = size
     if compact and name == "prepare":
@@ -72,6 +74,26 @@ def capture(app, name: str, target: Path, *, expanded: bool = False, compact: bo
     window.resize(width, height)
     window.show()
     app.processEvents()
+
+    if name == "prepare":
+        # Keep the source column narrow, middle-elide in the actual available width,
+        # and retain the full filename as the native Qt hover tooltip.
+        for index in range(5):
+            label = window.findChild(QLabel, f"sourceFile{index}")
+            if label is None:
+                raise RuntimeError(f"Prepare design lacks sourceFile{index}")
+            source_name = label.toolTip()
+            if not source_name:
+                raise RuntimeError(f"Prepare design lacks full filename tooltip for sourceFile{index}")
+            label.setText(
+                label.fontMetrics().elidedText(
+                    source_name,
+                    Qt.TextElideMode.ElideMiddle,
+                    max(48, label.contentsRect().width() - 8),
+                )
+            )
+        app.processEvents()
+
     image = window.grab()
     if image.isNull() or not image.save(str(target), "PNG"):
         window.close()
