@@ -154,7 +154,8 @@ def _record(row: sqlite3.Row) -> dict[str, Any]:
         return value  # Operation rows contain no LoRA metadata.
     value["family"], value["family_source"] = _effective_version(value)
     value["architecture_conflict"] = bool(
-        value["declared_version"] and value["detected_version"]
+        value["declared_version"]
+        and value["detected_version"]
         and value["declared_version"] != value["detected_version"]
     )
     return value
@@ -560,9 +561,7 @@ class AssetRegistry:
         if not self.path.exists():
             return None
         with closing(self._connect()) as db:
-            row = db.execute(
-                "SELECT * FROM lora_records WHERE sha256=? AND size=?", (sha256, size)
-            ).fetchone()
+            row = db.execute("SELECT * FROM lora_records WHERE sha256=? AND size=?", (sha256, size)).fetchone()
             if row is None:
                 return None
             return _record(row)
@@ -577,12 +576,16 @@ class AssetRegistry:
         if not changes or any(key not in allowed for key in changes):
             raise ValidationError("Only canonical LoRA metadata fields may be edited.")
         for key, value in changes.items():
-            if key == "declared_version" and value is not None and (
-                not isinstance(value, str) or not re.fullmatch(r"[a-z0-9_.-]+", value)
+            if (
+                key == "declared_version"
+                and value is not None
+                and (not isinstance(value, str) or not re.fullmatch(r"[a-z0-9_.-]+", value))
             ):
                 raise ValidationError("Choose an exact Draw Things architecture version.")
-            if key == "short_name" and value is not None and (
-                not isinstance(value, str) or not re.fullmatch(r"[A-Za-z0-9_]{1,20}", value)
+            if (
+                key == "short_name"
+                and value is not None
+                and (not isinstance(value, str) or not re.fullmatch(r"[A-Za-z0-9_]{1,20}", value))
             ):
                 raise ValidationError("Short name must be 1-20 ASCII letters, digits, or underscores.")
             if key == "format_code" and value not in (None, "F16", "Q8P"):
@@ -599,9 +602,7 @@ class AssetRegistry:
 
     @staticmethod
     def _update_lora_metadata(db, sha256: str, size: int, changes: dict) -> dict[str, Any]:
-        row = db.execute(
-            "SELECT * FROM lora_records WHERE sha256=? AND size=?", (sha256, size)
-        ).fetchone()
+        row = db.execute("SELECT * FROM lora_records WHERE sha256=? AND size=?", (sha256, size)).fetchone()
         if row is None:
             raise ValidationError("No measured LoRA content record exists; Prepare the file first.")
         updated = {key: row[key] for key in row.keys()}
@@ -610,13 +611,10 @@ class AssetRegistry:
             raise ValidationError("LoRA format and provenance must be set or cleared together.")
         assignments = ", ".join(f"{key}=?" for key in changes)
         db.execute(
-            f"UPDATE lora_records SET {assignments}, updated_at_utc=? "
-            "WHERE sha256=? AND size=?",
+            f"UPDATE lora_records SET {assignments}, updated_at_utc=? WHERE sha256=? AND size=?",
             (*changes.values(), _now(), sha256, size),
         )
-        record = db.execute(
-            "SELECT * FROM lora_records WHERE sha256=? AND size=?", (sha256, size)
-        ).fetchone()
+        record = db.execute("SELECT * FROM lora_records WHERE sha256=? AND size=?", (sha256, size)).fetchone()
         return _record(record)
 
     async def resolve_prepared(self, prepared: tuple[PreparedAsset, ...]) -> tuple[PreparedAsset, ...]:
@@ -678,9 +676,9 @@ class AssetRegistry:
             return []
         with closing(self._connect()) as db:
             return [
-                _record(x) for x in db.execute(
-                    f"SELECT a.*, {_LORA_COLUMNS} FROM assets a{_LORA_JOIN} "
-                    "ORDER BY a.created_at_utc, a.asset_id"
+                _record(x)
+                for x in db.execute(
+                    f"SELECT a.*, {_LORA_COLUMNS} FROM assets a{_LORA_JOIN} ORDER BY a.created_at_utc, a.asset_id"
                 )
             ]
 
