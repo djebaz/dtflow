@@ -48,6 +48,7 @@ TRANSFORMER_WIDTHS = {
     "wan_2_2": (3072, 5120),
     "hidream_i1": (2560,),
     "qwen_image": (3072,),
+    "qwen_image_2.1": (4096, 12288),
     "z_image": (3840,),
     "ernie_image": (4096,),
     "ltx_2": (2048, 4096),
@@ -159,6 +160,14 @@ def fingerprint_checks(
             "all_8_joint_block_projections": all(
                 sum(module.startswith(f"{name}-") for module in modules) == 2 * 8
                 for name in ("x_gate_proj", "x_up_proj", "x_down_proj", "c_q", "c_o")
+            ),
+        },
+        "qwen_image_2.1": {
+            "hidden_4096": 4096 in widths,
+            "feed_forward_12288": 12288 in widths,
+            "five_projection_pairs_per_32_layers": all(
+                sum(module.startswith(f"{name}-") for module in modules) == 2 * 32
+                for name in ("x_q", "x_k", "x_v", "x_o", "ffn_down_proj")
             ),
         },
         "sd_1": {
