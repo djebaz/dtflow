@@ -210,7 +210,6 @@ footer.study-footer{text-align:center;margin-top:20px;color:var(--color-secondar
 <button class="view-btn" data-view="prepare" type="button">Batch Prepare</button>
 <button class="view-btn" data-view="picker" type="button">LoRA picker</button>
 <button class="view-btn" id="open-metadata-from-nav" type="button">Edit metadata overlay</button>
-<button class="view-btn" data-view="triggers" type="button">Trigger behavior</button>
 </nav>
 <main class="study">
 
@@ -339,19 +338,6 @@ footer.study-footer{text-align:center;margin-top:20px;color:var(--color-secondar
   <div class="note">One selected LoRA only. This overlay edits an illustrative local record; no file, database, receipt or provider data is changed.</div>
 </section>
 </div>
-<section class="screen" id="screen-triggers">
-  <div class="screen-heading"><div><div class="page-label">Reference only / no separate Settings page</div><h1>Use LoRA trigger prefixes</h1><p>All five switches are shown together in the Connections right panel. Execution choices remain independently saved, and Generate, Queues, Workflows and Scripts can expose their own corresponding controls. This is a behavior reference, not a separate Settings page.</p></div><span class="soft-tag">Illustrative settings</span></div>
-  <div class="preferences">
-    <div class="surface setting-panel"><h2 class="section-small">Application default</h2><div class="setting-row"><div><strong>Default for new configurations</strong><p class="description">Changing this choice does not retroactively overwrite settings already saved in Generate, Queues, Workflows or Scripts.</p></div><input type="checkbox" class="toggle" data-trigger-scope="default" aria-label="Default for new configurations"></div><div class="note" style="margin-top:16px">The default is a starting value, not a live master switch.</div></div>
-    <div class="surface setting-panel"><h2 class="section-small">Independent execution settings</h2>
-      <div class="setting-row"><div><strong>Generate</strong><p class="description">Saved with Generate settings.</p></div><input class="toggle" type="checkbox" checked data-trigger-scope="generate" aria-label="Generate trigger prefixes"></div>
-      <div class="setting-row"><div><strong>Queues</strong><p class="description">Captured with plans, templates and retries.</p></div><input class="toggle" type="checkbox" data-trigger-scope="queues" aria-label="Queues trigger prefixes"></div>
-      <div class="setting-row"><div><strong>Workflows</strong><p class="description">Preserved with each saved workflow configuration.</p></div><input class="toggle" type="checkbox" checked data-trigger-scope="workflows" aria-label="Workflows trigger prefixes"></div>
-      <div class="setting-row"><div><strong>Scripts</strong><p class="description">Independent script Setup / execution preference.</p></div><input class="toggle" type="checkbox" data-trigger-scope="scripts" aria-label="Scripts trigger prefixes"></div>
-    </div>
-  </div>
-  <div class="note"><strong>Provider boundary:</strong> local prompt insertion is controlled by each path's saved setting. Cloud Asset trigger metadata-write support remains unverified; the visual toggle does not prove provider transmission, persistence or duplicate avoidance.</div>
-</section>
 <footer class="study-footer">Design prototype · DTFlow palette and spacing · #373 · Not native Qt / no network / no upload</footer>
 </main>
 <script>
@@ -359,7 +345,7 @@ footer.study-footer{text-align:center;margin-top:20px;color:var(--color-secondar
   "use strict";
   const $ = (selector, root = document) => root.querySelector(selector);
   const $$ = (selector, root = document) => Array.from(root.querySelectorAll(selector));
-  const screens = ["connections", "generate", "prepare", "picker", "triggers"];
+  const screens = ["connections", "generate", "prepare", "picker"];
   const setView = (name) => {
     if (!screens.includes(name)) return;
     $$(".screen").forEach(el => el.classList.toggle("active", el.id === "screen-" + name));
