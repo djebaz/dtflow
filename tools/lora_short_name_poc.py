@@ -61,8 +61,6 @@ def _quantization(entry: dict[str, Any]) -> tuple[str | None, str]:
     return None, "unknown"
 
 
-
-
 def analyze(entries: list[dict[str, Any]], *, include_other: bool = False) -> list[dict[str, Any]]:
     """Describe filename suggestions without reading LoRA bytes or calling DT+."""
     rows: list[dict[str, Any]] = []
@@ -76,25 +74,29 @@ def analyze(entries: list[dict[str, Any]], *, include_other: bool = False) -> li
         suggestion = suggest_short_name(filename)
         family = _model_family(entry)
         quantization, source = _quantization(entry)
-        rows.append({
-            "source_file": _basename(filename),
-            "suggestion": suggestion.name,
-            "alternatives": list(suggestion.alternatives),
-            "confidence": suggestion.confidence,
-            "needs_review": suggestion.needs_review,
-            "reason": suggestion.reason,
-            "detected_family_evidence": entry.get("detected_family"),
-            "model_family": family,
-            "quantization": quantization,
-            "quantization_source": source,
-            "likely_lora": _is_probably_lora(entry),
-        })
-        requests.append(NamingRequest(
-            short_name=suggestion.name,
-            exact_architecture=family,
-            format_code=quantization,
-            alternatives=suggestion.alternatives,
-        ))
+        rows.append(
+            {
+                "source_file": _basename(filename),
+                "suggestion": suggestion.name,
+                "alternatives": list(suggestion.alternatives),
+                "confidence": suggestion.confidence,
+                "needs_review": suggestion.needs_review,
+                "reason": suggestion.reason,
+                "detected_family_evidence": entry.get("detected_family"),
+                "model_family": family,
+                "quantization": quantization,
+                "quantization_source": source,
+                "likely_lora": _is_probably_lora(entry),
+            }
+        )
+        requests.append(
+            NamingRequest(
+                short_name=suggestion.name,
+                exact_architecture=family,
+                format_code=quantization,
+                alternatives=suggestion.alternatives,
+            )
+        )
 
     for row, result in zip(rows, allocate_batch_names(requests), strict=True):
         if result.short_name != row["suggestion"] and result.conflict is None:

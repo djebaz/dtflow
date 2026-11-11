@@ -1,7 +1,7 @@
 # Canonical LoRA record — clean-start implementation (#370)
 
 Date: 2026-11-11  
-Status: **Owner-approved clean-start direction; implementation in draft PR #378**  
+Status: **PR #378 canonical foundation; naming integration branch is source implementation, not yet Windows/DT+ accepted**  
 Parent: [epic #375](https://github.com/djebaz/dtflow/issues/375)  
 Design authority: [#373](https://github.com/djebaz/dtflow/issues/373)  
 Naming research: [PR #377](https://github.com/djebaz/dtflow/pull/377)
@@ -24,6 +24,7 @@ Use one canonical `lora_records` table in the existing `assets.sqlite3`, keyed b
 | `detected_version`, `detected_source` | File-derived exact Draw Things architecture or Unknown, preserving #371 evidence |
 | `declared_version` | Explicit selected exact Draw Things architecture, independent of detection |
 | `short_name` | Optional owner-edited portable 1–20-character name, or NULL until selected |
+| `managed_identifier` | Nullable accepted technical filename, unique case-insensitively across content records; stable until explicit Re-Prepare |
 | `format_code`, `format_source` | Selected `F16` or `Q8P`, and `converter_default`, `filename_hint` or `user` provenance; NULL until selected |
 | `trigger_words` | Locally persisted optional text (empty is valid); remote storage is not implied |
 | `updated_at_utc` | Local metadata update timestamp |
@@ -37,7 +38,7 @@ The effective architecture is `declared_version` when set, otherwise `detected_v
 1. Measure and retain a LoRA with the existing `AssetService.prepare` path. Persist its detected evidence into the canonical content row in the **same local transaction** that starts the corresponding asset operation. Re-Prepare can update the detection without overwriting user metadata. Keep ordinary upload/reuse/receipt behavior.
 2. Expose a local metadata-edit method on the existing `AssetRegistry`, keyed by verified SHA-256 and size, with clear validation and atomic updates. The method can record a user-declared exact version, optional short name, selected format/provenance and trigger text. It never uploads, renames assets, silently resets values or mutates another content hash.
 3. One shared, batched **local** metadata resolver enriches prepared selections for Generate, Queues, Workflows and Scripts before existing exact-version preflight and account-scoped receipt verification. Preserve LoRA identifiers, weights, selection order and the [#376](https://github.com/djebaz/dtflow/pull/376) effective-item-first Queue plan. No fallback to filename or broad catalogue `base_model` for exact dispatch version.
-4. Exact original/managed names are already represented by `assets.identifier`, per-key `asset_key_receipts.identifier` and the retained source-stamp index. Resolve them only alongside matching content identity. Avoid a duplicate alias store for imaginary migration needs. No technical name change from editing local metadata.
+4. The content-owned `lora_records.managed_identifier` is the accepted technical basename; `assets.identifier` and `asset_key_receipts.identifier` remain historical registration/account-scoped receipt names. Do not derive canonical naming authority from either receipt table or source-stamp index. A metadata-only edit never changes `managed_identifier`.
 5. Catalogue/import/Echo metadata without **measured content identity** remain discoverable evidence, not automatically merged into content records by matching a filename. Keep broad catalogue families strictly for browsing.
 
 ## Managed naming and #377 / #373 boundary
@@ -49,11 +50,11 @@ ShortName_FamilyTag_LoRA_Format.ckpt
 PortraitV2_Kr2_LoRA_F16.ckpt
 ```
 
-Store `short_name` and `format_code` separately; `FamilyTag` is a derived shortcode from #373's approved 30-architecture reference, **never a provider version**. Reject invalid short names and unsupported format codes; never infer model architecture from name text. The managed basename is a *new technical identifier* only when #373's explicit Prepare workflow chooses and authorizes it. Existing original files outside DTFlow storage remain untouched. The signed-upload/content-hash provider contract does not establish remote rename support.
+Store `short_name` and `format_code` separately; `FamilyTag` is a derived shortcode from #373's approved 30-architecture reference, **never a provider version**. Reject invalid short names and unsupported format codes; never infer model architecture from name text. The managed basename is accepted in the same registry write transaction as the explicit Prepare intent, before any DT+ negotiation. A case-insensitive unique constraint refuses the same filename for distinct verified content. Reuse the existing identifier for identical content, preserving its exact spelling. Only explicitly authorized Re-Prepare may replace the accepted identifier; existing historical/account-scoped receipts are never rewritten. Existing original files outside DTFlow storage remain untouched. The signed-upload/content-hash provider contract does not establish remote rename support.
 
 [PR #377](https://github.com/djebaz/dtflow/pull/377) has a **standalone, read-only POC**, not an implemented editor. Its suggested 1–20-character names, meaningful-word preservation, alternatives, confidence/review flags and format/architecture-scoped duplicate suggestions are **advisory only**. The updated #373 decision permits a usable suggestion to prefill the editable field; otherwise leave it blank. Do not recreate a separate naming algorithm in #370. Suggestions and numbered alternatives do not bypass collision checks: different content with the same final managed filename must be blocked pending the owner's edit/authorization.
 
-**#370 delivers only persistence, safe metadata APIs and the shared resolver.** #373 owns selecting files, calling/adapting #377's suggestion logic, architecture/format confirmation, managed-filename preview/collisions, batch Prepare, user-facing labels, trigger-prefix toggles and optional DT+ metadata sync.
+**The #370/naming integration branch supplies the local naming service, canonical occupied-name snapshot, atomic managed identifier + intent, and optional explicit Prepare metadata handoff.** #373 still owns the actual batch editor, row lifecycle, labels, partial batch authorization, trigger-prefix toggles and optional DT+ metadata sync. The existing desktop file-picker path is not yet the approved batch editor.
 
 ## Trigger and provider boundary
 
@@ -61,7 +62,7 @@ Save user trigger words locally. `override.loras[].prefix` transmission and inde
 
 ## Implementation and acceptance
 
-- Extend the existing asset database schema **for fresh state only**; reject older schema versions with an actionable manual-reset message. Preserve no legacy migration/backfill code. Never automatically remove application data.
+- Use fresh-state asset schema 6 (one nullable `managed_identifier` on `lora_records` with `COLLATE NOCASE UNIQUE`); reject older schema versions with an actionable manual-reset message. Preserve no legacy migration/backfill code. Never automatically remove application data.
 - Use the one canonical record for file-derived/declared architecture and optional metadata. Existing receipt operations and key-scoped references remain unchanged. A missing/Unknown version still refuses at #371's preflight.
 - Adopt shared lookup for all four execution paths via their existing prepared-receipt loading/resolution seams, with no new remote calls or duplicate Queue planner.
 - Check source-level invariants: same bytes under two names/keys share editable metadata but keep separate receipts; two distinct byte hashes never merge even if names match; user choice takes precedence while conflicts remain visible; metadata editing never renames, uploads or overwrites assets.

@@ -11,7 +11,7 @@ Prepare. Callers provide verified content identities and occupied names.
 from __future__ import annotations
 
 import re
-from collections.abc import Collection, Sequence
+from collections.abc import Collection, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -36,9 +36,35 @@ class NamingRequest:
     format_code: str | None
     family_tag: str | None = None
     manually_edited: bool = False
+    replace_existing: bool = False
     alternatives: tuple[str, ...] = ()
     sha256: str | None = None
     size: int | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class LoraPrepareMetadata:
+    """Metadata accepted by one explicit Prepare action, not a naming suggestion.
+
+    Exact architecture and selected format are independent of filename parsing.
+    A declaration is recorded separately from file-detected architecture.
+    """
+
+    short_name: str
+    exact_architecture: str
+    format_code: str
+    format_source: str
+    trigger_words: str = ""
+    declared_version: str | None = None
+    replace_existing: bool = False
+
+    @property
+    def identifier(self) -> str:
+        """Return the validated managed filename for the requested Prepare."""
+        tag = architecture_shortcode(self.exact_architecture)
+        if tag is None:
+            raise ValueError("The selected exact architecture has no approved managed-name shortcode.")
+        return managed_filename(self.short_name, tag, self.format_code)
 
 
 @dataclass(frozen=True, slots=True)
@@ -106,118 +132,101 @@ PACKAGING = {
 }
 # Complete architecture and shortcode vocabulary follows issue #373.
 # The tokens below are filename-cleaning hints only, never family evidence.
-ARCHITECTURE_MARKERS = {
-    "C25x29B",
-    "C25x2B",
-    "cosmos",
-    "cosmos2_5_2_9b",
-    "cosmos2_5_2b",
-    "cosmos2.5_2.9b",
-    "cosmos2.5_2b",
-    "cosmos25",
-    "Erni",
-    "ernie",
-    "ernie_image",
-    "ernieimage",
-    "ernieImage",
-    "F1",
-    "F2",
-    "F2x4B",
-    "F2x9B",
-    "F3x5B",
-    "flux",
-    "flux1",
-    "flux2",
-    "flux2_4b",
-    "flux2_9b",
-    "flux3",
-    "flux3_5b",
-    "fluxklein",
-    "HDI1",
-    "hidream",
-    "hidream_i1",
-    "hiDreamI1",
-    "hunyuan",
-    "hunyuan_video",
-    "hunyuanVideo",
-    "HYV",
-    "ID4",
-    "ideogram",
-    "ideogram_4",
-    "ideogram4",
-    "illus",
-    "Kr2",
-    "krea",
-    "krea_2",
-    "krea2",
-    "ltx",
-    "ltx2",
-    "ltx2_3",
-    "ltx2.3",
-    "ltx23",
-    "miniH3",
-    "minimax",
-    "minimax_h3",
-    "minimaxh3",
-    "minimaxH3",
-    "moss",
-    "Moss",
-    "moss_image",
-    "mossimage",
-    "mossImage",
-    "Pix",
-    "pixart",
-    "qwen",
-    "qwen_image",
-    "qwen_image_2.1",
-    "qwenimage",
-    "qwenImage",
-    "qwenImage2_1",
-    "qwenimage21",
-    "Qwn",
-    "Qwn21",
-    "schnell",
-    "sd1",
-    "SD1",
-    "sd2",
-    "SD2",
-    "sd3",
-    "SD3",
-    "sd3_large",
-    "SD3L",
-    "sd3Large",
-    "sdxl",
-    "sdxl_base",
-    "sdxl_base_v0.9",
-    "sdxl_refiner",
-    "sdxl_refiner_v0.9",
-    "sdxlBase",
-    "sdxlRefiner",
-    "SSD",
-    "ssd_1b",
-    "ssd1b",
-    "W21x13B",
-    "W21x14B",
-    "W22x5B",
-    "wan",
-    "wan_v2.1_1.3b",
-    "wan_v2.1_14b",
-    "wan_v2.2_5b",
-    "wan21",
-    "wan21_1_3b",
-    "wan21_14b",
-    "wan22",
-    "wan22_5b",
-    "XL",
-    "XLRef",
-    "z_image",
-    "zbase",
-    "zi",
-    "zimage",
-    "zImage",
-    "zimg",
-    "ZiT",
+# The single approved #373 exact-version -> managed-display-tag vocabulary.
+# A display tag is never a DT+ override.loras[].version.
+ARCHITECTURE_TAGS = {
+    "krea_2": "Kr2",
+    "flux1": "F1",
+    "flux2": "F2",
+    "flux2_9b": "F2x9B",
+    "flux2_4b": "F2x4B",
+    "flux3_5b": "F3x5B",
+    "sd3": "SD3",
+    "sd3_large": "SD3L",
+    "v1": "SD1",
+    "v2": "SD2",
+    "sdxl_base_v0.9": "XL",
+    "sdxl_refiner_v0.9": "XLRef",
+    "ssd_1b": "SSD",
+    "pixart": "Pix",
+    "hunyuan_video": "HYV",
+    "wan_v2.1_1.3b": "W21x13B",
+    "wan_v2.1_14b": "W21x14B",
+    "wan_v2.2_5b": "W22x5B",
+    "hidream_i1": "HDI1",
+    "qwen_image": "Qwn",
+    "qwen_image_2.1": "Qwn21",
+    "z_image": "ZiT",
+    "ernie_image": "Erni",
+    "moss_image": "Moss",
+    "minimax_h3": "miniH3",
+    "ideogram_4": "ID4",
+    "ltx2": "ltx2",
+    "ltx2.3": "ltx23",
+    "cosmos2.5_2b": "C25x2B",
+    "cosmos2.5_2.9b": "C25x29B",
 }
+_TAG_ARCHITECTURES = {tag.casefold(): version for version, tag in ARCHITECTURE_TAGS.items()}
+
+# Additional POC #377 filename-cleaning aliases (not evidence of compatibility).
+_ARCHITECTURE_ALIASES = frozenset(
+    {
+        "cosmos",
+        "cosmos2_5_2_9b",
+        "cosmos2_5_2b",
+        "cosmos25",
+        "ernie",
+        "ernieimage",
+        "ernieImage",
+        "flux",
+        "flux3",
+        "fluxklein",
+        "hidream",
+        "hiDreamI1",
+        "hunyuan",
+        "hunyuanVideo",
+        "ideogram",
+        "ideogram4",
+        "illus",
+        "krea",
+        "krea2",
+        "ltx",
+        "ltx2_3",
+        "minimax",
+        "minimaxh3",
+        "minimaxH3",
+        "mossimage",
+        "mossImage",
+        "qwen",
+        "qwenimage",
+        "qwenImage",
+        "qwenImage2_1",
+        "qwenimage21",
+        "schnell",
+        "sd3Large",
+        "sdxl",
+        "sdxl_base",
+        "sdxl_refiner",
+        "sdxlBase",
+        "sdxlRefiner",
+        "ssd1b",
+        "wan",
+        "wan21",
+        "wan21_1_3b",
+        "wan21_14b",
+        "wan22",
+        "wan22_5b",
+        "zbase",
+        "zi",
+        "zimage",
+        "zImage",
+        "zimg",
+    }
+)
+# Preserve free-standing V1/V2 as possible *subject* versions.
+ARCHITECTURE_MARKERS = frozenset(
+    (ARCHITECTURE_TAGS.keys() - {"v1", "v2"}) | set(ARCHITECTURE_TAGS.values()) | _ARCHITECTURE_ALIASES
+)
 _ARCHITECTURE_PATTERN = re.compile(
     r"(?i)(?<![a-z0-9])(?:"
     + "|".join(
@@ -349,9 +358,8 @@ def suggest_short_name(filename: str) -> NameSuggestion:
 
     primary = candidates[0][0]
     alternatives = [name for name, _ in candidates[1:] if name != primary][:3]
-    low_signal = (
-        all(token.casefold() in WEAK for token in words)
-        or (len(words) == 1 and bool(re.fullmatch(r"[a-z]{1,4}\d+", words[0], re.I)))
+    low_signal = all(token.casefold() in WEAK for token in words) or (
+        len(words) == 1 and bool(re.fullmatch(r"[a-z]{1,4}\d+", words[0], re.I))
     )
     shortened = len(_label(words, version)) > MAX_SHORT_NAME
     confidence = "low" if low_signal else "medium" if shortened or len(words) == 1 else "high"
@@ -372,6 +380,13 @@ def suggest_short_name(filename: str) -> NameSuggestion:
 
 _TAG = re.compile(r"^[A-Za-z0-9]+$")
 _FORMATS = frozenset({"F16", "Q8P"})
+_MANAGED_NAME = re.compile(r"(?i)^(?P<name>[A-Za-z0-9_]{1,20})_(?P<tag>[A-Za-z0-9]+)_LoRA_(?P<fmt>F16|Q8P)\.ckpt$")
+_SHA256 = re.compile(r"^[0-9a-f]{64}$")
+
+
+def architecture_shortcode(exact_architecture: str) -> str | None:
+    """Return the #373 display tag for an exact architecture; not a provider version."""
+    return ARCHITECTURE_TAGS.get(exact_architecture)
 
 
 def managed_filename(short_name: str, family_tag: str, format_code: str) -> str:
@@ -387,7 +402,11 @@ def managed_filename(short_name: str, family_tag: str, format_code: str) -> str:
 
 def _identity(sha256: str | None, size: int | None) -> tuple[str, int] | None:
     """Only caller-supplied measured digests can establish content reuse."""
-    return (sha256, size) if sha256 is not None and size is not None else None
+    return (
+        (sha256, size)
+        if isinstance(sha256, str) and _SHA256.fullmatch(sha256) and isinstance(size, int) and size > 0
+        else None
+    )
 
 
 def _scope(architecture: str, format_code: str, name: str) -> tuple[str, str, str]:
@@ -399,6 +418,35 @@ def _prefixes(name: str, alternatives: tuple[str, ...]) -> tuple[str, ...]:
     candidates = {name}
     candidates.update(alt for alt in alternatives if name.casefold().startswith(alt.casefold()))
     return tuple(sorted((value for value in candidates if PORTABLE.fullmatch(value)), key=lambda v: (-len(v), v)))
+
+
+def occupied_from_snapshot(records: Sequence[Mapping[str, object]]) -> tuple[ManagedName, ...]:
+    """Build reservations from one canonical read, never from account-scoped receipts.
+
+    Only an explicitly accepted managed_identifier reserves a technical name.
+    Source filenames and historical assets/receipts are not canonical identifiers.
+    """
+    occupied: list[ManagedName] = []
+    for record in records:
+        raw = record.get("managed_identifier")
+        match = _MANAGED_NAME.fullmatch(raw) if isinstance(raw, str) else None
+        if match is None:
+            continue
+        architecture = _TAG_ARCHITECTURES.get(match["tag"].casefold())
+        if architecture is None:
+            continue
+        sha = record.get("sha256")
+        size = record.get("size")
+        occupied.append(
+            ManagedName(
+                match["name"],
+                architecture,
+                match["fmt"].upper(),
+                sha if isinstance(sha, str) else None,
+                size if isinstance(size, int) else None,
+            )
+        )
+    return tuple(occupied)
 
 
 def allocate_batch_names(
@@ -414,7 +462,8 @@ def allocate_batch_names(
     claimed: dict[tuple[str, str, str], ManagedName | NamingRequest] = {}
     known_content: dict[tuple[str, int], ManagedName] = {}
     for old in occupied:
-        claimed.setdefault(_scope(old.exact_architecture, old.format_code, old.short_name), old)
+        key = _scope(old.exact_architecture, old.format_code, old.short_name)
+        claimed.setdefault(key, old)
         identity = _identity(old.sha256, old.size)
         if identity is not None:
             known_content.setdefault(identity, old)
@@ -444,25 +493,35 @@ def allocate_batch_names(
         if item.format_code not in _FORMATS:
             results.append(NameAllocation(name, conflict="missing_format"))
             continue
-        if item.family_tag is not None and not _TAG.fullmatch(item.family_tag):
-            results.append(NameAllocation(name, conflict="invalid_family_tag"))
+        expected_tag = architecture_shortcode(item.exact_architecture)
+        if expected_tag is None:
+            results.append(NameAllocation(name, conflict="unknown_architecture_tag"))
+            continue
+        if item.family_tag is not None and item.family_tag != expected_tag:
+            results.append(NameAllocation(name, conflict="architecture_tag_mismatch"))
             continue
 
         identity = _identity(item.sha256, item.size)
         canonical = known_content.get(identity) if identity is not None else None
-        if canonical is not None and _scope(
-            canonical.exact_architecture, canonical.format_code, canonical.short_name
-        ) != _scope(item.exact_architecture, item.format_code, name):
-            # The canonical record owns an accepted name for these bytes. Neither
-            # a heuristic nor a manual edit silently renames an existing asset.
-            results.append(NameAllocation(name, conflict="content_already_named"))
-            continue
+        if canonical is not None:
+            if (canonical.exact_architecture, canonical.format_code) != (
+                item.exact_architecture,
+                item.format_code,
+            ) and not item.replace_existing:
+                results.append(NameAllocation(name, conflict="content_metadata_conflict"))
+                continue
+            if canonical.short_name != name:
+                if item.manually_edited:
+                    if not item.replace_existing:
+                        results.append(NameAllocation(name, conflict="content_already_named"))
+                        continue
+                elif not item.replace_existing:
+                    # Re-selecting the same verified bytes retains accepted metadata.
+                    name = canonical.short_name
 
         key = _scope(item.exact_architecture, item.format_code, name)
         existing = claimed.get(key)
-        reuses = existing is not None and identity is not None and identity == _identity(
-            existing.sha256, existing.size
-        )
+        reuses = existing is not None and identity is not None and identity == _identity(existing.sha256, existing.size)
         collision = (existing is not None and not reuses) or (
             not item.manually_edited and key in reserved_manual and existing is None
         )
@@ -500,11 +559,7 @@ def allocate_batch_names(
             claimed[key] = item
         if identity is not None and canonical is None:
             known_content.setdefault(identity, ManagedName(name, item.exact_architecture, item.format_code, *identity))
-        filename = (
-            managed_filename(name, item.family_tag, item.format_code)
-            if item.family_tag is not None
-            else None
-        )
+        filename = managed_filename(name, expected_tag, item.format_code)
         results.append(
             NameAllocation(
                 short_name=name,

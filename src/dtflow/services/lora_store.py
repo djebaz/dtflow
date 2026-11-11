@@ -44,22 +44,6 @@ def _safe_name(name: str) -> str:
     return cleaned or "lora.ckpt"
 
 
-def managed_lora_filename(short_name: str, family_tag: str, format_code: str) -> str:
-    """Build the exact technical name for a newly authorized managed preparation.
-
-    The caller must supply a verified architecture's approved display shortcode.
-    Filename suggestions are advisory (#377); collision and authorization belong
-    to the future Prepare editor (#373). Original files are never renamed.
-    """
-    if not isinstance(short_name, str) or not re.fullmatch(r"[A-Za-z0-9_]{1,20}", short_name):
-        raise ValidationError("Short name must contain 1-20 ASCII letters, digits, or underscores.")
-    if not isinstance(family_tag, str) or not re.fullmatch(r"[A-Za-z0-9]+", family_tag):
-        raise ValidationError("A verified architecture shortcode is required.")
-    if format_code not in ("F16", "Q8P"):
-        raise ValidationError("Managed LoRA format must be F16 or Q8P.")
-    return f"{short_name}_{family_tag}_LoRA_{format_code}.ckpt"
-
-
 def _hash(path: Path) -> tuple[str, int]:
     digest, total = hashlib.sha256(), 0
     with path.open("rb") as handle:
