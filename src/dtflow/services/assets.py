@@ -35,7 +35,7 @@ from dtflow.core.tasks import settle
 from dtflow.diagnostics import api_error_data, cloud_key_data, event as diagnostic_event
 from dtflow.persistence.assets import AssetRegistry, AssetsBusyError, newest_per_name
 from dtflow.persistence.store import PersistenceError
-from dtflow.services.lora_family import LoraFamily, detect_lora_family
+from dtflow.services.lora_family import LoraFamily, detect_lora_family, validate_converted_lora
 from dtflow.services.lora_naming import LoraPrepareMetadata
 from dtflow.services.lora_store import LoraStore
 
@@ -178,6 +178,7 @@ class AssetService:
                 raise ValidationError("Prepare identifier disagrees with the selected managed LoRA name.")
             identifier = selected_identifier
         stat, digest = await asyncio.to_thread(_observe, path)
+        await asyncio.to_thread(validate_converted_lora, path)
         content = AssetContent("lora", identifier or path.name, digest, stat.st_size, provenance)
         retained = None
         if self.store is not None:
@@ -240,6 +241,7 @@ class AssetService:
         backend = self.backend
         credential_id = await self._credential_id()
         if detected is None:
+            await asyncio.to_thread(validate_converted_lora, path)
             detected = await asyncio.to_thread(detect_lora_family, path)
         asset_id, operation = await self.registry.begin(
             content,
@@ -250,6 +252,8 @@ class AssetService:
         )
         transferred = False
         try:
+            if metadata is not None and self.store is not None:
+                await asyncio.to_thread(self.store.rename_accepted, content.sha256, content.size, content.identifier)
             negotiation = negotiation or await backend.negotiate_asset(content)
             if negotiation.status == "exists":
                 receipt = await self.registry.confirm(
@@ -289,6 +293,9 @@ class AssetService:
                     asset_id, operation, "cancelled" if transferred else "cancelled_early", transferred, credential_id
                 )
             )
+            raise
+        except ValidationError:
+            await settle(self.registry.mark(asset_id, operation, "failed", "retained_name_failed", protect_confirmed=True))
             raise
         except BackendError as exc:
             failure = exc.failure
