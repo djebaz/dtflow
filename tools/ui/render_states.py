@@ -544,6 +544,28 @@ def render_lora_prepare_states(shell, out):
     save(shell.form, out, "lora-picker")
     shell.inline.dismiss()
 
+    # The genuine Connections library is collapsed in the central workspace.
+    # Add only illustrative list rows for the expanded screenshot; no store writes.
+    shell.form.connectionNavigationButton.click()
+    QTest.qWait(110)
+    shell.form.customLorasDisclosure.setChecked(False)
+    save(shell.form, out, "lora-connections-collapsed")
+    library = shell.form.retainedLorasList
+    library.clear()
+    for label in (
+        "PortraitV2[Kr2]  ·  F16  ·  Ready",
+        "Cinematic[ZiT]  ·  Q8P  ·  Ready",
+        "DetailBoost  ·  Needs architecture",
+        "Realism[F1]  ·  F16  ·  Ready",
+    ):
+        library.addItem(label)
+    shell.form.customLorasStatusLabel.setText("4 illustrative locally known LoRAs.")
+    shell.form.retainedLorasStatusLabel.setText("4 illustrative local entries · no files loaded.")
+    shell.form.customLorasDisclosure.setChecked(True)
+    QTest.qWait(70)
+    save(shell.form, out, "lora-connections-expanded")
+    shell.form.customLorasDisclosure.setChecked(False)
+
 
 @fixture("connection-outcomes")
 def render_connection_outcomes(shell, out):
