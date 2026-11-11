@@ -4,6 +4,6 @@
   "documentation": ["*.md", "*.rst", "LICENSE*", "NOTICE*", ".github/ISSUE_TEMPLATE/**"],
   "shared": ["pyproject.toml", "uv.lock", ".python-version", ".github/actions/**", "tools/ci/action_changes.py", "tools/ci/action_dependencies.json"],
   "ci": ["*.py", "*.qss", "*.ui", "src/dtflow/**", "tests/**", ".github/workflows/ci.yml"],
-  "render": ["src/dtflow/**", "tools/ui/**", "tests/fixtures/**", "tests/conftest.py", "tests/helpers/**", ".github/workflows/main.yml", ".github/workflows/render-request.yml"],
+  "render": ["src/dtflow/**", "tools/ui/**", "devdocs/design-system/ui_kits/lora/qt/*.ui", "tests/fixtures/**", "tests/conftest.py", "tests/helpers/**", ".github/workflows/main.yml", ".github/workflows/render-request.yml"],
   "ci_ignore": ["docs/**", "devdocs/**", ".github/pull_request_template.*", ".github/workflows/main.yml", ".github/workflows/render-request.yml", ".github/workflows/artifacts_swapper.yml", ".github/workflows/build-and-release.yml"]
 }
