@@ -171,6 +171,10 @@ class LoraAssetPanel:
         )
         self._candidates = list(self._inventory_candidates)
 
+    def eligible_architectures(self) -> tuple[str, ...]:
+        """Exact architectures the active backend lists LoRAs for; a filename or catalogue label is never evidence."""
+        return tuple(dict.fromkeys(self._inventory_families.values()))
+
     def set_candidates(self, entries, *, checkpoint_version: str | None = None) -> None:
         """Offer only known-compatible LoRAs; keep selected mismatches visible for correction."""
         self._checkpoint_version = checkpoint_version

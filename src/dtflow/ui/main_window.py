@@ -17,6 +17,7 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QListWidgetItem,
+    QTableWidgetItem,
     QLineEdit,
     QMainWindow,
     QPlainTextEdit,
@@ -49,6 +50,7 @@ from dtflow.services.cache_management import CATEGORIES, cache_usage, purge_cach
 from dtflow.services.catalogue import Catalogue, FAMILY_LABELS, import_user_loras
 from dtflow.services.lora_family import retained_families
 from dtflow.services.lora_auto_naming import normalize_previous_retained
+from dtflow.services.lora_metadata_edit import read_lora_rows
 from dtflow.services.lora_store import LoraStore
 from dtflow.services.connection import Presentation, check_connection, present_failure, present_status
 from dtflow.services.cloud_usage import key_identity
@@ -69,6 +71,8 @@ from dtflow.ui.brand import connection_icon, status_dot, tinted_icon
 from dtflow.ui.button_focus import KeyboardFocusGuard
 from dtflow.ui.current_page_stack import CurrentPageStack
 from dtflow.ui.cloud_usage_panel import CloudUsagePanel
+from dtflow.ui.lora_metadata_overlay import LoraMetadataOverlay
+from dtflow.ui.lora_trigger_panel import LoraTriggerPanel
 from dtflow.ui.workflow_defaults_panel import WorkflowDefaultsPanel
 from dtflow.ui.gallery_page import GalleryPage
 from dtflow.ui.generation_page import GenerationPage
@@ -539,8 +543,22 @@ class MainWindow:
         form.importCustomLorasButton.clicked.connect(self.import_custom_loras)
         form.clearCustomLorasButton.clicked.connect(self.clear_custom_loras)
         form.removeRetainedLoraButton.clicked.connect(self.remove_retained_lora)
-        form.retainedLorasList.itemSelectionChanged.connect(self._retained_lora_selection_changed)
-        self._remove_lora_shortcut = QShortcut(QKeySequence("Delete"), form.retainedLorasList)
+        table = form.retainedLorasTable
+        table.verticalHeader().setVisible(False)
+        table.horizontalHeader().setStretchLastSection(True)
+        table.itemSelectionChanged.connect(self._retained_lora_selection_changed)
+        table.itemDoubleClicked.connect(lambda _item: self.edit_lora_metadata())
+        form.editLoraMetadataButton.clicked.connect(self.edit_lora_metadata)
+        self._lora_records: dict[tuple[str, int], dict] = {}
+        self._lora_names: dict[tuple[str, int], str] = {}
+        self.lora_metadata_overlay = LoraMetadataOverlay(
+            form.connectionWorkspaceScroll,
+            self.runner,
+            self.state_dir,
+            on_saved=self._lora_metadata_saved,
+            on_closed=lambda: form.retainedLorasTable.setFocus(),
+        )
+        self._remove_lora_shortcut = QShortcut(QKeySequence("Delete"), form.retainedLorasTable)
         self._remove_lora_shortcut.setContext(Qt.ShortcutContext.WidgetWithChildrenShortcut)
         self._remove_lora_shortcut.activated.connect(self.remove_retained_lora)
         self._removing_retained_lora = False
@@ -652,6 +670,9 @@ class MainWindow:
             on_unavailable=self._show_usage_unavailable,
         )
         self.workflow_defaults = WorkflowDefaultsPanel(form, self.runner, self.state_dir)
+        self.lora_triggers = LoraTriggerPanel(
+            form, self.runner, self.state_dir, self.generation.page.triggerPrefixCheck
+        )
         self.activity.listen(self._usage_activity_changed)
         self._gui_heartbeat = GuiHeartbeat(
             form,
@@ -1799,7 +1820,11 @@ class MainWindow:
             found = retained_families(self.state_dir, identities)
             for entry in entries:
                 entry["detected_family"] = found.get((entry.get("sha256"), entry.get("size")))
-            return len(Catalogue(self.state_dir).user_loras()), entries, store.usage()
+            try:
+                records = asyncio.run(read_lora_rows(self.state_dir))
+            except Exception:  # noqa: BLE001 - the table still lists retained files without local metadata
+                records = {}
+            return len(Catalogue(self.state_dir).user_loras()), entries, store.usage(), records
 
         self._read_summary("loras", read, self._custom_loras_read)
 
@@ -1811,8 +1836,9 @@ class MainWindow:
             self.form.retainedLorasStatusLabel.setText("Retained files unavailable; reopen Connection to retry.")
             self.form.clearCustomLorasButton.setEnabled(False)
             self.form.removeRetainedLoraButton.setEnabled(False)
+            self.form.editLoraMetadataButton.setEnabled(False)
             return
-        count, entries, (stored_count, stored_bytes) = result
+        count, entries, (stored_count, stored_bytes), records = result
         self.form.customLorasStatusLabel.setText(
             f"{count} custom LoRA definition" + ("" if count == 1 else "s") + " imported."
             if count
@@ -1825,27 +1851,73 @@ class MainWindow:
             if stored_count
             else "No locally retained LoRAs."
         )
-        listing = self.form.retainedLorasList
-        selected = listing.currentItem()
-        identity = selected.data(Qt.ItemDataRole.UserRole) if selected else None
-        listing.clear()
+        table = self.form.retainedLorasTable
+        identity = self._selected_lora_identity()
+        self._lora_records, self._lora_names = records, {}
+        rows = []
         for entry in sorted(entries, key=lambda item: str(item.get("name", "")).casefold()):
             name, sha256, size = entry.get("name"), entry.get("sha256"), entry.get("size")
-            if not isinstance(name, str) or not isinstance(sha256, str) or not isinstance(size, int):
-                continue
-            found = entry.get("detected_family")
-            family = FAMILY_LABELS.get(found.family, found.family) if found and found.family else "Unknown"
-            item = QListWidgetItem(f"{name} · {family} · {self._human_bytes(size)}")
-            item.setData(Qt.ItemDataRole.UserRole, (sha256, size))
-            item.setToolTip(
-                f"{name}\nFamily: {family} ({found.source if found else 'unknown'})\n"
+            if isinstance(name, str) and isinstance(sha256, str) and isinstance(size, int):
+                rows.append((name, sha256, size, entry.get("detected_family")))
+        table.setRowCount(len(rows))
+        for row, (name, sha256, size, found) in enumerate(rows):
+            record = records.get((sha256, size)) or {}
+            version = record.get("family") or (found.family if found and found.family else None)
+            architecture = FAMILY_LABELS.get(version, version) if version else "Unknown"
+            if record.get("architecture_conflict"):
+                architecture += " (conflict)"
+            short = record.get("short_name") or ""
+            status = "Needs architecture" if not version else "Needs short name" if not short else "Ready"
+            cells = (
+                short or "—",
+                architecture,
+                record.get("format_code") or "—",
+                record.get("trigger_words") or "—",
+                status,
+            )
+            tooltip = (
+                f"{name}\nFamily: {architecture} ({record.get('family_source') or (found.source if found else 'unknown')})\n"
                 f"{self._human_bytes(size)} · SHA-256 {sha256}\n"
                 "Remove deletes only this managed copy, not the original, remote asset, or history."
             )
-            listing.addItem(item)
+            self._lora_names[(sha256, size)] = name
+            for column, text in enumerate(cells):
+                item = QTableWidgetItem(text)
+                item.setToolTip(tooltip)
+                if column == 0:
+                    item.setData(Qt.ItemDataRole.UserRole, (sha256, size))
+                table.setItem(row, column, item)
             if (sha256, size) == identity:
-                listing.setCurrentItem(item)
+                table.selectRow(row)
+        table.resizeColumnsToContents()
         self._retained_lora_selection_changed()
+
+    def _selected_lora_identity(self) -> tuple[str, int] | None:
+        table = self.form.retainedLorasTable
+        rows = table.selectionModel().selectedRows() if table.selectionModel() else []
+        item = table.item(rows[0].row(), 0) if rows else None
+        return item.data(Qt.ItemDataRole.UserRole) if item else None
+
+    def edit_lora_metadata(self) -> None:
+        """Open the single-record metadata overlay for the one selected library row."""
+        identity = self._selected_lora_identity()
+        record = self._lora_records.get(identity) if identity else None
+        if identity is None or self._removing_retained_lora:
+            return
+        if record is None:
+            InlineNotice.error(
+                self.form,
+                "No metadata to edit yet",
+                "This LoRA has no local metadata record. Prepare it from Generate first.",
+            )
+            return
+        self.lora_metadata_overlay.open(
+            record, self._lora_names.get(identity, "LoRA"), self.generation.lora.eligible_architectures()
+        )
+
+    def _lora_metadata_saved(self) -> None:
+        self.form.statusBar().showMessage("LoRA metadata saved locally. Files and receipts unchanged.", 5000)
+        self.refresh_custom_loras(background=True)
 
     def _toggle_custom_loras(self, expanded: bool) -> None:
         """Expand the existing Connections LoRA library only when needed."""
@@ -1854,21 +1926,21 @@ class MainWindow:
         self.form.customLorasDisclosure.setAccessibleName("Hide custom LoRAs" if expanded else "Show custom LoRAs")
 
     def _retained_lora_selection_changed(self) -> None:
-        self.form.removeRetainedLoraButton.setEnabled(
-            not self._removing_retained_lora and bool(self.form.retainedLorasList.selectedItems())
-        )
+        selected = self._selected_lora_identity() is not None
+        self.form.removeRetainedLoraButton.setEnabled(not self._removing_retained_lora and selected)
+        self.form.editLoraMetadataButton.setEnabled(not self._removing_retained_lora and selected)
 
     def remove_retained_lora(self) -> None:
         """Click Remove or press Delete on a selected retained copy: no confirmation or other deletion."""
         if self._removing_retained_lora:
             return
-        selected = self.form.retainedLorasList.selectedItems()
-        if not selected:
+        identity = self._selected_lora_identity()
+        if identity is None:
             return
-        sha256, size = selected[0].data(Qt.ItemDataRole.UserRole)
+        sha256, size = identity
         self._removing_retained_lora = True
         self.form.removeRetainedLoraButton.setEnabled(False)
-        self.form.retainedLorasList.setEnabled(False)
+        self.form.retainedLorasTable.setEnabled(False)
         self.runner.submit(
             asyncio.to_thread(LoraStore(self.state_dir).remove, sha256, size),
             self._retained_lora_removed,
@@ -1876,7 +1948,7 @@ class MainWindow:
 
     def _retained_lora_removed(self, removed, error) -> None:
         self._removing_retained_lora = False
-        self.form.retainedLorasList.setEnabled(True)
+        self.form.retainedLorasTable.setEnabled(True)
         if error is not None:
             InlineNotice.error(self.form, "Retained LoRA not removed", str(error))
         elif removed:

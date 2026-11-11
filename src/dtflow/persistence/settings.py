@@ -234,3 +234,52 @@ def _store_dialog_entries(state: Path, document: dict, runtime: str, entries: di
     else:
         document.pop("dialog_paths", None)
     _write(state, document)
+
+
+# Use LoRA trigger prefixes (#373): one application default plus an independent saved choice per execution path.
+# A path without its own saved choice follows the default; changing the default never rewrites a saved choice.
+TRIGGER_PATHS = ("generate", "queues", "workflows", "scripts")
+_TRIGGER_LOCK = threading.Lock()  # two switches toggled quickly must not overwrite each other's read-modify-write
+
+
+def _trigger_document(document: dict) -> tuple[bool, dict[str, bool]]:
+    stored = document.get("lora_trigger_prefixes")
+    if not isinstance(stored, dict):
+        return False, {}
+    default = stored.get("default") is True
+    paths = stored.get("paths")
+    chosen = (
+        {name: value for name, value in paths.items() if name in TRIGGER_PATHS and type(value) is bool}
+        if isinstance(paths, dict)
+        else {}
+    )
+    return default, chosen
+
+
+def load_trigger_prefixes(state: Path) -> dict[str, bool]:
+    """The effective trigger-prefix switches: ``default`` plus each execution path (its own choice, else the default)."""
+    default, chosen = _trigger_document(_read(state))
+    return {"default": default, **{name: chosen.get(name, default) for name in TRIGGER_PATHS}}
+
+
+def save_trigger_prefix(state: Path, name: str, value: bool) -> Path:
+    """Save the application default (``default``) or one execution path's own choice, leaving the others untouched."""
+    if name not in ("default", *TRIGGER_PATHS) or type(value) is not bool:
+        raise SettingsError("Unknown LoRA trigger prefix setting.")
+    with _TRIGGER_LOCK:
+        document = _read(state)  # refuse to overwrite an unreadable or newer file
+        default, chosen = _trigger_document(document)
+        if name == "default":
+            default = value
+        else:
+            chosen[name] = value
+        document["lora_trigger_prefixes"] = {"default": default, "paths": chosen}
+        return _write(state, document)
+
+
+def trigger_prefix_enabled(state: Path, path: str) -> bool:
+    """Whether one execution path inserts trigger prefixes; an unreadable settings file means no insertion."""
+    try:
+        return load_trigger_prefixes(state)[path]
+    except (SettingsError, KeyError):
+        return False
