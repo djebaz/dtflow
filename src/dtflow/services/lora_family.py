@@ -4,7 +4,7 @@ Only SQLite tensor names and shape metadata are inspected, never weights. A
 filename, current checkpoint, or generic hidden-size match is not proof of
 family. Unknown and ambiguous structures remain explicitly unknown.
 
-Z-Image, Krea 2, MOSS Image, FLUX.1, bounded SD 1.x and SDXL Base signatures are
+Z-Image, Krea 2, MOSS Image, FLUX.1, FLUX.2 Klein 9B, SD 1.x and SDXL Base signatures are
 grounded in owner-provided converted CKPT reports and upstream Draw Things
 model definitions (#369). Unidentified or partial adapters stay unknown.
 """
@@ -153,6 +153,25 @@ def detect_lora_family(path: Path) -> LoraFamily:
             for index in (3, 4, 5)
         )
     )
+    # FLUX.2 Klein 9B has 8 double-stream and 24 single-stream blocks,
+    # hidden width 4096 and 3x feed-forward width 12288. The projection
+    # counts distinguish it from FLUX.2 base (6144 wide, 8+48 blocks)
+    # and Klein 4B (3072 wide, 5+20 blocks). Sparse adapters remain unknown.
+    flux2_9b = (
+        {4096, 12288} <= dit_dimensions
+        and all(
+            sum(module.startswith(f"{name}-") for module in dit_modules) == 2 * (8 + 24)
+            for name in ("x_q", "x_k", "x_v", "x_o")
+        )
+        and all(
+            sum(module.startswith(f"{name}-") for module in dit_modules) == 2 * 24
+            for name in ("x_w1", "x_w2", "x_w3")
+        )
+        and all(
+            sum(module.startswith(f"{name}-") for module in dit_modules) == 2 * 8
+            for name in ("x_gate_proj", "x_up_proj", "x_down_proj", "c_q", "c_o")
+        )
+    )
     # SD1.x and SDXL share U-Net channel widths (320/640/1280), and SDXL
     # can include a 768-wide CLIP-L text model. Require 768 also in U-Net LoRA
     # shapes (SD1.x cross-attention), plus absence of SD2/SDXL conditioning
@@ -183,6 +202,7 @@ def detect_lora_family(path: Path) -> LoraFamily:
             ("krea_2", krea_2),
             ("moss_image", moss_image),
             ("flux_1", flux_1),
+            ("flux2_9b", flux2_9b),
             ("sd_1", sd_1),
             ("sdxl", sdxl),
         )
