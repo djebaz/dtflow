@@ -247,13 +247,16 @@ _ZIMAGE_LEAVES = {
     "feed_forward_w3": "ffn_up_proj",
     "feed_forward_w2": "ffn_down_proj",
 }
+_ZIMAGE_FFN = {"ffn_gate_proj", "ffn_up_proj", "ffn_down_proj"}
 
 
 def resolve_zimage(module: str) -> Target | None:
     """Z Image (Turbo): 30 main layers plus 2 noise refiner and 2 context refiner blocks.
 
     Names follow the Swift model: ``t-<group>_<layer>-<block index>-0`` with an empty group
-    for the main layers. Fused sources (``attention.qkv`` and ``adaLN_modulation.0``) map
+    for the main layers; the three feed forward layers live in a named sub-model
+    (``t-ffn-<i>-ffn_down_proj-0-0``). Main layers match the Swift output; the refiner blocks
+    follow the same rule but were not part of the reference LoRA. Fused sources (``attention.qkv`` and ``adaLN_modulation.0``) map
     to several targets and are split by ``split_fused``.
     """
     match = _ZIMAGE_BLOCK.match(module)
@@ -265,6 +268,10 @@ def resolve_zimage(module: str) -> Target | None:
     prefix = "" if group == "layers" else f"{group}_"
 
     def name(layer: str) -> str:
+        if layer in _ZIMAGE_FFN:
+            # The feed forward is its own named sub-model: t-<ffn model>-<block>-<layer>-0-0
+            # (checked against the Swift output for the 30 main layers).
+            return f"t-{prefix}ffn-{index}-{prefix}{layer}-0-0"
         return f"t-{prefix}{layer}-{index}-0"
 
     if leaf in _ZIMAGE_LEAVES:
