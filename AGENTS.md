@@ -43,6 +43,7 @@ These instructions apply throughout `dtflow`.
 - Prefer `uv run` for validation so checks execute in the locked project environment.
 - Do not mutate a supposedly reproducible environment with arbitrary package upgrades during normal validation.
 - When changing `pyproject.toml` tool configuration, keep documented commands and CI behavior aligned with the canonical configuration.
+- **Pillow 13 compatibility watch (#385):** DTFlow explicitly overrides `drawthings-py==0.4.0`'s declared `pillow<13` limit to use Pillow 13; NumPy 2.3.5 remains pinned separately because NumPy 2.4.4/2.5.3 failed to import on the tested legacy Pentium E6500. On 2026-11-11, the owner reported successful Windows standalone smoke of `dtflow-6.2.0-gf1f13d8-windows-x64.exe`: generation, queues, inpainting, person and face detection for masks, and JPEG export, with no warnings observed in app logs. This is bounded smoke evidence, not a guarantee for every operation, CPU or SDK update. If native imports, image decode/encode, masks, generation or JPEG exports regress, check the Pillow override and upstream SDK compatibility before adding workarounds or blaming unrelated systems. Do not silently downgrade dependencies or remove the NumPy pin; see `devdocs/research/drawthings-grpc-proof.md` and [#385](https://github.com/djebaz/dtflow/pull/385).
 
 ### Agent environment readiness
 
