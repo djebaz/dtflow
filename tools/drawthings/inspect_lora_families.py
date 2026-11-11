@@ -41,7 +41,7 @@ MARKERS = ("ada_ln", "ffn_", "proj", "text_fusion", "txtfusion", "textfusion", "
 TRANSFORMER_WIDTHS = {
     "pixart": (1152,),
     "sd3": (1536, 2432),
-    "flux_1": (3072, 12288),
+    "flux1": (3072, 12288),
     "flux_2": (3072, 4096, 6144),
     "hunyuan_video": (3072,),
     "wan_2_1": (1536, 5120),
@@ -55,8 +55,8 @@ TRANSFORMER_WIDTHS = {
     "krea_2": (6144,),
     "moss_image": (3072,),
 }
-UNET_WIDTHS = {"sd_1": (320, 640, 1280), "sd_2": (320, 640, 1280),
-               "sdxl": (320, 640, 1280)}
+UNET_WIDTHS = {"v1": (320, 640, 1280), "v2": (320, 640, 1280),
+               "sdxl_base_v0.9": (320, 640, 1280)}
 
 
 def dimensions(value: object) -> tuple[int, ...]:
@@ -138,7 +138,7 @@ def fingerprint_checks(
             "ffn_gate_proj": any(re.fullmatch(r"ffn_gate_proj-\d+-\d+", m) for m in modules),
             "x_o": any(re.fullmatch(r"x_o-\d+-\d+", m) for m in modules),
         },
-        "flux_1": {
+        "flux1": {
             "hidden_3072": 3072 in widths,
             "feed_forward_12288": 12288 in widths,
             "all_57_block_projection_pairs": all(
@@ -174,14 +174,14 @@ def fingerprint_checks(
                 for name in ("x_q", "x_k", "x_v", "x_o", "ffn_down_proj")
             ),
         },
-        "sd_1": {
+        "v1": {
             "text_encoder_768": 768 in text,
             "unet_320_640_1280_and_768": {320, 640, 1280, 768} <= unet,
             "no_sd2_or_sdxl_unet_context": not ({1024, 2048} & unet),
             "no_sd2_or_sdxl_text_width": not ({1024, 1280} & text),
             "no_sdxl_second_text_encoder": "__te2__text_model__" not in namespace_widths,
         },
-        "sdxl": {
+        "sdxl_base_v0.9": {
             "clip_l_768": 768 in text,
             "clip_g_1280": 1280 in te2,
             "unet_640_1280": {640, 1280} <= unet,
