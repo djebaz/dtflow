@@ -1,0 +1,26 @@
+/* Issue #373: prototype-only LoRA component aliases. Not runtime Qt tokens. */
+:root {
+  --lora-editor-max-width: 1120px;
+  --lora-table-min-width: 950px;
+  --lora-row-min-height: 52px;
+  --lora-compact-table-min-width: 720px;
+  --lora-compact-columns: minmax(154px, 1fr) 128px 116px 60px 105px 116px;
+  --lora-compact-column-gap: 5px;
+  --lora-file-column-min-width: 220px;
+  --lora-input-min-height: 30px;
+  --lora-footer-min-height: 56px;
+  --lora-cell-gap: 8px;
+  --lora-cell-padding: 6px;
+  --lora-panel-padding: var(--space-md);
+  --lora-picker-row-min-height: 38px;
+  --lora-placement-gap: var(--space-md);
+  --lora-library-max-height: 260px; /* prototype-only; center table scrolls when expanded */
+  --lora-border: var(--color-section-border);
+  --lora-row-background: var(--color-item-surface);
+  --lora-preview-background: var(--color-host);
+  --lora-muted: var(--color-secondary);
+  --lora-ready: var(--color-success);
+  --lora-unready: var(--color-warning);
+  --lora-invalid: var(--color-error);
+  --lora-focus: var(--color-focus);
+}

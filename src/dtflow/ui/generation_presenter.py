@@ -13,6 +13,7 @@ from pathlib import Path
 
 from dtflow.core.models import SEED_LIMIT, LoRASelection, ResolvedGenerationRequest, Sampler, ValidationError
 from dtflow.services.artifacts import atomic_write
+from dtflow.services.lora_naming import display_label
 from dtflow.services.config import export_config, load_config, resolve_request
 
 FAKE_MODEL = "fake-fixture"  # the same default the CLI applies for the fake backend only
@@ -192,7 +193,9 @@ def describe_request(request: ResolvedGenerationRequest, backend: str, endpoint:
     lines += [f"guidance: {request.guidance}", f"sampler: {request.sampler_id.value}"]
     receipts = {item.identifier: item.receipt_id[:8] for item in request.prepared_assets}
     lines += [
-        f"lora: {item.identifier} @ {item.weight}"
+        f"lora: {item.identifier}"
+        + (f" [{display_label(item.identifier)}]" if display_label(item.identifier) != item.identifier else "")
+        + f" @ {item.weight}"
         + (f" (receipt {receipts[item.identifier]})" if item.identifier in receipts else "")
         for item in request.loras
     ]

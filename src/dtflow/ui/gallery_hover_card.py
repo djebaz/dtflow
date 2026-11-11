@@ -19,6 +19,7 @@ from PySide6.QtWidgets import (
 )
 
 from dtflow.core.gallery import GalleryItem
+from dtflow.services.lora_naming import display_label
 from dtflow.ui.gallery_detail_preview import ASSETS
 from dtflow.ui.prompt_tags import PromptTagHighlighter, stored_runs
 
@@ -188,8 +189,9 @@ class GalleryHoverCard(QFrame):
         row = QHBoxLayout(chip)
         row.setContentsMargins(4, 2, 4, 2)
         row.setSpacing(6)
-        name = _ElidedLabel(identifier, chip)
+        name = _ElidedLabel(display_label(identifier), chip)
         name.setProperty("textRole", "loraName")
+        name.setToolTip(identifier)
         value = QLabel(f"{weight:g}", chip)
         value.setProperty("textRole", "identifier")
         status = QLabel("Unknown", chip)

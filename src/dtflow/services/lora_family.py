@@ -25,6 +25,17 @@ from dtflow.services.lora_store import LoraStore
 from pathlib import Path
 
 MAX_TENSORS = 20_000
+# Exact Draw Things architectures ``detect_lora_family`` can recognise from a file (keep in step with its matches).
+DETECTABLE_FAMILIES = (
+    "z_image",
+    "krea_2",
+    "moss_image",
+    "flux1",
+    "flux2_9b",
+    "qwen_image_2.1",
+    "v1",
+    "sdxl_base_v0.9",
+)
 _SHAPE = re.compile(r"^\s*[\[(]\s*\d+(?:\s*,\s*\d+)*\s*[\])]\s*$")
 _DIT_LORA_NAME = re.compile(r"^__dit__\[t-([^\]]+)\]__(?:up|down)__$")
 
@@ -204,15 +215,10 @@ def detect_lora_family(path: Path) -> LoraFamily:
     )
     matches = [
         family
-        for family, matched in (
-            ("z_image", z_image),
-            ("krea_2", krea_2),
-            ("moss_image", moss_image),
-            ("flux1", flux_1),
-            ("flux2_9b", flux2_9b),
-            ("qwen_image_2.1", qwen_image_2_1),
-            ("v1", sd_1),
-            ("sdxl_base_v0.9", sdxl),
+        for family, matched in zip(
+            DETECTABLE_FAMILIES,
+            (z_image, krea_2, moss_image, flux_1, flux2_9b, qwen_image_2_1, sd_1, sdxl),
+            strict=True,
         )
         if matched
     ]
@@ -261,12 +267,15 @@ def validate_converted_lora(path: Path) -> None:
         raise ValidationError("Converted LoRA has no complete up/down tensor pair.")
 
 
-def retained_families(state: Path, identities: Iterable[tuple[str, int]]) -> dict[tuple[str, int], LoraFamily]:
+def retained_families(
+    state: Path, identities: Iterable[tuple[str, int]], *, verify: bool = True
+) -> dict[tuple[str, int], LoraFamily]:
     """Inspect legacy retained LoRAs locally, once per content identity; never upload.
 
     Used only to enrich read-only lists and preflight. Dispatch separately
     verifies the retained checksum before trusting these bytes for a request.
     Missing or unreadable files stay Unknown without hiding other receipts.
+    ``verify=False`` skips the full-file SHA-256 (it reads every byte of every LoRA); display-only callers use it.
     """
     store = LoraStore(state)
     result: dict[tuple[str, int], LoraFamily] = {}
@@ -276,7 +285,7 @@ def retained_families(state: Path, identities: Iterable[tuple[str, int]]) -> dic
             detected = LoraFamily()
             if retained is not None and retained.path.stat().st_size == size:
                 detected = detect_lora_family(retained.path)
-                if detected.family is not None:
+                if verify and detected.family is not None:
                     store.verify(retained)
             result[(sha256, size)] = detected
         except (OSError, ValidationError):

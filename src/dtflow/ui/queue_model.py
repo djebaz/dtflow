@@ -4,8 +4,9 @@ from html import escape
 from PySide6.QtCore import QAbstractTableModel, QModelIndex, QPointF, QRectF, Qt
 from PySide6.QtGui import QColor, QIcon, QPainter, QPen, QPixmap
 
+from dtflow.services.lora_naming import display_label
 from dtflow.ui.prompt_tags import tagged_html
-from dtflow.ui.queue_presenter import LORA_GAUGE_MIN_SCALE, ItemRow, display_name, gauge_scale
+from dtflow.ui.queue_presenter import LORA_GAUGE_MIN_SCALE, ItemRow, gauge_scale
 from dtflow.ui.theme import load_tokens
 
 # Preview, Prompt, Model, LoRAs, Parameters, Status and a duration column whose header is a painted stopwatch icon.
@@ -71,7 +72,7 @@ def _tooltip(row: ItemRow, column: int) -> str:
         if not row.loras:
             return ""
         lines = "".join(
-            f"<tr><td>{escape(display_name(name))}</td><td align='right'>&nbsp;{'' if weight is None else f'{weight:.2f}'}</td></tr>"
+            f"<tr><td>{escape(display_label(name))}<br><small>{escape(name)}</small></td><td align='right'>&nbsp;{'' if weight is None else f'{weight:.2f}'}</td></tr>"
             for name, weight in row.loras
         )
         return f"<table>{lines}</table>"
@@ -112,7 +113,7 @@ class QueueItemModel(QAbstractTableModel):
             "",
             row.prompt,
             row.model,
-            ", ".join(name for name, _ in row.loras),
+            ", ".join(display_label(name) for name, _ in row.loras),
             f"{row.steps_text}, {row.guidance_text}, {row.sampler_text}",
             row.state_text,
             row.duration_text,

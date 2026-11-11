@@ -86,6 +86,7 @@ from dtflow.core.workflows import (
 from dtflow.diagnostics import event as diagnostic_event
 from dtflow.memory_diagnostics import enabled as memory_enabled, observe as memory_observe, scope as memory_scope
 from dtflow.persistence.queues import QueueError, post_control
+from dtflow.persistence.settings import trigger_prefix_enabled
 from dtflow.persistence.store import PersistenceError, SQLiteAttempts
 from dtflow.persistence.workflow_items import BAD_STEP_STATES, WorkflowRequest
 from dtflow.services import session
@@ -1012,6 +1013,7 @@ class _Execution:
                             on_event=receive,
                             attempt_id=attempt_id,
                             layout=self.layout(keys),
+                            prefix=trigger_prefix_enabled(self.runner.state, "workflows"),
                             **options,
                         )
                         self.lora_streak.note(request, None)

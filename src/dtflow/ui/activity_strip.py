@@ -340,6 +340,12 @@ class ActivityStrip(QObject):
                 and all(row.property("compactStatus") for row in overlay_rows.values())
             )
             height = max(1 if compact_only else 48, height)
+            # Prepare is a batch editor, not a short notice. Use the available
+            # workspace height so many rows can be inspected without a tiny viewport.
+            # Other inline editors and progress notices retain their natural size.
+            editor = getattr(panel, "_editor", None) if visible_feedback else None
+            if editor is not None and isValid(editor) and editor.property("expandEditorHeight"):
+                height = min(max(height, self.host.height() - 80), max(1, self.host.height() - 16))
             rect = QRect(8, max(0, self.host.height() - height - 8), width, height)
             if self.form.geometry() != rect:
                 self.form.setGeometry(rect)

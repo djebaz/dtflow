@@ -1,0 +1,151 @@
+name: LoRA Prepare UI renders
+
+# Render canonical LoRA editors with synthetic data; no network or uploads.
+# A PR synchronize affecting Prepare triggers this scoped category automatically, without labels.
+run-name: >-
+  LoRA Prepare · PR #${{ github.event.pull_request.number }}
+
+on:
+  pull_request:
+    types: [synchronize, reopened]
+    paths:
+      - 'src/dtflow/ui/prepare_lora_editor.py'
+      - 'src/dtflow/ui/forms/prepare_lora_*.ui'
+      - 'src/dtflow/ui/lora_panel.py'
+      - 'src/dtflow/ui/lora_selection_editor.py'
+      - 'src/dtflow/ui/forms/lora_selection_*.ui'
+      - 'src/dtflow/ui/forms/main_window.ui'
+      - 'src/dtflow/ui/main_window.py'
+      - 'tools/ui/render_states.py'
+      - 'tools/ui/render_catalog.py'
+      - 'tools/ui/render_catalog.json'
+      - '.github/workflows/lora-design-render.yml'
+
+permissions:
+  contents: read
+  issues: write
+  pull-requests: write
+
+concurrency:
+  group: lora-prepare-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+env:
+  QT_QPA_PLATFORM: offscreen
+  UV_LOCKED: "1"
+  PYTHONUNBUFFERED: "1"
+  PYTHONFAULTHANDLER: "1"
+
+jobs:
+  capture:
+    name: Capture canonical LoRA views
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+
+      - name: Install Qt runtime library
+        run: |
+          sudo apt-get install -y --no-install-recommends libegl1 \
+            || { sudo apt-get update && sudo apt-get install -y --no-install-recommends libegl1; }
+
+      - uses: astral-sh/setup-uv@v10.3.3
+        with:
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+
+      - name: Sync environment
+        run: uv sync --locked
+
+      - name: Render canonical LoRA Prepare and shared picker
+        id: capture
+        run: |
+          timeout --signal=ABRT --kill-after=10s 150s \
+            .venv/bin/python tools/ui/render_states.py \
+              --category lora --fast --jobs 1 --out tmp/lora-ui
+          count=$(find tmp/lora-ui -maxdepth 1 -name 'lora-*.png' -type f | wc -l)
+          [ "$count" -eq 5 ] || { echo "::error::Expected 5 LoRA captures, got $count."; exit 1; }
+          echo "Captured LoRA Prepare wide/compact, shared picker, and Connections collapsed/expanded." >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload GitHub screenshot artifact
+        if: steps.capture.outcome == 'success'
+        uses: actions/upload-artifact@v7.0.2
+        with:
+          name: lora-runtime-pr${{ github.event.pull_request.number }}-${{ github.event.pull_request.head.sha }}
+          path: tmp/lora-ui/lora-*.png
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Upload images to Google Drive
+        id: drive
+        if: steps.capture.outcome == 'success'
+        continue-on-error: true
+        env:
+          REFRESH_TOKEN: ${{ secrets.GOOGLE_DRIVE_REFRESH_TOKEN }}
+          CLIENT_ID: ${{ secrets.GOOGLE_OAUTH_CLIENT_ID }}
+          CLIENT_SECRET: ${{ secrets.GOOGLE_OAUTH_CLIENT_SECRET }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          SHORT_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          [ -n "$REFRESH_TOKEN" ] && [ -n "$CLIENT_ID" ] && [ -n "$CLIENT_SECRET" ] \
+            || { echo "::warning::Drive credentials are unavailable; GitHub artifact remains available."; exit 1; }
+          folder="lora-runtime-pr${PR_NUMBER}-$(date -u +%Y%m%dT%H%M%SZ)-${SHORT_SHA:0:7}"
+          uv run python tools/ci/upload_ui_renders_to_drive.py \
+            --source tmp/lora-ui --mode images \
+            --refresh-token "$REFRESH_TOKEN" \
+            --client-id "$CLIENT_ID" \
+            --client-secret "$CLIENT_SECRET" \
+            --run-folder "$folder" --manifest tmp/lora-ui-drive.json
+
+      - name: Publish review links to PR
+        if: always() && steps.capture.outcome == 'success'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          python3 - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          path = Path("tmp/lora-ui-drive.json")
+          data = json.loads(path.read_text(encoding="utf-8")) if path.exists() else {}
+          by_name = {item["relative_path"]: item for item in data.get("files", [])}
+          names = sorted(path.name for path in Path("tmp/lora-ui").glob("lora-*.png"))
+          lines = [
+              "<!-- dtflow-lora-designer-renders -->",
+              "## Canonical LoRA views — 5 captures",
+              "",
+              f"[GitHub Actions run and PNG artifact]({os.environ['RUN_URL']})",
+              "",
+          ]
+          if data.get("folder_url"):
+              lines.extend([f"[Open Google Drive screenshots]({data['folder_url']})", ""])
+          for name in names:
+              item = by_name.get(name)
+              if item and item.get("view_url") and item.get("content_url"):
+                  lines.extend([f"**{name}**", "", f"[![{name}]({item['content_url']})]({item['view_url']})", ""])
+              else:
+                  lines.append(f"- {name} (see GitHub artifact)")
+          lines.extend(["", "_Canonical Qt editor with synthetic offline rows; not Windows or provider acceptance._", ""])
+          note = "\n".join(lines)
+          Path("tmp/lora-render-note.md").write_text(note, encoding="utf-8")
+          with Path(os.environ["GITHUB_STEP_SUMMARY"]).open("a", encoding="utf-8") as stream:
+              stream.write(note)
+          PY
+          marker='<!-- dtflow-lora-designer-renders -->'
+          comment_id=$(gh api "repos/$GITHUB_REPOSITORY/issues/$PR_NUMBER/comments" --paginate \
+            --jq '.[] | select(.user.type == "Bot" and (.body | contains("<!-- dtflow-lora-designer-renders -->"))) | .id' \
+            | tail -n 1)
+          if [ -n "$comment_id" ]; then
+            gh api --method PATCH "repos/$GITHUB_REPOSITORY/issues/comments/$comment_id" \
+              --raw-field "body=$(cat tmp/lora-render-note.md)" >/dev/null
+          else
+            gh api --method POST "repos/$GITHUB_REPOSITORY/issues/$PR_NUMBER/comments" \
+              --raw-field "body=$(cat tmp/lora-render-note.md)" >/dev/null
+          fi

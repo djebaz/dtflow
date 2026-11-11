@@ -1,0 +1,122 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="760" height="726" viewBox="0 0 760 726" role="img" aria-label="DTFlow LoRA Prepare compact horizontal table design render">
+<title>LoRA Prepare compact width — dense table</title><desc>Issue 373 UI concept: one horizontal row per file, six columns, short fields, compact vertical spacing, incomplete row visible. Illustrative SVG, not a native Qt capture.</desc>
+<rect x="0" y="0" width="760" height="726" rx="0" fill="#1f1f1f" stroke="none" />
+<rect x="0" y="0" width="760" height="64" rx="0" fill="#242424" stroke="none" />
+<rect x="16" y="14" width="30" height="30" rx="7" fill="#0068b8" stroke="none" />
+<text x="27" y="35" font-family="Segoe UI,Arial,sans-serif" font-size="17" font-weight="700" fill="#fff">D</text>
+<text x="58" y="28" font-family="Segoe UI,Arial,sans-serif" font-size="16" font-weight="650" fill="#e6e6e6">DTFlow</text>
+<text x="58" y="45" font-family="Segoe UI,Arial,sans-serif" font-size="11" font-weight="400" fill="#b2b2b2">Issue #373 · Compact width</text>
+<rect x="540" y="17" width="204" height="30" rx="5" fill="#1e1e1e" stroke="#424242" />
+<text x="551" y="36" font-family="Segoe UI,Arial,sans-serif" font-size="11" font-weight="600" fill="#b2b2b2">CONCEPT · NO UPLOAD</text>
+<text x="16" y="90" font-family="Segoe UI,Arial,sans-serif" font-size="10" font-weight="600" fill="#8fbde3">ASSETS / BATCH PREPARATION</text>
+<text x="16" y="123" font-family="Segoe UI,Arial,sans-serif" font-size="25" font-weight="650" fill="#e6e6e6">Prepare LoRAs</text>
+<text x="16" y="145" font-family="Segoe UI,Arial,sans-serif" font-size="12" font-weight="400" fill="#b2b2b2">Same six-column table. One file per row; no stacked cards.</text>
+<rect x="16" y="160" width="728" height="515" rx="7" fill="#252525" stroke="#343434" />
+<rect x="17" y="161" width="726" height="44" rx="0" fill="#252525" stroke="none" />
+<text x="28" y="186" font-family="Segoe UI,Arial,sans-serif" font-size="12" font-weight="400" fill="#b2b2b2">4 ready of 5 selected files</text>
+<rect x="619" y="169" width="14" height="14" rx="3" fill="#1e1e1e" stroke="#8fbde3" />
+<text x="642" y="181" font-family="Segoe UI,Arial,sans-serif" font-size="11" font-weight="600" fill="#d5ecff">Compact</text>
+<rect x="17" y="205" width="726" height="31" rx="0" fill="#2d2d2d" stroke="none" />
+<text x="25" y="224" font-family="Segoe UI,Arial,sans-serif" font-size="9" font-weight="600" fill="#b2b2b2">SOURCE FILE</text>
+<text x="185" y="224" font-family="Segoe UI,Arial,sans-serif" font-size="9" font-weight="600" fill="#b2b2b2">ARCHITECTURE</text>
+<text x="318" y="224" font-family="Segoe UI,Arial,sans-serif" font-size="9" font-weight="600" fill="#b2b2b2">SHORT NAME</text>
+<text x="439" y="224" font-family="Segoe UI,Arial,sans-serif" font-size="9" font-weight="600" fill="#b2b2b2">FORMAT</text>
+<text x="504" y="224" font-family="Segoe UI,Arial,sans-serif" font-size="9" font-weight="600" fill="#b2b2b2">TRIGGERS</text>
+<text x="614" y="224" font-family="Segoe UI,Arial,sans-serif" font-size="9" font-weight="600" fill="#b2b2b2">STATUS</text>
+<rect x="17" y="236" width="726" height="61" rx="0" fill="#173852" stroke="none" />
+<path d="M 17 297 L 743 297" fill="none" stroke="#343434"/>
+<rect x="17" y="236" width="3" height="61" rx="0" fill="#0068b8" stroke="none" />
+<text x="25" y="259" font-family="Consolas,monospace" font-size="11" font-weight="500" fill="#e6e6e6">portrait…f16.ckpt</text>
+<text x="25" y="282" font-family="Segoe UI,Arial,sans-serif" font-size="10" font-weight="500" fill="#8fbde3">Copy original</text>
+<rect x="185" y="244" width="127" height="29" rx="4" fill="#1e1e1e" stroke="#4a4a4a" />
+<text x="192" y="263" font-family="Segoe UI,Arial,sans-serif" font-size="11" font-weight="400" fill="#e6e6e6">Krea 2</text>
+<text x="299" y="263" font-family="Segoe UI,Arial,sans-serif" font-size="14" font-weight="400" fill="#b2b2b2">⌄</text>
+<rect x="318" y="244" width="115" height="29" rx="4" fill="#1e1e1e" stroke="#4a4a4a" />
+<text x="325" y="263" font-family="Segoe UI,Arial,sans-serif" font-size="11" font-weight="400" fill="#e6e6e6">PortraitV2</text>
+<rect x="439" y="244" width="59" height="29" rx="4" fill="#1e1e1e" stroke="#4a4a4a" />
+<text x="446" y="263" font-family="Segoe UI,Arial,sans-serif" font-size="11" font-weight="400" fill="#e6e6e6">F16</text>
+<text x="485" y="263" font-family="Segoe UI,Arial,sans-serif" font-size="14" font-weight="400" fill="#b2b2b2">⌄</text>
+<rect x="504" y="244" width="104" height="29" rx="4" fill="#1e1e1e" stroke="#4a4a4a" />
+<text x="511" y="263" font-family="Segoe UI,Arial,sans-serif" font-size="11" font-weight="400" fill="#e6e6e6">portrait style</text>
+<text x="185" y="287" font-family="Segoe UI,Arial,sans-serif" font-size="9" font-weight="400" fill="#b2b2b2">File-detected</text>
+<rect x="614" y="257" width="7" height="7" rx="4" fill="#78c97c" stroke="none" />
+<text x="627" y="265" font-family="Segoe UI,Arial,sans-serif" font-size="10" font-weight="500" fill="#78c97c">Ready</text>
+<rect x="17" y="297" width="726" height="61" rx="0" fill="#242424" stroke="none" />
+<path d="M 17 358 L 743 358" fill="none" stroke="#343434"/>
+<text x="25" y="320" font-family="Consolas,monospace" font-size="11" font-weight="500" fill="#e6e6e6">cinematic…q8p.ckpt</text>
+<text x="25" y="343" font-family="Segoe UI,Arial,sans-serif" font-size="10" font-weight="500" fill="#8fbde3">Copy original</text>
+<rect x="185" y="305" width="127" height="29" rx="4" fill="#1e1e1e" stroke="#4a4a4a" />
+<text x="192" y="324" font-family="Segoe UI,Arial,sans-serif" font-size="11" font-weight="400" fill="#e6e6e6">Z-Image Turbo</text>
+<text x="299" y="324" font-family="Segoe UI,Arial,sans-serif" font-size="14" font-weight="400" fill="#b2b2b2">⌄</text>
+<rect x="318" y="305" width="115" height="29" rx="4" fill="#1e1e1e" stroke="#4a4a4a" />
+<text x="325" y="324" font-family="Segoe UI,Arial,sans-serif" font-size="11" font-weight="400" fill="#e6e6e6">Cinematic</text>
+<rect x="439" y="305" width="59" height="29" rx="4" fill="#1e1e1e" stroke="#4a4a4a" />
+<text x="446" y="324" font-family="Segoe UI,Arial,sans-serif" font-size="11" font-weight="400" fill="#e6e6e6">Q8P</text>
+<text x="485" y="324" font-family="Segoe UI,Arial,sans-serif" font-size="14" font-weight="400" fill="#b2b2b2">⌄</text>
+<rect x="504" y="305" width="104" height="29" rx="4" fill="#1e1e1e" stroke="#4a4a4a" />
+<text x="511" y="324" font-family="Segoe UI,Arial,sans-serif" font-size="11" font-weight="400" fill="#e6e6e6">cinematic</text>
+<text x="185" y="348" font-family="Segoe UI,Arial,sans-serif" font-size="9" font-weight="400" fill="#b2b2b2">File-detected</text>
+<rect x="614" y="318" width="7" height="7" rx="4" fill="#78c97c" stroke="none" />
+<text x="627" y="326" font-family="Segoe UI,Arial,sans-serif" font-size="10" font-weight="500" fill="#78c97c">Ready</text>
+<rect x="17" y="358" width="726" height="61" rx="0" fill="#252525" stroke="none" />
+<path d="M 17 419 L 743 419" fill="none" stroke="#343434"/>
+<text x="25" y="381" font-family="Consolas,monospace" font-size="11" font-weight="500" fill="#e6e6e6">detail…911f.ckpt</text>
+<text x="25" y="404" font-family="Segoe UI,Arial,sans-serif" font-size="10" font-weight="500" fill="#8fbde3">Copy original</text>
+<rect x="185" y="366" width="127" height="29" rx="4" fill="#1e1e1e" stroke="#ffbf59" />
+<text x="192" y="385" font-family="Segoe UI,Arial,sans-serif" font-size="11" font-weight="400" fill="#b2b2b2">Select…</text>
+<text x="299" y="385" font-family="Segoe UI,Arial,sans-serif" font-size="14" font-weight="400" fill="#b2b2b2">⌄</text>
+<rect x="318" y="366" width="115" height="29" rx="4" fill="#1e1e1e" stroke="#4a4a4a" />
+<text x="325" y="385" font-family="Segoe UI,Arial,sans-serif" font-size="11" font-weight="400" fill="#e6e6e6">DetailBoost</text>
+<rect x="439" y="366" width="59" height="29" rx="4" fill="#1e1e1e" stroke="#4a4a4a" />
+<text x="446" y="385" font-family="Segoe UI,Arial,sans-serif" font-size="11" font-weight="400" fill="#e6e6e6">F16</text>
+<text x="485" y="385" font-family="Segoe UI,Arial,sans-serif" font-size="14" font-weight="400" fill="#b2b2b2">⌄</text>
+<rect x="504" y="366" width="104" height="29" rx="4" fill="#1e1e1e" stroke="#4a4a4a" />
+<text x="511" y="385" font-family="Segoe UI,Arial,sans-serif" font-size="11" font-weight="400" fill="#b2b2b2">Optional</text>
+<text x="185" y="409" font-family="Segoe UI,Arial,sans-serif" font-size="9" font-weight="400" fill="#ffbf59">Required</text>
+<rect x="614" y="379" width="7" height="7" rx="4" fill="#ffbf59" stroke="none" />
+<text x="627" y="387" font-family="Segoe UI,Arial,sans-serif" font-size="10" font-weight="500" fill="#ffbf59">Needs architecture</text>
+<rect x="17" y="419" width="726" height="61" rx="0" fill="#242424" stroke="none" />
+<path d="M 17 480 L 743 480" fill="none" stroke="#343434"/>
+<text x="25" y="442" font-family="Consolas,monospace" font-size="11" font-weight="500" fill="#e6e6e6">nak_lora_f16.ckpt</text>
+<text x="25" y="465" font-family="Segoe UI,Arial,sans-serif" font-size="10" font-weight="500" fill="#8fbde3">Copy original</text>
+<rect x="185" y="427" width="127" height="29" rx="4" fill="#1e1e1e" stroke="#4a4a4a" />
+<text x="192" y="446" font-family="Segoe UI,Arial,sans-serif" font-size="11" font-weight="400" fill="#e6e6e6">Krea 2</text>
+<text x="299" y="446" font-family="Segoe UI,Arial,sans-serif" font-size="14" font-weight="400" fill="#b2b2b2">⌄</text>
+<rect x="318" y="427" width="115" height="29" rx="4" fill="#1e1e1e" stroke="#4a4a4a" />
+<text x="325" y="446" font-family="Segoe UI,Arial,sans-serif" font-size="11" font-weight="400" fill="#e6e6e6">Nak</text>
+<rect x="439" y="427" width="59" height="29" rx="4" fill="#1e1e1e" stroke="#4a4a4a" />
+<text x="446" y="446" font-family="Segoe UI,Arial,sans-serif" font-size="11" font-weight="400" fill="#e6e6e6">F16</text>
+<text x="485" y="446" font-family="Segoe UI,Arial,sans-serif" font-size="14" font-weight="400" fill="#b2b2b2">⌄</text>
+<rect x="504" y="427" width="104" height="29" rx="4" fill="#1e1e1e" stroke="#4a4a4a" />
+<text x="511" y="446" font-family="Segoe UI,Arial,sans-serif" font-size="11" font-weight="400" fill="#b2b2b2">Optional</text>
+<text x="185" y="470" font-family="Segoe UI,Arial,sans-serif" font-size="9" font-weight="400" fill="#b2b2b2">User-declared</text>
+<rect x="614" y="440" width="7" height="7" rx="4" fill="#78c97c" stroke="none" />
+<text x="627" y="448" font-family="Segoe UI,Arial,sans-serif" font-size="10" font-weight="500" fill="#78c97c">Ready</text>
+<rect x="17" y="480" width="726" height="61" rx="0" fill="#252525" stroke="none" />
+<path d="M 17 541 L 743 541" fill="none" stroke="#343434"/>
+<text x="25" y="503" font-family="Consolas,monospace" font-size="11" font-weight="500" fill="#e6e6e6">portrait_77…f16.ckpt</text>
+<text x="25" y="526" font-family="Segoe UI,Arial,sans-serif" font-size="10" font-weight="500" fill="#8fbde3">Copy original</text>
+<rect x="185" y="488" width="127" height="29" rx="4" fill="#1e1e1e" stroke="#4a4a4a" />
+<text x="192" y="507" font-family="Segoe UI,Arial,sans-serif" font-size="11" font-weight="400" fill="#e6e6e6">Krea 2</text>
+<text x="299" y="507" font-family="Segoe UI,Arial,sans-serif" font-size="14" font-weight="400" fill="#b2b2b2">⌄</text>
+<rect x="318" y="488" width="115" height="29" rx="4" fill="#1e1e1e" stroke="#4a4a4a" />
+<text x="325" y="507" font-family="Segoe UI,Arial,sans-serif" font-size="11" font-weight="400" fill="#e6e6e6">PortraitV2_2</text>
+<rect x="439" y="488" width="59" height="29" rx="4" fill="#1e1e1e" stroke="#4a4a4a" />
+<text x="446" y="507" font-family="Segoe UI,Arial,sans-serif" font-size="11" font-weight="400" fill="#e6e6e6">F16</text>
+<text x="485" y="507" font-family="Segoe UI,Arial,sans-serif" font-size="14" font-weight="400" fill="#b2b2b2">⌄</text>
+<rect x="504" y="488" width="104" height="29" rx="4" fill="#1e1e1e" stroke="#4a4a4a" />
+<text x="511" y="507" font-family="Segoe UI,Arial,sans-serif" font-size="11" font-weight="400" fill="#b2b2b2">Optional</text>
+<text x="185" y="531" font-family="Segoe UI,Arial,sans-serif" font-size="9" font-weight="400" fill="#b2b2b2">User-declared</text>
+<rect x="614" y="501" width="7" height="7" rx="4" fill="#78c97c" stroke="none" />
+<text x="627" y="509" font-family="Segoe UI,Arial,sans-serif" font-size="10" font-weight="500" fill="#78c97c">Ready</text>
+<rect x="17" y="541" width="726" height="73" rx="0" fill="#1c1c1c" stroke="none" />
+<text x="28" y="559" font-family="Segoe UI,Arial,sans-serif" font-size="9" font-weight="600" fill="#b2b2b2">MANAGED FILENAME PREVIEW FOR SELECTED ROW</text>
+<text x="28" y="584" font-family="Consolas,monospace" font-size="13" font-weight="500" fill="#d5ecff">PortraitV2_Kr2_lora_f16.ckpt</text>
+<text x="533" y="585" font-family="Segoe UI,Arial,sans-serif" font-size="11" font-weight="500" fill="#e6e6e6">PortraitV2[Kr2]</text>
+<rect x="17" y="614" width="726" height="61" rx="0" fill="#252525" stroke="none" />
+<path d="M 17 614 L 743 614" fill="none" stroke="#343434"/>
+<text x="28" y="638" font-family="Segoe UI,Arial,sans-serif" font-size="11" font-weight="400" fill="#b2b2b2">Selected: 5  ·  Architectures: 4/5  ·  Ready: 4/5</text>
+<rect x="533" y="624" width="195" height="38" rx="5" fill="#0068b8" stroke="none" />
+<text x="543" y="648" font-family="Segoe UI,Arial,sans-serif" font-size="12" font-weight="600" fill="#fff">Prepare 4 ready LoRAs</text>
+<text x="16" y="708" font-family="Segoe UI,Arial,sans-serif" font-size="11" font-weight="400" fill="#b2b2b2">Design reference · Dense horizontal rows · No uploads · Not a native Qt screenshot</text>
+</svg>

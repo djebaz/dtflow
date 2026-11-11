@@ -48,6 +48,7 @@ from dtflow.ui.file_dialogs import QFileDialog
 from dtflow.core import workflows as wf
 from dtflow.core.output_layout import identity_from_path
 from dtflow.core.models import LoRASelection, ValidationError
+from dtflow.services.lora_naming import display_label, lora_offer, relabel_text
 from dtflow.services import workflow_library as library
 from dtflow.ui.activity_strip import activity_strip
 from dtflow.ui.inline_feedback import InlineNotice, confirm_action, edit_text, feedback
@@ -102,7 +103,7 @@ RECENT_RUNS = 20
 
 
 def step_message(step: dict) -> str:
-    return "\n".join(filter(None, (step.get("message"), *step.get("warnings", ()))))
+    return relabel_text("\n".join(filter(None, (step.get("message"), *step.get("warnings", ())))))
 
 
 def _repolish(widget: QWidget, **properties) -> None:
@@ -898,6 +899,9 @@ class WorkflowsPage(QObject):
         layout = i.workflowParamsHost.layout()
         _clear(layout)
         choices = self.choices_source() or {}
+        checkpoint = next((params.get(p.name) for p in spec.params if p.kind == "checkpoint"), None)
+        if checkpoint:
+            choices = {**choices, "node_model": str(checkpoint)}
         if spec.type == wf.DETECT_FACE:
             self._add_face_params(layout, node_id, node, params)
         else:
@@ -909,7 +913,19 @@ class WorkflowsPage(QObject):
         if spec.type in wf.IMAGE_OPERATIONS and node.prompt_mode is None:
             self._add_outputs(layout, node_id, node.image_outputs)
         self._add_concurrency(layout, node_id, choices.get("backend"))
+        self._contain_width(i.workflowParamsHost)
         self._sync_lock()
+
+    @staticmethod
+    def _contain_width(host) -> None:
+        """Keep the node panel inside its rail: a long checkpoint name in a combo's list must not widen the panel
+        (the rail clips horizontally and has no bar), so a combo sizes to its shown text, never to its widest item."""
+        for combo in host.findChildren(QComboBox):
+            combo.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon)
+            combo.setMinimumContentsLength(1)
+            policy = combo.sizePolicy()
+            policy.setHorizontalPolicy(QSizePolicy.Policy.Ignored)
+            combo.setSizePolicy(policy)
 
     def _add_face_params(self, layout, node_id: int, node, params: dict) -> None:
         """Detect face mask: the single method selector replaces ``mask_region``; ``person`` follows it."""
@@ -1251,13 +1267,19 @@ class WorkflowsPage(QObject):
                 layout.addWidget(_label("Refresh models on Generate to list this backend's checkpoints.", "secondary"))
         elif param.kind == "loras":
             loras = choices.get("loras") or {}
+            if (node_model := choices.get("node_model")) and not str(node_model).startswith(PLACEHOLDER):
+                loras = lora_offer(
+                    loras, choices.get("lora_versions") or {}, [(choices.get("model_versions") or {}).get(node_model)]
+                )
             families = choices.get("lora_families") or {}
             text = (
-                ", ".join(f"{name} · {weight:g} · {families.get(name, 'Unknown')}" for name, weight in value)
+                ", ".join(
+                    f"{display_label(name)} · {weight:g} · {families.get(name, 'Unknown')}" for name, weight in value
+                )
                 or "No LoRA"
             )
             summary = _label(text, "secondary")
-            summary.setToolTip(text)
+            summary.setToolTip("\n".join(f"{display_label(name)}\n{name}" for name, _ in value) or text)
             button = QPushButton("Edit LoRAs…", host)
             button.setAccessibleName(f"Edit LoRAs for node {node_id}")
 
@@ -1694,7 +1716,7 @@ class WorkflowsPage(QObject):
                 key = (step["node_id"], warning)
                 if key not in self._warning_seen:
                     self._warning_seen.add(key)
-                    fresh.append(f"{step_name(step)}: {warning}")
+                    fresh.append(f"{step_name(step)}: {relabel_text(warning)}")
         if fresh:
             text = "\n".join(fresh[:2])
             if len(fresh) > 2:
