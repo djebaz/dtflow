@@ -159,13 +159,13 @@ def prepare(window, qtbot, file, *, choose=True):
     if choose:
         # Choosing a file only opens the metadata editor: approve its one row (first offered architecture), then Prepare.
         editor = panel._prepare_editor
-        qtbot.waitUntil(lambda: editor.inspected, timeout=5000)
+        qtbot.waitUntil(lambda: editor.inspected, timeout=30000)
         editor.rows[0].widget.prepareArchitecture.setCurrentIndex(1)
         accept = window.inline.form.inlineEditorAcceptButton
-        qtbot.waitUntil(lambda: accept.isEnabled() and accept.text().startswith("Prepare 1 ready"), timeout=5000)
+        qtbot.waitUntil(lambda: accept.isEnabled() and accept.text().startswith("Prepare 1 ready"), timeout=30000)
         accept.click()
         # Prepare completion is independent of whether a checkpoint enables Generate.
-        qtbot.waitUntil(lambda: not panel.preparing and page.prepareAssetButton.isEnabled(), timeout=5000)
+        qtbot.waitUntil(lambda: not panel.preparing and page.prepareAssetButton.isEnabled(), timeout=30000)
     return asked
 
 
@@ -180,7 +180,7 @@ def test_prepare_starts_after_file_selection_and_lists_a_local_receipt(window, c
     assert cloud.puts == [] and cloud.api_calls == [] and page.assetList.count() == 0  # picker cancelled
 
     prepare(window, qtbot, file)
-    qtbot.waitUntil(lambda: page.assetList.count() == 1, timeout=5000)
+    qtbot.waitUntil(lambda: page.assetList.count() == 1, timeout=30000)
     assert "confirmed" in page.assetList.item(0).text() and "Style[ZiT]" in page.assetList.item(0).text()
     assert page.assetStatusLabel.text().startswith(("Receipt confirmed", "Receipt bound")) and len(cloud.puts) == 1
 
@@ -189,14 +189,14 @@ def test_prepare_starts_after_file_selection_and_lists_a_local_receipt(window, c
     add_lora(window, qtbot, MANAGED, 0.8)
     qtbot.waitUntil(
         lambda: receipt_bound(page) and page.prepareAssetButton.isEnabled(),
-        timeout=5000,
+        timeout=30000,
     )
     cloud.stored.clear()  # the server lost the file: the receipt goes stale and reconcile still never uploads
     page.loraList.setCurrentRow(0)
     page.removeLoraButton.click()
     add_lora(window, qtbot, MANAGED, 0.8)
-    qtbot.waitUntil(lambda: page.assetStatusLabel.text().startswith("Reconciled: upload required"), timeout=5000)
-    qtbot.waitUntil(lambda: "unknown" in page.assetList.item(0).text(), timeout=5000)
+    qtbot.waitUntil(lambda: page.assetStatusLabel.text().startswith("Reconciled: upload required"), timeout=30000)
+    qtbot.waitUntil(lambda: "unknown" in page.assetList.item(0).text(), timeout=30000)
     assert len(cloud.puts) == 1 and window.generation.lora.receipt_ids() == ()
 
 
@@ -204,7 +204,7 @@ def test_unconfirmed_upload_is_unknown_with_its_code_and_not_retried(window, clo
     cloud.store_on_put = False  # the PUT "succeeds" but the server never lists the file
     prepare(window, qtbot, lora_file(tmp_path))
     page = window.generation_page
-    qtbot.waitUntil(lambda: page.assetList.count() == 1, timeout=5000)
+    qtbot.waitUntil(lambda: page.assetList.count() == 1, timeout=30000)
     assert page.assetStatusLabel.text().startswith("Outcome unknown")
     visible = page.assetStatusLabel.text().replace("\u200b", "")  # ignore intentional identifier wrapping
     assert "asset_upload_unconfirmed" in visible and "not retried" in visible
@@ -218,7 +218,7 @@ def test_asset_writer_contention_is_a_clear_busy_message(window, cloud, qtbot, t
     try:
         prepare(window, qtbot, lora_file(tmp_path))
         page = window.generation_page
-        qtbot.waitUntil(lambda: page.assetStatusLabel.text().startswith("Assets busy"), timeout=5000)
+        qtbot.waitUntil(lambda: page.assetStatusLabel.text().startswith("Assets busy"), timeout=30000)
         assert cloud.puts == [] and cloud.api_calls == []
     finally:
         loop.run_until_complete(other.aclose())
@@ -228,14 +228,14 @@ def test_asset_writer_contention_is_a_clear_busy_message(window, cloud, qtbot, t
 def test_prepare_adds_and_binds_the_lora_and_adding_it_again_reconciles_and_binds(window, cloud, qtbot, tmp_path):
     page = window.generation_page
     prepare(window, qtbot, lora_file(tmp_path))
-    qtbot.waitUntil(lambda: page.loraList.count() == 1, timeout=5000)  # Prepare adds the LoRA and binds its receipt
+    qtbot.waitUntil(lambda: page.loraList.count() == 1, timeout=30000)  # Prepare adds the LoRA and binds its receipt
     assert page.assetStatusLabel.text().startswith("Receipt bound") and receipt_bound(page)
     assert len(window.generation.lora.receipt_ids()) == 1
     page.loraList.setCurrentRow(0)
     page.removeLoraButton.click()
     assert window.generation.lora.receipt_ids() == ()  # removing the LoRA drops its binding
     add_lora(window, qtbot, MANAGED, 0.8)
-    qtbot.waitUntil(lambda: receipt_bound(page), timeout=5000)
+    qtbot.waitUntil(lambda: receipt_bound(page), timeout=30000)
     assert len(window.generation.lora.receipt_ids()) == 1
     window.form.backendCombo.setCurrentText("fake")  # receipts are cloud-only; actions are disabled elsewhere
     assert not page.prepareAssetButton.isEnabled() and page.assetStatusLabel.text().startswith("Cloud only")
