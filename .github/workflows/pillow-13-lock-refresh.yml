@@ -1,0 +1,52 @@
+name: Temporary Pillow 13 lockfile refresh
+
+on:
+  push:
+    branches:
+      - security/pillow-13-compatibility
+    paths:
+      - .github/workflows/pillow-13-lock-refresh.yml
+
+permissions:
+  contents: write
+
+jobs:
+  relock:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          ref: security/pillow-13-compatibility
+          persist-credentials: true
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: "0.11.19"
+      - name: Resolve and commit Pillow 13
+        env:
+          UV_PYTHON_PREFERENCE: only-managed
+          UV_LINK_MODE: copy
+          UV_SYSTEM_CERTS: "true"
+        shell: bash
+        run: |
+          set -euo pipefail
+          uv python install 3.13
+          uv lock --upgrade-package pillow
+          uv lock --check
+          python3 - <<'PY'
+          import tomllib
+          with open("uv.lock", "rb") as handle:
+              lock = tomllib.load(handle)
+          pillow = next(package for package in lock["package"] if package["name"] == "pillow")
+          assert pillow["version"].startswith("13."), pillow["version"]
+          print("Resolved Pillow:", pillow["version"])
+          PY
+          git add uv.lock
+          if git diff --cached --quiet; then
+            echo "No lockfile changes required."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "chore(deps): regenerate uv.lock with Pillow 13"
+          git push origin HEAD:security/pillow-13-compatibility
