@@ -358,6 +358,25 @@ class LoraStore:
             return path
         return None
 
+    def origin_names(self) -> dict[tuple[str, int], tuple[str, ...]]:
+        """Per retained content, the file names it was prepared from (folder stripped), for matching imported names."""
+        try:
+            files = self._read()
+        except ValidationError:
+            return {}
+        result = {}
+        for item in files:
+            origins = item.get("origins")
+            if not isinstance(origins, dict) or not isinstance(item.get("sha256"), str):
+                continue
+            names = {Path(name).name for name in origins} | {
+                Path(stamp["path"]).name
+                for stamp in origins.values()
+                if isinstance(stamp, dict) and isinstance(stamp.get("path"), str)
+            }
+            result[(item["sha256"], item.get("size"))] = tuple(sorted(names))
+        return result
+
     def current_by_name(self) -> dict[str, tuple[str, int]]:
         """Per LoRA name, the bytes most recently prepared on purpose (explicit Prepare or a refresh)."""
         latest: dict[str, tuple[str, str, int]] = {}
