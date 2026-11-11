@@ -1,4 +1,4 @@
-"""Independent durable registry of locally known cloud assets (``<state>/assets.sqlite3``, schema version 5).
+"""Independent durable registry of locally known cloud assets (``<state>/assets.sqlite3``, schema version 6).
 
 A receipt row is a *local candidate*, not remote inventory. The content-keyed
 ``lora_records`` table owns file-detected and user-declared exact architecture plus local
@@ -26,8 +26,9 @@ from uuid import uuid4
 from dtflow.core.models import PREPARATION_STATES, AssetContent, PreparedAsset, ValidationError
 from dtflow.persistence import store
 from dtflow.persistence.store import PersistenceError
+from dtflow.services.lora_naming import LoraPrepareMetadata
 
-SCHEMA_VERSION = 5
+SCHEMA_VERSION = 6
 UNRESOLVED = ("intent", "transferring")
 SOURCES = ("transfer", "already_exists", "reconciled")
 
@@ -76,6 +77,7 @@ SCHEMA = (
         detected_source TEXT NOT NULL DEFAULT 'unknown',
         declared_version TEXT,
         short_name TEXT,
+        managed_identifier TEXT COLLATE NOCASE UNIQUE,
         format_code TEXT,
         format_source TEXT,
         trigger_words TEXT NOT NULL DEFAULT '',
@@ -133,7 +135,7 @@ def _lock_file(path: Path):
 
 
 _LORA_COLUMNS = (
-    "r.detected_version, r.detected_source, r.declared_version, r.short_name, "
+    "r.detected_version, r.detected_source, r.declared_version, r.short_name, r.managed_identifier, "
     "r.format_code, r.format_source, r.trigger_words"
 )
 _LORA_JOIN = " LEFT JOIN lora_records r ON r.sha256=a.sha256 AND r.size=a.size"
@@ -290,13 +292,22 @@ class AssetRegistry:
         action: str = "prepare",
         *,
         family: str | None = None,
+        lora_metadata: LoraPrepareMetadata | None = None,
     ) -> tuple[str, str]:
-        """Persist intent (before any negotiation or transfer) and return ``(asset_id, operation_id)``."""
-        return await self._run(self._write, self._begin, content, backend_id, origin, action, family)
+        """Atomically accept a managed name and persist intent before provider negotiation."""
+        if lora_metadata is not None and (action != "prepare" or content.kind != "lora"):
+            raise ValidationError("Managed LoRA metadata can only be accepted during explicit Prepare.")
+        return await self._run(self._write, self._begin, content, backend_id, origin, action, family, lora_metadata)
 
     @staticmethod
     def _begin(
-        db, content: AssetContent, backend_id: str, origin: str, action: str, family: str | None
+        db,
+        content: AssetContent,
+        backend_id: str,
+        origin: str,
+        action: str,
+        family: str | None,
+        lora_metadata: LoraPrepareMetadata | None,
     ) -> tuple[str, str]:
         now, operation = _now(), uuid4().hex
         if content.kind == "lora":
@@ -323,6 +334,61 @@ class AssetRegistry:
                     action == "prepare",
                 ),
             )
+            if lora_metadata is not None:
+                # This is the authoritative local check. The same BEGIN IMMEDIATE
+                # transaction commits the accepted managed identifier and Prepare
+                # intent. Account-scoped receipt names are not naming authority.
+                try:
+                    identifier = lora_metadata.identifier
+                except ValueError as exc:
+                    raise ValidationError(str(exc)) from exc
+                if content.identifier != identifier:
+                    raise ValidationError("Prepare must use the accepted managed technical filename.")
+                if lora_metadata.format_source not in ("converter_default", "filename_hint", "user"):
+                    raise ValidationError("Choose a valid LoRA format provenance.")
+                if not isinstance(lora_metadata.trigger_words, str):
+                    raise ValidationError("LoRA trigger words must be text.")
+                declared = lora_metadata.declared_version
+                if declared is not None and declared != lora_metadata.exact_architecture:
+                    raise ValidationError("Declared architecture must match the selected exact architecture.")
+                existing = db.execute(
+                    "SELECT managed_identifier, declared_version FROM lora_records "
+                    "WHERE sha256=? AND size=?", (content.sha256, content.size)
+                ).fetchone()
+                effective = declared or existing["declared_version"] or family
+                if effective != lora_metadata.exact_architecture:
+                    raise ValidationError("Choose a verified or explicitly declared exact LoRA architecture.")
+                previous = existing["managed_identifier"]
+                if (
+                    previous is not None
+                    and previous.casefold() != identifier.casefold()
+                    and not lora_metadata.replace_existing
+                ):
+                    raise ValidationError(
+                        "This content already has an accepted managed filename. "
+                        "Choose explicit Re-Prepare to change it."
+                    )
+                conflict = db.execute(
+                    "SELECT 1 FROM lora_records WHERE managed_identifier=? COLLATE NOCASE "
+                    "AND NOT (sha256=? AND size=?)",
+                    (identifier, content.sha256, content.size),
+                ).fetchone()
+                if conflict is not None:
+                    raise ValidationError(
+                        "That managed LoRA filename is already assigned to different content. "
+                        "Edit the short name before preparing."
+                    )
+                db.execute(
+                    "UPDATE lora_records SET short_name=?, managed_identifier=?, "
+                    "declared_version=COALESCE(?, declared_version), "
+                    "format_code=?, format_source=?, trigger_words=?, updated_at_utc=? "
+                    "WHERE sha256=? AND size=?",
+                    (
+                        lora_metadata.short_name, identifier, declared,
+                        lora_metadata.format_code, lora_metadata.format_source,
+                        lora_metadata.trigger_words, now, content.sha256, content.size,
+                    ),
+                )
         row = db.execute(
             "SELECT asset_id, state FROM assets WHERE kind=? AND backend_id=? AND origin=? AND sha256=? AND size=?",
             (content.kind, backend_id, origin, content.sha256, content.size),
@@ -574,6 +640,25 @@ class AssetRegistry:
             if row is None:
                 return None
             return _record(row)
+
+    async def lora_name_snapshot(self) -> tuple[dict[str, Any], ...]:
+        """Read accepted content-level managed names once for a Prepare batch.
+
+        Historical asset identifiers and account receipts are intentionally not
+        reservations. Preview users should fetch this once per editor batch;
+        begin() repeats the collision check inside the writer transaction.
+        """
+        return await self._run(self._lora_name_snapshot)
+
+    def _lora_name_snapshot(self) -> tuple[dict[str, Any], ...]:
+        if not self.path.exists():
+            return ()
+        with closing(self._connect()) as db:
+            rows = db.execute(
+                "SELECT sha256, size, managed_identifier FROM lora_records "
+                "WHERE managed_identifier IS NOT NULL"
+            ).fetchall()
+        return tuple(dict(row) for row in rows)
 
     async def update_lora_metadata(self, sha256: str, size: int, **changes) -> dict[str, Any]:
         """Atomically change local LoRA metadata without renaming, uploading, or altering receipts.
