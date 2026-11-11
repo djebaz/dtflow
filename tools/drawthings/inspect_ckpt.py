@@ -11,6 +11,7 @@ whose shape or datatype differ. Read-only; the files are never modified.
 from __future__ import annotations
 
 import argparse
+import array
 import hashlib
 import sqlite3
 import struct
@@ -75,6 +76,44 @@ def read_tensors(path: Path, verbose: bool) -> dict[str, dict]:
         con.close()
 
 
+def read_data(path: Path, name: str) -> bytes:
+    con = open_readonly(path)
+    try:
+        row = con.execute("select data from tensors where name = ?", (name,)).fetchone()
+        return bytes(row[0] or b"")
+    finally:
+        con.close()
+
+
+def f16_value(word: int) -> float:
+    return struct.unpack("<e", struct.pack("<H", word))[0]
+
+
+def diff_detail(path_a: Path, path_b: Path, name: str) -> None:
+    """Print where and how two f16 tensors differ (decoded as float16 words)."""
+    da, db = read_data(path_a, name), read_data(path_b, name)
+    if len(da) != len(db) or len(da) % 2:
+        print(f"    sizes differ or odd: A {len(da)} B {len(db)}")
+        return
+    wa, wb = array.array("H"), array.array("H")
+    wa.frombytes(da)
+    wb.frombytes(db)
+    if sys.byteorder == "big":
+        wa.byteswap()
+        wb.byteswap()
+    idx = [i for i in range(len(wa)) if wa[i] != wb[i]]
+    one_ulp = sum(1 for i in idx if abs(wa[i] - wb[i]) == 1)
+    b_zero = sum(1 for i in idx if wb[i] in (0, 0x8000))
+    a_subnormal = sum(1 for i in idx if (wa[i] & 0x7C00) == 0 and wa[i] & 0x3FF)
+    max_abs = max((abs(f16_value(wa[i]) - f16_value(wb[i])) for i in idx), default=0.0)
+    print(
+        f"    {len(idx)} of {len(wa)} elements differ; first at element {idx[0]} (byte {2 * idx[0]}); "
+        f"1-ulp diffs {one_ulp}; B is zero {b_zero}; A subnormal {a_subnormal}; max abs diff {max_abs:.3e}"
+    )
+    for i in idx[:6]:
+        print(f"      [{i}] A={wa[i]:04x} ({f16_value(wa[i]):.6e})  B={wb[i]:04x} ({f16_value(wb[i]):.6e})")
+
+
 def describe(t: dict) -> str:
     shape = "x".join(map(str, t["shape"])) or "-"
     flags = f"type={t['type']} format={t['format']} dimblob={t['dim_bytes']}B"
@@ -116,6 +155,9 @@ def main() -> int:
         print(f"shared tensors with different data bytes: {len(content)} of {len(set(a) & set(b))}")
         for n in content[:20]:
             print(f"  {n}: A head={a[n]['head']} B head={b[n]['head']}")
+        for n in content[:3]:
+            print(f"  detail {n}")
+            diff_detail(args.a, args.b, n)
         print(f"tensor bytes A: {total}, B: {sum(t['bytes'] for t in b.values())}")
     return 0
 
