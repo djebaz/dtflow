@@ -39,7 +39,7 @@ COLAB_HINT = (
 
 # ccv flags as stored in the tensors table (see inspect_ckpt.py for the datatype list).
 DATATYPE_F16 = 0x20000
-FORMAT_NCHW = 0x02
+FORMAT_NHWC = 0x01  # what Draw Things writes for these 2-D weights (checked on a Krea 2 ckpt)
 TYPE_CPU = 0x01
 MAX_DIM_ALLOC = 12
 
@@ -371,7 +371,7 @@ def write_ckpt(path: Path, tensors: dict[str, np.ndarray]) -> None:
                 (
                     name,
                     TYPE_CPU,
-                    FORMAT_NCHW,
+                    FORMAT_NHWC,
                     DATATYPE_F16,
                     _encode_dims(tuple(array.shape)),
                     np.ascontiguousarray(array, dtype="<f2").tobytes(),
