@@ -1,9 +1,9 @@
 """Managed durable copies of converted custom LoRA files (``<state>/lora_files/``).
 
 A retained copy is a durable asset, not disposable cache: it lets a LoRA that vanished from DT+ be restored even after the
-user deleted the original file. Files keep their original name for readability; identity is the measured SHA-256 plus
-size, recorded in ``index.json`` and re-verified every time the bytes are about to be used. Nothing here talks to the
-network, and removal only ever touches files this store created.
+user deleted the original file. Copies may adopt their explicitly accepted managed filename; identity remains the measured
+SHA-256 plus size in ``index.json`` and is re-verified whenever bytes are about to be used.
+Nothing here talks to the network, and removal only touches files this store created.
 """
 
 from __future__ import annotations
