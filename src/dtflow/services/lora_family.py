@@ -267,12 +267,15 @@ def validate_converted_lora(path: Path) -> None:
         raise ValidationError("Converted LoRA has no complete up/down tensor pair.")
 
 
-def retained_families(state: Path, identities: Iterable[tuple[str, int]]) -> dict[tuple[str, int], LoraFamily]:
+def retained_families(
+    state: Path, identities: Iterable[tuple[str, int]], *, verify: bool = True
+) -> dict[tuple[str, int], LoraFamily]:
     """Inspect legacy retained LoRAs locally, once per content identity; never upload.
 
     Used only to enrich read-only lists and preflight. Dispatch separately
     verifies the retained checksum before trusting these bytes for a request.
     Missing or unreadable files stay Unknown without hiding other receipts.
+    ``verify=False`` skips the full-file SHA-256 (it reads every byte of every LoRA); display-only callers use it.
     """
     store = LoraStore(state)
     result: dict[tuple[str, int], LoraFamily] = {}
@@ -282,7 +285,7 @@ def retained_families(state: Path, identities: Iterable[tuple[str, int]]) -> dic
             detected = LoraFamily()
             if retained is not None and retained.path.stat().st_size == size:
                 detected = detect_lora_family(retained.path)
-                if detected.family is not None:
+                if verify and detected.family is not None:
                     store.verify(retained)
             result[(sha256, size)] = detected
         except (OSError, ValidationError):

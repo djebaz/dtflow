@@ -3,6 +3,7 @@
 import asyncio
 import logging
 import os
+import time
 from pathlib import Path
 
 from PySide6.QtCore import QEvent, QFile, QIODevice, QObject, QSignalBlocker, QSize, Qt, QTimer, Slot
@@ -557,6 +558,7 @@ class MainWindow:
         form.editLoraMetadataButton.clicked.connect(self.edit_lora_metadata)
         self._lora_records: dict[tuple[str, int], dict] = {}
         self._lora_entries: list[dict] = []
+        self._retained_normalized = False
         self._lora_names: dict[tuple[str, int], str] = {}
         self.lora_metadata_overlay = LoraMetadataOverlay(
             form.connectionWorkspaceScroll,
@@ -1822,19 +1824,9 @@ class MainWindow:
         self.form.removeRetainedLoraButton.setEnabled(False)
 
         def read():
-            # Background-only local naming: no provider call and no Prepare UI change.
-            asyncio.run(normalize_previous_retained(self.state_dir))
+            # Only the index and a stat per file: the table must paint at once. Hashing and naming follow separately.
             store = LoraStore(self.state_dir)
-            entries = store.entries()
-            identities = [
-                (entry["sha256"], entry["size"])
-                for entry in entries
-                if isinstance(entry.get("sha256"), str) and isinstance(entry.get("size"), int)
-            ]
-            found = retained_families(self.state_dir, identities)
-            for entry in entries:
-                entry["detected_family"] = found.get((entry.get("sha256"), entry.get("size")))
-            return len(Catalogue(self.state_dir).user_loras()), entries, store.usage()
+            return len(Catalogue(self.state_dir).user_loras()), store.entries(), store.usage()
 
         self._read_summary("loras", read, self._custom_loras_read)
 
@@ -1864,6 +1856,41 @@ class MainWindow:
         self._lora_entries = entries
         self._render_lora_table()  # the retained files show at once; metadata columns follow from a separate read
         self._read_summary("lora_records", self._read_lora_records, self._lora_records_read)
+        self._read_summary("lora_families", self._read_lora_families, self._lora_families_read)
+
+    def _read_lora_families(self):
+        """Slow local work (hashes whole files), off the first paint: auto-naming once per run, then family detection."""
+        started = time.monotonic()
+        if not self._retained_normalized:
+            self._retained_normalized = True  # a file that cannot be named is not re-hashed on every navigation
+            asyncio.run(normalize_previous_retained(self.state_dir))
+        named = time.monotonic()
+        store = LoraStore(self.state_dir)
+        entries = store.entries()
+        identities = [
+            (entry["sha256"], entry["size"])
+            for entry in entries
+            if isinstance(entry.get("sha256"), str) and isinstance(entry.get("size"), int)
+        ]
+        found = retained_families(self.state_dir, identities, verify=False)  # dispatch re-verifies the bytes itself
+        for entry in entries:
+            entry["detected_family"] = found.get((entry.get("sha256"), entry.get("size")))
+        diagnostic_event(
+            log,
+            "connection.retained_loras_slow_read",
+            data={
+                "files": len(entries),
+                "naming_ms": round((named - started) * 1000),
+                "families_ms": round((time.monotonic() - named) * 1000),
+            },
+        )
+        return entries
+
+    def _lora_families_read(self, entries, error) -> None:
+        if error is not None or entries is None or self._removing_retained_lora:
+            return
+        self._lora_entries = entries
+        self._render_lora_table()
 
     @staticmethod
     def _read_lora_records_sync(state_dir):
