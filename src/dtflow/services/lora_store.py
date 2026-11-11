@@ -121,9 +121,7 @@ class LoraStore:
         if (digest, total) != (retained.sha256, retained.size):
             raise ValidationError(f"Retained LoRA {retained.name} no longer matches its recorded checksum.")
 
-    def retain(
-        self, source: Path, sha256: str, size: int, *, managed_name: str | None = None
-    ) -> RetainedFile:
+    def retain(self, source: Path, sha256: str, size: int, *, managed_name: str | None = None) -> RetainedFile:
         """Copy new content directly to its managed name, keeping one indexed copy per hash."""
         source = Path(source)
         if managed_name is not None and (
@@ -261,7 +259,9 @@ class LoraStore:
             except OSError as exc:
                 # An extra unindexed hard link is safer than losing the canonical one.
                 diagnostic_event(
-                    log, "assets.retained_old_name_left", level=logging.WARNING,
+                    log,
+                    "assets.retained_old_name_left",
+                    level=logging.WARNING,
                     data={"sha": sha256[:8], "reason": type(exc).__name__},
                 )
             return RetainedFile(accepted_name, sha256, size, target)

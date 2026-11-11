@@ -198,9 +198,7 @@ class AssetService:
         retained = None
         if self.store is not None:
             # One verified copy with its chosen name, indexed before any provider call.
-            retained = await asyncio.to_thread(
-                self.store.retain, path, digest, stat.st_size, managed_name=managed_name
-            )
+            retained = await asyncio.to_thread(self.store.retain, path, digest, stat.st_size, managed_name=managed_name)
             diagnostic_event(
                 log, "assets.copy_kept", level=logging.INFO, data={"size": stat.st_size, "sha": digest[:8]}
             )
@@ -227,7 +225,11 @@ class AssetService:
             )
             task = asyncio.create_task(
                 self._prepare(
-                    path, content, stat, detected=detected, metadata=metadata,
+                    path,
+                    content,
+                    stat,
+                    detected=detected,
+                    metadata=metadata,
                     retained_name=retained.name if retained is not None else None,
                     managed_name=managed_name,
                 )
