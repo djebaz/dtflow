@@ -1,6 +1,7 @@
 """Edit the whole Generate LoRA selection in one inline editor: check, uncheck and weigh each LoRA."""
 
 from collections.abc import Callable, Sequence
+import re
 from pathlib import Path
 
 from PySide6.QtCore import QEvent, QFile, QIODevice, QObject, Qt
@@ -29,6 +30,29 @@ def _load(name: str, parent: QWidget | None) -> QWidget:
     if form is None:
         raise OSError(f"{name} could not be loaded")
     return form
+
+
+_MANAGED_LABEL = re.compile(r"(?i)^(?P<short>[A-Za-z0-9_]{1,20})_(?P<tag>[A-Za-z0-9]+)_lora_(?:f16|q8p)\\.ckpt$")
+
+
+def _display_label(identifier: str) -> str:
+    """Use the readable short label for managed LoRAs; retain all legacy identities."""
+    match = _MANAGED_LABEL.fullmatch(identifier)
+    return f"{match['short']}[{match['tag']}]" if match else identifier
+
+
+class _ToggleRow(QObject):
+    """Make unused row space select a LoRA without stealing clicks from its controls."""
+
+    def __init__(self, row: QWidget):
+        super().__init__(row)
+        self._checkbox = row.loraSelectionCheck
+
+    def eventFilter(self, watched, event):
+        if event.type() == QEvent.Type.MouseButtonRelease and event.button() == Qt.MouseButton.LeftButton:
+            self._checkbox.click()
+            return True
+        return False
 
 
 class _WheelStep(QObject):
@@ -118,18 +142,32 @@ def edit_lora_selection(
     extra: dict[str, list[float]] = {}  # multi_weight: the weights collected per LoRA
     rows: dict[str, QWidget] = {}
 
+    def reorder_rows() -> None:
+        """Selected first and A–Z within both groups; no execution-order mutation."""
+        ordered = sorted(
+            rows.items(),
+            key=lambda item: (
+                not item[1].loraSelectionCheck.isChecked(),
+                _display_label(item[0]).casefold(),
+                item[0].casefold(),
+            ),
+        )
+        for index, (_identifier, row) in enumerate(ordered):
+            rows_layout.insertWidget(index, row)
+
     def update_count() -> None:
         count = sum(row.loraSelectionCheck.isChecked() for row in rows.values())
         editor.loraSelectionCount.setText(f"{count} selected")
+        reorder_rows()
 
     def add_row(name: str, *, checked: bool, weight: float, top: bool = False) -> QWidget:
         row = _load("lora_selection_row.ui", editor.loraSelectionRows)
         row.setProperty("identifier", name)
         check, slider, label = row.loraSelectionCheck, row.loraSelectionSlider, row.loraSelectionWeight
         family = families.get(name, "Unknown")
-        check.setText(f"{name} · {family}")
+        check.setText(f"{_display_label(name)} · {family}")
         check.setChecked(checked)
-        check.setAccessibleName(f"Use {name}, family {family}")
+        check.setAccessibleName(f"Use {_display_label(name)}, family {family}")
         suggestion = suggestions.get(name)
         check.setToolTip(
             f"{name}\nFamily: {family}"
@@ -147,6 +185,7 @@ def edit_lora_selection(
 
         slider.valueChanged.connect(moved)
         slider.installEventFilter(wheel_step)
+        row.installEventFilter(_ToggleRow(row))
         if multi_weight:
             extra[name] = list(collected[name]) if len(collected.get(name, ())) > 1 else []
             row.loraSelectionAddWeightButton.setVisible(True)
@@ -232,11 +271,13 @@ def edit_lora_selection(
     def accept() -> None:
         if editor.loraSelectionCustomIdentifier.text().strip():
             add_custom()  # an identifier typed but not yet added is part of the selection
-        # Display order: the existing selection keeps its order, newly checked LoRAs follow.
+        # Visual A–Z sorting must never reorder existing effective requests or weights.
+        effective_order = list(dict.fromkeys(item.identifier for item in selected))
+        new_names = [name for name in rows if name not in current]
         chosen = [
             (name, value)
-            for name, row in rows.items()
-            if row.loraSelectionCheck.isChecked()
+            for name in (*effective_order, *new_names)
+            if name in rows and rows[name].loraSelectionCheck.isChecked()
             for value in (extra.get(name) or [weights[name]])
         ]
         panel.dismiss()
