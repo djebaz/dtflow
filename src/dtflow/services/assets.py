@@ -229,6 +229,7 @@ class AssetService:
                 self._prepare(
                     path, content, stat, detected=detected, metadata=metadata,
                     retained_name=retained.name if retained is not None else None,
+                    managed_name=managed_name,
                 )
             )
             _INFLIGHT[key] = task
@@ -259,6 +260,7 @@ class AssetService:
         detected: LoraFamily | None = None,
         metadata: LoraPrepareMetadata | None = None,
         retained_name: str | None = None,
+        managed_name: str | None = None,
     ) -> PreparedAsset:
         backend = self.backend
         credential_id = await self._credential_id()
@@ -274,9 +276,9 @@ class AssetService:
         )
         transferred = False
         try:
-            if metadata is not None and self.store is not None and retained_name != content.identifier:
+            if managed_name is not None and self.store is not None and retained_name != managed_name:
                 # Only previously retained copies can need an in-place name change.
-                await asyncio.to_thread(self.store.rename_accepted, content.sha256, content.size, content.identifier)
+                await asyncio.to_thread(self.store.rename_accepted, content.sha256, content.size, managed_name)
             negotiation = negotiation or await backend.negotiate_asset(content)
             if negotiation.status == "exists":
                 receipt = await self.registry.confirm(
