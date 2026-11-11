@@ -328,7 +328,7 @@ class ValueChips(QWidget):
                 label.setMaximumWidth(GROUP_NAME_WIDTH)
                 shown = display_label(name)  # ShortName[Tag] like every picker; the full identifier stays on hover
                 label.setText(label.fontMetrics().elidedText(shown, Qt.TextElideMode.ElideMiddle, GROUP_NAME_WIDTH))
-                label.setToolTip(name)
+                label.setToolTip(f"{shown}\n{name}" if shown != name else name)
                 self._layout.insertWidget(self._lead + len(self._chips), label)
                 self._chips.append(label)
                 for index, short in members:
@@ -342,20 +342,22 @@ class ValueChips(QWidget):
 
     def _add_chip(self, index: int, text: str, value: str) -> None:
         """One chip for ``values[index]``: its text and ×, or (with ``edit_chip``) an edit button plus a separate ×."""
+        hint = value
         if self._label is not None and text == value:
-            text = self._label(value)
-            text = self.fontMetrics().elidedText(text, Qt.TextElideMode.ElideRight, CHIP_TEXT_WIDTH)
+            full = self._label(value)
+            hint = f"{full}\n{value}" if full != value else value  # label first, the exact filename(s) below
+            text = self.fontMetrics().elidedText(full, Qt.TextElideMode.ElideRight, CHIP_TEXT_WIDTH)
         if self._edit_chip is not None:
             edit = QPushButton(text, self)
             edit.setProperty("role", "valueChip")
-            edit.setToolTip(f"Edit {value}")
+            edit.setToolTip(f"Edit {hint}")
             edit.setAccessibleName(f"Edit {_noun(self._title)} {value}")
             edit.clicked.connect(lambda _=False, i=index: self._edit_clicked(i))
             self._layout.insertWidget(self._lead + len(self._chips), edit)
             self._chips.append(edit)
         chip = QPushButton("×" if self._edit_chip is not None else f"{text}  ×", self)
         chip.setProperty("role", "valueChip")
-        chip.setToolTip(f"Remove {value}")
+        chip.setToolTip(f"Remove {hint}")
         chip.setAccessibleName(f"Remove {_noun(self._title)} {value}")
         chip.clicked.connect(lambda _=False, i=index: self.remove_value(i))
         self._layout.insertWidget(self._lead + len(self._chips), chip)

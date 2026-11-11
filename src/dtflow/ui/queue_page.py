@@ -2678,6 +2678,18 @@ class QueuePage:
         self.templates.changed()
 
     @staticmethod
+    def _lora_set_hint(text: str) -> str:
+        """Hover text of a LoRA-set cell: one line per LoRA, ``ShortName[Tag] 0.8`` then its filename."""
+        lines = []
+        for part in text.split(" + "):
+            identifier, space, weight = part.rpartition(" ")
+            if not space:
+                return text
+            label = display_label(identifier)
+            lines.append(f"{label} {weight}" + (f"\n    {identifier}" if label != identifier else ""))
+        return "\n".join(lines)
+
+    @staticmethod
     def _lora_set_labels(text: str) -> str:
         """``a.ckpt 0.8 + b.ckpt 0.4`` with each identifier shown as its ShortName[Tag] label."""
         parts = []
@@ -2685,6 +2697,15 @@ class QueuePage:
             identifier, space, weight = part.rpartition(" ")
             parts.append(f"{display_label(identifier)} {weight}" if space else part)
         return " + ".join(parts)
+
+    @staticmethod
+    def _column_hint(name: str) -> str:
+        """Header hover: a managed LoRA's weight column names its label, then the filename."""
+        if name.startswith("lora_weight."):
+            identifier = name.removeprefix("lora_weight.")
+            label = display_label(identifier)
+            return f"{label} weight\n{identifier}" if label != identifier else f"{identifier} weight"
+        return name
 
     @staticmethod
     def _column_title(name: str) -> str:
@@ -2709,7 +2730,7 @@ class QueuePage:
             self.plan_model.setHeaderData(
                 column,
                 Qt.Orientation.Horizontal,
-                "All effective LoRAs and weights" if name == "Effective LoRAs" else name,
+                "All effective LoRAs and weights" if name == "Effective LoRAs" else self._column_hint(name),
                 Qt.ItemDataRole.ToolTipRole,
             )
         prompt_column = table.columns.index("prompt") if "prompt" in table.columns else None
@@ -2720,7 +2741,8 @@ class QueuePage:
                 full = item.text()
                 if columns[column] in ("loras", "Effective LoRAs"):
                     item.setText(self._lora_set_labels(full))  # ShortName[Tag]; the tooltip keeps the filenames
-                item.setToolTip(full)  # the cells elide to the panel width
+                is_set = columns[column] in ("loras", "Effective LoRAs")
+                item.setToolTip(self._lora_set_hint(full) if is_set else full)  # the cells elide to the panel width
             if prompt_column is not None and number < len(table.prompt_runs):
                 runs = decode_runs(row[prompt_column], table.prompt_runs[number])
                 if runs:  # the parts the prompt variation produced are painted as tags by the view's delegate
