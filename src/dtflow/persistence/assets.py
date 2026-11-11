@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import asyncio
 import os
+import re
 import sqlite3
 from contextlib import closing
 from datetime import UTC, datetime
@@ -546,6 +547,99 @@ class AssetRegistry:
             # Oldest first by when the file's content was first seen. A relink or key switch re-stamps
             # ``confirmed_at_utc`` on old content and must never make it look newer (#361).
             return tuple(sorted(by_name.values(), key=lambda item: (created.get(item.receipt_id, ""), item.identifier)))
+
+    async def lora_metadata(self, sha256: str, size: int) -> dict[str, Any] | None:
+        """Read canonical local content metadata; no provider or filesystem operation."""
+        return await self._run(self._lora_metadata, sha256, size)
+
+    def _lora_metadata(self, sha256: str, size: int) -> dict[str, Any] | None:
+        if not self.path.exists():
+            return None
+        with closing(self._connect()) as db:
+            row = db.execute(
+                "SELECT * FROM lora_records WHERE sha256=? AND size=?", (sha256, size)
+            ).fetchone()
+            if row is None:
+                return None
+            result = _record(row)
+            return result
+
+    async def update_lora_metadata(self, sha256: str, size: int, **changes) -> dict[str, Any]:
+        """Atomically change local LoRA metadata without renaming, uploading, or altering receipts.
+
+        Accepted keys: declared_version, short_name, format_code, format_source, trigger_words.
+        Omitted values are unchanged; None explicitly clears optional metadata.
+        """
+        allowed = {"declared_version", "short_name", "format_code", "format_source", "trigger_words"}
+        if not changes or any(key not in allowed for key in changes):
+            raise ValidationError("Only canonical LoRA metadata fields may be edited.")
+        for key, value in changes.items():
+            if key == "declared_version" and value is not None and (
+                not isinstance(value, str) or not re.fullmatch(r"[a-z0-9_.-]+", value)
+            ):
+                raise ValidationError("Choose an exact Draw Things architecture version.")
+            if key == "short_name" and value is not None and (
+                not isinstance(value, str) or not re.fullmatch(r"[A-Za-z0-9_]{1,20}", value)
+            ):
+                raise ValidationError("Short name must be 1-20 ASCII letters, digits, or underscores.")
+            if key == "format_code" and value not in (None, "F16", "Q8P"):
+                raise ValidationError("LoRA format must be F16 or Q8P.")
+            if key == "format_source" and value not in (None, "converter_default", "filename_hint", "user"):
+                raise ValidationError("LoRA format source must be a known provenance.")
+            if key == "trigger_words" and not isinstance(value, str):
+                raise ValidationError("LoRA trigger words must be text.")
+        if not isinstance(sha256, str) or not re.fullmatch(r"[0-9a-f]{64}", sha256):
+            raise ValidationError("A measured SHA-256 is required.")
+        if not isinstance(size, int) or size < 1:
+            raise ValidationError("A measured positive byte size is required.")
+        return await self._run(self._write, self._update_lora_metadata, sha256, size, changes)
+
+    @staticmethod
+    def _update_lora_metadata(db, sha256: str, size: int, changes: dict) -> dict[str, Any]:
+        row = db.execute(
+            "SELECT * FROM lora_records WHERE sha256=? AND size=?", (sha256, size)
+        ).fetchone()
+        if row is None:
+            raise ValidationError("No measured LoRA content record exists; Prepare the file first.")
+        updated = {key: row[key] for key in row.keys()}
+        updated.update(changes)
+        if (updated["format_code"] is None) != (updated["format_source"] is None):
+            raise ValidationError("LoRA format and provenance must be set or cleared together.")
+        assignments = ", ".join(f"{key}=?" for key in changes)
+        db.execute(
+            f"UPDATE lora_records SET {assignments}, updated_at_utc=? "
+            "WHERE sha256=? AND size=?",
+            (*changes.values(), _now(), sha256, size),
+        )
+        record = db.execute(
+            "SELECT * FROM lora_records WHERE sha256=? AND size=?", (sha256, size)
+        ).fetchone()
+        return _record(record)
+
+    async def resolve_prepared(self, prepared: tuple[PreparedAsset, ...]) -> tuple[PreparedAsset, ...]:
+        """Enrich selected receipts from one local canonical read, preserving IDs and order."""
+        if not prepared:
+            return prepared
+        return await self._run(self._resolve_prepared, prepared)
+
+    def _resolve_prepared(self, prepared: tuple[PreparedAsset, ...]) -> tuple[PreparedAsset, ...]:
+        if not self.path.exists():
+            return prepared
+        hashes = tuple(dict.fromkeys(item.sha256 for item in prepared))
+        with closing(self._connect()) as db:
+            rows = db.execute(
+                "SELECT * FROM lora_records WHERE sha256 IN (" + ",".join("?" for _ in hashes) + ")",
+                hashes,
+            ).fetchall()
+        records = {(row["sha256"], row["size"]): row for row in rows}
+        from dataclasses import replace
+
+        return tuple(
+            replace(item, family=_effective_version(records[(item.sha256, item.size)])[0],
+                    family_source=_effective_version(records[(item.sha256, item.size)])[1])
+            if (item.sha256, item.size) in records else item
+            for item in prepared
+        )
 
     async def get(self, asset_id: str) -> dict[str, Any] | None:
         return await self._run(self._get, asset_id)
