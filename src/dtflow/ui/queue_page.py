@@ -28,7 +28,7 @@ from dtflow.persistence.settings import SettingsError, load_cloud_concurrency, v
 from dtflow.persistence.store import StateBusyError
 from dtflow.services.connection import Presentation, present_generation_failure
 from dtflow.services.dynamic_prompts import decode_runs
-from dtflow.services.lora_naming import lora_offer
+from dtflow.services.lora_naming import display_label, lora_offer
 from dtflow.services.image_preparation import prepare_edit_inputs
 from dtflow.services.plan_errors import PlanError
 from dtflow.services.planning import Plan, PlanTable, describe_plan, expand_plan, new_rng_seed, plan_size, resolve_plan
@@ -191,7 +191,7 @@ POSTED = "Posted. The dispatch owner applies it at its next poll, or at the next
 def _dimension_text(name: str, count: int) -> str:
     """``2 step counts``-style wording of one plan dimension for the composer summary."""
     if name.startswith("lora_weight."):
-        return f"{count} weights of {name.split('.', 1)[1]}"
+        return f"{count} weights of {display_label(name.split('.', 1)[1])}"
     nouns = {"steps": "step count", "guidance": "guidance value", "strength": "strength", "loras": "LoRA set"}
     noun = nouns.get(name, name)
     return f"{count} {noun}{'s' if count != 1 else ''}"

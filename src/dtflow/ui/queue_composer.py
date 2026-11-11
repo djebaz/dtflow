@@ -23,6 +23,7 @@ from PySide6.QtWidgets import (
 )
 
 from dtflow.core.models import LoRASelection
+from dtflow.services.lora_naming import display_label
 from dtflow.ui.lora_selection_editor import edit_lora_selection
 from dtflow.ui.performance import profile_slow_gui_callback
 from dtflow.ui.search_select import choose_searchable
@@ -320,7 +321,8 @@ class ValueChips(QWidget):
                 label.setObjectName("valueChipsGroupName")
                 label.setProperty("lineBreak", True)
                 label.setMaximumWidth(GROUP_NAME_WIDTH)
-                label.setText(label.fontMetrics().elidedText(name, Qt.TextElideMode.ElideMiddle, GROUP_NAME_WIDTH))
+                shown = display_label(name)  # ShortName[Tag] like every picker; the full identifier stays on hover
+                label.setText(label.fontMetrics().elidedText(shown, Qt.TextElideMode.ElideMiddle, GROUP_NAME_WIDTH))
                 label.setToolTip(name)
                 self._layout.insertWidget(self._lead + len(self._chips), label)
                 self._chips.append(label)
