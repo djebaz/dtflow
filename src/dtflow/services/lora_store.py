@@ -15,12 +15,13 @@ import os
 import re
 import tempfile
 from dataclasses import dataclass
+from collections.abc import Iterable, Mapping
 from datetime import UTC, datetime
 from pathlib import Path
 
 from dtflow.core.models import ValidationError
 from dtflow.diagnostics import event as diagnostic_event
-from dtflow.persistence.assets import _lock_file
+from dtflow.persistence.assets import AssetsBusyError, _lock_file
 
 log = logging.getLogger(__name__)
 STORE_DIR = "lora_files"
@@ -193,6 +194,86 @@ class LoraStore:
             return RetainedFile(name, sha256, size, target)
         finally:
             handle.close()
+
+
+    def rename_accepted(self, sha256: str, size: int, accepted_name: str) -> RetainedFile | None:
+        """Give existing verified retained bytes their accepted canonical filename.
+
+        Link the verified content first, commit the index atomically, and only
+        then unlink the old name. An interruption cannot lose the indexed copy.
+        No remote receipt, source file or origin stamp is renamed.
+        """
+        if _safe_name(accepted_name) != accepted_name or not accepted_name.endswith(".ckpt"):
+            raise ValidationError("The accepted LoRA filename is not portable.")
+        handle = self._locked()
+        try:
+            files = self._read()
+            item = next(
+                (row for row in files if (row.get("sha256"), row.get("size")) == (sha256, size)), None
+            )
+            if item is None:
+                return None
+            original = self._path(item)
+            if original.name == accepted_name:
+                self.verify(RetainedFile(original.name, sha256, size, original))
+                return RetainedFile(original.name, sha256, size, original)
+            self.verify(RetainedFile(original.name, sha256, size, original))
+            for other in files:
+                if other is not item and str(other.get("name", "")).casefold() == accepted_name.casefold():
+                    raise ValidationError("Another retained LoRA already uses the accepted filename.")
+            target = self.directory / accepted_name
+            if os.path.lexists(target):
+                # A previous interruption may have created the new hard link
+                # before the index commit. Adopt it only when its bytes match.
+                if target == original or target.is_symlink() or not target.is_file():
+                    raise ValidationError("The accepted LoRA filename is already occupied.")
+                self.verify(RetainedFile(accepted_name, sha256, size, target))
+            else:
+                try:
+                    os.link(original, target)  # Same filesystem; atomic no-overwrite name creation.
+                except OSError as exc:
+                    raise ValidationError("Could not name the retained LoRA; its original copy is intact.") from exc
+            item["name"] = accepted_name
+            self._write(files)
+            try:
+                original.unlink()
+            except OSError:
+                # An extra unindexed copy is safer than losing the canonical one.
+                diagnostic_event(log, "assets.retained_old_name_left", level=logging.WARNING, data={"sha": sha256[:8]})
+            return RetainedFile(accepted_name, sha256, size, target)
+        finally:
+            handle.close()
+
+    def align_accepted_names(self, records: Iterable[Mapping[str, object]]) -> int:
+        """Bring previously retained new-schema files in line with accepted names.
+
+        Never synthesize metadata for unnamed LoRAs, and never hold the store
+        lock while waiting for the asset writer: removal uses the reverse path.
+        """
+        if not self._index_path.exists():
+            return 0
+        try:
+            owner = _lock_file(self.directory.parent / "assets.lock")
+        except AssetsBusyError:
+            return 0  # A current Prepare will reconcile its own accepted name.
+        try:
+            changed = 0
+            for record in records:
+                sha, size, name = record.get("sha256"), record.get("size"), record.get("managed_identifier")
+                if not isinstance(sha, str) or type(size) is not int or not isinstance(name, str):
+                    continue
+                try:
+                    before = self.find(sha, size)
+                    if before is not None and before.name != name and self.rename_accepted(sha, size, name):
+                        changed += 1
+                except (ValidationError, OSError) as exc:
+                    diagnostic_event(
+                        log, "assets.retained_name_sync_failed", level=logging.WARNING,
+                        data={"sha": sha[:8], "reason": type(exc).__name__},
+                    )
+            return changed
+        finally:
+            owner.close()
 
     @staticmethod
     def _edge(path: Path, size: int) -> str:
