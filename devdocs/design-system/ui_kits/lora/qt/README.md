@@ -34,6 +34,17 @@ six-column batch editor at 760 px wide.
 On Windows, inspect Qt font/DPI behavior separately. The offline screenshots are
 synthetic design evidence, **not** runtime behavior or Windows acceptance.
 
+## Fast PR rendering
+
+Add the exact **`lora:render`** label to a pull request to run
+[`LoRA design renders`](../../../../../../.github/workflows/lora-design-render.yml).
+The label persists across subsequent pushes and rerenders only these standalone
+Designer forms (seven PNGs, including expanded Connections and compact Prepare).
+The dedicated job uploads a downloadable GitHub Actions artifact and, when
+configured, Google Drive images with links in an updated PR review comment.
+The broad UI fixture renderer is deliberately **not invoked** by this LoRA label;
+it retains its original scope and change gate.
+
 ## Integration boundary
 
 The canonical application forms remain in `src/dtflow/ui/forms/` (in particular
