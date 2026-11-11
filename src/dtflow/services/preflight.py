@@ -9,7 +9,6 @@ service does not model them: every selection is a whole-model (``All``) LoRA on 
 import logging
 from dataclasses import replace
 
-from dtflow.backends.drawthings.versions import bundled_exact_version
 from dtflow.core.model_profiles import exact_model_spec
 from dtflow.core.models import (
     BackendError,
@@ -20,6 +19,7 @@ from dtflow.core.models import (
     ResolvedGenerationRequest,
 )
 from dtflow.diagnostics import event as diagnostic_event
+from dtflow.services.catalogue import bundled_exact_version
 from dtflow.services.dynamic_prompts import PROMPT_TAGS_KEY, decode_runs, encode_runs
 
 BLOCKING = ("architecture_mismatch", "not_available", "prepared_architecture_unknown")
