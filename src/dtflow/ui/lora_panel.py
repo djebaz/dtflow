@@ -532,7 +532,9 @@ class LoraAssetPanel:
             or self._saved() is not self._prepare_saved
         ):
             return
-        selected = {name: metadata for path, metadata in chosen if (name := str(path)) not in self._prepare_metadata}
+        # A file that already settled may be sent again by an explicit Re-Prepare; one still queued may not.
+        queued = set(self._prepare_files[self._prepare_index :]) if self.preparing else set()
+        selected = {name: metadata for path, metadata in chosen if (name := str(path)) not in queued}
         if not selected:
             return
         if self.preparing:

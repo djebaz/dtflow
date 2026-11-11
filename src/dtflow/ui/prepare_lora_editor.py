@@ -58,6 +58,7 @@ class _Row:
     manual_format: bool = False
     admitted: bool = False
     outcome: str | None = None
+    reprepare: bool = False
 
 
 class _FileElision(QObject):
@@ -134,6 +135,7 @@ class PrepareBatchEditor:
             row_widget.prepareSourceFile.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
             row_widget.prepareShortName.setText(suggestion.name or "")
             row_widget.prepareFormat.setCurrentIndex(1 if re.search(r"(?i)_lora_q8p\.ckpt$", path.name) else 0)
+            row_widget.prepareReprepare.clicked.connect(lambda _checked=False, item=row: self._reprepare(item))
             row_widget.prepareCopySource.clicked.connect(
                 lambda _checked=False, name=path.name: QGuiApplication.clipboard().setText(name)
             )
@@ -221,6 +223,7 @@ class PrepareBatchEditor:
                 exact_architecture=row.widget.prepareArchitecture.currentData(),
                 format_code=row.widget.prepareFormat.currentText(),
                 manually_edited=row.manual_name,
+                replace_existing=row.reprepare,
                 alternatives=row.alternatives,
             )
             for row in self.rows
@@ -312,6 +315,7 @@ class PrepareBatchEditor:
                 row.widget.prepareShortName.setProperty("invalid", name_error)
                 row.widget.prepareShortName.style().unpolish(row.widget.prepareShortName)
                 row.widget.prepareShortName.style().polish(row.widget.prepareShortName)
+                row.widget.prepareReprepare.setVisible(row.admitted and row.outcome == "Failed")
                 row.widget.setProperty("checkedSelection", row is self.selected)
                 row.widget.style().unpolish(row.widget)
                 row.widget.style().polish(row.widget)
@@ -363,6 +367,7 @@ class PrepareBatchEditor:
                 format_source=source,
                 trigger_words=row.widget.prepareTriggerWords.text().strip(),
                 declared_version=version if row.manual_family or version != row.detected else None,
+                replace_existing=row.reprepare,
             )
             accepted.append((row.path, metadata))
         if not accepted:
@@ -386,6 +391,20 @@ class PrepareBatchEditor:
                 row.widget.prepareTriggerWords,
             ):
                 control.setEnabled(False)
+        self.refresh()
+
+    def _reprepare(self, row: _Row):
+        """Unlock one failed row for editing; it is sent again only by the next explicit Prepare action."""
+        if not self.active() or not row.admitted or row.outcome != "Failed":
+            return
+        row.admitted, row.outcome, row.reprepare = False, None, True
+        for control in (
+            row.widget.prepareArchitecture,
+            row.widget.prepareShortName,
+            row.widget.prepareFormat,
+            row.widget.prepareTriggerWords,
+        ):
+            control.setEnabled(True)
         self.refresh()
 
     def completed(self, path: Path, outcome: str):
