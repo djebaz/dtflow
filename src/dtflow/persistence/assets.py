@@ -691,7 +691,7 @@ class AssetRegistry:
             raise ValidationError("The measured LoRA record no longer exists.")
         expected_version = row["declared_version"] or row["detected_version"]
         if expected_version != metadata.exact_architecture or architecture_shortcode(expected_version) is None:
-            raise ValidationError("The LoRA has no known, supported exact architecture for automatic naming.")
+            raise ValidationError("The LoRA has no recognized exact architecture for automatic naming.")
         if row["short_name"] is not None and row["short_name"] != metadata.short_name:
             raise ValidationError("The saved LoRA short name cannot be replaced automatically.")
         if row["format_code"] is not None and row["format_code"] != metadata.format_code:
