@@ -138,10 +138,9 @@ nav.views{display:flex;gap:7px;align-items:center;flex-wrap:wrap;padding:12px ma
 .workspace-note{color:var(--color-secondary);font-size:var(--font-size-small);line-height:1.5;margin:8px 0 0}
 .workspace-card .action{padding:6px 10px;min-height:30px}
 .workspace-card .setting-row{padding:6px 0}
-.trigger-group-title{font-size:var(--font-size-small);font-weight:650;color:var(--color-secondary);margin:12px 0 5px}
-.trigger-setting{cursor:pointer;display:flex;gap:10px;align-items:center;justify-content:space-between;margin:0;font-weight:400}
-.trigger-setting strong{font-size:var(--font-size-small)}
-.trigger-setting .description{font-weight:400}
+/* Match the density of the neighboring Connections controls: one line per scope. */
+.workspace-card .trigger-setting{cursor:pointer;display:flex;gap:10px;align-items:center;justify-content:space-between;margin:0;padding:3px 0;min-height:30px;font-size:var(--font-size-small);font-weight:400}
+.workspace-card .trigger-setting--default{margin-bottom:4px;padding-bottom:7px}
 .trigger-setting .toggle{margin-left:auto}
 .trigger-setting:focus-within{outline:2px solid var(--lora-focus);outline-offset:1px}
 .trigger-setting .toggle:focus-visible{outline:0}
@@ -240,15 +239,13 @@ footer.study-footer{text-align:center;margin-top:20px;color:var(--color-secondar
     </div>
     <aside class="workspace-pane"><section class="surface workspace-card">
       <h2>LoRA trigger prefixes</h2>
-      <p class="workspace-note">Configure defaults and inspect each independently saved execution choice here.</p>
-      <div class="trigger-group-title">Application default</div>
-      <label class="setting-row trigger-setting"><span><strong>New configurations</strong><span class="description">Starting value only</span></span><input class="toggle" data-trigger-scope="default" type="checkbox" aria-label="Default LoRA trigger prefixes for new configurations"></label>
-      <div class="trigger-group-title">Execution contexts</div>
-      <label class="setting-row trigger-setting"><span><strong>Generate</strong><span class="description">Generate settings</span></span><input class="toggle" data-trigger-scope="generate" type="checkbox" checked aria-label="Generate LoRA trigger prefixes"></label>
-      <label class="setting-row trigger-setting"><span><strong>Queues</strong><span class="description">Queue plans and templates</span></span><input class="toggle" data-trigger-scope="queues" type="checkbox" aria-label="Queues LoRA trigger prefixes"></label>
-      <label class="setting-row trigger-setting"><span><strong>Workflows</strong><span class="description">Workflow configurations</span></span><input class="toggle" data-trigger-scope="workflows" type="checkbox" checked aria-label="Workflows LoRA trigger prefixes"></label>
-      <label class="setting-row trigger-setting"><span><strong>Scripts</strong><span class="description">Script executions</span></span><input class="toggle" data-trigger-scope="scripts" type="checkbox" aria-label="Scripts LoRA trigger prefixes"></label>
-      <p class="workspace-note">Each switch is independent. The application default never overwrites existing choices. Prototype changes are temporary.</p>
+      <div role="group" aria-label="LoRA trigger prefix settings">
+        <label class="setting-row trigger-setting trigger-setting--default" title="Starting value for new configurations; existing choices are unchanged"><span>Application default</span><input class="toggle" data-trigger-scope="default" type="checkbox" aria-label="Default LoRA trigger prefixes for new configurations"></label>
+        <label class="setting-row trigger-setting"><span>Generate</span><input class="toggle" data-trigger-scope="generate" type="checkbox" checked aria-label="Generate LoRA trigger prefixes"></label>
+        <label class="setting-row trigger-setting"><span>Queues</span><input class="toggle" data-trigger-scope="queues" type="checkbox" aria-label="Queues LoRA trigger prefixes"></label>
+        <label class="setting-row trigger-setting"><span>Workflows</span><input class="toggle" data-trigger-scope="workflows" type="checkbox" checked aria-label="Workflows LoRA trigger prefixes"></label>
+        <label class="setting-row trigger-setting"><span>Scripts</span><input class="toggle" data-trigger-scope="scripts" type="checkbox" aria-label="Scripts LoRA trigger prefixes"></label>
+      </div>
     </section><section class="surface workspace-card"><h2>Existing global controls</h2><p class="workspace-note">Other app-wide preferences keep their current placement.</p></section></aside>
   </div>
   <div class="note"><strong>Design-only placement:</strong> expand Custom LoRAs to manage metadata; close it to recover the center workspace. No local files, metadata or provider state is changed by this illustration.</div>
