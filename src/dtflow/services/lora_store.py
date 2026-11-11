@@ -15,13 +15,12 @@ import os
 import re
 import tempfile
 from dataclasses import dataclass
-from collections.abc import Iterable, Mapping
 from datetime import UTC, datetime
 from pathlib import Path
 
 from dtflow.core.models import ValidationError
 from dtflow.diagnostics import event as diagnostic_event
-from dtflow.persistence.assets import AssetsBusyError, _lock_file
+from dtflow.persistence.assets import _lock_file
 
 log = logging.getLogger(__name__)
 STORE_DIR = "lora_files"
@@ -247,37 +246,6 @@ class LoraStore:
             return RetainedFile(accepted_name, sha256, size, target)
         finally:
             handle.close()
-
-    def align_accepted_names(self, records: Iterable[Mapping[str, object]]) -> int:
-        """Bring previously retained new-schema files in line with accepted names.
-
-        Never synthesize metadata for unnamed LoRAs, and never hold the store
-        lock while waiting for the asset writer: removal uses the reverse path.
-        """
-        if not self._index_path.exists():
-            return 0
-        try:
-            owner = _lock_file(self.directory.parent / "assets.lock")
-        except AssetsBusyError:
-            return 0  # A current Prepare will reconcile its own accepted name.
-        try:
-            changed = 0
-            for record in records:
-                sha, size, name = record.get("sha256"), record.get("size"), record.get("managed_identifier")
-                if not isinstance(sha, str) or type(size) is not int or not isinstance(name, str):
-                    continue
-                try:
-                    before = self.find(sha, size)
-                    if before is not None and before.name != name and self.rename_accepted(sha, size, name):
-                        changed += 1
-                except (ValidationError, OSError) as exc:
-                    diagnostic_event(
-                        log, "assets.retained_name_sync_failed", level=logging.WARNING,
-                        data={"sha": sha[:8], "reason": type(exc).__name__},
-                    )
-            return changed
-        finally:
-            owner.close()
 
     @staticmethod
     def _edge(path: Path, size: int) -> str:
