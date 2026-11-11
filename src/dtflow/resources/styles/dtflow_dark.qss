@@ -2556,3 +2556,55 @@ QFrame#scriptsEditorToolbar QPushButton#largerFontButton {
   padding: 0;
   font-size: ${type.section};
 }
+
+/* Canonical LoRA Prepare shares the application theme and input controls.
+   Keep rows flat, with the same selection and semantic status colors as DTFlow. */
+QFrame#prepareLoraRow {
+  background-color: ${color.surface};
+  border: 0;
+  border-bottom: 1px solid ${color.sectionBorder};
+  border-radius: 0;
+}
+QFrame#prepareLoraRow:hover { background-color: ${color.buttonHover}; }
+QFrame#prepareLoraRow[checkedSelection="true"] {
+  background-color: ${color.selection};
+  border-left: 3px solid ${color.accentEdge};
+  border-bottom: 1px solid ${color.selectionBorder};
+}
+QFrame#prepareLoraRow[checkedSelection="true"]:hover { background-color: ${color.selectionHover}; }
+QFrame#prepareLoraRow QLabel[role="secondary"] { background: transparent; padding: 0; }
+QFrame#prepareLoraRow QWidget[role="sectionContents"] { background: transparent; border: 0; }
+QFrame#prepareLoraRow QLabel#prepareSourceFile { color: ${color.text}; }
+QFrame#prepareLoraRow[checkedSelection="true"] QLabel#prepareSourceFile { color: ${color.selectionText}; }
+QFrame#prepareLoraRow QToolButton#prepareCopySource {
+  background: transparent;
+  border: 0;
+  padding: 0;
+  color: ${color.eyebrow};
+}
+QFrame#prepareLoraRow QToolButton#prepareCopySource:hover { color: ${color.focus}; }
+QFrame#prepareLoraRow QLabel#prepareRowStatus {
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  padding: 0;
+  font-size: ${type.small};
+  font-weight: ${type.weightLabel};
+}
+QFrame#prepareLoraRow QLabel#prepareRowStatus[state="ok"] { color: ${color.success}; }
+QFrame#prepareLoraRow QLabel#prepareRowStatus[state="warning"] { color: ${color.warning}; }
+QFrame#prepareLoraRow QLabel#prepareRowStatus[state="error"] { color: ${color.error}; }
+QFrame#prepareLoraRow QLabel#prepareStatusDot { font-size: 7pt; }
+QFrame#prepareLoraRow QLineEdit,
+QFrame#prepareLoraRow QComboBox { background-color: ${color.input}; }
+QFrame#prepareLoraRow QLineEdit[invalid="true"],
+QFrame#prepareLoraRow QComboBox[invalid="true"] { border: 1px solid ${color.error}; }
+QFrame#preparePreviewPanel {
+  background: ${color.host};
+  border: 0;
+  border-top: 1px solid ${color.sectionBorder};
+  border-bottom: 1px solid ${color.sectionBorder};
+  border-radius: 0;
+}
+QLabel#prepareManagedFilename { color: ${color.selectionText}; }
+QFrame#prepareBatchHeading { border-radius: 0; }

@@ -238,7 +238,6 @@ class PrepareBatchEditor:
                     ready += 1
 
                 row.widget.prepareRowStatus.setText(message)
-                row.widget.prepareRowStatus.setProperty("role", "statusChip")
                 row.widget.prepareRowStatus.setProperty("state", state)
                 row.widget.prepareStatusDot.setProperty("state", state)
                 for label in (row.widget.prepareRowStatus, row.widget.prepareStatusDot):
@@ -246,10 +245,9 @@ class PrepareBatchEditor:
                     label.style().polish(label)
                 source_note = row.widget.prepareFileEvidence
                 source_note.setText(
-                    "Inspecting file…"
-                    if not self.inspected
-                    else "Detected from file"
-                    if row.detected
+                    "Inspecting file…" if not self.inspected
+                    else "Declared by user" if row.manual_family
+                    else "Detected from file" if row.detected
                     else "Unknown inspection"
                 )
                 family_note = row.widget.prepareArchitectureSource
@@ -273,6 +271,18 @@ class PrepareBatchEditor:
                 row.widget.prepareArchitecture.setProperty("invalid", self.inspected and not family)
                 row.widget.prepareArchitecture.style().unpolish(row.widget.prepareArchitecture)
                 row.widget.prepareArchitecture.style().polish(row.widget.prepareArchitecture)
+                short_name = row.widget.prepareShortName.text().strip()
+                name_error = (
+                    self.inspected and not row.admitted and (
+                        not _SHORT_NAME.fullmatch(short_name)
+                        or (allocation is not None and allocation.conflict not in (
+                            None, "missing_architecture", "missing_format"
+                        ))
+                    )
+                )
+                row.widget.prepareShortName.setProperty("invalid", name_error)
+                row.widget.prepareShortName.style().unpolish(row.widget.prepareShortName)
+                row.widget.prepareShortName.style().polish(row.widget.prepareShortName)
                 row.widget.setProperty("checkedSelection", row is self.selected)
                 row.widget.style().unpolish(row.widget)
                 row.widget.style().polish(row.widget)

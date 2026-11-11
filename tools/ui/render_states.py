@@ -492,6 +492,13 @@ def render_lora_prepare_states(shell, out):
         ("krea_2", "z_image", "flux1"),
         (),
     )
+    # Show the mockup's text and partial-batch states with synthetic editable values.
+    # These are presentation examples, never file or provider evidence.
+    editor.rows[0].widget.prepareShortName.setText("PortraitV2")
+    editor.rows[0].widget.prepareTriggerWords.setText("portrait style")
+    editor.rows[1].widget.prepareTriggerWords.setText("cinematic lighting")
+    editor.rows[4].widget.prepareShortName.setText("PortraitV2")
+    editor.refresh()
     # No file bytes are accessed, no provider client is opened, and Prepare is never clicked.
     QTest.qWait(80)
     if not editor.active() or not shell.inline.form.isVisible():
