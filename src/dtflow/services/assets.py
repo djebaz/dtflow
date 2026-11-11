@@ -189,9 +189,16 @@ class AssetService:
             )
         detected = await asyncio.to_thread(detect_lora_family, retained.path if retained else path)
         if metadata is None and identifier is None:
-            metadata = await auto_prepare_metadata(self.registry, path.name, digest, stat.st_size, detected.family)
-            if metadata is not None:
-                identifier = metadata.identifier
+            saved = await self.registry.lora_metadata(digest, stat.st_size)
+            accepted = saved.get("managed_identifier") if saved else None
+            if isinstance(accepted, str):
+                # Re-Prepare preserves the exact accepted technical name, including
+                # existing uppercase suffixes and their account-scoped receipts.
+                identifier = accepted
+            else:
+                metadata = await auto_prepare_metadata(self.registry, path.name, digest, stat.st_size, detected.family)
+                if metadata is not None:
+                    identifier = metadata.identifier
         content = AssetContent("lora", identifier or path.name, digest, stat.st_size, provenance)
         key = (
             self.backend.backend_id,
