@@ -173,7 +173,7 @@ def edit_lora_selection(
             weights_for_name = values if values else [weights[name]]
             values_text = ", ".join(format_weight(v) for v in weights_for_name)
             lines.append(f"{index}. {_display_label(name)} @ {values_text}")
-        editor.loraSelectionOrderSummary.setText("\\n".join(lines) if lines else "No LoRAs selected")
+        editor.loraSelectionOrderSummary.setText("\n".join(lines) if lines else "No LoRAs selected")
 
     def update_count() -> None:
         count = sum(row.loraSelectionCheck.isChecked() for row in rows.values())
