@@ -2671,9 +2671,22 @@ class QueuePage:
         self.templates.changed()
 
     @staticmethod
+    def _lora_set_labels(text: str) -> str:
+        """``a.ckpt 0.8 + b.ckpt 0.4`` with each identifier shown as its ShortName[Tag] label."""
+        parts = []
+        for part in text.split(" + "):
+            identifier, space, weight = part.rpartition(" ")
+            parts.append(f"{display_label(identifier)} {weight}" if space else part)
+        return " + ".join(parts)
+
+    @staticmethod
     def _column_title(name: str) -> str:
-        """A preview column header without the ``lora_weight.`` prefix and the LoRA file extension (full name on hover)."""
-        name = name.removeprefix("lora_weight.")
+        """A preview column header: ShortName[Tag] for a managed LoRA weight, else the name without prefix and extension."""
+        if name.startswith("lora_weight."):
+            name = name.removeprefix("lora_weight.")
+            shown = display_label(name)  # ShortName[Tag] like every picker
+            if shown != name:
+                return shown
         for suffix in (".ckpt", ".safetensors"):
             name = name.removesuffix(suffix)
         return name
@@ -2696,8 +2709,11 @@ class QueuePage:
         for number, row in enumerate(table.rows):
             values = (*row, table.lora_stacks[number]) if show_stack else row
             cells = [QStandardItem(cell) for cell in values]
-            for item in cells:
-                item.setToolTip(item.text())  # the cells elide to the panel width
+            for column, item in enumerate(cells):
+                full = item.text()
+                if columns[column] in ("loras", "Effective LoRAs"):
+                    item.setText(self._lora_set_labels(full))  # ShortName[Tag]; the tooltip keeps the filenames
+                item.setToolTip(full)  # the cells elide to the panel width
             if prompt_column is not None and number < len(table.prompt_runs):
                 runs = decode_runs(row[prompt_column], table.prompt_runs[number])
                 if runs:  # the parts the prompt variation produced are painted as tags by the view's delegate
