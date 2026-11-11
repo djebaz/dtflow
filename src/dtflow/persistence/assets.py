@@ -1,9 +1,9 @@
 """Independent durable registry of locally known cloud assets (``<state>/assets.sqlite3``, schema version 5).
 
-A row is a *local candidate*, not remote inventory: it records what this machine measured and what a server once
-acknowledged. It never stores raw credentials, signed URLs or file contents. A version-3 side table records per-key and per-name references
-under the stable opaque credential identity; schema-1 receipts remain historical, unassigned evidence until checked
-under a selected key. Confirmed per-key receipts are reused without routine network checks.
+A receipt row is a *local candidate*, not remote inventory. The content-keyed
+``lora_records`` table owns file-detected and user-declared exact architecture plus local
+editable metadata. Account/name-scoped DT+ receipts remain separate. No legacy schema
+migration is provided for disposable pre-release state; incompatible state is never deleted.
 
 Writers (``prepare`` and ``reconcile``) hold an exclusive ``assets.lock`` for their lifetime; opening as a writer
 turns any leftover ``intent``/``transferring`` operation of an interrupted process into explicit ``unknown`` evidence.
@@ -150,6 +150,8 @@ def _effective_version(row) -> tuple[str | None, str]:
 
 def _record(row: sqlite3.Row) -> dict[str, Any]:
     value = {key: row[key] for key in row.keys()}
+    if "detected_version" not in value:
+        return value  # Operation rows contain no LoRA metadata.
     value["family"], value["family_source"] = _effective_version(value)
     value["architecture_conflict"] = bool(
         value["declared_version"] and value["detected_version"]
@@ -453,8 +455,6 @@ class AssetRegistry:
         if not self.path.exists():
             return None
         with closing(self._connect()) as db:
-            if db.execute("PRAGMA user_version").fetchone()[0] < 2:
-                return None
             row = db.execute(
                 f"SELECT a.*, {_LORA_COLUMNS}, k.identifier AS scoped_identifier, "
                 "k.remote_id AS scoped_remote, k.confirmed_at_utc AS scoped_confirmed "
@@ -535,15 +535,15 @@ class AssetRegistry:
                 f"FROM assets a{_LORA_JOIN} JOIN asset_key_receipts k ON a.asset_id=k.asset_id "
                 "WHERE a.kind='lora' AND k.state='confirmed'"
             ):
-                    from dataclasses import replace
+                from dataclasses import replace
 
-                    created[row["asset_id"]] = row["created_at_utc"]
-                    by_name[(row["asset_id"], row["logical_name"])] = replace(
-                        self._prepared(row),
-                        identifier=row["logical_name"],
-                        remote_id=row["logical_remote"],
-                        confirmed_at_utc=row["logical_confirmed"],
-                    )
+                created[row["asset_id"]] = row["created_at_utc"]
+                by_name[(row["asset_id"], row["logical_name"])] = replace(
+                    self._prepared(row),
+                    identifier=row["logical_name"],
+                    remote_id=row["logical_remote"],
+                    confirmed_at_utc=row["logical_confirmed"],
+                )
             # Oldest first by when the file's content was first seen. A relink or key switch re-stamps
             # ``confirmed_at_utc`` on old content and must never make it look newer (#361).
             return tuple(sorted(by_name.values(), key=lambda item: (created.get(item.receipt_id, ""), item.identifier)))
@@ -684,9 +684,8 @@ class AssetRegistry:
         if record is None:
             raise ValidationError("No local asset receipt has that identifier.")
         if record["state"] != "confirmed" or not record["remote_id"]:
-            # Earlier schema-2 versions could mark the shared content row unknown after a
-            # different API key failed, despite preserving another key's confirmed receipt.
-            # Recover that *candidate* without guessing a key; dispatch resolves its scope.
+            # Another key's validation can leave a shared row unconfirmed.
+            # Keep valid key-scoped candidates without pretending to know the active key.
             alternatives = [item for item in await self.choices() if item.receipt_id == asset_id]
             if alternatives:
                 return alternatives[0]
