@@ -98,7 +98,19 @@ def ckpt_summary(path: Path) -> dict:
     """Reuse the existing family inspector; retain only meaningful evidence."""
     report = inspect_ckpt(path, sample_count=0)
     if "error" in report:
-        raise ValueError(report["error"])
+        # An unsupported SQLite schema is not evidence that a file is invalid.
+        # Expose only table/column names so the owner can diagnose this case
+        # without sharing weights or a full schema dump.
+        return {
+            "format": "draw_things_ckpt",
+            "detected_family": None,
+            "family_evidence": "unknown",
+            "error": report["error"],
+            "sqlite_tables": report.get("tables", []),
+            "tensor_columns": [
+                column["name"] for column in report.get("tensor_columns", [])
+            ],
+        }
     family = report["current_detector_result"]
     result = {
         "format": "draw_things_ckpt",
@@ -223,7 +235,9 @@ def main() -> int:
             if canonical in seen:
                 continue
             seen.add(canonical)
-            results.append(extract(path))
+            result = extract(path)
+            results.append(result)
+            failed |= "error" in result
         except (OSError, ValueError, UnicodeError, sqlite3.Error, struct.error) as exc:
             failed = True
             results.append({"file": path.name, "error": f"{type(exc).__name__}: {exc}"})
