@@ -40,6 +40,51 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
+
+def _populate_canonical_prepare(window) -> None:
+    """Fill the *runtime* Prepare Designer forms with synthetic, offline review rows."""
+    from PySide6.QtWidgets import QSizePolicy
+    from dtflow.ui.prepare_lora_editor import _load
+
+    samples = (
+        ("portrait_8e62d922f3a4c82b1aef990108a2fae9_lora_f16.ckpt", "Krea 2", "PortraitV2", "F16", "portrait style", "File-derived evidence", "Ready", "ok"),
+        ("cinematic_20261109_f3e817d0a432bf_lora_q8p.ckpt", "Z-Image Turbo", "Cinematic", "Q8P", "cinematic lighting", "File-derived evidence", "Ready", "ok"),
+        ("detail_boost_ep12_3a32f30bc9e7821d_911f.ckpt", "", "DetailBoost", "F16", "", "Required · not file-detected", "Needs architecture", "warning"),
+        ("nak_lora_f16.ckpt", "Krea 2", "Nak", "F16", "", "User-declared, unverified", "Ready", "ok"),
+        ("portrait_77ad2a_lora_f16.ckpt", "Krea 2", "PortraitV2_2", "F16", "", "User-declared", "Ready", "ok"),
+    )
+    window.prepareEmpty.hide()
+    for index, (filename, family, short, fmt, trigger, provenance, status, state) in enumerate(samples):
+        row = _load("prepare_lora_row.ui", window.prepareBatchRows)
+        row.prepareSourceFile.setToolTip(filename)
+        row.prepareSourceFile.setText(filename)
+        row.prepareSourceFile.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
+        row.prepareArchitecture.addItem("Krea 2", "krea_2")
+        row.prepareArchitecture.addItem("Z-Image Turbo", "z_image")
+        row.prepareArchitecture.addItem("FLUX.1", "flux1")
+        if family:
+            row.prepareArchitecture.setCurrentText(family)
+        row.prepareArchitectureSource.setText(provenance)
+        row.prepareShortName.setText(short)
+        row.prepareFormat.setCurrentText(fmt)
+        row.prepareTriggerWords.setText(trigger)
+        row.prepareRowStatus.setText(status)
+        row.prepareRowStatus.setProperty("role", "statusChip")
+        row.prepareRowStatus.setProperty("state", state)
+        row.prepareStatusDot.setProperty("state", state)
+        row.prepareArchitectureSource.setProperty("state", "error" if not family else "unknown")
+        row.prepareArchitecture.setProperty("invalid", not bool(family))
+        row.setProperty("checkedSelection", index == 0)
+        window.prepareBatchRowsLayout.insertWidget(index, row)
+    window.prepareFileCount.setText("5 selected files")
+    window.prepareSelectedCount.setText("Selected: 5")
+    window.prepareAssignedCount.setText("Architectures assigned: 4/5")
+    window.prepareReadyCount.setText("Ready: 4/5")
+    window.prepareManagedFilename.setText("PortraitV2_Kr2_LoRA_F16.ckpt")
+    window.prepareDisplayLabel.setText("Display label · PortraitV2[Kr2]")
+
+
+
 def capture(app, name: str, target: Path, *, expanded: bool = False, compact: bool = False) -> None:
     """Load one design-only Designer form and capture its native Qt widget appearance."""
     from PySide6.QtCore import QFile, QIODevice, QPoint, Qt
@@ -47,7 +92,8 @@ def capture(app, name: str, target: Path, *, expanded: bool = False, compact: bo
     from PySide6.QtWidgets import QLabel, QScrollArea, QToolButton, QWidget
 
     filename, size = FORM_SIZES[name]
-    file = QFile(str(FORMS / filename))
+    source = ROOT / "src" / "dtflow" / "ui" / "forms" if name == "prepare" else FORMS
+    file = QFile(str(source / filename))
     if not file.open(QIODevice.OpenModeFlag.ReadOnly):
         raise OSError(f"Cannot read LoRA design form: {filename}")
     try:
@@ -56,6 +102,9 @@ def capture(app, name: str, target: Path, *, expanded: bool = False, compact: bo
         file.close()
     if not isinstance(window, QWidget):
         raise RuntimeError(f"Could not load Qt Designer LoRA form: {filename}")
+
+    if name == "prepare":
+        _populate_canonical_prepare(window)
 
     if name == "connections":
         library = window.findChild(QWidget, "customLorasDetails")
@@ -76,40 +125,28 @@ def capture(app, name: str, target: Path, *, expanded: bool = False, compact: bo
     app.processEvents()
 
     if name == "prepare":
-        # Keep the source column narrow, middle-elide in the actual available width,
-        # and retain the full filename as the native Qt hover tooltip.
         for index in range(5):
-            label = window.findChild(QLabel, f"sourceFile{index}")
-            if label is None:
-                raise RuntimeError(f"Prepare design lacks sourceFile{index}")
+            row = window.prepareBatchRowsLayout.itemAt(index).widget()
+            label = row.prepareSourceFile
             source_name = label.toolTip()
-            if not source_name:
-                raise RuntimeError(f"Prepare design lacks full filename tooltip for sourceFile{index}")
             label.setText(
                 label.fontMetrics().elidedText(
-                    source_name,
-                    Qt.TextElideMode.ElideMiddle,
-                    max(32, label.contentsRect().width() - 6),
+                    source_name, Qt.TextElideMode.ElideMiddle,
+                    max(35, label.contentsRect().width() - 6),
                 )
             )
-            copy = window.findChild(QToolButton, f"copySource{index}")
-            if copy is None:
-                raise RuntimeError(f"Prepare design lacks copySource{index}")
+            copy = row.prepareCopySource
             copy.clicked.connect(lambda _checked=False, filename=source_name: app.clipboard().setText(filename))
-            if compact:
-                copy.setText("Copy")
         app.processEvents()
-
         if compact:
-            # The key metadata/status column must remain on-screen at the 760-pixel review width.
-            scroll = window.findChild(QScrollArea, "batchTableScroll")
-            status = window.findChild(QLabel, "rowStatus0")
-            if scroll is None or status is None:
-                raise RuntimeError("Prepare design lacks status column or table viewport")
+            # The real six-column row must keep Status visible without horizontal scrolling.
+            row = window.prepareBatchRowsLayout.itemAt(0).widget()
+            scroll = window.prepareBatchScroll
+            status = row.prepareRowStatus
             far_edge = status.mapTo(scroll.viewport(), QPoint(status.width(), 0)).x()
             if far_edge > scroll.viewport().width():
                 raise RuntimeError(
-                    f"Compact Prepare status column is clipped: {far_edge}px > {scroll.viewport().width()}px"
+                    f"Compact native Prepare status is clipped: {far_edge}px > {scroll.viewport().width()}px"
                 )
 
     image = window.grab()
