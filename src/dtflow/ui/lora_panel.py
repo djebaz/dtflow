@@ -18,6 +18,7 @@ from PySide6.QtWidgets import QListWidgetItem, QWidget
 from dtflow.ui.file_dialogs import QFileDialog
 from dtflow.core.models import BackendError, LoRASelection, RemoteOutcome, ResolvedGenerationRequest, ValidationError
 from dtflow.diagnostics import event as diagnostic_event
+from dtflow.services.catalogue import Catalogue, FAMILY_LABELS
 from dtflow.services.connection import (
     Presentation,
     present_asset_failure,
@@ -54,6 +55,7 @@ class LoraAssetPanel:
         backend_source: Callable[[], tuple[str, str | None]],
         saved_source: Callable,
         state_dir: Path,
+        catalogue: Catalogue | None = None,
         build_request: Callable[[], ResolvedGenerationRequest | None],
         is_busy: Callable[[], bool],
         set_busy: Callable[[bool], None],
@@ -76,6 +78,9 @@ class LoraAssetPanel:
         self._receipts: dict[str, str] = {}  # selected LoRA identifier -> local receipt id (never exported)
         self._candidates: list[tuple[str, float | None]] = []
         self._records: dict[tuple[str, str], dict] = {}
+        self._inventory_families: dict[str, str] = {}
+        self._checkpoint_version: str | None = None
+        self._catalogue = catalogue if catalogue is not None else Catalogue(self._state)
         self._bind_after_list: str | None = None  # identifier to bind once the registry list has been refreshed
         self._add_when_bound = False  # a Prepare also adds the LoRA to the list; a plain add never needs to
         page.addLoraButton.clicked.connect(self.add)
@@ -127,23 +132,54 @@ class LoraAssetPanel:
 
     def set_inventory(self, snapshot) -> None:
         """Remember raw backend LoRAs until the catalogue controller supplies a compatible candidate set."""
+        self._inventory_families = (
+            {
+                entry.identifier: entry.architecture
+                for entry in snapshot.entries
+                if entry.kind == "lora" and entry.architecture
+            }
+            if snapshot
+            else {}
+        )
         self._inventory_candidates = (
             [(e.identifier, e.default_weight) for e in snapshot.entries if e.kind == "lora"] if snapshot else []
         )
         self._candidates = list(self._inventory_candidates)
 
-    def set_candidates(self, entries, *, prune_selected: bool = False) -> None:
-        """Use compatible catalogue LoRAs, or raw inventory suggestions when the checkpoint is unclassified."""
+    def set_candidates(self, entries, *, checkpoint_version: str | None = None) -> None:
+        """Offer only known-compatible LoRAs; keep selected mismatches visible for correction."""
+        self._checkpoint_version = checkpoint_version
         if entries is None:
             self._candidates = list(getattr(self, "_inventory_candidates", ()))
-            return
-        weights = {name: weight for name, weight in getattr(self, "_inventory_candidates", self._candidates)}
-        self._candidates = [(entry.identifier, weights.get(entry.identifier)) for entry in entries]
-        if prune_selected:
-            allowed = {entry.identifier for entry in entries}
-            kept = tuple(item for item in self.loras if item.identifier in allowed)
-            if kept != self.loras:
-                self.set_loras(kept)
+        else:
+            weights = {name: weight for name, weight in getattr(self, "_inventory_candidates", self._candidates)}
+            self._candidates = [(entry.identifier, weights.get(entry.identifier)) for entry in entries]
+        self._render_loras()
+        if any(not self._candidate_compatible(item.identifier) for item in self.loras):
+            self._show(
+                self.page.compatibilityStatusLabel,
+                Presentation("warning", "Incompatible LoRA selected", "Remove it or choose a matching checkpoint."),
+            )
+
+    def _candidate_family(self, name: str) -> str | None:
+        """Prefer the selected receipt, then unambiguous confirmed file evidence, then Echo."""
+        receipt = self._receipts.get(name)
+        if receipt is not None:
+            record = self._records.get((receipt, name))
+            if record is not None and record.get("state") == "confirmed":
+                return record.get("family")
+        versions = {
+            record.get("family")
+            for record in self._records.values()
+            if record["identifier"] == name and record["state"] == "confirmed"
+        }
+        if versions:
+            return next(iter(versions)) if len(versions) == 1 else None
+        return self._inventory_families.get(name)
+
+    def _candidate_compatible(self, name: str) -> bool:
+        candidate = self._candidate_family(name)
+        return self._checkpoint_version is None or candidate is None or candidate == self._checkpoint_version
 
     # -- selection -------------------------------------------------------------------------------------------------
     def receipts(self) -> dict[str, str]:
@@ -165,10 +201,46 @@ class LoraAssetPanel:
         )
         self._show(self.page.compatibilityStatusLabel, Presentation("unknown", text, ""))
 
+    def family_labels(self) -> dict[str, str]:
+        """Family evidence for display only; actual identifiers remain unchanged in requests.
+
+        Prepared file evidence takes priority over declarations. Conflicting prepared
+        receipts without a selected binding are shown as Unknown, not guessed.
+        """
+        family = {
+            entry.identifier: f"{FAMILY_LABELS.get(entry.base_model, entry.base_model)} (catalogue)"
+            for entry in self._catalogue.lora_definitions()
+            if entry.base_model
+        }
+        for name, value in self._inventory_families.items():
+            family.setdefault(name, f"{FAMILY_LABELS.get(value, value)} (provider)")
+        records: dict[str, list[dict]] = {}
+        for (asset_id, name), record in self._records.items():
+            if record.get("state") != "confirmed":
+                continue
+            if name in self._receipts and self._receipts[name] != asset_id:
+                continue
+            records.setdefault(name, []).append(record)
+        for name, entries in records.items():
+            values = {(record.get("family"), record.get("family_source")) for record in entries}
+            if len(values) != 1:
+                family[name] = "Unknown (conflicting receipts)"
+                continue
+            value, source = next(iter(values))
+            family[name] = (
+                f"{FAMILY_LABELS.get(value, value)} (file)"
+                if value and source == "file"
+                else "Unknown (file unclassified)"
+            )
+        return family
+
     def _render_loras(self) -> None:
+        labels = self.family_labels()
         self.page.loraList.clear()
         for item in self.loras:
-            text = f"{item.identifier} @ {item.weight}"
+            text = f"{item.identifier} @ {item.weight} · {labels.get(item.identifier, 'Unknown')}"
+            if not self._candidate_compatible(item.identifier):
+                text += f" · incompatible with {self._checkpoint_version}"
             if item.identifier in self._receipts:
                 text += f" [receipt {self._receipts[item.identifier][:8]}]"
             entry = QListWidgetItem(text)
@@ -177,18 +249,29 @@ class LoraAssetPanel:
 
     def choices(self) -> list[tuple[str, float | None]]:
         """(identifier, catalogue weight) of every LoRA offered for selection, custom-LoRA records included."""
-        candidates = list(self._candidates)
+        candidates = [(name, weight) for name, weight in self._candidates if self._candidate_compatible(name)]
         known = {name for name, _ in candidates}
-        return candidates + [
-            (record["identifier"], None) for record in self._records.values() if record["identifier"] not in known
-        ]
+        for record in self._records.values():
+            name = record["identifier"]
+            if name not in known and self._candidate_compatible(name):
+                candidates.append((name, None))
+                known.add(name)
+        return candidates
 
     def all_choices(self) -> list[tuple[str, float | None]]:
-        """Like ``choices`` but every LoRA the backend reports, not only those compatible with the checkpoint (a
-        queue may cross several checkpoints, so the composer cannot filter by one)."""
+        """Include every provider and local LoRA for multi-checkpoint queue composition."""
         listed = list(getattr(self, "_inventory_candidates", ()))
         known = {name for name, _ in listed}
-        return listed + [(name, weight) for name, weight in self.choices() if name not in known]
+        for name, weight in self._candidates:
+            if name not in known:
+                listed.append((name, weight))
+                known.add(name)
+        for record in self._records.values():
+            name = record["identifier"]
+            if name not in known:
+                listed.append((name, None))
+                known.add(name)
+        return listed
 
     def confirmed_receipts(self) -> dict[str, str]:
         """Identifier -> confirmed local receipt id of the custom LoRAs that can be bound (cloud only)."""
@@ -221,6 +304,7 @@ class LoraAssetPanel:
             candidates=[name for name, _ in candidates],
             selected=self.loras,
             suggestions=dict(candidates),
+            families=self.family_labels(),
             callback=apply_selection,
         )
 
@@ -289,13 +373,20 @@ class LoraAssetPanel:
         selected = self._selected_id()
         self.page.assetList.clear()
         for record in records:
+            value = record.get("family")
+            source = record.get("family_source")
+            family = (
+                f"{FAMILY_LABELS.get(value, value)} (file)"
+                if value and source == "file"
+                else "Unknown (file unclassified)"
+            )
             text = (
-                f"{record['identifier']} · {record['state']} ({record['evidence']}) · "
-                f"{record['sha256'][:8]} · {record['size']} B"
+                f"{record['identifier']} · {family} · "
+                f"{record['state']} ({record['evidence']}) · {record['sha256'][:8]} · {record['size']} B"
             )
             item = QListWidgetItem(text)
             item.setData(Qt.ItemDataRole.UserRole, (record["asset_id"], record["identifier"]))  # Qt.UserRole
-            item.setToolTip(f"Receipt {record['asset_id']} on {record['origin']}")
+            item.setToolTip(f"LoRA family: {family}\nReceipt {record['asset_id']} on {record['origin']}")
             self.page.assetList.addItem(item)
             if (record["asset_id"], record["identifier"]) == selected:
                 self.page.assetList.setCurrentItem(item)
@@ -459,7 +550,8 @@ class LoraAssetPanel:
                 Presentation(
                     "ok" if record["state"] == "confirmed" else "warning",
                     "Receipt " + record["state"],
-                    f"{record['identifier']} ({record['evidence']}).",
+                    f"{record['identifier']} · {self.family_labels().get(record['identifier'], 'Unknown')} "
+                    f"({record['evidence']}).",
                 ),
             )
             if bind:

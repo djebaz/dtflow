@@ -41,7 +41,7 @@ from dtflow.core.models import (
 )
 from dtflow.diagnostics import event as diagnostic_event
 from dtflow.logging_setup import dev_enabled
-from dtflow.services.catalogue import Catalogue
+from dtflow.services.catalogue import Catalogue, FAMILY_LABELS
 from dtflow.services.checkpoint_metadata import resolve_checkpoint_metadata
 from dtflow.services.connection import (
     Presentation,
@@ -51,6 +51,7 @@ from dtflow.services.connection import (
 )
 from dtflow.services.image_preparation import prepare_edit_inputs
 from dtflow.services.image_quality import assess_file
+from dtflow.services.preflight import checkpoint_exact_version
 from dtflow.services.presets import apply_preset, builtin_presets, load_presets, save_preset
 from dtflow.services.session import (
     InventoryDisplayMemory,
@@ -327,6 +328,7 @@ class GenerationPage:
             backend_source=backend_source,
             saved_source=saved_source,
             state_dir=self._state,
+            catalogue=self._catalogue,
             build_request=self._request_for_check,
             is_busy=lambda: self._busy,
             set_busy=self._set_busy,
@@ -913,6 +915,7 @@ class GenerationPage:
             "size": f"{page.widthSpinBox.value()}x{page.heightSpinBox.value()}",
             "prompt": page.promptEdit.toPlainText(),  # the template of a prompt variation
             "loras": dict(self.lora.all_choices()),  # identifier -> catalogue weight; unfiltered, models may differ
+            "lora_families": self.lora.family_labels(),  # display only; raw identifiers remain unchanged
             "receipts": self.lora.confirmed_receipts(),  # bound for LoRA sets that name a custom cloud LoRA
         }
 
@@ -1525,8 +1528,9 @@ class GenerationPage:
             if self._key_switch_checkpoint is not None:
                 self._key_switch_checkpoint = self.page.modelCombo.currentText()
             # While previous/next stepping is in progress, keep selected LoRAs until it settles.
-            self._filter_loras(prune_selected=not self._step_settle.isActive())
+            self._filter_loras()
         self._filter_samplers()
+        self._write_inventory_stats()
 
     def _rebuild_catalogue(
         self,
@@ -1629,24 +1633,27 @@ class GenerationPage:
                 page.modelCombo.setCurrentText("")
         finally:
             self._updating_catalogue = False
-        self._filter_loras(prune_selected=not preserve_selection and self._inventory_snapshot is not None)
+        self._filter_loras()
 
     def reload_custom_loras(self) -> None:
         """Re-resolve LoRA candidates after user-owned catalogue metadata changes."""
         self._filter_loras()
 
-    def _filter_loras(self, *, prune_selected: bool = True) -> None:
+    def _filter_loras(self) -> None:
         checkpoint = self.page.modelCombo.currentText().strip()
         include_cloud = self._backend()[0] == "local" and self.page.includeCloudCheck.isChecked()
         model = self._catalogue.checkpoint(checkpoint, include_unavailable=include_cloud)
+        version = checkpoint_exact_version(checkpoint, self._inventory_snapshot)
         entries = (
             self._catalogue.compatible_loras(
                 checkpoint, domain=self._catalogue_domain(), include_unavailable=include_cloud
             )
-            if model is not None and model.base_model is not None
+            if version is not None and model is not None and model.base_model is not None
             else None
         )
-        self.lora.set_candidates(entries, prune_selected=prune_selected and entries is not None)
+        # Filter new choices only. Saved selections remain visible, and shared
+        # preflight will reject a confirmed mismatch even if the UI is bypassed.
+        self.lora.set_candidates(entries, checkpoint_version=version)
 
     def _compute_units_estimate(self) -> ComputeUnitEstimate:
         """Read the same current form settings for the meter and explicit inspector."""
@@ -1786,6 +1793,19 @@ class GenerationPage:
         lines = [counts, f"{self._inventory_how} · observed {observed}"]
         if self._inventory_notice:
             lines.append(self._inventory_notice)
+        selected = self.page.modelCombo.currentText().strip()
+        if selected:
+            entry = self._catalogue.checkpoint(selected, include_unavailable=True)
+            family = entry.base_model if entry else None
+            label_name = FAMILY_LABELS.get(family, family) if family else "unknown"
+            chosen_filter = self.page.baseModelCombo.currentData()
+            if family and chosen_filter not in (family, None):
+                displayed = FAMILY_LABELS.get(chosen_filter, chosen_filter)
+                lines.append(
+                    f"Checkpoint family: {label_name} (Base model filter: {displayed}; generation uses checkpoint)"
+                )
+            else:
+                lines.append(f"Checkpoint family: {label_name}")
         label.setText("\n".join(lines))
         label.setToolTip(
             f"{snapshot.backend_id} inventory {self._inventory_how}; observed {snapshot.observed_at_utc}.\n"

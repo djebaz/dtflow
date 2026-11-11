@@ -1698,6 +1698,7 @@ class QueuePage:
             "search",
             "LoRA",
             weights=lambda: self._choices().get("loras", {}),
+            families=lambda: self._choices().get("lora_families", {}),
             convert=self._lora_set_chip,
             initial=self._generate_loras,
             edit_chip=lambda chip: tuple(LoRASelection(name, weight) for name, weight in parse_lora_set(chip)),
@@ -1707,6 +1708,7 @@ class QueuePage:
             "search",
             "LoRA weight",
             weights=lambda: self._choices().get("loras", {}),
+            families=lambda: self._choices().get("lora_families", {}),
             initial=self._lora_weight_selection,
             convert=self._lora_weight_chips,
             editor_title="Edit LoRA weights",
@@ -2059,7 +2061,11 @@ class QueuePage:
         name, endpoint = self._draft[1:3] if self._draft is not None and self._composing else self._backend()
         page.composerSummaryBackendLabel.setText(f"{name} · {endpoint}" if endpoint else name)
         page.composerSummaryModelLabel.setText(request.model_id)
-        loras = loras or "\n".join(lora_text(lora.identifier, lora.weight) for lora in request.loras)
+        labels = self._choices().get("lora_families", {})
+        loras = loras or "\n".join(
+            f"{lora_text(lora.identifier, lora.weight)} · {labels.get(lora.identifier, 'Unknown')}"
+            for lora in request.loras
+        )
         page.composerSummaryLorasLabel.setText(loras or "None")
         page.composerSummaryItemsLabel.setText("—" if count is None else str(count))
         page.composerSummaryVariesLabel.setText(varies)

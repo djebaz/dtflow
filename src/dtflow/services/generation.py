@@ -41,10 +41,11 @@ from dtflow.core.output_layout import OutputLayout
 from dtflow.services.artifacts import save_artifacts, validate_result
 from dtflow.services.assets import AssetService, AssetValidator
 from dtflow.services.budget import BufferBudget
+from dtflow.services.catalogue import Catalogue
 from dtflow.services.events import EventBuffer
 from dtflow.services.image_artifacts import save_image_artifacts
 from dtflow.services.image_inputs import snapshot_image_inputs
-from dtflow.services.preflight import preflight_loras, raise_if_blocked
+from dtflow.services.preflight import checkpoint_exact_version, preflight_loras, raise_if_blocked
 
 log = logging.getLogger(__name__)
 
@@ -87,6 +88,9 @@ class GenerationService:
         preview_images: bool = True,
     ):
         self.assets = assets
+        self.catalogue = (
+            Catalogue(assets.state) if isinstance(assets, AssetService) and assets.state is not None else None
+        )
         self.backend, self.store, self.output = backend, store, Path(output)
         self.timeouts = timeouts or TimeoutPolicy()
         self.saver = saver
@@ -145,7 +149,12 @@ class GenerationService:
 
     async def preflight(self, request: ResolvedGenerationRequest):
         """Structured LoRA diagnostics from the backend's current inventory; never dispatches anything."""
-        return preflight_loras(request, await self.get_inventory())
+        snapshot = await self.get_inventory()
+        return preflight_loras(
+            request,
+            snapshot,
+            checkpoint_version=checkpoint_exact_version(request.model_id, snapshot),
+        )
 
     async def generate(
         self,

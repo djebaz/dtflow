@@ -46,7 +46,8 @@ from dtflow.persistence.original_io import (
     require_originals_ready,
 )
 from dtflow.services.cache_management import CATEGORIES, cache_usage, purge_cache
-from dtflow.services.catalogue import Catalogue, import_user_loras
+from dtflow.services.catalogue import Catalogue, FAMILY_LABELS, import_user_loras
+from dtflow.services.lora_family import retained_families
 from dtflow.services.lora_store import LoraStore
 from dtflow.services.connection import Presentation, check_connection, present_failure, present_status
 from dtflow.services.cloud_usage import key_identity
@@ -1784,7 +1785,16 @@ class MainWindow:
 
         def read():
             store = LoraStore(self.state_dir)
-            return len(Catalogue(self.state_dir).user_loras()), store.entries(), store.usage()
+            entries = store.entries()
+            identities = [
+                (entry["sha256"], entry["size"])
+                for entry in entries
+                if isinstance(entry.get("sha256"), str) and isinstance(entry.get("size"), int)
+            ]
+            found = retained_families(self.state_dir, identities)
+            for entry in entries:
+                entry["detected_family"] = found.get((entry.get("sha256"), entry.get("size")))
+            return len(Catalogue(self.state_dir).user_loras()), entries, store.usage()
 
         self._read_summary("loras", read, self._custom_loras_read)
 
@@ -1818,10 +1828,13 @@ class MainWindow:
             name, sha256, size = entry.get("name"), entry.get("sha256"), entry.get("size")
             if not isinstance(name, str) or not isinstance(sha256, str) or not isinstance(size, int):
                 continue
-            item = QListWidgetItem(f"{name} · {self._human_bytes(size)}")
+            found = entry.get("detected_family")
+            family = FAMILY_LABELS.get(found.family, found.family) if found and found.family else "Unknown"
+            item = QListWidgetItem(f"{name} · {family} · {self._human_bytes(size)}")
             item.setData(Qt.ItemDataRole.UserRole, (sha256, size))
             item.setToolTip(
-                f"{name}\n{self._human_bytes(size)} · SHA-256 {sha256}\n"
+                f"{name}\nFamily: {family} ({found.source if found else 'unknown'})\n"
+                f"{self._human_bytes(size)} · SHA-256 {sha256}\n"
                 "Remove deletes only this managed copy, not the original, remote asset, or history."
             )
             listing.addItem(item)
