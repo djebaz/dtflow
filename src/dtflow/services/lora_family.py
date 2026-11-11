@@ -61,7 +61,7 @@ def detect_lora_family(path: Path) -> LoraFamily:
     """Detect the exact Draw Things version from converted SQLite metadata.
 
     A family is returned only when independent architectural landmarks agree.
-    Unknown or unsupported formats remain valid LoRAs for existing workflows.
+    Unknown or unsupported files remain unclassified; cloud dispatch then requires an explicit architecture.
     """
     path = Path(path)
     if not path.is_file():
