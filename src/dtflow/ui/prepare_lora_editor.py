@@ -14,7 +14,7 @@ from typing import Callable, Sequence
 from PySide6.QtCore import QEvent, QFile, QIODevice, QObject, Qt, QTimer
 from PySide6.QtGui import QGuiApplication
 from PySide6.QtUiTools import QUiLoader
-from PySide6.QtWidgets import QComboBox, QLabel, QSizePolicy, QWidget
+from PySide6.QtWidgets import QSizePolicy, QWidget
 from shiboken6 import isValid
 
 from dtflow.services.catalogue import FAMILY_LABELS

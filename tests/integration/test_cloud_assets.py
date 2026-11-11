@@ -52,7 +52,8 @@ async def test_prepare_upload_receipt_restart_and_validated_reuse(tmp_path):
     assert receipt.remote_id == "remote-" + sha256(data)[:12] and receipt.backend_id == "drawthings-cloud"
 
     (put,) = cloud.puts
-    assert put["body"] == data and max(put["sizes"]) <= CHUNK and len(put["sizes"]) == 5
+    assert put["body"] == data and max(put["sizes"]) <= CHUNK
+    assert len(put["sizes"]) == (len(data) + CHUNK - 1) // CHUNK and len(put["sizes"]) > 1
     assert "authorization" not in put["headers"] and put["headers"]["content-length"] == str(len(data))
     assert put["url"] == "https://storage.invalid/put/OBJECT?X-Signature=SIGNED-QUERY-SECRET"
     first = cloud.api_calls[0]
@@ -147,8 +148,9 @@ async def test_changed_bytes_and_other_scopes_never_share_identity_or_in_flight_
         assert len(one.puts) == len(two.puts) == 1
 
         one.on_chunk = None
-        changed = lora_file(tmp_path, data=b"\x01" + file.read_bytes()[1:])  # same name, same size, other bytes
-        changed.rename(file)
+        previous_size = file.stat().st_size
+        lora_file(tmp_path, data=bytes(range(255, -1, -1)) * 10)  # same SQLite shape and size, other bytes
+        assert file.stat().st_size == previous_size
         other = await AssetService(first_backend, registry).prepare(file)
         assert other.sha256 != receipts[0].sha256 and other.receipt_id != receipts[0].receipt_id
         assert other.identifier == receipts[0].identifier == "style.ckpt"

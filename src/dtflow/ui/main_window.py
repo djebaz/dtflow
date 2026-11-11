@@ -48,6 +48,7 @@ from dtflow.persistence.original_io import (
 from dtflow.services.cache_management import CATEGORIES, cache_usage, purge_cache
 from dtflow.services.catalogue import Catalogue, FAMILY_LABELS, import_user_loras
 from dtflow.services.lora_family import retained_families
+from dtflow.services.lora_auto_naming import normalize_previous_retained
 from dtflow.services.lora_store import LoraStore
 from dtflow.services.connection import Presentation, check_connection, present_failure, present_status
 from dtflow.services.cloud_usage import key_identity
@@ -1786,6 +1787,8 @@ class MainWindow:
         self.form.removeRetainedLoraButton.setEnabled(False)
 
         def read():
+            # Background-only local naming: no provider call and no Prepare UI change.
+            asyncio.run(normalize_previous_retained(self.state_dir))
             store = LoraStore(self.state_dir)
             entries = store.entries()
             identities = [
@@ -1847,12 +1850,8 @@ class MainWindow:
     def _toggle_custom_loras(self, expanded: bool) -> None:
         """Expand the existing Connections LoRA library only when needed."""
         self.form.customLorasBoxContents.setVisible(expanded)
-        self.form.customLorasDisclosure.setArrowType(
-            Qt.ArrowType.DownArrow if expanded else Qt.ArrowType.RightArrow
-        )
-        self.form.customLorasDisclosure.setAccessibleName(
-            "Hide custom LoRAs" if expanded else "Show custom LoRAs"
-        )
+        self.form.customLorasDisclosure.setArrowType(Qt.ArrowType.DownArrow if expanded else Qt.ArrowType.RightArrow)
+        self.form.customLorasDisclosure.setAccessibleName("Hide custom LoRAs" if expanded else "Show custom LoRAs")
 
     def _retained_lora_selection_changed(self) -> None:
         self.form.removeRetainedLoraButton.setEnabled(

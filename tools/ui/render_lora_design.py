@@ -115,7 +115,7 @@ def _populate_canonical_prepare(window) -> None:
     window.prepareSelectedCount.setText("Selected: 5")
     window.prepareAssignedCount.setText("Architectures assigned: 4/5")
     window.prepareReadyCount.setText("Ready: 4/5")
-    window.prepareManagedFilename.setText("PortraitV2_Kr2_LoRA_F16.ckpt")
+    window.prepareManagedFilename.setText("PortraitV2_Kr2_lora_f16.ckpt")
     window.prepareDisplayLabel.setText("Display label · PortraitV2[Kr2]")
 
 
@@ -123,7 +123,7 @@ def capture(app, name: str, target: Path, *, expanded: bool = False, compact: bo
     """Load one design-only Designer form and capture its native Qt widget appearance."""
     from PySide6.QtCore import QFile, QIODevice, QPoint, Qt
     from PySide6.QtUiTools import QUiLoader
-    from PySide6.QtWidgets import QLabel, QScrollArea, QToolButton, QWidget
+    from PySide6.QtWidgets import QToolButton, QWidget
 
     filename, size = FORM_SIZES[name]
     source = ROOT / "src" / "dtflow" / "ui" / "forms" if name == "prepare" else FORMS

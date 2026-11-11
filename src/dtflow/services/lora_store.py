@@ -1,9 +1,9 @@
 """Managed durable copies of converted custom LoRA files (``<state>/lora_files/``).
 
 A retained copy is a durable asset, not disposable cache: it lets a LoRA that vanished from DT+ be restored even after the
-user deleted the original file. Files keep their original name for readability; identity is the measured SHA-256 plus
-size, recorded in ``index.json`` and re-verified every time the bytes are about to be used. Nothing here talks to the
-network, and removal only ever touches files this store created.
+user deleted the original file. Copies adopt their canonical managed filename when available; identity remains the measured
+SHA-256 plus size in ``index.json`` and is re-verified whenever bytes are about to be used.
+Nothing here talks to the network, and removal only touches files this store created.
 """
 
 from __future__ import annotations
@@ -121,9 +121,13 @@ class LoraStore:
         if (digest, total) != (retained.sha256, retained.size):
             raise ValidationError(f"Retained LoRA {retained.name} no longer matches its recorded checksum.")
 
-    def retain(self, source: Path, sha256: str, size: int) -> RetainedFile:
-        """Keep verified source bytes, deduplicated by digest/size; repair a damaged managed copy if possible."""
+    def retain(self, source: Path, sha256: str, size: int, *, managed_name: str | None = None) -> RetainedFile:
+        """Copy new content directly to its managed name, keeping one indexed copy per hash."""
         source = Path(source)
+        if managed_name is not None and (
+            _safe_name(managed_name) != managed_name or not managed_name.endswith(".ckpt")
+        ):
+            raise ValidationError("The managed LoRA filename is not portable.")
         handle = self._locked()
         try:
             files = self._read()
@@ -149,12 +153,18 @@ class LoraStore:
                 original = _safe_name(source.name)
                 stem, suffix = os.path.splitext(original)
                 taken = {str(item.get("name", "")).casefold() for item in files}
-                name = original
-                counter = 0
-                while name.casefold() in taken or os.path.lexists(self.directory / name):
-                    counter += 1
-                    end = f"-{sha256[:8]}" + (f"-{counter}" if counter > 1 else "")
-                    name = f"{stem}{end}{suffix}"
+                name = managed_name or original
+                if managed_name is not None:
+                    # The canonical allocator decides managed-name collisions.
+                    # Never silently append a hash or overwrite another copy.
+                    if name.casefold() in taken or os.path.lexists(self.directory / name):
+                        raise ValidationError("The managed LoRA filename already exists; no copy was overwritten.")
+                else:
+                    counter = 0
+                    while name.casefold() in taken or os.path.lexists(self.directory / name):
+                        counter += 1
+                        end = f"-{sha256[:8]}" + (f"-{counter}" if counter > 1 else "")
+                        name = f"{stem}{end}{suffix}"
                 target = self.directory / name
 
             temporary = None
@@ -189,8 +199,72 @@ class LoraStore:
                 files.append(
                     {"name": name, "sha256": sha256, "size": size, "retained_at_utc": datetime.now(UTC).isoformat()}
                 )
-                self._write(files)
+                try:
+                    self._write(files)
+                except OSError as exc:
+                    # The source is still intact; don't leave a newly copied
+                    # file outside the retained index if its write failed.
+                    try:
+                        target.unlink(missing_ok=True)
+                    except OSError:
+                        diagnostic_event(log, "assets.retained_unindexed_copy", level=logging.WARNING)
+                    raise ValidationError("The retained LoRA index could not be saved.") from exc
             return RetainedFile(name, sha256, size, target)
+        finally:
+            handle.close()
+
+    def rename_accepted(self, sha256: str, size: int, accepted_name: str) -> RetainedFile | None:
+        """Give existing verified retained bytes their accepted canonical filename.
+
+        Link the verified content first, commit the index atomically, and only
+        then unlink the old name. An interruption cannot lose the indexed copy.
+        No remote receipt, source file or origin stamp is renamed.
+        """
+        if _safe_name(accepted_name) != accepted_name or not accepted_name.endswith(".ckpt"):
+            raise ValidationError("The accepted LoRA filename is not portable.")
+        handle = self._locked()
+        try:
+            files = self._read()
+            item = next((row for row in files if (row.get("sha256"), row.get("size")) == (sha256, size)), None)
+            if item is None:
+                return None
+            original = self._path(item)
+            if original.name == accepted_name:
+                self.verify(RetainedFile(original.name, sha256, size, original))
+                return RetainedFile(original.name, sha256, size, original)
+            self.verify(RetainedFile(original.name, sha256, size, original))
+            if original.name.casefold() == accepted_name.casefold():
+                # On case-insensitive filesystems both names refer to one file;
+                # unlinking the old spelling would delete the accepted copy.
+                raise ValidationError("A case-only retained LoRA rename needs explicit handling.")
+            for other in files:
+                if other is not item and str(other.get("name", "")).casefold() == accepted_name.casefold():
+                    raise ValidationError("Another retained LoRA already uses the accepted filename.")
+            target = self.directory / accepted_name
+            if os.path.lexists(target):
+                # A previous interruption may have created the new hard link
+                # before the index commit. Adopt it only when its bytes match.
+                if target == original or target.is_symlink() or not target.is_file():
+                    raise ValidationError("The accepted LoRA filename is already occupied.")
+                self.verify(RetainedFile(accepted_name, sha256, size, target))
+            else:
+                try:
+                    os.link(original, target)  # Same filesystem; atomic no-overwrite name creation.
+                except OSError as exc:
+                    raise ValidationError("Could not name the retained LoRA; its original copy is intact.") from exc
+            item["name"] = accepted_name
+            self._write(files)
+            try:
+                original.unlink()
+            except OSError as exc:
+                # An extra unindexed hard link is safer than losing the canonical one.
+                diagnostic_event(
+                    log,
+                    "assets.retained_old_name_left",
+                    level=logging.WARNING,
+                    data={"sha": sha256[:8], "reason": type(exc).__name__},
+                )
+            return RetainedFile(accepted_name, sha256, size, target)
         finally:
             handle.close()
 

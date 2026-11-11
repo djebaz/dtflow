@@ -389,6 +389,17 @@ def architecture_shortcode(exact_architecture: str) -> str | None:
     return ARCHITECTURE_TAGS.get(exact_architecture)
 
 
+_CONVERTED_FORMAT_SUFFIX = re.compile(r"(?i)(?:^|[_\s.-])(?:lora[_\s.-]*)?(q8p|f16|fp16)\.ckpt$")
+
+
+def suggested_lora_format(filename: str) -> tuple[str, str]:
+    """Return an editable LoRA format hint; filename text does not prove tensor precision."""
+    match = _CONVERTED_FORMAT_SUFFIX.search(_basename(filename))
+    if match is None:
+        return "F16", "converter_default"
+    return ("Q8P" if match.group(1).casefold() == "q8p" else "F16"), "filename_hint"
+
+
 def managed_filename(short_name: str, family_tag: str, format_code: str) -> str:
     """Build a managed technical filename from validated presentation metadata."""
     if not PORTABLE.fullmatch(short_name):
@@ -397,7 +408,7 @@ def managed_filename(short_name: str, family_tag: str, format_code: str) -> str:
         raise ValueError("Architecture shortcode must contain ASCII letters and digits.")
     if format_code not in _FORMATS:
         raise ValueError("LoRA format must be F16 or Q8P.")
-    return f"{short_name}_{family_tag}_LoRA_{format_code}.ckpt"
+    return f"{short_name}_{family_tag}_lora_{format_code.lower()}.ckpt"
 
 
 def _identity(sha256: str | None, size: int | None) -> tuple[str, int] | None:
