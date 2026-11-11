@@ -3,8 +3,8 @@
   "states": [
     {"id": "lora-prepare-wide", "category": "lora", "subcategory": "prepare", "fixture": "lora-prepare", "stage": "ready", "level": "f", "path": "lora-prepare-wide.png"},
     {"id": "lora-prepare-compact", "category": "lora", "subcategory": "prepare", "fixture": "lora-prepare", "stage": "layout", "level": "f", "path": "lora-prepare-compact.png"},
-    {"id": "lora-connections-collapsed", "category": "lora", "subcategory": "connection", "fixture": "lora-prepare", "stage": "collapsed", "level": "f", "path": "lora-connections-collapsed.png"},
-    {"id": "lora-connections-expanded", "category": "lora", "subcategory": "connection", "fixture": "lora-prepare", "stage": "expanded", "level": "f", "path": "lora-connections-expanded.png"},
+    {"id": "lora-connections-collapsed", "category": "lora", "subcategory": "connection", "fixture": "lora-prepare", "stage": "setup", "level": "f", "path": "lora-connections-collapsed.png"},
+    {"id": "lora-connections-expanded", "category": "lora", "subcategory": "connection", "fixture": "lora-prepare", "stage": "ready", "level": "f", "path": "lora-connections-expanded.png"},
     {"id": "lora-picker", "category": "lora", "subcategory": "selection", "fixture": "lora-prepare", "stage": "ready", "level": "f", "path": "lora-picker.png"},
     {"id": "shell-30-startup-splash", "category": "shell", "subcategory": "startup", "fixture": "startup-splash", "stage": "empty", "level": "m", "path": "shell-30-startup-splash.png"},
     {"id": "shell-01-about", "category": "shell", "subcategory": "feedback", "fixture": "shell", "stage": "setup", "level": "f", "path": "shell-01-about.png"},
