@@ -147,7 +147,6 @@ def suggest(filename: str) -> dict[str, Any]:
     low_signal = (
         not words
         or all(token.casefold() in WEAK for token in words)
-        or (len(words) == 1 and len(words[0]) <= 3)
         or (len(words) == 1 and bool(re.fullmatch(r"[a-z]{1,4}\d+", words[0], re.I)))
     )
     shortened = len(_label(words, version)) > MAX_SHORT_NAME
