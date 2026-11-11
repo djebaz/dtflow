@@ -12,7 +12,6 @@ from uuid import uuid4
 
 from dtflow.build import identity
 from dtflow.core.image_inputs import INPUT_NAMES, ImageInputSnapshot, PreparedImageInputs
-from dtflow.core.model_profiles import exact_model_spec
 from dtflow.core.models import (
     Backend,
     BackendError,
@@ -46,7 +45,7 @@ from dtflow.services.catalogue import Catalogue
 from dtflow.services.events import EventBuffer
 from dtflow.services.image_artifacts import save_image_artifacts
 from dtflow.services.image_inputs import snapshot_image_inputs
-from dtflow.services.preflight import preflight_loras, raise_if_blocked
+from dtflow.services.preflight import checkpoint_exact_version, preflight_loras, raise_if_blocked
 
 log = logging.getLogger(__name__)
 
@@ -150,12 +149,11 @@ class GenerationService:
 
     async def preflight(self, request: ResolvedGenerationRequest):
         """Structured LoRA diagnostics from the backend's current inventory; never dispatches anything."""
-        spec = exact_model_spec(request.model_id)
-        version = spec.get("version") if spec is not None else None
+        snapshot = await self.get_inventory()
         return preflight_loras(
             request,
-            await self.get_inventory(),
-            checkpoint_version=version if isinstance(version, str) and version else None,
+            snapshot,
+            checkpoint_version=checkpoint_exact_version(request.model_id, snapshot),
         )
 
     async def generate(
