@@ -35,7 +35,8 @@ from dtflow.core.tasks import settle
 from dtflow.diagnostics import api_error_data, cloud_key_data, event as diagnostic_event
 from dtflow.persistence.assets import AssetRegistry, AssetsBusyError, newest_per_name
 from dtflow.persistence.store import PersistenceError
-from dtflow.services.lora_family import LoraFamily, detect_lora_family
+from dtflow.services.lora_family import LoraFamily, detect_lora_family, validate_converted_lora
+from dtflow.services.lora_auto_naming import auto_prepare_metadata
 from dtflow.services.lora_naming import LoraPrepareMetadata
 from dtflow.services.lora_store import LoraStore
 
@@ -167,8 +168,9 @@ class AssetService:
         provenance: str = "",
         metadata: LoraPrepareMetadata | None = None,
     ) -> PreparedAsset:
-        """Explicit Prepare; accept a managed name before any provider negotiation."""
+        """Explicit Prepare; derive a usable managed name before provider negotiation."""
         path = Path(path)
+        managed_name = None
         if metadata is not None:
             try:
                 selected_identifier = metadata.identifier
@@ -176,13 +178,27 @@ class AssetService:
                 raise ValidationError(str(exc)) from exc
             if identifier is not None and identifier != selected_identifier:
                 raise ValidationError("Prepare identifier disagrees with the selected managed LoRA name.")
-            identifier = selected_identifier
+            identifier = managed_name = selected_identifier
         stat, digest = await asyncio.to_thread(_observe, path)
+        await asyncio.to_thread(validate_converted_lora, path)
+        # Decide the technical filename before retaining bytes. Never create an
+        # original-name copy merely to link it under the accepted name later.
+        detected = await asyncio.to_thread(detect_lora_family, path)
+        if metadata is None and identifier is None:
+            saved = await self.registry.lora_metadata(digest, stat.st_size)
+            accepted = saved.get("managed_identifier") if saved else None
+            if isinstance(accepted, str):
+                # Re-Prepare preserves the accepted technical identifier and receipts.
+                identifier = managed_name = accepted
+            else:
+                metadata = await auto_prepare_metadata(self.registry, path.name, digest, stat.st_size, detected.family)
+                if metadata is not None:
+                    identifier = managed_name = metadata.identifier
         content = AssetContent("lora", identifier or path.name, digest, stat.st_size, provenance)
         retained = None
         if self.store is not None:
-            # Keep the durable copy first, so a failed or interrupted upload never costs the user the file.
-            retained = await asyncio.to_thread(self.store.retain, path, digest, stat.st_size)
+            # One verified copy with its chosen name, indexed before any provider call.
+            retained = await asyncio.to_thread(self.store.retain, path, digest, stat.st_size, managed_name=managed_name)
             diagnostic_event(
                 log, "assets.copy_kept", level=logging.INFO, data={"size": stat.st_size, "sha": digest[:8]}
             )
@@ -197,7 +213,6 @@ class AssetService:
         )
         task = _INFLIGHT.get(key)
         if task is None or task.done():
-            detected = await asyncio.to_thread(detect_lora_family, retained.path if retained else path)
             diagnostic_event(
                 log,
                 "assets.lora_family_detected",
@@ -208,7 +223,17 @@ class AssetService:
                     "family_source": detected.source,
                 },
             )
-            task = asyncio.create_task(self._prepare(path, content, stat, detected=detected, metadata=metadata))
+            task = asyncio.create_task(
+                self._prepare(
+                    path,
+                    content,
+                    stat,
+                    detected=detected,
+                    metadata=metadata,
+                    retained_name=retained.name if retained is not None else None,
+                    managed_name=managed_name,
+                )
+            )
             _INFLIGHT[key] = task
             task.add_done_callback(
                 lambda done, key=key: _INFLIGHT.pop(key, None) if _INFLIGHT.get(key) is done else None
@@ -236,10 +261,13 @@ class AssetService:
         negotiation: AssetNegotiation | None = None,
         detected: LoraFamily | None = None,
         metadata: LoraPrepareMetadata | None = None,
+        retained_name: str | None = None,
+        managed_name: str | None = None,
     ) -> PreparedAsset:
         backend = self.backend
         credential_id = await self._credential_id()
         if detected is None:
+            await asyncio.to_thread(validate_converted_lora, path)
             detected = await asyncio.to_thread(detect_lora_family, path)
         asset_id, operation = await self.registry.begin(
             content,
@@ -250,6 +278,9 @@ class AssetService:
         )
         transferred = False
         try:
+            if managed_name is not None and self.store is not None and retained_name != managed_name:
+                # Only previously retained copies can need an in-place name change.
+                await asyncio.to_thread(self.store.rename_accepted, content.sha256, content.size, managed_name)
             negotiation = negotiation or await backend.negotiate_asset(content)
             if negotiation.status == "exists":
                 receipt = await self.registry.confirm(
@@ -288,6 +319,11 @@ class AssetService:
                 self._settle_unknown(
                     asset_id, operation, "cancelled" if transferred else "cancelled_early", transferred, credential_id
                 )
+            )
+            raise
+        except ValidationError:
+            await settle(
+                self.registry.mark(asset_id, operation, "failed", "retained_name_failed", protect_confirmed=True)
             )
             raise
         except BackendError as exc:
