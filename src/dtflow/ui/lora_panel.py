@@ -29,7 +29,12 @@ from dtflow.services.connection import (
 from dtflow.services.lora_family import detect_lora_family
 from dtflow.services.lora_naming import LoraPrepareMetadata
 from dtflow.services.session import (
-    check_loras, list_assets, occupied_managed_lora_names, prepare_asset, reconcile_asset, selection_for,
+    check_loras,
+    list_assets,
+    occupied_managed_lora_names,
+    prepare_asset,
+    reconcile_asset,
+    selection_for,
 )
 from dtflow.ui.activity_strip import activity_strip
 from dtflow.ui.runner import AsyncRunner
@@ -258,7 +263,9 @@ class LoraAssetPanel:
             if not self._candidate_compatible(item.identifier):
                 text += f" · incompatible with {self._checkpoint_version}"
             entry = QListWidgetItem(text)
-            detail = f"{item.identifier}\nWeight: {item.weight:g}\nArchitecture: {labels.get(item.identifier, 'Unknown')}"
+            detail = (
+                f"{item.identifier}\nWeight: {item.weight:g}\nArchitecture: {labels.get(item.identifier, 'Unknown')}"
+            )
             if item.identifier in self._receipts:
                 detail += f"\nConfirmed receipt: {self._receipts[item.identifier]}"
             entry.setToolTip(detail)  # precise identifiers remain available on hover

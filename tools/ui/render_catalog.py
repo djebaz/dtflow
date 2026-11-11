@@ -12,7 +12,18 @@ import os
 from dataclasses import dataclass
 from pathlib import Path
 
-CATEGORY_ORDER = ("shell", "connection", "generate", "lora", "inpaint", "queues", "scripts", "workflows", "images", "logs")
+CATEGORY_ORDER = (
+    "shell",
+    "connection",
+    "generate",
+    "lora",
+    "inpaint",
+    "queues",
+    "scripts",
+    "workflows",
+    "images",
+    "logs",
+)
 STAGE_ORDER = ("empty", "setup", "ready", "running", "results", "failure", "recovery", "layout")
 CATALOG_PATH = Path(__file__).with_suffix(".json")
 

@@ -85,6 +85,7 @@ class _FileElision(QObject):
                 )
             )
 
+
 class _RowFocus(QObject):
     """Follow keyboard focus and pointer selection without intercepting controls."""
 
@@ -95,9 +96,7 @@ class _RowFocus(QObject):
     def eventFilter(self, watched, event):
         if event.type() in (QEvent.Type.FocusIn, QEvent.Type.MouseButtonPress):
             for row in self.owner.rows:
-                if row is not self.owner.selected and (
-                    watched is row.widget or row.widget.isAncestorOf(watched)
-                ):
+                if row is not self.owner.selected and (watched is row.widget or row.widget.isAncestorOf(watched)):
                     self.owner._select(row)
                     break
         return False
@@ -139,21 +138,21 @@ class PrepareBatchEditor:
                 lambda _checked=False, name=path.name: QGuiApplication.clipboard().setText(name)
             )
             row_widget.prepareShortName.textEdited.connect(lambda _s, item=row: self._edited_name(item))
-            row_widget.prepareArchitecture.currentIndexChanged.connect(
-                lambda _idx, item=row: self._edited_family(item)
-            )
-            row_widget.prepareFormat.currentIndexChanged.connect(
-                lambda _idx, item=row: self._edited_format(item)
-            )
+            row_widget.prepareArchitecture.currentIndexChanged.connect(lambda _idx, item=row: self._edited_family(item))
+            row_widget.prepareFormat.currentIndexChanged.connect(lambda _idx, item=row: self._edited_format(item))
             row_widget.prepareTriggerWords.textChanged.connect(lambda _s: self.refresh())
             row_widget.mousePressEvent = lambda event, item=row: self._select(item)
             self.form.prepareBatchRowsLayout.insertWidget(len(self.rows) - 1, row_widget)
             row_widget.prepareRowStatus.setText("Inspecting file…")
             row_widget.prepareStatusDot.setProperty("state", "unknown")
             for control in (
-                row_widget, row_widget.prepareSourceFile, row_widget.prepareCopySource,
-                row_widget.prepareArchitecture, row_widget.prepareShortName,
-                row_widget.prepareFormat, row_widget.prepareTriggerWords,
+                row_widget,
+                row_widget.prepareSourceFile,
+                row_widget.prepareCopySource,
+                row_widget.prepareArchitecture,
+                row_widget.prepareShortName,
+                row_widget.prepareFormat,
+                row_widget.prepareTriggerWords,
             ):
                 control.installEventFilter(self._focus_selection)
         self.selected = self.rows[0] if self.rows else None
@@ -198,16 +197,12 @@ class PrepareBatchEditor:
         """Apply read-only file evidence and verified backend choices on the GUI thread."""
         if not self.active():
             return
-        self.architectures = tuple(
-            dict.fromkeys(v for v in architectures if architecture_shortcode(v) is not None)
-        )
+        self.architectures = tuple(dict.fromkeys(v for v in architectures if architecture_shortcode(v) is not None))
         self.occupied = tuple(occupied)
         self._updating = True
         for row, result in zip(self.rows, evidence, strict=True):
             row.detected = result.family
-            row.widget.prepareFileEvidence.setText(
-                "Detected from file" if result.family else "Unknown inspection"
-            )
+            row.widget.prepareFileEvidence.setText("Detected from file" if result.family else "Unknown inspection")
             combo = row.widget.prepareArchitecture
             combo.clear()
             combo.addItem("Select architecture…", None)
@@ -256,7 +251,10 @@ class PrepareBatchEditor:
                 elif allocation is None or not family:
                     message, state = "Needs architecture", "warning"
                 elif allocation.conflict is not None:
-                    message, state = "Name conflict" if "collision" in allocation.conflict else "Check short name", "error"
+                    message, state = (
+                        "Name conflict" if "collision" in allocation.conflict else "Check short name",
+                        "error",
+                    )
                 else:
                     message, state = "Ready", "ok"
                     ready += 1
@@ -269,9 +267,12 @@ class PrepareBatchEditor:
                     label.style().polish(label)
                 source_note = row.widget.prepareFileEvidence
                 source_note.setText(
-                    "Inspecting file…" if not self.inspected
-                    else "Declared by user" if row.manual_family
-                    else "Detected from file" if row.detected
+                    "Inspecting file…"
+                    if not self.inspected
+                    else "Declared by user"
+                    if row.manual_family
+                    else "Detected from file"
+                    if row.detected
                     else "Unknown inspection"
                 )
                 family_note = row.widget.prepareArchitectureSource
@@ -280,7 +281,8 @@ class PrepareBatchEditor:
                 elif family:
                     if row.manual_family:
                         family_note.setText(
-                            "User declared · file differs" if row.detected and row.detected != family
+                            "User declared · file differs"
+                            if row.detected and row.detected != family
                             else "User declared · unverified"
                         )
                     else:
@@ -297,11 +299,14 @@ class PrepareBatchEditor:
                 row.widget.prepareArchitecture.style().polish(row.widget.prepareArchitecture)
                 short_name = row.widget.prepareShortName.text().strip()
                 name_error = (
-                    self.inspected and not row.admitted and (
+                    self.inspected
+                    and not row.admitted
+                    and (
                         not _SHORT_NAME.fullmatch(short_name)
-                        or (allocation is not None and allocation.conflict not in (
-                            None, "missing_architecture", "missing_format"
-                        ))
+                        or (
+                            allocation is not None
+                            and allocation.conflict not in (None, "missing_architecture", "missing_format")
+                        )
                     )
                 )
                 row.widget.prepareShortName.setProperty("invalid", name_error)
@@ -312,29 +317,23 @@ class PrepareBatchEditor:
                 row.widget.style().polish(row.widget)
 
             self.form.prepareSelectedCount.setText(f"Selected: {len(self.rows)}")
-            self.form.prepareAssignedCount.setText(
-                f"Architectures assigned: {assigned}/{len(self.rows)}"
-            )
+            self.form.prepareAssignedCount.setText(f"Architectures assigned: {assigned}/{len(self.rows)}")
             self.form.prepareReadyCount.setText(f"Ready: {ready}/{len(self.rows)}")
             button = self.panel.form.inlineEditorAcceptButton
             button.setText(
-                f"Prepare {ready} ready LoRA{'s' if ready != 1 else ''}"
-                if self.inspected else "Inspecting files…"
+                f"Prepare {ready} ready LoRA{'s' if ready != 1 else ''}" if self.inspected else "Inspecting files…"
             )
             button.setEnabled(ready > 0)
             if self.selected is not None:
                 index = self.rows.index(self.selected)
                 allocation = allocations[index]
                 self.form.prepareManagedFilename.setText(
-                    allocation.filename if allocation and allocation.filename
-                    else "Complete required fields to preview"
+                    allocation.filename if allocation and allocation.filename else "Complete required fields to preview"
                 )
                 architecture = self.selected.widget.prepareArchitecture.currentData()
                 short = self.selected.widget.prepareShortName.text().strip()
                 tag = architecture_shortcode(architecture) if architecture else None
-                self.form.prepareDisplayLabel.setText(
-                    f"{short}[{tag}]" if short and tag else "No display label yet"
-                )
+                self.form.prepareDisplayLabel.setText(f"{short}[{tag}]" if short and tag else "No display label yet")
             QTimer.singleShot(0, self._elision.refresh)
         finally:
             self._updating = False
@@ -351,8 +350,10 @@ class PrepareBatchEditor:
                 continue
             fmt = row.widget.prepareFormat.currentText()
             source = (
-                "user" if row.manual_format
-                else "filename_hint" if re.search(r"(?i)_lora_(?:q8p|f16)\.ckpt$", row.path.name)
+                "user"
+                if row.manual_format
+                else "filename_hint"
+                if re.search(r"(?i)_lora_(?:q8p|f16)\.ckpt$", row.path.name)
                 else "converter_default"
             )
             metadata = LoraPrepareMetadata(
@@ -379,8 +380,10 @@ class PrepareBatchEditor:
             row.admitted = True
             row.outcome = None
             for control in (
-                row.widget.prepareArchitecture, row.widget.prepareShortName,
-                row.widget.prepareFormat, row.widget.prepareTriggerWords
+                row.widget.prepareArchitecture,
+                row.widget.prepareShortName,
+                row.widget.prepareFormat,
+                row.widget.prepareTriggerWords,
             ):
                 control.setEnabled(False)
         self.refresh()

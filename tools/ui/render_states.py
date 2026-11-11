@@ -461,7 +461,6 @@ def render_workspace_states(app, state, out):
         dispose_window(app, shell.form)
 
 
-
 @fixture("lora-prepare")
 def render_lora_prepare_states(shell, out):
     """Capture only the canonical in-window Prepare UI using synthetic LoRA metadata."""
@@ -500,9 +499,7 @@ def render_lora_prepare_states(shell, out):
     editor.rows[4].widget.prepareShortName.setText("PortraitV2")
     # Illustrate a user declaration separately from file inspection.
     for row in (editor.rows[3], editor.rows[4]):
-        row.widget.prepareArchitecture.setCurrentIndex(
-            row.widget.prepareArchitecture.findData("krea_2")
-        )
+        row.widget.prepareArchitecture.setCurrentIndex(row.widget.prepareArchitecture.findData("krea_2"))
     editor._select(editor.rows[0])  # Match the HTML reference's first-row preview.
     # No file bytes are accessed, no provider client is opened, and Prepare is never clicked.
     QTest.qWait(80)

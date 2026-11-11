@@ -40,16 +40,42 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-
 def _populate_canonical_prepare(window) -> None:
     """Fill the *runtime* Prepare Designer forms with synthetic, offline review rows."""
     from PySide6.QtWidgets import QSizePolicy
     from dtflow.ui.prepare_lora_editor import _load
 
     samples = (
-        ("portrait_8e62d922f3a4c82b1aef990108a2fae9_lora_f16.ckpt", "Krea 2", "PortraitV2", "F16", "portrait style", "File-derived evidence", "Ready", "ok"),
-        ("cinematic_20261109_f3e817d0a432bf_lora_q8p.ckpt", "Z-Image Turbo", "Cinematic", "Q8P", "cinematic lighting", "File-derived evidence", "Ready", "ok"),
-        ("detail_boost_ep12_3a32f30bc9e7821d_911f.ckpt", "", "DetailBoost", "F16", "", "Required · not file-detected", "Needs architecture", "warning"),
+        (
+            "portrait_8e62d922f3a4c82b1aef990108a2fae9_lora_f16.ckpt",
+            "Krea 2",
+            "PortraitV2",
+            "F16",
+            "portrait style",
+            "File-derived evidence",
+            "Ready",
+            "ok",
+        ),
+        (
+            "cinematic_20261109_f3e817d0a432bf_lora_q8p.ckpt",
+            "Z-Image Turbo",
+            "Cinematic",
+            "Q8P",
+            "cinematic lighting",
+            "File-derived evidence",
+            "Ready",
+            "ok",
+        ),
+        (
+            "detail_boost_ep12_3a32f30bc9e7821d_911f.ckpt",
+            "",
+            "DetailBoost",
+            "F16",
+            "",
+            "Required · not file-detected",
+            "Needs architecture",
+            "warning",
+        ),
         ("nak_lora_f16.ckpt", "Krea 2", "Nak", "F16", "", "User-declared, unverified", "Ready", "ok"),
         ("portrait_77ad2a_lora_f16.ckpt", "Krea 2", "PortraitV2_2", "F16", "", "User-declared", "Ready", "ok"),
     )
@@ -65,10 +91,15 @@ def _populate_canonical_prepare(window) -> None:
         if family:
             row.prepareArchitecture.setCurrentText(family)
         row.prepareArchitectureSource.setText(provenance)
-        row.prepareFileEvidence.setText((
-            "Detected from file", "Detected from file", "Unknown inspection",
-            "Declared by user", "Distinct-content fixture",
-        )[index])
+        row.prepareFileEvidence.setText(
+            (
+                "Detected from file",
+                "Detected from file",
+                "Unknown inspection",
+                "Declared by user",
+                "Distinct-content fixture",
+            )[index]
+        )
         row.prepareShortName.setText(short)
         row.prepareFormat.setCurrentText(fmt)
         row.prepareTriggerWords.setText(trigger)
@@ -86,7 +117,6 @@ def _populate_canonical_prepare(window) -> None:
     window.prepareReadyCount.setText("Ready: 4/5")
     window.prepareManagedFilename.setText("PortraitV2_Kr2_LoRA_F16.ckpt")
     window.prepareDisplayLabel.setText("Display label · PortraitV2[Kr2]")
-
 
 
 def capture(app, name: str, target: Path, *, expanded: bool = False, compact: bool = False) -> None:
@@ -135,7 +165,8 @@ def capture(app, name: str, target: Path, *, expanded: bool = False, compact: bo
             source_name = label.toolTip()
             label.setText(
                 label.fontMetrics().elidedText(
-                    source_name, Qt.TextElideMode.ElideMiddle,
+                    source_name,
+                    Qt.TextElideMode.ElideMiddle,
                     max(35, label.contentsRect().width() - 6),
                 )
             )

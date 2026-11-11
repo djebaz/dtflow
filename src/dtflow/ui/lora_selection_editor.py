@@ -249,6 +249,7 @@ def edit_lora_selection(
             row.loraSelectionAddWeightButton.clicked.connect(add_weight)
             slider.installEventFilter(_ClickToAdd(row, add_weight))
             render_chips()  # several loaded weights start as chips
+
         def toggle_row(checked: bool) -> None:
             row.setProperty("checkedSelection", checked)
             row.style().unpolish(row)
@@ -303,11 +304,7 @@ def edit_lora_selection(
         if editor.loraSelectionCustomIdentifier.text().strip():
             add_custom()  # an identifier typed but not yet added is part of the selection
         # Visual A–Z sorting must never reorder existing effective requests or weights.
-        chosen = [
-            (name, value)
-            for name in effective_names()
-            for value in (extra.get(name) or [weights[name]])
-        ]
+        chosen = [(name, value) for name in effective_names() for value in (extra.get(name) or [weights[name]])]
         panel.dismiss()
         callback(chosen)
 
