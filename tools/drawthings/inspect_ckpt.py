@@ -53,18 +53,19 @@ def read_tensors(path: Path, verbose: bool) -> dict[str, dict]:
         if not columns:
             raise SystemExit(f"{path}: no 'tensors' table, not a Draw Things ckpt?")
         want = [c for c in ("name", "type", "format", "datatype", "dim") if c in columns]
-        query = f"select {', '.join(want)}, length(data), substr(data, 1, 8) from tensors"
+        query = f"select {', '.join(want)}, length(data), substr(data, 1, 8), length(dim) from tensors"
         out: dict[str, dict] = {}
         hashes = {n: hashlib.sha256(d or b"").hexdigest() for n, d in con.execute("select name, data from tensors")}
         for row in con.execute(query):
             rec = dict(zip(want, row[: len(want)], strict=True))
-            size, head = row[len(want)], row[len(want) + 1]
+            size, head, dim_bytes = row[len(want)], row[len(want) + 1], row[len(want) + 2]
             dtype = rec.get("datatype")
             out[rec["name"]] = {
                 "shape": decode_dims(rec.get("dim")),
                 "datatype": DATATYPES.get(dtype, hex(dtype) if isinstance(dtype, int) else "?"),
                 "format": rec.get("format"),
                 "type": rec.get("type"),
+                "dim_bytes": dim_bytes or 0,
                 "bytes": size or 0,
                 "head": bytes(head).hex() if head else "",
                 "sha": hashes[rec["name"]],
@@ -76,7 +77,8 @@ def read_tensors(path: Path, verbose: bool) -> dict[str, dict]:
 
 def describe(t: dict) -> str:
     shape = "x".join(map(str, t["shape"])) or "-"
-    return f"{t['datatype']:>5} {shape:<22} {t['bytes']:>10} B  head={t['head']}"
+    flags = f"type={t['type']} format={t['format']} dimblob={t['dim_bytes']}B"
+    return f"{t['datatype']:>5} {shape:<22} {t['bytes']:>10} B  {flags}  head={t['head']}"
 
 
 def main() -> int:
