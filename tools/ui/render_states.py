@@ -503,7 +503,7 @@ def render_lora_prepare_states(shell, out):
         row.widget.prepareArchitecture.setCurrentIndex(
             row.widget.prepareArchitecture.findData("krea_2")
         )
-    editor.refresh()
+    editor._select(editor.rows[0])  # Match the HTML reference's first-row preview.
     # No file bytes are accessed, no provider client is opened, and Prepare is never clicked.
     QTest.qWait(80)
     if not editor.active() or not shell.inline.form.isVisible():
