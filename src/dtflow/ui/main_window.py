@@ -791,6 +791,7 @@ class MainWindow:
             "models": models,
             "loras": choices.get("loras", {}),
             "lora_families": choices.get("lora_families", {}),
+            "listed_loras": tuple(e.identifier for e in snapshot.entries if e.kind == "lora") if snapshot else (),
             "lora_versions": choices.get("lora_versions", {}),
             "model_versions": {model: checkpoint_exact_version(model, snapshot) for model in models},
             "backend": self.form.backendCombo.currentText(),
@@ -1661,7 +1662,10 @@ class MainWindow:
         )
 
     def _check_preset_loras(self) -> None:
-        """After an import, say which LoRAs the presets name that are not prepared here (cloud only)."""
+        """After an import, say which LoRAs the imported presets name that have no prepared match here (cloud only).
+
+        An import replaces the whole preset library, so every saved preset is an imported one. Names DT+ lists itself
+        are never a problem."""
         backend = self.generation._backend()[0]
         if backend != "cloud":
             return
@@ -1675,6 +1679,8 @@ class MainWindow:
         )
         if not names:
             return
+        snapshot = self.generation._inventory_snapshot
+        listed = tuple(entry.identifier for entry in snapshot.entries if entry.kind == "lora") if snapshot else ()
 
         def done(matches, failure) -> None:
             if failure is not None:
@@ -1682,12 +1688,13 @@ class MainWindow:
             missing = lora_relink.problems(matches)
             if missing:
                 self.form.statusBar().showMessage(
-                    f"Imported presets name {len(missing)} LoRA(s) that are not prepared here or match several: "
-                    "Prepare them, or pick one when you load the preset.",
+                    f"Imported presets name {len(missing)} LoRA(s) with no prepared match or several: "
+                    "Prepare them, or pick one when you load the preset. "
+                    + ", ".join(lora_relink.imported_label(item.requested) for item in missing[:5]),
                     15000,
                 )
 
-        self.runner.submit(lora_relink.resolve_names(self.state_dir, backend, names), done)
+        self.runner.submit(lora_relink.resolve_names(self.state_dir, backend, names, listed=listed), done)
 
     def export_presets(self) -> None:
         chosen, _ = QFileDialog.getSaveFileName(

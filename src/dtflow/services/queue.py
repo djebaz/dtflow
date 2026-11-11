@@ -69,6 +69,7 @@ class QueueDispatcher:
         self._recovery_active = False
         self._recovery_attempted: set[tuple[str, str, int]] = set()
         self._unprepared_noted: set[str] = set()
+        self._unprepared_unavailable = False  # the advisory check failed once; later items skip it
         self._recovery_assets: frozenset[tuple[str, str, int]] = frozenset()
         self._queue_assets: tuple = ()
         # Consecutive items that ended with DT+'s generic error per LoRA, to stop a queue full of a broken file (#361).
@@ -245,7 +246,11 @@ class QueueDispatcher:
     async def _warn_unprepared(self, queue_id: str, item_id: str, request: ResolvedGenerationRequest) -> None:
         """Say once per queue and LoRA that a selected cloud LoRA has no prepared receipt, so DT+ application stays
         unconfirmed. Reads the cached inventory only; it never blocks, retries or sends anything (#388)."""
-        if not request.loras or request.prepared_assets and len(request.prepared_assets) == len(request.loras):
+        if (
+            not request.loras
+            or self._unprepared_unavailable
+            or (request.prepared_assets and len(request.prepared_assets) == len(request.loras))
+        ):
             return
         try:
             diagnostics = await self.service.preflight(request)
@@ -260,7 +265,8 @@ class QueueDispatcher:
                 data={"lora": [log_label(identifier) for identifier in fresh]},
             )
             await self._record_event(queue_id, notes.UNPREPARED, {"item_id": item_id, "loras": fresh})
-        except Exception as exc:  # advisory only
+        except Exception as exc:  # advisory only; one failure is enough, later items do not repeat the wait
+            self._unprepared_unavailable = True
             diagnostic_event(
                 log, "queue.lora_unprepared_check_failed", level=logging.WARNING, data={"reason": type(exc).__name__}
             )

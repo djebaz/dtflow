@@ -644,13 +644,15 @@ class WorkflowsPage(QObject):
         if backend != "cloud" or not names:
             return
 
+        listed = tuple((self.choices_source() or {}).get("listed_loras") or ())
+
         def done(matches, problem) -> None:
             text = lora_relink.summary(matches) if problem is None else ""
             if text:
                 state = "warning" if lora_relink.problems(matches) else "success"
                 activity_strip(self.workspace).complete("workflow-loras", "Workflow LoRAs checked", text + ".", state)
 
-        self._submit(lora_relink.resolve_names(self.state, backend, names), done)
+        self._submit(lora_relink.resolve_names(self.state, backend, names, listed=listed), done)
 
     def open_graph(self, graph: wf.Graph, path: Path | None, name: str | None = None) -> None:
         canvas = self.ensure_canvas()
@@ -1788,7 +1790,7 @@ class WorkflowsPage(QObject):
         lines.extend(list(warnings.values())[:6])
         if len(warnings) > 6:
             lines.append(f"{len(warnings) - 6} more node warning(s); select a node for details.")
-        w.workflowOutputText.setText("\n".join(lines))
+        w.workflowOutputText.setText(relabel_text("\n".join(lines)))  # steps store identifiers, never labels
         w.stopWorkflowButton.setVisible(state in LIVE_RUN)
         w.stopWorkflowButton.setEnabled(self.queue_id is not None)
         self._set_results(run.get("results", []))

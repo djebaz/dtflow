@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import collections
 import concurrent.futures
 import hashlib
 import json
@@ -211,6 +212,8 @@ class ScriptHost:
         self.retries = 0
         self._blocked: str | None = None
         self._unprepared_noted: set[str] = set()
+        self._notes: collections.deque[tuple[str, int]] = collections.deque()  # console lines from the service loop
+        self._script_thread: threading.Thread | None = None
         # Virtual canvas for text-to-image scripts: geometry bookkeeping only, no pixels (layers and masks are #116).
         self._zoom = 1.0
         self._origin = (0, 0)
@@ -259,16 +262,35 @@ class ScriptHost:
         if self.cancel.is_set():
             coroutine.close()  # never started
             raise ScriptCancelled()
+        self._script_thread = threading.current_thread()
         future = asyncio.run_coroutine_threadsafe(coroutine, self.loop)
         if track:
             self.pending.append(future)
-        while True:
-            if self.cancel.is_set():
-                raise ScriptCancelled()
-            try:
-                return future.result(POLL_SECONDS)
-            except concurrent.futures.TimeoutError:
-                continue
+        try:
+            while True:
+                if self.cancel.is_set():
+                    raise ScriptCancelled()
+                try:
+                    return future.result(POLL_SECONDS)
+                except concurrent.futures.TimeoutError:
+                    self._flush_notes()
+                    continue
+        finally:
+            self._flush_notes()
+
+    def _say(self, message: str, level: int) -> None:
+        """Console output from any thread: the console belongs to the script thread, so a note raised on the service
+        loop waits in a queue until that thread is next in ``_await``."""
+        if threading.current_thread() is getattr(self, "_script_thread", None):
+            self._flush_notes()
+            self._console(message, level)
+        else:
+            self._notes.append((message, level))
+
+    def _flush_notes(self) -> None:
+        while self._notes:
+            message, level = self._notes.popleft()
+            self._console(message, level)
 
     # -- configuration --------------------------------------------------------------------------------------------
 
@@ -474,7 +496,7 @@ class ScriptHost:
             ]
             for name in fresh:
                 self._unprepared_noted.add(name)
-                self._console("Warning: " + relabel_text(notes.unprepared_message(name)), 0)
+                self._say("Warning: " + relabel_text(notes.unprepared_message(name)), 0)
                 diagnostic_event(log, "script.lora_unprepared", level=logging.WARNING, data={"lora": log_label(name)})
         except Exception as exc:  # advisory only
             diagnostic_event(
@@ -491,7 +513,7 @@ class ScriptHost:
             data={"reason": type(exc).__name__, "lora": [log_label(item.identifier, item.sha256) for item in assets]},
         )
         detail = notes.recovery_failure_text(exc)
-        self._console(relabel_text(notes.recovery_failed_message(identifiers, detail)), 1)
+        self._say(relabel_text(notes.recovery_failed_message(identifiers, detail, pauses=False)), 1)
 
     def _retry_step(self, step: int, reason: str, *, kind: str) -> bool:
         """Ask the person whether to retry a step that failed or has no confirmed outcome.

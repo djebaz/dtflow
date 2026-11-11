@@ -54,13 +54,18 @@ def recovery_failed_detail(identifiers: Sequence[str], exc: BaseException) -> di
     return {"reason": "restore_failed", "loras": list(identifiers), "detail": recovery_failure_text(exc)}
 
 
-def recovery_failed_message(identifiers: Sequence[str], detail: str) -> str:
-    """Run-level sentence for a recovery that stopped work; relabelled for display only."""
+def recovery_failed_message(identifiers: Sequence[str], detail: str, *, pauses: bool = True) -> str:
+    """Run-level sentence for a recovery check that failed; relabelled for display only.
+
+    Queue and Workflow pause, so they say so; Scripts do not pause (they show their own Retry form or fail the job)."""
     names = ", ".join(identifiers) or "a selected LoRA"
     reason = f" {detail}." if detail and not detail.endswith(".") else (f" {detail}" if detail else "")
-    return (
-        f"Checking {names} on DT+ failed.{reason} Paused. Use Retry once the cause is fixed, or Prepare the LoRA again."
+    follow = (
+        "Paused. Use Retry once the cause is fixed, or Prepare the LoRA again."
+        if pauses
+        else "Retry once the cause is fixed, or Prepare the LoRA again."
     )
+    return f"Checking {names} on DT+ failed.{reason} {follow}"
 
 
 def pause_message(kind: str, identifiers: Sequence[str]) -> str:

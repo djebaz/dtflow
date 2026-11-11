@@ -93,6 +93,7 @@ from dtflow.services import lora_relink, session
 from dtflow.services.assets import possible_missing_asset
 from dtflow.services import lora_run_notes as notes
 from dtflow.services.lora_naming import log_label
+from dtflow.services.preflight import checkpoint_exact_version
 from dtflow.services.generation import GenerationService
 from dtflow.services.workflow_prompts import prompt_counts, resolve as resolve_prompt
 from dtflow.services.workflow_queue import (
@@ -382,6 +383,10 @@ class _Execution:
         self.recovery_assets: frozenset[tuple[str, str, int]] = frozenset()
         self.dirty = False
         self.lora_streak = LoraStreak()
+        self.relink_lock = asyncio.Lock()
+        self.relink_loaded = False  # the relink evidence is read once per run, not once per submission
+        self.relink_evidence: lora_relink.RelinkEvidence | None = None
+        self.relink_snapshot = None
         # Each planned submission may get the shared automatic retry (#241): at most planned x 2 before any Retry.
         self.allowance = request.planned * (1 + AUTO_RETRIES + LORA_EXTRA_RETRIES)
         limit = runner.service.backend.capabilities.max_concurrency
@@ -479,13 +484,21 @@ class _Execution:
             await self.set_limits()
             if self.request.backend == "cloud" and self.runner.service.assets is not None:
                 # One first-use BYOM batch before concurrent workflow branches begin.
-                selected = {
-                    name
-                    for node in self.graph.nodes
-                    if node.type in GENERATIVE
-                    for name, _ in node.params.get("loras", ())
-                }
                 choices = await session.script_asset_choices(self.runner.state, self.request.backend)
+                # Imported names are matched first, so a relinked LoRA joins this shared first-use batch.
+                evidence = await self.load_relink(choices)
+                selected: set[str] = set()
+                for node in self.graph.nodes:
+                    if node.type not in GENERATIVE:
+                        continue
+                    names = [name for name, _ in node.params.get("loras", ())]
+                    matches = self.relink_matches(names, str(node.params.get("checkpoint") or ""), evidence)
+                    selected.update(
+                        matches[name].identifier
+                        if name in matches and matches[name].status == lora_relink.MATCHED
+                        else name
+                        for name in names
+                    )
                 prepared = tuple(item for item in choices if item.identifier in selected)
                 ensure_many = getattr(self.runner.service.assets, "ensure_many", None)
                 if prepared and callable(ensure_many):
@@ -852,6 +865,44 @@ class _Execution:
 
     # -- submission ------------------------------------------------------------------------------------------------
 
+    async def load_relink(self, choices) -> lora_relink.RelinkEvidence | None:
+        """The local evidence that imported LoRA names are matched against, read once per run.
+
+        Advisory: any failure here means "no relink" (the step still runs with the names it has)."""
+        async with self.relink_lock:
+            if self.relink_loaded:
+                return self.relink_evidence
+            self.relink_loaded = True
+            try:
+                try:
+                    self.relink_snapshot = await self.runner.service.get_inventory()
+                except Exception:  # the cached inventory is only used to leave DT+'s own LoRAs alone
+                    self.relink_snapshot = None
+                snapshot = self.relink_snapshot
+                listed = tuple(e.identifier for e in snapshot.entries if e.kind == "lora") if snapshot else ()
+                self.relink_evidence = await lora_relink.load_evidence(
+                    self.runner.state, self.request.backend, choices, listed
+                )
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:
+                self.relink_evidence = None
+                diagnostic_event(
+                    log, "workflow.relink_unavailable", level=logging.WARNING, data={"reason": type(exc).__name__}
+                )
+            return self.relink_evidence
+
+    def relink_matches(self, names, model: str, evidence) -> dict:
+        """Matches for ``names`` used with checkpoint ``model``; no evidence means no relink."""
+        if evidence is None:
+            return {}
+        family = checkpoint_exact_version(model, self.relink_snapshot) if model else None
+        try:
+            return lora_relink.match_names(names, evidence, family=family)
+        except Exception as exc:  # advisory only
+            diagnostic_event(log, "workflow.relink_failed", level=logging.WARNING, data={"reason": type(exc).__name__})
+            return {}
+
     async def recover_assets(self, keys: list[Key], request, failure) -> bool:
         """Hold new branches while one repair covers a bounded group of LoRA identities."""
         assets = getattr(self.runner.service, "assets", None)
@@ -1001,8 +1052,10 @@ class _Execution:
                     choices = await session.script_asset_choices(self.runner.state, self.request.backend)
                     # A name carried by an imported file may be the original filename of a LoRA prepared here under a
                     # managed name: relink an unambiguous match before binding; never guess between several.
-                    evidence = await lora_relink.load_evidence(self.runner.state, self.request.backend, choices)
-                    matches = lora_relink.match_names((lora.identifier for lora in request.loras), evidence)
+                    evidence = await self.load_relink(choices)
+                    matches = self.relink_matches(
+                        [lora.identifier for lora in request.loras], request.model_id, evidence
+                    )
                     request = lora_relink.relink_request(request, matches)
                     selected = {lora.identifier for lora in request.loras}
                     request = await session.bind_prepared(
