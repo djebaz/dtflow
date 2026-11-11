@@ -2555,9 +2555,7 @@ class QueuePage:
             request = replace(
                 request,
                 prepared_assets=(),
-                resolution_evidence=tuple(
-                    pair for pair in request.resolution_evidence if pair[0] != "prepared_assets"
-                ),
+                resolution_evidence=tuple(pair for pair in request.resolution_evidence if pair[0] != "prepared_assets"),
             )
             if backend["name"] == "cloud":
                 # LoRA sets replace the draft; weight sweeps add to its fixed LoRAs.
