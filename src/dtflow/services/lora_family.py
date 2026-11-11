@@ -4,9 +4,10 @@ Only SQLite tensor names and shape metadata are inspected, never weights. A
 filename, current checkpoint, or generic hidden-size match is not proof of
 family. Unknown and ambiguous structures remain explicitly unknown.
 
-Z-Image, Krea 2, MOSS Image, FLUX.1, FLUX.2 Klein 9B, SD 1.x and SDXL Base signatures are
-grounded in owner-provided converted CKPT reports and upstream Draw Things
-model definitions (#369). Unidentified or partial adapters stay unknown.
+Z-Image, Krea 2, MOSS Image, FLUX.1, FLUX.2 Klein 9B, Qwen Image 2.1,
+SD 1.x and SDXL Base signatures are grounded in owner-provided converted
+CKPT reports and upstream Draw Things definitions (#369).
+Unidentified or partial adapters stay unknown.
 """
 
 from __future__ import annotations
@@ -172,6 +173,17 @@ def detect_lora_family(path: Path) -> LoraFamily:
             for name in ("x_gate_proj", "x_up_proj", "x_down_proj", "c_q", "c_o")
         )
     )
+    # Qwen Image 2.1 has 32 transformer blocks, hidden width 4096 and
+    # 3x feed-forward width 12288. The converted LoRA sample adapts these
+    # five projections in all 32 blocks; a partial adapter stays unknown.
+    # Qwen Image (original) uses a different 3072-wide, 60-layer model.
+    qwen_image_2_1 = (
+        {4096, 12288} <= dit_dimensions
+        and all(
+            sum(module.startswith(f"{name}-") for module in dit_modules) == 2 * 32
+            for name in ("x_q", "x_k", "x_v", "x_o", "ffn_down_proj")
+        )
+    )
     # SD1.x and SDXL share U-Net channel widths (320/640/1280), and SDXL
     # can include a 768-wide CLIP-L text model. Require 768 also in U-Net LoRA
     # shapes (SD1.x cross-attention), plus absence of SD2/SDXL conditioning
@@ -203,6 +215,7 @@ def detect_lora_family(path: Path) -> LoraFamily:
             ("moss_image", moss_image),
             ("flux_1", flux_1),
             ("flux2_9b", flux2_9b),
+            ("qwen_image_2.1", qwen_image_2_1),
             ("sd_1", sd_1),
             ("sdxl", sdxl),
         )
