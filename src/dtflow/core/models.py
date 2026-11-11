@@ -164,7 +164,7 @@ class PreparedAsset:
     size: int
     receipt_id: str
     confirmed_at_utc: str
-    family: str | None = None  # File-derived LoRA family; never inferred from the selected checkpoint.
+    family: str | None = None  # Exact Draw Things LoRA version from file evidence, not the chosen checkpoint.
     family_source: str = "unknown"
 
     def __post_init__(self) -> None:
