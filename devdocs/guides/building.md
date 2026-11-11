@@ -66,7 +66,7 @@ Launch options are `-nc/--no-cache`, `-x/--dev`, `-q/--logs DIR`, `-h/--help` an
 
 ## Packaging inputs and diagnostics
 
-The canonical input is `tools/packaging/launch_gui.py`, delegating to the desktop bootstrap and existing Qt application. Windows uses the windowed bootloader and the DTFlow icon. PyInstaller's PySide6 hooks collect native Qt libraries/plugins. Explicit package data includes canonical Designer forms, QSS/tokens, images and `drawthings-py` trust resources; keyring metadata and the Windows backend are included for secure storage. `--clean` avoids reusing stale analysis/identity inputs.
+The canonical input is `tools/packaging/launch_gui.py`, delegating to the desktop bootstrap and existing Qt application. Windows uses the windowed bootloader and the DTFlow icon. PyInstaller's PySide6 hooks collect native Qt libraries/plugins. Explicit package data includes canonical Designer forms, QSS/tokens, images and `drawthings-py` trust resources; keyring metadata and the Windows backend are included for secure storage. `--clean` avoids reusing stale analysis/identity inputs. Packaging consumes the checked-in `src/dtflow/diagnostic_components.py` without regenerating it, so the clean source identity is not changed by the build. After logger declarations change, run `uv run python tools/generate_diagnostic_components.py` during development and commit the result.
 
 Application state and outputs default to `%LOCALAPPDATA%\DTFlow\`; logs default to `%LOCALAPPDATA%\DTFlow\logs\`. Those paths are independent of the executable directory and current working directory. `-q/--logs` overrides diagnostics only; `-nc` does not remove durable state or outputs. See [runtime layout](../architecture/runtime-layout.md).
 
