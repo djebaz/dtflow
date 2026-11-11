@@ -313,8 +313,14 @@ class AssetRegistry:
                 "updated_at_utc=CASE WHEN ? THEN excluded.updated_at_utc "
                 "ELSE lora_records.updated_at_utc END",
                 (
-                    content.sha256, content.size, family, "file" if family else "unknown", now,
-                    action == "prepare", action == "prepare", action == "prepare",
+                    content.sha256,
+                    content.size,
+                    family,
+                    "file" if family else "unknown",
+                    now,
+                    action == "prepare",
+                    action == "prepare",
+                    action == "prepare",
                 ),
             )
         row = db.execute(
