@@ -22,9 +22,14 @@ updates:
         exclude-patterns:
           - "drawthings-py"
     ignore:
-      # Pinned on purpose by [tool.uv] override-dependencies: NumPy 2.4+ fails to import on the tested
-      # legacy Windows CPU (see devdocs/research/drawthings-grpc-proof.md).
+      # NumPy 2.3.5 is pinned for legacy Windows CPU compatibility (NumPy 2.4+ failed to import).
+      # Ignore routine updates, but leave Dependabot security update PRs eligible for review.
       - dependency-name: "numpy"
+        update-types: ["version-update:semver-major", "version-update:semver-minor", "version-update:semver-patch"]
+      # Pillow 13 was owner-smoke-tested in the packaged Windows EXE (#385/#386), but overrides
+      # drawthings-py 0.4.0's declared Pillow <13 cap; review security fixes for SDK compatibility.
+      - dependency-name: "pillow"
+        update-types: ["version-update:semver-major", "version-update:semver-minor", "version-update:semver-patch"]
 
   # GitHub Actions used by the CI workflow.
   - package-ecosystem: "github-actions"
