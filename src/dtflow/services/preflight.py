@@ -7,6 +7,11 @@ service does not model them: every selection is a whole-model (``All``) LoRA on 
 """
 
 from dataclasses import replace
+import logging
+
+from dtflow.backends.drawthings.versions import bundled_exact_version
+from dtflow.core.model_profiles import exact_model_spec
+from dtflow.diagnostics import event as diagnostic_event
 
 from dtflow.core.models import (
     BackendError,
@@ -21,6 +26,23 @@ from dtflow.services.dynamic_prompts import PROMPT_TAGS_KEY, decode_runs, encode
 BLOCKING = ("architecture_mismatch", "not_available", "prepared_architecture_unknown")
 # Successful generation never proves a LoRA was applied, so the evidence level is fixed until the backend reports it.
 UNCONFIRMED = "application_unconfirmed"
+log = logging.getLogger(__name__)
+
+
+def checkpoint_exact_version(model_id: str, snapshot: InventorySnapshot | None = None) -> str | None:
+    """Prefer exact published and Echo versions; use only unambiguous bundled identities."""
+    spec = exact_model_spec(model_id)
+    version = spec.get("version") if spec is not None else None
+    if isinstance(version, str) and version:
+        return version
+    if snapshot is not None:
+        entry = next(
+            (item for item in snapshot.entries if item.identifier == model_id and item.kind == "model"),
+            None,
+        )
+        if entry is not None and entry.architecture:
+            return entry.architecture
+    return bundled_exact_version(model_id)
 
 
 def preflight_loras(
@@ -113,6 +135,18 @@ def blocked(diagnostics: tuple[PreflightDiagnostic, ...]) -> tuple[PreflightDiag
 
 def raise_if_blocked(request: ResolvedGenerationRequest, diagnostics: tuple[PreflightDiagnostic, ...]) -> None:
     problems = blocked(diagnostics)
+    for item in problems:
+        diagnostic_event(
+            log,
+            "lora.compatibility_blocked",
+            level=logging.WARNING,
+            data={
+                "reason": item.code,
+                "checkpoint_version": item.model_family or "unknown",
+                "lora_version": item.lora_family or "unknown",
+                "outcome": "not_submitted",
+            },
+        )
     if problems:
         raise BackendError(
             BackendFailure(
