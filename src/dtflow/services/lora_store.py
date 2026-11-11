@@ -201,7 +201,16 @@ class LoraStore:
                 files.append(
                     {"name": name, "sha256": sha256, "size": size, "retained_at_utc": datetime.now(UTC).isoformat()}
                 )
-                self._write(files)
+                try:
+                    self._write(files)
+                except OSError as exc:
+                    # The source is still intact; don't leave a newly copied
+                    # file outside the retained index if its write failed.
+                    try:
+                        target.unlink(missing_ok=True)
+                    except OSError:
+                        diagnostic_event(log, "assets.retained_unindexed_copy", level=logging.WARNING)
+                    raise ValidationError("The retained LoRA index could not be saved.") from exc
             return RetainedFile(name, sha256, size, target)
         finally:
             handle.close()
