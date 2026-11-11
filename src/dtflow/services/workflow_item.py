@@ -89,8 +89,9 @@ from dtflow.persistence.queues import QueueError, post_control
 from dtflow.persistence.settings import trigger_prefix_enabled
 from dtflow.persistence.store import PersistenceError, SQLiteAttempts
 from dtflow.persistence.workflow_items import BAD_STEP_STATES, WorkflowRequest
-from dtflow.services import session
+from dtflow.services import lora_relink, session
 from dtflow.services.assets import possible_missing_asset
+from dtflow.services.lora_naming import display_label
 from dtflow.services.generation import GenerationService
 from dtflow.services.workflow_prompts import prompt_counts, resolve as resolve_prompt
 from dtflow.services.workflow_queue import (
@@ -976,11 +977,17 @@ class _Execution:
                     self.runner.on_event(self.item_id, event)
 
             options = {"prepared_inputs": prepared} if prepared is not None else {}
+            matches: dict = {}
             try:
                 if self.request.backend == "cloud" and request.loras:
                     # Workflow files carry names/weights only. Bind existing local receipts at dispatch,
                     # independently of Generate; the generation service still validates their account/scope.
                     choices = await session.script_asset_choices(self.runner.state, self.request.backend)
+                    # A name carried by an imported file may be the original filename of a LoRA prepared here under a
+                    # managed name: relink an unambiguous match before binding; never guess between several.
+                    evidence = await lora_relink.load_evidence(self.runner.state, self.request.backend, choices)
+                    matches = lora_relink.match_names((lora.identifier for lora in request.loras), evidence)
+                    request = lora_relink.relink_request(request, matches)
                     selected = {lora.identifier for lora in request.loras}
                     request = await session.bind_prepared(
                         self.runner.state,
@@ -1075,8 +1082,13 @@ class _Execution:
                     }
                     for item in outcome.diagnostics
                 ]
+                ambiguous = {name: match for name, match in matches.items() if match.status == lora_relink.AMBIGUOUS}
                 warnings = [
-                    f"{item.identifier}: DT+ availability unconfirmed (no prepared receipt). If this is a custom LoRA, use Prepare."
+                    f"{display_label(item.identifier)}: matches several prepared LoRAs "
+                    f"({', '.join(display_label(name) for name in ambiguous[item.identifier].candidates)}); "
+                    "it was not applied. Pick one in the workflow."
+                    if item.identifier in ambiguous
+                    else f"{display_label(item.identifier)}: not prepared for DT+, so it was not applied. Use Prepare."
                     for item in outcome.diagnostics
                     if item.code == "availability_unknown" and item.identifier not in bound
                 ]

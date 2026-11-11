@@ -68,6 +68,7 @@ from dtflow.services.credentials import (
     credential_status,
     resolve_credentials,
 )
+from dtflow.services import lora_relink
 from dtflow.services.presets import export_presets, import_presets, load_presets
 from dtflow.ui.activity import Activity
 from dtflow.ui.activity_strip import ActivityStrip, activity_strip
@@ -1649,6 +1650,7 @@ class MainWindow:
             self.refresh_presets()
             self.generation.refresh_presets()
             self.form.statusBar().showMessage(f"Imported {count} Draw Things preset(s).", 5000)
+            self._check_preset_loras()
 
         confirm_action(
             self.form,
@@ -1657,6 +1659,35 @@ class MainWindow:
             "Importing replaces the entire durable preset library, including presets saved from Generate. Continue?",
             proceed,
         )
+
+    def _check_preset_loras(self) -> None:
+        """After an import, say which LoRAs the presets name that are not prepared here (cloud only)."""
+        backend = self.generation._backend()[0]
+        if backend != "cloud":
+            return
+        names = tuple(
+            dict.fromkeys(
+                item["file"]
+                for preset in load_presets(self.state_dir)
+                for item in preset["configuration"].get("loras") or ()
+                if isinstance(item, dict) and isinstance(item.get("file"), str)
+            )
+        )
+        if not names:
+            return
+
+        def done(matches, failure) -> None:
+            if failure is not None:
+                return
+            missing = lora_relink.problems(matches)
+            if missing:
+                self.form.statusBar().showMessage(
+                    f"Imported presets name {len(missing)} LoRA(s) that are not prepared here or match several: "
+                    "Prepare them, or pick one when you load the preset.",
+                    15000,
+                )
+
+        self.runner.submit(lora_relink.resolve_names(self.state_dir, backend, names), done)
 
     def export_presets(self) -> None:
         chosen, _ = QFileDialog.getSaveFileName(
