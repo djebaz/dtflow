@@ -48,6 +48,7 @@ from dtflow.ui.file_dialogs import QFileDialog
 from dtflow.core import workflows as wf
 from dtflow.core.output_layout import identity_from_path
 from dtflow.core.models import LoRASelection, ValidationError
+from dtflow.services.lora_naming import display_label
 from dtflow.services import workflow_library as library
 from dtflow.ui.activity_strip import activity_strip
 from dtflow.ui.inline_feedback import InlineNotice, confirm_action, edit_text, feedback
@@ -1253,7 +1254,9 @@ class WorkflowsPage(QObject):
             loras = choices.get("loras") or {}
             families = choices.get("lora_families") or {}
             text = (
-                ", ".join(f"{name} · {weight:g} · {families.get(name, 'Unknown')}" for name, weight in value)
+                ", ".join(
+                    f"{display_label(name)} · {weight:g} · {families.get(name, 'Unknown')}" for name, weight in value
+                )
                 or "No LoRA"
             )
             summary = _label(text, "secondary")

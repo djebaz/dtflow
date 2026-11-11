@@ -1,7 +1,6 @@
 """Edit the whole Generate LoRA selection in one inline editor: check, uncheck and weigh each LoRA."""
 
 from collections.abc import Callable, Sequence
-import re
 from pathlib import Path
 
 from PySide6.QtCore import QEvent, QFile, QIODevice, QObject, Qt
@@ -10,6 +9,7 @@ from PySide6.QtUiTools import QUiLoader
 from PySide6.QtWidgets import QPushButton, QSlider, QWidget
 
 from dtflow.core.models import LoRASelection
+from dtflow.services.lora_naming import display_label
 from dtflow.ui.inline_feedback import feedback
 
 WEIGHT_STEPS = 20  # slider ticks per 1.0 of weight: 0.05 per tick, per arrow key and per mouse-wheel notch
@@ -32,13 +32,7 @@ def _load(name: str, parent: QWidget | None) -> QWidget:
     return form
 
 
-_MANAGED_LABEL = re.compile(r"(?i)^(?P<short>[A-Za-z0-9_]{1,20})_(?P<tag>[A-Za-z0-9]+)_lora_(?:f16|q8p)\.ckpt$")
-
-
-def _display_label(identifier: str) -> str:
-    """Use the readable short label for managed LoRAs; retain all legacy identities."""
-    match = _MANAGED_LABEL.fullmatch(identifier)
-    return f"{match['short']}[{match['tag']}]" if match else identifier
+_display_label = display_label  # one shared format for every LoRA picker and summary
 
 
 class _ToggleRow(QObject):

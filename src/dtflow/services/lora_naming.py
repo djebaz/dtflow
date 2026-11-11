@@ -580,3 +580,12 @@ def allocate_batch_names(
             )
         )
     return tuple(results)
+
+
+_MANAGED_LABEL = re.compile(r"(?i)^(?P<short>[A-Za-z0-9_]{1,20})_(?P<tag>[A-Za-z0-9]+)_lora_(?:f16|q8p)\.ckpt$")
+
+
+def display_label(identifier: str) -> str:
+    """``PortraitV2[Kr2]`` for a managed LoRA filename; every other identifier is shown exactly as it is."""
+    match = _MANAGED_LABEL.fullmatch(identifier)
+    return f"{match['short']}[{match['tag']}]" if match else identifier
