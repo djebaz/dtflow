@@ -920,9 +920,6 @@ async def list_assets(state: Path, *, named: bool = False) -> list[dict]:
     registry = AssetRegistry(state)
     await registry.open()
     try:
-        # Existing accepted names are content-owned. Reconcile retained filenames
-        # without uploading, changing receipt identifiers or guessing missing metadata.
-        await asyncio.to_thread(LoraStore(state).align_accepted_names, await registry.lora_name_snapshot())
         records = await registry.list()
         if not named:
             return [asset_view(record) for record in records]
