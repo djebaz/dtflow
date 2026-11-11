@@ -455,15 +455,7 @@ def _mappings() -> dict:
 
 def _sdxl_partials() -> list[tuple[str, str]]:
     """Original UNet names to diffusers names for the SDXL layout (3 levels, no attention on the first)."""
-    pairs = [
-        ("time_embed.0.", "time_embedding.linear_1."),
-        ("time_embed.2.", "time_embedding.linear_2."),
-        ("label_emb.0.0.", "add_embedding.linear_1."),
-        ("label_emb.0.2.", "add_embedding.linear_2."),
-        ("input_blocks.0.0.", "conv_in."),
-        ("out.0.", "conv_norm_out."),
-        ("out.2.", "conv_out."),
-    ]
+    pairs: list[tuple[str, str]] = []
     for block, (level, index) in {1: (0, 0), 2: (0, 1), 4: (1, 0), 5: (1, 1), 7: (2, 0), 8: (2, 1)}.items():
         pairs.append((f"input_blocks.{block}.0.", f"down_blocks.{level}.resnets.{index}."))
         if level > 0:
@@ -484,6 +476,16 @@ def _sdxl_partials() -> list[tuple[str, str]]:
         ("output_blocks.2.2.", "up_blocks.0.upsamplers.0."),
         ("output_blocks.5.2.", "up_blocks.1.upsamplers.0."),
         ("output_blocks.8.1.", "up_blocks.2.upsamplers.0."),
+    ]
+    # Anchored and last: a bare "out.0." would also match every "to_out.0." attention key.
+    pairs += [
+        ("diffusion_model.time_embed.0.", "diffusion_model.time_embedding.linear_1."),
+        ("diffusion_model.time_embed.2.", "diffusion_model.time_embedding.linear_2."),
+        ("diffusion_model.label_emb.0.0.", "diffusion_model.add_embedding.linear_1."),
+        ("diffusion_model.label_emb.0.2.", "diffusion_model.add_embedding.linear_2."),
+        ("diffusion_model.input_blocks.0.0.", "diffusion_model.conv_in."),
+        ("diffusion_model.out.0.", "diffusion_model.conv_norm_out."),
+        ("diffusion_model.out.2.", "diffusion_model.conv_out."),
     ]
     return pairs
 
