@@ -181,6 +181,9 @@ class PrepareBatchEditor:
         self._updating = True
         for row, result in zip(self.rows, evidence, strict=True):
             row.detected = result.family
+            row.widget.prepareFileEvidence.setText(
+                "Detected from file" if result.family else "Unknown inspection"
+            )
             combo = row.widget.prepareArchitecture
             combo.clear()
             combo.addItem("Select architecture…", None)
