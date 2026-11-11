@@ -172,7 +172,7 @@ def test_prepare_starts_after_file_selection_and_lists_a_local_receipt(window, c
     page.removeLoraButton.click()
     add_lora(window, qtbot, "style.ckpt", 0.8)
     qtbot.waitUntil(
-        lambda: "[receipt " in page.loraList.item(0).text() and page.generateButton.isEnabled(), timeout=5000
+        lambda: "[receipt " in page.loraList.item(0).text() and page.prepareAssetButton.isEnabled(), timeout=5000
     )
     cloud.stored.clear()  # the server lost the file: the receipt goes stale and reconcile still never uploads
     page.loraList.setCurrentRow(0)
