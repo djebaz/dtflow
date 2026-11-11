@@ -504,11 +504,10 @@ def allocate_batch_names(
         identity = _identity(item.sha256, item.size)
         canonical = known_content.get(identity) if identity is not None else None
         if canonical is not None:
-            if (
-                (canonical.exact_architecture, canonical.format_code)
-                != (item.exact_architecture, item.format_code)
-                and not item.replace_existing
-            ):
+            if (canonical.exact_architecture, canonical.format_code) != (
+                item.exact_architecture,
+                item.format_code,
+            ) and not item.replace_existing:
                 results.append(NameAllocation(name, conflict="content_metadata_conflict"))
                 continue
             if canonical.short_name != name:
