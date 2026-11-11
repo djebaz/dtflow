@@ -54,6 +54,7 @@ on:
     paths:
       - 'src/dtflow/**'
       - 'tools/ui/**'
+      - 'devdocs/design-system/ui_kits/lora/qt/*.ui'
       - 'tests/fixtures/**'
       - 'tests/helpers/**'
       - 'tests/conftest.py'
@@ -212,6 +213,32 @@ jobs:
           fi
           exit "$status"
 
+      # These are design-only Designer forms, not production widgets covered by render_states.py.
+      # Reuse the established screenshot output/upload/PR-summary path rather than a separate workflow.
+      - name: Render LoRA Designer references
+        id: lora_design
+        if: always() && steps.changes.outputs.run == 'true'
+        env:
+          BASE_REF: ${{ steps.target.outputs.base_ref }}
+          PR_NUMBER: ${{ github.event.pull_request.number || inputs.pr }}
+        run: |
+          if [ ! -f tools/ui/render_lora_design.py ]; then
+            echo "No LoRA design renderer at this revision; skipping."
+            exit 0
+          fi
+          if [ -n "$PR_NUMBER" ] && [ -n "$BASE_REF" ]; then
+            # Skip this extra capture on unrelated PRs. Compare the full PR, not only its final commit.
+            if ! git diff --name-only "origin/$BASE_REF...HEAD" -- \
+              'devdocs/design-system/ui_kits/lora/qt/*.ui' 'tools/ui/render_lora_design.py' | grep -q .; then
+              echo "No LoRA Designer changes in this PR; skipping."
+              exit 0
+            fi
+          fi
+          mkdir -p tmp/ui-renders/lora-design
+          .venv/bin/python tools/ui/render_lora_design.py \
+            --out tmp/ui-renders/lora-design --connections-expanded --compact-prepare
+          echo "rendered=true" >> "$GITHUB_OUTPUT"
+
       - name: Upload renders to Google Drive
         id: drive
         if: always() && steps.changes.outputs.run == 'true'
@@ -261,6 +288,8 @@ jobs:
           TARGET: ${{ steps.target.outputs.label }}
           SHA: ${{ steps.target.outputs.sha }}
           DRIVE_UPLOADED: ${{ steps.drive.outputs.uploaded }}
+          LORA_RENDER_OUTCOME: ${{ steps.lora_design.outcome }}
+          LORA_RENDERED: ${{ steps.lora_design.outputs.rendered }}
         shell: python3 {0}
         run: |
           import json, os, re, struct
@@ -290,6 +319,8 @@ jobs:
               "134": "⏱️ Timed out (watchdog)",
               "": "⚠️ Did not run",
           }.get(status, f"❌ Failed (exit {status})")
+          if os.environ.get("LORA_RENDER_OUTCOME") == "failure":
+              verdict = "❌ LoRA Designer capture failed" if status == "0" else verdict + "; LoRA capture failed"
 
           categories = {Path(row["path"]).name: row["category"] for row in manifest.get("states", []) if "category" in row}
 
@@ -300,6 +331,8 @@ jobs:
 
           # Accept tab-first names and retain compatibility with older numbered renders.
           def area(path):
+              if path.relative_to(out).parts[:1] == ("lora-design",):
+                  return "LoRA design"
               if path.relative_to(out).parts[:1] == ("image-navigation",):
                   return "Image Navigation"
               if path.stem.startswith("scripts_"):
@@ -338,6 +371,10 @@ jobs:
               f"| Target | {os.environ.get('TARGET') or '?'} |",
               f"| Commit | `{os.environ.get('SHA', '')[:7]}` |",
               f"| States rendered | **{len(pngs)}** |",
+          ]
+          if os.environ.get("LORA_RENDERED") == "true":
+              md.append(f"| LoRA Designer captures | **{sum(1 for p in pngs if area(p) == 'LoRA design')}** |")
+          md += [
           ]
           if finals:
               md.append(f"| Script result | {'; '.join(finals)} |")
@@ -396,6 +433,15 @@ jobs:
                           f"[![{relative}]({item['content_url']})]({item['view_url']})",
                           "",
                       ]
+
+              lora_previews = [p for p in pngs if area(p) == "LoRA design"]
+              if lora_previews:
+                  md += ["### LoRA Designer captures", ""]
+                  for path in lora_previews:
+                      relative = path.relative_to(out).as_posix()
+                      item = drive_files.get(relative)
+                      md.append(f"- [{path.name}]({item['view_url']})" if item else f"- `{relative}` (upload unavailable)")
+                  md.append("")
 
               navigation = [p for p in pngs if area(p) == "Image Navigation"]
               if navigation:
