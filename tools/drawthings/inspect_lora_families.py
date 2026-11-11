@@ -99,6 +99,8 @@ def fingerprint_checks(
     """Show each production family signature's independent structural evidence."""
     unet = namespace_widths.get("__unet__", set())
     text = namespace_widths.get("__text_model__", set())
+    te2 = namespace_widths.get("__te2__text_model__", set())
+    fixed_unet = namespace_widths.get("__unet_fixed__", set())
     return {
         "z_image": {
             "width_3840": 3840 in widths,
@@ -137,6 +139,13 @@ def fingerprint_checks(
             "no_sd2_or_sdxl_unet_context": not ({1024, 2048} & unet),
             "no_sd2_or_sdxl_text_width": not ({1024, 1280} & text),
             "no_sdxl_second_text_encoder": "__te2__text_model__" not in namespace_widths,
+        },
+        "sdxl": {
+            "clip_l_768": 768 in text,
+            "clip_g_1280": 1280 in te2,
+            "unet_640_1280": {640, 1280} <= unet,
+            "fixed_unet_conditioning_2048": 2048 in fixed_unet,
+            "no_refiner_unet_widths": not ({384, 1536} & unet),
         },
     }
 
@@ -258,7 +267,7 @@ def inspect(path: Path, sample_count: int) -> dict:
     if not modules and detected == "unknown":
         report["limitation"] = (
             "No Draw Things __dit__ LoRA up/down tensors. Only the guarded "
-            "SD 1.x UNet + text encoder signature is currently supported "
+            "SD 1.x and SDXL Base signatures are currently supported "
             "without DiT tensors; other architectures remain unknown."
         )
     return report
