@@ -85,6 +85,23 @@ class _FileElision(QObject):
                 )
             )
 
+class _RowFocus(QObject):
+    """Follow keyboard focus and pointer selection without intercepting controls."""
+
+    def __init__(self, parent: QWidget, owner: "PrepareBatchEditor"):
+        super().__init__(parent)
+        self.owner = owner
+
+    def eventFilter(self, watched, event):
+        if event.type() in (QEvent.Type.FocusIn, QEvent.Type.MouseButtonPress):
+            for row in self.owner.rows:
+                if row is not self.owner.selected and (
+                    watched is row.widget or row.widget.isAncestorOf(watched)
+                ):
+                    self.owner._select(row)
+                    break
+        return False
+
 
 class PrepareBatchEditor:
     """Own editable rows, readiness and visual outcomes for one selected batch."""
@@ -106,6 +123,7 @@ class PrepareBatchEditor:
         self.inspected = False
         self.selected: _Row | None = None
         self._updating = False
+        self._focus_selection = _RowFocus(self.form, self)
 
         self.form.prepareEmpty.hide()
         for path in dict.fromkeys(Path(p) for p in paths):
@@ -132,6 +150,12 @@ class PrepareBatchEditor:
             self.form.prepareBatchRowsLayout.insertWidget(len(self.rows) - 1, row_widget)
             row_widget.prepareRowStatus.setText("Inspecting file…")
             row_widget.prepareStatusDot.setProperty("state", "unknown")
+            for control in (
+                row_widget, row_widget.prepareSourceFile, row_widget.prepareCopySource,
+                row_widget.prepareArchitecture, row_widget.prepareShortName,
+                row_widget.prepareFormat, row_widget.prepareTriggerWords,
+            ):
+                control.installEventFilter(self._focus_selection)
         self.selected = self.rows[0] if self.rows else None
         self._elision = _FileElision(self.form, self.rows)
         for row in self.rows:

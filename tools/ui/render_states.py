@@ -486,8 +486,8 @@ def render_lora_prepare_states(shell, out):
             LoraFamily("krea_2", "file"),
             LoraFamily("z_image", "file"),
             LoraFamily(),
-            LoraFamily("krea_2", "file"),
-            LoraFamily("krea_2", "file"),
+            LoraFamily(),
+            LoraFamily(),
         ),
         ("krea_2", "z_image", "flux1"),
         (),
@@ -498,6 +498,11 @@ def render_lora_prepare_states(shell, out):
     editor.rows[0].widget.prepareTriggerWords.setText("portrait style")
     editor.rows[1].widget.prepareTriggerWords.setText("cinematic lighting")
     editor.rows[4].widget.prepareShortName.setText("PortraitV2")
+    # Illustrate a user declaration separately from file inspection.
+    for row in (editor.rows[3], editor.rows[4]):
+        row.widget.prepareArchitecture.setCurrentIndex(
+            row.widget.prepareArchitecture.findData("krea_2")
+        )
     editor.refresh()
     # No file bytes are accessed, no provider client is opened, and Prepare is never clicked.
     QTest.qWait(80)
