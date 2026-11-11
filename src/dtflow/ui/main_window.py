@@ -52,6 +52,7 @@ from dtflow.services.catalogue import Catalogue, FAMILY_LABELS, import_user_lora
 from dtflow.services.lora_family import retained_families
 from dtflow.services.lora_auto_naming import normalize_previous_retained
 from dtflow.services.lora_metadata_edit import read_lora_rows
+from dtflow.services.lora_naming import label_overrides, set_label_overrides
 from dtflow.services.lora_store import LoraStore
 from dtflow.services.connection import Presentation, check_connection, present_failure, present_status
 from dtflow.services.cloud_usage import key_identity
@@ -1858,6 +1859,8 @@ class MainWindow:
         table = self.form.retainedLorasTable
         identity = self._selected_lora_identity()
         self._lora_records, self._lora_names = records, {}
+        set_label_overrides(label_overrides(records.values()))
+        self.generation.lora.refresh_labels()
         rows = []
         for entry in sorted(entries, key=lambda item: str(item.get("name", "")).casefold()):
             name, sha256, size = entry.get("name"), entry.get("sha256"), entry.get("size")

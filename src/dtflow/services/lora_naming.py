@@ -585,7 +585,33 @@ def allocate_batch_names(
 _MANAGED_LABEL = re.compile(r"(?i)^(?P<short>[A-Za-z0-9_]{1,20})_(?P<tag>[A-Za-z0-9]+)_lora_(?:f16|q8p)\.ckpt$")
 
 
+_LABEL_OVERRIDES: dict[str, str] = {}
+
+
+def set_label_overrides(labels: dict[str, str]) -> None:
+    """Replace the saved-short-name labels (managed identifier -> ``Short[Tag]``) used by every list.
+
+    The canonical metadata record owns the editable short name; the technical identifier never changes."""
+    _LABEL_OVERRIDES.clear()
+    _LABEL_OVERRIDES.update(labels)
+
+
+def label_overrides(records) -> dict[str, str]:
+    """``Short[Tag]`` for each managed record whose saved short name and exact architecture are known."""
+    labels: dict[str, str] = {}
+    for record in records:
+        identifier, short = record.get("managed_identifier"), record.get("short_name")
+        tag = architecture_shortcode(record.get("family") or "")
+        if isinstance(identifier, str) and short and tag:
+            labels[identifier] = f"{short}[{tag}]"
+    return labels
+
+
 def display_label(identifier: str) -> str:
-    """``PortraitV2[Kr2]`` for a managed LoRA filename; every other identifier is shown exactly as it is."""
+    """``PortraitV2[Kr2]`` for a managed LoRA: its saved short name, else the one in its filename.
+    Every other identifier is shown exactly as it is."""
+    saved = _LABEL_OVERRIDES.get(identifier)
+    if saved is not None:
+        return saved
     match = _MANAGED_LABEL.fullmatch(identifier)
     return f"{match['short']}[{match['tag']}]" if match else identifier

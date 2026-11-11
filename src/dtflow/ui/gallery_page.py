@@ -64,6 +64,7 @@ from dtflow import gallery_limits
 from dtflow.core.gallery import GalleryItem, GalleryQuery
 from dtflow.core.gallery_selection import MAX_CHECKED_IMAGES, GallerySelection
 from dtflow.core.models import ValidationError
+from dtflow.services.lora_naming import display_label
 from dtflow.diagnostics import event as diagnostic_event
 from dtflow.diagnostics import measurement
 from dtflow.logging_setup import dev_enabled
@@ -3515,7 +3516,7 @@ class GalleryPage(QObject):
         full = "; ".join(f"{identifier} · {weight:g}" for identifier, weight in item.loras)
         first = item.loras[0]
         chips[0].show()
-        self._widget("galleryLoRAName1", QLabel).setText(first[0])
+        self._widget("galleryLoRAName1", QLabel).setText(display_label(first[0]))
         self._widget("galleryLoRAWeight1", QLabel).setText(f"{first[1]:g}")
         self._widget("galleryLoRAStatus1", QLabel).setText("Unknown")
         self._widget("galleryLoRAStatus1", QLabel).setToolTip(
@@ -3523,7 +3524,7 @@ class GalleryPage(QObject):
         )
         if len(item.loras) > 1:
             chips[1].show()
-            rest = "; ".join(f"{identifier} · {weight:g}" for identifier, weight in item.loras[1:])
+            rest = "; ".join(f"{display_label(identifier)} · {weight:g}" for identifier, weight in item.loras[1:])
             self._widget("galleryLoRAName2", QLabel).setText(rest)
             self._widget("galleryLoRAName2", QLabel).setToolTip(full)
             self._widget("galleryLoRAWeight2", QLabel).setText("")

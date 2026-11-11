@@ -40,6 +40,7 @@ from dtflow.services.session import (
 )
 from dtflow.ui.activity_strip import activity_strip
 from dtflow.ui.runner import AsyncRunner
+from dtflow.services.lora_naming import display_label
 from dtflow.ui.lora_selection_editor import _display_label, edit_lora_selection
 from dtflow.ui.prepare_lora_editor import PrepareBatchEditor
 
@@ -273,6 +274,10 @@ class LoraAssetPanel:
             )
         return family
 
+    def refresh_labels(self) -> None:
+        """Redraw the selection after the saved short names changed; identifiers and weights are untouched."""
+        self._render_loras()
+
     def _render_loras(self) -> None:
         labels = self.family_labels()
         self.page.loraList.clear()
@@ -432,7 +437,7 @@ class LoraAssetPanel:
             source = record.get("family_source")
             family = _family_evidence_label(value, source, conflict=bool(record.get("architecture_conflict")))
             text = (
-                f"{record['identifier']} · {family} · "
+                f"{display_label(record['identifier'])} · {family} · "
                 f"{record['state']} ({record['evidence']}) · {record['sha256'][:8]} · {record['size']} B"
             )
             item = QListWidgetItem(text)
@@ -442,7 +447,7 @@ class LoraAssetPanel:
                 f"\nUser selected: {record.get('declared_version') or 'None'}"
             )
             item.setToolTip(
-                f"LoRA architecture: {family}{evidence}\nReceipt {record['asset_id']} on {record['origin']}"
+                f"{record['identifier']}\nLoRA architecture: {family}{evidence}\nReceipt {record['asset_id']} on {record['origin']}"
             )
             self.page.assetList.addItem(item)
             if (record["asset_id"], record["identifier"]) == selected:
