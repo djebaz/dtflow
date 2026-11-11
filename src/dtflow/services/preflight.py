@@ -1,8 +1,8 @@
 """Shared LoRA preflight: structured diagnostics from inventory evidence, no guessed compatibility.
 
 Architecture match, availability and generation evidence stay separate. Only a confirmed architecture mismatch or a
-confirmed absence blocks dispatch; unknown metadata stays unknown and is reported, never silently omitted or labeled
-compatible. The official engine's base/refiner and Kandinsky/SD-v1 exception rules are not pinned yet, so this
+confirmed absence blocks dispatch; a prepared LoRA without a version is rejected. Other unknown metadata stays unknown,
+not labeled compatible. The official engine's base/refiner and Kandinsky/SD-v1 exception rules are not pinned yet, so this
 service does not model them: every selection is a whole-model (``All``) LoRA on a base model.
 """
 
@@ -18,7 +18,7 @@ from dtflow.core.models import (
 )
 from dtflow.services.dynamic_prompts import PROMPT_TAGS_KEY, decode_runs, encode_runs
 
-BLOCKING = ("architecture_mismatch", "not_available")
+BLOCKING = ("architecture_mismatch", "not_available", "prepared_architecture_unknown")
 # Successful generation never proves a LoRA was applied, so the evidence level is fixed until the backend reports it.
 UNCONFIRMED = "application_unconfirmed"
 
@@ -27,13 +27,15 @@ def preflight_loras(
     request: ResolvedGenerationRequest,
     snapshot: InventorySnapshot,
     *,
-    checkpoint_family: str | None = None,
+    checkpoint_version: str | None = None,
 ) -> tuple[PreflightDiagnostic, ...]:
     """Return one diagnostic per selected LoRA, in selection order."""
     by_id = {entry.identifier: entry for entry in snapshot.entries}
     prepared = {item.identifier: item for item in request.prepared_assets}
     model = by_id.get(request.model_id)
-    base = model.architecture if model is not None and model.kind == "model" else checkpoint_family
+    # Exact-file metadata takes priority; Echo model versions are already provider IDs.
+    # Never infer an exact version from a broad checkpoint catalogue grouping.
+    base = checkpoint_version or (model.architecture if model is not None and model.kind == "model" else None)
     source = f"{snapshot.backend_id}:{snapshot.observed_at_utc}"
     diagnostics = []
     for selection in request.loras:
@@ -42,7 +44,9 @@ def preflight_loras(
         if asset is not None:
             # The converted file outranks any server or catalogue declaration. A prepared
             # receipt proves availability, but not that the LoRA applied to the output.
-            if asset.family is not None and base is not None:
+            if asset.family is None:
+                match, code = "unknown", "prepared_architecture_unknown"
+            elif base is not None:
                 match = "match" if asset.family == base else "mismatch"
                 code = "ok" if match == "match" else "architecture_mismatch"
             else:
@@ -107,6 +111,8 @@ def raise_if_blocked(request: ResolvedGenerationRequest, diagnostics: tuple[Pref
                     f"{item.identifier}: LoRA family {item.lora_family} does not match "
                     f"checkpoint family {item.model_family} ({request.model_id})."
                     if item.code == "architecture_mismatch" and item.lora_family and item.model_family
+                    else f"{item.identifier}: prepared LoRA architecture is unknown; use a LoRA with a detected version."
+                    if item.code == "prepared_architecture_unknown"
                     else f"{item.identifier}: {item.code}."
                     for item in problems
                 ),
