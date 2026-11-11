@@ -19,7 +19,8 @@ from dtflow.ui.file_dialogs import QFileDialog
 from dtflow.core.models import BackendError, LoRASelection, RemoteOutcome, ResolvedGenerationRequest, ValidationError
 from dtflow.diagnostics import event as diagnostic_event
 from dtflow.logging_setup import development_mode
-from dtflow.services.catalogue import Catalogue, FAMILY_LABELS
+from dtflow.services.catalogue import Catalogue, FAMILY_LABELS, bundled_exact_version
+from dtflow.services.lora_family import DETECTABLE_FAMILIES
 from dtflow.services.connection import (
     Presentation,
     present_asset_failure,
@@ -27,14 +28,25 @@ from dtflow.services.connection import (
     present_preflight,
     present_reconciliation,
 )
-from dtflow.services.session import check_loras, list_assets, prepare_asset, reconcile_asset, selection_for
+from dtflow.services.lora_family import detect_lora_family
+from dtflow.services.lora_naming import LoraPrepareMetadata
+from dtflow.services.session import (
+    check_loras,
+    list_assets,
+    occupied_managed_lora_names,
+    prepare_asset,
+    reconcile_asset,
+    selection_for,
+)
 from dtflow.ui.activity_strip import activity_strip
 from dtflow.ui.runner import AsyncRunner
-from dtflow.ui.lora_selection_editor import edit_lora_selection
+from dtflow.services.lora_naming import display_label
+from dtflow.ui.lora_selection_editor import _display_label, edit_lora_selection
+from dtflow.ui.prepare_lora_editor import PrepareBatchEditor
 
 UPLOAD_NOTICE = (
-    "Prepare accepts multiple converted LoRA files and may upload each to DT+ if the server does not already have it. "
-    "Uploading does not consume credits, but a later generation using this LoRA may."
+    "Select converted LoRA files, review their metadata, then explicitly Prepare ready rows. "
+    "Preparing may upload to DT+ without consuming credits; later generation may consume credits."
 )
 DEFAULT_LORA_WEIGHT = 1.0
 CLOUD_ONLY = "Asset actions need the cloud provider (choose it on the Connection page)."
@@ -76,6 +88,9 @@ class LoraAssetPanel:
         self._state, self._build, self._is_busy, self._set_busy = Path(state_dir), build_request, is_busy, set_busy
         self.choose_asset_file = _choose_asset_file
         self._prepare_files: tuple[str, ...] = ()
+        self._prepare_metadata: dict[str, LoraPrepareMetadata] = {}
+        self._prepare_editor: PrepareBatchEditor | None = None
+        self._prepare_editor_context = None
         self._prepare_index = 0
         self._prepare_counts = {"confirmed": 0, "failed": 0, "unresolved": 0}
         self._prepare_issues: list[str] = []
@@ -91,6 +106,7 @@ class LoraAssetPanel:
         self._candidates: list[tuple[str, float | None]] = []
         self._records: dict[tuple[str, str], dict] = {}
         self._inventory_families: dict[str, str] = {}
+        self._inventory_checkpoints: tuple[str, ...] = ()
         self._checkpoint_version: str | None = None
         self._catalogue = catalogue if catalogue is not None else Catalogue(self._state)
         self._bind_after_list: str | None = None  # identifier to bind once the registry list has been refreshed
@@ -153,10 +169,24 @@ class LoraAssetPanel:
             if snapshot
             else {}
         )
+        self._inventory_checkpoints = (
+            tuple(entry.identifier for entry in snapshot.entries if entry.kind == "model") if snapshot else ()
+        )
         self._inventory_candidates = (
             [(e.identifier, e.default_weight) for e in snapshot.entries if e.kind == "lora"] if snapshot else []
         )
         self._candidates = list(self._inventory_candidates)
+
+    def eligible_architectures(self) -> tuple[str, ...]:
+        """Exact architectures offered for a LoRA: everything DTFlow's file detector can recognise plus what the
+        active backend lists. A filename or broad catalogue label is never evidence."""
+        versions = [*DETECTABLE_FAMILIES, *self._inventory_families.values()]
+        versions += [
+            version
+            for identifier in self._inventory_checkpoints
+            if (version := bundled_exact_version(identifier)) is not None
+        ]
+        return tuple(dict.fromkeys(versions))
 
     def set_candidates(self, entries, *, checkpoint_version: str | None = None) -> None:
         """Offer only known-compatible LoRAs; keep selected mismatches visible for correction."""
@@ -244,17 +274,24 @@ class LoraAssetPanel:
             )
         return family
 
+    def refresh_labels(self) -> None:
+        """Redraw the selection after the saved short names changed; identifiers and weights are untouched."""
+        self._render_loras()
+
     def _render_loras(self) -> None:
         labels = self.family_labels()
         self.page.loraList.clear()
         for item in self.loras:
-            text = f"{item.identifier} @ {item.weight} · {labels.get(item.identifier, 'Unknown')}"
+            text = f"{_display_label(item.identifier)} @ {item.weight:g}"
             if not self._candidate_compatible(item.identifier):
                 text += f" · incompatible with {self._checkpoint_version}"
-            if item.identifier in self._receipts:
-                text += f" [receipt {self._receipts[item.identifier][:8]}]"
             entry = QListWidgetItem(text)
-            entry.setToolTip(text)  # a long name is elided in the narrow rail
+            detail = (
+                f"{item.identifier}\nWeight: {item.weight:g}\nArchitecture: {labels.get(item.identifier, 'Unknown')}"
+            )
+            if item.identifier in self._receipts:
+                detail += f"\nConfirmed receipt: {self._receipts[item.identifier]}"
+            entry.setToolTip(detail)  # precise identifiers remain available on hover
             self.page.loraList.addItem(entry)
 
     def choices(self) -> list[tuple[str, float | None]]:
@@ -400,7 +437,7 @@ class LoraAssetPanel:
             source = record.get("family_source")
             family = _family_evidence_label(value, source, conflict=bool(record.get("architecture_conflict")))
             text = (
-                f"{record['identifier']} · {family} · "
+                f"{display_label(record['identifier'])} · {family} · "
                 f"{record['state']} ({record['evidence']}) · {record['sha256'][:8]} · {record['size']} B"
             )
             item = QListWidgetItem(text)
@@ -410,7 +447,7 @@ class LoraAssetPanel:
                 f"\nUser selected: {record.get('declared_version') or 'None'}"
             )
             item.setToolTip(
-                f"LoRA architecture: {family}{evidence}\nReceipt {record['asset_id']} on {record['origin']}"
+                f"{record['identifier']}\nLoRA architecture: {family}{evidence}\nReceipt {record['asset_id']} on {record['origin']}"
             )
             self.page.assetList.addItem(item)
             if (record["asset_id"], record["identifier"]) == selected:
@@ -429,32 +466,95 @@ class LoraAssetPanel:
         return item.data(Qt.ItemDataRole.UserRole) if item is not None else None
 
     def prepare(self) -> None:
+        """File selection opens the actual in-window metadata editor; no upload occurs yet."""
         if self.preparing or self._is_busy() or self._runner.closed:
             return
         backend = self._backend()
         if backend[0] != "cloud":
             return
         revision = self._ownership_revision
-        # The shared file dialog opens at the folder remembered for this picker, else at the state directory.
         chosen = self.choose_asset_file(self.page, self._state)
         if isinstance(chosen, str):
-            chosen = [chosen] if chosen else []  # retain injected single-file picker compatibility
+            chosen = [chosen] if chosen else []
         if not chosen:
             return
         if self._runner.closed or self._is_busy() or self._backend() != backend or revision != self._ownership_revision:
-            return  # Cancelled picker or backend/ownership changed while choosing.
-        self._prepare_files = tuple(dict.fromkeys(os.path.abspath(path) for path in chosen))
-        self._prepare_index = 0
-        self._prepare_counts = {"confirmed": 0, "failed": 0, "unresolved": 0}
-        self._prepare_issues = []
-        self._prepare_backend, self._prepare_revision = backend, revision
-        self._prepare_saved = self._saved()
-        self._registry_generation += 1  # old list callbacks cannot replace newly prepared receipts
-        self._set_busy(True)
-        activity_strip(self.page).start(
-            "asset", "Preparing cloud assets", detail="May upload each selected file; waiting for receipts."
+            return
+        paths = tuple(dict.fromkeys(os.path.abspath(path) for path in chosen))
+        self._prepare_editor = PrepareBatchEditor(self.page, paths, on_prepare=self._authorize_prepare)
+        editor = self._prepare_editor
+        self._prepare_editor_context = (backend, revision, self._saved())
+        # The provider's current LoRA inventory is the only authority for selectable
+        # architectures. A catalogue label or filename is never support evidence.
+        eligible = self.eligible_architectures()
+        self._runner.submit(
+            self._inspect_prepare_files(paths),
+            lambda result, failure: self._inspected_prepare_editor(editor, eligible, result, failure),
         )
-        self._prepare_next()
+
+    async def _inspect_prepare_files(self, paths: tuple[str, ...]):
+        """Inspect file headers off the GUI thread and read existing canonical name reservations."""
+        evidence = await asyncio.to_thread(lambda: tuple(detect_lora_family(Path(p)) for p in paths))
+        occupied = await occupied_managed_lora_names(self._state)
+        return evidence, occupied
+
+    def _inspected_prepare_editor(self, editor, eligible, result, failure) -> None:
+        if self._runner.closed or not editor.active() or editor is not self._prepare_editor:
+            return
+        if failure is not None:
+            self._show(
+                self.page.assetStatusLabel,
+                Presentation("error", "Could not inspect selected LoRAs", str(failure)),
+            )
+            return
+        if result is not None:
+            evidence, occupied = result
+            editor.set_inspection(evidence, eligible, occupied)
+
+    def _authorize_prepare(self, chosen: list[tuple[Path, LoraPrepareMetadata]]) -> None:
+        """Admit only explicitly approved, metadata-complete rows under the existing owner."""
+        if not chosen or self._runner.closed:
+            return
+        backend = self._backend()
+        editor_context = self._prepare_editor_context
+        if (
+            backend[0] != "cloud"
+            or editor_context is None
+            or backend != editor_context[0]
+            or self._ownership_revision != editor_context[1]
+            or self._saved() is not editor_context[2]
+            or (self._is_busy() and not self.preparing)
+        ):
+            return
+        if self.preparing and (
+            backend != self._prepare_backend
+            or self._ownership_revision != self._prepare_revision
+            or self._saved() is not self._prepare_saved
+        ):
+            return
+        # A file that already settled may be sent again by an explicit Re-Prepare; one still queued may not.
+        queued = set(self._prepare_files[self._prepare_index :]) if self.preparing else set()
+        selected = {name: metadata for path, metadata in chosen if (name := str(path)) not in queued}
+        if not selected:
+            return
+        if self.preparing:
+            self._prepare_files += tuple(selected)
+            self._prepare_metadata.update(selected)
+        else:
+            self._prepare_files = tuple(selected)
+            self._prepare_metadata = dict(selected)
+            self._prepare_index = 0
+            self._prepare_counts = {"confirmed": 0, "failed": 0, "unresolved": 0}
+            self._prepare_backend, self._prepare_revision = backend, self._ownership_revision
+            self._prepare_saved = self._saved()
+            self._registry_generation += 1
+            self._set_busy(True)
+            activity_strip(self.page).start(
+                "asset", "Preparing cloud assets", detail="Only approved ready rows were admitted."
+            )
+            self._prepare_next()
+        if self._prepare_editor is not None:
+            self._prepare_editor.admitted([Path(p) for p in selected])
 
     def invalidate_prepare_ownership(self) -> None:
         """Credential/backend changes stop admission after the currently admitted file settles."""
@@ -477,7 +577,11 @@ class LoraAssetPanel:
         activity_strip(self.page).update("asset", 0, 0, detail=detail)
         self._runner.submit(
             prepare_asset(
-                self._state, Path(self._prepare_files[self._prepare_index]), provenance="gui", saved=self._prepare_saved
+                self._state,
+                Path(self._prepare_files[self._prepare_index]),
+                provenance="gui",
+                saved=self._prepare_saved,
+                metadata=self._prepare_metadata[self._prepare_files[self._prepare_index]],
             ),
             self._prepared,
         )
@@ -494,6 +598,11 @@ class LoraAssetPanel:
             else:
                 outcome = "confirmed" if state == "confirmed" else "failed" if state == "failed" else "unresolved"
             self._prepare_counts[outcome] += 1
+            if self._prepare_editor is not None:
+                self._prepare_editor.completed(
+                    Path(self._prepare_files[self._prepare_index]),
+                    "Prepared" if outcome == "confirmed" else "Failed" if outcome == "failed" else "Outcome unknown",
+                )
             if outcome != "confirmed":
                 explanation = (
                     present_asset_failure(failure)
@@ -567,6 +676,7 @@ class LoraAssetPanel:
     def _finish_prepare(self) -> None:
         total, done = len(self._prepare_files), self._prepare_index
         self._prepare_files = ()
+        self._prepare_metadata = {}
         self._prepare_saved = None
         self._set_busy(False)
         if total == 1 and done == 1:
@@ -598,7 +708,7 @@ class LoraAssetPanel:
             else Presentation(
                 "ok" if record["state"] == "confirmed" else "warning",
                 "Receipt " + record["state"],
-                f"{record['identifier']} ({record['evidence']}).",
+                f"{display_label(record['identifier'])} ({record['evidence']}).",
             )
         )
         strip.complete(
@@ -616,7 +726,7 @@ class LoraAssetPanel:
                 Presentation(
                     "ok" if record["state"] == "confirmed" else "warning",
                     "Receipt " + record["state"],
-                    f"{record['identifier']} · {self.family_labels().get(record['identifier'], 'Unknown')} "
+                    f"{display_label(record['identifier'])} · {self.family_labels().get(record['identifier'], 'Unknown')} "
                     f"({record['evidence']}).",
                 ),
             )
@@ -674,7 +784,9 @@ class LoraAssetPanel:
                 if announce:
                     self._show(
                         self.page.assetStatusLabel,
-                        Presentation("ok", "Receipt bound", f"{identifier} uses its confirmed cloud receipt."),
+                        Presentation(
+                            "ok", "Receipt bound", f"{display_label(identifier)} uses its confirmed cloud receipt."
+                        ),
                     )
                 return True
         return False

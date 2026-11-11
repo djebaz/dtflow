@@ -14,6 +14,7 @@ from dtflow.core.output_layout import identity_from_path, is_metadata_name
 from dtflow.core.queue_eta import estimate_queue_seconds
 from dtflow.services.connection import failure_reason, local_time
 from dtflow.services.dynamic_prompts import decode_runs
+from dtflow.services.lora_naming import display_label
 
 MIN_ETA_SAMPLES = 1
 
@@ -832,7 +833,8 @@ def created_text(at_utc: str, now: datetime | None = None) -> str:
 
 def lora_text(identifier: str, weight) -> str:
     """``style.safetensors 0.8``: a LoRA and its weight, as the queue header and composer summary list it."""
-    return f"{identifier} {weight:g}" if isinstance(weight, (int, float)) else identifier
+    label = display_label(identifier)
+    return f"{label} {weight:g}" if isinstance(weight, (int, float)) else label
 
 
 DISPLAY_EXTENSIONS = (".ckpt", ".safetensors", ".pt", ".pth", ".bin")

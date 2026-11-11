@@ -580,3 +580,74 @@ def allocate_batch_names(
             )
         )
     return tuple(results)
+
+
+_MANAGED_LABEL = re.compile(r"(?i)^(?P<short>[A-Za-z0-9_]{1,20})_(?P<tag>[A-Za-z0-9]+)_lora_(?:f16|q8p)\.ckpt$")
+
+
+# A managed-looking filename without the architecture tag (``nak_lora_f16.ckpt``): a copy kept before tags existed.
+_LEGACY_LABEL = re.compile(r"(?i)^(?P<short>[A-Za-z0-9_]{1,20})_lora_(?:f16|q8p)\.ckpt$")
+
+_LABEL_OVERRIDES: dict[str, str] = {}
+
+
+def set_label_overrides(labels: dict[str, str]) -> None:
+    """Replace the saved-short-name labels (managed identifier -> ``Short[Tag]``) used by every list.
+
+    The canonical metadata record owns the editable short name; the technical identifier never changes."""
+    _LABEL_OVERRIDES.clear()
+    _LABEL_OVERRIDES.update(labels)
+
+
+def label_overrides(records) -> dict[str, str]:
+    """``Short[Tag]`` for each managed record whose saved short name and exact architecture are known."""
+    labels: dict[str, str] = {}
+    for record in records:
+        identifier, short = record.get("managed_identifier"), record.get("short_name")
+        tag = architecture_shortcode(record.get("family") or "")
+        if isinstance(identifier, str) and short and tag:
+            labels[identifier] = f"{short}[{tag}]"
+    return labels
+
+
+def display_label(identifier: str) -> str:
+    """``PortraitV2[Kr2]`` for a managed LoRA: its saved short name, else the one in its filename.
+    Every other identifier is shown exactly as it is."""
+    saved = _LABEL_OVERRIDES.get(identifier)
+    if saved is not None:
+        return saved
+    match = _MANAGED_LABEL.fullmatch(identifier)
+    if match:
+        return f"{match['short']}[{match['tag']}]"
+    legacy = _LEGACY_LABEL.fullmatch(identifier)
+    return f"{legacy['short']} (legacy name)" if legacy else identifier
+
+
+_EMBEDDED_MANAGED = re.compile(r"(?i)(?<![A-Za-z0-9_])[A-Za-z0-9_]{1,20}_[A-Za-z0-9]+_lora_(?:f16|q8p)\.ckpt")
+
+
+def relabel_text(text: str) -> str:
+    """``text`` with every LoRA filename in it shown as its label. For display only: stored messages, warnings and
+    logs keep the exact filename, and only the managed-filename shape or a saved short name is replaced."""
+    if not text:
+        return text
+    for identifier in sorted(_LABEL_OVERRIDES, key=len, reverse=True):
+        if identifier in text:
+            text = text.replace(identifier, _LABEL_OVERRIDES[identifier])
+    return _EMBEDDED_MANAGED.sub(lambda match: display_label(match.group(0)), text)
+
+
+def lora_offer(loras: dict, lora_versions: dict, model_versions: Sequence[str | None]) -> dict:
+    """The LoRAs to offer for the chosen checkpoints: those whose exact family matches one of the checkpoints'.
+
+    Like Generate's picker, nothing is hidden on a guess: with no checkpoint, or one whose family is unknown, every
+    LoRA stays; a LoRA whose family is unknown also stays. Saved selections are kept visible by the editors.
+    """
+    if not model_versions or any(version is None for version in model_versions):
+        return dict(loras)
+    wanted = set(model_versions)
+    return {
+        name: weight
+        for name, weight in loras.items()
+        if (version := lora_versions.get(name)) is None or version in wanted
+    }

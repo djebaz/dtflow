@@ -38,6 +38,7 @@ from dtflow.core.models import (
 from dtflow.core.tasks import settle
 from dtflow.diagnostics import event as diagnostic_event
 from dtflow.persistence.queues import QueueError, post_control, read_queue_requests
+from dtflow.services.preflight import apply_trigger_prefixes
 from dtflow.persistence.store import PersistenceError, SQLiteAttempts
 from dtflow.core.request_records import request_from_record
 from dtflow.services.assets import possible_missing_asset
@@ -58,8 +59,10 @@ class QueueDispatcher:
         poll: float = 0.5,
         on_settle: Callable[[str, str], None] | None = None,
         on_event: Callable[[str, BackendEvent], None] | None = None,
+        trigger_prefix: Callable[[], bool] | None = None,
     ):
         self.store, self.service, self.poll, self.on_settle, self.on_event = store, service, poll, on_settle, on_event
+        self._trigger_prefix = trigger_prefix  # the Queues switch, read when each item runs (#373)
         self._asset_recovery: asyncio.Task | None = None
         self._recovery_active = False
         self._recovery_attempted: set[tuple[str, str, int]] = set()
@@ -364,6 +367,8 @@ class QueueDispatcher:
                             )
                         ) from exc
                 layout = OutputLayout(group_name("queue", queue_id), prompt_label(request.prompt))
+                if self._trigger_prefix is not None and request.loras and self._trigger_prefix():
+                    request = apply_trigger_prefixes(request, await self.service.get_inventory(refresh=True))
                 retries = 0
                 while True:
                     try:

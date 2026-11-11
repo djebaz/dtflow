@@ -28,6 +28,7 @@ from dtflow.persistence.settings import SettingsError, load_cloud_concurrency, v
 from dtflow.persistence.store import StateBusyError
 from dtflow.services.connection import Presentation, present_generation_failure
 from dtflow.services.dynamic_prompts import decode_runs
+from dtflow.services.lora_naming import display_label, lora_offer, relabel_text
 from dtflow.services.image_preparation import prepare_edit_inputs
 from dtflow.services.plan_errors import PlanError
 from dtflow.services.planning import Plan, PlanTable, describe_plan, expand_plan, new_rng_seed, plan_size, resolve_plan
@@ -190,7 +191,7 @@ POSTED = "Posted. The dispatch owner applies it at its next poll, or at the next
 def _dimension_text(name: str, count: int) -> str:
     """``2 step counts``-style wording of one plan dimension for the composer summary."""
     if name.startswith("lora_weight."):
-        return f"{count} weights of {name.split('.', 1)[1]}"
+        return f"{count} weights of {display_label(name.split('.', 1)[1])}"
     nouns = {"steps": "step count", "guidance": "guidance value", "strength": "strength", "loras": "LoRA set"}
     noun = nouns.get(name, name)
     return f"{count} {noun}{'s' if count != 1 else ''}"
@@ -1699,6 +1700,17 @@ class QueuePage:
             if label is not None and field is not None:
                 label.setContentsMargins(0, 6 if isinstance(field, QPlainTextEdit) else 3, 0, 0)
 
+    def _offered_loras(self) -> dict:
+        """LoRA choices for the models this plan uses (Generate's checkpoint when none is chosen), as on Generate."""
+        choices = self._choices()
+        models = [m for m in self.page.planModelsEdit.values() if m] or [choices.get("model") or ""]
+        versions = choices.get("model_versions", {})
+        return lora_offer(
+            choices.get("loras", {}),
+            choices.get("lora_versions", {}),
+            [versions.get(model) for model in models if model],
+        )
+
     def _configure_dimensions(self) -> None:
         page = self.page
         page.planModelsEdit.configure(
@@ -1712,9 +1724,10 @@ class QueuePage:
         page.planLoraSetsEdit.configure(
             "search",
             "LoRA",
-            weights=lambda: self._choices().get("loras", {}),
+            weights=self._offered_loras,
             families=lambda: self._choices().get("lora_families", {}),
             convert=self._lora_set_chip,
+            label=self._lora_set_label,
             initial=self._generate_loras,
             edit_chip=lambda chip: tuple(LoRASelection(name, weight) for name, weight in parse_lora_set(chip)),
             editor_title="LoRA set",
@@ -1722,7 +1735,7 @@ class QueuePage:
         page.planLorasEdit.configure(
             "search",
             "LoRA weight",
-            weights=lambda: self._choices().get("loras", {}),
+            weights=self._offered_loras,
             families=lambda: self._choices().get("lora_families", {}),
             initial=self._lora_weight_selection,
             convert=self._lora_weight_chips,
@@ -1789,6 +1802,12 @@ class QueuePage:
         """The weight chips as the planner's lines: one ``IDENTIFIER: w1; w2`` per LoRA, in the order first added."""
         grouped = self._lora_weight_groups()
         return "\n".join(f"{key}: {'; '.join(values)}" if values != [""] else key for key, values in grouped.items())
+
+    @staticmethod
+    def _lora_set_label(chip: str) -> str:
+        """A LoRA-set chip as ``ShortName[Tag] 0.8 + Other[Tag] 0.4``; anything unreadable shows as written."""
+        pairs = parse_lora_set(chip)
+        return " + ".join(f"{display_label(name)} {weight:g}" for name, weight in pairs) if pairs else chip
 
     def _lora_set_chip(self, chosen) -> str:
         """The checked (identifier, weight) pairs as one LoRA-set chip; none checked is the set without LoRAs."""
@@ -2458,7 +2477,7 @@ class QueuePage:
         if failure is not None:
             if isinstance(failure, PlanError | FormError):
                 self._plan_failed(failure)
-                self._quick_report(Presentation("error", "Queue not created", sentence(str(failure))))
+                self._quick_report(Presentation("error", "Queue not created", sentence(relabel_text(str(failure)))))
                 return
             self._quick_report(present_generation_failure(failure))
             return
@@ -2659,9 +2678,43 @@ class QueuePage:
         self.templates.changed()
 
     @staticmethod
+    def _lora_set_hint(text: str) -> str:
+        """Hover text of a LoRA-set cell: one line per LoRA, ``ShortName[Tag] 0.8`` then its filename."""
+        lines = []
+        for part in text.split(" + "):
+            identifier, space, weight = part.rpartition(" ")
+            if not space:
+                return text
+            label = display_label(identifier)
+            lines.append(f"{label} {weight}" + (f"\n    {identifier}" if label != identifier else ""))
+        return "\n".join(lines)
+
+    @staticmethod
+    def _lora_set_labels(text: str) -> str:
+        """``a.ckpt 0.8 + b.ckpt 0.4`` with each identifier shown as its ShortName[Tag] label."""
+        parts = []
+        for part in text.split(" + "):
+            identifier, space, weight = part.rpartition(" ")
+            parts.append(f"{display_label(identifier)} {weight}" if space else part)
+        return " + ".join(parts)
+
+    @staticmethod
+    def _column_hint(name: str) -> str:
+        """Header hover: a managed LoRA's weight column names its label, then the filename."""
+        if name.startswith("lora_weight."):
+            identifier = name.removeprefix("lora_weight.")
+            label = display_label(identifier)
+            return f"{label} weight\n{identifier}" if label != identifier else f"{identifier} weight"
+        return name
+
+    @staticmethod
     def _column_title(name: str) -> str:
-        """A preview column header without the ``lora_weight.`` prefix and the LoRA file extension (full name on hover)."""
-        name = name.removeprefix("lora_weight.")
+        """A preview column header: ShortName[Tag] for a managed LoRA weight, else the name without prefix and extension."""
+        if name.startswith("lora_weight."):
+            name = name.removeprefix("lora_weight.")
+            shown = display_label(name)  # ShortName[Tag] like every picker
+            if shown != name:
+                return shown
         for suffix in (".ckpt", ".safetensors"):
             name = name.removesuffix(suffix)
         return name
@@ -2677,15 +2730,19 @@ class QueuePage:
             self.plan_model.setHeaderData(
                 column,
                 Qt.Orientation.Horizontal,
-                "All effective LoRAs and weights" if name == "Effective LoRAs" else name,
+                "All effective LoRAs and weights" if name == "Effective LoRAs" else self._column_hint(name),
                 Qt.ItemDataRole.ToolTipRole,
             )
         prompt_column = table.columns.index("prompt") if "prompt" in table.columns else None
         for number, row in enumerate(table.rows):
             values = (*row, table.lora_stacks[number]) if show_stack else row
             cells = [QStandardItem(cell) for cell in values]
-            for item in cells:
-                item.setToolTip(item.text())  # the cells elide to the panel width
+            for column, item in enumerate(cells):
+                full = item.text()
+                if columns[column] in ("loras", "Effective LoRAs"):
+                    item.setText(self._lora_set_labels(full))  # ShortName[Tag]; the tooltip keeps the filenames
+                is_set = columns[column] in ("loras", "Effective LoRAs")
+                item.setToolTip(self._lora_set_hint(full) if is_set else full)  # the cells elide to the panel width
             if prompt_column is not None and number < len(table.prompt_runs):
                 runs = decode_runs(row[prompt_column], table.prompt_runs[number])
                 if runs:  # the parts the prompt variation produced are painted as tags by the view's delegate
@@ -2756,7 +2813,7 @@ class QueuePage:
         """One place for a planning error: beside the plan, with the owning field marked."""
         error = plan_error(exc)
         self._mark_plan(error.widget)
-        self._show(self.page.planCountLabel, "error", sentence(str(error)))
+        self._show(self.page.planCountLabel, "error", sentence(relabel_text(str(error))))
         self.page.startQueueButton.setText("Start now")
         self.plan_model.clear()
         self._sync_preview_table_visibility()
@@ -2765,7 +2822,7 @@ class QueuePage:
         if failure is not None:
             if isinstance(failure, PlanError | FormError):
                 self._plan_failed(failure)
-                self._message(Presentation("error", "Queue not created", sentence(str(failure))))
+                self._message(Presentation("error", "Queue not created", sentence(relabel_text(str(failure)))))
                 return
             self._message(present_generation_failure(failure))
             return
@@ -2816,7 +2873,7 @@ class QueuePage:
                 activity_strip(self.page).complete(
                     f"queue-assets:{wrapped.queue_id}:{event.kind}",
                     titles[event.kind],
-                    event.stage,
+                    relabel_text(event.stage),
                     state[event.kind],
                 )
             return

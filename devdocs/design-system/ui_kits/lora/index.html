@@ -1,0 +1,571 @@
+<!-- @dsCard group="UI Kits" viewport="1200x760" name="LoRA Prepare — #373" -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>DTFlow — LoRA UX design study #373</title>
+<link rel="stylesheet" href="../../styles.css">
+<link rel="stylesheet" href="../../tokens/lora.css">
+<style>
+/* Design-only browser illustration; all status colors and type reuse DTFlow tokens. */
+*{box-sizing:border-box}
+html,body{min-height:100%;height:auto;overflow:auto}
+body{background:var(--color-background);color:var(--color-text);font-family:var(--font-family-ui);font-size:var(--font-size-body);margin:0}
+button,input,select{font:inherit;color:inherit}
+button{cursor:pointer}
+button:disabled{cursor:default;opacity:.52}
+button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid var(--lora-focus);outline-offset:2px}
+header.site-head{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:16px max(20px,calc((100vw - 1420px)/2));border-bottom:1px solid var(--color-section-border);background:var(--color-toolbar)}
+.brand{display:flex;align-items:center;gap:11px}
+.mark{display:grid;place-items:center;background:var(--color-accent);color:var(--color-on-accent);width:32px;height:32px;border-radius:8px;font-weight:700}
+.brand strong{font-size:13pt}.eyebrow{color:var(--color-eyebrow);font-size:var(--font-size-small);font-weight:600;letter-spacing:.7px;text-transform:uppercase}
+.subtitle{color:var(--color-secondary);font-size:var(--font-size-small);margin-top:4px}
+.prototype-flag{border:1px solid var(--color-button-border);border-radius:5px;background:var(--color-input);color:var(--color-secondary);font-size:var(--font-size-small);padding:8px 10px;white-space:nowrap}
+nav.views{display:flex;gap:7px;align-items:center;flex-wrap:wrap;padding:12px max(20px,calc((100vw - 1420px)/2));border-bottom:1px solid var(--color-section-border);background:var(--color-surface)}
+.view-btn{border:1px solid transparent;border-radius:var(--radius-button);background:transparent;padding:9px 13px;color:var(--color-secondary)}
+.view-btn:hover{background:var(--color-button-hover);color:var(--color-text)}
+.view-btn.active{background:var(--color-selection);border-color:var(--color-selection-border);color:var(--color-selection-text);font-weight:600}
+.study{max-width:1420px;margin:0 auto;padding:18px 16px 40px}
+.screen{display:none}.screen.active{display:block}
+#screen-prepare.active{max-width:var(--lora-editor-max-width);margin-inline:auto}
+.surface{background:var(--color-surface);border:1px solid var(--color-panel-edge);border-radius:var(--radius-panel);overflow:hidden}
+.screen-heading{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap;margin-bottom:11px}
+.screen-heading h1{font-size:var(--font-size-title);font-weight:650;margin:0 0 5px}
+.screen-heading p,.description{font-size:var(--font-size-small);color:var(--color-secondary);margin:0;line-height:1.55}
+.screen-heading .side-meta{text-align:right;color:var(--color-secondary);font-size:var(--font-size-small)}
+.page-label{font-size:var(--font-size-small);color:var(--color-eyebrow);font-weight:600;text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px}
+.soft-tag{font-size:var(--font-size-small);font-weight:500;color:var(--color-secondary);border:1px solid var(--color-button-border);border-radius:5px;padding:5px 8px}
+.toolbar{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;padding:8px 12px;border-bottom:1px solid var(--lora-border)}
+.toolbar .hint{font-size:var(--font-size-small);color:var(--color-secondary)}
+.compact-toggle{display:flex;align-items:center;gap:8px;font-size:var(--font-size-small)}
+.compact-toggle input{accent-color:var(--color-accent)}
+.table-scroll{overflow-x:auto}
+.data-head,.prepare-row{display:grid;grid-template-columns:minmax(195px,1fr) minmax(130px,158px) minmax(135px,158px) 86px minmax(140px,178px) 115px;gap:var(--lora-cell-gap);align-items:start;padding:6px 10px;min-width:var(--lora-table-min-width)}
+.data-head{background:var(--color-section-header);color:var(--color-secondary);font-size:var(--font-size-small);font-weight:600;padding-top:7px;padding-bottom:7px}
+.prepare-row{border-top:1px solid var(--lora-border);min-height:var(--lora-row-min-height);transition:background .1s}
+.prepare-row:first-of-type{border-top:0}
+.prepare-row:hover{background:var(--color-button-hover)}
+.prepare-row.selected{background:var(--color-selection);box-shadow:inset 3px 0 var(--color-accent-edge)}
+.cell{min-width:0}
+.mobile-label{display:none}
+.file-name{display:flex;align-items:center;gap:2px;min-width:0;max-width:100%;font-family:var(--font-family-mono);font-size:var(--font-size-small);white-space:nowrap;overflow:hidden}
+.file-name .file-start{overflow:hidden;text-overflow:clip;white-space:nowrap;flex:1;direction:ltr}
+.file-name .file-end{flex:none;color:var(--color-text)}
+.file-name .ellipsis{flex:none;color:var(--color-secondary)}
+.subline{display:flex;gap:7px;align-items:center;margin-top:3px;font-size:8pt;color:var(--color-secondary);flex-wrap:wrap}
+.copy{border:0;padding:0;background:none;color:var(--color-eyebrow);font-size:8pt;text-decoration:underline;text-underline-offset:2px}
+.editor-input{width:100%;min-height:var(--lora-input-min-height);border:1px solid var(--color-border);border-radius:var(--radius-input);background:var(--color-input);color:var(--color-input-text);padding:4px 7px;min-width:0}
+.editor-input:hover{border-color:var(--color-input-border-hover)}
+.editor-input::placeholder{color:var(--color-placeholder)}
+.editor-input.invalid{border-color:var(--lora-invalid)}
+.editor-input:disabled{background:var(--color-button);color:var(--color-disabled)}
+.field-note{font-size:8pt;color:var(--color-secondary);margin-top:3px}
+/* Keep architecture provenance/errors, but remove repeated helper lines from ordinary rows. */
+.prepare-row>.cell:nth-child(3) .field-note,.prepare-row>.cell:nth-child(4) .field-note,.prepare-row>.cell:nth-child(5) .field-note{display:none}
+.field-note.error{color:var(--lora-invalid)}
+.status{display:inline-flex;align-items:center;gap:6px;font-size:var(--font-size-small);line-height:1.35;padding-top:5px}
+.dot{display:inline-block;flex:none;width:7px;height:7px;border-radius:50%;background:var(--color-secondary)}
+.status.ready .dot{background:var(--lora-ready)}
+.status.warn .dot{background:var(--lora-unready)}
+.status.error .dot{background:var(--lora-invalid)}
+.status.busy .dot{background:var(--color-accent-hover)}
+.preview-box{display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;background:var(--lora-preview-background);padding:9px 12px;border-top:1px solid var(--lora-border)}
+.preview-title{font-size:8pt;color:var(--color-secondary);margin-bottom:5px}
+.code{font-family:var(--font-family-mono);font-size:var(--font-size-small);overflow-wrap:anywhere}
+.filename-preview{color:var(--color-selection-text)}
+.batch-footer{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;min-height:var(--lora-footer-min-height);padding:9px 12px;background:var(--color-surface);border-top:1px solid var(--lora-border)}
+.counts{display:flex;gap:18px;flex-wrap:wrap;color:var(--color-secondary);font-size:var(--font-size-small)}
+.counts strong{color:var(--color-text)}
+.actions{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.action{border:1px solid var(--color-button-border);background:var(--color-button);border-radius:var(--radius-button);padding:9px 15px;min-height:36px;color:var(--color-button-text);font-weight:600;font-size:var(--font-size-small)}
+.action:hover{background:var(--color-button-hover);border-color:var(--color-button-border-hover)}
+.action.primary{background:var(--color-accent);border-color:var(--color-accent);color:var(--color-on-accent)}
+.action.primary:hover{background:var(--color-accent-hover)}
+.action.primary:disabled{background:var(--color-button);border-color:var(--color-disabled-border);color:var(--color-disabled)}
+.note{padding:12px 15px;border-left:3px solid var(--color-focus);background:var(--color-host);color:var(--color-secondary);font-size:var(--font-size-small);line-height:1.55;margin-top:16px;border-radius:4px}
+.note strong{color:var(--color-text)}
+/* Compact layout stays a table: one horizontal row per LoRA, never stacked cards. */
+.force-compact .data-head,.force-compact .prepare-row{
+  grid-template-columns:var(--lora-compact-columns);
+  min-width:var(--lora-compact-table-min-width);
+  gap:var(--lora-compact-column-gap);
+  padding:6px 8px;
+}
+.force-compact .editor-input{font-size:9pt}
+.force-compact .status{font-size:9pt}
+.force-compact .surface{max-width:760px;margin:0 auto}
+.force-compact .screen-heading{max-width:760px;margin-left:auto;margin-right:auto}
+.force-compact .note{max-width:760px;margin:16px auto}
+.picker-wrap{display:grid;grid-template-columns:minmax(0,1fr) 260px;gap:12px}
+.picker-list{padding:9px}
+.picker-search{width:100%;margin-bottom:8px}
+.picker-row{display:grid;grid-template-columns:20px minmax(0,1fr) 94px 94px;gap:8px;align-items:center;border-bottom:1px solid var(--color-section-border);padding:6px 8px;min-height:var(--lora-picker-row-min-height);cursor:pointer}
+.picker-row:hover{background:var(--color-button-hover)}
+.picker-row:focus-within{outline:2px solid var(--lora-focus);outline-offset:-2px}
+.picker-row.selected{background:var(--color-selection)}
+.picker-row input[type=checkbox]{accent-color:var(--color-accent);width:16px;height:16px}
+.picker-label{font-weight:600;font-size:var(--font-size-body)}
+.group-label{color:var(--color-secondary);text-transform:uppercase;font-size:8pt;letter-spacing:.7px;font-weight:600;padding:8px 10px;background:var(--color-section-header)}
+.readout{background:var(--color-host);border:1px solid var(--color-section-border);border-radius:var(--radius-panel);padding:17px;font-size:var(--font-size-small);color:var(--color-secondary);line-height:1.7}
+.readout h2{font-size:var(--font-size-section);color:var(--color-text);margin:0 0 12px}
+.readout .code{color:var(--color-text)}
+.metadata-grid{display:grid;grid-template-columns:minmax(0,1fr) 290px;gap:16px}
+.metadata-form{padding:12px}
+.metadata-form .field-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.metadata-form label,.preferences label{display:block;font-size:var(--font-size-small);color:var(--color-secondary);font-weight:600;margin-bottom:4px}
+.metadata-form .wide{grid-column:1/-1}
+.section-small{font-size:var(--font-size-section);font-weight:600;margin:0 0 14px}
+.preferences{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+.setting-panel{padding:12px}
+.setting-row{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:9px 0;border-bottom:1px solid var(--color-section-border)}
+.setting-row:last-child{border-bottom:0}
+.setting-row strong{display:block;font-size:var(--font-size-body);margin-bottom:4px}
+.setting-row .description{max-width:490px}
+.toggle{appearance:none;width:40px;height:24px;border:1px solid var(--color-button-border);border-radius:15px;background:var(--color-button-hover);flex:none;position:relative;cursor:pointer}
+.toggle:before{content:"";position:absolute;left:3px;top:3px;width:16px;height:16px;border-radius:50%;background:var(--color-secondary);transition:transform .12s}
+.toggle:checked{background:var(--color-accent);border-color:var(--color-accent)}
+.toggle:checked:before{background:var(--color-on-accent);transform:translateX(16px)}
+
+/* Placement study: Connections keeps its three existing zones and hides the library by default. */
+.connection-layout,.generate-layout{display:grid;grid-template-columns:minmax(170px,21%) minmax(0,1fr) minmax(240px,28%);gap:var(--lora-placement-gap);align-items:start}
+.workspace-pane{min-width:0;display:grid;gap:var(--lora-placement-gap)}
+.workspace-card{padding:12px}
+.workspace-card h2{font-size:var(--font-size-section);margin:0 0 10px}
+.workspace-label{display:block;font-size:var(--font-size-small);color:var(--color-secondary);margin:0 0 5px}
+.workspace-value{padding:7px 9px;background:var(--color-input);border:1px solid var(--color-border);border-radius:var(--radius-input);font-size:var(--font-size-small)}
+.workspace-status{color:var(--color-success);font-size:var(--font-size-small)}
+.workspace-note{color:var(--color-secondary);font-size:var(--font-size-small);line-height:1.5;margin:8px 0 0}
+.workspace-card .action{padding:6px 10px;min-height:30px}
+.workspace-card .setting-row{padding:6px 0}
+/* Match the density of the neighboring Connections controls: one line per scope. */
+.workspace-card .trigger-setting{cursor:pointer;display:flex;gap:10px;align-items:center;justify-content:space-between;margin:0;padding:3px 0;min-height:30px;font-size:var(--font-size-small);font-weight:400}
+.workspace-card .trigger-setting--default{margin-bottom:4px;padding-bottom:7px}
+.trigger-setting .toggle{margin-left:auto}
+.trigger-setting:focus-within{outline:2px solid var(--lora-focus);outline-offset:1px}
+.trigger-setting .toggle:focus-visible{outline:0}
+.library-table tbody tr{cursor:pointer}
+.library-table tbody tr:hover{background:var(--color-button-hover)}
+.library-table tbody tr:focus-visible{outline:2px solid var(--lora-focus);outline-offset:-2px}
+.metadata-backdrop{position:fixed;inset:0;z-index:100;background:var(--color-editor-scrim,rgba(0,0,0,.75));display:grid;place-items:center;padding:16px}
+.metadata-backdrop[hidden]{display:none}
+.metadata-dialog{width:min(960px,100%);max-height:min(90vh,800px);overflow-y:auto;background:var(--color-surface);border:1px solid var(--color-panel-edge);border-radius:var(--radius-panel);padding:16px}
+.metadata-dialog .metadata-grid{grid-template-columns:minmax(0,1fr) 245px}
+.metadata-dialog .screen-heading{margin-bottom:14px}
+@media(max-width:780px){.metadata-dialog .metadata-grid{grid-template-columns:1fr}}
+
+.library-heading{width:100%;display:flex;align-items:center;gap:9px;text-align:left;background:var(--color-section-header);color:var(--color-text);border:0;padding:11px 12px;font-weight:600}
+.library-heading:hover{background:var(--color-button-hover)}
+.library-heading .soft-tag{margin-left:auto}
+.library-heading .chevron{font-size:16px;transition:transform .14s}
+.library-heading[aria-expanded="true"] .chevron{transform:rotate(90deg)}
+.library-contents{padding:10px 12px 12px}
+.library-contents[hidden]{display:none}
+.library-toolbar{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px}
+.library-table-wrap{overflow-x:auto;max-height:var(--lora-library-max-height);overflow-y:auto;border:1px solid var(--color-section-border);border-radius:5px}
+.library-table{border-collapse:collapse;width:100%;min-width:580px;font-size:var(--font-size-small)}
+.library-table th{position:sticky;top:0;background:var(--color-section-header);color:var(--color-secondary);text-align:left;padding:8px 7px}
+.library-table td{border-top:1px solid var(--color-section-border);padding:8px 7px}
+.library-table tr[aria-selected="true"]{background:var(--color-selection)}
+.library-table .code{font-size:8pt}
+.mini-preview{min-height:105px;display:grid;place-items:center;border:1px dashed var(--color-border-strong);background:var(--color-canvas);border-radius:5px;color:var(--color-secondary);font-size:var(--font-size-small)}
+.generate-selected{display:grid;gap:7px;margin:9px 0}
+.selected-lora{padding:8px;background:var(--color-item-surface);border:1px solid var(--color-section-border);border-radius:5px}
+.selected-lora strong{font-size:var(--font-size-small)}
+.selected-lora .code{display:block;margin-top:5px;color:var(--color-secondary)}
+@media(max-width:860px){.connection-layout,.generate-layout{grid-template-columns:minmax(145px,1fr) minmax(0,2fr)}.connection-layout>.workspace-pane:last-child,.generate-layout>.workspace-pane:last-child{grid-column:1/-1}}
+@media(max-width:560px){.connection-layout,.generate-layout{grid-template-columns:1fr}.connection-layout>.workspace-pane:last-child,.generate-layout>.workspace-pane:last-child{grid-column:auto}}
+
+footer.study-footer{text-align:center;margin-top:20px;color:var(--color-secondary);font-size:8pt}
+@media(max-width:1000px){
+  /* Small viewports preserve the table and scroll only if the columns cannot fit. */
+  .data-head,.prepare-row{
+    grid-template-columns:var(--lora-compact-columns);
+    min-width:var(--lora-compact-table-min-width);
+    gap:var(--lora-compact-column-gap);
+    padding:6px 8px;
+  }
+  .prepare-row .editor-input{font-size:9pt}
+  .prepare-row .status{font-size:9pt}
+  .picker-wrap,.metadata-grid,.preferences{grid-template-columns:1fr}
+}
+@media(max-width:600px){
+  header.site-head{padding:12px}.prototype-flag{white-space:normal}
+  .study{padding:17px 10px}
+  .metadata-form .field-grid{grid-template-columns:1fr}
+  .batch-footer{position:sticky;bottom:0;z-index:3}
+  .batch-footer .actions{width:100%}.batch-footer .action.primary{flex:1}
+  .picker-row{grid-template-columns:20px minmax(0,1fr) 72px;gap:7px}.picker-row .weight-value{display:none}
+}
+</style>
+</head>
+<body>
+<header class="site-head">
+  <div class="brand"><div class="mark" aria-hidden="true">D</div><div><strong>DTFlow</strong><div class="subtitle">Design system / LoRA lifecycle</div></div></div>
+  <div class="prototype-flag">Concept render · #373 · Offline / no uploads</div>
+</header>
+<nav class="views" aria-label="Design screen">
+<button class="view-btn active" data-view="connections" type="button">Connections placement</button>
+<button class="view-btn" data-view="generate" type="button">Generate placement</button>
+<button class="view-btn" data-view="prepare" type="button">Batch Prepare</button>
+<button class="view-btn" data-view="picker" type="button">LoRA picker</button>
+<button class="view-btn" id="open-metadata-from-nav" type="button">Edit metadata overlay</button>
+</nav>
+<main class="study">
+
+<section class="screen" id="screen-connections">
+  <div class="screen-heading"><div><div class="page-label">Connections / placement proposal</div><h1>Custom LoRAs in context</h1><p>Keep the existing center workspace. The Custom LoRAs section is collapsed by default, expanding only when management is needed.</p></div><span class="soft-tag">Not a new navigation tab</span></div>
+  <div class="connection-layout">
+    <aside class="workspace-pane"><div class="surface workspace-card"><h2>Connection</h2><span class="workspace-label">Backend</span><div class="workspace-value">DT+ Cloud</div><p class="workspace-status">● Connected (illustrative)</p><p class="workspace-note">Existing backend, account and connection controls stay on the left.</p></div></aside>
+    <div class="workspace-pane">
+      <section class="surface workspace-card"><h2>Connection readiness</h2><p class="workspace-note">Current connection check and readiness evidence remain at the top of the center workspace.</p></section>
+      <section class="surface" aria-label="Custom LoRAs management">
+        <button class="library-heading" id="connection-library-toggle" type="button" aria-expanded="false" aria-controls="connection-library-details"><span class="chevron" aria-hidden="true">▸</span><span>Custom LoRAs</span><span class="soft-tag">4 locally known · example</span></button>
+        <div class="library-contents" id="connection-library-details" hidden>
+          <p class="workspace-note" style="margin:0 0 10px">One canonical metadata library; locally retained copies and preparation receipts remain distinct.</p>
+          <div class="library-toolbar"><button class="action primary" id="connection-edit-metadata" type="button">Edit metadata</button><button class="action" type="button" disabled title="No file operations in this prototype">Remove retained copy · preview</button><button class="action" type="button" disabled title="No file operations in this prototype">Import JSON · preview</button></div>
+          <div class="library-table-wrap"><table class="library-table" aria-label="Custom LoRAs, select one row for metadata editing"><thead><tr><th>Short name</th><th>Architecture</th><th>Format</th><th>Trigger words</th><th>Status</th></tr></thead><tbody>
+          <tr data-lora-id="portrait" tabindex="0" aria-selected="true"><td>PortraitV2</td><td>Kr2</td><td>F16</td><td>portrait style</td><td>Ready</td></tr>
+          <tr data-lora-id="cinematic" tabindex="0" aria-selected="false"><td>Cinematic</td><td>ZiT</td><td>Q8P</td><td>cinematic lighting</td><td>Ready</td></tr>
+          <tr data-lora-id="detail" tabindex="0" aria-selected="false"><td>DetailBoost</td><td>Unknown</td><td>F16</td><td>—</td><td>Needs architecture</td></tr>
+          <tr data-lora-id="realism" tabindex="0" aria-selected="false"><td>Realism</td><td>F1</td><td>F16</td><td>—</td><td>Ready</td></tr>
+          </tbody></table></div>
+          <p class="workspace-note">Select a single row for Edit metadata. Full filenames, file hashes and remote receipt details remain inspectable. Remove retained copy affects local bytes only.</p><p class="workspace-note" id="connection-metadata-feedback" role="status" hidden></p>
+        </div>
+      </section>
+      <section class="surface workspace-card"><h2>Draw Things presets</h2><p class="workspace-note">Existing import/export controls and status stay here.</p></section>
+      <section class="surface workspace-card"><h2>Disposable cache</h2><p class="workspace-note">Existing cache status and cleanup actions stay here.</p></section>
+    </div>
+    <aside class="workspace-pane"><section class="surface workspace-card">
+      <h2>LoRA trigger prefixes</h2>
+      <div role="group" aria-label="LoRA trigger prefix settings">
+        <label class="setting-row trigger-setting trigger-setting--default" title="Starting value for new configurations; existing choices are unchanged"><span>Application default</span><input class="toggle" data-trigger-scope="default" type="checkbox" aria-label="Default LoRA trigger prefixes for new configurations"></label>
+        <label class="setting-row trigger-setting"><span>Generate</span><input class="toggle" data-trigger-scope="generate" type="checkbox" checked aria-label="Generate LoRA trigger prefixes"></label>
+        <label class="setting-row trigger-setting"><span>Queues</span><input class="toggle" data-trigger-scope="queues" type="checkbox" aria-label="Queues LoRA trigger prefixes"></label>
+        <label class="setting-row trigger-setting"><span>Workflows</span><input class="toggle" data-trigger-scope="workflows" type="checkbox" checked aria-label="Workflows LoRA trigger prefixes"></label>
+        <label class="setting-row trigger-setting"><span>Scripts</span><input class="toggle" data-trigger-scope="scripts" type="checkbox" aria-label="Scripts LoRA trigger prefixes"></label>
+      </div>
+    </section><section class="surface workspace-card"><h2>Existing global controls</h2><p class="workspace-note">Other app-wide preferences keep their current placement.</p></section></aside>
+  </div>
+  <div class="note"><strong>Design-only placement:</strong> expand Custom LoRAs to manage metadata; close it to recover the center workspace. No local files, metadata or provider state is changed by this illustration.</div>
+</section>
+<section class="screen" id="screen-generate">
+  <div class="screen-heading"><div><div class="page-label">Generate / placement proposal</div><h1>Selected LoRAs only</h1><p>The right inspector shows the active selection, weights and this Generate configuration's own trigger-prefix control—not a second metadata library.</p></div><span class="soft-tag">Illustrative UI</span></div>
+  <div class="generate-layout">
+    <aside class="workspace-pane"><div class="surface workspace-card"><h2>Parameters</h2><span class="workspace-label">Checkpoint</span><div class="workspace-value">Krea 2 (example)</div><p class="workspace-note">Existing generation parameters remain on the left.</p></div></aside>
+    <div class="workspace-pane"><section class="surface workspace-card"><h2>Generate workspace</h2><span class="workspace-label">Prompt</span><div class="workspace-value">Portrait with cinematic lighting…</div><div class="mini-preview" style="margin-top:10px">Existing image preview</div><p class="workspace-note">Prompt and image preview remain in the flexible center.</p></section></div>
+    <aside class="workspace-pane"><section class="surface workspace-card"><h2>Selected LoRAs <span class="soft-tag" id="generate-count">2</span></h2><div class="generate-selected" id="generate-selected"></div><button class="action primary" type="button" id="generate-edit-selection">Add / Edit LoRAs</button><div class="setting-row"><div><strong>Use LoRA trigger prefixes</strong><p class="description">Generate only</p></div><input type="checkbox" class="toggle" checked data-trigger-scope="generate" aria-label="Generate LoRA trigger prefixes"></div><p class="workspace-note">The shared selection picker opens on demand. There are no metadata-management actions here.</p></section></aside>
+  </div>
+  <div class="note"><strong>Design-only placement:</strong> visual selections are examples, and the picker is interactive only within this offline fixture. No generation request is sent.</div>
+</section>
+<section class="screen" id="screen-prepare">
+  <div class="screen-heading"><div><div class="page-label">Assets / batch preparation</div><h1>Prepare LoRAs</h1><p>Complete metadata before preparing on DT+. Files stay local until you choose Prepare.</p></div><div class="side-meta"><span class="soft-tag">5 selected files</span><div style="margin-top:12px">Design fixture · names and architectures illustrative</div></div></div>
+  <div class="surface" id="batch-surface">
+    <div class="toolbar"><span class="hint">Only ready rows are included. Incomplete rows stay editable while other files are preparing.</span><label class="compact-toggle"><input type="checkbox" id="compact-toggle"> Compact width</label></div>
+    <div class="table-scroll" id="prepare-table">
+      <div class="data-head"><div>Source file</div><div>Architecture</div><div>Short name</div><div>Quantization</div><div>Trigger words</div><div>Status</div></div>
+      <div class="prepare-row selected" data-file="portrait_8e62d922f3a4c82b1aef990108a2fae9_lora_f16.ckpt">
+        <div class="cell"><span class="mobile-label">Source file</span><div class="file-name" title="portrait_8e62d922f3a4c82b1aef990108a2fae9_lora_f16.ckpt"><span class="file-start">portrait_8e62d922f3a4c82b1</span><span class="ellipsis">…</span><span class="file-end">_lora_f16.ckpt</span></div><div class="subline"><button class="copy" type="button">Copy original</button><span>Detected from file</span></div></div>
+        <div class="cell"><label class="mobile-label">Architecture</label><select class="editor-input family"><option value="">Select architecture…</option><option selected value="Kr2">Krea 2</option><option value="ZiT">Z-Image Turbo</option><option value="F1">FLUX.1</option></select><div class="field-note">File-derived evidence</div></div>
+        <div class="cell"><label class="mobile-label">Short name</label><input class="editor-input short" value="PortraitV2" maxlength="20"><div class="field-note">Editable suggestion</div></div>
+        <div class="cell"><label class="mobile-label">Quantization</label><select class="editor-input quant"><option selected>F16</option><option>Q8P</option></select><div class="field-note">Filename hint</div></div>
+        <div class="cell"><label class="mobile-label">Trigger words</label><input class="editor-input trigger" value="portrait style" placeholder="Optional"><div class="field-note">Stored locally</div></div>
+        <div class="cell"><span class="mobile-label">Status</span><span class="status ready"><span class="dot"></span><span class="status-text">Ready</span></span></div>
+      </div>
+      <div class="prepare-row" data-file="cinematic_20261109_f3e817d0a432bf_lora_q8p.ckpt">
+        <div class="cell"><span class="mobile-label">Source file</span><div class="file-name" title="cinematic_20261109_f3e817d0a432bf_lora_q8p.ckpt"><span class="file-start">cinematic_20261109_f3e817</span><span class="ellipsis">…</span><span class="file-end">_lora_q8p.ckpt</span></div><div class="subline"><button class="copy" type="button">Copy original</button><span>Detected from file</span></div></div>
+        <div class="cell"><label class="mobile-label">Architecture</label><select class="editor-input family"><option value="">Select architecture…</option><option value="Kr2">Krea 2</option><option selected value="ZiT">Z-Image Turbo</option><option value="F1">FLUX.1</option></select><div class="field-note">File-derived evidence</div></div>
+        <div class="cell"><label class="mobile-label">Short name</label><input class="editor-input short" value="Cinematic" maxlength="20"><div class="field-note">Editable suggestion</div></div>
+        <div class="cell"><label class="mobile-label">Quantization</label><select class="editor-input quant"><option>F16</option><option selected>Q8P</option></select><div class="field-note">Filename hint</div></div>
+        <div class="cell"><label class="mobile-label">Trigger words</label><input class="editor-input trigger" value="cinematic lighting" placeholder="Optional"><div class="field-note">Stored locally</div></div>
+        <div class="cell"><span class="mobile-label">Status</span><span class="status ready"><span class="dot"></span><span class="status-text">Ready</span></span></div>
+      </div>
+      <div class="prepare-row" data-file="detail_boost_ep12_3a32f30bc9e7821d_911f.ckpt">
+        <div class="cell"><span class="mobile-label">Source file</span><div class="file-name" title="detail_boost_ep12_3a32f30bc9e7821d_911f.ckpt"><span class="file-start">detail_boost_ep12_3a32f30</span><span class="ellipsis">…</span><span class="file-end">_911f.ckpt</span></div><div class="subline"><button class="copy" type="button">Copy original</button><span>Unknown inspection</span></div></div>
+        <div class="cell"><label class="mobile-label">Architecture</label><select class="editor-input family"><option selected value="">Select architecture…</option><option value="Kr2">Krea 2</option><option value="ZiT">Z-Image Turbo</option><option value="F1">FLUX.1</option></select><div class="field-note error">Required · not file-detected</div></div>
+        <div class="cell"><label class="mobile-label">Short name</label><input class="editor-input short" value="DetailBoost" maxlength="20"><div class="field-note">Editable suggestion</div></div>
+        <div class="cell"><label class="mobile-label">Quantization</label><select class="editor-input quant"><option selected>F16</option><option>Q8P</option></select><div class="field-note">Converter default</div></div>
+        <div class="cell"><label class="mobile-label">Trigger words</label><input class="editor-input trigger" placeholder="Optional"><div class="field-note">Not required</div></div>
+        <div class="cell"><span class="mobile-label">Status</span><span class="status warn"><span class="dot"></span><span class="status-text">Needs architecture</span></span></div>
+      </div>
+      <div class="prepare-row" data-file="nak_lora_f16.ckpt">
+        <div class="cell"><span class="mobile-label">Source file</span><div class="file-name" title="nak_lora_f16.ckpt"><span class="file-start">nak</span><span class="file-end">_lora_f16.ckpt</span></div><div class="subline"><button class="copy" type="button">Copy original</button><span>Declared by user</span></div></div>
+        <div class="cell"><label class="mobile-label">Architecture</label><select class="editor-input family"><option value="">Select architecture…</option><option selected value="Kr2">Krea 2</option><option value="ZiT">Z-Image Turbo</option><option value="F1">FLUX.1</option></select><div class="field-note">User-declared, unverified</div></div>
+        <div class="cell"><label class="mobile-label">Short name</label><input class="editor-input short" value="Nak" maxlength="20"><div class="field-note">Short word is valid</div></div>
+        <div class="cell"><label class="mobile-label">Quantization</label><select class="editor-input quant"><option selected>F16</option><option>Q8P</option></select><div class="field-note">Filename hint</div></div>
+        <div class="cell"><label class="mobile-label">Trigger words</label><input class="editor-input trigger" placeholder="Optional"><div class="field-note">Not required</div></div>
+        <div class="cell"><span class="mobile-label">Status</span><span class="status ready"><span class="dot"></span><span class="status-text">Ready</span></span></div>
+      </div>
+      <div class="prepare-row" data-file="portrait_77ad2a_lora_f16.ckpt">
+        <div class="cell"><span class="mobile-label">Source file</span><div class="file-name" title="portrait_77ad2a_lora_f16.ckpt"><span class="file-start">portrait_77ad2a</span><span class="file-end">_lora_f16.ckpt</span></div><div class="subline"><button class="copy" type="button">Copy original</button><span>Distinct-content fixture</span></div></div>
+        <div class="cell"><label class="mobile-label">Architecture</label><select class="editor-input family"><option value="">Select architecture…</option><option selected value="Kr2">Krea 2</option><option value="ZiT">Z-Image Turbo</option><option value="F1">FLUX.1</option></select><div class="field-note">User-declared</div></div>
+        <div class="cell"><label class="mobile-label">Short name</label><input class="editor-input short" value="PortraitV2_2" maxlength="20"><div class="field-note">Scoped collision proposal</div></div>
+        <div class="cell"><label class="mobile-label">Quantization</label><select class="editor-input quant"><option selected>F16</option><option>Q8P</option></select><div class="field-note">Converter default</div></div>
+        <div class="cell"><label class="mobile-label">Trigger words</label><input class="editor-input trigger" placeholder="Optional"><div class="field-note">Not required</div></div>
+        <div class="cell"><span class="mobile-label">Status</span><span class="status ready"><span class="dot"></span><span class="status-text">Ready</span></span></div>
+      </div>
+    </div>
+    <div class="preview-box"><div><div class="preview-title">Managed filename preview for selected row</div><div class="code filename-preview" id="filename-preview">PortraitV2_Kr2_lora_f16.ckpt</div></div><div class="soft-tag" id="display-label">Display label · PortraitV2[Kr2]</div></div>
+    <div class="batch-footer"><div class="counts"><span>Selected: <strong>5</strong></span><span>Architectures assigned: <strong id="families-count">4/5</strong></span><span>Ready: <strong id="ready-count">4/5</strong></span></div><div class="actions"><button class="action" type="button" id="reset-button">Reset fixture</button><button class="action primary" type="button" id="prepare-button">Prepare 4 ready LoRAs</button></div></div>
+  </div>
+  <div class="note" id="prepare-note"><strong>Illustrative design.</strong> Fields, family examples and file names are fixtures. The Prepare button only marks rows as “Preparing (preview)” in this page. No provider eligibility, hash, collision with real files, cloud upload or Qt behavior is verified.</div>
+</section>
+<section class="screen" id="screen-picker">
+  <div class="screen-heading"><div><div class="page-label">Generate / Queues / Workflows</div><h1>Edit LoRAs</h1><p>Selected first; short names sort A–Z within each group. Display order never changes execution order.</p></div><span class="soft-tag" id="picker-count">2 selected</span></div>
+  <div class="picker-wrap">
+    <div class="surface picker-list"><input id="picker-search" class="editor-input picker-search" placeholder="Search short name, architecture or exact identifier…" aria-label="Search LoRAs">
+      <div id="picker-items"></div>
+      <div class="batch-footer" style="margin:12px -14px -14px"><div class="description">Custom exact identifier and existing weights remain supported.</div><div class="actions"><button type="button" class="action">Cancel</button><button type="button" class="action primary">Apply (preview)</button></div></div>
+    </div>
+    <aside class="readout"><h2>Effective LoRA order</h2><p>Preserved independently of the visual picker sort.</p><div id="effective-order" class="code" style="margin:15px 0"></div><p>Identifiers and weights are unchanged by a short-name edit. New selections append to execution order even when the list re-sorts.</p><hr style="border:0;border-top:1px solid var(--color-section-border);margin:15px 0"><strong style="color:var(--color-text)">Display pattern</strong><div class="code" style="margin-top:9px">PortraitV2[Kr2] @ 0.8</div><p style="margin-top:10px">Exact managed ID is disclosed in item details, not substituted into backend requests.</p></aside>
+  </div>
+</section>
+<div class="metadata-backdrop" id="metadata-backdrop" hidden>
+<section class="metadata-dialog" id="metadata-dialog" role="dialog" aria-modal="true" aria-labelledby="metadata-dialog-title">
+
+  <div class="screen-heading"><div><div class="page-label">Connections / Custom LoRAs / Edit metadata</div><h1 id="metadata-dialog-title">Edit LoRA metadata</h1><p>Existing prepared files will not be uploaded or renamed.</p></div><span class="soft-tag">Metadata-only mode</span></div>
+  <div class="metadata-grid">
+    <div class="surface metadata-form"><h2 class="section-small" id="metadata-name">PortraitV2[Kr2]</h2><div class="field-grid">
+      <div class="wide"><label>Original / prepared identifier (read-only)</label><input class="editor-input code" id="metadata-identifier" disabled value="portrait_8e62d922f3a4c82b1aef990108a2fae9_lora_f16.ckpt"></div>
+      <div><label>Architecture</label><select class="editor-input" id="metadata-architecture"><option value="">Unknown / select…</option><option selected value="Kr2">Krea 2</option><option value="ZiT">Z-Image Turbo</option><option value="F1">FLUX.1</option></select><div class="field-note" id="metadata-architecture-note">File detected: Krea 2 · user declaration separate</div></div>
+      <div><label>Short name</label><input class="editor-input" id="metadata-short" value="PortraitV2"></div>
+      <div><label>Quantization</label><select class="editor-input" id="metadata-format"><option selected>F16</option><option>Q8P</option></select><div class="field-note">Existing saved selection retained</div></div>
+      <div><label>Trigger words (optional)</label><input class="editor-input" id="metadata-trigger" value="portrait style"></div>
+      <div class="wide" style="padding:12px;border:1px solid var(--color-section-border);background:var(--color-host);border-radius:6px"><div class="preview-title">Managed identifier remains unchanged</div><div class="code" id="metadata-managed-id">portrait_8e62d922f3a4c82b1aef990108a2fae9_lora_f16.ckpt</div></div>
+    </div><div class="batch-footer"><div class="description">No upload or rename occurs for metadata-only edits.</div><div class="actions"><button class="action" type="button" id="cancel-metadata">Cancel</button><button class="action primary" type="button" id="save-metadata">Save metadata (preview)</button></div></div></div>
+    <aside class="readout"><h2>Source and identity</h2><div>Short label<br><span class="code" id="metadata-readout-label">PortraitV2[Kr2]</span></div><div style="margin-top:12px">Architecture source<br><span class="code" id="metadata-readout-source">Detected from file</span></div><div style="margin-top:12px">Original retained file<br><span class="code" id="metadata-readout-original">…a9_lora_f16.ckpt</span></div><div style="margin-top:12px">Technical receipt<br><span class="code">Unchanged</span></div><div style="margin-top:20px;color:var(--color-warning)">A family conflict would appear here in plain text, keeping both detected and declared evidence.</div></aside>
+  </div>
+  <div class="note">One selected LoRA only. This overlay edits an illustrative local record; no file, database, receipt or provider data is changed.</div>
+</section>
+</div>
+<footer class="study-footer">Design prototype · DTFlow palette and spacing · #373 · Not native Qt / no network / no upload</footer>
+</main>
+<script>
+(() => {
+  "use strict";
+  const $ = (selector, root = document) => root.querySelector(selector);
+  const $$ = (selector, root = document) => Array.from(root.querySelectorAll(selector));
+  const screens = ["connections", "generate", "prepare", "picker"];
+  const setView = (name) => {
+    if (!screens.includes(name)) return;
+    $$(".screen").forEach(el => el.classList.toggle("active", el.id === "screen-" + name));
+    $$(".view-btn").forEach(el => { const on = el.dataset.view === name; el.classList.toggle("active", on); el.setAttribute("aria-pressed", String(on)); });
+  };
+  $$(".view-btn").forEach(el => el.addEventListener("click", () => setView(el.dataset.view)));
+  const libraryToggle = $("#connection-library-toggle");
+  libraryToggle.addEventListener("click", () => {
+    const isOpen = libraryToggle.getAttribute("aria-expanded") === "true";
+    libraryToggle.setAttribute("aria-expanded", String(!isOpen));
+    $("#connection-library-details").hidden = isOpen;
+  });
+  // Connection table metadata editing is intentionally single-item only.
+  const loRAFixtures = {
+    portrait:{name:"PortraitV2",tag:"Kr2",family:"Kr2",format:"F16",trigger:"portrait style",file:"portrait_8e62d922f3a4c82b1aef990108a2fae9_lora_f16.ckpt",source:"Detected from file"},
+    cinematic:{name:"Cinematic",tag:"ZiT",family:"ZiT",format:"Q8P",trigger:"cinematic lighting",file:"cinematic_20261111_lora_q8p.ckpt",source:"Detected from file"},
+    detail:{name:"DetailBoost",tag:"?",family:"",format:"F16",trigger:"",file:"detail_boost_ep12_lora_f16.ckpt",source:"Unknown — manual selection required"},
+    realism:{name:"Realism",tag:"F1",family:"F1",format:"F16",trigger:"",file:"realism_lora_f16.ckpt",source:"Detected from file"}
+  };
+  let selectedLibraryId="portrait";
+  let metadataReturnFocus=null;
+  const libraryRows=$$("#connection-library-details tbody tr[data-lora-id]");
+  const selectLibraryRow=id=>{
+    selectedLibraryId=id;
+    libraryRows.forEach(row=>row.setAttribute("aria-selected",String(row.dataset.loraId===id)));
+  };
+  libraryRows.forEach(row=>{
+    row.addEventListener("click",()=>selectLibraryRow(row.dataset.loraId));
+    row.addEventListener("keydown",event=>{
+      if(event.key==="Enter"||event.key===" "){event.preventDefault();selectLibraryRow(row.dataset.loraId);}
+    });
+  });
+  const closeMetadata=()=>{
+    $("#metadata-backdrop").hidden=true;
+    metadataReturnFocus?.focus();
+  };
+  const openMetadata=()=>{
+    const item=loRAFixtures[selectedLibraryId];
+    metadataReturnFocus=document.activeElement;
+    $("#metadata-name").textContent=item.name+"["+item.tag+"]";
+    $("#metadata-identifier").value=item.file;
+    $("#metadata-architecture").value=item.family;
+    $("#metadata-architecture-note").textContent=item.source;
+    $("#metadata-short").value=item.name;
+    $("#metadata-format").value=item.format;
+    $("#metadata-trigger").value=item.trigger;
+    $("#metadata-managed-id").textContent=item.file;
+    $("#metadata-readout-label").textContent=item.name+"["+item.tag+"]";
+    $("#metadata-readout-source").textContent=item.source;
+    $("#metadata-readout-original").textContent=item.file;
+    $("#metadata-backdrop").hidden=false;
+    $("#metadata-short").focus();
+  };
+  $("#connection-edit-metadata").addEventListener("click",openMetadata);
+  $("#open-metadata-from-nav").addEventListener("click",()=>{
+    setView("connections");
+    if(libraryToggle.getAttribute("aria-expanded")==="false")libraryToggle.click();
+    selectLibraryRow("portrait");
+    openMetadata();
+  });
+  $("#cancel-metadata").addEventListener("click",closeMetadata);
+  $("#metadata-backdrop").addEventListener("click",event=>{
+    if(event.target===$("#metadata-backdrop"))closeMetadata();
+  });
+  $("#metadata-backdrop").addEventListener("keydown",event=>{
+    if(event.key==="Escape"){event.preventDefault();closeMetadata();return;}
+    if(event.key!=="Tab")return;
+    const controls=$$('input:not(:disabled),select:not(:disabled),button:not(:disabled)',$("#metadata-dialog"));
+    if(!controls.length)return;
+    const first=controls[0],last=controls[controls.length-1];
+    if(event.shiftKey&&document.activeElement===first){event.preventDefault();last.focus();}
+    else if(!event.shiftKey&&document.activeElement===last){event.preventDefault();first.focus();}
+  });
+  // Synchronize the illustrated switches across Connections, Generate and the reference view.
+  $$("[data-trigger-scope]").forEach(control=>control.addEventListener("change",()=>{
+    $$('[data-trigger-scope="'+control.dataset.triggerScope+'"]').forEach(peer=>{peer.checked=control.checked;});
+  }));
+  $("#save-metadata").addEventListener("click",()=>{
+    closeMetadata();
+    const feedback=$("#connection-metadata-feedback");
+    feedback.hidden=false;
+    feedback.textContent="Preview only: no metadata was saved for "+loRAFixtures[selectedLibraryId].name+".";
+  });
+  $("#generate-edit-selection").addEventListener("click", () => setView("picker"));
+  const params = new URLSearchParams(window.location.search);
+  setView(params.get("view")==="metadata" ? "connections" : (params.get("view") || "connections"));
+  if(params.get("view")==="metadata")$("#open-metadata-from-nav").click();
+  const compact = $("#compact-toggle");
+  const updateCompact = () => $("#screen-prepare").classList.toggle("force-compact", compact.checked);
+  compact.addEventListener("change", updateCompact);
+  compact.checked = params.get("compact") === "1";
+  updateCompact();
+  const rows = $$(".prepare-row");
+  const initialRows = rows.map(row => ({
+    family: $(".family",row).value, short: $(".short",row).value,
+    quant: $(".quant",row).value, trigger: $(".trigger",row).value
+  }));
+  const statuses = new WeakMap();
+  let current = rows[0];
+  const labelFor = row => {
+    const n = $(".short",row).value, f = $(".family",row).value, q = $(".quant",row).value;
+    if(!n || !f || !/^[A-Za-z0-9_]{1,20}$/.test(n)) return null;
+    return {display: n + "[" + f + "]", technical: n + "_" + f + "_LoRA_" + q + ".ckpt"};
+  };
+  const rowStatus = row => {
+    if(statuses.get(row) === "busy") return ["Preparing (preview)","busy"];
+    const f = $(".family",row).value, n = $(".short",row).value, q = $(".quant",row).value;
+    if(!f) return ["Needs architecture","warn"];
+    if(!n) return ["Needs short name","warn"];
+    if(!/^[A-Za-z0-9_]{1,20}$/.test(n)) return ["Invalid short name","error"];
+    const competing = rows.some(other => other !== row && $(".family",other).value === f && $(".quant",other).value === q && $(".short",other).value.toLowerCase() === n.toLowerCase());
+    if(competing) return ["Name conflict","error"];
+    return ["Ready","ready"];
+  };
+  const paint = () => {
+    let ready=0, assigned=0;
+    rows.forEach(row=>{
+      const [message, state]=rowStatus(row);
+      if($(".family",row).value) assigned++;
+      if(state==="ready") ready++;
+      const badge = $(".status",row);
+      badge.className="status "+state;
+      $(".status-text",badge).textContent=message;
+      const short = $(".short",row);
+      short.classList.toggle("invalid",state==="error" || (state==="warn" && !short.value));
+      $(".family",row).classList.toggle("invalid", !$(".family",row).value);
+    });
+    $("#ready-count").textContent=ready+"/"+rows.length;
+    $("#families-count").textContent=assigned+"/"+rows.length;
+    $("#prepare-button").textContent="Prepare "+ready+" ready LoRA"+(ready===1?"":"s");
+    $("#prepare-button").disabled=ready===0;
+    const preview=labelFor(current);
+    $("#filename-preview").textContent=preview?preview.technical:"Complete required fields to preview";
+    $("#display-label").textContent=preview?"Display label · "+preview.display:"No display label yet";
+  };
+  rows.forEach(row=>{
+    row.addEventListener("focusin",()=>{
+      current=row;rows.forEach(r=>r.classList.toggle("selected",r===row));paint();
+    });
+    row.addEventListener("click",event=>{
+      if(event.target.closest("button,select,input"))return;
+      current=row;rows.forEach(r=>r.classList.toggle("selected",r===row));paint();
+    });
+    $$("input,select",row).forEach(input=>input.addEventListener("input",paint));
+    $(".copy",row).addEventListener("click",()=>{
+      const file=row.dataset.file;
+      if(navigator.clipboard && navigator.clipboard.writeText){
+        navigator.clipboard.writeText(file).catch(()=>{});
+      }
+      $(".copy",row).textContent="Copy original";
+    });
+  });
+  $("#prepare-button").addEventListener("click",()=>{
+    rows.filter(row=>rowStatus(row)[1]==="ready").forEach(row=>{
+      statuses.set(row,"busy");
+      $$("input,select",row).forEach(input=>input.disabled=true);
+    });
+    $("#prepare-note").innerHTML="<strong>Preview only.</strong> Rows marked Preparing illustrate partial-batch ownership; no file or provider operation was started. Incomplete rows remain editable and require a later explicit Prepare action.";
+    paint();
+  });
+  $("#reset-button").addEventListener("click",()=>{
+    rows.forEach((row,i)=>{
+      const v=initialRows[i];statuses.delete(row);
+      $(".family",row).value=v.family;$(".short",row).value=v.short;
+      $(".quant",row).value=v.quant;$(".trigger",row).value=v.trigger;
+      $$("input,select",row).forEach(input=>input.disabled=false);
+    });
+    $("#prepare-note").innerHTML="<strong>Illustrative design.</strong> Fields, family examples and file names are fixtures. The Prepare button only marks rows as “Preparing (preview)” in this page. No provider eligibility, hash, collision with real files, cloud upload or Qt behavior is verified.";
+    paint();
+  });
+  paint();
+  const options=[
+    {id:"portrait-id",name:"PortraitV2",family:"Kr2",weight:"0.8"},
+    {id:"cinematic-id",name:"Cinematic",family:"Kr2",weight:"1.0"},
+    {id:"anime-id",name:"AnimeStyle",family:"ZiT",weight:"1.0"},
+    {id:"detail-id",name:"DetailBoost",family:"ZiT",weight:"0.7"},
+    {id:"realism-id",name:"Realism",family:"F1",weight:"1.0"}
+  ];
+  const selected=["portrait-id","cinematic-id"]; // Effective order remains independent of visual sorting.
+  const renderGenerateSelection=()=>{
+    const host=$("#generate-selected");host.replaceChildren();
+    selected.forEach(id=>{
+      const item=options.find(candidate=>candidate.id===id);
+      if(!item)return;
+      const row=document.createElement("div");row.className="selected-lora";
+      const label=document.createElement("strong");label.textContent=item.name+"["+item.family+"]";
+      const weight=document.createElement("span");weight.className="code";weight.textContent="Weight "+item.weight;
+      row.append(label,weight);host.appendChild(row);
+    });
+    if(!selected.length){const empty=document.createElement("p");empty.className="workspace-note";empty.textContent="No LoRAs selected";host.appendChild(empty);}
+    $("#generate-count").textContent=String(selected.length);
+  };
+  const pickerRender=()=>{
+    const term=$("#picker-search").value.toLowerCase().trim();
+    const sorted=[...options].sort((a,b)=>{
+      const ia=selected.includes(a.id)?0:1,ib=selected.includes(b.id)?0:1;
+      return ia-ib||a.name.toLowerCase().localeCompare(b.name.toLowerCase())||a.family.localeCompare(b.family)||a.id.localeCompare(b.id);
+    }).filter(item=>!term||[item.name,item.family,item.id].some(s=>s.toLowerCase().includes(term)));
+    const host=$("#picker-items");host.replaceChildren();
+    let group="";
+    sorted.forEach(item=>{
+      const g=selected.includes(item.id)?"Selected":"Available";
+      if(group!==g){group=g;const heading=document.createElement("div");heading.className="group-label";heading.textContent=g;host.appendChild(heading);}
+      const row=document.createElement("label");row.className="picker-row"+(selected.includes(item.id)?" selected":"");
+      const cb=document.createElement("input");cb.type="checkbox";cb.checked=selected.includes(item.id);cb.setAttribute("aria-label","Select "+item.name+"["+item.family+"]");
+      cb.addEventListener("change",()=>{const index=selected.indexOf(item.id);if(cb.checked&&index<0)selected.push(item.id);if(!cb.checked&&index>=0)selected.splice(index,1);pickerRender();});
+      const name=document.createElement("span");name.className="picker-label";name.textContent=item.name+"["+item.family+"]";
+      const weight=document.createElement("span");weight.className="code weight-value";weight.textContent="Weight "+item.weight;
+      const status=document.createElement("span");status.className="description";status.textContent=cb.checked?"Selected":"Not selected";
+      row.append(cb,name,weight,status);host.appendChild(row);
+    });
+    $("#picker-count").textContent=selected.length+" selected";
+    renderGenerateSelection();
+    $("#effective-order").textContent=selected.map((id,i)=>{const item=options.find(o=>o.id===id);return (i+1)+". "+item.name+"["+item.family+"] @ "+item.weight;}).join("\n");
+    $("#effective-order").style.whiteSpace="pre-line";
+  };
+  $("#picker-search").addEventListener("input",pickerRender);
+  pickerRender();
+
+})();
+</script>
+</body>
+</html>

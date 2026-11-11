@@ -8,6 +8,7 @@ from PySide6.QtCore import QEvent, QObject, QRect, QRectF, QSize, Qt
 from PySide6.QtGui import QColor, QFont, QFontMetrics, QPainter, QPainterPath, QTextLayout, QTextOption
 from PySide6.QtWidgets import QHeaderView, QStyle, QStyledItemDelegate, QStyleOptionViewItem, QTableView
 
+from dtflow.services.lora_naming import display_label
 from dtflow.ui.prompt_tags import paint_tag_runs
 from dtflow.ui.queue_model import ROW_ROLE, stopwatch_icon
 from dtflow.ui.queue_presenter import display_name, lora_fraction
@@ -233,7 +234,7 @@ class QueueItemDelegate(QStyledItemDelegate):
             painter.drawText(
                 QRect(rect.left(), top, gauge_left - 6 - rect.left(), LORA_LINE),
                 Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter,
-                name_metrics.elidedText(display_name(name), Qt.TextElideMode.ElideRight, gauge_left - 6 - rect.left()),
+                name_metrics.elidedText(display_label(name), Qt.TextElideMode.ElideRight, gauge_left - 6 - rect.left()),
             )
             track = QRectF(gauge_left, top + (LORA_LINE - 6) / 2, GAUGE_WIDTH, 6)
             painter.setPen(Qt.PenStyle.NoPen)

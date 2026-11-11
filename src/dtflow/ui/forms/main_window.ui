@@ -468,84 +468,6 @@
             </widget>
            </item>
            <item>
-            <widget class="QGroupBox" name="customLorasBox">
-             <property name="title"><string /></property>
-             <property name="role" stdset="0"><string>sectionCard</string></property>
-             <property name="accessibleName"><string>Custom LoRAs</string></property>
-             <layout class="QVBoxLayout" name="customLorasBoxCardLayout">
-              <property name="leftMargin"><number>0</number></property>
-              <property name="topMargin"><number>0</number></property>
-              <property name="rightMargin"><number>0</number></property>
-              <property name="bottomMargin"><number>0</number></property>
-              <property name="spacing"><number>0</number></property>
-              <item>
-               <widget class="QFrame" name="customLorasBoxHeader">
-                <property name="role" stdset="0"><string>sectionHeader</string></property>
-                <layout class="QHBoxLayout" name="customLorasBoxHeaderLayout">
-                 <property name="leftMargin"><number>10</number></property>
-                 <property name="topMargin"><number>7</number></property>
-                 <property name="rightMargin"><number>10</number></property>
-                 <property name="bottomMargin"><number>7</number></property>
-                 <item>
-                  <widget class="QLabel" name="customLorasBoxHeading">
-                   <property name="text"><string>Custom LoRAs</string></property>
-                   <property name="textRole" stdset="0"><string>panelHeading</string></property>
-                  </widget>
-                 </item>
-                </layout>
-               </widget>
-              </item>
-              <item>
-               <widget class="QWidget" name="customLorasBoxContents">
-                <property name="role" stdset="0"><string>sectionContents</string></property>
-                <layout class="QVBoxLayout" name="customLorasLayout">
-                 <property name="leftMargin"><number>10</number></property>
-                 <property name="topMargin"><number>8</number></property>
-                 <property name="rightMargin"><number>10</number></property>
-                 <property name="bottomMargin"><number>10</number></property>
-                 <property name="spacing"><number>8</number></property>
-                 <item>
-                  <widget class="QLabel" name="customLorasStatusLabel">
-                   <property name="text"><string>No custom LoRA definitions imported.</string></property>
-                   <property name="wordWrap"><bool>true</bool></property>
-                   <property name="role" stdset="0"><string>secondary</string></property>
-                  </widget>
-                 </item>
-                 <item>
-                  <layout class="QHBoxLayout" name="customLorasButtons">
-                   <property name="spacing"><number>6</number></property>
-                   <item><widget class="QPushButton" name="importCustomLorasButton"><property name="text"><string>Import JSON…</string></property></widget></item>
-                   <item><widget class="QPushButton" name="clearCustomLorasButton"><property name="text"><string>Clear</string></property></widget></item>
-                  </layout>
-                 </item>
-                 <item>
-                  <widget class="QLabel" name="retainedLorasStatusLabel">
-                   <property name="text"><string>No locally retained LoRAs.</string></property>
-                   <property name="wordWrap"><bool>true</bool></property>
-                   <property name="role" stdset="0"><string>secondary</string></property>
-                  </widget>
-                 </item>
-                 <item>
-                  <widget class="QListWidget" name="retainedLorasList">
-                   <property name="toolTip"><string>Local retained copies only. Select a file and press Delete to remove it.</string></property>
-                   <property name="maximumHeight"><number>112</number></property>
-                   <property name="selectionMode"><enum>QAbstractItemView::SingleSelection</enum></property>
-                  </widget>
-                 </item>
-                 <item>
-                  <widget class="QPushButton" name="removeRetainedLoraButton">
-                   <property name="text"><string>Remove selected</string></property>
-                   <property name="toolTip"><string>Delete the selected retained copy only. Original files, DT+ assets and saved results are unchanged.</string></property>
-                   <property name="enabled"><bool>false</bool></property>
-                  </widget>
-                 </item>
-                </layout>
-               </widget>
-              </item>
-             </layout>
-            </widget>
-           </item>
-           <item>
             <widget class="QGroupBox" name="rememberedFoldersBox">
              <property name="sizePolicy"><sizepolicy hsizetype="Preferred" vsizetype="Maximum"/></property>
              <property name="title"><string /></property>
@@ -790,6 +712,105 @@
                  </spacer>
                 </item>
                </layout>
+              </item>
+             </layout>
+            </widget>
+           </item>
+           <item>
+            <widget class="QGroupBox" name="customLorasBox"><property name="sizePolicy"><sizepolicy hsizetype="Preferred" vsizetype="Maximum"/></property>
+             <property name="title"><string /></property>
+             <property name="role" stdset="0"><string>sectionCard</string></property>
+             <property name="accessibleName"><string>Custom LoRAs</string></property>
+             <layout class="QVBoxLayout" name="customLorasBoxCardLayout">
+              <property name="leftMargin"><number>0</number></property>
+              <property name="topMargin"><number>0</number></property>
+              <property name="rightMargin"><number>0</number></property>
+              <property name="bottomMargin"><number>0</number></property>
+              <property name="spacing"><number>0</number></property>
+              <item>
+               <widget class="QFrame" name="customLorasBoxHeader">
+                <property name="role" stdset="0"><string>sectionHeader</string></property>
+                <layout class="QHBoxLayout" name="customLorasBoxHeaderLayout">
+                 <property name="leftMargin"><number>10</number></property>
+                 <property name="topMargin"><number>7</number></property>
+                 <property name="rightMargin"><number>10</number></property>
+                 <property name="bottomMargin"><number>7</number></property>
+                 <item>
+                  <widget class="QLabel" name="customLorasHeading"><property name="text"><string>Custom LoRAs</string></property><property name="textRole" stdset="0"><string>panelHeading</string></property></widget>
+                 </item>
+                 <item>
+                  <spacer name="customLorasHeaderSpacer"><property name="orientation"><enum>Qt::Horizontal</enum></property><property name="sizeHint" stdset="0"><size><width>20</width><height>20</height></size></property></spacer>
+                 </item>
+                 <item>
+                  <widget class="QToolButton" name="customLorasDisclosure"><property name="toolButtonStyle"><enum>Qt::ToolButtonIconOnly</enum></property><property name="iconSize"><size><width>16</width><height>16</height></size></property><property name="checkable"><bool>true</bool></property><property name="checked"><bool>false</bool></property><property name="autoRaise"><bool>true</bool></property><property name="accessibleName"><string>Show custom LoRAs</string></property><property name="toolTip"><string>Expand to manage locally known custom LoRAs and retained files.</string></property></widget>
+                 </item>
+                </layout>
+               </widget>
+              </item>
+              <item>
+               <widget class="QWidget" name="customLorasBoxContents"><property name="visible"><bool>false</bool></property>
+                <property name="role" stdset="0"><string>sectionContents</string></property>
+                <layout class="QVBoxLayout" name="customLorasLayout">
+                 <property name="leftMargin"><number>10</number></property>
+                 <property name="topMargin"><number>8</number></property>
+                 <property name="rightMargin"><number>10</number></property>
+                 <property name="bottomMargin"><number>10</number></property>
+                 <property name="spacing"><number>8</number></property>
+                 <item>
+                  <widget class="QLabel" name="customLorasStatusLabel">
+                   <property name="text"><string>No custom LoRA definitions imported.</string></property>
+                   <property name="wordWrap"><bool>true</bool></property>
+                   <property name="role" stdset="0"><string>secondary</string></property>
+                  </widget>
+                 </item>
+                 <item>
+                  <layout class="QHBoxLayout" name="customLorasButtons">
+                   <property name="spacing"><number>6</number></property>
+                   <item><widget class="QPushButton" name="importCustomLorasButton"><property name="text"><string>Import JSON…</string></property></widget></item>
+                   <item><widget class="QPushButton" name="clearCustomLorasButton"><property name="text"><string>Clear</string></property></widget></item>
+                  </layout>
+                 </item>
+                 <item>
+                  <widget class="QLabel" name="retainedLorasStatusLabel">
+                   <property name="text"><string>No locally retained LoRAs.</string></property>
+                   <property name="wordWrap"><bool>true</bool></property>
+                   <property name="role" stdset="0"><string>secondary</string></property>
+                  </widget>
+                 </item>
+                 <item>
+                  <widget class="QTableWidget" name="retainedLorasTable">
+                   <property name="toolTip"><string>Local retained copies. Select one row to edit its metadata or press Delete to remove the retained copy only.</string></property>
+                   <property name="accessibleName"><string>Custom LoRA library</string></property>
+                   <property name="minimumHeight"><number>96</number></property>
+                   <property name="maximumHeight"><number>168</number></property>
+                   <property name="selectionMode"><enum>QAbstractItemView::SingleSelection</enum></property>
+                   <property name="selectionBehavior"><enum>QAbstractItemView::SelectRows</enum></property>
+                   <property name="editTriggers"><set>QAbstractItemView::NoEditTriggers</set></property>
+                   <property name="showGrid"><bool>false</bool></property>
+                   <property name="columnCount"><number>5</number></property>
+                   <column><property name="text"><string>Short name</string></property></column>
+                   <column><property name="text"><string>Architecture</string></property></column>
+                   <column><property name="text"><string>Format</string></property></column>
+                   <column><property name="text"><string>Trigger words</string></property></column>
+                   <column><property name="text"><string>Status</string></property></column>
+                  </widget>
+                 </item>
+                 <item>
+                  <layout class="QHBoxLayout" name="customLoraTableButtons"><property name="spacing"><number>6</number></property>
+                   <item><widget class="QPushButton" name="editLoraMetadataButton">
+                   <property name="text"><string>Edit metadata…</string></property>
+                   <property name="toolTip"><string>Edit the selected LoRA's architecture, short name, format and trigger words. Prepared files are not uploaded or renamed.</string></property>
+                   <property name="enabled"><bool>false</bool></property>
+                  </widget></item>
+                   <item><widget class="QPushButton" name="removeRetainedLoraButton">
+                   <property name="text"><string>Remove selected</string></property>
+                   <property name="toolTip"><string>Local only: deletes the selected retained copy. Original files, DT+ assets and saved results are unchanged.</string></property>
+                   <property name="enabled"><bool>false</bool></property>
+                  </widget></item>
+                  </layout>
+                 </item>
+                </layout>
+               </widget>
               </item>
              </layout>
             </widget>
@@ -1107,6 +1128,31 @@
                 <item><widget class="QSpinBox" name="workflowLocalSpin"><property name="minimum"><number>1</number></property><property name="maximum"><number>10</number></property><property name="accessibleName"><string>Default concurrency on local</string></property><property name="toolTip"><string>Default global concurrency of a workflow on a local Draw Things server: the most steps running at the same time, all nodes together.</string></property></widget></item>
                 <item><widget class="QLabel" name="workflowSegmentationSpinLabel"><property name="text"><string>Default segmentation concurrency</string></property><property name="textRole" stdset="0"><string>caption</string></property><property name="buddy"><cstring>workflowSegmentationSpin</cstring></property></widget></item>
                 <item><widget class="QSpinBox" name="workflowSegmentationSpin"><property name="minimum"><number>1</number></property><property name="maximum"><number>10</number></property><property name="accessibleName"><string>Default segmentation concurrency</string></property><property name="toolTip"><string>Default concurrency of each segmentation node (Detect face today): the most of its steps running at the same time, never above the global concurrency.</string></property></widget></item>
+               </layout></widget></item>
+             </layout>
+            </widget>
+           </item>
+           <item>
+            <widget class="QGroupBox" name="loraTriggerBox">
+             <property name="title"><string /></property>
+             <property name="role" stdset="0"><string>sectionCard</string></property>
+             <property name="accessibleName"><string>Use LoRA trigger prefixes</string></property>
+             <layout class="QVBoxLayout" name="loraTriggerCardLayout">
+              <property name="leftMargin"><number>0</number></property><property name="topMargin"><number>0</number></property>
+              <property name="rightMargin"><number>0</number></property><property name="bottomMargin"><number>0</number></property>
+              <property name="spacing"><number>0</number></property>
+              <item><widget class="QFrame" name="loraTriggerHeader"><property name="role" stdset="0"><string>sectionHeader</string></property>
+               <layout class="QHBoxLayout" name="loraTriggerHeaderLayout"><property name="leftMargin"><number>10</number></property><property name="topMargin"><number>7</number></property><property name="rightMargin"><number>10</number></property><property name="bottomMargin"><number>7</number></property>
+                <item><widget class="QLabel" name="loraTriggerHeading"><property name="text"><string>Use LoRA trigger prefixes</string></property><property name="textRole" stdset="0"><string>panelHeading</string></property></widget></item>
+               </layout></widget></item>
+              <item><widget class="QWidget" name="loraTriggerContents"><property name="role" stdset="0"><string>sectionContents</string></property>
+               <layout class="QVBoxLayout" name="loraTriggerLayout"><property name="leftMargin"><number>10</number></property><property name="topMargin"><number>8</number></property><property name="rightMargin"><number>10</number></property><property name="bottomMargin"><number>10</number></property><property name="spacing"><number>6</number></property>
+                <item><widget class="QCheckBox" name="loraTriggerDefaultCheck"><property name="text"><string>Application default</string></property><property name="accessibleName"><string>Only seeds execution paths that have no choice of their own. Changing it never rewrites a saved choice.</string></property><property name="toolTip"><string>Only seeds execution paths that have no choice of their own. Changing it never rewrites a saved choice.</string></property></widget></item>
+                <item><spacer name="loraTriggerGap"><property name="orientation"><enum>Qt::Vertical</enum></property><property name="sizeType"><enum>QSizePolicy::Fixed</enum></property><property name="sizeHint" stdset="0"><size><width>0</width><height>2</height></size></property></spacer></item>
+                <item><widget class="QCheckBox" name="loraTriggerGenerateCheck"><property name="text"><string>Generate</string></property><property name="accessibleName"><string>Insert each selected LoRA's trigger prefix in Generate.</string></property><property name="toolTip"><string>Insert each selected LoRA's trigger prefix in Generate.</string></property></widget></item>
+                <item><widget class="QCheckBox" name="loraTriggerQueuesCheck"><property name="text"><string>Queues</string></property><property name="accessibleName"><string>Insert each selected LoRA's trigger prefix when a queue item runs.</string></property><property name="toolTip"><string>Insert each selected LoRA's trigger prefix when a queue item runs.</string></property></widget></item>
+                <item><widget class="QCheckBox" name="loraTriggerWorkflowsCheck"><property name="text"><string>Workflows</string></property><property name="accessibleName"><string>Insert each selected LoRA's trigger prefix in generative workflow nodes.</string></property><property name="toolTip"><string>Insert each selected LoRA's trigger prefix in generative workflow nodes.</string></property></widget></item>
+                <item><widget class="QCheckBox" name="loraTriggerScriptsCheck"><property name="text"><string>Scripts</string></property><property name="accessibleName"><string>Insert each selected LoRA's trigger prefix in script generations.</string></property><property name="toolTip"><string>Insert each selected LoRA's trigger prefix in script generations.</string></property></widget></item>
                </layout></widget></item>
              </layout>
             </widget>

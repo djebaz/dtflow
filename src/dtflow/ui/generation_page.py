@@ -51,6 +51,7 @@ from dtflow.services.connection import (
 )
 from dtflow.services.image_preparation import prepare_edit_inputs
 from dtflow.services.image_quality import assess_file
+from dtflow.services.lora_naming import relabel_text
 from dtflow.services.preflight import checkpoint_exact_version
 from dtflow.services.presets import apply_preset, builtin_presets, load_presets, save_preset
 from dtflow.services.session import (
@@ -917,6 +918,15 @@ class GenerationPage:
             "loras": dict(self.lora.all_choices()),  # identifier -> catalogue weight; unfiltered, models may differ
             "lora_families": self.lora.family_labels(),  # display only; raw identifiers remain unchanged
             "receipts": self.lora.confirmed_receipts(),  # bound for LoRA sets that name a custom cloud LoRA
+            "model": page.modelCombo.currentText().strip(),
+            # Exact families (None = unknown) so Queues and Workflows can filter their LoRA pickers like Generate.
+            "model_versions": {
+                page.modelCombo.itemText(index): checkpoint_exact_version(
+                    page.modelCombo.itemText(index), self._inventory_snapshot
+                )
+                for index in range(page.modelCombo.count())
+            },
+            "lora_versions": {name: self.lora._candidate_family(name) for name, _ in self.lora.all_choices()},
         }
 
     def queue_edit_job(self):
@@ -1211,7 +1221,9 @@ class GenerationPage:
                 "assets_failed": "error",
                 "assets_inconclusive": "warning",
             }
-            activity_strip(self.page).complete(event.kind, titles[event.kind], event.stage, states[event.kind])
+            activity_strip(self.page).complete(
+                event.kind, titles[event.kind], relabel_text(event.stage), states[event.kind]
+            )
             return
         if event.kind == "preparing" and event.stage == "retrying" and self._request is not None:
             # The one automatic retry (#241) runs under a new request identity; Stop reads that attempt's evidence.

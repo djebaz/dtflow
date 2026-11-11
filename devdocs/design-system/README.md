@@ -211,3 +211,17 @@ Read `DESIGN.md` for the complete layout specification, component checklist, and
 ---
 
 **Built from:** DTFlow Qt workspace (`djebaz/dtflow` — see original repository for implementation details)
+
+## LoRA preparation and picker design (issue #373)
+
+The [LoRA UI design contract](lora-ux.md) complements the canonical Qt design and the owner-approved [issue #373](https://github.com/djebaz/dtflow/issues/373). The new [LoRA design kit](ui_kits/lora/index.html) is an **offline, interactive visual reference** with Connections and Generate integration views, a collapsed-by-default Custom LoRAs section in the existing Connections center, Batch Prepare (wide and compact-width tables, one row per file), a selected-first LoRA picker, a **single-LoRA metadata overlay**, and **all five trigger-prefix switches displayed together in the Connections right inspector** (global default plus Generate, Queues, Workflows and Scripts). Each execution switch remains independent; the global default is only for new configurations, not a master override. The mock synchronizes matching visible switches for illustration without persisting any settings. No separate Settings page is proposed. [Desktop](ui_kits/lora/prepare-wide.svg) and [compact](ui_kits/lora/prepare-compact.svg) SVG renders are review illustrations, **not native Qt screenshots**.
+
+The [editable native Qt Designer forms](ui_kits/lora/qt/README.md) provide a
+parallel **design-only** representation of Connections, Generate, Batch Prepare,
+the selected-first picker, and the single-LoRA metadata editor. The offline
+[Qt capture command](../../tools/ui/render_lora_design.py) can render these
+forms with DTFlow's tracked stylesheet, including an expanded Connections library
+and a compact-width Prepare view. They are not wired into DTFlow's canonical
+runtime `.ui` forms; no native screenshots or Windows acceptance are claimed.
+
+The design's [LoRA component tokens](tokens/lora.css) reuse shared palette/type/spacing roles with local layout measurements. They are not imported by runtime QSS, are not part of \`tokens.json\`, and do not change the approved desktop behavior. The new editor and its explicit Prepare authorization are **not implemented** by this design system update; #373 and a reviewed AGENTS.md contract amendment govern future runtime work. PR #381 provides the separate canonical naming/metadata foundation.
