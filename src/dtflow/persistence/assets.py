@@ -663,6 +663,64 @@ class AssetRegistry:
             ).fetchall()
         return tuple(dict(row) for row in rows)
 
+    async def lora_records(self) -> tuple[dict[str, Any], ...]:
+        """Read local content identities and metadata without provider or filesystem work."""
+        return await self._run(self._lora_records)
+
+    def _lora_records(self) -> tuple[dict[str, Any], ...]:
+        if not self.path.exists():
+            return ()
+        with closing(self._connect()) as db:
+            rows = db.execute("SELECT * FROM lora_records ORDER BY sha256, size").fetchall()
+        return tuple(_record(row) for row in rows)
+
+    async def accept_local_managed_name(
+        self, sha256: str, size: int, metadata: LoraPrepareMetadata
+    ) -> bool:
+        """Accept a first managed name for previously prepared content, with no Prepare or provider call."""
+        return await self._run(self._write, self._accept_local_managed_name, sha256, size, metadata)
+
+    @staticmethod
+    def _accept_local_managed_name(db, sha256: str, size: int, metadata: LoraPrepareMetadata) -> bool:
+        from dtflow.services.lora_naming import architecture_shortcode, managed_filename
+
+        row = db.execute(
+            "SELECT * FROM lora_records WHERE sha256=? AND size=?", (sha256, size)
+        ).fetchone()
+        if row is None:
+            raise ValidationError("The measured LoRA record no longer exists.")
+        expected_version = row["declared_version"] or row["detected_version"]
+        if expected_version != metadata.exact_architecture or architecture_shortcode(expected_version) is None:
+            raise ValidationError("The LoRA has no known, supported exact architecture for automatic naming.")
+        if row["short_name"] is not None and row["short_name"] != metadata.short_name:
+            raise ValidationError("The saved LoRA short name cannot be replaced automatically.")
+        if row["format_code"] is not None and row["format_code"] != metadata.format_code:
+            raise ValidationError("The saved LoRA format cannot be replaced automatically.")
+        if metadata.format_source not in ("converter_default", "filename_hint", "user"):
+            raise ValidationError("Invalid LoRA format provenance.")
+        try:
+            identifier = managed_filename(
+                metadata.short_name, architecture_shortcode(expected_version), metadata.format_code
+            )
+        except ValueError as exc:
+            raise ValidationError(str(exc)) from exc
+        previous = row["managed_identifier"]
+        if previous is not None:
+            if previous != identifier:
+                raise ValidationError("The already accepted LoRA identifier cannot change automatically.")
+            return False
+        if db.execute(
+            "SELECT 1 FROM lora_records WHERE managed_identifier=? COLLATE NOCASE AND NOT (sha256=? AND size=?)",
+            (identifier, sha256, size),
+        ).fetchone():
+            raise ValidationError("Another LoRA already owns that managed filename.")
+        db.execute(
+            "UPDATE lora_records SET short_name=?, managed_identifier=?, format_code=?, format_source=?, "
+            "updated_at_utc=? WHERE sha256=? AND size=?",
+            (metadata.short_name, identifier, metadata.format_code, metadata.format_source, _now(), sha256, size),
+        )
+        return True
+
     async def update_lora_metadata(self, sha256: str, size: int, **changes) -> dict[str, Any]:
         """Atomically change local LoRA metadata without renaming, uploading, or altering receipts.
 
