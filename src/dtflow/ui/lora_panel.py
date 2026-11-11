@@ -78,6 +78,7 @@ class LoraAssetPanel:
         self._prepare_files: tuple[str, ...] = ()
         self._prepare_index = 0
         self._prepare_counts = {"confirmed": 0, "failed": 0, "unresolved": 0}
+        self._prepare_issues: list[str] = []
         self._ownership_revision = 0
         self._last_backend = self._backend()
         self._prepare_backend = None
@@ -445,6 +446,7 @@ class LoraAssetPanel:
         self._prepare_files = tuple(dict.fromkeys(os.path.abspath(path) for path in chosen))
         self._prepare_index = 0
         self._prepare_counts = {"confirmed": 0, "failed": 0, "unresolved": 0}
+        self._prepare_issues = []
         self._prepare_backend, self._prepare_revision = backend, revision
         self._prepare_saved = self._saved()
         self._registry_generation += 1  # old list callbacks cannot replace newly prepared receipts
@@ -493,6 +495,19 @@ class LoraAssetPanel:
                 outcome = "confirmed" if state == "confirmed" else "failed" if state == "failed" else "unresolved"
             self._prepare_counts[outcome] += 1
             if outcome != "confirmed":
+                explanation = (
+                    present_asset_failure(failure)
+                    if failure is not None
+                    else Presentation(
+                        "warning", "Receipt not confirmed",
+                        f"State: {state or 'unavailable'}. Review the local receipt before trying again.",
+                    )
+                )
+                if len(self._prepare_issues) < 3:
+                    filename = Path(self._prepare_files[self._prepare_index]).name
+                    self._prepare_issues.append(
+                        f"{self._prepare_index + 1}/{len(self._prepare_files)} {filename}: {explanation.detail}"
+                    )
                 data = {
                     "outcome": outcome,
                     "reason": "service_error" if failure is not None else "receipt_not_confirmed",
@@ -508,17 +523,7 @@ class LoraAssetPanel:
                     ),
                 }
                 if development_mode():
-                    # User-selected basename and the public explanation belong in
-                    # development diagnostics, never a crowded batch status label.
-                    explanation = (
-                        present_asset_failure(failure)
-                        if failure is not None
-                        else Presentation(
-                            "warning",
-                            "Receipt not confirmed",
-                            f"State: {state or 'unavailable'}. Review the local receipt before trying again.",
-                        )
-                    )
+                    # Full per-file evidence stays in dev logs, without full paths.
                     data.update(
                         filename=Path(self._prepare_files[self._prepare_index]).name,
                         error_headline=explanation.headline,
@@ -570,8 +575,11 @@ class LoraAssetPanel:
             f"{counts['confirmed']} confirmed, {counts['failed']} failed, "
             f"{counts['unresolved']} unresolved, {total - done} unstarted. No automatic retries."
         )
-        if (counts["failed"] or counts["unresolved"]) and development_mode():
-            detail += " See Logs for per-file details."
+        if self._prepare_issues:
+            detail += "\n" + "\n".join(self._prepare_issues)
+            unseen = counts["failed"] + counts["unresolved"] - len(self._prepare_issues)
+            if unseen:
+                detail += f"\n{unseen} more unsuccessful file(s); see -x Logs for all details."
         state = "error" if counts["failed"] else "success" if counts["confirmed"] == total else "partial"
         activity_strip(self.page).complete("asset", "Cloud preparation finished", detail, state)
         level = "ok" if state == "success" else "error" if state == "error" else "warning"
