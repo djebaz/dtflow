@@ -25,9 +25,6 @@ updates:
       # Pinned on purpose by [tool.uv] override-dependencies: NumPy 2.4+ fails to import on the tested
       # legacy Windows CPU (see devdocs/research/drawthings-grpc-proof.md).
       - dependency-name: "numpy"
-      # drawthings-py 0.4.x requires Pillow <13.
-      - dependency-name: "pillow"
-        versions: [">=13"]
 
   # GitHub Actions used by the CI workflow.
   - package-ecosystem: "github-actions"
