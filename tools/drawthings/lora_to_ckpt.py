@@ -332,34 +332,40 @@ def _encode_dims(shape: tuple[int, ...]) -> bytes:
 def write_ckpt(path: Path, tensors: dict[str, np.ndarray]) -> None:
     if path.exists():
         raise ConversionError(f"{path} already exists; refusing to overwrite.")
+    path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_name(path.name + ".part")
-    if tmp.exists():
-        tmp.unlink()
-    con = sqlite3.connect(tmp)
+    tmp.unlink(missing_ok=True)
+    done = False
     try:
-        con.execute(
-            "CREATE TABLE tensors (name TEXT, type INTEGER, format INTEGER, datatype INTEGER, "
-            "dim BLOB, data BLOB, PRIMARY KEY (name))"
-        )
-        rows = (
-            (
-                name,
-                TYPE_CPU,
-                FORMAT_NCHW,
-                DATATYPE_F16,
-                _encode_dims(tuple(array.shape)),
-                np.ascontiguousarray(array, dtype="<f2").tobytes(),
+        # The connection must be closed before the file is renamed or deleted (Windows locks it).
+        con = sqlite3.connect(str(tmp))
+        try:
+            con.execute(
+                "CREATE TABLE tensors (name TEXT, type INTEGER, format INTEGER, datatype INTEGER, "
+                "dim BLOB, data BLOB, PRIMARY KEY (name))"
             )
-            for name, array in tensors.items()
-        )
-        con.executemany("INSERT INTO tensors VALUES (?, ?, ?, ?, ?, ?)", rows)
-        con.commit()
-    except BaseException:
-        con.close()
-        tmp.unlink(missing_ok=True)
-        raise
-    con.close()
-    tmp.replace(path)
+            rows = (
+                (
+                    name,
+                    TYPE_CPU,
+                    FORMAT_NCHW,
+                    DATATYPE_F16,
+                    _encode_dims(tuple(array.shape)),
+                    np.ascontiguousarray(array, dtype="<f2").tobytes(),
+                )
+                for name, array in tensors.items()
+            )
+            con.executemany("INSERT INTO tensors VALUES (?, ?, ?, ?, ?, ?)", rows)
+            con.commit()
+        finally:
+            con.close()
+        tmp.replace(path)
+        done = True
+    except sqlite3.Error as error:
+        raise ConversionError(f"Cannot write {path}: {error}") from error
+    finally:
+        if not done:
+            tmp.unlink(missing_ok=True)
 
 
 # --------------------------------------------------------------------------- conversion
