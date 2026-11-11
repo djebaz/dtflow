@@ -1,7 +1,7 @@
 name: LoRA Prepare UI renders
 
 # Render only the canonical Prepare overlay with synthetic data; no network or uploads.
-# PRs touching this UI trigger automatically, without labels or unrelated categories.
+# A PR synchronize affecting Prepare triggers this scoped category automatically, without labels.
 run-name: >-
   LoRA Prepare · PR #${{ github.event.pull_request.number }}
 
