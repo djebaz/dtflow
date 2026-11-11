@@ -503,7 +503,7 @@ class LoraAssetPanel:
                         f"State: {state or 'unavailable'}. Review the local receipt before trying again.",
                     )
                 )
-                if len(self._prepare_issues) < 3:
+                if len(self._prepare_issues) < 8:
                     filename = Path(self._prepare_files[self._prepare_index]).name
                     self._prepare_issues.append(
                         f"{self._prepare_index + 1}/{len(self._prepare_files)} {filename}: {explanation.detail}"
