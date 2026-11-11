@@ -5,6 +5,7 @@ name: UI renders
 # Mapped selection uses render_changes.py, render_coverage.json and render_dependencies.json.
 # "render-all", or a manual all-category dispatch without "changed_only", renders every state.
 # tools/ui/render_states.py uses offline fixtures and a network guard; no provider traffic, generation or secrets.
+# The manual LoRA category invokes the same canonical-form renderer as the dedicated lora:render workflow.
 run-name: >-
   UI renders · ${{ github.event_name == 'pull_request' && format('PR #{0} · {1}', github.event.pull_request.number, github.event.pull_request.title)
   || inputs.pr != '' && format('PR #{0}', inputs.pr) || format('branch {0}', github.ref_name) }}
@@ -28,6 +29,7 @@ on:
           - all
           - connection
           - generate
+          - lora
           - images
           - image-navigation
           - queues
@@ -172,7 +174,14 @@ jobs:
           category="${{ inputs.category || 'all' }}"
           help_file=tmp/render-help.txt
           level_flag=""
-          if ! .venv/bin/python tools/ui/render_states.py --help >"$help_file" 2>&1; then
+          if [ "$category" = "lora" ]; then
+            # Manual LoRA category: only seven targeted Qt screenshots, never the full fixture catalogue.
+            [ -f tools/ui/render_lora_design.py ] || { echo "::error::LoRA renderer unavailable on selected commit."; exit 1; }
+            timeout --signal=ABRT --kill-after=10s 180s \
+              .venv/bin/python tools/ui/render_lora_design.py --out tmp/ui-renders \
+                --connections-expanded --compact-prepare \
+              2>&1 | tee tmp/render.log || status=$?
+          elif ! .venv/bin/python tools/ui/render_states.py --help >"$help_file" 2>&1; then
             cat "$help_file"
             echo "::error::Renderer could not start; refusing to treat a broken renderer as a legacy renderer."
             status=1
@@ -300,6 +309,8 @@ jobs:
 
           # Accept tab-first names and retain compatibility with older numbered renders.
           def area(path):
+              if path.name.startswith("lora-"):
+                  return "LoRA"
               if path.relative_to(out).parts[:1] == ("image-navigation",):
                   return "Image Navigation"
               if path.stem.startswith("scripts_"):
