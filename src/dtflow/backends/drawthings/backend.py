@@ -25,7 +25,7 @@ from dtflow.backends.drawthings.codec import (
 from dtflow.backends.drawthings.errors import api_error, api_failure, diagnostics, error, failure, from_exception
 from dtflow.backends.drawthings.inventory import build_snapshot
 from dtflow.backends.drawthings.tls import TlsPolicy
-from dtflow.backends.drawthings.versions import bundled_base_version, lora_version
+from dtflow.backends.drawthings.versions import bundled_base_version
 from dtflow.backends.drawthings.wire import CLIENT_NAME, build_generation_message
 from dtflow.core.image_inputs import ImageInputSnapshot, PreparedImageInputs
 from dtflow.core.image_operations import ImageOperationPermit
@@ -526,13 +526,7 @@ class DrawThingsBackend:
                                 for item in request.prepared_assets
                             ],
                             "override_sent": sent,
-                            "override_reason": "sent"
-                            if sent
-                            else "none_prepared"
-                            if not prepared_names
-                            else "unknown_base_version"
-                            if not lora_version(base_version, spec)
-                            else "not_sent",
+                            "override_reason": "sent" if sent else "none_prepared" if not prepared_names else "not_sent",
                         },
                     )
                 emit("preparing", stage="wire_validated")
