@@ -63,8 +63,8 @@ def preflight_loras(
         entry = by_id.get(selection.identifier)
         asset = prepared.get(selection.identifier)
         if asset is not None:
-            # The converted file outranks any server or catalogue declaration. A prepared
-            # receipt proves availability, but not that the LoRA applied to the output.
+            # Canonical local metadata resolves explicit user choice over file evidence.
+            # A receipt proves availability, not that the LoRA affected the output.
             if asset.family is None:
                 match, code = "unknown", "prepared_architecture_unknown"
             elif base is not None:
@@ -79,7 +79,7 @@ def preflight_loras(
                     "prepared",
                     UNCONFIRMED,
                     code,
-                    "file" if asset.family_source == "file" else source,
+                    asset.family_source if asset.family_source in ("file", "user") else source,
                     model_family=base,
                     lora_family=asset.family,
                 )
