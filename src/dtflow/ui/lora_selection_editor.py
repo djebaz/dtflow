@@ -32,7 +32,7 @@ def _load(name: str, parent: QWidget | None) -> QWidget:
     return form
 
 
-_MANAGED_LABEL = re.compile(r"(?i)^(?P<short>[A-Za-z0-9_]{1,20})_(?P<tag>[A-Za-z0-9]+)_lora_(?:f16|q8p)\\.ckpt$")
+_MANAGED_LABEL = re.compile(r"(?i)^(?P<short>[A-Za-z0-9_]{1,20})_(?P<tag>[A-Za-z0-9]+)_lora_(?:f16|q8p)\.ckpt$")
 
 
 def _display_label(identifier: str) -> str:
