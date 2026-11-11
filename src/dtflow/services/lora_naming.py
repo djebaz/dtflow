@@ -36,9 +36,35 @@ class NamingRequest:
     format_code: str | None
     family_tag: str | None = None
     manually_edited: bool = False
+    replace_existing: bool = False
     alternatives: tuple[str, ...] = ()
     sha256: str | None = None
     size: int | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class LoraPrepareMetadata:
+    """Metadata accepted by one explicit Prepare action, not a naming suggestion.
+
+    Exact architecture and selected format are independent of filename parsing.
+    A declaration is recorded separately from file-detected architecture.
+    """
+
+    short_name: str
+    exact_architecture: str
+    format_code: str
+    format_source: str
+    trigger_words: str = ""
+    declared_version: str | None = None
+    replace_existing: bool = False
+
+    @property
+    def identifier(self) -> str:
+        """Return the validated managed filename for the requested Prepare."""
+        tag = architecture_shortcode(self.exact_architecture)
+        if tag is None:
+            raise ValueError("The selected exact architecture has no approved managed-name shortcode.")
+        return managed_filename(self.short_name, tag, self.format_code)
 
 
 @dataclass(frozen=True, slots=True)
@@ -390,37 +416,31 @@ def _prefixes(name: str, alternatives: tuple[str, ...]) -> tuple[str, ...]:
     return tuple(sorted((value for value in candidates if PORTABLE.fullmatch(value)), key=lambda v: (-len(v), v)))
 
 
-def occupied_from_snapshot(snapshot: Mapping[str, Sequence[Mapping[str, object]]]) -> tuple[ManagedName, ...]:
-    """Convert one canonical registry snapshot into scoped reservations without I/O.
+def occupied_from_snapshot(records: Sequence[Mapping[str, object]]) -> tuple[ManagedName, ...]:
+    """Build reservations from one canonical read, never from account-scoped receipts.
 
-    Only canonical accepted metadata and recognizable managed identifiers
-    reserve names. Source file names alone never establish identities.
+    Only an explicitly accepted managed_identifier reserves a technical name.
+    Source filenames and historical assets/receipts are not canonical identifiers.
     """
-    names: list[ManagedName] = []
-    seen: set[tuple[str, str, str, str | None, int | None]] = set()
-
-    def add(name: str, architecture: str, fmt: str, sha: object, size: object) -> None:
-        if architecture not in ARCHITECTURE_TAGS or fmt not in _FORMATS or not PORTABLE.fullmatch(name):
-            return
-        digest = sha if isinstance(sha, str) else None
-        length = size if isinstance(size, int) else None
-        key = (architecture, fmt, name.casefold(), digest, length)
-        if key not in seen:
-            seen.add(key)
-            names.append(ManagedName(name, architecture, fmt, digest, length))
-
-    for row in snapshot.get("records", ()):
-        name, fmt, architecture = row.get("short_name"), row.get("format_code"), row.get("exact_architecture")
-        if isinstance(name, str) and isinstance(fmt, str) and isinstance(architecture, str):
-            add(name, architecture, fmt, row.get("sha256"), row.get("size"))
-    for row in snapshot.get("identifiers", ()):
-        identifier = row.get("identifier")
-        match = _MANAGED_NAME.fullmatch(identifier) if isinstance(identifier, str) else None
-        if match is not None:
-            architecture = _TAG_ARCHITECTURES.get(match["tag"].casefold())
-            if architecture is not None:
-                add(match["name"], architecture, match["fmt"].upper(), row.get("sha256"), row.get("size"))
-    return tuple(names)
+    occupied: list[ManagedName] = []
+    for record in records:
+        raw = record.get("managed_identifier")
+        match = _MANAGED_NAME.fullmatch(raw) if isinstance(raw, str) else None
+        if match is None:
+            continue
+        architecture = _TAG_ARCHITECTURES.get(match["tag"].casefold())
+        if architecture is None:
+            continue
+        sha = record.get("sha256")
+        size = record.get("size")
+        occupied.append(
+            ManagedName(
+                match["name"], architecture, match["fmt"].upper(),
+                sha if isinstance(sha, str) else None,
+                size if isinstance(size, int) else None,
+            )
+        )
+    return tuple(occupied)
 
 
 def allocate_batch_names(
@@ -483,10 +503,12 @@ def allocate_batch_names(
                 continue
             if canonical.short_name.casefold() != name.casefold():
                 if item.manually_edited:
-                    results.append(NameAllocation(name, conflict="content_already_named"))
-                    continue
-                # Re-selecting the same verified bytes retains accepted metadata.
-                name = canonical.short_name
+                    if not item.replace_existing:
+                        results.append(NameAllocation(name, conflict="content_already_named"))
+                        continue
+                else:
+                    # Re-selecting the same verified bytes retains accepted metadata.
+                    name = canonical.short_name
 
         key = _scope(item.exact_architecture, item.format_code, name)
         existing = claimed.get(key)
