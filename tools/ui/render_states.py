@@ -550,15 +550,27 @@ def render_lora_prepare_states(shell, out):
     QTest.qWait(110)
     shell.form.customLorasDisclosure.setChecked(False)
     save(shell.form, out, "lora-connections-collapsed")
-    library = shell.form.retainedLorasList
-    library.clear()
-    for label in (
-        "PortraitV2[Kr2]  ·  F16  ·  Ready",
-        "Cinematic[ZiT]  ·  Q8P  ·  Ready",
-        "DetailBoost  ·  Needs architecture",
-        "Realism[F1]  ·  F16  ·  Ready",
-    ):
-        library.addItem(label)
+    # Synthetic rows go through the real table fill; no store or registry is written.
+    rows = (
+        ("Portrait_Kr2_lora_f16.ckpt", "PortraitV2", "krea2", "F16", "portrait style"),
+        ("Cinematic_ZiT_lora_q8p.ckpt", "Cinematic", "z_image_turbo", "Q8P", "cinematic lighting"),
+        ("detail_boost_ep12.ckpt", None, None, None, ""),
+        ("Realism_F1_lora_f16.ckpt", "Realism", "flux1", "F16", ""),
+    )
+    entries, records = [], {}
+    for index, (name, short, version, quantization, triggers) in enumerate(rows):
+        sha = f"{index:064x}"
+        entries.append({"name": name, "sha256": sha, "size": 1_000_000 + index, "detected_family": None})
+        records[(sha, 1_000_000 + index)] = {
+            "family": version,
+            "family_source": "file",
+            "short_name": short,
+            "format_code": quantization,
+            "trigger_words": triggers,
+            "architecture_conflict": False,
+        }
+    shell._custom_loras_read((0, entries, (len(rows), 4_000_000), records), None)
+    shell.form.retainedLorasTable.selectRow(0)
     shell.form.customLorasStatusLabel.setText("4 illustrative locally known LoRAs.")
     shell.form.retainedLorasStatusLabel.setText("4 illustrative local entries · no files loaded.")
     shell.form.customLorasDisclosure.setChecked(True)

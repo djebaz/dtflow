@@ -1,6 +1,6 @@
 # Issue #373 — LoRA preparation and selection design
 
-**Status:** proposed UI design and visual reference; not a Qt implementation or Windows acceptance.  
+**Status:** design reference with a Qt implementation in PR #382: the batch Prepare editor, the Connections library table with the single-record metadata overlay, and the five trigger-prefix switches. Native Windows and provider acceptance are still pending.  
 **Source of decisions:** [issue #373](https://github.com/djebaz/dtflow/issues/373), finalized on 2026-11-11.  
 **Implementation foundation:** [PR #381](https://github.com/djebaz/dtflow/pull/381), based on #378.  
 **Renders:** [LoRA UI kit](ui_kits/lora/index.html) · [wide design render](ui_kits/lora/prepare-wide.svg) · [compact render](ui_kits/lora/prepare-compact.svg).

@@ -262,6 +262,12 @@ def load_trigger_prefixes(state: Path) -> dict[str, bool]:
     return {"default": default, **{name: chosen.get(name, default) for name in TRIGGER_PATHS}}
 
 
+def load_trigger_choices(state: Path) -> tuple[bool, frozenset[str]]:
+    """The saved application default and the paths that hold a choice of their own."""
+    default, chosen = _trigger_document(_read(state))
+    return default, frozenset(chosen)
+
+
 def save_trigger_prefix(state: Path, name: str, value: bool) -> Path:
     """Save the application default (``default``) or one execution path's own choice, leaving the others untouched."""
     if name not in ("default", *TRIGGER_PATHS) or type(value) is not bool:

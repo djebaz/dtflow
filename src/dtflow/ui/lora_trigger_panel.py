@@ -12,7 +12,12 @@ from pathlib import Path
 from PySide6.QtCore import QObject, QSignalBlocker
 from PySide6.QtWidgets import QCheckBox, QWidget
 
-from dtflow.persistence.settings import SettingsError, load_trigger_prefixes, save_trigger_prefix
+from dtflow.persistence.settings import (
+    SettingsError,
+    load_trigger_choices,
+    load_trigger_prefixes,
+    save_trigger_prefix,
+)
 from dtflow.ui.runner import AsyncRunner
 
 log = logging.getLogger(__name__)
@@ -29,8 +34,10 @@ class LoraTriggerPanel(QObject):
             "workflows": form.loraTriggerWorkflowsCheck,
             "scripts": form.loraTriggerScriptsCheck,
         }
+        self._explicit: set[str] = set()
         try:
             values = load_trigger_prefixes(self.state_dir)
+            self._explicit = set(load_trigger_choices(self.state_dir)[1])
         except SettingsError:
             values = dict.fromkeys(self._checks, False)
             for check in self._checks.values():
@@ -46,6 +53,16 @@ class LoraTriggerPanel(QObject):
         generate_check.toggled.connect(lambda checked: self._changed("generate", checked, from_generate=True))
 
     def _changed(self, name: str, checked: bool, *, from_generate: bool = False) -> None:
+        if name == "default":  # paths without a choice of their own follow it; saved choices stay as they are
+            for path, check in self._checks.items():
+                if path != "default" and path not in self._explicit:
+                    with QSignalBlocker(check):
+                        check.setChecked(checked)
+            if "generate" not in self._explicit:
+                with QSignalBlocker(self._generate_page_check):
+                    self._generate_page_check.setChecked(checked)
+        else:
+            self._explicit.add(name)
         if name == "generate":  # Generate's own control and this card show the one saved choice
             other = self._checks["generate"] if from_generate else self._generate_page_check
             with QSignalBlocker(other):
