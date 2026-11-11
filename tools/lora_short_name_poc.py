@@ -218,6 +218,7 @@ def analyze(entries: list[dict[str, Any]], *, include_other: bool = False) -> li
             if base.startswith(name) and name != base
         ]
         prefixes = sorted(set(prefixes), key=len, reverse=True)
+        resolved = False
         for number in range(2, len(rows) + 2):
             suffix = f"_{number}"
             proposed = next(
@@ -235,10 +236,9 @@ def analyze(entries: list[dict[str, Any]], *, include_other: bool = False) -> li
             row["needs_review"] = True
             row["reason"] = "Duplicate proposed short name; review the numbered suggestion."
             assigned.add(key)
+            resolved = True
             break
-        else:
-            proposed = None
-        if proposed is None:
+        if not resolved:
             row["suggestion"] = None
             row["needs_review"] = True
             row["reason"] = "No complete-word candidate leaves room for a unique numeric suffix."
