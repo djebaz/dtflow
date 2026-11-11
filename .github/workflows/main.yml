@@ -51,24 +51,24 @@ on:
         options:
           - images
           - zip
-  pull_request:
-    types: [opened, synchronize, reopened, ready_for_review]
-    paths:
-      - 'src/dtflow/**'
-      - 'tools/ui/**'
-      - 'tests/fixtures/**'
-      - 'tests/helpers/**'
-      - 'tests/conftest.py'
-      - 'pyproject.toml'
-      - 'uv.lock'
-      - '.python-version'
-      - '.github/actions/**'
-      - '.github/workflows/main.yml'
-      - '.github/workflows/render-request.yml'
-      - 'tools/ci/action_changes.py'
-      - 'tools/ci/action_dependencies.json'
-      - '!**/*.md'
-      - '!**/*.rst'
+  # pull_request:
+    # types: [opened, synchronize, reopened, ready_for_review]
+    # paths:
+      # - 'src/dtflow/**'
+      # - 'tools/ui/**'
+      # - 'tests/fixtures/**'
+      # - 'tests/helpers/**'
+      # - 'tests/conftest.py'
+      # - 'pyproject.toml'
+      # - 'uv.lock'
+      # - '.python-version'
+      # - '.github/actions/**'
+      # - '.github/workflows/main.yml'
+      # - '.github/workflows/render-request.yml'
+      # - 'tools/ci/action_changes.py'
+      # - 'tools/ci/action_dependencies.json'
+      # - '!**/*.md'
+      # - '!**/*.rst'
 
 permissions:
   contents: read
