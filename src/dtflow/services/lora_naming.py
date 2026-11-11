@@ -585,6 +585,9 @@ def allocate_batch_names(
 _MANAGED_LABEL = re.compile(r"(?i)^(?P<short>[A-Za-z0-9_]{1,20})_(?P<tag>[A-Za-z0-9]+)_lora_(?:f16|q8p)\.ckpt$")
 
 
+# A managed-looking filename without the architecture tag (``nak_lora_f16.ckpt``): a copy kept before tags existed.
+_LEGACY_LABEL = re.compile(r"(?i)^(?P<short>[A-Za-z0-9_]{1,20})_lora_(?:f16|q8p)\.ckpt$")
+
 _LABEL_OVERRIDES: dict[str, str] = {}
 
 
@@ -614,7 +617,10 @@ def display_label(identifier: str) -> str:
     if saved is not None:
         return saved
     match = _MANAGED_LABEL.fullmatch(identifier)
-    return f"{match['short']}[{match['tag']}]" if match else identifier
+    if match:
+        return f"{match['short']}[{match['tag']}]"
+    legacy = _LEGACY_LABEL.fullmatch(identifier)
+    return f"{legacy['short']} (legacy name)" if legacy else identifier
 
 
 _EMBEDDED_MANAGED = re.compile(r"(?i)(?<![A-Za-z0-9_])[A-Za-z0-9_]{1,20}_[A-Za-z0-9]+_lora_(?:f16|q8p)\.ckpt")

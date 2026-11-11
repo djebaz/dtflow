@@ -913,7 +913,19 @@ class WorkflowsPage(QObject):
         if spec.type in wf.IMAGE_OPERATIONS and node.prompt_mode is None:
             self._add_outputs(layout, node_id, node.image_outputs)
         self._add_concurrency(layout, node_id, choices.get("backend"))
+        self._contain_width(i.workflowParamsHost)
         self._sync_lock()
+
+    @staticmethod
+    def _contain_width(host) -> None:
+        """Keep the node panel inside its rail: a long checkpoint name in a combo's list must not widen the panel
+        (the rail clips horizontally and has no bar), so a combo sizes to its shown text, never to its widest item."""
+        for combo in host.findChildren(QComboBox):
+            combo.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon)
+            combo.setMinimumContentsLength(1)
+            policy = combo.sizePolicy()
+            policy.setHorizontalPolicy(QSizePolicy.Policy.Ignored)
+            combo.setSizePolicy(policy)
 
     def _add_face_params(self, layout, node_id: int, node, params: dict) -> None:
         """Detect face mask: the single method selector replaces ``mask_region``; ``person`` follows it."""

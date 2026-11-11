@@ -142,6 +142,14 @@ def edit_lora_selection(
     empty = editor.loraSelectionEmpty
     suggestions = suggestions or {}
     families = families or {}
+    names = list(dict.fromkeys([*candidates, *(item.identifier for item in selected)]))
+    taken = [_display_label(name) for name in names]
+
+    def shown(name: str) -> str:
+        """The row's name: ShortName[Tag], with the filename added where two files would read the same."""
+        label = _display_label(name)
+        return f"{label} ({name})" if taken.count(label) > 1 else label
+
     weights: dict[str, float] = {}
     extra: dict[str, list[float]] = {}  # multi_weight: the weights collected per LoRA
     rows: dict[str, QWidget] = {}
@@ -176,7 +184,7 @@ def edit_lora_selection(
             values = extra.get(name)
             weights_for_name = values if values else [weights[name]]
             values_text = ", ".join(format_weight(v) for v in weights_for_name)
-            lines.append(f"{index}. {_display_label(name)} @ {values_text}")
+            lines.append(f"{index}. {shown(name)} @ {values_text}")
         editor.loraSelectionOrderSummary.setText("\n".join(lines) if lines else "No LoRAs selected")
 
     def update_count() -> None:
@@ -190,7 +198,7 @@ def edit_lora_selection(
         row.setProperty("identifier", name)
         check, slider, label = row.loraSelectionCheck, row.loraSelectionSlider, row.loraSelectionWeight
         family = families.get(name, "Unknown")
-        check.setText(f"{_display_label(name)} · {family}")
+        check.setText(f"{shown(name)} · {family}")
         check.setChecked(checked)
         check.setAccessibleName(f"Use {_display_label(name)}, family {family}")
         suggestion = suggestions.get(name)
