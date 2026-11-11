@@ -261,6 +261,7 @@ class QueuePage:
         self._choices = self._composer_choices
         self._reuse_hook = reuse_hook
         self._draft = None  # immutable request/backend/receipts snapshot; Generate is only an explicit copy source
+        self._draft_choices: dict = {}  # initial inventory suggestions, not a live view of later Generate edits
         self._draft_job = None
         self._template_cap = False  # a loaded recipe's cap is local authoring state, never the shared cloud default
         self._authoring_reconstructed = False
@@ -1570,6 +1571,10 @@ class QueuePage:
 
     def _set_draft(self, request, name, endpoint, asset_ids, job) -> None:
         self._draft = request, name, endpoint, tuple(asset_ids)
+        # Generate is an explicit one-way source, including its offered LoRA/model choices.
+        # Keeping these plain dict/list snapshots avoids changing an existing draft when
+        # Generate changes checkpoint, key or inventory.
+        self._draft_choices = self._live_choices()
         self._draft_job = job
         edit = self.page.composerPromptEdit
         edit.blockSignals(True)
@@ -1577,10 +1582,10 @@ class QueuePage:
         edit.blockSignals(False)
 
     def _composer_choices(self) -> dict:
-        choices = self._live_choices()
         if self._draft is None:
-            return choices
+            return self._live_choices()
         request, name, endpoint, _ = self._draft
+        choices = self._draft_choices
         if self._backend() != (name, endpoint):
             # Inventory and account-bound receipt choices cannot migrate to a different captured backend.
             choices = {
@@ -1589,8 +1594,18 @@ class QueuePage:
                 "loras": {item.identifier: item.weight for item in request.loras},
                 "receipts": {},
             }
+        # Keep exact, imported or now-unlisted choices visible for editing the draft;
+        # their presence here does not prove provider availability or authorize uploads.
+        models = list(choices.get("models", ()))
+        if request.model_id not in models:
+            models.append(request.model_id)
+        loras = dict(choices.get("loras", {}))
+        for item in request.loras:
+            loras.setdefault(item.identifier, item.weight)
         return {
             **choices,
+            "models": models,
+            "loras": loras,
             "prompt": self.page.composerPromptEdit.toPlainText(),
             "size": f"{request.width_px}x{request.height_px}",
         }
@@ -1959,11 +1974,12 @@ class QueuePage:
         if self._plan_form().variation != "Off" and not self._runner.closed:
             self._preview_in_background(request)
             return
-        plan = self._plan_for(request)
-        if plan is None:
+        planned = self._plan_for(request)
+        if planned is None:
             self._show_summary(request, None, "—", "—")
             return
-        self._summarize(request, plan, self.plan_model.rowCount())
+        plan, table = planned
+        self._summarize(request, plan, table.total, table)
 
     @staticmethod
     def _request_key(request):
@@ -2032,9 +2048,9 @@ class QueuePage:
         plan, table = result
         self._show_table(table)
         self._show(self.page.planCountLabel, "ok", summary_text(table))
-        self._summarize(request, plan, table.total)
+        self._summarize(request, plan, table.total, table)
 
-    def _summarize(self, request, plan: Plan, total: int) -> None:
+    def _summarize(self, request, plan: Plan, total: int, table: PlanTable) -> None:
         varies = (
             ", ".join(_dimension_text(name, len(values)) for name, values in plan.dimensions if len(values) > 1)
             or "Nothing"
@@ -2046,14 +2062,15 @@ class QueuePage:
             if any(name == "seed" for name, _ in plan.dimensions)
             else "fixed"
         )
-        sets = dict(plan.dimensions).get("loras")
-        self._show_summary(
-            request,
-            total,
-            varies,
-            sentence(SEED_POLICY_TEXT[policy]),
-            loras=None if sets is None else f"{len(sets)} LoRA set{'s' if len(sets) != 1 else ''}, per item",
+        stacks = tuple(dict.fromkeys(table.lora_stacks))
+        loras = (
+            ("None" if stacks[0] == "none" else stacks[0])
+            if len(stacks) == 1
+            else f"Varies by item ({len(stacks)} LoRA combinations); see preview"
+            if stacks
+            else None
         )
+        self._show_summary(request, total, varies, sentence(SEED_POLICY_TEXT[policy]), loras=loras)
 
     def _show_summary(self, request, count: int | None, varies: str, seeds: str, *, loras: str | None = None) -> None:
         """The right column while composing: what the queue being built will be, before anything is saved."""
@@ -2117,8 +2134,14 @@ class QueuePage:
             request, name, endpoint, asset_ids = (
                 self._request_source() if quick and count is not None else self._composer_request()
             )
-            if not (quick and count is not None) and self.templates.loaded is not None:
-                asset_ids = self.templates.validate_use(request, name, endpoint)
+            if not (quick and count is not None):
+                if (name, endpoint) != self._backend():
+                    raise ValidationError(
+                        "The connection changed since this Queue draft was captured. "
+                        "Use Generate settings or reload a template for the current backend before creating a queue."
+                    )
+                if self.templates.loaded is not None:
+                    asset_ids = self.templates.validate_use(request, name, endpoint)
         except ValidationError as exc:
             # From another tab the marked field is out of sight, so say where it is.
             report(Presentation("error", "Queue not created", f"On Generate: {exc}" if quick else str(exc)))
@@ -2128,11 +2151,12 @@ class QueuePage:
             if self._plan_form().variation != "Off":
                 resolving = self._plan_inputs(request)  # prompt sampling runs on the worker, with the creation
             else:
-                plan = self._plan_for(request)
-                if plan is None:
+                planned = self._plan_for(request)
+                if planned is None:
                     error = self.page.planCountLabel.text()
                     report(Presentation("error", "Queue not created", error))
                     return
+                plan, _table = planned
         source_form = PlanForm("Repeat") if quick and count is not None else self._plan_form()
         count, cap = count or self.page.queueCountSpinBox.value(), self.page.newQueueCapSpinBox.value()
         backend = {"name": name, "endpoint": endpoint, "scenario": "success", **self._simulation()}
@@ -2517,20 +2541,34 @@ class QueuePage:
         up_next: bool = False,
         composer_source=None,
     ):
-        request = await bind_prepared(self._state, backend["name"], request, asset_ids)
         receipts = ()
-        dimensions = dict(plan.dimensions) if plan is not None else {}
-        sets = dimensions.get("loras")
-        weighted = [name.partition(".")[2] for name in dimensions if name.startswith("lora_weight.")]  # chip order
-        if (sets or weighted) and backend["name"] == "cloud":
-            # LoRA sets and weights may name custom cloud LoRAs that are not on Generate: bind their receipts too.
-            named = {identifier for chosen in sets or () for identifier, _ in chosen} | set(weighted)
-            named -= {x.identifier for x in request.loras}
-            # The newest receipt of each name: the composer's remembered receipt can be older than a LoRA prepared
-            # again under the same name, and a name without a receipt is sent without its LoRA (#361).
-            candidates = await script_asset_choices(self._state, "cloud")
-            receipts = tuple(item for item in candidates if item.identifier in named)
-        request = self._with_weighted_loras(request, weighted)
+        if plan is None:
+            # A simple Repeat preserves the explicit Generate/Queue receipt selection.
+            request = await bind_prepared(self._state, backend["name"], request, asset_ids)
+        else:
+            dimensions = dict(plan.dimensions)
+            sets = dimensions.get("loras")
+            weighted = [name.partition(".")[2] for name in dimensions if name.startswith("lora_weight.")]
+            request = self._with_weighted_loras(request, weighted)
+            # Resolve only the receipts used by effective Pair/Cross items. A removed
+            # Generate LoRA must not block a C/None plan through an unrelated stale receipt.
+            request = replace(
+                request,
+                prepared_assets=(),
+                resolution_evidence=tuple(pair for pair in request.resolution_evidence if pair[0] != "prepared_assets"),
+            )
+            if backend["name"] == "cloud":
+                # LoRA sets replace the draft; weight sweeps add to its fixed LoRAs.
+                names = (
+                    {identifier for chosen in sets for identifier, _ in chosen}
+                    if sets is not None
+                    else {item.identifier for item in request.loras}
+                )
+                # Read the latest locally confirmed receipt for each effective name,
+                # without binding an unused receipt or contacting DT+ before Start.
+                if names:
+                    candidates = await script_asset_choices(self._state, "cloud")
+                    receipts = tuple(item for item in candidates if item.identifier in names)
         if job is not None:
             # An Inpaint edit: stage the prepared source and mask once; nothing is sent until Start.
             selection = await asyncio.to_thread(
@@ -2630,12 +2668,22 @@ class QueuePage:
 
     def _show_table(self, table: PlanTable) -> None:
         self.plan_model.clear()
-        self.plan_model.setHorizontalHeaderLabels([self._column_title(name) for name in table.columns])
-        for column, name in enumerate(table.columns):
-            self.plan_model.setHeaderData(column, Qt.Orientation.Horizontal, name, Qt.ItemDataRole.ToolTipRole)
+        # The planner provides each item's full effective stack; fixed LoRAs must not
+        # disappear from the preview just because only another LoRA's weight varies.
+        show_stack = "loras" not in table.columns and any(stack != "none" for stack in table.lora_stacks)
+        columns = (*table.columns, *(("Effective LoRAs",) if show_stack else ()))
+        self.plan_model.setHorizontalHeaderLabels([self._column_title(name) for name in columns])
+        for column, name in enumerate(columns):
+            self.plan_model.setHeaderData(
+                column,
+                Qt.Orientation.Horizontal,
+                "All effective LoRAs and weights" if name == "Effective LoRAs" else name,
+                Qt.ItemDataRole.ToolTipRole,
+            )
         prompt_column = table.columns.index("prompt") if "prompt" in table.columns else None
         for number, row in enumerate(table.rows):
-            cells = [QStandardItem(cell) for cell in row]
+            values = (*row, table.lora_stacks[number]) if show_stack else row
+            cells = [QStandardItem(cell) for cell in values]
             for item in cells:
                 item.setToolTip(item.text())  # the cells elide to the panel width
             if prompt_column is not None and number < len(table.prompt_runs):
@@ -2651,7 +2699,7 @@ class QueuePage:
         header = view.horizontalHeader()
         header.setMinimumSectionSize(40)
         header.setTextElideMode(Qt.TextElideMode.ElideRight)
-        for column in range(len(table.columns)):
+        for column in range(len(columns)):
             header.setSectionResizeMode(
                 column,
                 header.ResizeMode.ResizeToContents if column == 0 else header.ResizeMode.Stretch,
@@ -2673,7 +2721,7 @@ class QueuePage:
         view.setMaximumHeight(height)
         self._sync_preview_table_visibility()
 
-    def _plan_for(self, request) -> Plan | None:
+    def _plan_for(self, request) -> tuple[Plan, PlanTable] | None:
         """Build and fully validate the plan against the form's request; shows the preview table.
 
         Wildcard files are read only when the template names them, and again only when they change on disk.
@@ -2686,7 +2734,7 @@ class QueuePage:
             return None
         self._show_table(table)
         self._show(self.page.planCountLabel, "ok", summary_text(table))
-        return plan
+        return plan, table
 
     def _plan_inputs(self, request) -> tuple:
         """Everything the pure planning step needs, read on the GUI thread so a worker can run it."""
