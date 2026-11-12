@@ -191,6 +191,17 @@ class PrepareBatchEditor:
         """Whether the main window still owns this editor's widget."""
         return isValid(self.form) and self.panel._editor is self.form
 
+    def _name_hint(self, row: _Row) -> str:
+        """Advisory only: architectures whose label shares a word with the filename. Never selected for the user."""
+        name = row.path.stem.casefold()
+        found = []
+        for version in self.architectures:
+            label = FAMILY_LABELS.get(version, version)
+            words = [w for w in re.split(r"[^a-z0-9]+", label.casefold()) if len(w) >= 4]
+            if words and words[0] in name:
+                found.append(label)
+        return ", ".join(found[:3])
+
     def set_identity(self, path: Path, sha256: str | None, size: int | None, accepted: str | None = None) -> None:
         """Attach the background content hash (``None`` when unreadable) and any accepted managed filename."""
         for row in self.rows:
@@ -287,7 +298,7 @@ class PrepareBatchEditor:
         for index, (row, result) in enumerate(zip(self.rows, evidence, strict=True)):
             row.detected = result.family
             row.invalid = invalid[index] if invalid else None
-            row.widget.prepareFileEvidence.setText("Detected from file" if result.family else "Unknown inspection")
+            row.widget.prepareFileEvidence.setText("Detected from file" if result.family else "Family not detected")
             combo = row.widget.prepareArchitecture
             combo.clear()
             combo.addItem("Select architecture…", None)
@@ -383,7 +394,7 @@ class PrepareBatchEditor:
                     if row.manual_family
                     else "Detected from file"
                     if row.detected
-                    else "Unknown inspection"
+                    else "Family not detected"
                 )
                 family_note = row.widget.prepareArchitectureSource
                 for control in (
@@ -401,7 +412,8 @@ class PrepareBatchEditor:
                 elif family:
                     if row.manual_family:
                         family_note.setText(
-                            "User declared · file differs"
+                            f"You chose {FAMILY_LABELS.get(family, family)} · file detected "
+                            f"{FAMILY_LABELS.get(row.detected, row.detected)}"
                             if row.detected and row.detected != family
                             else "User declared · unverified"
                         )
@@ -410,7 +422,10 @@ class PrepareBatchEditor:
                 elif row.detected:
                     family_note.setText("Detected; backend support unverified")
                 else:
-                    family_note.setText("Required · not file-detected")
+                    hint = self._name_hint(row)
+                    family_note.setText(
+                        "Required · family not detected, choose it" + (f" · name suggests {hint}" if hint else "")
+                    )
                 family_note.setProperty(
                     "state", "error" if (not family or row.invalid) and self.inspected else "unknown"
                 )
