@@ -133,7 +133,9 @@ class PrepareBatchEditor:
         paths: Sequence[str],
         *,
         on_prepare: Callable[[list[tuple[Path, LoraPrepareMetadata]]], None],
+        on_inspect_progress: Callable[[float | None, int, int], None] | None = None,
     ):
+        self._on_inspect_progress = on_inspect_progress
         self.parent = parent
         self.hash_cancelled = threading.Event()
         self.read_bytes: dict[Path, int] = {}  # written by the background hash thread, read by the GUI timer
@@ -202,17 +204,10 @@ class PrepareBatchEditor:
         """Whether the main window still owns this editor's widget."""
         return isValid(self.form) and self.panel._editor is self.form
 
-    def set_fraction(self, fraction: float | None) -> None:
-        """The one progress bar of this editor, shared by inspection and the Prepare run (``None`` = unknown)."""
-        if not self.active():
-            return
-        bar = self.form.preparePhaseBar
-        if fraction is None:
-            bar.setRange(0, 0)
-        else:
-            bar.setRange(0, 1000)
-            bar.setValue(int(max(0.0, min(1.0, fraction)) * 1000))
-        bar.show()
+    def _report(self, fraction: float | None, finished: int, total: int) -> None:
+        """Hand the overall inspection state to the panel, which shows it in the shared bottom activity bar."""
+        if self._on_inspect_progress is not None:
+            self._on_inspect_progress(fraction, finished, total)
 
     def note_read(self, path: Path, done: int) -> None:
         """Called from the hash thread: remember bytes read so far (a plain int write, read by the GUI timer)."""
@@ -222,11 +217,11 @@ class PrepareBatchEditor:
         """Show real inspection progress while files are still being read: overall bar, count, per-file percent."""
         if not self.active():
             self._tick_timer.stop()
+            self._report(None, 0, len(self.rows))
             return
         pending = [row for row in self.rows if row.hashing]
         if self.inspected and not pending:
-            if not any(row.admitted and row.outcome is None for row in self.rows):
-                self.form.preparePhaseBar.hide()  # a Prepare run may already own the bar
+            self._report(None, 0, len(self.rows))
             self.form.prepareFileCount.setText(f"{len(self.rows)} selected files")
             self._tick_timer.stop()
             return
@@ -235,7 +230,7 @@ class PrepareBatchEditor:
             row.total_bytes if not row.hashing else min(self.read_bytes.get(row.path, 0), row.total_bytes)
             for row in self.rows
         )
-        self.set_fraction(done / total)
+        self._report(done / total, len(self.rows) - len(pending), len(self.rows))
         finished = len(self.rows) - len(pending)
         self.form.prepareFileCount.setText(
             f"{len(self.rows)} selected files · inspecting {finished}/{len(self.rows)}"
@@ -286,7 +281,6 @@ class PrepareBatchEditor:
     def set_summary(self, text: str) -> None:
         """One-line run result shown inside the editor while it stays open."""
         if self.active():
-            self.form.preparePhaseBar.hide()
             self.form.prepareFileCount.setText(f"{len(self.rows)} selected files · {text}")
 
     def cancel_hashing(self) -> None:
@@ -321,6 +315,7 @@ class PrepareBatchEditor:
     def close(self) -> None:
         """Dismiss this editor only while it still owns the panel; never touch an unrelated consent or notice."""
         self.cancel_hashing()
+        self._report(None, 0, len(self.rows))
         if self.active():
             self.panel.dismiss()
 

@@ -102,6 +102,7 @@ class LoraAssetPanel:
         self._prepare_editor_context = None
         self._prepare_index = 0
         self._prepare_counts = {"confirmed": 0, "failed": 0, "unresolved": 0}
+        self._inspecting = False
         self._prepare_final: dict[str, str] = {}  # last outcome per distinct file in this run
         self._prepare_issues: list[str] = []
         self._ownership_revision = 0
@@ -493,7 +494,9 @@ class LoraAssetPanel:
         paths = tuple(dict.fromkeys(os.path.abspath(path) for path in chosen))
         if self._prepare_editor is not None:
             self._prepare_editor.cancel_hashing()  # a replaced editor must not keep reading files
-        self._prepare_editor = PrepareBatchEditor(self.page, paths, on_prepare=self._authorize_prepare)
+        self._prepare_editor = PrepareBatchEditor(
+            self.page, paths, on_prepare=self._authorize_prepare, on_inspect_progress=self._inspect_progress
+        )
         editor = self._prepare_editor
         self._prepare_editor_context = (backend, revision, self._saved())
         # The provider's current LoRA inventory is the only authority for selectable
@@ -504,6 +507,27 @@ class LoraAssetPanel:
             lambda result, failure: self._inspected_prepare_editor(editor, eligible, result, failure),
         )
         self._hash_next(editor, paths, 0)
+
+    def _inspect_progress(self, fraction: float | None, finished: int, total: int) -> None:
+        """Inspection of the selected files in the same bottom activity bar the Prepare run uses (one bar)."""
+        strip = activity_strip(self.page)
+        key = "asset-inspect"
+        if fraction is None:
+            if self._inspecting:
+                self._inspecting = False
+                strip.finish(key)
+            return
+        if not self._inspecting:
+            self._inspecting = True
+            strip.start(key, "Inspecting LoRA files", detail=f"Reading {total} selected file(s); nothing is uploaded.")
+        strip.update(
+            key,
+            int(fraction * 1000),
+            1000,
+            detail=f"Inspecting {finished} of {total} file(s); nothing is uploaded.",
+            count=f"{finished}/{total}",
+            stage="inspecting",
+        )
 
     def _hash_next(self, editor, paths: tuple[str, ...], index: int) -> None:
         """Hash the selected files one after another in the background; Prepare reuses the remembered digests."""
