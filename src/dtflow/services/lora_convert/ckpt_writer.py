@@ -62,6 +62,7 @@ def write_ckpt(path: Path, tensors: dict[str, np.ndarray], ctx: ConversionContex
             )
 
     try:
+        path.parent.mkdir(parents=True, exist_ok=True)
         # Unique temp name: two conversions to the same destination must not share (and delete) one file.
         handle, tmp_name = tempfile.mkstemp(prefix=f"{path.name}.", suffix=".part", dir=path.parent)
         os.close(handle)

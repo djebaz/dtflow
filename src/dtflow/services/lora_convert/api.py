@@ -83,8 +83,13 @@ def _convert(request: ConversionRequest, ctx: ConversionContext) -> ConversionRe
     # Cheap checks before any work; write_ckpt checks the name again at the rename.
     if request.destination.exists():
         raise DestinationError(f"{request.destination} already exists; refusing to overwrite.")
-    if not request.destination.parent.is_dir():
-        raise DestinationError(f"The folder {request.destination.parent} does not exist; create it first.")
+    # A missing folder is created at write time (after the conversion succeeded); here only make sure
+    # it can be: the nearest existing ancestor must be a directory.
+    ancestor = request.destination.parent
+    while not ancestor.exists() and ancestor != ancestor.parent:
+        ancestor = ancestor.parent
+    if not ancestor.is_dir():
+        raise DestinationError(f"Cannot create the folder {request.destination.parent}: {ancestor} is not a folder.")
     check_numpy()
     ctx.stage("reading")
     with SafeTensors(request.source) as st:

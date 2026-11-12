@@ -27,6 +27,21 @@ _KREA2_BLOCK = re.compile(r"^(?:transformer_)?blocks_(\d+)_(attn|ff|mlp)_(\w+)$"
 _KREA2_FUSION = re.compile(r"^(?:text_fusion|txtfusion)_(layerwise|refiner)_blocks_(\d+)_(attn|ff|mlp)_(\w+)$")
 
 
+# Non-block layers, normalized source module -> Draw Things names (checked against the Swift importer).
+_KREA2_FIXED: dict[str, tuple[str, ...]] = {
+    "img_in": ("t-img_in-0-0",),
+    "final_layer_linear": ("t-final_linear-0-0",),
+    "last_linear": ("t-final_linear-0-0",),
+    "text_fusion_projector": ("t-text_fusion_projector-0-0",),
+    "txtfusion_projector": ("t-text_fusion_projector-0-0",),
+    "time_embed_linear_1": ("t-time_embed_linear_1-0-0",),
+    "time_embed_linear_2": ("t-time_embed_linear_2-0-0",),
+    "time_mod_proj": tuple(f"t-time_mod_proj_{i}-0-0" for i in range(6)),
+    "txt_in_linear_1": ("t-linear_1-0-0",),
+    "txt_in_linear_2": ("t-linear_2-0-0",),
+}
+
+
 def _krea2_leaf(kind: str, leaf: str) -> str | None:
     if kind == "attn":
         return _KREA2_ATTN.get(leaf)
@@ -38,9 +53,13 @@ def resolve_krea2(module: str) -> Target | None:
 
     Parameter names follow the Swift model: ``t-<layer name>-<block index>-0`` where the
     layer name carries the group prefix (``text_fusion_layerwise_attn_to_q`` and so on).
-    The time embedding, text projection and image in/out layers live in the "fixed"
-    model and are not handled here.
+    Also the layers outside the blocks (time embedding, text projection, image in/out, text input),
+    whose names and the six way split of ``time_mod_proj`` were taken from the Swift importer's
+    output (``lora-convert`` oracle), not from the source: ``t-<layer>-0-0``.
     """
+    fixed = _KREA2_FIXED.get(module)
+    if fixed is not None:
+        return Target("dit", fixed)
     match = _KREA2_BLOCK.match(module)
     if match:
         index, kind, leaf = int(match.group(1)), match.group(2), match.group(3)
