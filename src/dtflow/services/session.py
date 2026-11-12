@@ -894,6 +894,18 @@ async def prepare_asset(
         return record
 
 
+async def accepted_managed_identifier(state: Path, sha256: str, size: int) -> str | None:
+    """The managed filename this exact content already has in the local registry (no provider call)."""
+    registry = AssetRegistry(state)
+    await registry.open()
+    try:
+        saved = await registry.lora_metadata(sha256, size)
+    finally:
+        await registry.aclose()
+    accepted = saved.get("managed_identifier") if saved else None
+    return accepted if isinstance(accepted, str) else None
+
+
 async def occupied_managed_lora_names(state: Path) -> tuple[ManagedName, ...]:
     """Read content-scoped accepted managed names once per batch, without provider calls.
 

@@ -66,6 +66,9 @@ class _Row:
     failure: str | None = None
     sha256: str | None = None
     size: int | None = None
+    phase: str | None = None  # live "Uploading 43%" style text while this row is being prepared
+    accepted: str | None = None  # managed filename this exact content already has in the local registry
+    accepted_conflict: bool = False
     hashing: bool = True  # background content hash still running (cleared when it ends, even if unreadable)
 
 
@@ -179,13 +182,30 @@ class PrepareBatchEditor:
         """Whether the main window still owns this editor's widget."""
         return isValid(self.form) and self.panel._editor is self.form
 
-    def set_identity(self, path: Path, sha256: str | None, size: int | None) -> None:
-        """Attach the background content hash (``None`` when unreadable) so names reuse accepted ones."""
+    def set_identity(self, path: Path, sha256: str | None, size: int | None, accepted: str | None = None) -> None:
+        """Attach the background content hash (``None`` when unreadable) and any accepted managed filename."""
         for row in self.rows:
             if row.path == path:
-                row.sha256, row.size, row.hashing = sha256, size, False
+                row.sha256, row.size, row.accepted, row.hashing = sha256, size, accepted, False
                 break
         self.refresh()
+
+    def progress(self, path: Path, text: str | None, summary: str | None = None) -> None:
+        """Show the live phase of one row (``None`` clears it) and an overall line next to the file count."""
+        if not self.active():
+            return
+        for row in self.rows:
+            if row.path == path:
+                row.phase = text
+                break
+        if summary is not None:
+            self.form.prepareFileCount.setText(f"{len(self.rows)} selected files · {summary}")
+        self.refresh()
+
+    def set_summary(self, text: str) -> None:
+        """One-line run result shown inside the editor while it stays open."""
+        if self.active():
+            self.form.prepareFileCount.setText(f"{len(self.rows)} selected files · {text}")
 
     def cancel_hashing(self) -> None:
         """Stop the background reads (editor closed, dismissed or replaced)."""
@@ -296,24 +316,36 @@ class PrepareBatchEditor:
             ready = 0
             assigned = 0
             for row, allocation in zip(self.rows, allocations, strict=True):
+                row.accepted_conflict = False
                 family = row.widget.prepareArchitecture.currentData()
-                if family:
+                if family and not row.invalid:
                     assigned += 1
                 if allocation and allocation.short_name and not row.manual_name and not row.admitted:
                     if allocation.short_name != row.widget.prepareShortName.text():
                         row.widget.prepareShortName.setText(allocation.short_name)
                 if row.admitted:
-                    message = row.outcome or "Preparing…"
+                    message = row.outcome or row.phase or "Preparing…"
                     state = "ok" if message in ("Ready", "Prepared") else "error" if message == "Failed" else "warning"
                 elif not self.inspected:
                     message, state = "Inspecting file…", "unknown"
                 elif row.invalid:
-                    message, state = "Not a LoRA", "error"
+                    message, state = "Not a valid LoRA", "error"
                 elif row.hashing:
                     # The content hash decides whether the file already has an accepted name; wait for it.
                     message, state = "Reading file…", "unknown"
                 elif allocation is None or not family:
                     message, state = "Needs architecture", "warning"
+                elif (
+                    row.accepted
+                    and not row.reprepare
+                    and allocation.filename
+                    and allocation.conflict is None
+                    and allocation.filename.casefold() != row.accepted.casefold()
+                ):
+                    # Known before Prepare: this content already has another accepted name. Re-Prepare is the
+                    # explicit choice to rename it; until then the row is not sent (it would be refused).
+                    message, state = "Already accepted under another name", "warning"
+                    row.accepted_conflict = True
                 elif allocation.conflict is not None:
                     message, state = (
                         "Name conflict" if "collision" in allocation.conflict else "Check short name",
@@ -324,7 +356,11 @@ class PrepareBatchEditor:
                     ready += 1
 
                 row.widget.prepareRowStatus.setText(message)
-                row.widget.prepareRowStatus.setToolTip(row.invalid or row.failure or "")
+                row.widget.prepareRowStatus.setToolTip(
+                    row.invalid
+                    or row.failure
+                    or (f"Accepted filename: {row.accepted}" if row.accepted_conflict else "")
+                )
                 row.widget.prepareRowStatus.setProperty("state", state)
                 row.widget.prepareStatusDot.setProperty("state", state)
                 for label in (row.widget.prepareRowStatus, row.widget.prepareStatusDot):
@@ -377,18 +413,35 @@ class PrepareBatchEditor:
                 row.widget.prepareShortName.setProperty("invalid", name_error)
                 row.widget.prepareShortName.style().unpolish(row.widget.prepareShortName)
                 row.widget.prepareShortName.style().polish(row.widget.prepareShortName)
-                row.widget.prepareReprepare.setVisible(row.admitted and row.outcome == "Failed" and row.can_reprepare)
+                row.widget.prepareReprepare.setVisible(
+                    (row.admitted and row.outcome == "Failed" and row.can_reprepare) or row.accepted_conflict
+                )
+                if row.accepted_conflict:
+                    row.widget.prepareReprepare.setToolTip(
+                        f"This content is already accepted as {row.accepted}. Re-Prepare renames it to the name shown "
+                        "here: a new filename and a new DT+ upload; earlier receipts keep the old name. "
+                        "Nothing is sent until you press the Prepare button."
+                    )
                 row.widget.setProperty("checkedSelection", row is self.selected)
                 row.widget.style().unpolish(row.widget)
                 row.widget.style().polish(row.widget)
 
+            valid = [row for row in self.rows if not row.invalid]
+            invalid = len(self.rows) - len(valid)
+            prepared = sum(row.outcome == "Prepared" for row in self.rows)
+            running = [row for row in self.rows if row.admitted and row.outcome is None]
             self.form.prepareSelectedCount.setText(f"Selected: {len(self.rows)}")
-            self.form.prepareAssignedCount.setText(f"Architectures assigned: {assigned}/{len(self.rows)}")
-            self.form.prepareReadyCount.setText(f"Ready: {ready}/{len(self.rows)}")
-            button = self.panel.form.inlineEditorAcceptButton
-            button.setText(
-                f"Prepare {ready} ready LoRA{'s' if ready != 1 else ''}" if self.inspected else "Inspecting files…"
+            self.form.prepareAssignedCount.setText(f"Architectures assigned: {assigned}/{len(valid)}")
+            self.form.prepareReadyCount.setText(
+                f"Prepared: {prepared} · Ready: {ready}" + (f" · Not valid: {invalid}" if invalid else "")
             )
+            button = self.panel.form.inlineEditorAcceptButton
+            if not self.inspected:
+                button.setText("Inspecting files…")
+            elif running and ready == 0:
+                button.setText(f"Preparing… {len(self.rows) - len(running) - invalid}/{len(self.rows) - invalid}")
+            else:
+                button.setText(f"Prepare {ready} ready LoRA{'s' if ready != 1 else ''}")
             button.setEnabled(ready > 0)
             if self.selected is not None:
                 index = self.rows.index(self.selected)
@@ -465,7 +518,13 @@ class PrepareBatchEditor:
 
     def _reprepare(self, row: _Row):
         """Unlock one failed row for editing; it is sent again only by the next explicit Prepare action."""
-        if not self.active() or not row.admitted or row.outcome != "Failed" or not row.can_reprepare:
+        if not self.active():
+            return
+        if not row.admitted and row.accepted_conflict:
+            row.reprepare = True  # renames the accepted name on the next Prepare
+            self.refresh()
+            return
+        if not row.admitted or row.outcome != "Failed" or not row.can_reprepare:
             return
         row.admitted, row.outcome, row.reprepare, row.checked = False, None, True, False
         for control in (

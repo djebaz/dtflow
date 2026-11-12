@@ -39,6 +39,7 @@ from dtflow.services.lora_digest import DigestCancelled, hash_file
 from dtflow.services.lora_family import detect_lora_family, validate_converted_lora
 from dtflow.services.lora_naming import LoraPrepareMetadata
 from dtflow.services.session import (
+    accepted_managed_identifier,
     check_loras,
     list_assets,
     occupied_managed_lora_names,
@@ -514,14 +515,15 @@ class LoraAssetPanel:
         path = Path(paths[index])
 
         async def hashing():
-            return await asyncio.to_thread(hash_file, path, editor.hash_cancelled.is_set)
+            sha, size = await asyncio.to_thread(hash_file, path, editor.hash_cancelled.is_set)
+            return sha, size, await accepted_managed_identifier(self._state, sha, size)
 
         def done(result, failure) -> None:
             if isinstance(failure, DigestCancelled) or self._runner.closed:
                 return
             if editor.active():
-                sha, size = result if failure is None else (None, None)
-                editor.set_identity(path, sha, size)
+                sha, size, accepted = result if failure is None else (None, None, None)
+                editor.set_identity(path, sha, size, accepted)
             self._hash_next(editor, paths, index + 1)
 
         self._runner.submit(hashing(), done)
@@ -771,8 +773,12 @@ class LoraAssetPanel:
             parts.append(f"{unstarted} unstarted")
         detail = ", ".join(parts) + ". No automatic retries."
         if editor_open:
-            # One surface at a time: the editor rows carry the per-file reasons.
-            state = "partial"
+            # One surface at a time: the open editor shows the result, so the bar job just ends quietly.
+            self._prepare_editor.set_summary(detail)
+            activity_strip(self.page).finish("asset")
+            self._show(self.page.assetStatusLabel, Presentation("warning", "Cloud preparation finished", detail))
+            self.refresh_assets()
+            return
         else:
             if self._prepare_issues:
                 detail += "\n" + "\n".join(self._prepare_issues)
@@ -800,7 +806,8 @@ class LoraAssetPanel:
         editor_open = self._prepare_editor is not None and self._prepare_editor.active()
         if editor_open:
             # One surface at a time: the open editor shows the row's reason and Re-Prepare.
-            strip.complete("asset", presentation.headline, "", "partial")
+            self._prepare_editor.set_summary(presentation.headline)
+            strip.finish("asset")
         else:
             strip.complete(
                 "asset",

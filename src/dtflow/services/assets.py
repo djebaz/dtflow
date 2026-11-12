@@ -18,6 +18,7 @@ from dataclasses import replace
 from typing import Protocol
 
 from dtflow.core.models import (
+    NameAlreadyAcceptedError,
     AssetBackend,
     AssetContent,
     AssetNegotiation,
@@ -191,6 +192,14 @@ class AssetService:
             identifier = managed_name = selected_identifier
         stat, digest = await asyncio.to_thread(partial(_observe, cached=True), path)
         await asyncio.to_thread(validate_converted_lora, path)
+        if metadata is not None and not metadata.replace_existing:
+            # Refuse a changed name before any copy or upload, so nothing is retained under the refused name.
+            saved = await self.registry.lora_metadata(digest, stat.st_size)
+            accepted = saved.get("managed_identifier") if saved else None
+            if isinstance(accepted, str) and accepted != identifier:
+                raise NameAlreadyAcceptedError(
+                    "This content already has an accepted managed filename. Choose explicit Re-Prepare to change it."
+                )
         # Decide the technical filename before retaining bytes. Never create an
         # original-name copy merely to link it under the accepted name later.
         detected = await asyncio.to_thread(detect_lora_family, path)
