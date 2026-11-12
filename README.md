@@ -96,6 +96,7 @@ See the [CLI reference](devdocs/guides/cli.md) for backends, options and example
 - [Workflows](devdocs/guides/workflows.md): graph authoring, saved files, branch execution and model-download consent
 - [Scripts](devdocs/guides/scripts.md): Inspect > Setup > Run Script, optional bounded parallel batches and LoRA readiness
 - [Portable Krea2 mixer](devdocs/guides/krea2-mixer.md): cached LoRA discovery, single-form Setup, saved settings and explicit chunks
+- [LoRA conversion and CKPT format](devdocs/guides/lora-ckpt-format.md): Windows safetensors conversion, case-insensitive batch CLI, optional reports and compatibility limits
 - [CLI reference](devdocs/guides/cli.md): automation and development interface
 - [Release notes](devdocs/releases/) and the [release roadmap](devdocs/plans/releases.md)
 
@@ -105,7 +106,7 @@ See the [CLI reference](devdocs/guides/cli.md) for backends, options and example
 
 - [Development tools](devdocs/guides/development.md), [testing](devdocs/guides/testing.md),
   [Windows builds](devdocs/guides/building.md) and [releasing](devdocs/guides/releasing.md)
-- [Architecture](devdocs/architecture/), including the [runtime layout](devdocs/architecture/runtime-layout.md),
+- [Architecture](devdocs/architecture/), including the [LoRA converter](devdocs/architecture/lora-convert.md), [runtime layout](devdocs/architecture/runtime-layout.md),
   [structured diagnostics](devdocs/architecture/structured-diagnostics.md) with its
   [event catalogue](devdocs/architecture/diagnostic-event-schema.md) and
   [JSON Schema](devdocs/schemas/diagnostic-record-v1.schema.json), and

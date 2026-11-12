@@ -81,6 +81,17 @@ Preflight is metadata evidence only: successful generation does not prove a LoRA
 
 The official base/refiner and Kandinsky/SD-v1 exception rules are not pinned yet, so only whole-model LoRAs on a base model are supported.
 
+### Convert safetensors into Draw Things CKPT (source-tree utility)
+
+The integrated converter is currently a **module command**, not a `dtflow lora convert` subcommand. It runs locally, requires the correct source family, and does not upload to DT+:
+
+```powershell
+uv run python -m dtflow.services.lora_convert "C:/LoRAs/example.safetensors" "C:/Converted/example.ckpt" --family krea2
+uv run python -m dtflow.services.lora_convert "C:/LoRAs/*BALL*" "C:/Converted" --family krea2 -w -a
+```
+
+A quoted filename glob searches one directory, ignoring case and admitting only `.safetensors` files; the suffix can be omitted from the pattern. The second command stages explicit replacement of existing outputs and writes a version 2 source/output analysis report in `C:/Converted/reports/`. Without `-a`, batches write compact version 1 reports. Other explicit family choices are `zimage`, `flux1`, `sd1` and `sdxl` (SDXL additionally requires `--experimental`). See [the converter guide](lora-ckpt-format.md#integrated-windows-converter-409) for supported limits. In-app safetensors preparation remains future work (#401).
+
 ## Cloud asset receipts
 
 Use these commands only for an intentionally selected, already-converted Draw Things LoRA file:
