@@ -23,7 +23,14 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 from uuid import uuid4
 
-from dtflow.core.models import PREPARATION_STATES, AssetContent, PreparedAsset, ValidationError
+from dtflow.core.models import (
+    accepted_name_changes,
+    PREPARATION_STATES,
+    AssetContent,
+    NameAlreadyAcceptedError,
+    PreparedAsset,
+    ValidationError,
+)
 from dtflow.persistence import store
 from dtflow.persistence.store import PersistenceError
 
@@ -361,8 +368,8 @@ class AssetRegistry:
                 if effective != lora_metadata.exact_architecture:
                     raise ValidationError("Choose a verified or explicitly declared exact LoRA architecture.")
                 previous = existing["managed_identifier"]
-                if previous is not None and previous != identifier and not lora_metadata.replace_existing:
-                    raise ValidationError(
+                if accepted_name_changes(previous, identifier) and not lora_metadata.replace_existing:
+                    raise NameAlreadyAcceptedError(
                         "This content already has an accepted managed filename. "
                         "Choose explicit Re-Prepare to change it."
                     )
@@ -702,7 +709,7 @@ class AssetRegistry:
             raise ValidationError(str(exc)) from exc
         previous = row["managed_identifier"]
         if previous is not None:
-            if previous != identifier:
+            if accepted_name_changes(previous, identifier):
                 raise ValidationError("The already accepted LoRA identifier cannot change automatically.")
             return False
         if db.execute(
