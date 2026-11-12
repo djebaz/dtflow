@@ -12,6 +12,7 @@ import hashlib
 import json
 import logging
 import os
+import uuid
 import re
 import tempfile
 from dataclasses import dataclass
@@ -79,6 +80,35 @@ class LoraStore:
             raise ValidationError("The retained LoRA index is malformed; nothing was changed.")
         return [item for item in files if isinstance(item, dict)]
 
+    def _read_recovering(self) -> list[dict]:
+        """Read the index under the store lock, first restoring a file a killed case-only rename left half-moved.
+
+        ``.<id>.rename`` is the temporary name of an in-place rename; when the index still names a file that is
+        missing, the temporary one is that file, so it goes back under its indexed name (nothing is lost).
+        """
+        files = self._read()
+        try:
+            leftovers = [p for p in self.directory.glob(".*.rename") if p.is_file()]
+        except OSError:
+            return files
+        for temporary in leftovers:
+            try:
+                size = temporary.stat().st_size
+                owner = next(
+                    (
+                        item
+                        for item in files
+                        if item.get("size") == size and not self._path(item).exists() and item.get("name")
+                    ),
+                    None,
+                )
+                if owner is not None:
+                    os.replace(temporary, self._path(owner))
+                    diagnostic_event(log, "assets.retained_rename_recovered", level=logging.WARNING, data={})
+            except (OSError, ValidationError):
+                continue
+        return files
+
     def _write(self, files: list[dict]) -> None:
         temporary = self.directory / ".index.tmp"
         with temporary.open("w", encoding="utf-8", newline="\n") as handle:
@@ -133,7 +163,7 @@ class LoraStore:
             raise ValidationError("The managed LoRA filename is not portable.")
         handle = self._locked()
         try:
-            files = self._read()
+            files = self._read_recovering()
             matching = next(
                 (item for item in files if item.get("sha256") == sha256 and item.get("size") == size),
                 None,
@@ -227,7 +257,7 @@ class LoraStore:
             raise ValidationError("The accepted LoRA filename is not portable.")
         handle = self._locked()
         try:
-            files = self._read()
+            files = self._read_recovering()
             item = next((row for row in files if (row.get("sha256"), row.get("size")) == (sha256, size)), None)
             if item is None:
                 return None
@@ -236,14 +266,25 @@ class LoraStore:
                 self.verify(RetainedFile(original.name, sha256, size, original))
                 return RetainedFile(original.name, sha256, size, original)
             self.verify(RetainedFile(original.name, sha256, size, original))
-            if original.name.casefold() == accepted_name.casefold():
-                # On case-insensitive filesystems both names refer to one file;
-                # unlinking the old spelling would delete the accepted copy.
-                raise ValidationError("A case-only retained LoRA rename needs explicit handling.")
+            target = self.directory / accepted_name
+            if original.name.casefold() == accepted_name.casefold() and os.path.lexists(target):
+                # Case-insensitive filesystem: both spellings are one file, so linking and unlinking would delete
+                # the only copy. Rename in place through a temporary name instead, then commit the index.
+                if target.is_symlink() or not os.path.samefile(target, original):
+                    raise ValidationError("The accepted LoRA filename is already occupied.")
+                temporary = self.directory / f".{uuid.uuid4().hex}.rename"
+                os.replace(original, temporary)
+                try:
+                    os.replace(temporary, target)
+                except OSError as exc:
+                    os.replace(temporary, original)  # put the original spelling back; nothing is lost
+                    raise ValidationError("Could not rename the retained LoRA; its original copy is intact.") from exc
+                item["name"] = accepted_name
+                self._write(files)
+                return RetainedFile(accepted_name, sha256, size, target)
             for other in files:
                 if other is not item and str(other.get("name", "")).casefold() == accepted_name.casefold():
                     raise ValidationError("Another retained LoRA already uses the accepted filename.")
-            target = self.directory / accepted_name
             if os.path.lexists(target):
                 # A previous interruption may have created the new hard link
                 # before the index commit. Adopt it only when its bytes match.

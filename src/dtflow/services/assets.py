@@ -18,6 +18,8 @@ from dataclasses import replace
 from typing import Protocol
 
 from dtflow.core.models import (
+    accepted_name_changes,
+    NameAlreadyAcceptedError,
     AssetBackend,
     AssetContent,
     AssetNegotiation,
@@ -35,6 +37,9 @@ from dtflow.core.tasks import settle
 from dtflow.diagnostics import api_error_data, cloud_key_data, event as diagnostic_event
 from dtflow.persistence.assets import AssetRegistry, AssetsBusyError, newest_per_name
 from dtflow.persistence.store import PersistenceError
+from functools import partial
+
+from dtflow.services.lora_digest import cached_digest, remember
 from dtflow.services.lora_family import LoraFamily, detect_lora_family, validate_converted_lora
 from dtflow.services.lora_auto_naming import auto_prepare_metadata
 from dtflow.services.lora_naming import LoraPrepareMetadata
@@ -93,12 +98,18 @@ def possible_missing_asset(failure: BackendFailure) -> bool:
     return failure.code in _ASSET_REJECTION_CODES or server_ended_without_result(failure)
 
 
-def _observe(path: Path) -> tuple[os.stat_result, str]:
-    """Hash incrementally (bounded memory) and require the file to be unchanged while it was read."""
+def _observe(path: Path, *, cached: bool = False) -> tuple[os.stat_result, str]:
+    """Hash incrementally (bounded memory) and require the file to be unchanged while it was read.
+
+    ``cached=True`` reuses a digest the editor already computed in the background, valid only while the file's
+    size and mtime are unchanged; any other caller always reads the bytes.
+    """
     try:
         before = path.stat()
         if not path.is_file() or before.st_size < 1:
             raise ValidationError("Asset file must be a non-empty regular file.")
+        if cached and (known := cached_digest(path, before)) is not None:
+            return before, known
         digest, total = hashlib.sha256(), 0
         with path.open("rb") as handle:
             while chunk := handle.read(CHUNK):
@@ -109,6 +120,7 @@ def _observe(path: Path) -> tuple[os.stat_result, str]:
         raise ValidationError("Asset file could not be read.") from exc
     if (before.st_size, before.st_mtime_ns) != (after.st_size, after.st_mtime_ns) or total != before.st_size:
         raise _failure(ErrorCategory.VALIDATION, "asset_changed", "Asset file changed while it was hashed.")
+    remember(path, before, digest.hexdigest())
     return before, digest.hexdigest()
 
 
@@ -179,8 +191,16 @@ class AssetService:
             if identifier is not None and identifier != selected_identifier:
                 raise ValidationError("Prepare identifier disagrees with the selected managed LoRA name.")
             identifier = managed_name = selected_identifier
-        stat, digest = await asyncio.to_thread(_observe, path)
+        stat, digest = await asyncio.to_thread(partial(_observe, cached=True), path)
         await asyncio.to_thread(validate_converted_lora, path)
+        if metadata is not None and not metadata.replace_existing:
+            # Refuse a changed name before any copy or upload, so nothing is retained under the refused name.
+            saved = await self.registry.lora_metadata(digest, stat.st_size)
+            accepted = saved.get("managed_identifier") if saved else None
+            if isinstance(accepted, str) and accepted_name_changes(accepted, identifier):
+                raise NameAlreadyAcceptedError(
+                    "This content already has an accepted managed filename. Choose explicit Re-Prepare to change it."
+                )
         # Decide the technical filename before retaining bytes. Never create an
         # original-name copy merely to link it under the accepted name later.
         detected = await asyncio.to_thread(detect_lora_family, path)

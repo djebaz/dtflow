@@ -16,7 +16,14 @@ from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QListWidgetItem, QWidget
 
 from dtflow.ui.file_dialogs import QFileDialog
-from dtflow.core.models import BackendError, LoRASelection, RemoteOutcome, ResolvedGenerationRequest, ValidationError
+from dtflow.core.models import (
+    BackendError,
+    LoRASelection,
+    NameAlreadyAcceptedError,
+    RemoteOutcome,
+    ResolvedGenerationRequest,
+    ValidationError,
+)
 from dtflow.diagnostics import event as diagnostic_event
 from dtflow.logging_setup import development_mode
 from dtflow.services.catalogue import Catalogue, FAMILY_LABELS, bundled_exact_version
@@ -28,9 +35,11 @@ from dtflow.services.connection import (
     present_preflight,
     present_reconciliation,
 )
-from dtflow.services.lora_family import detect_lora_family
+from dtflow.services.lora_digest import DigestCancelled, hash_file
+from dtflow.services.lora_family import detect_lora_family, validate_converted_lora
 from dtflow.services.lora_naming import LoraPrepareMetadata
 from dtflow.services.session import (
+    accepted_managed_identifier,
     check_loras,
     list_assets,
     occupied_managed_lora_names,
@@ -91,8 +100,11 @@ class LoraAssetPanel:
         self._prepare_metadata: dict[str, LoraPrepareMetadata] = {}
         self._prepare_editor: PrepareBatchEditor | None = None
         self._prepare_editor_context = None
+        self._hash_paused: tuple | None = None
         self._prepare_index = 0
         self._prepare_counts = {"confirmed": 0, "failed": 0, "unresolved": 0}
+        self._inspecting = False
+        self._prepare_final: dict[str, str] = {}  # last outcome per distinct file in this run
         self._prepare_issues: list[str] = []
         self._ownership_revision = 0
         self._last_backend = self._backend()
@@ -480,8 +492,16 @@ class LoraAssetPanel:
             return
         if self._runner.closed or self._is_busy() or self._backend() != backend or revision != self._ownership_revision:
             return
-        paths = tuple(dict.fromkeys(os.path.abspath(path) for path in chosen))
-        self._prepare_editor = PrepareBatchEditor(self.page, paths, on_prepare=self._authorize_prepare)
+        # One row per file: spellings that differ only by case, a \\?\ prefix or a symlink are the same file.
+        unique: dict[str, str] = {}
+        for path in chosen:
+            unique.setdefault(os.path.normcase(os.path.realpath(path)), os.path.abspath(path))
+        paths = tuple(unique.values())
+        if self._prepare_editor is not None:
+            self._prepare_editor.cancel_hashing()  # a replaced editor must not keep reading files
+        self._prepare_editor = PrepareBatchEditor(
+            self.page, paths, on_prepare=self._authorize_prepare, on_inspect_progress=self._inspect_progress
+        )
         editor = self._prepare_editor
         self._prepare_editor_context = (backend, revision, self._saved())
         # The provider's current LoRA inventory is the only authority for selectable
@@ -491,12 +511,86 @@ class LoraAssetPanel:
             self._inspect_prepare_files(paths),
             lambda result, failure: self._inspected_prepare_editor(editor, eligible, result, failure),
         )
+        self._hash_next(editor, paths, 0)
+
+    def _inspect_progress(self, done_bytes: int | None, total_bytes: int, finished: int, files: int) -> None:
+        """Inspection of the selected files in the shared bottom activity bar (``done_bytes=None``: it is over)."""
+        strip = activity_strip(self.page)
+        key = "asset-inspect"
+        if self.preparing and done_bytes is not None:
+            return  # the run's own bar row is the one shown while it is going
+        if done_bytes is None:
+            if self._inspecting:
+                self._inspecting = False
+                strip.finish(key)
+            return
+        if not self._inspecting:
+            self._inspecting = True
+            strip.start(key, "Inspecting LoRA files", detail=f"Reading {files} selected file(s); nothing is uploaded.")
+        strip.update(
+            key,
+            int(done_bytes * 1000 / max(1, total_bytes)),
+            1000,
+            detail=f"Inspecting {finished} of {files} file(s); nothing is uploaded.",
+            count=f"{finished}/{files}",
+            stage="inspecting",
+        )
+
+    def _hash_next(self, editor, paths: tuple[str, ...], index: int) -> None:
+        """Hash the selected files one after another in the background; Prepare reuses the remembered digests."""
+        if index >= len(paths) or self._runner.closed:
+            return
+        if not editor.active() or editor is not self._prepare_editor:
+            editor.cancel_hashing()  # closed, dismissed or replaced: stop reading and end the bar job
+            return
+        if self.preparing:
+            # A run is reading and uploading: do not compete with it for the disk. Resumed when it ends.
+            self._hash_paused = (editor, paths, index)
+            self._inspect_progress(None, 0, 0, len(paths))
+            return
+        path = Path(paths[index])
+
+        async def hashing():
+            sha, size = await asyncio.to_thread(
+                hash_file, path, editor.hash_cancelled.is_set, lambda n: editor.note_read(path, n)
+            )
+            try:
+                accepted = await accepted_managed_identifier(self._state, sha, size)
+            except Exception:  # an unreadable registry must not discard a good content hash
+                accepted = None
+            return sha, size, accepted
+
+        def done(result, failure) -> None:
+            if isinstance(failure, DigestCancelled) or self._runner.closed:
+                editor.cancel_hashing()
+                return
+            if editor.active():
+                sha, size, accepted = result if failure is None else (None, None, None)
+                editor.set_identity(path, sha, size, accepted)
+            else:
+                editor.cancel_hashing()
+            self._hash_next(editor, paths, index + 1)
+
+        self._runner.submit(hashing(), done)
 
     async def _inspect_prepare_files(self, paths: tuple[str, ...]):
         """Inspect file headers off the GUI thread and read existing canonical name reservations."""
         evidence = await asyncio.to_thread(lambda: tuple(detect_lora_family(Path(p)) for p in paths))
+
+        def invalid_reasons() -> tuple[str | None, ...]:
+            # The same container check Prepare runs later: a non-LoRA is flagged now, not after Prepare.
+            reasons: list[str | None] = []
+            for item in paths:
+                try:
+                    validate_converted_lora(Path(item))
+                    reasons.append(None)
+                except ValidationError as exc:
+                    reasons.append(str(exc))
+            return tuple(reasons)
+
+        invalid = await asyncio.to_thread(invalid_reasons)
         occupied = await occupied_managed_lora_names(self._state)
-        return evidence, occupied
+        return evidence, occupied, invalid
 
     def _inspected_prepare_editor(self, editor, eligible, result, failure) -> None:
         if self._runner.closed or not editor.active() or editor is not self._prepare_editor:
@@ -508,8 +602,8 @@ class LoraAssetPanel:
             )
             return
         if result is not None:
-            evidence, occupied = result
-            editor.set_inspection(evidence, eligible, occupied)
+            evidence, occupied, *rest = result
+            editor.set_inspection(evidence, eligible, occupied, rest[0] if rest else None)
 
     def _authorize_prepare(self, chosen: list[tuple[Path, LoraPrepareMetadata]]) -> None:
         """Admit only explicitly approved, metadata-complete rows under the existing owner."""
@@ -545,6 +639,8 @@ class LoraAssetPanel:
             self._prepare_metadata = dict(selected)
             self._prepare_index = 0
             self._prepare_counts = {"confirmed": 0, "failed": 0, "unresolved": 0}
+            self._prepare_final = {}
+            self._prepare_issues = []
             self._prepare_backend, self._prepare_revision = backend, self._ownership_revision
             self._prepare_saved = self._saved()
             self._registry_generation += 1
@@ -555,6 +651,19 @@ class LoraAssetPanel:
             self._prepare_next()
         if self._prepare_editor is not None:
             self._prepare_editor.admitted([Path(p) for p in selected])
+
+    def _release_prepare_editor_if_all_checked(self) -> None:
+        """Release the overlay once every row got past the checks that can demand Re-Prepare.
+
+        A row that is not admitted yet (Needs architecture, Name conflict), is still being checked, or failed
+        keeps the editor open, so its Re-Prepare action stays reachable. Only this editor is dismissed; an
+        unrelated armed consent or notice is left alone.
+        """
+        editor = self._prepare_editor
+        if editor is None or not editor.all_checked():
+            return
+        editor.close()
+        self._prepare_editor = self._prepare_editor_context = None
 
     def invalidate_prepare_ownership(self) -> None:
         """Credential/backend changes stop admission after the currently admitted file settles."""
@@ -598,11 +707,19 @@ class LoraAssetPanel:
             else:
                 outcome = "confirmed" if state == "confirmed" else "failed" if state == "failed" else "unresolved"
             self._prepare_counts[outcome] += 1
+            settled = (
+                "existing" if outcome == "confirmed" and (record or {}).get("evidence") == "already_exists" else outcome
+            )
+            self._prepare_final[self._prepare_files[self._prepare_index]] = settled
             if self._prepare_editor is not None:
                 self._prepare_editor.completed(
                     Path(self._prepare_files[self._prepare_index]),
                     "Prepared" if outcome == "confirmed" else "Failed" if outcome == "failed" else "Outcome unknown",
+                    # Re-Prepare only answers the accepted-managed-filename refusal; every other failure is final.
+                    can_reprepare=isinstance(failure, NameAlreadyAcceptedError),
+                    detail=present_asset_failure(failure).detail if failure is not None else None,
                 )
+                self._release_prepare_editor_if_all_checked()
             if outcome != "confirmed":
                 explanation = (
                     present_asset_failure(failure)
@@ -673,27 +790,61 @@ class LoraAssetPanel:
             return
         self._present_prepared(record, failure)
 
+    def _drop_dead_editor(self) -> None:
+        """Forget an editor the user dismissed, so it cannot receive progress or checks from a later run."""
+        editor = self._prepare_editor
+        if editor is not None and not editor.active():
+            editor.cancel_hashing()
+            self._prepare_editor = self._prepare_editor_context = None
+
+    def _resume_hashing(self) -> None:
+        paused, self._hash_paused = self._hash_paused, None
+        if paused is not None:
+            self._hash_next(*paused)
+
     def _finish_prepare(self) -> None:
         total, done = len(self._prepare_files), self._prepare_index
         self._prepare_files = ()
         self._prepare_metadata = {}
         self._prepare_saved = None
         self._set_busy(False)
+        self._resume_hashing()
         if total == 1 and done == 1:
             same_owner = self._backend() == self._prepare_backend and self._ownership_revision == self._prepare_revision
             self._present_prepared(*self._prepare_last, bind=same_owner)
             return
-        counts = self._prepare_counts
-        detail = (
-            f"{counts['confirmed']} confirmed, {counts['failed']} failed, "
-            f"{counts['unresolved']} unresolved, {total - done} unstarted. No automatic retries."
-        )
-        if self._prepare_issues:
-            detail += "\n" + "\n".join(self._prepare_issues)
-            unseen = counts["failed"] + counts["unresolved"] - len(self._prepare_issues)
-            if unseen:
-                detail += f"\n{unseen} more unsuccessful file(s); see -x Logs for all details."
-        state = "error" if counts["failed"] else "success" if counts["confirmed"] == total else "partial"
+        self._release_prepare_editor_if_all_checked()
+        self._drop_dead_editor()
+        editor_open = self._prepare_editor is not None and self._prepare_editor.active()
+        # Count distinct files by their last outcome: a Re-Prepared file is one file, not two.
+        final = list(self._prepare_final.values())
+        prepared, existing = final.count("confirmed"), final.count("existing")
+        failed, unresolved = final.count("failed"), final.count("unresolved")
+        unstarted = total - done
+        parts = [f"{prepared} prepared"]
+        if existing:
+            parts.append(f"{existing} already on DT+")
+        if failed:
+            parts.append(f"{failed} failed")
+        if unresolved:
+            parts.append(f"{unresolved} unresolved")
+        if unstarted:
+            parts.append(f"{unstarted} unstarted")
+        detail = ", ".join(parts) + ". No automatic retries."
+        if editor_open:
+            # One surface at a time: the open editor shows the result, so the bar job just ends quietly.
+            self._prepare_editor.set_summary(detail)
+            activity_strip(self.page).finish("asset")
+            self._show(self.page.assetStatusLabel, Presentation("warning", "Cloud preparation finished", detail))
+            self.refresh_assets()
+            return
+        else:
+            if self._prepare_issues:
+                detail += "\n" + "\n".join(self._prepare_issues)
+                unseen = max(0, failed + unresolved - len(self._prepare_issues))
+                if unseen:
+                    detail += f"\n{unseen} more unsuccessful file(s); see -x Logs for all details."
+            state = "error" if failed else "partial" if unresolved or unstarted else "success"
         activity_strip(self.page).complete("asset", "Cloud preparation finished", detail, state)
         level = "ok" if state == "success" else "error" if state == "error" else "warning"
         self._show(self.page.assetStatusLabel, Presentation(level, "Cloud preparation finished", detail))
@@ -702,6 +853,7 @@ class LoraAssetPanel:
     def _present_prepared(self, record, failure, *, bind: bool = True) -> None:
         self._set_busy(False)
         strip = activity_strip(self.page)
+        self._drop_dead_editor()
         presentation = (
             present_asset_failure(failure)
             if failure
@@ -711,12 +863,18 @@ class LoraAssetPanel:
                 f"{display_label(record['identifier'])} ({record['evidence']}).",
             )
         )
-        strip.complete(
-            "asset",
-            presentation.headline,
-            presentation.detail,
-            "partial" if presentation.level == "warning" else "error" if failure else "success",
-        )
+        editor_open = self._prepare_editor is not None and self._prepare_editor.active()
+        if editor_open:
+            # One surface at a time: the open editor shows the row's reason and Re-Prepare.
+            self._prepare_editor.set_summary(presentation.headline)
+            strip.finish("asset")
+        else:
+            strip.complete(
+                "asset",
+                presentation.headline,
+                presentation.detail,
+                "partial" if presentation.level == "warning" else "error" if failure else "success",
+            )
         status = self.page.assetStatusLabel
         if failure is not None:
             self._show(status, present_asset_failure(failure))
