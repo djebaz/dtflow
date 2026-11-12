@@ -75,6 +75,10 @@ class ValidationError(ValueError):
     """Invalid application input; no remote submission is implied."""
 
 
+class NameAlreadyAcceptedError(ValidationError):
+    """Content already has an accepted managed filename; only an explicit Re-Prepare may change it."""
+
+
 Metadata = tuple[tuple[str, str], ...]
 MAX_QUEUE_ITEMS = 1000  # one queue's item ceiling; the planner checks it before enumerating
 MAX_QUEUE_CONCURRENCY = 10  # configurable client policy; provider limits still apply

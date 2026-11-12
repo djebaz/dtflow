@@ -23,7 +23,13 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 from uuid import uuid4
 
-from dtflow.core.models import PREPARATION_STATES, AssetContent, PreparedAsset, ValidationError
+from dtflow.core.models import (
+    PREPARATION_STATES,
+    AssetContent,
+    NameAlreadyAcceptedError,
+    PreparedAsset,
+    ValidationError,
+)
 from dtflow.persistence import store
 from dtflow.persistence.store import PersistenceError
 
@@ -362,7 +368,7 @@ class AssetRegistry:
                     raise ValidationError("Choose a verified or explicitly declared exact LoRA architecture.")
                 previous = existing["managed_identifier"]
                 if previous is not None and previous != identifier and not lora_metadata.replace_existing:
-                    raise ValidationError(
+                    raise NameAlreadyAcceptedError(
                         "This content already has an accepted managed filename. "
                         "Choose explicit Re-Prepare to change it."
                     )

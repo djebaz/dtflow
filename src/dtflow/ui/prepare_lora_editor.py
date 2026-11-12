@@ -60,6 +60,9 @@ class _Row:
     outcome: str | None = None
     reprepare: bool = False
     checked: bool = False
+    can_reprepare: bool = False
+    invalid: str | None = None
+    failure: str | None = None
 
 
 class _FileElision(QObject):
@@ -178,7 +181,13 @@ class PrepareBatchEditor:
         while the file is still being checked, so the editor must stay open until every row got past that step.
         """
         return bool(self.rows) and all(
-            row.admitted and row.outcome != "Failed" and (row.checked or row.outcome is not None) for row in self.rows
+            row.invalid  # not a LoRA: never admitted, nothing left to do for it here
+            or (
+                row.admitted
+                and (row.checked or row.outcome is not None)
+                and not (row.outcome == "Failed" and row.can_reprepare)
+            )
+            for row in self.rows
         )
 
     def checked(self, path: Path) -> None:
@@ -218,6 +227,7 @@ class PrepareBatchEditor:
         evidence: Sequence[LoraFamily],
         architectures: Sequence[str],
         occupied: Sequence[ManagedName],
+        invalid: Sequence[str | None] | None = None,
     ):
         """Apply read-only file evidence and verified backend choices on the GUI thread."""
         if not self.active():
@@ -225,8 +235,9 @@ class PrepareBatchEditor:
         self.architectures = tuple(dict.fromkeys(v for v in architectures if architecture_shortcode(v) is not None))
         self.occupied = tuple(occupied)
         self._updating = True
-        for row, result in zip(self.rows, evidence, strict=True):
+        for index, (row, result) in enumerate(zip(self.rows, evidence, strict=True)):
             row.detected = result.family
+            row.invalid = invalid[index] if invalid else None
             row.widget.prepareFileEvidence.setText("Detected from file" if result.family else "Unknown inspection")
             combo = row.widget.prepareArchitecture
             combo.clear()
@@ -274,6 +285,8 @@ class PrepareBatchEditor:
                     state = "ok" if message in ("Ready", "Prepared") else "error" if message == "Failed" else "warning"
                 elif not self.inspected:
                     message, state = "Inspecting file…", "unknown"
+                elif row.invalid:
+                    message, state = "Not a LoRA", "error"
                 elif allocation is None or not family:
                     message, state = "Needs architecture", "warning"
                 elif allocation.conflict is not None:
@@ -286,6 +299,7 @@ class PrepareBatchEditor:
                     ready += 1
 
                 row.widget.prepareRowStatus.setText(message)
+                row.widget.prepareRowStatus.setToolTip(row.invalid or row.failure or "")
                 row.widget.prepareRowStatus.setProperty("state", state)
                 row.widget.prepareStatusDot.setProperty("state", state)
                 for label in (row.widget.prepareRowStatus, row.widget.prepareStatusDot):
@@ -338,7 +352,7 @@ class PrepareBatchEditor:
                 row.widget.prepareShortName.setProperty("invalid", name_error)
                 row.widget.prepareShortName.style().unpolish(row.widget.prepareShortName)
                 row.widget.prepareShortName.style().polish(row.widget.prepareShortName)
-                row.widget.prepareReprepare.setVisible(row.admitted and row.outcome == "Failed")
+                row.widget.prepareReprepare.setVisible(row.admitted and row.outcome == "Failed" and row.can_reprepare)
                 row.widget.setProperty("checkedSelection", row is self.selected)
                 row.widget.style().unpolish(row.widget)
                 row.widget.style().polish(row.widget)
@@ -373,7 +387,7 @@ class PrepareBatchEditor:
         accepted: list[tuple[Path, LoraPrepareMetadata]] = []
         for row, allocated in zip(self.rows, allocations, strict=True):
             version = row.widget.prepareArchitecture.currentData()
-            if row.admitted or not version or not allocated.ready or not allocated.short_name:
+            if row.admitted or row.invalid or not version or not allocated.ready or not allocated.short_name:
                 continue
             fmt = row.widget.prepareFormat.currentText()
             source = (
@@ -419,7 +433,7 @@ class PrepareBatchEditor:
 
     def _reprepare(self, row: _Row):
         """Unlock one failed row for editing; it is sent again only by the next explicit Prepare action."""
-        if not self.active() or not row.admitted or row.outcome != "Failed":
+        if not self.active() or not row.admitted or row.outcome != "Failed" or not row.can_reprepare:
             return
         row.admitted, row.outcome, row.reprepare, row.checked = False, None, True, False
         for control in (
@@ -431,12 +445,14 @@ class PrepareBatchEditor:
             control.setEnabled(True)
         self.refresh()
 
-    def completed(self, path: Path, outcome: str):
+    def completed(self, path: Path, outcome: str, *, can_reprepare: bool = False, detail: str | None = None):
         """Reflect the provider result without automatically authorizing another row."""
         if not self.active():
             return
         for row in self.rows:
             if row.path == path:
                 row.outcome = outcome
+                row.can_reprepare = outcome == "Failed" and can_reprepare
+                row.failure = detail
                 break
         self.refresh()

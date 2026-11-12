@@ -16,7 +16,14 @@ from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QListWidgetItem, QWidget
 
 from dtflow.ui.file_dialogs import QFileDialog
-from dtflow.core.models import BackendError, LoRASelection, RemoteOutcome, ResolvedGenerationRequest, ValidationError
+from dtflow.core.models import (
+    BackendError,
+    LoRASelection,
+    NameAlreadyAcceptedError,
+    RemoteOutcome,
+    ResolvedGenerationRequest,
+    ValidationError,
+)
 from dtflow.diagnostics import event as diagnostic_event
 from dtflow.logging_setup import development_mode
 from dtflow.services.catalogue import Catalogue, FAMILY_LABELS, bundled_exact_version
@@ -28,7 +35,7 @@ from dtflow.services.connection import (
     present_preflight,
     present_reconciliation,
 )
-from dtflow.services.lora_family import detect_lora_family
+from dtflow.services.lora_family import detect_lora_family, validate_converted_lora
 from dtflow.services.lora_naming import LoraPrepareMetadata
 from dtflow.services.session import (
     check_loras,
@@ -495,8 +502,21 @@ class LoraAssetPanel:
     async def _inspect_prepare_files(self, paths: tuple[str, ...]):
         """Inspect file headers off the GUI thread and read existing canonical name reservations."""
         evidence = await asyncio.to_thread(lambda: tuple(detect_lora_family(Path(p)) for p in paths))
+
+        def invalid_reasons() -> tuple[str | None, ...]:
+            # The same container check Prepare runs later: a non-LoRA is flagged now, not after Prepare.
+            reasons: list[str | None] = []
+            for item in paths:
+                try:
+                    validate_converted_lora(Path(item))
+                    reasons.append(None)
+                except ValidationError as exc:
+                    reasons.append(str(exc))
+            return tuple(reasons)
+
+        invalid = await asyncio.to_thread(invalid_reasons)
         occupied = await occupied_managed_lora_names(self._state)
-        return evidence, occupied
+        return evidence, occupied, invalid
 
     def _inspected_prepare_editor(self, editor, eligible, result, failure) -> None:
         if self._runner.closed or not editor.active() or editor is not self._prepare_editor:
@@ -508,8 +528,8 @@ class LoraAssetPanel:
             )
             return
         if result is not None:
-            evidence, occupied = result
-            editor.set_inspection(evidence, eligible, occupied)
+            evidence, occupied, *rest = result
+            editor.set_inspection(evidence, eligible, occupied, rest[0] if rest else None)
 
     def _authorize_prepare(self, chosen: list[tuple[Path, LoraPrepareMetadata]]) -> None:
         """Admit only explicitly approved, metadata-complete rows under the existing owner."""
@@ -545,6 +565,7 @@ class LoraAssetPanel:
             self._prepare_metadata = dict(selected)
             self._prepare_index = 0
             self._prepare_counts = {"confirmed": 0, "failed": 0, "unresolved": 0}
+            self._prepare_issues = []
             self._prepare_backend, self._prepare_revision = backend, self._ownership_revision
             self._prepare_saved = self._saved()
             self._registry_generation += 1
@@ -615,6 +636,9 @@ class LoraAssetPanel:
                 self._prepare_editor.completed(
                     Path(self._prepare_files[self._prepare_index]),
                     "Prepared" if outcome == "confirmed" else "Failed" if outcome == "failed" else "Outcome unknown",
+                    # Re-Prepare only answers the accepted-managed-filename refusal; every other failure is final.
+                    can_reprepare=isinstance(failure, NameAlreadyAcceptedError),
+                    detail=present_asset_failure(failure).detail if failure is not None else None,
                 )
                 self._release_prepare_editor_if_all_checked()
             if outcome != "confirmed":
@@ -698,16 +722,27 @@ class LoraAssetPanel:
             self._present_prepared(*self._prepare_last, bind=same_owner)
             return
         counts = self._prepare_counts
-        detail = (
-            f"{counts['confirmed']} confirmed, {counts['failed']} failed, "
-            f"{counts['unresolved']} unresolved, {total - done} unstarted. No automatic retries."
-        )
-        if self._prepare_issues:
-            detail += "\n" + "\n".join(self._prepare_issues)
-            unseen = counts["failed"] + counts["unresolved"] - len(self._prepare_issues)
-            if unseen:
-                detail += f"\n{unseen} more unsuccessful file(s); see -x Logs for all details."
-        state = "error" if counts["failed"] else "success" if counts["confirmed"] == total else "partial"
+        self._release_prepare_editor_if_all_checked()
+        editor_open = self._prepare_editor is not None and self._prepare_editor.active()
+        prepared = counts["confirmed"]
+        parts = [f"{prepared} prepared"]
+        if counts["failed"]:
+            parts.append(f"{counts['failed']} failed")
+        if counts["unresolved"]:
+            parts.append(f"{counts['unresolved']} unresolved")
+        if total - done:
+            parts.append(f"{total - done} unstarted")
+        detail = ", ".join(parts) + ". No automatic retries."
+        if editor_open:
+            # One surface at a time: the editor rows carry the per-file reasons.
+            state = "partial"
+        else:
+            if self._prepare_issues:
+                detail += "\n" + "\n".join(self._prepare_issues)
+                unseen = max(0, counts["failed"] + counts["unresolved"] - len(self._prepare_issues))
+                if unseen:
+                    detail += f"\n{unseen} more unsuccessful file(s); see -x Logs for all details."
+            state = "error" if counts["failed"] else "success" if counts["confirmed"] == total else "partial"
         activity_strip(self.page).complete("asset", "Cloud preparation finished", detail, state)
         level = "ok" if state == "success" else "error" if state == "error" else "warning"
         self._show(self.page.assetStatusLabel, Presentation(level, "Cloud preparation finished", detail))
@@ -725,12 +760,17 @@ class LoraAssetPanel:
                 f"{display_label(record['identifier'])} ({record['evidence']}).",
             )
         )
-        strip.complete(
-            "asset",
-            presentation.headline,
-            presentation.detail,
-            "partial" if presentation.level == "warning" else "error" if failure else "success",
-        )
+        editor_open = self._prepare_editor is not None and self._prepare_editor.active()
+        if editor_open:
+            # One surface at a time: the open editor shows the row's reason and Re-Prepare.
+            strip.complete("asset", presentation.headline, "", "partial")
+        else:
+            strip.complete(
+                "asset",
+                presentation.headline,
+                presentation.detail,
+                "partial" if presentation.level == "warning" else "error" if failure else "success",
+            )
         status = self.page.assetStatusLabel
         if failure is not None:
             self._show(status, present_asset_failure(failure))
