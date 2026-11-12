@@ -508,24 +508,24 @@ class LoraAssetPanel:
         )
         self._hash_next(editor, paths, 0)
 
-    def _inspect_progress(self, fraction: float | None, finished: int, total: int) -> None:
-        """Inspection of the selected files in the same bottom activity bar the Prepare run uses (one bar)."""
+    def _inspect_progress(self, done_bytes: int | None, total_bytes: int, finished: int, files: int) -> None:
+        """Inspection of the selected files in the shared bottom activity bar (``done_bytes=None``: it is over)."""
         strip = activity_strip(self.page)
         key = "asset-inspect"
-        if fraction is None:
+        if done_bytes is None:
             if self._inspecting:
                 self._inspecting = False
                 strip.finish(key)
             return
         if not self._inspecting:
             self._inspecting = True
-            strip.start(key, "Inspecting LoRA files", detail=f"Reading {total} selected file(s); nothing is uploaded.")
+            strip.start(key, "Inspecting LoRA files", detail=f"Reading {files} selected file(s); nothing is uploaded.")
         strip.update(
             key,
-            int(fraction * 1000),
+            int(done_bytes * 1000 / max(1, total_bytes)),
             1000,
-            detail=f"Inspecting {finished} of {total} file(s); nothing is uploaded.",
-            count=f"{finished}/{total}",
+            detail=f"Inspecting {finished} of {files} file(s); nothing is uploaded.",
+            count=f"{finished}/{files}",
             stage="inspecting",
         )
 

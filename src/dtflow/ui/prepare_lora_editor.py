@@ -133,7 +133,7 @@ class PrepareBatchEditor:
         paths: Sequence[str],
         *,
         on_prepare: Callable[[list[tuple[Path, LoraPrepareMetadata]]], None],
-        on_inspect_progress: Callable[[float | None, int, int], None] | None = None,
+        on_inspect_progress: Callable[[int | None, int, int, int], None] | None = None,
     ):
         self._on_inspect_progress = on_inspect_progress
         self.parent = parent
@@ -204,10 +204,11 @@ class PrepareBatchEditor:
         """Whether the main window still owns this editor's widget."""
         return isValid(self.form) and self.panel._editor is self.form
 
-    def _report(self, fraction: float | None, finished: int, total: int) -> None:
-        """Hand the overall inspection state to the panel, which shows it in the shared bottom activity bar."""
+    def _report(self, done_bytes: int | None, total_bytes: int, finished: int, files: int) -> None:
+        """Hand the overall inspection state to the panel (``done_bytes=None`` = inspection over), which shows it
+        in the shared bottom activity bar as part of the global Prepare progress."""
         if self._on_inspect_progress is not None:
-            self._on_inspect_progress(fraction, finished, total)
+            self._on_inspect_progress(done_bytes, total_bytes, finished, files)
 
     def note_read(self, path: Path, done: int) -> None:
         """Called from the hash thread: remember bytes read so far (a plain int write, read by the GUI timer)."""
@@ -217,11 +218,11 @@ class PrepareBatchEditor:
         """Show real inspection progress while files are still being read: overall bar, count, per-file percent."""
         if not self.active():
             self._tick_timer.stop()
-            self._report(None, 0, len(self.rows))
+            self._report(None, 0, 0, len(self.rows))
             return
         pending = [row for row in self.rows if row.hashing]
         if self.inspected and not pending:
-            self._report(None, 0, len(self.rows))
+            self._report(None, 0, 0, len(self.rows))
             self.form.prepareFileCount.setText(f"{len(self.rows)} selected files")
             self._tick_timer.stop()
             return
@@ -230,7 +231,7 @@ class PrepareBatchEditor:
             row.total_bytes if not row.hashing else min(self.read_bytes.get(row.path, 0), row.total_bytes)
             for row in self.rows
         )
-        self._report(done / total, len(self.rows) - len(pending), len(self.rows))
+        self._report(done, total, len(self.rows) - len(pending), len(self.rows))
         finished = len(self.rows) - len(pending)
         self.form.prepareFileCount.setText(
             f"{len(self.rows)} selected files · inspecting {finished}/{len(self.rows)}"
@@ -315,7 +316,7 @@ class PrepareBatchEditor:
     def close(self) -> None:
         """Dismiss this editor only while it still owns the panel; never touch an unrelated consent or notice."""
         self.cancel_hashing()
-        self._report(None, 0, len(self.rows))
+        self._report(None, 0, 0, len(self.rows))
         if self.active():
             self.panel.dismiss()
 
