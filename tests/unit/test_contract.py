@@ -112,7 +112,10 @@ def test_only_the_draw_things_integration_imports_provider_libraries():
             ("services", "person_selection.py"),
             ("services", "face_geometry.py"),
         )
-        allow_numpy = relative.parts in (("services", "person_selection.py"), ("services", "face_geometry.py"))
+        allow_numpy = relative.parts in (
+            ("services", "person_selection.py"),
+            ("services", "face_geometry.py"),
+        ) or relative.parts[:2] == ("services", "lora_convert")  # the pure-Python LoRA converter needs numpy
         assert not forbidden_imports(
             path.read_text(), package, backends=False, allow_pillow=allow_pillow, allow_numpy=allow_numpy
         ), path

@@ -58,33 +58,36 @@ All in `dtflow.services.lora_convert`. Synchronous and blocking by design; calle
 ```python
 @dataclass(frozen=True, slots=True)
 class ConversionRequest:
-    source: Path                 # .safetensors
-    destination: Path            # .ckpt; must not exist (never overwrite, same rule as the CLI today)
-    family: str                  # converter family key: "krea2" | "zimage" | "flux1" | "sd1" | "sdxl"
+    source: Path  # .safetensors
+    destination: Path  # .ckpt; must not exist (never overwrite, same rule as the CLI today)
+    family: str  # converter family key: "krea2" | "zimage" | "flux1" | "sd1" | "sdxl"
     scale: float = 1.0
     allow_experimental: bool = False
-    ignore_unmatched: bool = False   # table families only, as today
+    ignore_unmatched: bool = False  # table families only, as today
+
 
 @dataclass(frozen=True, slots=True)
 class ConversionProgress:
-    stage: str            # "reading" | "converting" | "writing" | "finishing"
-    done: int             # tensors (modules) processed
-    total: int            # known after key scan; 0 before
-    message: str = ""     # human line for the log, same text the old log() printed
+    stage: str  # "reading" | "converting" | "writing" | "finishing"
+    done: int  # tensors (modules) processed
+    total: int  # known after key scan; 0 before
+    message: str = ""  # human line for the log, same text the old log() printed
+
 
 @dataclass(frozen=True, slots=True)
 class ConversionResult:
     destination: Path
-    family: str                     # converter key
-    exact_architecture: str         # Draw Things version string, e.g. "krea_2", "z_image", "flux1", "v1", "sdxl_base_v0.9"
+    family: str  # converter key
+    exact_architecture: str  # Draw Things version string, e.g. "krea_2", "z_image", "flux1", "v1", "sdxl_base_v0.9"
     tensors_written: int
-    destination_sha256: str         # computed while writing (no second pass) so LoraStore can skip a rehash
+    destination_sha256: str  # computed while writing (no second pass) so LoraStore can skip a rehash
     destination_size: int
-    source_sha256: str | None       # None unless request.hash_source (see below)
+    source_sha256: str | None  # None unless request.hash_source (see below)
     source_size: int
     experimental: bool
-    warnings: tuple[str, ...]       # e.g. skipped unmatched modules, experimental notice
+    warnings: tuple[str, ...]  # e.g. skipped unmatched modules, experimental notice
     provenance: ConversionProvenance
+
 
 def convert_lora(
     request: ConversionRequest,
@@ -109,16 +112,16 @@ Design decisions:
 ```python
 @dataclass(frozen=True, slots=True)
 class ConversionProvenance:
-    converter: str          # "dtflow.lora_convert"
+    converter: str  # "dtflow.lora_convert"
     converter_version: str  # CONVERTER_VERSION, an integer-like string bumped on any output change
-    draw_things_revision: str   # "db37e65"
+    draw_things_revision: str  # "db37e65"
     family: str
     scale: float
-    source_name: str        # base name only; full path is recorded by LoraStore.origins, not here
+    source_name: str  # base name only; full path is recorded by LoraStore.origins, not here
     source_sha256: str | None
     source_size: int
     created_at_utc: str
-    verification: str       # "verified" | "unverified_on_dt_plus" | "experimental" (from the FamilySpec)
+    verification: str  # "verified" | "unverified_on_dt_plus" | "experimental" (from the FamilySpec)
 ```
 
 `CONVERTER_VERSION` is a constant in `provenance.py`, bumped by hand whenever output bytes could change. It is the thing #327/Option 8 compare to offer "reconvert". It is JSON-safe (`asdict`) and stored with the retained file (section 8). No prompts, no private paths, no endpoints (AGENTS privacy rule): only the file base name.
@@ -132,13 +135,13 @@ Unchanged from today and kept deliberately strict: unknown keys, unmatched modul
 ```python
 @dataclass(frozen=True, slots=True)
 class FamilySpec:
-    key: str                     # "krea2"
-    label: str                   # "Krea 2"
-    exact_architecture: str      # "krea_2"
+    key: str  # "krea2"
+    label: str  # "Krea 2"
+    exact_architecture: str  # "krea_2"
     status: Literal["verified", "unverified_on_dt_plus", "experimental"]
-    experimental: bool           # True only for sdxl; requires allow_experimental
+    experimental: bool  # True only for sdxl; requires allow_experimental
     kind: Literal["resolver", "tables"]
-    convert: Callable[[ConversionContext], ConversionPlan]   # see below
+    convert: Callable[[ConversionContext], ConversionPlan]  # see below
     notes: str = ""
 ```
 
