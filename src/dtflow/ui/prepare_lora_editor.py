@@ -170,6 +170,15 @@ class PrepareBatchEditor:
         """Whether the main window still owns this editor's widget."""
         return isValid(self.form) and self.panel._editor is self.form
 
+    def all_prepared(self) -> bool:
+        """Whether every row was admitted and ended as Prepared (nothing failed, unknown or unfinished)."""
+        return bool(self.rows) and all(row.admitted and row.outcome == "Prepared" for row in self.rows)
+
+    def close(self) -> None:
+        """Dismiss this editor only while it still owns the panel; never touch an unrelated consent or notice."""
+        if self.active():
+            self.panel.dismiss()
+
     def _select(self, row: _Row):
         self.selected = row
         self.refresh()
