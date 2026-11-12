@@ -1,7 +1,7 @@
 """Extract the plain-literal weight tables of Draw Things' ``ModelMapping.swift`` to JSON.
 
 Dev tool, run when the pinned Draw Things revision changes. The converter
-(``lora_to_ckpt.py``) ships the result as ``lora_mappings.json`` so nothing needs Swift at run time.
+(``src/dtflow/services/lora_convert``) ships the result as ``data/lora_mappings.json`` so nothing needs Swift at run time.
 
 Usage:
     python extract_swift_mappings.py /path/to/draw-things-community/Libraries/SwiftDiffusion/Sources/Mappings/ModelMapping.swift OUT.json REVISION
