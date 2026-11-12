@@ -555,16 +555,16 @@ class LoraAssetPanel:
             self._prepare_next()
         if self._prepare_editor is not None:
             self._prepare_editor.admitted([Path(p) for p in selected])
-            self._release_prepare_editor_if_all_started()
 
-    def _release_prepare_editor_if_all_started(self) -> None:
-        """Release the overlay once every row has been started so the bar shows the real progress.
+    def _release_prepare_editor_if_all_checked(self) -> None:
+        """Release the overlay once every row got past the checks that can demand Re-Prepare.
 
-        A row that was not admitted (Needs architecture, Name conflict) keeps the editor open.
-        Only this editor is dismissed; an unrelated armed consent or notice is left alone.
+        A row that is not admitted yet (Needs architecture, Name conflict), is still being checked, or failed
+        keeps the editor open, so its Re-Prepare action stays reachable. Only this editor is dismissed; an
+        unrelated armed consent or notice is left alone.
         """
         editor = self._prepare_editor
-        if editor is None or not editor.all_admitted():
+        if editor is None or not editor.all_checked():
             return
         editor.close()
         self._prepare_editor = self._prepare_editor_context = None
@@ -616,6 +616,7 @@ class LoraAssetPanel:
                     Path(self._prepare_files[self._prepare_index]),
                     "Prepared" if outcome == "confirmed" else "Failed" if outcome == "failed" else "Outcome unknown",
                 )
+                self._release_prepare_editor_if_all_checked()
             if outcome != "confirmed":
                 explanation = (
                     present_asset_failure(failure)

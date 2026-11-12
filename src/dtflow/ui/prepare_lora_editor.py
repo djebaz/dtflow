@@ -59,6 +59,7 @@ class _Row:
     admitted: bool = False
     outcome: str | None = None
     reprepare: bool = False
+    checked: bool = False
 
 
 class _FileElision(QObject):
@@ -170,9 +171,22 @@ class PrepareBatchEditor:
         """Whether the main window still owns this editor's widget."""
         return isValid(self.form) and self.panel._editor is self.form
 
-    def all_admitted(self) -> bool:
-        """Whether every row has been started (none is waiting for fixes or a name)."""
-        return bool(self.rows) and all(row.admitted for row in self.rows)
+    def all_checked(self) -> bool:
+        """Whether every row is admitted and past the local checks, with no failure left to Re-Prepare.
+
+        The registry refuses a changed name for content that already has an accepted one (Re-Prepare needed)
+        while the file is still being checked, so the editor must stay open until every row got past that step.
+        """
+        return bool(self.rows) and all(
+            row.admitted and row.outcome != "Failed" and (row.checked or row.outcome is not None) for row in self.rows
+        )
+
+    def checked(self, path: Path) -> None:
+        """Record that the registry accepted this row's name, so it can no longer need Re-Prepare."""
+        for row in self.rows:
+            if row.path == path:
+                row.checked = True
+                break
 
     def close(self) -> None:
         """Dismiss this editor only while it still owns the panel; never touch an unrelated consent or notice."""
@@ -393,6 +407,7 @@ class PrepareBatchEditor:
                 continue
             row.admitted = True
             row.outcome = None
+            row.checked = False
             for control in (
                 row.widget.prepareArchitecture,
                 row.widget.prepareShortName,
@@ -406,7 +421,7 @@ class PrepareBatchEditor:
         """Unlock one failed row for editing; it is sent again only by the next explicit Prepare action."""
         if not self.active() or not row.admitted or row.outcome != "Failed":
             return
-        row.admitted, row.outcome, row.reprepare = False, None, True
+        row.admitted, row.outcome, row.reprepare, row.checked = False, None, True, False
         for control in (
             row.widget.prepareArchitecture,
             row.widget.prepareShortName,
