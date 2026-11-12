@@ -11,7 +11,7 @@ import asyncio
 import hashlib
 import logging
 import secrets
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime
@@ -56,6 +56,7 @@ from dtflow.services.credentials import EnvironmentCredentials, resolve_credenti
 from dtflow.services.generation import GenerationService
 from dtflow.services.image_inputs import restore_image_inputs
 from dtflow.services.lora_store import LoraStore
+from dtflow.services.prepare_progress import PrepareEvent
 from dtflow.services.lora_auto_naming import normalize_previous_retained
 from dtflow.services.lora_naming import LoraPrepareMetadata, ManagedName, occupied_from_snapshot
 from dtflow.services.image_preparation import prepare_image_files, validate_prepared_inputs
@@ -874,6 +875,7 @@ async def prepare_asset(
     provenance: str,
     saved: CredentialProvider | None = None,
     metadata: LoraPrepareMetadata | None = None,
+    progress: Callable[[PrepareEvent], None] | None = None,
 ) -> dict:
     """Explicitly Prepare using accepted naming metadata and a stable technical identifier.
 
@@ -881,7 +883,7 @@ async def prepare_asset(
     its final managed identifier in the same transaction as the Prepare intent.
     """
     async with open_assets(state, saved=saved) as service:
-        prepared = await service.prepare(file, name, provenance=provenance, metadata=metadata)
+        prepared = await service.prepare(file, name, provenance=provenance, metadata=metadata, progress=progress)
         record = await service.registry.get(prepared.receipt_id)
         # The historical content row can have another filename/key. Present this
         # exact successful preparation, rather than the first name to share its bytes.
