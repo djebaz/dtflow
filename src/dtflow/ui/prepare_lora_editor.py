@@ -7,6 +7,7 @@ the provider; the existing asset controller owns all submissions and outcomes.
 from __future__ import annotations
 
 import re
+import threading
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, Sequence
@@ -63,6 +64,9 @@ class _Row:
     can_reprepare: bool = False
     invalid: str | None = None
     failure: str | None = None
+    sha256: str | None = None
+    size: int | None = None
+    hashing: bool = True  # background content hash still running (cleared when it ends, even if unreadable)
 
 
 class _FileElision(QObject):
@@ -118,6 +122,7 @@ class PrepareBatchEditor:
         on_prepare: Callable[[list[tuple[Path, LoraPrepareMetadata]]], None],
     ):
         self.parent = parent
+        self.hash_cancelled = threading.Event()
         self.form = _load("prepare_lora_batch.ui")
         self.panel = feedback(parent)
         self._on_prepare = on_prepare
@@ -174,6 +179,18 @@ class PrepareBatchEditor:
         """Whether the main window still owns this editor's widget."""
         return isValid(self.form) and self.panel._editor is self.form
 
+    def set_identity(self, path: Path, sha256: str | None, size: int | None) -> None:
+        """Attach the background content hash (``None`` when unreadable) so names reuse accepted ones."""
+        for row in self.rows:
+            if row.path == path:
+                row.sha256, row.size, row.hashing = sha256, size, False
+                break
+        self.refresh()
+
+    def cancel_hashing(self) -> None:
+        """Stop the background reads (editor closed, dismissed or replaced)."""
+        self.hash_cancelled.set()
+
     def all_checked(self) -> bool:
         """Whether every row is admitted and past the local checks, with no failure left to Re-Prepare.
 
@@ -201,6 +218,7 @@ class PrepareBatchEditor:
 
     def close(self) -> None:
         """Dismiss this editor only while it still owns the panel; never touch an unrelated consent or notice."""
+        self.cancel_hashing()
         if self.active():
             self.panel.dismiss()
 
@@ -261,6 +279,8 @@ class PrepareBatchEditor:
                 manually_edited=row.manual_name,
                 replace_existing=row.reprepare,
                 alternatives=row.alternatives,
+                sha256=row.sha256,
+                size=row.size,
             )
             for row in self.rows
         ]
@@ -289,6 +309,9 @@ class PrepareBatchEditor:
                     message, state = "Inspecting file…", "unknown"
                 elif row.invalid:
                     message, state = "Not a LoRA", "error"
+                elif row.hashing:
+                    # The content hash decides whether the file already has an accepted name; wait for it.
+                    message, state = "Reading file…", "unknown"
                 elif allocation is None or not family:
                     message, state = "Needs architecture", "warning"
                 elif allocation.conflict is not None:
@@ -389,7 +412,14 @@ class PrepareBatchEditor:
         accepted: list[tuple[Path, LoraPrepareMetadata]] = []
         for row, allocated in zip(self.rows, allocations, strict=True):
             version = row.widget.prepareArchitecture.currentData()
-            if row.admitted or row.invalid or not version or not allocated.ready or not allocated.short_name:
+            if (
+                row.admitted
+                or row.invalid
+                or row.hashing
+                or not version
+                or not allocated.ready
+                or not allocated.short_name
+            ):
                 continue
             fmt = row.widget.prepareFormat.currentText()
             source = (

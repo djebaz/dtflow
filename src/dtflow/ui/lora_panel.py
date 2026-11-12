@@ -35,6 +35,7 @@ from dtflow.services.connection import (
     present_preflight,
     present_reconciliation,
 )
+from dtflow.services.lora_digest import DigestCancelled, hash_file
 from dtflow.services.lora_family import detect_lora_family, validate_converted_lora
 from dtflow.services.lora_naming import LoraPrepareMetadata
 from dtflow.services.session import (
@@ -489,6 +490,8 @@ class LoraAssetPanel:
         if self._runner.closed or self._is_busy() or self._backend() != backend or revision != self._ownership_revision:
             return
         paths = tuple(dict.fromkeys(os.path.abspath(path) for path in chosen))
+        if self._prepare_editor is not None:
+            self._prepare_editor.cancel_hashing()  # a replaced editor must not keep reading files
         self._prepare_editor = PrepareBatchEditor(self.page, paths, on_prepare=self._authorize_prepare)
         editor = self._prepare_editor
         self._prepare_editor_context = (backend, revision, self._saved())
@@ -499,6 +502,29 @@ class LoraAssetPanel:
             self._inspect_prepare_files(paths),
             lambda result, failure: self._inspected_prepare_editor(editor, eligible, result, failure),
         )
+        self._hash_next(editor, paths, 0)
+
+    def _hash_next(self, editor, paths: tuple[str, ...], index: int) -> None:
+        """Hash the selected files one after another in the background; Prepare reuses the remembered digests."""
+        if index >= len(paths) or self._runner.closed:
+            return
+        if not editor.active() or editor is not self._prepare_editor:
+            editor.cancel_hashing()  # closed, dismissed or replaced: stop reading
+            return
+        path = Path(paths[index])
+
+        async def hashing():
+            return await asyncio.to_thread(hash_file, path, editor.hash_cancelled.is_set)
+
+        def done(result, failure) -> None:
+            if isinstance(failure, DigestCancelled) or self._runner.closed:
+                return
+            if editor.active():
+                sha, size = result if failure is None else (None, None)
+                editor.set_identity(path, sha, size)
+            self._hash_next(editor, paths, index + 1)
+
+        self._runner.submit(hashing(), done)
 
     async def _inspect_prepare_files(self, paths: tuple[str, ...]):
         """Inspect file headers off the GUI thread and read existing canonical name reservations."""
