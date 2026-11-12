@@ -47,6 +47,10 @@ class UnmatchedModulesError(ConversionError):
 
     code = "unmatched_modules"
 
+    def __init__(self, user_message: str, *, modules: tuple[str, ...] = (), hint: str | None = None) -> None:
+        self.modules = modules
+        super().__init__(user_message, hint=hint)
+
 
 class ShapeMismatchError(ConversionError):
     """Tensor shapes do not fit the family."""
