@@ -16,6 +16,7 @@ import os
 import sys
 import tempfile
 import time
+from dataclasses import replace
 from datetime import UTC, datetime
 from fnmatch import fnmatchcase
 from pathlib import Path
@@ -81,18 +82,9 @@ def _convert(source: Path, destination: Path, args: argparse.Namespace, *, progr
     # then atomically replace it; an error leaves the previous checkpoint untouched.
     with tempfile.TemporaryDirectory(prefix=".lora-convert-", dir=destination.parent) as temporary:
         staged = Path(temporary) / destination.name
-        staged_request = ConversionRequest(
-            source=source,
-            destination=staged,
-            family=args.family,
-            scale=args.scale,
-            allow_experimental=args.experimental,
-            ignore_unmatched=args.ignore_unmatched,
-            hash_source=False,
-        )
-        result = convert_lora(staged_request, progress=progress)
+        result = convert_lora(replace(request, destination=staged), progress=progress)
         os.replace(staged, destination)
-        return result
+        return replace(result, destination=destination)
 
 
 def _write_report(directory: Path, report: dict) -> Path:
@@ -162,7 +154,9 @@ def _batch(files: list[Path], destination: Path, source: Path, args: argparse.Na
                 except Exception as error:
                     # A bad file must not prevent analysis of later files; preserve the
                     # unexpected failure distinctly instead of labelling it unsupported.
-                    item.update(status="failed", error_code="unexpected_error", error=f"{type(error).__name__}: {error}")
+                    item.update(
+                        status="failed", error_code="unexpected_error", error=f"{type(error).__name__}: {error}"
+                    )
         item["elapsed_seconds"] = round(time.monotonic() - started_item, 3)
         items.append(item)
         print(f"  {item['status']}: {item.get('error', item.get('reason', output.name))}", flush=True)
@@ -196,11 +190,15 @@ def _batch(files: list[Path], destination: Path, source: Path, args: argparse.Na
 
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(prog="python -m dtflow.services.lora_convert", description=__doc__.splitlines()[0])
-    ap.add_argument("source", type=Path, help="One .safetensors file, a folder, or a quoted filename glob (case-insensitive)")
+    ap.add_argument(
+        "source", type=Path, help="A .safetensors file, folder, or quoted filename glob (case-insensitive)"
+    )
     ap.add_argument("destination", type=Path, help="Output .ckpt file or, for a batch, an output folder")
     ap.add_argument("--family", required=True, choices=sorted(spec.key for spec in supported_families()))
     ap.add_argument("--scale", type=float, default=1.0)
-    ap.add_argument("-w", "--overwrite", action="store_true", help="Replace existing .ckpt files after successful conversion")
+    ap.add_argument(
+        "-w", "--overwrite", action="store_true", help="Replace existing .ckpt files after successful conversion"
+    )
     ap.add_argument(
         "--ignore-unmatched",
         action="store_true",
@@ -223,7 +221,11 @@ def main(argv: list[str] | None = None) -> int:
     if batch:
         return _batch(files, args.destination, args.source, args)
 
-    output = args.destination / files[0].with_suffix(".ckpt").name if args.destination.is_dir() else args.destination
+    output = (
+        args.destination / files[0].with_suffix(".ckpt").name
+        if args.destination.is_dir() or args.destination.suffix.casefold() != ".ckpt"
+        else args.destination
+    )
     try:
         _convert(files[0], output, args, progress=_print_message)
     except (ConversionError, OSError) as error:
