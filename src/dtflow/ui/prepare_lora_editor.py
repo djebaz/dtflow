@@ -217,7 +217,10 @@ class PrepareBatchEditor:
         """Hand the overall inspection state to the panel (``done_bytes=None`` = inspection over), which shows it
         in the shared bottom activity bar as part of the global Prepare progress."""
         if self._on_inspect_progress is not None:
-            self._on_inspect_progress(done_bytes, total_bytes, finished, files)
+            try:
+                self._on_inspect_progress(done_bytes, total_bytes, finished, files)
+            except RuntimeError:
+                pass  # reported during teardown: the panel's widgets are already deleted
 
     def note_read(self, path: Path, done: int) -> None:
         """Called from the hash thread: remember bytes read so far (a plain int write, read by the GUI timer)."""
