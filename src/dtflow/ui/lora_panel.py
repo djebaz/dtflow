@@ -515,7 +515,9 @@ class LoraAssetPanel:
         path = Path(paths[index])
 
         async def hashing():
-            sha, size = await asyncio.to_thread(hash_file, path, editor.hash_cancelled.is_set)
+            sha, size = await asyncio.to_thread(
+                hash_file, path, editor.hash_cancelled.is_set, lambda n: editor.note_read(path, n)
+            )
             return sha, size, await accepted_managed_identifier(self._state, sha, size)
 
         def done(result, failure) -> None:

@@ -66,6 +66,7 @@ class _Row:
     failure: str | None = None
     sha256: str | None = None
     size: int | None = None
+    total_bytes: int = 0
     phase: str | None = None  # live "Uploading 43%" style text while this row is being prepared
     accepted: str | None = None  # managed filename this exact content already has in the local registry
     accepted_conflict: bool = False
@@ -135,6 +136,7 @@ class PrepareBatchEditor:
     ):
         self.parent = parent
         self.hash_cancelled = threading.Event()
+        self.read_bytes: dict[Path, int] = {}  # written by the background hash thread, read by the GUI timer
         self.form = _load("prepare_lora_batch.ui")
         self.panel = feedback(parent)
         self._on_prepare = on_prepare
@@ -179,6 +181,15 @@ class PrepareBatchEditor:
             ):
                 control.installEventFilter(self._focus_selection)
         self.selected = self.rows[0] if self.rows else None
+        for row in self.rows:
+            try:
+                row.total_bytes = row.path.stat().st_size
+            except OSError:
+                row.total_bytes = 0
+        self._tick_timer = QTimer(self.form)
+        self._tick_timer.setInterval(200)
+        self._tick_timer.timeout.connect(self._tick_inspection)
+        self._tick_timer.start()
         self._elision = _FileElision(self.form, self.rows)
         for row in self.rows:
             row.widget.prepareSourceFile.installEventFilter(self._elision)
@@ -190,6 +201,41 @@ class PrepareBatchEditor:
     def active(self) -> bool:
         """Whether the main window still owns this editor's widget."""
         return isValid(self.form) and self.panel._editor is self.form
+
+    def note_read(self, path: Path, done: int) -> None:
+        """Called from the hash thread: remember bytes read so far (a plain int write, read by the GUI timer)."""
+        self.read_bytes[path] = done
+
+    def _tick_inspection(self) -> None:
+        """Show real inspection progress while files are still being read: overall bar, count, per-file percent."""
+        if not self.active():
+            self._tick_timer.stop()
+            return
+        bar = self.form.prepareInspectBar
+        pending = [row for row in self.rows if row.hashing]
+        if self.inspected and not pending:
+            bar.hide()
+            self.form.prepareFileCount.setText(f"{len(self.rows)} selected files")
+            self._tick_timer.stop()
+            return
+        total = sum(row.total_bytes for row in self.rows) or 1
+        done = sum(
+            row.total_bytes if not row.hashing else min(self.read_bytes.get(row.path, 0), row.total_bytes)
+            for row in self.rows
+        )
+        bar.setMaximum(total)
+        bar.setValue(done)
+        bar.show()
+        finished = len(self.rows) - len(pending)
+        self.form.prepareFileCount.setText(
+            f"{len(self.rows)} selected files · inspecting {finished}/{len(self.rows)}"
+            if not self.inspected
+            else f"{len(self.rows)} selected files · reading {finished}/{len(self.rows)}"
+        )
+        for row in pending:
+            read = self.read_bytes.get(row.path, 0)
+            if read and row.total_bytes and not row.admitted and not row.invalid:
+                row.widget.prepareRowStatus.setText(f"Reading {min(99, read * 100 // row.total_bytes)}%")
 
     def _name_hint(self, row: _Row) -> str:
         """Advisory only: architectures whose label shares a word with the filename. Never selected for the user."""

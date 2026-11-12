@@ -41,7 +41,9 @@ def remember(path: Path, stat: os.stat_result, digest: str) -> None:
         _CACHE[_key(path)] = (stat.st_size, stat.st_mtime_ns, digest)
 
 
-def hash_file(path: Path, cancelled: Callable[[], bool] | None = None) -> tuple[str, int]:
+def hash_file(
+    path: Path, cancelled: Callable[[], bool] | None = None, on_progress: Callable[[int], None] | None = None
+) -> tuple[str, int]:
     """Return ``(sha256, size)``, remembering them; raises ``DigestCancelled`` between chunks.
 
     Raises ``OSError`` when unreadable and ``ValueError`` when empty or changed while read.
@@ -60,6 +62,8 @@ def hash_file(path: Path, cancelled: Callable[[], bool] | None = None) -> tuple[
                 raise DigestCancelled
             digest.update(chunk)
             total += len(chunk)
+            if on_progress is not None:
+                on_progress(total)
     after = path.stat()
     if (before.st_size, before.st_mtime_ns) != (after.st_size, after.st_mtime_ns) or total != before.st_size:
         raise ValueError("file changed while it was hashed")
