@@ -44,6 +44,7 @@ from dtflow.services.lora_family import LoraFamily, detect_lora_family, validate
 from dtflow.services.lora_auto_naming import auto_prepare_metadata
 from dtflow.services.lora_naming import LoraPrepareMetadata
 from dtflow.services.lora_store import LoraStore
+from dtflow.services.prepare_progress import CHECKING, CONFIRMING, EXISTS, UPLOADING, PrepareEvent
 
 log = logging.getLogger(__name__)
 CHUNK = 1024 * 1024
@@ -98,7 +99,9 @@ def possible_missing_asset(failure: BackendFailure) -> bool:
     return failure.code in _ASSET_REJECTION_CODES or server_ended_without_result(failure)
 
 
-def _observe(path: Path, *, cached: bool = False) -> tuple[os.stat_result, str]:
+def _observe(
+    path: Path, *, cached: bool = False, on_progress: Callable[[int, int], None] | None = None
+) -> tuple[os.stat_result, str]:
     """Hash incrementally (bounded memory) and require the file to be unchanged while it was read.
 
     ``cached=True`` reuses a digest the editor already computed in the background, valid only while the file's
@@ -109,12 +112,16 @@ def _observe(path: Path, *, cached: bool = False) -> tuple[os.stat_result, str]:
         if not path.is_file() or before.st_size < 1:
             raise ValidationError("Asset file must be a non-empty regular file.")
         if cached and (known := cached_digest(path, before)) is not None:
+            if on_progress is not None:
+                on_progress(before.st_size, before.st_size)
             return before, known
         digest, total = hashlib.sha256(), 0
         with path.open("rb") as handle:
             while chunk := handle.read(CHUNK):
                 digest.update(chunk)
                 total += len(chunk)
+                if on_progress is not None:
+                    on_progress(total, before.st_size)
         after = path.stat()
     except OSError as exc:
         raise ValidationError("Asset file could not be read.") from exc
@@ -130,6 +137,24 @@ class AssetValidator(Protocol):
     async def ensure(self, prepared: PreparedAsset, on_stage: Callable[[str], None] | None = None) -> PreparedAsset: ...
 
     def forget(self, assets) -> None: ...
+
+
+def _guarded(progress: Callable[[PrepareEvent], None] | None) -> Callable[[PrepareEvent], None] | None:
+    """Progress is cosmetic: a callback that raises is logged once and dropped, never an upload failure."""
+    if progress is None:
+        return None
+    alive = [True]
+
+    def call(event: PrepareEvent) -> None:
+        if not alive[0]:
+            return
+        try:
+            progress(event)
+        except Exception:
+            alive[0] = False
+            diagnostic_event(log, "assets.progress_callback_failed", level=logging.WARNING, data={})
+
+    return call
 
 
 class AssetService:
@@ -179,9 +204,15 @@ class AssetService:
         *,
         provenance: str = "",
         metadata: LoraPrepareMetadata | None = None,
+        progress: Callable[[PrepareEvent], None] | None = None,
     ) -> PreparedAsset:
-        """Explicit Prepare; derive a usable managed name before provider negotiation."""
+        """Explicit Prepare; derive a usable managed name before provider negotiation.
+
+        ``progress`` receives stage events (checking, uploading with bytes, confirming, exists); it must not raise."""
         path = Path(path)
+        progress = _guarded(progress)
+        if progress is not None:
+            progress(PrepareEvent(CHECKING))
         managed_name = None
         if metadata is not None:
             try:
@@ -191,7 +222,13 @@ class AssetService:
             if identifier is not None and identifier != selected_identifier:
                 raise ValidationError("Prepare identifier disagrees with the selected managed LoRA name.")
             identifier = managed_name = selected_identifier
-        stat, digest = await asyncio.to_thread(partial(_observe, cached=True), path)
+        # The checking phase is two byte passes (hash, then the kept copy); each reports half of the phase.
+        hashed = copied = None
+        if progress is not None:
+            hashed = lambda done, total: progress(PrepareEvent(CHECKING, done, 2 * total))  # noqa: E731
+            copied = lambda done, total: progress(PrepareEvent(CHECKING, total + done, 2 * total))  # noqa: E731
+        observe = partial(_observe, cached=True, **({"on_progress": hashed} if hashed else {}))
+        stat, digest = await asyncio.to_thread(observe, path)
         await asyncio.to_thread(validate_converted_lora, path)
         if metadata is not None and not metadata.replace_existing:
             # Refuse a changed name before any copy or upload, so nothing is retained under the refused name.
@@ -218,7 +255,10 @@ class AssetService:
         retained = None
         if self.store is not None:
             # One verified copy with its chosen name, indexed before any provider call.
-            retained = await asyncio.to_thread(self.store.retain, path, digest, stat.st_size, managed_name=managed_name)
+            retain = partial(
+                self.store.retain, managed_name=managed_name, **({"on_progress": copied} if copied else {})
+            )
+            retained = await asyncio.to_thread(retain, path, digest, stat.st_size)
             diagnostic_event(
                 log, "assets.copy_kept", level=logging.INFO, data={"size": stat.st_size, "sha": digest[:8]}
             )
@@ -252,6 +292,7 @@ class AssetService:
                     metadata=metadata,
                     retained_name=retained.name if retained is not None else None,
                     managed_name=managed_name,
+                    progress=progress,
                 )
             )
             _INFLIGHT[key] = task
@@ -283,6 +324,7 @@ class AssetService:
         metadata: LoraPrepareMetadata | None = None,
         retained_name: str | None = None,
         managed_name: str | None = None,
+        progress: Callable[[PrepareEvent], None] | None = None,
     ) -> PreparedAsset:
         backend = self.backend
         credential_id = await self._credential_id()
@@ -303,6 +345,8 @@ class AssetService:
                 await asyncio.to_thread(self.store.rename_accepted, content.sha256, content.size, managed_name)
             negotiation = negotiation or await backend.negotiate_asset(content)
             if negotiation.status == "exists":
+                if progress is not None:
+                    progress(PrepareEvent(EXISTS))
                 receipt = await self.registry.confirm(
                     asset_id,
                     operation,
@@ -333,7 +377,16 @@ class AssetService:
                 protect_confirmed=credential_id is not None,
             )
             transferred = True
-            await backend.upload_asset(path, content, negotiation)
+            if progress is None:
+                await backend.upload_asset(path, content, negotiation)
+            else:
+                progress(PrepareEvent(UPLOADING, 0, content.size))
+                await backend.upload_asset(
+                    path,
+                    content,
+                    negotiation,
+                    on_progress=lambda sent, total: progress(PrepareEvent(UPLOADING, sent, total)),
+                )
         except asyncio.CancelledError:
             await settle(
                 self._settle_unknown(
@@ -368,6 +421,8 @@ class AssetService:
                 ErrorCategory.PROTOCOL, "asset_unexpected_failure", "Asset preparation failed.", RemoteOutcome.UNKNOWN
             ) from None
         # The transfer returned success; the server's own reference is still needed for a confirmed receipt.
+        if progress is not None:
+            progress(PrepareEvent(CONFIRMING))
         try:
             after = await backend.negotiate_asset(content)
         except asyncio.CancelledError:
