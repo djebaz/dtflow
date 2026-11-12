@@ -193,6 +193,16 @@ def _report(source: Path, directory: Path, args: argparse.Namespace, started: st
     }
     if args.analyze:
         report["analysis_enabled"] = True
+        checked = [item["output_check"] for item in items if "output_check" in item]
+        report["output_check_summary"] = {
+            "checked": len(checked),
+            "structure_valid": sum(check["structure"] == "valid" for check in checked),
+            "structure_invalid": sum(check["structure"] == "invalid" for check in checked),
+            "family_matched": sum(check["family_match"] is True for check in checked),
+            "family_mismatched": sum(check["family_match"] is False for check in checked),
+            "family_unknown": sum(check["detection"] == "unknown" for check in checked),
+            "detection_errors": sum(check["detection"] == "error" for check in checked),
+        }
     return report
 
 
