@@ -44,11 +44,7 @@ def write_ckpt(path: Path, tensors: dict[str, np.ndarray], ctx: ConversionContex
     """Write ``tensors`` to ``path`` (never overwriting). Returns (sha256, size) of the file."""
     if path.exists():
         raise DestinationError(f"{path} already exists; refusing to overwrite.")
-    path.parent.mkdir(parents=True, exist_ok=True)
-    # Unique temp name: two conversions to the same destination must not share (and delete) one file.
-    handle, tmp_name = tempfile.mkstemp(prefix=f"{path.name}.", suffix=".part", dir=path.parent)
-    os.close(handle)
-    tmp = Path(tmp_name)
+    tmp = None
     done = False
     total = len(tensors)
 
@@ -66,6 +62,10 @@ def write_ckpt(path: Path, tensors: dict[str, np.ndarray], ctx: ConversionContex
             )
 
     try:
+        # Unique temp name: two conversions to the same destination must not share (and delete) one file.
+        handle, tmp_name = tempfile.mkstemp(prefix=f"{path.name}.", suffix=".part", dir=path.parent)
+        os.close(handle)
+        tmp = Path(tmp_name)
         # The connection must be closed before the file is renamed or deleted (Windows locks it).
         con = sqlite3.connect(str(tmp))
         try:
@@ -92,5 +92,5 @@ def write_ckpt(path: Path, tensors: dict[str, np.ndarray], ctx: ConversionContex
     except sqlite3.Error as error:
         raise DestinationError(f"Cannot write {path}: {error}") from error
     finally:
-        if not done:
+        if not done and tmp is not None:
             tmp.unlink(missing_ok=True)

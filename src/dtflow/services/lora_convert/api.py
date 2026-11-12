@@ -80,8 +80,11 @@ def _convert(request: ConversionRequest, ctx: ConversionContext) -> ConversionRe
                 "Pass --experimental to convert anyway, or " + COLAB_HINT
             )
         ctx.log(f"warning: {request.family} is experimental, its output has not been compared with Draw Things yet.")
-    if request.destination.exists():  # cheap, before any work; write_ckpt checks again at the rename
+    # Cheap checks before any work; write_ckpt checks the name again at the rename.
+    if request.destination.exists():
         raise DestinationError(f"{request.destination} already exists; refusing to overwrite.")
+    if not request.destination.parent.is_dir():
+        raise DestinationError(f"The folder {request.destination.parent} does not exist; create it first.")
     check_numpy()
     ctx.stage("reading")
     with SafeTensors(request.source) as st:
