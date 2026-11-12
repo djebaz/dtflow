@@ -9,10 +9,11 @@ import asyncio
 import logging
 import os
 import re
+import time
 from collections.abc import Callable
 from pathlib import Path
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QTimer
 from PySide6.QtWidgets import QListWidgetItem, QWidget
 
 from dtflow.ui.file_dialogs import QFileDialog
@@ -38,7 +39,10 @@ from dtflow.services.session import (
     reconcile_asset,
     selection_for,
 )
+from dtflow.services.prepare_progress import EXISTS, PrepareEvent, PrepareProgress
+from dtflow.ui.activity_bar import clock
 from dtflow.ui.activity_strip import activity_strip
+from dtflow.ui.latest_relay import LatestRelay
 from dtflow.ui.runner import AsyncRunner
 from dtflow.services.lora_naming import display_label
 from dtflow.ui.lora_selection_editor import _display_label, edit_lora_selection
@@ -100,6 +104,13 @@ class LoraAssetPanel:
         self._prepare_revision = 0
         self._prepare_saved = None
         self._prepare_last = (None, None)
+        self._prepare_progress: PrepareProgress | None = None
+        self._prepare_relay: LatestRelay | None = None
+        self._prepare_stop = False  # "Stop after current file": nothing new starts once set
+        self._prepare_rendered = 0.0
+        self._prepare_timer = QTimer(page)  # keeps elapsed, ETA and the stall state moving between byte reports
+        self._prepare_timer.setInterval(500)
+        self._prepare_timer.timeout.connect(self._render_prepare)
         self._registry_generation = 0
         self.loras: tuple[LoRASelection, ...] = ()
         self._receipts: dict[str, str] = {}  # selected LoRA identifier -> local receipt id (never exported)
@@ -540,6 +551,7 @@ class LoraAssetPanel:
         if self.preparing:
             self._prepare_files += tuple(selected)
             self._prepare_metadata.update(selected)
+            self._track_prepare_files(selected)
         else:
             self._prepare_files = tuple(selected)
             self._prepare_metadata = dict(selected)
@@ -549,9 +561,17 @@ class LoraAssetPanel:
             self._prepare_saved = self._saved()
             self._registry_generation += 1
             self._set_busy(True)
+            self._prepare_stop = False
+            self._prepare_progress = PrepareProgress()
+            self._track_prepare_files(selected)
             activity_strip(self.page).start(
-                "asset", "Preparing cloud assets", detail="Only approved ready rows were admitted."
+                "asset",
+                "Preparing cloud assets",
+                stop=self._request_prepare_stop,
+                stop_text="Stop after current file",
+                detail="Only approved ready rows were admitted.",
             )
+            self._prepare_timer.start()
             self._prepare_next()
         if self._prepare_editor is not None:
             self._prepare_editor.admitted([Path(p) for p in selected])
@@ -569,6 +589,60 @@ class LoraAssetPanel:
         editor.close()
         self._prepare_editor = self._prepare_editor_context = None
 
+    def _track_prepare_files(self, selected) -> None:
+        """Register admitted files with the progress model, in the same order as ``_prepare_files``."""
+        for name in selected:
+            try:
+                size = Path(name).stat().st_size
+            except OSError:
+                size = 0
+            self._prepare_progress.add_file(name, size)
+
+    def _request_prepare_stop(self) -> None:
+        """Stop after the current file: it settles normally (no half-finished upload); later files never start."""
+        self._prepare_stop = True
+
+    def _on_prepare_event(self, index: int, event: PrepareEvent) -> None:
+        progress = self._prepare_progress
+        if progress is None:
+            return
+        progress.event(index, event)
+        if time.monotonic() - self._prepare_rendered >= 0.1:
+            self._render_prepare()
+
+    def _render_prepare(self) -> None:
+        progress = self._prepare_progress
+        if progress is None or not self.preparing:
+            return
+        self._prepare_rendered = time.monotonic()
+        snap = progress.snapshot()
+        total = len(self._prepare_files)
+        known = snap.fraction is not None
+        eta = ""
+        if snap.eta is not None:
+            seconds = snap.eta if snap.eta < 60 else 5 * round(snap.eta / 5)
+            eta = f"~{clock(seconds)} left"
+        detail = f"Preparing {min(self._prepare_index + 1, total)} of {total}. {snap.wide}".strip()
+        activity_strip(self.page).update(
+            "asset",
+            int(snap.fraction * 1000) if known else 0,
+            1000 if known else 0,
+            detail=detail,
+            elapsed=clock(snap.elapsed),
+            eta=eta,
+            stage=snap.stage,
+            wide=snap.wide,
+            count=f"{snap.settled}/{total}",
+        )
+
+    def _end_prepare_progress(self) -> None:
+        self._prepare_timer.stop()
+        self._prepare_progress = None
+        if self._prepare_relay is not None:
+            self._prepare_relay.close()
+            self._prepare_relay.deleteLater()
+            self._prepare_relay = None
+
     def invalidate_prepare_ownership(self) -> None:
         """Credential/backend changes stop admission after the currently admitted file settles."""
         self._ownership_revision += 1
@@ -577,7 +651,8 @@ class LoraAssetPanel:
         if self._runner.closed:
             return  # runner/service shutdown owns settlement; never submit another file
         if (
-            self._prepare_index >= len(self._prepare_files)
+            self._prepare_stop
+            or self._prepare_index >= len(self._prepare_files)
             or self._backend() != self._prepare_backend
             or self._ownership_revision != self._prepare_revision
             or self._saved() is not self._prepare_saved
@@ -587,14 +662,22 @@ class LoraAssetPanel:
         number, total = self._prepare_index + 1, len(self._prepare_files)
         detail = f"Preparing {number} of {total}. May upload this file; waiting for receipt."
         self._show(self.page.assetStatusLabel, Presentation("warning", "Preparing", detail))
-        activity_strip(self.page).update("asset", 0, 0, detail=detail)
+        index = self._prepare_index
+        if self._prepare_relay is not None:
+            self._prepare_relay.close()
+            self._prepare_relay.deleteLater()
+        # One relay per file: a late report of a settled file is dropped instead of moving the next one.
+        self._prepare_relay = LatestRelay(lambda event: self._on_prepare_event(index, event), self.page)
+        self._prepare_progress.start_file(index)
+        self._render_prepare()
         self._runner.submit(
             prepare_asset(
                 self._state,
-                Path(self._prepare_files[self._prepare_index]),
+                Path(self._prepare_files[index]),
                 provenance="gui",
                 saved=self._prepare_saved,
-                metadata=self._prepare_metadata[self._prepare_files[self._prepare_index]],
+                metadata=self._prepare_metadata[self._prepare_files[index]],
+                progress=self._prepare_relay,
             ),
             self._prepared,
         )
@@ -611,6 +694,7 @@ class LoraAssetPanel:
             else:
                 outcome = "confirmed" if state == "confirmed" else "failed" if state == "failed" else "unresolved"
             self._prepare_counts[outcome] += 1
+            self._settle_prepare_progress(record, outcome)
             if self._prepare_editor is not None:
                 self._prepare_editor.completed(
                     Path(self._prepare_files[self._prepare_index]),
@@ -686,8 +770,30 @@ class LoraAssetPanel:
             return
         self._present_prepared(record, failure)
 
+    def _settle_prepare_progress(self, record, outcome: str) -> None:
+        """Close the file in the progress model and log its phase timings (seconds per MiB) for weight tuning."""
+        progress, index = self._prepare_progress, self._prepare_index
+        if progress is None:
+            return
+        if record is not None and record.get("evidence") == "already_exists":
+            progress.event(index, PrepareEvent(EXISTS))
+        timings = progress.settle(index, outcome)
+        diagnostic_event(
+            log,
+            "ui.asset_prepare_timing",
+            level=logging.INFO,
+            data={"item": index + 1, "total": len(self._prepare_files), "outcome": outcome, **timings},
+        )
+        if self._prepare_relay is not None:
+            self._prepare_relay.close()  # late byte reports of this file are dropped
+
     def _finish_prepare(self) -> None:
         total, done = len(self._prepare_files), self._prepare_index
+        stopped, unstarted = self._prepare_stop, self._prepare_files[self._prepare_index :]
+        self._prepare_stop = False
+        self._end_prepare_progress()
+        if stopped and self._prepare_editor is not None:
+            self._prepare_editor.released([Path(p) for p in unstarted])
         self._prepare_files = ()
         self._prepare_metadata = {}
         self._prepare_saved = None
@@ -707,9 +813,12 @@ class LoraAssetPanel:
             if unseen:
                 detail += f"\n{unseen} more unsuccessful file(s); see -x Logs for all details."
         state = "error" if counts["failed"] else "success" if counts["confirmed"] == total else "partial"
-        activity_strip(self.page).complete("asset", "Cloud preparation finished", detail, state)
+        title = "Cloud preparation finished"
+        if stopped and state != "error":
+            state, title = "stopped", "Preparation stopped"
+        activity_strip(self.page).complete("asset", title, detail, state)
         level = "ok" if state == "success" else "error" if state == "error" else "warning"
-        self._show(self.page.assetStatusLabel, Presentation(level, "Cloud preparation finished", detail))
+        self._show(self.page.assetStatusLabel, Presentation(level, title, detail))
         self.refresh_assets()
 
     def _present_prepared(self, record, failure, *, bind: bool = True) -> None:

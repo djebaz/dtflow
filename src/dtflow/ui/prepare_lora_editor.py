@@ -416,6 +416,23 @@ class PrepareBatchEditor:
             control.setEnabled(True)
         self.refresh()
 
+    def released(self, paths: Sequence[Path]):
+        """Unlock rows that were admitted but never started (the run was stopped); they can be prepared again."""
+        if not self.active():
+            return
+        names = set(paths)
+        for row in self.rows:
+            if row.path in names and row.admitted and row.outcome is None:
+                row.admitted = False
+                for control in (
+                    row.widget.prepareArchitecture,
+                    row.widget.prepareShortName,
+                    row.widget.prepareFormat,
+                    row.widget.prepareTriggerWords,
+                ):
+                    control.setEnabled(True)
+        self.refresh()
+
     def completed(self, path: Path, outcome: str):
         """Reflect the provider result without automatically authorizing another row."""
         if not self.active():

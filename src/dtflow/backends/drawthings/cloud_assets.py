@@ -14,6 +14,7 @@ import logging
 import math
 import re
 import time
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -341,6 +342,7 @@ async def upload_signed(
     *,
     transport: httpx.AsyncBaseTransport | None = None,
     policy: AssetUploadPolicy | None = None,
+    on_progress: Callable[[int, int], None] | None = None,
 ) -> None:
     """Stream the file once to the signed destination with no DT+ authorization and bounded memory.
 
@@ -368,6 +370,8 @@ async def upload_signed(
                 if sent > content.size:
                     raise _transfer_error("asset_changed", RemoteOutcome.UNKNOWN, ErrorCategory.VALIDATION)
                 yielded += len(chunk)
+                if on_progress is not None:
+                    on_progress(yielded, content.size)  # bytes handed to the HTTP client, not server-acknowledged
                 yield chunk
             if sent != content.size or digest.hexdigest() != content.sha256:
                 raise _transfer_error("asset_changed", RemoteOutcome.UNKNOWN, ErrorCategory.VALIDATION)

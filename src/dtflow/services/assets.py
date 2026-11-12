@@ -39,6 +39,7 @@ from dtflow.services.lora_family import LoraFamily, detect_lora_family, validate
 from dtflow.services.lora_auto_naming import auto_prepare_metadata
 from dtflow.services.lora_naming import LoraPrepareMetadata
 from dtflow.services.lora_store import LoraStore
+from dtflow.services.prepare_progress import CHECKING, CONFIRMING, EXISTS, UPLOADING, PrepareEvent
 
 log = logging.getLogger(__name__)
 CHUNK = 1024 * 1024
@@ -167,9 +168,14 @@ class AssetService:
         *,
         provenance: str = "",
         metadata: LoraPrepareMetadata | None = None,
+        progress: Callable[[PrepareEvent], None] | None = None,
     ) -> PreparedAsset:
-        """Explicit Prepare; derive a usable managed name before provider negotiation."""
+        """Explicit Prepare; derive a usable managed name before provider negotiation.
+
+        ``progress`` receives stage events (checking, uploading with bytes, confirming, exists); it must not raise."""
         path = Path(path)
+        if progress is not None:
+            progress(PrepareEvent(CHECKING))
         managed_name = None
         if metadata is not None:
             try:
@@ -232,6 +238,7 @@ class AssetService:
                     metadata=metadata,
                     retained_name=retained.name if retained is not None else None,
                     managed_name=managed_name,
+                    progress=progress,
                 )
             )
             _INFLIGHT[key] = task
@@ -263,6 +270,7 @@ class AssetService:
         metadata: LoraPrepareMetadata | None = None,
         retained_name: str | None = None,
         managed_name: str | None = None,
+        progress: Callable[[PrepareEvent], None] | None = None,
     ) -> PreparedAsset:
         backend = self.backend
         credential_id = await self._credential_id()
@@ -283,6 +291,8 @@ class AssetService:
                 await asyncio.to_thread(self.store.rename_accepted, content.sha256, content.size, managed_name)
             negotiation = negotiation or await backend.negotiate_asset(content)
             if negotiation.status == "exists":
+                if progress is not None:
+                    progress(PrepareEvent(EXISTS))
                 receipt = await self.registry.confirm(
                     asset_id,
                     operation,
@@ -313,7 +323,16 @@ class AssetService:
                 protect_confirmed=credential_id is not None,
             )
             transferred = True
-            await backend.upload_asset(path, content, negotiation)
+            if progress is None:
+                await backend.upload_asset(path, content, negotiation)
+            else:
+                progress(PrepareEvent(UPLOADING, 0, content.size))
+                await backend.upload_asset(
+                    path,
+                    content,
+                    negotiation,
+                    on_progress=lambda sent, total: progress(PrepareEvent(UPLOADING, sent, total)),
+                )
         except asyncio.CancelledError:
             await settle(
                 self._settle_unknown(
@@ -348,6 +367,8 @@ class AssetService:
                 ErrorCategory.PROTOCOL, "asset_unexpected_failure", "Asset preparation failed.", RemoteOutcome.UNKNOWN
             ) from None
         # The transfer returned success; the server's own reference is still needed for a confirmed receipt.
+        if progress is not None:
+            progress(PrepareEvent(CONFIRMING))
         try:
             after = await backend.negotiate_asset(content)
         except asyncio.CancelledError:
