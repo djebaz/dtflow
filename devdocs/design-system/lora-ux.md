@@ -1,6 +1,6 @@
 # Issue #373 — LoRA preparation and selection design
 
-**Status:** design reference with a Qt implementation in PR #382: the batch Prepare editor, the Connections library table with the single-record metadata overlay, and the five trigger-prefix switches. Native Windows and provider acceptance are still pending.  
+**Status:** historical 2026-11-11 design reference. The Prepare editor foundation (#382), close/validation (#407) and phased progress/Stop (#408) are implemented on main; the converter service (#409) is source-tree CLI only, **not yet in the Prepare picker** (#401). Native/provider acceptance remains scenario-specific.  
 **Source of decisions:** [issue #373](https://github.com/djebaz/dtflow/issues/373), finalized on 2026-11-11.  
 **Implementation foundation:** [PR #381](https://github.com/djebaz/dtflow/pull/381), based on #378.  
 **Renders:** [LoRA UI kit](ui_kits/lora/index.html) · [wide design render](ui_kits/lora/prepare-wide.svg) · [compact render](ui_kits/lora/prepare-compact.svg).
@@ -10,7 +10,7 @@
 - **Before:** selecting converted files starts the existing cloud preparation immediately; there is no unified metadata editor, human-readable name or partial-batch readiness view.
 - **After:** one editor for all selected files, with suggested editable short names, an eligible exact architecture selector, F16/Q8P selection, optional triggers, safe managed-filename preview and **one explicit Prepare N ready LoRAs** action. Incomplete rows stay editable while already-authorized rows run and require a later explicit Prepare.
 - **Benefit:** no repeated dialogs, fewer unreadable filenames and one coherent editing flow.
-- **Tradeoff:** Prepare authorization moves from the file picker to the editor. This is an intentional behavior change and requires a reviewed root AGENTS.md amendment **before runtime implementation**.
+- **Tradeoff (implemented):** explicit Prepare authorization moved from file selection to the in-window editor. Root AGENTS.md and the [desktop guide](../guides/desktop.md#inline-actions-and-progress) now describe the behavior.
 
 ## Design rules
 
@@ -58,6 +58,12 @@ and provider checks still remain separate.
 
 The HTML kit and SVG graphics are **illustrative offline design renders**, not actual captured native Qt screenshots. The kit cannot hash, upload, persist, call a provider or dispatch generation. Architecture options in fixtures are examples, **not** a verified active-backend support list. Native Windows, backend/DT+ and accessibility acceptance are separate implementation gates. No tests or provider requests are part of the design deliverable.
 
-## Handoff
+## Implemented Prepare behavior and remaining work (2026-11-13)
 
-Implement the Qt Designer editor after amending the root AGENTS.md Prepare contract; wire it to PR #381's content-keyed metadata and naming resolver. Reuse shared picker patterns without mutating saved ordering, and verify provider architecture support/trigger-prefix behavior independently. Keep #373 as the product authority and #372 as the owner of Queue-specific effective LoRA stacks.
+- Imported converted CKPTs are inspected before upload approval; non-LoRA files and name conflicts are visible on their rows. **Re-Prepare** appears only after a previously accepted name is refused (#407).
+- The editor closes once admitted rows pass the Re-Prepare decision and no row still needs attention. It must preserve unrelated notices; per-row errors while the editor is open become one bar summary once closed (#407).
+- The existing status bar displays real checking/uploading/confirming progress, byte counts, percentage, throughput, a useful ETA or a stalled indication. **Stop after current file** is not a mid-upload cancellation (#408).
+- The owner confirmed two real Krea 2 prepared LoRAs visibly changed DT+ generation results, and [integrated offline CI](https://github.com/djebaz/dtflow/actions/runs/43327453328) passed 695 tests, 3 skipped. Exceptional editor, stall, Stop and packaged-app scenarios have not all been independently smoke-tested.
+- Automatic `.safetensors` conversion in Prepare (#401), source family detection (#402), and extended editing (#403) are future work. The [converter guide](../guides/lora-ckpt-format.md) covers the standalone source-tree CLI.
+
+The HTML/Qt kit above remains a design reference, not a rendered native acceptance record. Issue #373 remains product authority, and #372 owns Queue effective LoRA stacks. Later LoRA work belongs under epic #359.

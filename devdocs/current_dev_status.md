@@ -2,6 +2,8 @@
 
 Updated: 2026-11-08 for 6.2.0 preparation. [6.2.0 notes](releases/v6.2.0.md) cover workflow image/mask/resize nodes, wildcard prompts, saved-key selection, picker memory, panel sizing and diagnostics/crash mitigation. The candidate is not published; PR-head build, final merged build and owner artifact acceptance are separate gates. [6.1.0](https://github.com/djebaz/dtflow/releases/tag/v6.1.0) was published from `8e6e01e4` after owner acceptance of the exact Windows executable; its published body is authoritative. Subsequent source changes, CI and owner observations are separate from that artifact's acceptance. Repository source and linked evidence are authoritative; historical checkpoints remain in Git and versioned notes.
 
+**LoRA foundation update (2026-11-13):** Squash-merged #407/#408/#409 closed #398/#399/#400. The existing Prepare editor now inspects converted CKPT imports, authorizes only ready rows on explicit click, closes when no decision remains, and shows phased transfer progress/Stop. The local Qt-free `services/lora_convert/` API/CLI converts selected safetensors families with safe batching and optional reports; it does **not** yet integrate with the desktop `.safetensors` picker. Owner Windows Krea 2 two-sample iOS-reference and DT+ generation-effect smoke passed; integrated [offline CI](https://github.com/djebaz/dtflow/actions/runs/43327453328) was 695 passed / 3 skipped on the pre-format stack head. No final packaged Windows executable acceptance is implied. #401/#402/#403/#405 remain open in epic #359; see [converter guide](guides/lora-ckpt-format.md) and [architecture](architecture/lora-convert.md).
+
 ## Implemented scope mapped to the initial plan
 
 | Initial-plan phase | Current source scope | Remaining boundary |
