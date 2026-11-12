@@ -211,16 +211,21 @@ class PrepareBatchEditor:
         self.refresh()
 
     def progress(self, path: Path, text: str | None, summary: str | None = None) -> None:
-        """Show the live phase of one row (``None`` clears it) and an overall line next to the file count."""
+        """Show the live phase of one row (``None`` clears it) and an overall line beside the file count.
+
+        Touches only that row's status label and the count line: it is called while a run is in flight, so it must
+        not recompute names or restyle every row (that kept the GUI thread busy during a whole run).
+        """
         if not self.active():
             return
         for row in self.rows:
             if row.path == path:
                 row.phase = text
+                if row.admitted and row.outcome is None and not row.widget.prepareRowStatus.isHidden():
+                    row.widget.prepareRowStatus.setText(text or "Preparing…")
                 break
         if summary is not None:
             self.form.prepareFileCount.setText(f"{len(self.rows)} selected files · {summary}")
-        self.refresh()
 
     def set_summary(self, text: str) -> None:
         """One-line run result shown inside the editor while it stays open."""

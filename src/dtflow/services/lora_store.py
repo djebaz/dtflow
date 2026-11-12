@@ -12,6 +12,7 @@ import hashlib
 import json
 import logging
 import os
+import uuid
 import re
 import tempfile
 from dataclasses import dataclass
@@ -236,14 +237,25 @@ class LoraStore:
                 self.verify(RetainedFile(original.name, sha256, size, original))
                 return RetainedFile(original.name, sha256, size, original)
             self.verify(RetainedFile(original.name, sha256, size, original))
-            if original.name.casefold() == accepted_name.casefold():
-                # On case-insensitive filesystems both names refer to one file;
-                # unlinking the old spelling would delete the accepted copy.
-                raise ValidationError("A case-only retained LoRA rename needs explicit handling.")
+            target = self.directory / accepted_name
+            if original.name.casefold() == accepted_name.casefold() and os.path.lexists(target):
+                # Case-insensitive filesystem: both spellings are one file, so linking and unlinking would delete
+                # the only copy. Rename in place through a temporary name instead, then commit the index.
+                if target.is_symlink() or not os.path.samefile(target, original):
+                    raise ValidationError("The accepted LoRA filename is already occupied.")
+                temporary = self.directory / f".{uuid.uuid4().hex}.rename"
+                os.replace(original, temporary)
+                try:
+                    os.replace(temporary, target)
+                except OSError as exc:
+                    os.replace(temporary, original)  # put the original spelling back; nothing is lost
+                    raise ValidationError("Could not rename the retained LoRA; its original copy is intact.") from exc
+                item["name"] = accepted_name
+                self._write(files)
+                return RetainedFile(accepted_name, sha256, size, target)
             for other in files:
                 if other is not item and str(other.get("name", "")).casefold() == accepted_name.casefold():
                     raise ValidationError("Another retained LoRA already uses the accepted filename.")
-            target = self.directory / accepted_name
             if os.path.lexists(target):
                 # A previous interruption may have created the new hard link
                 # before the index commit. Adopt it only when its bytes match.
