@@ -104,6 +104,7 @@ def run_resolver(
             f"{len(unmatched)} modules do not belong to the {family} layers this converter knows "
             f"(for example {sample}). The file may be for another family or train layers that are "
             "not ported yet.",
+            modules=tuple(unmatched),
             hint=COLAB_HINT,
         )
     return out
