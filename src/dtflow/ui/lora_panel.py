@@ -555,6 +555,19 @@ class LoraAssetPanel:
             self._prepare_next()
         if self._prepare_editor is not None:
             self._prepare_editor.admitted([Path(p) for p in selected])
+            self._release_prepare_editor_if_all_started()
+
+    def _release_prepare_editor_if_all_started(self) -> None:
+        """Release the overlay once every row has been started so the bar shows the real progress.
+
+        A row that was not admitted (Needs architecture, Name conflict) keeps the editor open.
+        Only this editor is dismissed; an unrelated armed consent or notice is left alone.
+        """
+        editor = self._prepare_editor
+        if editor is None or not editor.all_admitted():
+            return
+        editor.close()
+        self._prepare_editor = self._prepare_editor_context = None
 
     def invalidate_prepare_ownership(self) -> None:
         """Credential/backend changes stop admission after the currently admitted file settles."""
@@ -697,34 +710,7 @@ class LoraAssetPanel:
         activity_strip(self.page).complete("asset", "Cloud preparation finished", detail, state)
         level = "ok" if state == "success" else "error" if state == "error" else "warning"
         self._show(self.page.assetStatusLabel, Presentation(level, "Cloud preparation finished", detail))
-        self._close_prepare_editor_if_done()
         self.refresh_assets()
-
-    def _close_prepare_editor_if_done(self) -> None:
-        """Close the Prepare editor only when every row is Prepared; otherwise it stays for Re-Prepare and fixes."""
-        editor = self._prepare_editor
-        if editor is None:
-            return
-        if not editor.active():
-            self._prepare_editor = self._prepare_editor_context = None
-            return
-        if self.preparing:
-            return
-        if not editor.all_prepared():
-            done = sum(row.outcome == "Prepared" for row in editor.rows)
-            if done:
-                attention = len(editor.rows) - done
-                self._show(
-                    self.page.assetStatusLabel,
-                    Presentation("warning", f"{done} prepared, {attention} need attention", ""),
-                )
-            return
-        count = len(editor.rows)
-        editor.close()
-        self._prepare_editor = self._prepare_editor_context = None
-        text = f"{count} LoRA{'s' if count != 1 else ''} prepared"
-        activity_strip(self.page).complete("asset", text, "", "success")
-        self._show(self.page.assetStatusLabel, Presentation("ok", text, ""))
 
     def _present_prepared(self, record, failure, *, bind: bool = True) -> None:
         self._set_busy(False)
@@ -759,7 +745,6 @@ class LoraAssetPanel:
             )
             if bind:
                 self._bind_after_list, self._add_when_bound = record["identifier"], True
-        self._close_prepare_editor_if_done()
         self.refresh_assets()
 
     def _start_reconcile(self, asset_id: str, bind: str | None = None) -> None:
