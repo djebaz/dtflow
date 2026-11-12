@@ -31,6 +31,7 @@ from dtflow.services.lora_convert import (
 )
 
 REPORT_SCHEMA_VERSION = 1
+ANALYSIS_REPORT_SCHEMA_VERSION = 2
 
 
 def _print_message(event: ConversionProgress) -> None:
@@ -92,7 +93,7 @@ def _write_report(directory: Path, report: dict) -> Path:
     reports = directory / "reports"
     reports.mkdir(parents=True, exist_ok=True)
     stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%S%fZ")
-    base = f"lora-convert-v{REPORT_SCHEMA_VERSION}-{stamp}"
+    base = f"lora-convert-v{report['schema_version']}-{stamp}"
     for index in range(1000):
         suffix = "" if index == 0 else f"-{index}"
         path = reports / f"{base}{suffix}.json"
@@ -104,6 +105,95 @@ def _write_report(directory: Path, report: dict) -> Path:
         except FileExistsError:
             continue
     raise OSError("Could not allocate a unique batch report filename.")
+
+
+def _analyze_item(path: Path, item: dict, args: argparse.Namespace) -> None:
+    """Collect optional source diagnostics before conversion, including on later failures."""
+    if not args.analyze:
+        return
+    try:
+        from dtflow.services.lora_convert.analysis import analyze_source
+
+        item["analysis"] = analyze_source(path, args.family)
+    except Exception as error:
+        item["analysis_error"] = f"{type(error).__name__}: {error}"
+
+
+def _check_output(path: Path, item: dict, args: argparse.Namespace) -> None:
+    """Inspect the written checkpoint with the existing app validation and family detector."""
+    if not args.analyze:
+        return
+    from dtflow.services.lora_convert.registry import lookup
+
+    expected = lookup(args.family).exact_architecture
+    check: dict = {
+        "expected_family": expected,
+        "detected_family": None,
+        "detection": "unknown",
+        "family_match": None,
+        "structure": "not_checked",
+    }
+    item["output_check"] = check
+    try:
+        from dtflow.services.lora_family import detect_lora_family, validate_converted_lora
+
+        try:
+            validate_converted_lora(path)
+        except Exception as error:
+            check["structure"] = "invalid"
+            check["structure_error"] = f"{type(error).__name__}: {error}"
+        else:
+            check["structure"] = "valid"
+
+        detected = detect_lora_family(path)
+        check["detected_family"] = detected.family
+        if detected.family is not None:
+            check["detection"] = "detected"
+            check["family_match"] = detected.family == expected
+    except Exception as error:
+        check["detection"] = "error"
+        check["detection_error"] = f"{type(error).__name__}: {error}"
+
+
+def _record_success(item: dict, result) -> None:
+    item.update(
+        status="succeeded",
+        tensors_written=result.tensors_written,
+        output_bytes=result.destination_size,
+        output_sha256=result.destination_sha256,
+        warnings=list(result.warnings),
+    )
+
+
+def _record_failure(item: dict, error: Exception) -> None:
+    if isinstance(error, ConversionError):
+        item.update(status="failed", error_code=error.code, error=str(error))
+        if hasattr(error, "modules"):
+            item["unmatched_modules"] = list(error.modules)
+    else:
+        item.update(status="failed", error_code="unexpected_error", error=f"{type(error).__name__}: {error}")
+
+
+def _report(source: Path, directory: Path, args: argparse.Namespace, started: str, items: list[dict]) -> dict:
+    """Compose the same report structure for single-file analysis and batch runs."""
+    totals = {status: sum(item["status"] == status for item in items) for status in ("succeeded", "failed", "skipped")}
+    report = {
+        "schema_version": ANALYSIS_REPORT_SCHEMA_VERSION if args.analyze else REPORT_SCHEMA_VERSION,
+        "converter_version": CONVERTER_VERSION,
+        "started_at_utc": started,
+        "completed_at_utc": datetime.now(UTC).isoformat(),
+        "input": str(source),
+        "output_folder": str(directory),
+        "family": args.family,
+        "scale": args.scale,
+        "overwrite": args.overwrite,
+        "total_files": len(items),
+        "summary": totals,
+        "files": items,
+    }
+    if args.analyze:
+        report["analysis_enabled"] = True
+    return report
 
 
 def _batch(files: list[Path], destination: Path, source: Path, args: argparse.Namespace) -> int:
@@ -123,6 +213,7 @@ def _batch(files: list[Path], destination: Path, source: Path, args: argparse.Na
         output = destination / path.with_suffix(".ckpt").name
         item: dict = {"source": path.name, "destination": output.name}
         started_item = time.monotonic()
+        _analyze_item(path, item, args)
         print(f"[{index}/{len(files)}] {path.name}", flush=True)
         # Windows treats case-only filename variants as the same destination.
         # Never let multiple sources silently replace one another in one batch.
@@ -136,46 +227,17 @@ def _batch(files: list[Path], destination: Path, source: Path, args: argparse.Na
             else:
                 try:
                     result = _convert(path, output, args)
-                    item.update(
-                        status="succeeded",
-                        tensors_written=result.tensors_written,
-                        output_bytes=result.destination_size,
-                        output_sha256=result.destination_sha256,
-                        warnings=list(result.warnings),
-                    )
-                except ConversionError as error:
-                    item.update(
-                        status="failed",
-                        error_code=error.code,
-                        error=str(error),
-                    )
-                    if hasattr(error, "modules"):
-                        item["unmatched_modules"] = list(error.modules)
+                    _record_success(item, result)
+                    _check_output(output, item, args)
                 except Exception as error:
-                    # A bad file must not prevent analysis of later files; preserve the
-                    # unexpected failure distinctly instead of labelling it unsupported.
-                    item.update(
-                        status="failed", error_code="unexpected_error", error=f"{type(error).__name__}: {error}"
-                    )
+                    # A failed file must not prevent analysis of later files.
+                    _record_failure(item, error)
         item["elapsed_seconds"] = round(time.monotonic() - started_item, 3)
         items.append(item)
         print(f"  {item['status']}: {item.get('error', item.get('reason', output.name))}", flush=True)
 
-    totals = {status: sum(item["status"] == status for item in items) for status in ("succeeded", "failed", "skipped")}
-    report = {
-        "schema_version": REPORT_SCHEMA_VERSION,
-        "converter_version": CONVERTER_VERSION,
-        "started_at_utc": started,
-        "completed_at_utc": datetime.now(UTC).isoformat(),
-        "input": str(source),
-        "output_folder": str(destination),
-        "family": args.family,
-        "scale": args.scale,
-        "overwrite": args.overwrite,
-        "total_files": len(files),
-        "summary": totals,
-        "files": items,
-    }
+    report = _report(source, destination, args, started, items)
+    totals = report["summary"]
     try:
         report_path = _write_report(destination, report)
     except OSError as error:
@@ -188,6 +250,38 @@ def _batch(files: list[Path], destination: Path, source: Path, args: argparse.Na
     return 1 if totals["failed"] else 0
 
 
+def _single(source: Path, output: Path, args: argparse.Namespace) -> int:
+    """Keep the original command unchanged unless -a requests a detailed report."""
+    if not args.analyze:
+        try:
+            _convert(source, output, args, progress=_print_message)
+        except (ConversionError, OSError) as error:
+            print(f"error: {error}", file=sys.stderr)
+            return 2
+        print(f"Converted {source.name} -> {output}")
+        return 0
+
+    started = datetime.now(UTC).isoformat()
+    begun = time.monotonic()
+    item: dict = {"source": source.name, "destination": output.name}
+    _analyze_item(source, item, args)
+    try:
+        result = _convert(source, output, args, progress=_print_message)
+        _record_success(item, result)
+        _check_output(output, item, args)
+    except Exception as error:
+        _record_failure(item, error)
+        print(f"error: {error}", file=sys.stderr)
+    item["elapsed_seconds"] = round(time.monotonic() - begun, 3)
+    try:
+        report_path = _write_report(output.parent, _report(source, output.parent, args, started, [item]))
+    except OSError as error:
+        print(f"error: Cannot save analysis report: {error}", file=sys.stderr)
+        return 2
+    print(f"Analysis report: {report_path}")
+    return 0 if item["status"] == "succeeded" else 2
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(prog="python -m dtflow.services.lora_convert", description=__doc__.splitlines()[0])
     ap.add_argument(
@@ -198,6 +292,12 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--scale", type=float, default=1.0)
     ap.add_argument(
         "-w", "--overwrite", action="store_true", help="Replace existing .ckpt files after successful conversion"
+    )
+    ap.add_argument(
+        "-a",
+        "--analyze",
+        action="store_true",
+        help="Include source mapping and output checkpoint checks in a version 2 JSON report",
     )
     ap.add_argument(
         "--ignore-unmatched",
@@ -226,13 +326,7 @@ def main(argv: list[str] | None = None) -> int:
         if args.destination.is_dir() or args.destination.suffix.casefold() != ".ckpt"
         else args.destination
     )
-    try:
-        _convert(files[0], output, args, progress=_print_message)
-    except (ConversionError, OSError) as error:
-        print(f"error: {error}", file=sys.stderr)
-        return 2
-    print(f"Converted {files[0].name} -> {output}")
-    return 0
+    return _single(files[0], output, args)
 
 
 if __name__ == "__main__":
