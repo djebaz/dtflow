@@ -458,7 +458,8 @@ def convert_tables(
         message = f"{len(set(unmatched))} LoRA tensors have no place in the {family} layers (for example {sample})."
         if not ignore_unmatched:
             raise UnmatchedModulesError(
-                f"{message} Pass --ignore-unmatched to skip them like Draw Things does, or {COLAB_HINT}"
+                f"{message} Pass --ignore-unmatched to skip them like Draw Things does, or {COLAB_HINT}",
+                modules=tuple(sorted(set(unmatched))),
             )
         ctx.log(f"warning: {message} Skipped.")
     return out
