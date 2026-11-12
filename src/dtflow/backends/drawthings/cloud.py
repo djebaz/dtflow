@@ -1,5 +1,6 @@
 """Direct DT+ backend: cloud authentication around the shared Draw Things transport path."""
 
+from collections.abc import Callable
 from dataclasses import replace
 from pathlib import Path
 
@@ -98,12 +99,23 @@ class DirectCloudBackend(DrawThingsBackend):
         """Batch-check distinct unconfirmed LoRAs with one BYOM request."""
         return await negotiate_lora_assets(self._auth, contents)
 
-    async def upload_asset(self, path: Path, content: AssetContent, negotiation: AssetNegotiation) -> None:
+    async def upload_asset(
+        self,
+        path: Path,
+        content: AssetContent,
+        negotiation: AssetNegotiation,
+        on_progress: Callable[[int, int], None] | None = None,
+    ) -> None:
         """Stream the file to the negotiated signed destination (explicit asset preparation only)."""
         if not isinstance(negotiation.ticket, UploadTicket):
             raise ValidationError("Upload needs a negotiated upload destination.")
         await upload_signed(
-            negotiation.ticket, path, content, transport=self._upload_transport, policy=self._upload_policy
+            negotiation.ticket,
+            path,
+            content,
+            transport=self._upload_transport,
+            policy=self._upload_policy,
+            on_progress=on_progress,
         )
 
     async def _generation_metadata(self, message):

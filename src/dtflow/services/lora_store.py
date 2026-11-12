@@ -15,6 +15,7 @@ import os
 import uuid
 import re
 import tempfile
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -154,8 +155,18 @@ class LoraStore:
                 f"Retained LoRA {display_label(retained.name)} no longer matches its recorded checksum."
             )
 
-    def retain(self, source: Path, sha256: str, size: int, *, managed_name: str | None = None) -> RetainedFile:
-        """Copy new content directly to its managed name, keeping one indexed copy per hash."""
+    def retain(
+        self,
+        source: Path,
+        sha256: str,
+        size: int,
+        *,
+        managed_name: str | None = None,
+        on_progress: Callable[[int, int], None] | None = None,
+    ) -> RetainedFile:
+        """Copy new content directly to its managed name, keeping one indexed copy per hash.
+
+        ``on_progress(copied, size)`` is optional, called per chunk from the calling thread; it must not raise."""
         source = Path(source)
         if managed_name is not None and (
             _safe_name(managed_name) != managed_name or not managed_name.endswith(".ckpt")
@@ -214,6 +225,8 @@ class LoraStore:
                         digest.update(chunk)
                         total += len(chunk)
                         writer.write(chunk)
+                        if on_progress is not None:
+                            on_progress(total, size)
                     writer.flush()
                     os.fsync(writer.fileno())
                 if (digest.hexdigest(), total) != (sha256, size):

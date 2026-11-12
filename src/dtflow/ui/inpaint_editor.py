@@ -39,7 +39,8 @@ from dtflow.services.model_provisioning import missing_entries
 from dtflow.services.session import image_edit_capability, selection_for
 from dtflow.ui.activity_strip import activity_strip
 from dtflow.ui.inline_feedback import confirm_action, feedback
-from dtflow.ui.model_download import LatestRelay, confirm_and_download, is_downloading
+from dtflow.ui.latest_relay import LatestRelay
+from dtflow.ui.model_download import confirm_and_download, is_downloading
 from dtflow.ui.inpaint_canvas import InpaintCanvas
 
 

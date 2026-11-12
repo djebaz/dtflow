@@ -606,7 +606,15 @@ class AssetBackend(Protocol):
     @property
     def scope(self) -> str: ...
     async def negotiate_asset(self, content: AssetContent) -> AssetNegotiation: ...
-    async def upload_asset(self, path: Path, content: AssetContent, negotiation: AssetNegotiation) -> None: ...
+    async def upload_asset(
+        self,
+        path: Path,
+        content: AssetContent,
+        negotiation: AssetNegotiation,
+        on_progress: Callable[[int, int], None] | None = None,
+    ) -> None:
+        """Upload the file; ``on_progress(sent, total)`` is optional and must never raise."""
+        ...
 
 
 @dataclass(frozen=True, slots=True)
