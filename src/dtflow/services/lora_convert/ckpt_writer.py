@@ -11,6 +11,7 @@ import hashlib
 import os
 import sqlite3
 import struct
+import tempfile
 from pathlib import Path
 
 import numpy as np
@@ -44,8 +45,10 @@ def write_ckpt(path: Path, tensors: dict[str, np.ndarray], ctx: ConversionContex
     if path.exists():
         raise DestinationError(f"{path} already exists; refusing to overwrite.")
     path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_name(f"{path.name}.{os.getpid()}.part")
-    tmp.unlink(missing_ok=True)
+    # Unique temp name: two conversions to the same destination must not share (and delete) one file.
+    handle, tmp_name = tempfile.mkstemp(prefix=f"{path.name}.", suffix=".part", dir=path.parent)
+    os.close(handle)
+    tmp = Path(tmp_name)
     done = False
     total = len(tensors)
 

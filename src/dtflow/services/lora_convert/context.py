@@ -36,8 +36,9 @@ class ConversionContext:
         if self.cancel is not None and self.cancel.is_set():
             raise ConversionCancelled("The conversion was cancelled.")
 
-    def stage(self, stage: str, done: int = 0, total: int = 0) -> None:
-        self.check_cancel()
+    def stage(self, stage: str, done: int = 0, total: int = 0, *, cancellable: bool = True) -> None:
+        if cancellable:
+            self.check_cancel()
         self._stage = stage
         self._emit(ConversionProgress(stage, done, total))
 

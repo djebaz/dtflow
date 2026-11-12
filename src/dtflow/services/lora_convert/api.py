@@ -21,6 +21,7 @@ from dtflow.services.lora_convert.errors import (
     COLAB_HINT,
     ConversionCancelled,
     ConversionError,
+    DestinationError,
     ExperimentalFamilyError,
     UnsupportedLoraFormatError,
 )
@@ -79,6 +80,8 @@ def _convert(request: ConversionRequest, ctx: ConversionContext) -> ConversionRe
                 "Pass --experimental to convert anyway, or " + COLAB_HINT
             )
         ctx.log(f"warning: {request.family} is experimental, its output has not been compared with Draw Things yet.")
+    if request.destination.exists():  # cheap, before any work; write_ckpt checks again at the rename
+        raise DestinationError(f"{request.destination} already exists; refusing to overwrite.")
     check_numpy()
     ctx.stage("reading")
     with SafeTensors(request.source) as st:
@@ -87,10 +90,11 @@ def _convert(request: ConversionRequest, ctx: ConversionContext) -> ConversionRe
         tensors = spec.run(st, request, ctx)
     if not tensors:
         raise UnsupportedLoraFormatError("No LoRA tensors found in the file.")
+    # Everything cancellable happens before the rename: after write_ckpt returns, the output is final.
+    source_sha256 = _sha256_source(request.source, ctx) if request.hash_source else None
     ctx.stage("writing", 0, len(tensors))
     destination_sha256, destination_size = write_ckpt(request.destination, tensors, ctx)
-    ctx.stage("finishing", len(tensors), len(tensors))
-    source_sha256 = _sha256_source(request.source, ctx) if request.hash_source else None
+    ctx.stage("finishing", len(tensors), len(tensors), cancellable=False)
     ctx.log(f"wrote {len(tensors)} tensors to {request.destination}")
     provenance = ConversionProvenance(
         converter=CONVERTER_NAME,
