@@ -179,6 +179,8 @@ class PrepareBatchEditor:
 
         The registry refuses a changed name for content that already has an accepted one (Re-Prepare needed)
         while the file is still being checked, so the editor must stay open until every row got past that step.
+        ``row.checked`` comes from a later stage event; a file that fails or settles first never reports one, so a
+        known outcome counts as past checking too (this fallback is what lets a failed or instant row release).
         """
         return bool(self.rows) and all(
             row.invalid  # not a LoRA: never admitted, nothing left to do for it here

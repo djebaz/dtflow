@@ -100,6 +100,7 @@ class LoraAssetPanel:
         self._prepare_editor_context = None
         self._prepare_index = 0
         self._prepare_counts = {"confirmed": 0, "failed": 0, "unresolved": 0}
+        self._prepare_final: dict[str, str] = {}  # last outcome per distinct file in this run
         self._prepare_issues: list[str] = []
         self._ownership_revision = 0
         self._last_backend = self._backend()
@@ -565,6 +566,7 @@ class LoraAssetPanel:
             self._prepare_metadata = dict(selected)
             self._prepare_index = 0
             self._prepare_counts = {"confirmed": 0, "failed": 0, "unresolved": 0}
+            self._prepare_final = {}
             self._prepare_issues = []
             self._prepare_backend, self._prepare_revision = backend, self._ownership_revision
             self._prepare_saved = self._saved()
@@ -632,6 +634,10 @@ class LoraAssetPanel:
             else:
                 outcome = "confirmed" if state == "confirmed" else "failed" if state == "failed" else "unresolved"
             self._prepare_counts[outcome] += 1
+            settled = (
+                "existing" if outcome == "confirmed" and (record or {}).get("evidence") == "already_exists" else outcome
+            )
+            self._prepare_final[self._prepare_files[self._prepare_index]] = settled
             if self._prepare_editor is not None:
                 self._prepare_editor.completed(
                     Path(self._prepare_files[self._prepare_index]),
@@ -721,17 +727,22 @@ class LoraAssetPanel:
             same_owner = self._backend() == self._prepare_backend and self._ownership_revision == self._prepare_revision
             self._present_prepared(*self._prepare_last, bind=same_owner)
             return
-        counts = self._prepare_counts
         self._release_prepare_editor_if_all_checked()
         editor_open = self._prepare_editor is not None and self._prepare_editor.active()
-        prepared = counts["confirmed"]
+        # Count distinct files by their last outcome: a Re-Prepared file is one file, not two.
+        final = list(self._prepare_final.values())
+        prepared, existing = final.count("confirmed"), final.count("existing")
+        failed, unresolved = final.count("failed"), final.count("unresolved")
+        unstarted = total - done
         parts = [f"{prepared} prepared"]
-        if counts["failed"]:
-            parts.append(f"{counts['failed']} failed")
-        if counts["unresolved"]:
-            parts.append(f"{counts['unresolved']} unresolved")
-        if total - done:
-            parts.append(f"{total - done} unstarted")
+        if existing:
+            parts.append(f"{existing} already on DT+")
+        if failed:
+            parts.append(f"{failed} failed")
+        if unresolved:
+            parts.append(f"{unresolved} unresolved")
+        if unstarted:
+            parts.append(f"{unstarted} unstarted")
         detail = ", ".join(parts) + ". No automatic retries."
         if editor_open:
             # One surface at a time: the editor rows carry the per-file reasons.
@@ -739,10 +750,10 @@ class LoraAssetPanel:
         else:
             if self._prepare_issues:
                 detail += "\n" + "\n".join(self._prepare_issues)
-                unseen = max(0, counts["failed"] + counts["unresolved"] - len(self._prepare_issues))
+                unseen = max(0, failed + unresolved - len(self._prepare_issues))
                 if unseen:
                     detail += f"\n{unseen} more unsuccessful file(s); see -x Logs for all details."
-            state = "error" if counts["failed"] else "success" if counts["confirmed"] == total else "partial"
+            state = "error" if failed else "partial" if unresolved or unstarted else "success"
         activity_strip(self.page).complete("asset", "Cloud preparation finished", detail, state)
         level = "ok" if state == "success" else "error" if state == "error" else "warning"
         self._show(self.page.assetStatusLabel, Presentation(level, "Cloud preparation finished", detail))
