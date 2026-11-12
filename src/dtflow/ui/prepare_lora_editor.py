@@ -72,6 +72,15 @@ class _Row:
     hashing: bool = True  # background content hash still running (cleared when it ends, even if unreadable)
 
 
+def _invalid_label(reason: str) -> str:
+    """Short row status for a file whose container check failed (reason text comes from the validator)."""
+    if "readable" in reason:
+        return "Unreadable checkpoint"
+    if "up/down" in reason or "usable tensor" in reason or "metadata is missing" in reason:
+        return "No LoRA weights"
+    return "Not a valid LoRA"
+
+
 class _FileElision(QObject):
     """Keep source filenames middle-elided to their live Qt column width."""
 
@@ -329,7 +338,7 @@ class PrepareBatchEditor:
                 elif not self.inspected:
                     message, state = "Inspecting file…", "unknown"
                 elif row.invalid:
-                    message, state = "Not a valid LoRA", "error"
+                    message, state = _invalid_label(row.invalid), "error"
                 elif row.hashing:
                     # The content hash decides whether the file already has an accepted name; wait for it.
                     message, state = "Reading file…", "unknown"
@@ -377,8 +386,18 @@ class PrepareBatchEditor:
                     else "Unknown inspection"
                 )
                 family_note = row.widget.prepareArchitectureSource
+                for control in (
+                    row.widget.prepareArchitecture,
+                    row.widget.prepareShortName,
+                    row.widget.prepareFormat,
+                    row.widget.prepareTriggerWords,
+                ):
+                    # A file that cannot be a LoRA has nothing to choose: no architecture, name or format.
+                    control.setVisible(not (self.inspected and row.invalid))
                 if not self.inspected:
                     family_note.setText("Inspecting file…")
+                elif row.invalid:
+                    family_note.setText(row.invalid)
                 elif family:
                     if row.manual_family:
                         family_note.setText(
@@ -392,10 +411,12 @@ class PrepareBatchEditor:
                     family_note.setText("Detected; backend support unverified")
                 else:
                     family_note.setText("Required · not file-detected")
-                family_note.setProperty("state", "error" if not family and self.inspected else "unknown")
+                family_note.setProperty(
+                    "state", "error" if (not family or row.invalid) and self.inspected else "unknown"
+                )
                 family_note.style().unpolish(family_note)
                 family_note.style().polish(family_note)
-                row.widget.prepareArchitecture.setProperty("invalid", self.inspected and not family)
+                row.widget.prepareArchitecture.setProperty("invalid", self.inspected and not family and not row.invalid)
                 row.widget.prepareArchitecture.style().unpolish(row.widget.prepareArchitecture)
                 row.widget.prepareArchitecture.style().polish(row.widget.prepareArchitecture)
                 short_name = row.widget.prepareShortName.text().strip()
