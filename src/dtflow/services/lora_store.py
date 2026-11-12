@@ -80,6 +80,35 @@ class LoraStore:
             raise ValidationError("The retained LoRA index is malformed; nothing was changed.")
         return [item for item in files if isinstance(item, dict)]
 
+    def _read_recovering(self) -> list[dict]:
+        """Read the index under the store lock, first restoring a file a killed case-only rename left half-moved.
+
+        ``.<id>.rename`` is the temporary name of an in-place rename; when the index still names a file that is
+        missing, the temporary one is that file, so it goes back under its indexed name (nothing is lost).
+        """
+        files = self._read()
+        try:
+            leftovers = [p for p in self.directory.glob(".*.rename") if p.is_file()]
+        except OSError:
+            return files
+        for temporary in leftovers:
+            try:
+                size = temporary.stat().st_size
+                owner = next(
+                    (
+                        item
+                        for item in files
+                        if item.get("size") == size and not self._path(item).exists() and item.get("name")
+                    ),
+                    None,
+                )
+                if owner is not None:
+                    os.replace(temporary, self._path(owner))
+                    diagnostic_event(log, "assets.retained_rename_recovered", level=logging.WARNING, data={})
+            except (OSError, ValidationError):
+                continue
+        return files
+
     def _write(self, files: list[dict]) -> None:
         temporary = self.directory / ".index.tmp"
         with temporary.open("w", encoding="utf-8", newline="\n") as handle:
@@ -134,7 +163,7 @@ class LoraStore:
             raise ValidationError("The managed LoRA filename is not portable.")
         handle = self._locked()
         try:
-            files = self._read()
+            files = self._read_recovering()
             matching = next(
                 (item for item in files if item.get("sha256") == sha256 and item.get("size") == size),
                 None,
@@ -228,7 +257,7 @@ class LoraStore:
             raise ValidationError("The accepted LoRA filename is not portable.")
         handle = self._locked()
         try:
-            files = self._read()
+            files = self._read_recovering()
             item = next((row for row in files if (row.get("sha256"), row.get("size")) == (sha256, size)), None)
             if item is None:
                 return None

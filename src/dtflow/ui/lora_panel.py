@@ -100,6 +100,7 @@ class LoraAssetPanel:
         self._prepare_metadata: dict[str, LoraPrepareMetadata] = {}
         self._prepare_editor: PrepareBatchEditor | None = None
         self._prepare_editor_context = None
+        self._hash_paused: tuple | None = None
         self._prepare_index = 0
         self._prepare_counts = {"confirmed": 0, "failed": 0, "unresolved": 0}
         self._inspecting = False
@@ -491,7 +492,11 @@ class LoraAssetPanel:
             return
         if self._runner.closed or self._is_busy() or self._backend() != backend or revision != self._ownership_revision:
             return
-        paths = tuple(dict.fromkeys(os.path.abspath(path) for path in chosen))
+        # One row per file: spellings that differ only by case, a \\?\ prefix or a symlink are the same file.
+        unique: dict[str, str] = {}
+        for path in chosen:
+            unique.setdefault(os.path.normcase(os.path.realpath(path)), os.path.abspath(path))
+        paths = tuple(unique.values())
         if self._prepare_editor is not None:
             self._prepare_editor.cancel_hashing()  # a replaced editor must not keep reading files
         self._prepare_editor = PrepareBatchEditor(
@@ -512,6 +517,8 @@ class LoraAssetPanel:
         """Inspection of the selected files in the shared bottom activity bar (``done_bytes=None``: it is over)."""
         strip = activity_strip(self.page)
         key = "asset-inspect"
+        if self.preparing and done_bytes is not None:
+            return  # the run's own bar row is the one shown while it is going
         if done_bytes is None:
             if self._inspecting:
                 self._inspecting = False
@@ -534,7 +541,12 @@ class LoraAssetPanel:
         if index >= len(paths) or self._runner.closed:
             return
         if not editor.active() or editor is not self._prepare_editor:
-            editor.cancel_hashing()  # closed, dismissed or replaced: stop reading
+            editor.cancel_hashing()  # closed, dismissed or replaced: stop reading and end the bar job
+            return
+        if self.preparing:
+            # A run is reading and uploading: do not compete with it for the disk. Resumed when it ends.
+            self._hash_paused = (editor, paths, index)
+            self._inspect_progress(None, 0, 0, len(paths))
             return
         path = Path(paths[index])
 
@@ -542,14 +554,21 @@ class LoraAssetPanel:
             sha, size = await asyncio.to_thread(
                 hash_file, path, editor.hash_cancelled.is_set, lambda n: editor.note_read(path, n)
             )
-            return sha, size, await accepted_managed_identifier(self._state, sha, size)
+            try:
+                accepted = await accepted_managed_identifier(self._state, sha, size)
+            except Exception:  # an unreadable registry must not discard a good content hash
+                accepted = None
+            return sha, size, accepted
 
         def done(result, failure) -> None:
             if isinstance(failure, DigestCancelled) or self._runner.closed:
+                editor.cancel_hashing()
                 return
             if editor.active():
                 sha, size, accepted = result if failure is None else (None, None, None)
                 editor.set_identity(path, sha, size, accepted)
+            else:
+                editor.cancel_hashing()
             self._hash_next(editor, paths, index + 1)
 
         self._runner.submit(hashing(), done)
@@ -771,17 +790,31 @@ class LoraAssetPanel:
             return
         self._present_prepared(record, failure)
 
+    def _drop_dead_editor(self) -> None:
+        """Forget an editor the user dismissed, so it cannot receive progress or checks from a later run."""
+        editor = self._prepare_editor
+        if editor is not None and not editor.active():
+            editor.cancel_hashing()
+            self._prepare_editor = self._prepare_editor_context = None
+
+    def _resume_hashing(self) -> None:
+        paused, self._hash_paused = self._hash_paused, None
+        if paused is not None:
+            self._hash_next(*paused)
+
     def _finish_prepare(self) -> None:
         total, done = len(self._prepare_files), self._prepare_index
         self._prepare_files = ()
         self._prepare_metadata = {}
         self._prepare_saved = None
         self._set_busy(False)
+        self._resume_hashing()
         if total == 1 and done == 1:
             same_owner = self._backend() == self._prepare_backend and self._ownership_revision == self._prepare_revision
             self._present_prepared(*self._prepare_last, bind=same_owner)
             return
         self._release_prepare_editor_if_all_checked()
+        self._drop_dead_editor()
         editor_open = self._prepare_editor is not None and self._prepare_editor.active()
         # Count distinct files by their last outcome: a Re-Prepared file is one file, not two.
         final = list(self._prepare_final.values())
@@ -820,6 +853,7 @@ class LoraAssetPanel:
     def _present_prepared(self, record, failure, *, bind: bool = True) -> None:
         self._set_busy(False)
         strip = activity_strip(self.page)
+        self._drop_dead_editor()
         presentation = (
             present_asset_failure(failure)
             if failure

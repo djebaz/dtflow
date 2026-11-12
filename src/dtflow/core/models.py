@@ -79,6 +79,15 @@ class NameAlreadyAcceptedError(ValidationError):
     """Content already has an accepted managed filename; only an explicit Re-Prepare may change it."""
 
 
+def accepted_name_changes(accepted: str | None, identifier: str | None) -> bool:
+    """Whether ``identifier`` would change a content's accepted managed filename.
+
+    One rule for the editor, the service and the registry: the comparison is exact, so a case-only difference is
+    a change (explicit Re-Prepare renames it, in place on a case-insensitive filesystem).
+    """
+    return accepted is not None and identifier is not None and accepted != identifier
+
+
 Metadata = tuple[tuple[str, str], ...]
 MAX_QUEUE_ITEMS = 1000  # one queue's item ceiling; the planner checks it before enumerating
 MAX_QUEUE_CONCURRENCY = 10  # configurable client policy; provider limits still apply

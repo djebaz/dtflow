@@ -18,6 +18,7 @@ from PySide6.QtUiTools import QUiLoader
 from PySide6.QtWidgets import QSizePolicy, QWidget
 from shiboken6 import isValid
 
+from dtflow.core.models import accepted_name_changes
 from dtflow.services.catalogue import FAMILY_LABELS
 from dtflow.services.lora_family import LoraFamily
 from dtflow.services.lora_naming import (
@@ -73,8 +74,13 @@ class _Row:
     hashing: bool = True  # background content hash still running (cleared when it ends, even if unreadable)
 
 
+_DUPLICATE = "duplicate:"
+
+
 def _invalid_label(reason: str) -> str:
     """Short row status for a file whose container check failed (reason text comes from the validator)."""
+    if reason.startswith(_DUPLICATE):
+        return f"Same file as {reason[len(_DUPLICATE) :]}"
     if "readable" in reason:
         return "Unreadable checkpoint"
     if "up/down" in reason or "usable tensor" in reason or "metadata is missing" in reason:
@@ -138,6 +144,8 @@ class PrepareBatchEditor:
         self._on_inspect_progress = on_inspect_progress
         self.parent = parent
         self.hash_cancelled = threading.Event()
+        self._inspection_ended = False
+        self._refresh_pending = False
         self.read_bytes: dict[Path, int] = {}  # written by the background hash thread, read by the GUI timer
         self.form = _load("prepare_lora_batch.ui")
         self.panel = feedback(parent)
@@ -192,6 +200,7 @@ class PrepareBatchEditor:
         self._tick_timer.setInterval(200)
         self._tick_timer.timeout.connect(self._tick_inspection)
         self._tick_timer.start()
+        self.form.destroyed.connect(self._end_inspection)  # dismissed by Escape or a page change
         self._elision = _FileElision(self.form, self.rows)
         for row in self.rows:
             row.widget.prepareSourceFile.installEventFilter(self._elision)
@@ -217,8 +226,7 @@ class PrepareBatchEditor:
     def _tick_inspection(self) -> None:
         """Show real inspection progress while files are still being read: overall bar, count, per-file percent."""
         if not self.active():
-            self._tick_timer.stop()
-            self._report(None, 0, 0, len(self.rows))
+            self._end_inspection()
             return
         pending = [row for row in self.rows if row.hashing]
         if self.inspected and not pending:
@@ -260,7 +268,33 @@ class PrepareBatchEditor:
             if row.path == path:
                 row.sha256, row.size, row.accepted, row.hashing = sha256, size, accepted, False
                 break
-        self.refresh()
+        self._mark_duplicates()
+        self._refresh_later()
+
+    def _mark_duplicates(self) -> None:
+        """A row with the same content (sha256, size) as an earlier row is not prepared twice."""
+        first: dict[tuple[str, int], _Row] = {}
+        for row in self.rows:
+            if row.sha256 is None or row.size is None:
+                continue
+            earlier = first.setdefault((row.sha256, row.size), row)
+            if earlier is not row:
+                if row.invalid is None or row.invalid.startswith(_DUPLICATE):
+                    row.invalid = _DUPLICATE + earlier.path.name
+            elif row.invalid is not None and row.invalid.startswith(_DUPLICATE):
+                row.invalid = None
+
+    def _refresh_later(self) -> None:
+        """Coalesce refreshes triggered by many background hashes into one pass."""
+        if self._refresh_pending or not self.active():
+            return
+        self._refresh_pending = True
+
+        def run() -> None:
+            self._refresh_pending = False
+            self.refresh()
+
+        QTimer.singleShot(150, run)
 
     def progress(self, path: Path, text: str | None, summary: str | None = None) -> None:
         """Show the live phase of one row (``None`` clears it) and an overall line beside the file count.
@@ -285,8 +319,21 @@ class PrepareBatchEditor:
             self.form.prepareFileCount.setText(f"{len(self.rows)} selected files · {text}")
 
     def cancel_hashing(self) -> None:
-        """Stop the background reads (editor closed, dismissed or replaced)."""
+        """Stop the background reads (editor closed, dismissed or replaced) and end the inspection report."""
+        self._end_inspection()
+
+    def _end_inspection(self, *_ignored) -> None:
+        """The one idempotent path for an editor that is gone: stop hashing and tell the panel inspection is over."""
         self.hash_cancelled.set()
+        if self._inspection_ended:
+            return
+        self._inspection_ended = True
+        try:
+            if isValid(self.form):
+                self._tick_timer.stop()
+        except RuntimeError:
+            pass
+        self._report(None, 0, 0, len(self.rows))
 
     def all_checked(self) -> bool:
         """Whether every row is admitted and past the local checks, with no failure left to Re-Prepare.
@@ -315,8 +362,7 @@ class PrepareBatchEditor:
 
     def close(self) -> None:
         """Dismiss this editor only while it still owns the panel; never touch an unrelated consent or notice."""
-        self.cancel_hashing()
-        self._report(None, 0, 0, len(self.rows))
+        self._end_inspection()
         if self.active():
             self.panel.dismiss()
 
@@ -366,6 +412,7 @@ class PrepareBatchEditor:
             combo.setCurrentIndex(max(0, index))
         self._updating = False
         self.inspected = True
+        self._mark_duplicates()
         self.refresh()
 
     def _allocation(self):
@@ -414,11 +461,10 @@ class PrepareBatchEditor:
                 elif allocation is None or not family:
                     message, state = "Needs architecture", "warning"
                 elif (
-                    row.accepted
-                    and not row.reprepare
+                    not row.reprepare
                     and allocation.filename
                     and allocation.conflict is None
-                    and allocation.filename.casefold() != row.accepted.casefold()
+                    and accepted_name_changes(row.accepted, allocation.filename)
                 ):
                     # Known before Prepare: this content already has another accepted name. Re-Prepare is the
                     # explicit choice to rename it; until then the row is not sent (it would be refused).
@@ -466,7 +512,9 @@ class PrepareBatchEditor:
                 if not self.inspected:
                     family_note.setText("Inspecting file…")
                 elif row.invalid:
-                    family_note.setText(row.invalid)
+                    family_note.setText(
+                        _invalid_label(row.invalid) if row.invalid.startswith(_DUPLICATE) else row.invalid
+                    )
                 elif family:
                     if row.manual_family:
                         family_note.setText(

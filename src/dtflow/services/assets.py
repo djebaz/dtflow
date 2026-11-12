@@ -18,6 +18,7 @@ from dataclasses import replace
 from typing import Protocol
 
 from dtflow.core.models import (
+    accepted_name_changes,
     NameAlreadyAcceptedError,
     AssetBackend,
     AssetContent,
@@ -196,7 +197,7 @@ class AssetService:
             # Refuse a changed name before any copy or upload, so nothing is retained under the refused name.
             saved = await self.registry.lora_metadata(digest, stat.st_size)
             accepted = saved.get("managed_identifier") if saved else None
-            if isinstance(accepted, str) and accepted != identifier:
+            if isinstance(accepted, str) and accepted_name_changes(accepted, identifier):
                 raise NameAlreadyAcceptedError(
                     "This content already has an accepted managed filename. Choose explicit Re-Prepare to change it."
                 )
