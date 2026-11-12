@@ -149,9 +149,7 @@ def analyze_source(path: Path, family: str) -> dict:
                 if target.up_rows is not None and "up" in roles and "down" in roles:
                     up = source.shape(roles["up"])
                     down = source.shape(roles["down"])
-                    if len(up) >= 2 and len(down) >= 2 and (
-                        up[0] != target.up_rows or down[1] != target.down_cols
-                    ):
+                    if len(up) >= 2 and len(down) >= 2 and (up[0] != target.up_rows or down[1] != target.down_cols):
                         shape_issues.append({"module": module, "issue": "target_shape_mismatch"})
         elif family in ("sd1", "sdxl"):
             matched = _table_matches(keys, family)

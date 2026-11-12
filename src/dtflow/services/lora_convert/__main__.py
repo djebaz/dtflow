@@ -294,9 +294,7 @@ def _single(source: Path, output: Path, args: argparse.Namespace) -> int:
 
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(prog="python -m dtflow.services.lora_convert", description=__doc__.splitlines()[0])
-    ap.add_argument(
-        "source", type=Path, help="A .safetensors file, folder, or quoted filename glob (case-insensitive)"
-    )
+    ap.add_argument("source", type=Path, help="A .safetensors file, folder, or quoted filename glob (case-insensitive)")
     ap.add_argument("destination", type=Path, help="Output .ckpt file or, for a batch, an output folder")
     ap.add_argument("--family", required=True, choices=sorted(spec.key for spec in supported_families()))
     ap.add_argument("--scale", type=float, default=1.0)
