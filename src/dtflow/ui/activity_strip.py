@@ -427,6 +427,8 @@ class ActivityStrip(QObject):
                     if stop_text == "Cancel before start"
                     else "Cancelling download; the partial file is removed, completed models stay installed."
                     if stop_text == "Cancel download"
+                    else "Stopping after the current file; completed files remain and no upload is cut off."
+                    if stop_text == "Stop after current file"
                     else "Stopping local wait; remote cancellation is not confirmed."
                     if stop_text == "Stop waiting locally"
                     else "Stopping after the current item; completed work remains."
@@ -440,6 +442,16 @@ class ActivityStrip(QObject):
         self.operations_changed.emit()
         self._position()
         QTimer.singleShot(0, self, self._position)
+
+    def set_stop_visible(self, key, visible: bool) -> None:
+        """Show or hide the Stop button of a running row (a stopping row keeps its disabled button)."""
+        row = self.rows.get(key)
+        if not self._live() or row is None or not isValid(row) or row.property("feedbackState") != "progress":
+            return
+        button = row.activityStopButton
+        if button.isEnabled() and button.isHidden() == visible:
+            button.setVisible(visible)
+            self._sync_bar()
 
     def update(self, key, done, total, *, detail=None, elapsed="", eta="", stage="", wide="", queued=0, count=None):
         """``count`` replaces the default "done / total" text (e.g. transferred MiB when done/total are percent)."""
@@ -581,4 +593,7 @@ class ActivityStrip(QObject):
 
 
 def activity_strip(parent):
-    return getattr(parent.window(), "_activity_strip", None)
+    try:
+        return getattr(parent.window(), "_activity_strip", None)
+    except RuntimeError:
+        return None  # the widget was already deleted (application teardown)
