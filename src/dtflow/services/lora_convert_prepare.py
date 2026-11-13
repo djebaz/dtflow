@@ -60,6 +60,13 @@ def _convert_sync(
 
     hint = {"file_prefix": source.name[:3], "source_sha_prefix": source_sha[:12], "family": family}
     store = LoraStore(state)
+    if spec.status != "verified":
+        diagnostic_event(
+            log,
+            "lora_convert.prepare_unverified_family",
+            level=logging.WARNING,
+            data={**hint, "verification": spec.status},
+        )
     reused = store.find_converted(source_sha, family, 1.0, CONVERTER_VERSION)
     if reused is not None:
         if progress is not None:
