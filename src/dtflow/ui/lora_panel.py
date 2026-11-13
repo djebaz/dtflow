@@ -69,6 +69,7 @@ from dtflow.ui.latest_relay import LatestRelay
 from dtflow.ui.lora_selection_editor import _display_label, edit_lora_selection
 from dtflow.ui.prepare_lora_editor import PrepareBatchEditor
 from dtflow.ui.runner import AsyncRunner
+from dtflow.ui.source_details_view import safe_tooltip
 
 UPLOAD_NOTICE = (
     "Select converted .ckpt or source .safetensors LoRAs, review metadata and conversion family, "
@@ -94,6 +95,15 @@ def _family_evidence_label(value: str | None, source: str | None, *, conflict: b
     if source == "user":
         return f"{label} (user selected, conflicts with file)" if conflict else f"{label} (user selected)"
     return f"{label} (file)" if source == "file" else f"{label} (unverified)"
+
+
+def _short_reason(reason: str) -> str:
+    """One concise sentence of a failure: no tensor-name examples, no command hints, no Colab hint (shown once)."""
+    reason = reason.replace(COLAB_HINT, "")
+    reason = re.sub(r"\s*\(for example [^)]*\)", "", reason)
+    reason = re.sub(r"\s*Pass --\S.*?(?=\.\s|$)(\.)?", "", reason).strip()
+    reason = re.sub(r"\s*,?\s*or\s*$", "", reason).strip()
+    return reason if reason.endswith((".", "!", "?")) else reason + "."
 
 
 class LoraAssetPanel:
@@ -124,7 +134,7 @@ class LoraAssetPanel:
         self._prepare_counts = {"confirmed": 0, "failed": 0, "unresolved": 0}
         self._inspecting = False
         self._prepare_final: dict[str, str] = {}  # last outcome per distinct file in this run
-        self._prepare_issues: list[str] = []
+        self._prepare_issues: list[tuple[str, str, str]] = []
         self._ownership_revision = 0
         self._last_backend = self._backend()
         self._prepare_backend = None
@@ -166,13 +176,15 @@ class LoraAssetPanel:
         return bool(self._prepare_files)
 
     @staticmethod
-    def _show(label, presentation: Presentation) -> None:
+    def _show(label, presentation: Presentation, tooltip: str = "") -> None:
         label.setProperty("state", presentation.level)
         label.style().unpolish(label)
         label.style().polish(label)
         text = f"{presentation.headline}. {presentation.detail}".strip()
         # A wrapping label is as wide as its longest word: let a file name break after "_", "-" and "." inside it.
+        label.setTextFormat(Qt.TextFormat.PlainText)
         label.setText(re.sub(r"(?<=\w)([_.\-])(?=\w)", "\\1\u200b", text))
+        label.setToolTip(safe_tooltip(tooltip))
 
     def receipt_ids(self) -> tuple[str, ...]:
         selected = {item.identifier for item in self.loras}
@@ -1069,7 +1081,7 @@ class LoraAssetPanel:
                 if len(self._prepare_issues) < 8:
                     filename = Path(self._prepare_files[self._prepare_index]).name
                     self._prepare_issues.append(
-                        f"{self._prepare_index + 1}/{len(self._prepare_files)} {filename}: {explanation.detail}"
+                        (f"{self._prepare_index + 1}/{len(self._prepare_files)}", filename, explanation.detail)
                     )
                 if isinstance(failure, ConversionError):
                     reason = "conversion_failed"
@@ -1195,36 +1207,51 @@ class LoraAssetPanel:
         prepared, existing = final.count("confirmed"), final.count("existing")
         failed, unresolved = final.count("failed"), final.count("unresolved")
         unstarted = total - done
+        # A run that prepared something is mostly a success: its problem files "need attention", they did not fail the run.
+        mostly_fine = bool(prepared + existing)
+        problem = "needs attention" if mostly_fine else "failed"
         parts = [f"{prepared} prepared"]
         if existing:
             parts.append(f"{existing} already on DT+")
         if failed:
-            parts.append(f"{failed} failed")
+            parts.append(f"{failed} {problem}")
         if unresolved:
             parts.append(f"{unresolved} unresolved")
         if unstarted:
             parts.append(f"{unstarted} unstarted")
         detail = ", ".join(parts) + ". No automatic retries."
+        state = "error" if failed and not mostly_fine else "partial" if failed or unresolved or unstarted else "success"
+        level = "ok" if state == "success" else "error" if state == "error" else "warning"
         if editor_open:
             # One surface at a time: the open editor shows the result, so the bar job just ends quietly.
             self._prepare_editor.set_summary(detail)
             activity_strip(self.page).finish("asset")
-            self._show(self.page.assetStatusLabel, Presentation("warning", "Cloud preparation finished", detail))
+            self._show(self.page.assetStatusLabel, Presentation(level, "Cloud preparation finished", detail))
             self.refresh_assets()
             return
-        else:
-            if self._prepare_issues:
-                detail += "\n" + "\n".join(self._prepare_issues)
-                unseen = max(0, failed + unresolved - len(self._prepare_issues))
-                if unseen:
-                    detail += f"\n{unseen} more unsuccessful file(s); see -x Logs for all details."
-            state = "error" if failed else "partial" if unresolved or unstarted else "success"
         title = "Cloud preparation finished"
+        panel_detail, full_detail, toast_detail = detail, detail, detail
+        if self._prepare_issues:
+            # Short reasons in the panel; the exact messages stay in the tooltip and in -x Logs.
+            lines = [f"{index} {name}: {_short_reason(reason)}" for index, name, reason in self._prepare_issues]
+            hint = "\n" + COLAB_HINT if any(COLAB_HINT in reason for _, _, reason in self._prepare_issues) else ""
+            panel_detail = detail + "\n" + "\n".join(lines) + hint
+            full_detail = detail + "\n" + "\n".join(f"{i} {n}: {r}" for i, n, r in self._prepare_issues)
+            unseen = max(0, failed + unresolved - len(self._prepare_issues))
+            if unseen:
+                more = f"\n{unseen} more unsuccessful file(s); see -x Logs for all details."
+                panel_detail += more
+                full_detail += more
+            if mostly_fine:
+                toast_detail = detail + " Details in the side panel and -x Logs."
+            else:
+                toast_detail = full_detail
+        detail = toast_detail
         if stopped and state != "error":
             state, title = "stopped", "Preparation stopped"
         activity_strip(self.page).complete("asset", title, detail, state)
         level = "ok" if state == "success" else "error" if state == "error" else "warning"
-        self._show(self.page.assetStatusLabel, Presentation(level, title, detail))
+        self._show(self.page.assetStatusLabel, Presentation(level, title, panel_detail), tooltip=full_detail)
         self.refresh_assets()
 
     def _present_prepared(self, record, failure, *, bind: bool = True) -> None:

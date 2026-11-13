@@ -1,6 +1,6 @@
 name: LoRA Prepare UI renders
 
-# Render canonical LoRA editors with synthetic data; no network or uploads.
+# Render canonical LoRA editors with synthetic data; the PNGs are published only as a GitHub artifact.
 # A PR synchronize affecting Prepare triggers this scoped category automatically, without labels.
 run-name: >-
   LoRA Prepare · PR #${{ github.event.pull_request.number }}
@@ -22,7 +22,7 @@ on:
       - '.github/workflows/lora-design-render.yml'
 
 permissions:
-  contents: read
+  contents: write   # only to publish previews on the ci-render-previews branch
   issues: write
   pull-requests: write
 
@@ -72,35 +72,53 @@ jobs:
           [ "$count" -eq "$expected" ] || { echo "::error::Expected $expected LoRA captures, got $count."; exit 1; }
           echo "Captured $count LoRA Prepare, picker, hover-tooltip, and Connections views." >> "$GITHUB_STEP_SUMMARY"
 
-      - name: Upload GitHub screenshot artifact
+      - name: Upload screenshot artifact
         if: steps.capture.outcome == 'success'
+        id: artifact
         uses: actions/upload-artifact@v7.0.2
         with:
           name: lora-runtime-pr${{ github.event.pull_request.number }}-${{ github.event.pull_request.head.sha }}
           path: tmp/lora-ui/lora-*.png
           if-no-files-found: error
-          retention-days: 14
+          retention-days: 2
 
-      - name: Upload images to Google Drive
-        id: drive
+      - name: Publish previews on the ci-render-previews branch
+        id: previews
         if: steps.capture.outcome == 'success'
         continue-on-error: true
         env:
-          REFRESH_TOKEN: ${{ secrets.GOOGLE_DRIVE_REFRESH_TOKEN }}
-          CLIENT_ID: ${{ secrets.GOOGLE_OAUTH_CLIENT_ID }}
-          CLIENT_SECRET: ${{ secrets.GOOGLE_OAUTH_CLIENT_SECRET }}
+          GH_TOKEN: ${{ github.token }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
-          SHORT_SHA: ${{ github.event.pull_request.head.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: |
-          [ -n "$REFRESH_TOKEN" ] && [ -n "$CLIENT_ID" ] && [ -n "$CLIENT_SECRET" ] \
-            || { echo "::warning::Drive credentials are unavailable; GitHub artifact remains available."; exit 1; }
-          folder="lora-runtime-pr${PR_NUMBER}-$(date -u +%Y%m%dT%H%M%SZ)-${SHORT_SHA:0:7}"
-          uv run python tools/ci/upload_ui_renders_to_drive.py \
-            --source tmp/lora-ui --mode images \
-            --refresh-token "$REFRESH_TOKEN" \
-            --client-id "$CLIENT_ID" \
-            --client-secret "$CLIENT_SECRET" \
-            --run-folder "$folder" --manifest tmp/lora-ui-drive.json
+          # A CI-owned branch holding one parentless commit with each PR's latest renders, so history never grows.
+          branch=ci-render-previews
+          short="${HEAD_SHA:0:7}"
+          url="https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+          for attempt in 1 2 3; do
+            rm -rf tmp/previews && mkdir -p tmp/previews && cd tmp/previews
+            git init -q && git remote add origin "$url"
+            old=""
+            if git fetch -q --depth 1 origin "$branch"; then
+              old=$(git rev-parse FETCH_HEAD)
+              git checkout -q -b "$branch" FETCH_HEAD
+            else
+              git checkout -q --orphan "$branch"
+            fi
+            rm -rf "pr${PR_NUMBER}" && mkdir -p "pr${PR_NUMBER}/${short}"
+            cp ../lora-ui/lora-*.png "pr${PR_NUMBER}/${short}/"
+            git add -A
+            commit=$(git -c user.name=github-actions[bot] -c user.email=41898282+github-actions[bot]@users.noreply.github.com \
+              commit-tree "$(git write-tree)" -m "CI render previews (latest per PR)")
+            if git push -q --force-with-lease="refs/heads/${branch}:${old}" origin "${commit}:refs/heads/${branch}"; then
+              echo "published=true" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+            cd ../..
+            sleep $((attempt * 3))
+          done
+          echo "::warning::Could not publish previews; the artifact remains available."
+          exit 1
 
       - name: Publish review links to PR
         if: always() && steps.capture.outcome == 'success'
@@ -108,31 +126,43 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          PREVIEWS: ${{ steps.previews.outputs.published }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          ARTIFACT_URL: ${{ steps.artifact.outputs.artifact-url }}
+          ARTIFACT_NAME: lora-runtime-pr${{ github.event.pull_request.number }}-${{ github.event.pull_request.head.sha }}
         run: |
           python3 - <<'PY'
           import json
           import os
           from pathlib import Path
 
-          path = Path("tmp/lora-ui-drive.json")
-          data = json.loads(path.read_text(encoding="utf-8")) if path.exists() else {}
-          by_name = {item["relative_path"]: item for item in data.get("files", [])}
           names = sorted(path.name for path in Path("tmp/lora-ui").glob("lora-*.png"))
           lines = [
               "<!-- dtflow-lora-designer-renders -->",
               f"## Canonical LoRA views — {len(names)} captures",
               "",
-              f"[GitHub Actions run and PNG artifact]({os.environ['RUN_URL']})",
+              f"Download the PNGs: artifact **{os.environ['ARTIFACT_NAME']}** (kept 2 days) at the bottom of the "
+              f"[workflow run]({os.environ['RUN_URL']})"
+              + (f", or [direct download]({os.environ['ARTIFACT_URL']})." if os.environ.get("ARTIFACT_URL") else "."),
               "",
           ]
-          if data.get("folder_url"):
-              lines.extend([f"[Open Google Drive screenshots]({data['folder_url']})", ""])
-          for name in names:
-              item = by_name.get(name)
-              if item and item.get("view_url") and item.get("content_url"):
-                  lines.extend([f"**{name}**", "", f"[![{name}]({item['content_url']})]({item['view_url']})", ""])
-              else:
-                  lines.append(f"- {name} (see GitHub artifact)")
+          if os.environ.get("PREVIEWS") == "true":
+              base = (
+                  f"{os.environ['GITHUB_SERVER_URL']}/{os.environ['GITHUB_REPOSITORY']}/raw/ci-render-previews/"
+                  f"pr{os.environ['PR_NUMBER']}/{os.environ['HEAD_SHA'][:7]}"
+              )
+              lines.extend(["<table>"])
+              for start in range(0, len(names), 3):
+                  lines.append("<tr>")
+                  for name in names[start : start + 3]:
+                      lines.append(
+                          f'<td width="33%" valign="top"><a href="{base}/{name}"><img src="{base}/{name}" width="100%" '
+                          f'alt="{name}"></a><br><sub>{name}</sub></td>'
+                      )
+                  lines.extend(["</tr>"])
+              lines.extend(["</table>", ""])
+          else:
+              lines.extend(f"- {name}" for name in names)
           lines.extend(["", "_Canonical Qt editor with synthetic offline rows; not Windows or provider acceptance._", ""])
           note = "\n".join(lines)
           Path("tmp/lora-render-note.md").write_text(note, encoding="utf-8")
