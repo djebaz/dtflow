@@ -240,6 +240,11 @@ class DetailModel:
     facts: tuple[tuple[str, str], ...] = ()
     tags: tuple[str, ...] = ()
 
+    @property
+    def line(self) -> str:
+        """The one-line form (summary, then the informational mismatch note when there is one)."""
+        return " · ".join(part for part in (self.summary, self.note) if part)
+
     def __bool__(self) -> bool:
         return bool(self.summary or self.facts or self.tags)
 
@@ -273,10 +278,13 @@ def detail_model(
         facts.append((label, value))
         seen.add(label)
     rank, alpha = fields.get("ss_network_dim"), fields.get("ss_network_alpha")
+    trigger = fields.get("modelspec.trigger_phrase")
     parts = [
+        f"Trained as {fields['ss_output_name']}" if fields.get("ss_output_name") else None,
         f"rank {rank} / alpha {alpha}" if rank and alpha else f"rank {rank}" if rank else None,
         fields.get("ss_resolution") or fields.get("modelspec.resolution"),
         f"{fields['ss_num_epochs']} epochs" if fields.get("ss_num_epochs") else None,
+        f"trigger: {trigger[:40]}{'…' if len(trigger) > 40 else ''}" if trigger else None,
     ]
     summary = " · ".join(part for part in parts if part)
     note = ""

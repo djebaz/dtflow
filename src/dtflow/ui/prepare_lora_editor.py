@@ -33,7 +33,7 @@ from dtflow.services.lora_naming import (
     suggest_short_name,
 )
 from dtflow.ui.inline_feedback import feedback
-from dtflow.ui.source_details_view import SourceDetailsView
+from dtflow.ui.source_details_view import ElidedLabel, SourceDetailsPopup
 
 _SHORT_NAME = re.compile(r"^[A-Za-z0-9_]{1,20}$")
 
@@ -215,10 +215,10 @@ class PrepareBatchEditor:
                 row.total_bytes = row.path.stat().st_size
             except OSError:
                 row.total_bytes = 0
-        self._details_view = SourceDetailsView(self.form.prepareSourceDetailsHost)
-        self.form.prepareSourceDetailsHostLayout.addWidget(self._details_view)
         self._details_model = DetailModel()
-        self.form.prepareSourceDetailsToggle.toggled.connect(self._toggle_details)
+        self._details_popup = SourceDetailsPopup(self.form)
+        self._summary = ElidedLabel(self.form.prepareSourceSummary)
+        self.form.prepareSourceDetailsToggle.clicked.connect(self._open_details)
         stretch = self.form.findChild(QLayout, "preparePreviewLayout")
         if stretch is not None:  # about 40% filename and label, 60% declared-metadata summary
             stretch.setStretch(0, 4)
@@ -553,10 +553,10 @@ class PrepareBatchEditor:
         note.setToolTip(explanation if shown else "")
         field.setToolTip(explanation)
 
-    def _toggle_details(self, expanded: bool) -> None:
-        """Show or hide the full-width grid; the one-line summary stays, so the rows list changes only on request."""
-        self.form.prepareSourceDetailsToggle.setText("Details ▾" if expanded else "Details ▸")
-        self.form.prepareSourceDetailsPanel.setVisible(expanded and bool(self._details_model))
+    def _open_details(self) -> None:
+        """Float the full grid above the preview band; it overlaps the rows list and never resizes anything."""
+        if self._details_model:
+            self._details_popup.show_above(self.form.prepareSourceDetailsToggle, self._details_model)
 
     def _source_details(self, row: _Row) -> DetailModel:
         """Read-only descriptive content of the row's source file."""
@@ -803,21 +803,17 @@ class PrepareBatchEditor:
                 allocation = allocations[index]
                 model = self._source_details(self.selected)
                 model = DetailModel() if self.selected.invalid else model
-                if model != self._details_model:
-                    self._details_model = model
-                    self._details_view.set_model(model)
-                toggle = self.form.prepareSourceDetailsToggle
-                toggle.setVisible(bool(model))
-                self.form.prepareSourceSummary.setText(
-                    ("Declared by the file: " + model.summary)
-                    if model.summary
-                    else "Declared by the file: details below"
+                self._details_model = model
+                self.form.prepareSourceDetailsToggle.setVisible(bool(model))
+                self._summary.set_text(
+                    model.line
+                    if model.line
+                    else "Declared by the file: see Details"
                     if model
-                    else "No descriptive metadata in this file"
+                    else "No descriptive metadata"
                     if self.selected.source_kind == "safetensors" and self.inspected
                     else ""
                 )
-                self.form.prepareSourceDetailsPanel.setVisible(toggle.isChecked() and bool(model))
                 self.form.prepareManagedFilename.setText(
                     allocation.filename if allocation and allocation.filename else "Complete required fields to preview"
                 )
