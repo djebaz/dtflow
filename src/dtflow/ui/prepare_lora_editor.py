@@ -194,6 +194,7 @@ class PrepareBatchEditor:
                 row_widget.prepareSourceFile,
                 row_widget.prepareCopySource,
                 row_widget.prepareArchitecture,
+                row_widget.prepareExperimentalConfirm,
                 row_widget.prepareShortName,
                 row_widget.prepareFormat,
                 row_widget.prepareTriggerWords,
