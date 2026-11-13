@@ -80,7 +80,7 @@ def write_report(directory: Path, report: dict) -> Path:
         path = reports / f"{base}{'' if index == 0 else f'-{index}'}.json"
         try:
             with path.open("x", encoding="utf-8") as handle:
-                json.dump(report, handle, indent=2, ensure_ascii=False)
+                json.dump(report, handle, indent=2, ensure_ascii=True)
                 handle.write("\n")
             return path
         except FileExistsError:
@@ -114,4 +114,4 @@ def run(files: list[Path], source: Path, directory: Path, *, analyze: bool) -> i
         f"Metadata: {summary['succeeded']} read, {summary['failed']} failed, {summary['with_metadata']} with metadata, "
         f"{summary['with_trigger_suggestion']} with a trigger suggestion. Report: {path}"
     )
-    return 1 if summary["failed"] else 0
+    return (2 if len(files) == 1 else 1) if summary["failed"] else 0
