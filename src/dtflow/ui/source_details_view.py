@@ -10,7 +10,7 @@ from functools import cache
 
 from PySide6.QtCore import QEvent, QObject, QRect, QSize, Qt
 from PySide6.QtGui import QColor, QFont, QFontMetrics, QPainter
-from PySide6.QtWidgets import QLabel, QSizePolicy, QToolTip, QWidget
+from PySide6.QtWidgets import QApplication, QLabel, QSizePolicy, QToolTip, QWidget
 
 from dtflow.ui.theme import load_tokens
 
@@ -122,7 +122,23 @@ class RegionTooltip(QObject):
     def eventFilter(self, watched, event) -> bool:  # noqa: N802 - Qt override
         if event.type() == QEvent.Type.ToolTip and self._text and isinstance(watched, QWidget):
             if self._area().contains(self._root.mapFromGlobal(event.globalPos())):
-                QToolTip.showText(event.globalPos(), self._text, self._root)
+                # Match the Logs hover: Qt's short native fade takes precedence over its roll animation.
+                # Scope the preference to this show and respect desktop-wide disabled effects.
+                effects = (Qt.UIEffect.UI_FadeTooltip, Qt.UIEffect.UI_AnimateTooltip)
+                saved_effects = (
+                    tuple(QApplication.isEffectEnabled(effect) for effect in effects)
+                    if QApplication.isEffectEnabled(Qt.UIEffect.UI_General)
+                    else None
+                )
+                try:
+                    if saved_effects is not None:
+                        QApplication.setEffectEnabled(Qt.UIEffect.UI_FadeTooltip, True)
+                    QToolTip.showText(event.globalPos(), self._text, self._root)
+                finally:
+                    # Enabling fade also enables animation; restore both flags, even if showing fails.
+                    if saved_effects is not None:
+                        for effect, enabled in zip(effects, saved_effects, strict=True):
+                            QApplication.setEffectEnabled(effect, enabled)
                 event.accept()
                 return True
         return False
