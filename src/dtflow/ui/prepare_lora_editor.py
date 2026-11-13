@@ -404,24 +404,51 @@ class PrepareBatchEditor:
         architectures: Sequence[str],
         occupied: Sequence[ManagedName],
         invalid: Sequence[str | None] | None = None,
+        conversions: Sequence[dict] = (),
     ):
-        """Apply read-only file evidence and verified backend choices on the GUI thread."""
+        """Apply checkpoint evidence and converted-source provenance on the GUI thread."""
         if not self.active():
             return
         self.architectures = tuple(dict.fromkeys(v for v in architectures if architecture_shortcode(v) is not None))
         self.occupied = tuple(occupied)
+        for item in conversions:
+            sha, size = item.get("sha256"), item.get("size")
+            if not isinstance(sha, str) or type(size) is not int:
+                continue
+            entries = item.get("conversions")
+            if not isinstance(entries, list):
+                entries = [item.get("conversion")]
+            for entry in entries:
+                if not isinstance(entry, dict) or not isinstance(entry.get("source"), dict):
+                    continue
+                source = entry["source"]
+                if isinstance(source.get("sha256"), str):
+                    self._existing_conversions[
+                        (source["sha256"], entry.get("family"), entry.get("converter_version"))
+                    ] = (sha, size)
         self._updating = True
         for index, (row, result) in enumerate(zip(self.rows, evidence, strict=True)):
-            row.detected = result.family
+            row.detected = result.family if row.source_kind == "ckpt" else None
             row.invalid = invalid[index] if invalid else None
-            row.widget.prepareFileEvidence.setText("Detected from file" if result.family else "Family not detected")
             combo = row.widget.prepareArchitecture
             combo.clear()
-            combo.addItem("Select architecture…", None)
-            for version in self.architectures:
-                combo.addItem(FAMILY_LABELS.get(version, version), version)
-            index = combo.findData(row.detected)
-            combo.setCurrentIndex(max(0, index))
+            combo.addItem(
+                "Select conversion family…" if row.source_kind == "safetensors" else "Select architecture…",
+                None,
+            )
+            if row.source_kind == "safetensors":
+                for spec in self._conversion_families.values():
+                    caution = (
+                        " · Experimental" if spec.experimental
+                        else " · Unverified on DT+" if spec.status == "unverified_on_dt_plus"
+                        else ""
+                    )
+                    combo.addItem(spec.label + caution, spec.exact_architecture)
+            else:
+                for version in self.architectures:
+                    combo.addItem(FAMILY_LABELS.get(version, version), version)
+            selection = combo.findData(row.detected)
+            combo.setCurrentIndex(max(0, selection))
         self._updating = False
         self.inspected = True
         self._mark_duplicates()
@@ -436,8 +463,32 @@ class PrepareBatchEditor:
                 manually_edited=row.manual_name,
                 replace_existing=row.reprepare,
                 alternatives=row.alternatives,
-                sha256=row.sha256,
-                size=row.size,
+                sha256=(
+                    self._existing_conversions.get(
+                        (
+                            row.sha256,
+                            self._conversion_families[row.widget.prepareArchitecture.currentData()].key,
+                            CONVERTER_VERSION,
+                        ),
+                        (None, None),
+                    )[0]
+                    if row.source_kind == "safetensors" and row.sha256
+                    and row.widget.prepareArchitecture.currentData() in self._conversion_families
+                    else row.sha256 if row.source_kind == "ckpt" else None
+                ),
+                size=(
+                    self._existing_conversions.get(
+                        (
+                            row.sha256,
+                            self._conversion_families[row.widget.prepareArchitecture.currentData()].key,
+                            CONVERTER_VERSION,
+                        ),
+                        (None, None),
+                    )[1]
+                    if row.source_kind == "safetensors" and row.sha256
+                    and row.widget.prepareArchitecture.currentData() in self._conversion_families
+                    else row.size if row.source_kind == "ckpt" else None
+                ),
             )
             for row in self.rows
         ]
