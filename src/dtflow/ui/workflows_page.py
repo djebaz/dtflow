@@ -54,7 +54,7 @@ from dtflow.services import lora_relink
 from dtflow.ui.activity_strip import activity_strip
 from dtflow.ui.inline_feedback import InlineNotice, confirm_action, edit_text, feedback
 from dtflow.ui.prompt_tags import style_prompt_tags
-from dtflow.ui.lora_hints import bind_prompt_hint
+from dtflow.ui.lora_hints import PromptHintOverlay
 from dtflow.ui.search_select import SearchableComboBox
 
 log = logging.getLogger(__name__)
@@ -301,6 +301,7 @@ class WorkflowsPage(QObject):
         self.start_created = start_created  # QueuePage.start_created(queue_id, done)
         self.open_image = open_image
         self.canvas = None
+        self.prompt_hints = PromptHintOverlay(self.workspace.workflowCanvasHost)
         self.path: Path | None = None
         self.name = ""
         self.entries: list[library.LibraryEntry] = []
@@ -899,6 +900,8 @@ class WorkflowsPage(QObject):
         i, w = self.inspector, self.workspace
         params = self.canvas.node_params(node_id) if (self.canvas is not None and node_id is not None) else None
         self._sync_lock()
+        if self._inspected != node_id:
+            self.prompt_hints.close()
         if params is None:
             self._inspected = None
             _clear(i.workflowParamsHost.layout())
@@ -1268,7 +1271,25 @@ class WorkflowsPage(QObject):
         if param.hint:
             label.setToolTip(param.hint)
         if param.kind != "bool":
-            layout.addWidget(label)
+            if param.kind == "text" and param.name in {"prompt", "negative_prompt"}:
+                # The node inspector is the input; hints occupy the center canvas beside it.
+                row = QHBoxLayout()
+                row.setContentsMargins(0, 0, 0, 0)
+                row.addWidget(label)
+                row.addStretch(1)
+                hint_button = QToolButton(host)
+
+                def node_loras():
+                    values = self.canvas.node_params(node_id) if self.canvas is not None else None
+                    return tuple(
+                        LoRASelection(name, float(weight)) for name, weight in (values or {}).get("loras", ())
+                    )
+
+                self.prompt_hints.bind(hint_button, node_loras, title=f"LoRAs · node {node_id}")
+                row.addWidget(hint_button)
+                layout.addLayout(row)
+            else:
+                layout.addWidget(label)
         try:
             checked = wf.check_param(param, value, draft=True)
         except wf.WorkflowError as exc:
@@ -1336,12 +1357,6 @@ class WorkflowsPage(QObject):
             edit.setTabChangesFocus(True)
             edit.textChanged.connect(lambda: self._set(node_id, param.name, edit.toPlainText()))
             node = self.canvas.node(node_id)
-            if param.name in {"prompt", "negative_prompt"}:
-                def node_loras():
-                    values = self.canvas.node_params(node_id) if self.canvas is not None else None
-                    return tuple(LoRASelection(name, float(weight)) for name, weight in (values or {}).get("loras", ()))
-
-                edit.lora_hint = bind_prompt_hint(edit, node_loras, title=f"LoRAs · node {node_id}")
             if param.name == "prompt" and node is not None and node.prompt_mode is not None:
                 # Wildcard prompt (#317): tag {a|b} groups and __lists__ like the Queues composer does.
                 edit.prompt_tags = style_prompt_tags(edit)
