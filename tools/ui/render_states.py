@@ -504,56 +504,137 @@ def render_workspace_states(app, state, out):
 
 @fixture("lora-prepare")
 def render_lora_prepare_states(shell, out):
-    """Capture only the canonical in-window Prepare UI using synthetic LoRA metadata."""
+    """Capture real LoRA UI with synthetic source and retained metadata, without uploading or converting files."""
+    from dtflow.services.lora_convert import CONVERTER_VERSION, supported_families
+    from dtflow.services.lora_convert.detect import FamilyDetection
+    from dtflow.services.lora_convert.source_metadata import extract
     from dtflow.services.lora_family import LoraFamily
     from dtflow.ui.prepare_lora_editor import PrepareBatchEditor
 
+    portrait_metadata = extract(
+        {
+            "modelspec.architecture": "krea_2",
+            "ss_base_model_version": "krea_2",
+            "ss_output_name": "PortraitV2",
+            "modelspec.trigger_phrase": "portrait style",
+            "ss_network_dim": "16",
+            "ss_network_alpha": "8",
+            "ss_resolution": "(1024, 1024)",
+            "ss_num_epochs": "12",
+            "ss_class_tokens": "portrait person",
+            "modelspec.usage_hint": "Use with portrait lighting prompts.",
+            "ss_tag_frequency": json.dumps(
+                {"training": {"portrait style": 94, "soft light": 52, "detailed skin": 35, "studio background": 18}}
+            ),
+        }
+    )
+    cinematic_metadata = extract(
+        {
+            "modelspec.architecture": "z-image",
+            "ss_output_name": "Cinematic",
+            "modelspec.trigger_phrase": "cinematic lighting",
+            "ss_network_dim": "8",
+            "ss_network_alpha": "8",
+            "ss_num_epochs": "6",
+            "ss_tag_frequency": json.dumps({"training": {"cinematic": 61, "film grain": 39, "backlight": 28}}),
+        }
+    )
+
     shell.form.generationNavigationButton.click()
     shell.form.resize(1600, 1000)
-    # Navigation can queue a dismiss of the previous inline editor. Settle it
-    # before opening this editor, or an otherwise valid capture shows only Generate.
+    # Navigation can queue a dismiss of the previous inline editor.
     QTest.qWait(120)
     paths = [
-        "portrait_8e62d922f3a4c82b1aef990108a2fae9_lora_f16.ckpt",
-        "cinematic_20261109_f3e817d0a432bf_lora_q8p.ckpt",
-        "detail_boost_ep12_3a32f30bc9e7821d_911f.ckpt",
+        "portrait_8e62d922f3a4c82b1aef990108a2fae9.safetensors",
+        "cinematic_20261109_f3e817d0a432bf.safetensors",
+        "detail_boost_ep12_3a32f30bc9e7821d.safetensors",
         "nak_lora_f16.ckpt",
         "portrait_77ad2a_lora_f16.ckpt",
     ]
     editor = PrepareBatchEditor(shell.generation_page, paths, on_prepare=lambda _batch: None)
+    # Simulated content identities exercise reuse and saved triggers without opening a registry.
+    for index, row in enumerate(editor.rows):
+        row.sha256 = f"{index + 20:064x}"
+        row.size = 1_000_000 + index
+        row.hashing = False
+    converted_sha, converted_size = "f" * 64, 2_100_000
+    prior_conversion = {
+        "sha256": converted_sha,
+        "size": converted_size,
+        "conversions": [
+            {
+                "family": "zimage",
+                "converter_version": CONVERTER_VERSION,
+                "source": {"sha256": editor.rows[1].sha256},
+            }
+        ],
+    }
     editor.set_inspection(
-        (
-            LoraFamily("krea_2", "file"),
-            LoraFamily("z_image", "file"),
-            LoraFamily(),
-            LoraFamily(),
-            LoraFamily(),
-        ),
+        (LoraFamily(), LoraFamily(), LoraFamily(), LoraFamily(), LoraFamily()),
         ("krea_2", "z_image", "flux1"),
         (),
+        conversions=(prior_conversion,),
+        converter_families=supported_families(),
+        detections=(
+            FamilyDetection("detected", family="krea2"),
+            FamilyDetection("detected", family="zimage"),
+            FamilyDetection("unknown", reason="Structure does not identify a supported family."),
+            None,
+            None,
+        ),
+        source_metadata=(portrait_metadata, cinematic_metadata, extract({}), None, None),
+        saved_triggers={(converted_sha, converted_size): "my saved cinematic token"},
     )
-    # Show the mockup's text and partial-batch states with synthetic editable values.
-    # These are presentation examples, never file or provider evidence.
     editor.rows[0].widget.prepareShortName.setText("PortraitV2")
-    editor.rows[0].widget.prepareTriggerWords.setText("portrait style")
-    editor.rows[1].widget.prepareTriggerWords.setText("cinematic lighting")
+    editor.rows[1].widget.prepareShortName.setText("Cinematic")
     editor.rows[4].widget.prepareShortName.setText("PortraitV2")
-    # Illustrate a user declaration separately from file inspection.
     for row in (editor.rows[3], editor.rows[4]):
         row.widget.prepareArchitecture.setCurrentIndex(row.widget.prepareArchitecture.findData("krea_2"))
-    editor._select(editor.rows[0])  # Match the HTML reference's first-row preview.
-    # No file bytes are accessed, no provider client is opened, and Prepare is never clicked.
+    editor._select(editor.rows[0])
     QTest.qWait(80)
     if not editor.active() or not shell.inline.form.isVisible():
         raise RuntimeError("Canonical LoRA Prepare overlay was dismissed before capture")
     save(shell.form, out, "lora-prepare-wide")
+    save_tooltip(
+        shell.form, out, "lora-prepare-metadata-tooltip", editor.form.preparePreviewPanel, hover=editor._summary
+    )
+    editor._select(editor.rows[1])
+    QTest.qWait(40)
+    save(shell.form, out, "lora-prepare-saved-trigger")
+    editor._select(editor.rows[2])
+    QTest.qWait(40)
+    save(shell.form, out, "lora-prepare-no-metadata")
+    editor._select(editor.rows[0])
     shell.form.resize(1080, 860)
     QTest.qWait(80)
     save(shell.form, out, "lora-prepare-compact")
     shell.inline.dismiss()
 
-    # The existing shared picker is used by Generate, Queue plans and Workflow nodes.
-    # Render that actual selector rather than maintaining a second design-only picker.
+    # One in-memory projection drives the same hover cards used by Generate and the shared LoRA picker.
+    names = (
+        "PortraitV2_Kr2_lora_f16.ckpt",
+        "Cinematic_ZiT_lora_q8p.ckpt",
+        "DetailBoost_Kr2_lora_f16.ckpt",
+        "Realism_F1_lora_f16.ckpt",
+    )
+    hint_entries, hint_records = [], {}
+    for index, name in enumerate(names):
+        sha, size = f"{index + 101:064x}", 1_400_000 + index
+        metadata = portrait_metadata if index == 0 else cinematic_metadata if index == 1 else None
+        hint_entries.append(
+            {
+                "name": name, "sha256": sha, "size": size,
+                "source_metadata": metadata.retained_record() if metadata else None,
+            }
+        )
+        hint_records[(sha, size)] = {
+            "managed_identifier": name,
+            "trigger_words": "portrait style" if index == 0 else "my saved cinematic token" if index == 1 else "",
+        }
+    hints = shell.form._lora_hint_library
+    hints.entries, hints.records = hint_entries, hint_records
+
+    # Capture the existing shared LoRA picker and a tooltip on its real row widget.
     from dtflow.core.models import LoRASelection
     from dtflow.ui.lora_selection_editor import edit_lora_selection
 
@@ -561,21 +642,13 @@ def render_lora_prepare_states(shell, out):
     QTest.qWait(90)
     edit_lora_selection(
         shell.generation_page,
-        candidates=(
-            "PortraitV2_Kr2_lora_f16.ckpt",
-            "Cinematic_ZiT_lora_q8p.ckpt",
-            "DetailBoost_Kr2_lora_f16.ckpt",
-            "Realism_F1_lora_f16.ckpt",
-        ),
-        selected=(
-            LoRASelection("PortraitV2_Kr2_lora_f16.ckpt", 0.8),
-            LoRASelection("Cinematic_ZiT_lora_q8p.ckpt", 1.0),
-        ),
+        candidates=names,
+        selected=(LoRASelection(names[0], 0.8), LoRASelection(names[1], 1.0)),
         families={
-            "PortraitV2_Kr2_lora_f16.ckpt": "Krea 2",
-            "Cinematic_ZiT_lora_q8p.ckpt": "Z-Image Turbo",
-            "DetailBoost_Kr2_lora_f16.ckpt": "Krea 2",
-            "Realism_F1_lora_f16.ckpt": "FLUX.1",
+            names[0]: "Krea 2",
+            names[1]: "Z-Image Turbo",
+            names[2]: "Krea 2",
+            names[3]: "FLUX.1",
         },
         callback=lambda _selection: None,
     )
@@ -583,26 +656,51 @@ def render_lora_prepare_states(shell, out):
     if not shell.inline.form.isVisible():
         raise RuntimeError("The shared LoRA selector overlay was dismissed before capture")
     save(shell.form, out, "lora-picker")
+    picker_row = next(
+        (
+            row for row in shell.inline.form.findChildren(QWidget, "loraSelectionRow")
+            if row.property("identifier") == names[0]
+        ),
+        None,
+    )
+    if picker_row is None:
+        raise RuntimeError("The LoRA picker has no metadata-hover row")
+    save_tooltip(shell.form, out, "lora-picker-metadata-tooltip", picker_row)
     shell.inline.dismiss()
 
-    # The genuine Connections library is collapsed in the central workspace.
-    # Add only illustrative list rows for the expanded screenshot; no store writes.
+    # Generate's prompt hint reads the currently selected LoRAs, not an entire retained library.
+    selected_before = shell.generation.lora.loras
+    shell.generation.lora.loras = (LoRASelection(names[0], 0.8), LoRASelection(names[1], 1.0))
+    try:
+        save_tooltip(shell.form, out, "lora-prompt-metadata-tooltip", shell.generation_page.promptEdit.viewport())
+    finally:
+        shell.generation.lora.loras = selected_before
+
+    # Connections uses the real retained-LoRA table and editor with synthetic rows only.
     shell.form.connectionNavigationButton.click()
     QTest.qWait(110)
     shell.form.customLorasDisclosure.setChecked(False)
     save(shell.form, out, "lora-connections-collapsed")
-    # Synthetic rows go through the real table fill; no store or registry is written.
     rows = (
-        ("Portrait_Kr2_lora_f16.ckpt", "PortraitV2", "krea2", "F16", "portrait style"),
-        ("Cinematic_ZiT_lora_q8p.ckpt", "Cinematic", "z_image_turbo", "Q8P", "cinematic lighting"),
+        ("Portrait_Kr2_lora_f16.ckpt", "PortraitV2", "krea_2", "F16", "portrait style"),
+        ("Cinematic_ZiT_lora_q8p.ckpt", "Cinematic", "z_image", "Q8P", "my saved cinematic token"),
         ("detail_boost_ep12.ckpt", None, None, None, ""),
         ("Realism_F1_lora_f16.ckpt", "Realism", "flux1", "F16", ""),
     )
     entries, records = [], {}
     for index, (name, short, version, quantization, triggers) in enumerate(rows):
-        sha = f"{index:064x}"
-        entries.append({"name": name, "sha256": sha, "size": 1_000_000 + index, "detected_family": None})
-        records[(sha, 1_000_000 + index)] = {
+        sha, size = f"{index:064x}", 1_000_000 + index
+        metadata = portrait_metadata if index == 0 else cinematic_metadata if index == 1 else None
+        entries.append(
+            {
+                "name": name, "sha256": sha, "size": size, "detected_family": None,
+                "source_metadata": metadata.retained_record() if metadata else None,
+                "conversions": [{"detected_family": "krea2" if index == 0 else "zimage"}] if metadata else [],
+            }
+        )
+        records[(sha, size)] = {
+            "sha256": sha,
+            "size": size,
             "family": version,
             "family_source": "file",
             "short_name": short,
@@ -619,6 +717,16 @@ def render_lora_prepare_states(shell, out):
     shell.form.customLorasDisclosure.setChecked(True)
     QTest.qWait(70)
     save(shell.form, out, "lora-connections-expanded")
+
+    first = entries[0]
+    identity = first["sha256"], first["size"]
+    shell.lora_metadata_overlay.open(
+        records[identity], first["name"], ("krea_2", "z_image", "flux1"), shell._retained_source_details(identity)
+    )
+    QTest.qWait(60)
+    save(shell.form, out, "lora-edit-metadata")
+    save_tooltip(shell.form, out, "lora-edit-metadata-tooltip", shell.lora_metadata_overlay._summary)
+    shell.lora_metadata_overlay.close()
     shell.form.customLorasDisclosure.setChecked(False)
 
 
