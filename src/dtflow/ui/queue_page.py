@@ -635,6 +635,8 @@ class QueuePage:
         self._render_list()
         view = self._view()
         page.queueComposerScroll.setVisible(self._composing)
+        if not self._composing and page.composerPromptHintsButton.isChecked():
+            page.composerPromptHintsButton.setChecked(False)
         page.newQueueButton.setVisible(not self._composing)
         page.emptyStateCard.setVisible(view is None and not self._composing)
         page.emptyRelaunchButton.setVisible(self._last_queue() is not None)
