@@ -175,7 +175,7 @@ class PromptHintOverlay(QObject):
 
     @property
     def open(self) -> bool:
-        return self._button is not None and self.frame.isVisible()
+        return self._button is not None
 
     def bind(
         self, button: QToolButton, selected: Callable[[], Sequence[LoRASelection]], *, title: str = "Applied LoRAs"
