@@ -650,7 +650,8 @@ class LoraAssetPanel:
         invalid = await asyncio.to_thread(invalid_reasons)
         occupied = await occupied_managed_lora_names(self._state)
         conversions = await asyncio.to_thread(lambda: LoraStore(self._state).entries())
-        return evidence, occupied, invalid, conversions
+        converter_families = await asyncio.to_thread(supported_families)
+        return evidence, occupied, invalid, conversions, converter_families
 
     def _inspected_prepare_editor(self, editor, eligible, result, failure) -> None:
         if self._runner.closed or not editor.active() or editor is not self._prepare_editor:
@@ -662,8 +663,8 @@ class LoraAssetPanel:
             )
             return
         if result is not None:
-            evidence, occupied, invalid, conversions = result
-            editor.set_inspection(evidence, eligible, occupied, invalid, conversions)
+            evidence, occupied, invalid, conversions, converter_families = result
+            editor.set_inspection(evidence, eligible, occupied, invalid, conversions, converter_families)
 
     def _authorize_prepare(self, chosen: list[tuple[Path, LoraPrepareMetadata]]) -> None:
         """Admit only explicitly approved, metadata-complete rows under the existing owner."""
