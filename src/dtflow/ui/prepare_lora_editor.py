@@ -33,7 +33,7 @@ from dtflow.services.lora_naming import (
     suggest_short_name,
 )
 from dtflow.ui.inline_feedback import feedback
-from dtflow.ui.source_details_view import ElidedLabel, SourceDetailsPopup
+from dtflow.ui.source_details_view import ElidedLabel, safe_tooltip
 
 _SHORT_NAME = re.compile(r"^[A-Za-z0-9_]{1,20}$")
 
@@ -216,9 +216,8 @@ class PrepareBatchEditor:
             except OSError:
                 row.total_bytes = 0
         self._details_model = DetailModel()
-        self._details_popup = SourceDetailsPopup(self.form)
         self._summary = ElidedLabel(self.form.prepareSourceSummary)
-        self.form.prepareSourceDetailsToggle.clicked.connect(self._open_details)
+        self._tags_line = ElidedLabel(self.form.prepareSourceTags)
         stretch = self.form.findChild(QLayout, "preparePreviewLayout")
         if stretch is not None:  # about 40% filename and label, 60% declared-metadata summary
             stretch.setStretch(0, 4)
@@ -553,11 +552,6 @@ class PrepareBatchEditor:
         note.setToolTip(explanation if shown else "")
         field.setToolTip(explanation)
 
-    def _open_details(self) -> None:
-        """Float the full grid above the preview band; it overlaps the rows list and never resizes anything."""
-        if self._details_model:
-            self._details_popup.show_above(self.form.prepareSourceDetailsToggle, self._details_model)
-
     def _source_details(self, row: _Row) -> DetailModel:
         """Read-only descriptive content of the row's source file."""
         record = getattr(row.source_metadata, "record", lambda: None)()
@@ -804,12 +798,17 @@ class PrepareBatchEditor:
                 model = self._source_details(self.selected)
                 model = DetailModel() if self.selected.invalid else model
                 self._details_model = model
-                self.form.prepareSourceDetailsToggle.setVisible(bool(model))
+                self._tags_line.set_text(model.tags_line)
+                self.form.prepareSourceTags.setToolTip(
+                    safe_tooltip(
+                        "Top training tags (not necessarily trigger words): " + " · ".join(model.tags)
+                        if model.tags
+                        else ""
+                    )
+                )
                 self._summary.set_text(
                     model.line
                     if model.line
-                    else "Declared by the file: see Details"
-                    if model
                     else "No descriptive metadata"
                     if self.selected.source_kind == "safetensors" and self.inspected
                     else ""

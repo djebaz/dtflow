@@ -20,7 +20,7 @@ from dtflow.services.lora_convert.source_metadata import DetailModel
 from dtflow.services.lora_metadata_edit import save_lora_metadata
 from dtflow.services.lora_naming import architecture_shortcode
 from dtflow.ui.runner import AsyncRunner
-from dtflow.ui.source_details_view import ElidedLabel, SourceDetailsPopup
+from dtflow.ui.source_details_view import ElidedLabel, safe_tooltip
 
 _SHORT_NAME = re.compile(r"^[A-Za-z0-9_]{1,20}$")
 
@@ -75,9 +75,8 @@ class LoraMetadataOverlay(QObject):
         layout.addStretch(1)
         _Resize(host, self.overlay)
         self._details_model = DetailModel()
-        self._details_popup = SourceDetailsPopup(self.form)
         self._summary = ElidedLabel(self.form.loraMetadataSourceSummary)
-        self.form.loraMetadataSourceToggle.clicked.connect(self._open_source)
+        self._tags_line = ElidedLabel(self.form.loraMetadataSourceTags)
         self.form.loraMetadataCancel.clicked.connect(self.close)
         self.form.loraMetadataSave.clicked.connect(self.save)
         escape = QShortcut(QKeySequence(Qt.Key.Key_Escape), self.overlay)
@@ -85,9 +84,6 @@ class LoraMetadataOverlay(QObject):
         escape.activated.connect(self.close)
         self._identity: tuple[str, int] | None = None
         self._saving = False
-
-    def _open_source(self) -> None:
-        self._details_popup.show_above(self.form.loraMetadataSourceToggle, self._details_model, width=360)
 
     def is_open(self) -> bool:
         return self.overlay.isVisible()
@@ -101,9 +97,17 @@ class LoraMetadataOverlay(QObject):
         """
         form = self.form
         self._details_model = source_details or DetailModel()
-        form.loraMetadataSourceToggle.setVisible(bool(self._details_model))
         form.loraMetadataSourceSummary.setVisible(bool(self._details_model))
-        self._summary.set_text(self._details_model.line or "Declared by the source file: see Details")
+        form.loraMetadataSourceTags.setVisible(bool(self._details_model.tags))
+        form.loraMetadataSourceTags.setToolTip(
+            safe_tooltip(
+                "Top training tags (not necessarily trigger words): " + " · ".join(self._details_model.tags)
+                if self._details_model.tags
+                else ""
+            )
+        )
+        self._summary.set_text(self._details_model.line or "Declared by the source file")
+        self._tags_line.set_text(self._details_model.tags_line)
         self._identity = (record["sha256"], record["size"])
         form.loraMetadataFile.setText(name)
         combo = form.loraMetadataArchitecture

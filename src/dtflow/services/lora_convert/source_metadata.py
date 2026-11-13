@@ -245,6 +245,10 @@ class DetailModel:
         """The one-line form (summary, then the informational mismatch note when there is one)."""
         return " · ".join(part for part in (self.summary, self.note) if part)
 
+    @property
+    def tags_line(self) -> str:
+        return "Top tags: " + " · ".join(self.tags) if self.tags else ""
+
     def __bool__(self) -> bool:
         return bool(self.summary or self.facts or self.tags)
 
