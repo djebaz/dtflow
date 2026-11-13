@@ -589,6 +589,8 @@ before starting asynchronous preparation. Service-level receipt/retry safeguards
 
 Prepare supports multiple explicitly selected converted LoRA files and remembers the picker folder per runtime. Keep a single owned activity row with count-based “Preparing N of M” detail, then one summary separating confirmed, failed, unresolved and unstarted files; do not invent elapsed progress percentages or replace selected weights. Folder-preference failures use a separate amber result row and never block explicit preparation. Navigation does not cancel admitted uploads; backend/credential changes stop only further admission after the current file settles.
 
+Prepare rows align all six cells (file, architecture, short name, quantization, Trigger Words, status) on one top edge. A `.safetensors` row's descriptive metadata is two inline lines in the preview band, drawn by `ui/source_details_view.RunsLine` from tokens only: labels and separators `color.secondary` at `type.weightBody`, bold values `color.text` at `type.weightEmphasis`, `type.small`; each line is elided to the width and shows no panel or box. File text is plain text, never markup. One HTML-escaped tooltip, headed "Training metadata", covers the whole area (lines, gap and margins). The Trigger Words field shows a constant-height "saved" or "from file" badge; an empty saved value counts as not set. Every tooltip in the app fades in (set once at startup) instead of sliding.
+
 Checkpoint and LoRA choices use inline substring search and custom-identifier entry.
 
 The compact checkpoint-details and status-bar About buttons use a 20 × 20 logical-pixel button with a 16 × 16 icon and zero padding. Do not combine a fixed 20 px About button with wide text-button padding that squeezes its icon.
