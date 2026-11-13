@@ -843,24 +843,77 @@ class LoraAssetPanel:
         detail = f"Preparing {number} of {total}. May upload this file; waiting for receipt."
         self._show(self.page.assetStatusLabel, Presentation("warning", "Preparing", detail))
         index = self._prepare_index
+        source = Path(self._prepare_files[index])
+        metadata = self._prepare_metadata[str(source)]
+        converting = source.suffix.casefold() == ".safetensors"
         if self._prepare_relay is not None:
             self._prepare_relay.close()
             self._prepare_relay.deleteLater()
         # One relay per file: a late report of a settled file is dropped instead of moving the next one.
-        self._prepare_relay = LatestRelay(lambda event: self._on_prepare_event(index, event), self.page)
-        self._prepare_progress.start_file(index)
+        relay = self._prepare_relay = LatestRelay(lambda event: self._on_prepare_event(index, event), self.page)
+        self._prepare_progress.start_file(index, convert=converting)
         self._render_prepare()
-        self._runner.submit(
-            prepare_asset(
+
+        async def run_one():
+            path = source
+            forward = relay
+            if converting:
+                spec = next(
+                    (candidate for candidate in supported_families()
+                     if candidate.exact_architecture == metadata.exact_architecture),
+                    None,
+                )
+                if spec is None:
+                    raise UnsupportedFamilyError(
+                        "The chosen LoRA source family is not supported by the converter.",
+                        hint=COLAB_HINT,
+                    )
+
+                def conversion_progress(event: ConversionProgress) -> None:
+                    labels = {
+                        "reading": "Reading source",
+                        "converting": "Converting",
+                        "writing": "Writing checkpoint",
+                        "finishing": "Finishing conversion",
+                        "reused": "Reusing conversion",
+                    }
+                    relay(PrepareEvent(CONVERTING, event.done, event.total, label=labels.get(event.stage, "Converting")))
+
+                result = await convert_for_prepare(
+                    self._state,
+                    source,
+                    spec.key,
+                    metadata.identifier,
+                    progress=conversion_progress,
+                    cancel=self._prepare_convert_cancel,
+                    allow_experimental=spec.experimental,
+                )
+                path = result.retained.path
+                output_size = result.retained.size
+                relay(
+                    PrepareEvent(
+                        CONVERTING,
+                        1,
+                        1,
+                        label="Reused conversion" if result.reused else "Converted",
+                        output_size=output_size,
+                    )
+                )
+
+                def forward(event: PrepareEvent) -> None:
+                    # The relay may coalesce stage changes; carry the actual output size in every asset event.
+                    relay(PrepareEvent(event.stage, event.done, event.total, event.label, output_size))
+
+            return await prepare_asset(
                 self._state,
-                Path(self._prepare_files[index]),
+                path,
                 provenance="gui",
                 saved=self._prepare_saved,
-                metadata=self._prepare_metadata[self._prepare_files[index]],
-                progress=self._prepare_relay,
-            ),
-            self._prepared,
-        )
+                metadata=metadata,
+                progress=forward,
+            )
+
+        self._runner.submit(run_one(), self._prepared)
 
     def _prepared(self, record, failure) -> None:
         if self._prepare_files:
