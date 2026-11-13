@@ -139,6 +139,7 @@ WIRED_CONTROLS = (
     "inpaintModeButton",
     "scriptsModeButton",
     "promptEdit",
+    "promptHintsButton",
     "negativePromptEdit",
     "seedEdit",
     "imagesSpinBox",
