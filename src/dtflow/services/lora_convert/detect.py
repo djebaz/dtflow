@@ -104,6 +104,8 @@ class _ResolverRule:
     width: int | None  # expected hidden width; None when the resolver checks exact shapes itself
     # Parts the converted-output check (lora_family.py) or a look-alike model needs: a note when one is missing.
     require: Callable[[dict[str, dict[str, tuple[int, ...]]]], str | None]
+    # Which rule made the file distinctive, as a fixed phrase for the evidence list (empty when obvious).
+    basis: Callable[[dict[str, dict[str, tuple[int, ...]]]], str] = lambda modules: ""  # noqa: E731
 
 
 def _krea2_rule() -> _ResolverRule:
@@ -218,7 +220,14 @@ def _flux1_rule() -> _ResolverRule:
             "choose the family yourself"
         )
 
-    return _ResolverRule("flux1", flux1.resolve_flux1, tag, lambda m: bool(qkv.match(m)), None, require)
+    def basis(modules: dict[str, dict[str, tuple[int, ...]]]) -> str:
+        return (
+            "Flux-only module names"
+            if any(unique.match(m) for m in modules)
+            else "full 19 double and 38 single block coverage"
+        )
+
+    return _ResolverRule("flux1", flux1.resolve_flux1, tag, lambda m: bool(qkv.match(m)), None, require, basis)
 
 
 def _check_resolver(rule: _ResolverRule, modules: dict[str, dict[str, tuple[int, ...]]]) -> _Verdict:
@@ -264,6 +273,8 @@ def _check_resolver(rule: _ResolverRule, modules: dict[str, dict[str, tuple[int,
         return verdict
     verdict.ok = True
     verdict.evidence = [f"all {len(modules)} modules map to {label}"]
+    if basis := rule.basis(modules):
+        verdict.evidence.append("basis: " + basis)
     if tags:
         verdict.evidence.append("groups: " + ", ".join(sorted(tags)))
     if corroborated:
@@ -426,7 +437,7 @@ def _detect(source: SafeTensors) -> FamilyDetection:
 
 
 def _emit(path: Path, result: FamilyDetection, error_type: str | None = None) -> None:
-    """One bounded diagnostic event: outcome, family, candidate count and a 3-character filename prefix only."""
+    """One bounded diagnostic event: outcome, family, candidates, fixed evidence/reason and a 3-character filename prefix."""
     from dtflow.diagnostics import asset_ref_data, event as diagnostic_event
 
     data = {
@@ -435,6 +446,10 @@ def _emit(path: Path, result: FamilyDetection, error_type: str | None = None) ->
         "family": result.family,
         "candidates": len(result.candidates),
     }
+    if result.evidence:
+        data["evidence"] = list(result.evidence)  # fixed counts and group names, never tensor names
+    if result.outcome != "detected" and result.reason:
+        data["reason"] = result.reason  # fixed text, no path or exception detail
     if error_type:
         data["error_type"] = error_type
     diagnostic_event(log, "lora_convert.source_family_detected", data=data)
