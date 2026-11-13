@@ -2,9 +2,11 @@
 
 Examples:
     uv run python -m dtflow.services.lora_convert input.safetensors output.ckpt --family krea2
+    uv run python -m dtflow.services.lora_convert "C:/LoRAs/*.safetensors" C:/Converted
     uv run python -m dtflow.services.lora_convert "C:/LoRAs/*krea2*.safetensors" C:/Converted --family krea2 -w
 
-Folder and wildcard inputs are non-recursive. Wildcards are case-insensitive filename
+Without --family each file's family is detected from its header; a file that cannot be
+identified is reported as failed. Folder and wildcard inputs are non-recursive. Wildcards are case-insensitive filename
 globs, not regular expressions. A batch creates a new versioned JSON report per run.
 """
 
@@ -65,12 +67,12 @@ def _sources(source: Path) -> tuple[list[Path], bool]:
     return sorted(files, key=lambda path: (path.name.casefold(), path.name)), True
 
 
-def _convert(source: Path, destination: Path, args: argparse.Namespace, *, progress=None):
+def _convert(source: Path, destination: Path, args: argparse.Namespace, family: str, *, progress=None):
     """Convert one file, replacing an existing result only after successful conversion."""
     request = ConversionRequest(
         source=source,
         destination=destination,
-        family=args.family,
+        family=family,
         scale=args.scale,
         allow_experimental=args.experimental,
         ignore_unmatched=args.ignore_unmatched,
@@ -107,39 +109,75 @@ def _write_report(directory: Path, report: dict) -> Path:
     raise OSError("Could not allocate a unique batch report filename.")
 
 
-def _analyze_item(path: Path, item: dict, args: argparse.Namespace) -> None:
+def _resolve_family(path: Path, item: dict, args: argparse.Namespace):
+    """Pick the family for one file: --family as given, else the #402 header detector.
+
+    Returns ``(family, detection)``; ``family`` is None when auto detection found nothing,
+    in which case ``item`` is already marked failed with the detector's fixed reason.
+    """
+    if args.family:
+        item["family"] = args.family
+        item["family_source"] = "selected"
+        return args.family, None
+    from dtflow.services.lora_convert.detect import FamilyDetection, detect_source_family
+
+    try:
+        detection = detect_source_family(path)
+    except Exception as error:  # the detector is documented not to raise; never stop a batch
+        detection = FamilyDetection("unknown", reason=f"Could not analyse this file ({type(error).__name__}).")
+    item["family_source"] = "detected"
+    if detection.family:
+        item["family"] = detection.family
+        print(f"  detected family: {detection.family}", flush=True)
+        return detection.family, detection
+    reason = detection.reason or "The family could not be detected."
+    if detection.candidates:
+        reason += " Candidates: " + ", ".join(detection.candidates) + "."
+    item.update(
+        status="failed",
+        error_code="family_not_detected",
+        error=f"{reason} Pass --family to convert it anyway.",
+        family=None,
+    )
+    if args.analyze:
+        item["source_family_detection"] = detection.as_report()
+    return None, detection
+
+
+def _analyze_item(path: Path, item: dict, args: argparse.Namespace, family: str, detection=None) -> None:
     """Collect optional source diagnostics before conversion, including on later failures."""
     if not args.analyze:
         return
     try:
         from dtflow.services.lora_convert.analysis import analyze_source
 
-        item["analysis"] = analyze_source(path, args.family)
+        item["analysis"] = analyze_source(path, family)
     except Exception as error:
         item["analysis_error"] = f"{type(error).__name__}: {error}"
-    _detect_item(path, item, args)
+    _detect_item(path, item, family, detection)
 
 
-def _detect_item(path: Path, item: dict, args: argparse.Namespace) -> None:
-    """Read-only source family detection (additive report field). It never chooses or changes --family."""
+def _detect_item(path: Path, item: dict, family: str, detection=None) -> None:
+    """Record the source family detection (additive report field); an explicit --family is never changed."""
     try:
-        from dtflow.services.lora_convert.detect import detect_source_family
+        if detection is None:
+            from dtflow.services.lora_convert.detect import detect_source_family
 
-        detection = detect_source_family(path)
-        item["source_family_detection"] = detection.as_report(args.family)
-        shown = detection.family or ("unreadable" if detection.outcome == "unreadable" else "unknown")
-        print(f"  detected source family: {shown} (selected: {args.family})", flush=True)
+            detection = detect_source_family(path)
+            shown = detection.family or ("unreadable" if detection.outcome == "unreadable" else "unknown")
+            print(f"  detected source family: {shown} (selected: {family})", flush=True)
+        item["source_family_detection"] = detection.as_report(family)
     except Exception as error:
         item["source_family_detection_error"] = f"{type(error).__name__}: {error}"
 
 
-def _check_output(path: Path, item: dict, args: argparse.Namespace) -> None:
+def _check_output(path: Path, item: dict, args: argparse.Namespace, family: str) -> None:
     """Inspect the written checkpoint with the existing app validation and family detector."""
     if not args.analyze:
         return
     from dtflow.services.lora_convert.registry import lookup
 
-    expected = lookup(args.family).exact_architecture
+    expected = lookup(family).exact_architecture
     check: dict = {
         "expected_family": expected,
         "detected_family": None,
@@ -198,7 +236,7 @@ def _report(source: Path, directory: Path, args: argparse.Namespace, started: st
         "completed_at_utc": datetime.now(UTC).isoformat(),
         "input": str(source),
         "output_folder": str(directory),
-        "family": args.family,
+        "family": args.family or "auto",
         "scale": args.scale,
         "overwrite": args.overwrite,
         "total_files": len(items),
@@ -237,12 +275,16 @@ def _batch(files: list[Path], destination: Path, source: Path, args: argparse.Na
         output = destination / path.with_suffix(".ckpt").name
         item: dict = {"source": path.name, "destination": output.name}
         started_item = time.monotonic()
-        _analyze_item(path, item, args)
         print(f"[{index}/{len(files)}] {path.name}", flush=True)
+        family, detection = _resolve_family(path, item, args)
+        if family is not None:
+            _analyze_item(path, item, args, family, detection)
         # Windows treats case-only filename variants as the same destination.
         # Never let multiple sources silently replace one another in one batch.
         key = output.name.casefold()
-        if key in reserved:
+        if family is None:
+            pass  # auto detection failed: already recorded as failed
+        elif key in reserved:
             item.update(status="failed", error_code="destination_collision", error="Duplicate destination filename.")
         else:
             reserved.add(key)
@@ -250,15 +292,16 @@ def _batch(files: list[Path], destination: Path, source: Path, args: argparse.Na
                 item.update(status="skipped", reason="Destination already exists (use -w to replace it).")
             else:
                 try:
-                    result = _convert(path, output, args)
+                    result = _convert(path, output, args, family)
                     _record_success(item, result)
-                    _check_output(output, item, args)
+                    _check_output(output, item, args, family)
                 except Exception as error:
                     # A failed file must not prevent analysis of later files.
                     _record_failure(item, error)
         item["elapsed_seconds"] = round(time.monotonic() - started_item, 3)
         items.append(item)
-        print(f"  {item['status']}: {item.get('error', item.get('reason', output.name))}", flush=True)
+        shown = f" [{item['family']}]" if item.get("family") else ""
+        print(f"  {item['status']}{shown}: {item.get('error', item.get('reason', output.name))}", flush=True)
 
     report = _report(source, destination, args, started, items)
     totals = report["summary"]
@@ -277,25 +320,34 @@ def _batch(files: list[Path], destination: Path, source: Path, args: argparse.Na
 def _single(source: Path, output: Path, args: argparse.Namespace) -> int:
     """Keep the original command unchanged unless -a requests a detailed report."""
     if not args.analyze:
+        item: dict = {}
+        family, _ = _resolve_family(source, item, args)
+        if family is None:
+            print(f"error: {item['error']}", file=sys.stderr)
+            return 2
         try:
-            _convert(source, output, args, progress=_print_message)
+            _convert(source, output, args, family, progress=_print_message)
         except (ConversionError, OSError) as error:
             print(f"error: {error}", file=sys.stderr)
             return 2
-        print(f"Converted {source.name} -> {output}")
+        print(f"Converted {source.name} -> {output} ({family})")
         return 0
 
     started = datetime.now(UTC).isoformat()
     begun = time.monotonic()
     item: dict = {"source": source.name, "destination": output.name}
-    _analyze_item(source, item, args)
-    try:
-        result = _convert(source, output, args, progress=_print_message)
-        _record_success(item, result)
-        _check_output(output, item, args)
-    except Exception as error:
-        _record_failure(item, error)
-        print(f"error: {error}", file=sys.stderr)
+    family, detection = _resolve_family(source, item, args)
+    if family is None:
+        print(f"error: {item['error']}", file=sys.stderr)
+    else:
+        _analyze_item(source, item, args, family, detection)
+        try:
+            result = _convert(source, output, args, family, progress=_print_message)
+            _record_success(item, result)
+            _check_output(output, item, args, family)
+        except Exception as error:
+            _record_failure(item, error)
+            print(f"error: {error}", file=sys.stderr)
     item["elapsed_seconds"] = round(time.monotonic() - begun, 3)
     try:
         report_path = _write_report(output.parent, _report(source, output.parent, args, started, [item]))
@@ -310,7 +362,11 @@ def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(prog="python -m dtflow.services.lora_convert", description=__doc__.splitlines()[0])
     ap.add_argument("source", type=Path, help="A .safetensors file, folder, or quoted filename glob (case-insensitive)")
     ap.add_argument("destination", type=Path, help="Output .ckpt file or, for a batch, an output folder")
-    ap.add_argument("--family", required=True, choices=sorted(spec.key for spec in supported_families()))
+    ap.add_argument(
+        "--family",
+        choices=sorted(spec.key for spec in supported_families()),
+        help="Source family; when omitted, it is detected from each file's header",
+    )
     ap.add_argument("--scale", type=float, default=1.0)
     ap.add_argument(
         "-w", "--overwrite", action="store_true", help="Replace existing .ckpt files after successful conversion"
