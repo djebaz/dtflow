@@ -16,6 +16,7 @@ RECORD_VERSION = 1
 MAX_TAGS = 50  # retained training tags
 MAX_TAG_FREQUENCY_CHARS = 1024 * 1024  # a larger ss_tag_frequency string is not parsed at all
 MAX_TRIGGER_CHARS = 200
+_MAX_COUNT = 10**12
 
 # (header key, label, maximum stored characters). Dataset folders and paths (ss_dataset_dirs, ss_datasets) and free
 # training comments are deliberately not kept: they can hold local paths or personal text.
@@ -94,12 +95,14 @@ def _tag_frequency(raw: str | None) -> dict[str, dict[str, int]] | None:
         if not isinstance(dataset, str) or not isinstance(tags, dict):
             continue
         counts = {
-            tag: int(count)
+            tag: min(int(count), _MAX_COUNT)  # a huge integer (hundreds of digits) is clamped, never an error
             for tag, count in tags.items()
             if isinstance(tag, str)
             and isinstance(count, int | float)
             and not isinstance(count, bool)
-            and math.isfinite(count)  # JSON allows Infinity and NaN; int() of them raises
+            and (
+                isinstance(count, int) or math.isfinite(count)
+            )  # JSON allows Infinity and NaN; isfinite of a huge int overflows
             and count > 0
         }
         if counts:

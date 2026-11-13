@@ -528,7 +528,7 @@ def inspect_source(path: Path) -> SourceInspection:
     raw: dict = {}
     detection = _detect_file(path, raw)
     result = SourceInspection(detection, extract_safely(raw))
-    if key is not None:
+    if key is not None and detection.outcome != "unreadable":  # a read failure may be temporary (e.g. a lock)
         with _INSPECTIONS_LOCK:
             _INSPECTIONS[key] = result
             while len(_INSPECTIONS) > _INSPECTIONS_KEPT:
