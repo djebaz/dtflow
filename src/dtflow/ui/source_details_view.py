@@ -8,9 +8,9 @@ from __future__ import annotations
 import html
 from functools import cache
 
-from PySide6.QtCore import QSize, Qt
+from PySide6.QtCore import QEvent, QObject, QRect, QSize, Qt
 from PySide6.QtGui import QColor, QFont, QFontMetrics, QPainter
-from PySide6.QtWidgets import QLabel, QSizePolicy, QWidget
+from PySide6.QtWidgets import QLabel, QSizePolicy, QToolTip, QWidget
 
 from dtflow.ui.theme import load_tokens
 
@@ -85,3 +85,44 @@ class RunsLine(QWidget):
             painter.drawText(x, baseline, metrics.elidedText(text, Qt.TextElideMode.ElideRight, max(0, width - x)))
             break
         painter.end()
+
+
+class RegionTooltip(QObject):
+    """One tooltip for a whole region: the union of ``members`` (and ``margin`` px around it, full height of ``root``).
+
+    Qt shows a tooltip only for the widget under the cursor (or its ancestors with their own), so the lines, the
+    gaps between them and the band's margins around them would otherwise answer differently. This filter answers every
+    ToolTip event inside the region with the same text, whichever widget it reaches."""
+
+    def __init__(self, root: QWidget, members: list[QWidget], *, margin: int = 8, full_height: bool = False) -> None:
+        super().__init__(root)
+        self._root, self._members, self._margin, self._full_height = root, members, margin, full_height
+        self._text = ""
+        watched = {root, *members}
+        for member in members:
+            watched.update(member.findChildren(QWidget))
+        for widget in watched:
+            widget.installEventFilter(self)
+
+    def set_text(self, text: str) -> None:
+        self._text = text
+
+    def _area(self) -> QRect:
+        area = QRect()
+        for member in self._members:
+            if member.isVisible():
+                top_left = member.mapTo(self._root, member.rect().topLeft())
+                area = area.united(QRect(top_left, member.size()))
+        area = area.adjusted(-self._margin, -self._margin, self._margin, self._margin)
+        if self._full_height:
+            area.setTop(0)
+            area.setBottom(self._root.height())
+        return area
+
+    def eventFilter(self, watched, event) -> bool:  # noqa: N802 - Qt override
+        if event.type() == QEvent.Type.ToolTip and self._text and isinstance(watched, QWidget):
+            if self._area().contains(self._root.mapFromGlobal(event.globalPos())):
+                QToolTip.showText(event.globalPos(), self._text, self._root)
+                event.accept()
+                return True
+        return False

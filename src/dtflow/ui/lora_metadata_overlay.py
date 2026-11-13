@@ -20,7 +20,7 @@ from dtflow.services.lora_convert.source_metadata import DetailModel
 from dtflow.services.lora_metadata_edit import save_lora_metadata
 from dtflow.services.lora_naming import architecture_shortcode
 from dtflow.ui.runner import AsyncRunner
-from dtflow.ui.source_details_view import replace_with_runs, safe_tooltip
+from dtflow.ui.source_details_view import RegionTooltip, replace_with_runs, safe_tooltip
 
 _SHORT_NAME = re.compile(r"^[A-Za-z0-9_]{1,20}$")
 
@@ -77,6 +77,7 @@ class LoraMetadataOverlay(QObject):
         self._details_model = DetailModel()
         self._summary = replace_with_runs(self.form.loraMetadataSourceSummary)
         self._tags_line = replace_with_runs(self.form.loraMetadataSourceTags)
+        self._region_tip = RegionTooltip(self.form, [self._summary, self._tags_line], margin=6)
         self.form.loraMetadataCancel.clicked.connect(self.close)
         self.form.loraMetadataSave.clicked.connect(self.save)
         escape = QShortcut(QKeySequence(Qt.Key.Key_Escape), self.overlay)
@@ -99,6 +100,7 @@ class LoraMetadataOverlay(QObject):
         self._details_model = source_details or DetailModel()
         model = self._details_model
         tip = safe_tooltip(model.tooltip)
+        self._region_tip.set_text(tip)
         self._summary.set_runs((*model.runs, *model.note_runs) if model.runs or model.note_runs else ())
         self._summary.setVisible(bool(model))
         self._tags_line.set_runs(model.tag_runs)

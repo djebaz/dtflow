@@ -33,7 +33,7 @@ from dtflow.services.lora_naming import (
     suggest_short_name,
 )
 from dtflow.ui.inline_feedback import feedback
-from dtflow.ui.source_details_view import replace_with_runs, safe_tooltip
+from dtflow.ui.source_details_view import RegionTooltip, replace_with_runs, safe_tooltip
 
 _SHORT_NAME = re.compile(r"^[A-Za-z0-9_]{1,20}$")
 
@@ -218,6 +218,9 @@ class PrepareBatchEditor:
         self._details_model = DetailModel()
         self._summary = replace_with_runs(self.form.prepareSourceSummary)
         self._tags_line = replace_with_runs(self.form.prepareSourceTags)
+        self._region_tip = RegionTooltip(
+            self.form.preparePreviewPanel, [self.form.prepareSourceSummaryCell], margin=10, full_height=True
+        )
         stretch = self.form.findChild(QLayout, "preparePreviewLayout")
         if stretch is not None:  # about 40% filename and label, 60% declared-metadata summary
             stretch.setStretch(0, 4)
@@ -799,6 +802,7 @@ class PrepareBatchEditor:
                 model = DetailModel() if self.selected.invalid else model
                 self._details_model = model
                 tip = safe_tooltip(model.tooltip)  # the whole metadata area shows the full text, not just the tags
+                self._region_tip.set_text(tip)
                 self._tags_line.set_runs(model.tag_runs)
                 self.form.prepareSourceSummaryCell.setToolTip(tip)
                 self._tags_line.setToolTip(tip)
