@@ -13,7 +13,7 @@ from pathlib import Path
 from PySide6.QtCore import QCoreApplication, QEvent, QPointF, QRectF, Qt
 from PySide6.QtGui import QColor, QFont, QImage, QLinearGradient, QPainter
 from PySide6.QtTest import QTest
-from PySide6.QtWidgets import QApplication, QSpinBox
+from PySide6.QtWidgets import QApplication, QSpinBox, QToolButton
 
 ROOT = Path(__file__).resolve().parents[2]
 STATES = (
@@ -30,6 +30,7 @@ STATES = (
     "workflows-11-library-folded",
     "workflows-12-lora-warning",
     "workflows-13-lora-warning-history",
+    "workflows-14-prompt-hints",
 )
 OLD_CONTRACT = ROOT / "tools/node_editor_poc/reference_workflow_v1.json"  # a POC-era file the importer refuses
 
@@ -301,6 +302,39 @@ def render_workflows_states(out, *, window_factory, state_names, capture, dimens
                 run["steps"][0]["warnings"] = [warning]
                 page.canvas.select_node(1)
                 show_run(run, fresh=name.endswith("lora-warning"))
+            elif name.endswith("prompt-hints"):
+                from dtflow.services.lora_convert.source_metadata import extract
+
+                source = extract({
+                    "ss_output_name": "Workflow portrait style",
+                    "modelspec.trigger_phrase": "portrait style",
+                    "ss_network_dim": "16",
+                    "ss_num_epochs": "8",
+                    "ss_tag_frequency": json.dumps({
+                        "training": {"portrait style": 88, "soft light": 34, "natural skin": 21}
+                    }),
+                })
+                identifier = "PLACEHOLDER_lora_b.safetensors"
+                sha, size = "f" * 64, 1000000
+                owner.form._lora_hint_library.entries = [{
+                    "name": identifier, "sha256": sha, "size": size,
+                    "source_metadata": source.retained_record(),
+                }]
+                owner.form._lora_hint_library.records = {
+                    (sha, size): {"managed_identifier": identifier, "trigger_words": "portrait style"}
+                }
+                button = next(
+                    (
+                        widget for widget in page.inspector.workflowParamsHost.findChildren(QToolButton)
+                        if widget.accessibleName() == "Show LoRA prompt hints"
+                    ),
+                    None,
+                )
+                if button is None:
+                    raise RuntimeError("Workflow prompt hint toggle missing from node inspector")
+                button.click()
+                if not page.prompt_hints.open:
+                    raise RuntimeError("Workflow LoRA hint panel failed to open over the center workspace")
             elif name.endswith("library-folded"):
                 page._library_open = False  # as after pressing Library (not written to the fixture state)
                 page._sync_library_button()
