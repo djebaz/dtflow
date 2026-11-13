@@ -44,6 +44,7 @@ class PrepareEvent:
     done: int = 0
     total: int = 0
     label: str = ""  # bounded, UI-authored phase label; never source paths or converter text
+    output_size: int = 0  # actual converted checkpoint bytes when known
 
 
 @dataclass(slots=True)
@@ -149,8 +150,12 @@ class PrepareProgress:
             return
         now = self._clock()
         stage = event.stage
+        if event.output_size > 0:
+            file.size = event.output_size
         if stage == UPLOADING:
-            if file.stage in ("pending", CHECKING):
+            if file.stage in ("pending", CHECKING, CONVERTING):
+                if file.stage == CONVERTING:
+                    file.frac[CONVERTING] = 1.0
                 file.frac[CHECKING] = 1.0
                 self._enter(file, UPLOADING)
             elif file.stage != UPLOADING:
@@ -161,15 +166,19 @@ class PrepareProgress:
             file.frac[UPLOADING] = max(file.frac.get(UPLOADING, 0.0), fraction)
             self._byte_progress(file, event.done, now)
         elif stage == EXISTS:
+            file.frac[CONVERTING] = 1.0
             file.frac[CHECKING] = 1.0
             file.skip |= {"uploading", "confirming"}
             self._enter(file, EXISTS)
             self._hide_until = now + SET_CHANGE_HIDE
         elif stage == CONFIRMING:
+            file.frac[CONVERTING] = 1.0
             file.frac[CHECKING] = 1.0
             file.frac[UPLOADING] = 1.0
             self._enter(file, CONFIRMING)
         elif stage == CONVERTING:
+            if file.stage not in ("pending", CHECKING, CONVERTING):
+                return
             self._enter(file, CONVERTING)
             if event.label:
                 file.convert_label = event.label
