@@ -457,44 +457,31 @@ class PrepareBatchEditor:
         self._mark_duplicates()
         self.refresh()
 
+    def _content_identity(self, row: _Row) -> tuple[str | None, int | None]:
+        """Naming checks use converted content identity; a source hash is never a CKPT hash."""
+        if row.source_kind == "ckpt":
+            return row.sha256, row.size
+        spec = self._conversion_families.get(row.widget.prepareArchitecture.currentData())
+        if spec is None or not row.sha256:
+            return None, None
+        return self._existing_conversions.get((row.sha256, spec.key, CONVERTER_VERSION), (None, None))
+
     def _allocation(self):
-        requests = [
-            NamingRequest(
-                short_name=row.widget.prepareShortName.text().strip() or None,
-                exact_architecture=row.widget.prepareArchitecture.currentData(),
-                format_code=row.widget.prepareFormat.currentText(),
-                manually_edited=row.manual_name,
-                replace_existing=row.reprepare,
-                alternatives=row.alternatives,
-                sha256=(
-                    self._existing_conversions.get(
-                        (
-                            row.sha256,
-                            self._conversion_families[row.widget.prepareArchitecture.currentData()].key,
-                            CONVERTER_VERSION,
-                        ),
-                        (None, None),
-                    )[0]
-                    if row.source_kind == "safetensors" and row.sha256
-                    and row.widget.prepareArchitecture.currentData() in self._conversion_families
-                    else row.sha256 if row.source_kind == "ckpt" else None
-                ),
-                size=(
-                    self._existing_conversions.get(
-                        (
-                            row.sha256,
-                            self._conversion_families[row.widget.prepareArchitecture.currentData()].key,
-                            CONVERTER_VERSION,
-                        ),
-                        (None, None),
-                    )[1]
-                    if row.source_kind == "safetensors" and row.sha256
-                    and row.widget.prepareArchitecture.currentData() in self._conversion_families
-                    else row.size if row.source_kind == "ckpt" else None
-                ),
+        requests = []
+        for row in self.rows:
+            sha256, size = self._content_identity(row)
+            requests.append(
+                NamingRequest(
+                    short_name=row.widget.prepareShortName.text().strip() or None,
+                    exact_architecture=row.widget.prepareArchitecture.currentData(),
+                    format_code=row.widget.prepareFormat.currentText(),
+                    manually_edited=row.manual_name,
+                    replace_existing=row.reprepare,
+                    alternatives=row.alternatives,
+                    sha256=sha256,
+                    size=size,
+                )
             )
-            for row in self.rows
-        ]
         return allocate_batch_names(requests, self.occupied)
 
     def refresh(self):
@@ -511,10 +498,7 @@ class PrepareBatchEditor:
                 family = row.widget.prepareArchitecture.currentData()
                 spec = self._conversion_families.get(family) if row.source_kind == "safetensors" else None
                 if row.source_kind == "safetensors":
-                    identity = (
-                        self._existing_conversions.get((row.sha256, spec.key, CONVERTER_VERSION))
-                        if spec is not None and row.sha256 else None
-                    )
+                    identity = self._content_identity(row)
                     prior = next(
                         (
                             item for item in self.occupied
