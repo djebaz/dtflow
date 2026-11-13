@@ -367,6 +367,7 @@ class AssetService:
                         level=logging.INFO,
                         data={
                             "receipt": receipt.receipt_id,
+                            "asset_sha_prefix": content.sha256[:12],
                             "source": "already_exists",
                             "family": receipt.family or "unknown",
                             "family_source": receipt.family_source,
@@ -484,6 +485,7 @@ class AssetService:
                 level=logging.INFO,
                 data={
                     "receipt": receipt.receipt_id,
+                    "asset_sha_prefix": content.sha256[:12],
                     "source": "transfer",
                     "family": receipt.family or "unknown",
                     "family_source": receipt.family_source,
