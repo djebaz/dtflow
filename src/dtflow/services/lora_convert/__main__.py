@@ -413,7 +413,13 @@ def main(argv: list[str] | None = None) -> int:
             flag
             for flag, used in (
                 ("--family", args.family),
-                ("--scale", args.scale != 1.0),
+                (
+                    "--scale",
+                    any(
+                        token == "--scale" or token.startswith("--scale=")
+                        for token in (argv if argv is not None else sys.argv[1:])
+                    ),
+                ),
                 ("-w/--overwrite", args.overwrite),
                 ("--ignore-unmatched", args.ignore_unmatched),
                 ("-xp/--experimental", args.experimental),
