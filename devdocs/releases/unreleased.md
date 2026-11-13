@@ -6,7 +6,7 @@ Changes through 6.3.0 are consolidated in [DTFlow 6.3.0](v6.3.0.md). This file t
 
 ## Added
 
-- Prepare reads a `.safetensors` LoRA's descriptive header metadata: a two-line summary (training facts including declared base model, top tags) with a full selected-training-metadata tooltip (including up to 50 retained tags with counts) in the preview band and in Edit metadata (training facts only, not the file's own title, author or description), a Trigger Words suggestion only from an explicit trigger declaration (a saved or typed value always wins), and the same details in Edit metadata after conversion without the original file. The metadata is display-only and never affects family detection or conversion. The converter CLI gains `--metadata` (`-m`), which converts nothing and writes a JSON report of the descriptive metadata of a file, folder or glob.
+- Prepare reads a `.safetensors` LoRA's descriptive header metadata: a two-line summary (training facts including declared base model, top tags) with a styled selected-training-metadata tooltip (one trigger phrase, emphasized values, and a separate section of up to 50 retained tags with counts) in the preview band and in Edit metadata (training facts only, not the file's own title, author or description), a Trigger Words suggestion only from an explicit trigger declaration (a saved or typed value always wins), and the same details in Edit metadata after conversion without the original file. The metadata is display-only and never affects family detection or conversion. The converter CLI gains `--metadata` (`-m`), which converts nothing and writes a JSON report of the descriptive metadata of a file, folder or glob.
 
 ## Changed
 

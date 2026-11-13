@@ -12,6 +12,7 @@ from PySide6.QtCore import QEvent, QObject, QRect, QSize, Qt
 from PySide6.QtGui import QColor, QFont, QFontMetrics, QPainter
 from PySide6.QtWidgets import QApplication, QLabel, QSizePolicy, QToolTip, QWidget
 
+from dtflow.services.lora_convert.source_metadata import DetailModel
 from dtflow.ui.theme import load_tokens
 
 
@@ -23,6 +24,44 @@ def safe_tooltip(text: str) -> str:
 @cache
 def _tokens() -> dict[str, str]:
     return load_tokens()
+
+
+def metadata_tooltip(model: DetailModel) -> str:
+    """Emphasize values without interpreting any file-supplied markup."""
+    if not model.tooltip:
+        return ""
+    tokens = _tokens()
+
+    def span(text: str, *, strong: bool = False) -> str:
+        color = tokens["color.text" if strong else "color.secondary"]
+        weight = tokens["type.weightEmphasis" if strong else "type.weightBody"]
+        return f'<span style="color:{color};font-weight:{weight}">{html.escape(text)}</span>'
+
+    rows = [span(label + ": ") + span(value, strong=True) for label, value in model.facts]
+    if not rows and model.summary:
+        rows.append(span(model.summary, strong=True))
+    if model.note:
+        rows.append(span(model.note))
+    heading = span("Declared training metadata", strong=True) + "<br>" + span("File declarations · unverified")
+    body = '<p style="margin-top:0px;margin-bottom:6px">' + heading + "</p>"
+    if rows:
+        body += '<p style="margin-top:0px;margin-bottom:0px">' + "<br>".join(rows) + "</p>"
+    tags = (
+        [span(tag, strong=True) + span(f" ({count})") for tag, count in model.tag_counts]
+        if model.tag_counts
+        else [span(tag, strong=True) for tag in model.tags]
+    )
+    if tags:
+        body += (
+            '<p style="margin-top:6px;margin-bottom:0px">'
+            + span("Training tags", strong=True)
+            + "<br>"
+            + span("Not necessarily trigger words")
+            + "<br>"
+            + span(" · ").join(tags)
+            + "</p>"
+        )
+    return f'<div style="white-space:pre-wrap;font-size:{tokens["type.small"]}">{body}</div>'
 
 
 def _font(weight_token: str) -> QFont:

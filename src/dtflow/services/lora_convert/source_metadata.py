@@ -311,10 +311,14 @@ def detail_model(
     if not fields and not tags:
         return DetailModel()
     declared = declared_family(record)
+    # Display one phrase, not a list of activations. Keep the source record and editable Trigger Words untouched.
+    trigger = next(
+        (part.strip() for part in re.split(r"[,;\n]", fields.get("modelspec.trigger_phrase", "")) if part.strip()), None
+    )
     facts: list[tuple[str, str]] = []
     seen: set[str] = set()
     for key in _FACT_ORDER:
-        value = fields.get(key)
+        value = trigger if key == "modelspec.trigger_phrase" else fields.get(key)
         label = (
             "Trained as"
             if key == "ss_output_name"
@@ -327,7 +331,6 @@ def detail_model(
         facts.append((label, value))
         seen.add(label)
     rank, alpha = fields.get("ss_network_dim"), fields.get("ss_network_alpha")
-    trigger = fields.get("modelspec.trigger_phrase")
     resolution = fields.get("ss_resolution") or fields.get("modelspec.resolution")
     epochs = fields.get("ss_num_epochs")
     base_model = fields.get("ss_sd_model_name") or fields.get("ss_base_model_version")

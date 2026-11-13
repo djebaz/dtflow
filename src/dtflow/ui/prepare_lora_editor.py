@@ -33,7 +33,7 @@ from dtflow.services.lora_naming import (
     suggest_short_name,
 )
 from dtflow.ui.inline_feedback import feedback
-from dtflow.ui.source_details_view import RegionTooltip, replace_with_runs, safe_tooltip
+from dtflow.ui.source_details_view import RegionTooltip, metadata_tooltip, replace_with_runs
 
 _SHORT_NAME = re.compile(r"^[A-Za-z0-9_]{1,20}$")
 
@@ -801,7 +801,7 @@ class PrepareBatchEditor:
                 model = self._source_details(self.selected)
                 model = DetailModel() if self.selected.invalid else model
                 self._details_model = model
-                tip = safe_tooltip(model.tooltip)  # the whole metadata area shows the full text, not just the tags
+                tip = metadata_tooltip(model)  # the whole metadata region shares the full selected training details
                 self._region_tip.set_text(tip)
                 self._tags_line.set_runs(model.tag_runs)
                 self.form.prepareSourceSummaryCell.setToolTip(tip)
