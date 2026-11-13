@@ -34,7 +34,7 @@ from dtflow.core.models import (
 )
 from dtflow.core.retry_policy import REFRESH_FAILED_CODE, server_ended_without_result
 from dtflow.core.tasks import settle
-from dtflow.diagnostics import api_error_data, cloud_key_data, event as diagnostic_event
+from dtflow.diagnostics import api_error_data, asset_ref_data, cloud_key_data, event as diagnostic_event
 from dtflow.persistence.assets import AssetRegistry, AssetsBusyError, newest_per_name
 from dtflow.persistence.store import PersistenceError
 from functools import partial
@@ -139,7 +139,9 @@ class AssetValidator(Protocol):
     def forget(self, assets) -> None: ...
 
 
-def _guarded(progress: Callable[[PrepareEvent], None] | None) -> Callable[[PrepareEvent], None] | None:
+def _guarded(
+    progress: Callable[[PrepareEvent], None] | None, reference: dict
+) -> Callable[[PrepareEvent], None] | None:
     """Progress is cosmetic: a callback that raises is logged once and dropped, never an upload failure."""
     if progress is None:
         return None
@@ -152,7 +154,7 @@ def _guarded(progress: Callable[[PrepareEvent], None] | None) -> Callable[[Prepa
             progress(event)
         except Exception:
             alive[0] = False
-            diagnostic_event(log, "assets.progress_callback_failed", level=logging.WARNING, data={})
+            diagnostic_event(log, "assets.progress_callback_failed", level=logging.WARNING, data=reference.copy())
 
     return call
 
@@ -210,7 +212,8 @@ class AssetService:
 
         ``progress`` receives stage events (checking, uploading with bytes, confirming, exists); it must not raise."""
         path = Path(path)
-        progress = _guarded(progress)
+        progress_reference = asset_ref_data(filename=path.name)
+        progress = _guarded(progress, progress_reference)
         if progress is not None:
             progress(PrepareEvent(CHECKING))
         managed_name = None
@@ -252,6 +255,7 @@ class AssetService:
                 if metadata is not None:
                     identifier = managed_name = metadata.identifier
         content = AssetContent("lora", identifier or path.name, digest, stat.st_size, provenance)
+        progress_reference.update(asset_ref_data(sha256=digest))
         retained = None
         if self.store is not None:
             # One verified copy with its chosen name, indexed before any provider call.
@@ -260,7 +264,10 @@ class AssetService:
             )
             retained = await asyncio.to_thread(retain, path, digest, stat.st_size)
             diagnostic_event(
-                log, "assets.copy_kept", level=logging.INFO, data={"size": stat.st_size, "sha": digest[:8]}
+                log,
+                "assets.copy_kept",
+                level=logging.INFO,
+                data={**asset_ref_data(sha256=digest), "size": stat.st_size},
             )
         key = (
             self.backend.backend_id,
@@ -278,7 +285,7 @@ class AssetService:
                 "assets.lora_family_detected",
                 level=logging.INFO,
                 data={
-                    "sha": digest[:8],
+                    **asset_ref_data(sha256=digest),
                     "family": detected.family or "unknown",
                     "family_source": detected.source,
                 },
@@ -338,6 +345,13 @@ class AssetService:
             family=detected.family,
             lora_metadata=metadata,
         )
+        operation_ref = asset_ref_data(sha256=content.sha256, asset_id=asset_id, operation_id=operation)
+        diagnostic_event(
+            log,
+            "assets.prepare_started",
+            level=logging.DEBUG,
+            data={**operation_ref, "action": "restore" if content.provenance == "auto_restore" else "prepare"},
+        )
         transferred = False
         try:
             if managed_name is not None and self.store is not None and retained_name != managed_name:
@@ -366,8 +380,8 @@ class AssetService:
                         "assets.prepared",
                         level=logging.INFO,
                         data={
+                            **operation_ref,
                             "receipt": receipt.receipt_id,
-                            "asset_sha_prefix": content.sha256[:12],
                             "source": "already_exists",
                             "family": receipt.family or "unknown",
                             "family_source": receipt.family_source,
@@ -470,7 +484,7 @@ class AssetService:
                     log,
                     "assets.receipt_write_failed",
                     level=logging.ERROR,
-                    data={},
+                    data={**operation_ref, "reason": "receipt_write_failed"},
                 )
             raise _failure(
                 ErrorCategory.PERSISTENCE,
@@ -484,8 +498,8 @@ class AssetService:
                 "assets.prepared",
                 level=logging.INFO,
                 data={
+                    **operation_ref,
                     "receipt": receipt.receipt_id,
-                    "asset_sha_prefix": content.sha256[:12],
                     "source": "transfer",
                     "family": receipt.family or "unknown",
                     "family_source": receipt.family_source,
