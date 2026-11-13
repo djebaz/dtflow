@@ -885,15 +885,31 @@ class LoraAssetPanel:
                     }
                     relay(PrepareEvent(CONVERTING, event.done, event.total, label=labels.get(event.stage, "Converting")))
 
-                result = await convert_for_prepare(
-                    self._state,
-                    source,
-                    spec.key,
-                    metadata.identifier,
-                    progress=conversion_progress,
-                    cancel=self._prepare_convert_cancel,
-                    allow_experimental=spec.experimental,
-                )
+                try:
+                    result = await convert_for_prepare(
+                        self._state,
+                        source,
+                        spec.key,
+                        metadata.identifier,
+                        progress=conversion_progress,
+                        cancel=self._prepare_convert_cancel,
+                        allow_experimental=spec.experimental,
+                    )
+                except (ConversionError, ValidationError):
+                    raise
+                except Exception as exc:
+                    # The provider has not been contacted; even an unexpected local error is definite.
+                    diagnostic_event(
+                        log,
+                        "lora_convert.prepare_unexpected_failure",
+                        level=logging.ERROR,
+                        data={
+                            "file_prefix": source.name[:3],
+                            "family": spec.key,
+                            "error_type": type(exc).__name__,
+                        },
+                    )
+                    raise ConversionError("Local conversion failed before any upload began.") from exc
                 path = result.retained.path
                 output_size = result.retained.size
                 relay(
