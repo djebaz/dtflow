@@ -64,6 +64,7 @@ class _Row:
     manual_family: bool = False
     manual_format: bool = False
     manual_triggers: bool = False  # the user typed (or cleared) Trigger Words: no suggestion replaces it
+    auto_triggers: str = ""  # the last Trigger Words text filled in here, to tell it from the user's own edit
     source_metadata: object | None = None  # descriptive header metadata of a safetensors source (#414)
     admitted: bool = False
     outcome: str | None = None
@@ -507,7 +508,12 @@ class PrepareBatchEditor:
         stays editable; nothing here is saved or uploaded until the user prepares the row.
         """
         field, note = row.widget.prepareTriggerWords, row.widget.prepareTriggerNote
-        if row.manual_triggers or row.admitted:
+        if row.admitted:
+            return
+        if not row.manual_triggers and field.text() != row.auto_triggers:
+            row.manual_triggers = True  # whatever differs from what was filled in came from the user
+        if row.manual_triggers:
+            note.setVisible(False)
             return
         identity = (row.sha256, row.size) if row.source_kind == "ckpt" else self._content_identity(row)
         saved = self._saved_triggers.get(identity) if identity[0] is not None and identity[1] is not None else None
@@ -515,6 +521,7 @@ class PrepareBatchEditor:
         text, origin = (saved, "Saved value") if saved else (suggestion or "", "Suggested from file metadata")
         if field.text() != text:
             field.setText(text)
+        row.auto_triggers = text
         note.setText(origin if text else "")
         note.setVisible(bool(text) and not (self.inspected and row.invalid))
         field.setToolTip(
