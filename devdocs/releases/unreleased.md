@@ -24,5 +24,5 @@ Changes through 6.3.0 are consolidated in [DTFlow 6.3.0](v6.3.0.md). This file t
 
 ## Release audit
 
-- PRs: #418, #417, #420
-- Scope: Version bump 6.3.0 and release-note consolidation; #414 safetensors descriptive metadata and trigger suggestions (static checks, offscreen Qt checks of the editor and dialog on synthetic files; owner Windows smoke pending).
+- PRs: #418, #417, #420, #422
+- Scope: Version bump 6.3.0 and release-note consolidation; #414 safetensors descriptive metadata and trigger suggestions (static checks, offscreen Qt checks of the editor and dialog on synthetic files; owner Windows smoke pending); partial Cloud Prepare result presentation (#420); unified developer Preview workflow and tooling naming (#422, static checks only; captures/publication pending).

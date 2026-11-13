@@ -30,10 +30,11 @@ def current():
     if not pr:
         return True
     data = json.loads(gh("api", f"repos/{os.environ['GITHUB_REPOSITORY']}/pulls/{pr}"))
+    automatic = os.environ["GITHUB_EVENT_NAME"] == "pull_request"
     return (
         data["head"]["sha"] == os.environ["HEAD_SHA"]
-        and data["head"]["repo"]["full_name"] == os.environ["GITHUB_REPOSITORY"]
-        and (os.environ["GITHUB_EVENT_NAME"] != "pull_request" or not data["draft"])
+        and (data["head"].get("repo") or {}).get("full_name") == os.environ["GITHUB_REPOSITORY"]
+        and (not automatic or (not data["draft"] and data["state"] == "open"))
     )
 
 
@@ -68,7 +69,7 @@ def main():
             else:
                 git("checkout", "-q", "--orphan", BRANCH)
             destination = work / f"pr{pr}"
-            if destination.is_symlink():
+            if destination.is_symlink() or destination.resolve().parent != work.resolve():
                 raise ValueError("Refusing redirected PR preview directory")
             if destination.exists():
                 shutil.rmtree(destination)

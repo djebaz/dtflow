@@ -80,6 +80,7 @@ def request(event_name, event, mode, category, workflow):
             selection.update(
                 states=[state.id for state in rows],
                 fixtures=list(dict.fromkeys(state.fixture for state in rows)),
+                groups=sorted({state.group for state in rows}),
                 args=[arg for state in rows for arg in ("--state", state.id)],
             )
             selection["reasons"].append("LoRA input changed: retain the canonical fast runtime category")

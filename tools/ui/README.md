@@ -164,7 +164,7 @@ See the [UI previews guide](../../devdocs/guides/ui-previews.md) for the exact r
 
 #### Run levels and parallel workers
 
-`preview_states.py` takes a run level: `-f` (default, about 17 key states, around 25s on a 2-core Windows PC), `-m` (common variants, about 245 states) and `-s` (every state, about 456; used for exhaustive Actions runs). Category selection keeps the fast default unless a level is specified. Explicit `--group`, `--prefix` and `--state` selectors reach any level unless a level is specified. `-s` now means `--slow`; `--state` has no short form. `--list` prints the selection without starting Qt.
+`preview_states.py` takes a run level: `-f` (default, key states), `-m` (common variants) and `-s` (every registered state; used for exhaustive Preview requests). The catalogue, not a documentation count, owns the current inventory. Category selection keeps the fast default unless a level is specified. Explicit `--group`, `--prefix` and `--state` selectors reach any level unless a level is specified. `-s` means `--slow`; `--state` has no short form. `--list` prints the selection without starting Qt.
 
 The launcher imports no Qt and starts up to `-j N` worker processes (default one per core, 2 to 4; `-j 1` renders in one process). Each worker owns window groups: `workspace`, `gallery`, `main` (generation flow, queue, shell, inpaint, logs), `scripts`, `images-windows` and `splash`. Qt allows one application per process, so a worker costs about 5 to 7s of startup. The groups are packed into the fewest-slowest split from the measured `WORKER_COST` table in `preview_catalog.py`; retune it when a group changes size.
 

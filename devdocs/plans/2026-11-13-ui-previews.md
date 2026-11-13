@@ -10,8 +10,10 @@
 - [x] Consolidate request planning and workflows; skip all automatic draft requests, including labels.
 - [x] Migrate screenshot tooling filenames and active references without changing fixture behavior.
 - [x] Share GitHub artifact, latest-per-PR thumbnail publication and provenance/coverage reporting.
-- [ ] Update active documentation and unreleased notes; inspect static checks and diff.
-- [ ] Commit/push a coherent initial implementation and open a draft PR; finish source review before readiness.
+- [x] Update active documentation and unreleased notes; inspect static checks and diff.
+- [x] Commit/push a coherent initial implementation and open draft PR #422 at `ebbc0a62`.
+- [x] Finish source/reference review; validate Qt-free imports and catalogue/pack metadata.
+- [x] Finalize source-review corrections for commit/push and the Ready-for-review handoff; actual Actions execution remains separate evidence, tracked on PR #422.
 
 ## Decisions and design changes
 
@@ -30,4 +32,6 @@ None blocking. Implementation details and limitations will be recorded here.
 
 - Tests, renders and smoke tests will not be run by the agent. Final execution and native Windows/DPI acceptance remain with the owner.
 - Environment readiness passed: Python 3.13.13 / SQLite 3.53.1. Focused Ruff lint/format, Python AST and JSON parsing, and Actionlint 1.7.12 passed. Actionlint's optional ShellCheck/Pyflakes integrations were disabled because those executables are not installed; no shell execution or workflow runtime acceptance is implied.
-- Source/reference review continuing; no CI/Actions dispatch authorized by this issue.
+- Qt-free orchestration imports and selection metadata validation passed (494 existing states, 41 packs). No fixture scenarios or catalogue entries were added or changed; fixture modules only have mechanical import/function/path renames.
+- GitHub observed both Preview jobs skipped on draft PR #422 at `ebbc0a62` (run `43493375838`); this is draft-guard evidence, not a successful capture/publication run. No CI/Actions manually dispatched.
+- Final source review covered exact-head targeting, automatic draft/closed-PR refusal, changed-vs-all precedence, selection prerequisites, timeout/result separation, shared-helper release compatibility, lease publication/fallback and active references. Actual capture, private-repository inline visibility, concurrent publication/cancellation and native acceptance remain unverified.
