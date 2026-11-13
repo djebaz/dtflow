@@ -315,7 +315,7 @@ def save_tooltip(window, out, name, target, *, hover=None):
         target,
         QHelpEvent(QEvent.Type.ToolTip, local_position, global_position),
     )
-    QTest.qWait(80)
+    QTest.qWait(120)
     tips = [
         widget
         for widget in QApplication.topLevelWidgets()
@@ -710,6 +710,7 @@ def render_lora_prepare_states(shell, out):
         }
     shell._custom_loras_read((0, entries, (len(rows), 4_000_000)), None)
     shell._summary_reads.pop("lora_records", None)  # ignore the real read started by the call above
+    shell._summary_reads.pop("lora_families", None)  # prevent a slow background read replacing these synthetic rows
     shell._lora_records_read(records, None)
     shell.form.retainedLorasTable.selectRow(0)
     shell.form.customLorasStatusLabel.setText("4 illustrative locally known LoRAs.")
