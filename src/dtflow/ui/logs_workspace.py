@@ -10,6 +10,7 @@ import json
 import logging
 import time
 from datetime import datetime, timezone
+from html import escape
 from pathlib import Path
 from threading import Event
 
@@ -26,7 +27,7 @@ from PySide6.QtCore import (
     QTimer,
     Signal,
 )
-from PySide6.QtGui import QColor, QIcon, QKeySequence, QPainter, QPixmap, QShortcut
+from PySide6.QtGui import QColor, QCursor, QIcon, QKeySequence, QPainter, QPixmap, QShortcut
 from PySide6.QtWidgets import (
     QApplication,
     QComboBox,
@@ -36,6 +37,7 @@ from PySide6.QtWidgets import (
     QScrollBar,
     QSplitterHandle,
     QStyleOptionViewItem,
+    QToolTip,
     QWidget,
 )
 
@@ -53,7 +55,7 @@ from dtflow._diagnostic_reader import (
     snapshot,
 )
 from dtflow.diagnostic_components import COMPONENTS
-from dtflow.diagnostic_projection import characteristics
+from dtflow.diagnostic_projection import characteristic_order, characteristics
 from dtflow.persistence.settings import SettingsError, load_logs_preferences, save_logs_preferences
 from dtflow.logging_setup import LOGGER
 from dtflow.ui.activity_strip import activity_strip
@@ -415,7 +417,8 @@ class LogsWorkspace(QObject):
         self.delegate = LogCellDelegate(self.form.logsTable)
         self.form.logsTable.setItemDelegate(self.delegate)
         self.delegate.actionRequested.connect(self._row_action)
-        # Keyboard equivalents of painted actions; do not open the inspector on selection alone.
+        self.delegate.tooltipRequested.connect(self._cell_tooltip)
+        # Keyboard equivalents of painted actions; single-click selection does not open details.
         for key, action in (("Return", "details"), ("Ctrl+Return", "details"), ("Ctrl+Shift+C", "copy")):
             shortcut = QShortcut(QKeySequence(key), self.form.logsTable)
             shortcut.setContext(Qt.ShortcutContext.WidgetWithChildrenShortcut)
@@ -516,6 +519,7 @@ class LogsWorkspace(QObject):
         self.form.logsCopyVisible.clicked.connect(self.copy_visible)
         self.form.logsSaveMenu.clicked.connect(self._save_menu)
         self.form.logsTable.clicked.connect(self._row_clicked)
+        self.form.logsTable.doubleClicked.connect(self._row_double_clicked)
         self.form.logsSessionCombo.currentIndexChanged.connect(self._session_changed)
         for control in (
             self.form.logsSearch,
@@ -795,6 +799,7 @@ class LogsWorkspace(QObject):
             self._preferences_timer.stop()
             self._save_preferences()
         self.active = False
+        QToolTip.hideText()
         self._watch_outside(False)
         self._tokens.clear()
         for cancel in self._cancellations.values():
@@ -1013,6 +1018,8 @@ class LogsWorkspace(QObject):
     def _request_page(self, *, facets=False, navigation=None):
         self._set_pending(False)
         self._cancel("pending")
+        self._cancel("tooltip")
+        QToolTip.hideText()
         if not self.active:
             return
         sid = self._session()
@@ -1359,8 +1366,62 @@ class LogsWorkspace(QObject):
             return False
         return True
 
+    def _cell_tooltip(self, row, column, position):
+        """Hydrate only the hovered data cell, never a page of full records."""
+        self._cancel("tooltip")
+        QToolTip.hideText()
+        if not self.active or row >= len(self.model.refs):
+            return
+        ref = self.model.refs[row]
+        record = self.model.rows[row]
+        table = self.form.logsTable
+
+        def show(text):
+            current = table.indexAt(table.viewport().mapFromGlobal(QCursor.pos()))
+            if (
+                current.isValid()
+                and current.column() == column
+                and current.row() < len(self.model.refs)
+                and self.model.refs[current.row()] == ref
+                and table.isVisible()
+            ):
+                # Escape diagnostic text so HTML-looking values remain literal. No preview truncation.
+                QToolTip.showText(
+                    position,
+                    "<pre style='white-space: pre-wrap'>" + escape(text) + "</pre>",
+                    table.viewport(),
+                    table.visualRect(current),
+                )
+
+        if column == 3:
+
+            def load():
+                full = read_detail(self.directory, ref)
+                data = full.get("data")
+                if type(data) is dict and data:
+                    ordered = {key: data[key] for key in sorted(data, key=characteristic_order)}
+                    return json.dumps(ordered, ensure_ascii=False, indent=2)
+                return full.get("msg", "")
+
+            def delivered(text, error):
+                show("Cell data unavailable: " + error if error else text)
+
+            self._run(load, delivered, kind="tooltip")
+        else:
+            text = {
+                0: record["level"],
+                1: record["ts"] + " (UTC)",
+                2: record["component"] + "\n" + record["event"],
+                4: "Details (Return or double-click a row) · Copy raw JSONL (Ctrl+Shift+C)",
+            }.get(column, "")
+            show(text)
+
+    def _row_double_clicked(self, index):
+        if index.isValid() and index.column() != 4:
+            self._row_action(index.row(), "details")
+
     def _row_clicked(self, index):
-        # Selection alone never opens details; actions use the painted delegate.
+        # Single-click selects; double-click or the painted Details action opens JSON.
         if index.column() != 4:
             self.form.logsFollowButton.setChecked(False)
 
