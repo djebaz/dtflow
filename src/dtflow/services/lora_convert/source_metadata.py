@@ -65,7 +65,7 @@ class SourceMetadata:
 
     def retained_record(self) -> dict | None:
         """The record kept with a retained conversion: only what describes this LoRA's training (never the file's
-        own title, author, license, date, description or base-model lines), plus the derived declared family."""
+        own title, author, license, date or description), including declared base-model information."""
         fields = {key: value for key, value in self.fields.items() if key in _RETAINED}
         if not fields and not self.tags:
             return None
@@ -196,7 +196,7 @@ def declared_family(record: dict | None) -> str | None:
     For display and an informational comparison only: never an input to detection, suggestion or conversion.
     """
     kept = (record or {}).get("declared_family")
-    if isinstance(kept, str) and kept:  # a retained record keeps the derived family, not the raw declaration
+    if isinstance(kept, str) and kept:  # older retained records may have only the derived family
         return kept
     fields = (record or {}).get("fields")
     if not isinstance(fields, dict):
@@ -213,10 +213,13 @@ def declared_family(record: dict | None) -> str | None:
     return None
 
 
-# Only what describes this LoRA's training is shown. The file's own title, author, license, date, description and base
-# model lines (often inherited from the base model) stay out of the app; the CLI JSON report keeps them.
+# Only what describes this LoRA's training is shown, including its declared architecture/base model.
+# The file's own title, author, license, date and description stay out of the app; the CLI JSON report keeps them.
 _FACT_ORDER = (
     "ss_output_name",
+    "modelspec.architecture",
+    "ss_base_model_version",
+    "ss_sd_model_name",
     "modelspec.trigger_phrase",
     "ss_class_tokens",
     "ss_network_module",
@@ -242,6 +245,7 @@ class DetailModel:
     # The summary as (text, strong) runs: values are strong, labels and separators muted. Display only; the view
     # draws them as plain text, so file content is never interpreted as markup.
     runs: tuple[tuple[str, bool], ...] = ()
+    tag_counts: tuple[tuple[str, int], ...] = ()
 
     @property
     def note_runs(self) -> tuple[tuple[str, bool], ...]:
@@ -258,9 +262,18 @@ class DetailModel:
 
     @property
     def tooltip(self) -> str:
-        """Everything the two lines show, in full (plain text; the view escapes it)."""
-        tags = "Top training tags (not necessarily trigger words): " + " · ".join(self.tags) if self.tags else ""
-        return "\n".join(part for part in (self.line, tags) if part)
+        """All selected bounded training facts and retained tags, not the shortened inline summary."""
+        lines = [f"{label}: {value}" for label, value in self.facts]
+        if not lines and self.summary:
+            lines.append(self.summary)
+        if self.note:
+            lines.append(self.note)
+        tags = " · ".join(f"{tag} ({count})" for tag, count in self.tag_counts)
+        if not tags:
+            tags = " · ".join(self.tags)
+        if tags:
+            lines.append("Top training tags (not necessarily trigger words): " + tags)
+        return "Declared by the file (unverified)\n" + "\n".join(lines) if lines else ""
 
     @property
     def tags_line(self) -> str:
@@ -281,10 +294,19 @@ def detail_model(
         else {}
     )
     tags_raw = (record or {}).get("tags")
+    retained_tags = (tags_raw if isinstance(tags_raw, list) else [])[:MAX_TAGS]
     tags = tuple(
-        item[0]
-        for item in (tags_raw if isinstance(tags_raw, list) else [])[:_TAGS_SHOWN]
-        if isinstance(item, list) and item and isinstance(item[0], str)
+        item[0] for item in retained_tags[:_TAGS_SHOWN] if isinstance(item, list) and item and isinstance(item[0], str)
+    )
+    tag_counts = tuple(
+        (item[0], item[1])
+        for item in retained_tags
+        if isinstance(item, list)
+        and len(item) == 2
+        and isinstance(item[0], str)
+        and isinstance(item[1], int)
+        and not isinstance(item[1], bool)
+        and item[1] >= 0
     )
     if not fields and not tags:
         return DetailModel()
@@ -293,7 +315,13 @@ def detail_model(
     seen: set[str] = set()
     for key in _FACT_ORDER:
         value = fields.get(key)
-        label = "Trained as" if key == "ss_output_name" else _LABELS[key]
+        label = (
+            "Trained as"
+            if key == "ss_output_name"
+            else "ModelSpec resolution"
+            if key == "modelspec.resolution"
+            else _LABELS[key]
+        )
         if not value or label in seen:
             continue
         facts.append((label, value))
@@ -302,8 +330,10 @@ def detail_model(
     trigger = fields.get("modelspec.trigger_phrase")
     resolution = fields.get("ss_resolution") or fields.get("modelspec.resolution")
     epochs = fields.get("ss_num_epochs")
+    base_model = fields.get("ss_sd_model_name") or fields.get("ss_base_model_version")
     parts: list[list[tuple[str, bool]]] = [
         [("Trained as ", False), (fields["ss_output_name"], True)] if fields.get("ss_output_name") else [],
+        [("base ", False), (base_model, True)] if base_model else [],
         [("rank ", False), (rank, True), (" / alpha ", False), (alpha, True)]
         if rank and alpha
         else [("rank ", False), (rank, True)]
@@ -323,4 +353,4 @@ def detail_model(
         note = (
             f"Declared {family_label(declared)}, structure looks like {family_label(detected_family)} (informational)"
         )
-    return DetailModel(summary, note, tuple(facts), tags, tuple(runs))
+    return DetailModel(summary, note, tuple(facts), tags, tuple(runs), tag_counts)
