@@ -154,6 +154,9 @@ class LoRAHover(QObject):
 
     def eventFilter(self, watched, event) -> bool:  # noqa: N802 - Qt override
         if event.type() == QEvent.Type.ToolTip:
+            # Keep existing per-control hints (e.g. family, weight) available in the LoRA selector.
+            if watched is not self._widget and isinstance(watched, QWidget) and watched.toolTip():
+                return False
             source = library(self._widget)
             if source is not None:
                 tip = source.tooltip(self._groups(), detailed=self._detailed)
