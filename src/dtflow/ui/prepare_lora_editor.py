@@ -20,7 +20,7 @@ from shiboken6 import isValid
 
 from dtflow.core.models import accepted_name_changes
 from dtflow.services.catalogue import FAMILY_LABELS
-from dtflow.services.lora_convert import CONVERTER_VERSION, supported_families
+from dtflow.services.lora_convert import CONVERTER_VERSION
 from dtflow.services.lora_family import LoraFamily
 from dtflow.services.lora_naming import (
     LoraPrepareMetadata,
@@ -155,7 +155,7 @@ class PrepareBatchEditor:
         self.rows: list[_Row] = []
         self.occupied: tuple[ManagedName, ...] = ()
         self.architectures: tuple[str, ...] = ()
-        self._conversion_families = {spec.exact_architecture: spec for spec in supported_families()}
+        self._conversion_families = {}
         self._existing_conversions: dict[tuple[str, str, str], tuple[str, int]] = {}
         self.inspected = False
         self.selected: _Row | None = None
@@ -405,12 +405,14 @@ class PrepareBatchEditor:
         occupied: Sequence[ManagedName],
         invalid: Sequence[str | None] | None = None,
         conversions: Sequence[dict] = (),
+        converter_families: Sequence = (),
     ):
         """Apply checkpoint evidence and converted-source provenance on the GUI thread."""
         if not self.active():
             return
         self.architectures = tuple(dict.fromkeys(v for v in architectures if architecture_shortcode(v) is not None))
         self.occupied = tuple(occupied)
+        self._conversion_families = {spec.exact_architecture: spec for spec in converter_families}
         for item in conversions:
             sha, size = item.get("sha256"), item.get("size")
             if not isinstance(sha, str) or type(size) is not int:
