@@ -86,7 +86,6 @@ from dtflow.ui.inline_feedback import InlineNotice, edit_text
 from dtflow.ui.inpaint_editor import EditJob, InpaintEditor
 from dtflow.ui.lora_panel import LoraAssetPanel
 from dtflow.ui.prompt_tags import style_prompt_tags
-from dtflow.ui.lora_hints import bind_prompt_hint
 from dtflow.ui.submit_shortcut import SubmitShortcut
 from dtflow.ui.runner import AsyncRunner, EventRelay
 
