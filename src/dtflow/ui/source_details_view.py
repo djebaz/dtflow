@@ -42,7 +42,7 @@ def metadata_tooltip(model: DetailModel) -> str:
         rows.append(span(model.summary, strong=True))
     if model.note:
         rows.append(span(model.note))
-    heading = span("Declared training metadata", strong=True) + "<br>" + span("File declarations · unverified")
+    heading = span("Training metadata", strong=True)
     body = '<p style="margin-top:0px;margin-bottom:6px">' + heading + "</p>"
     if rows:
         body += '<p style="margin-top:0px;margin-bottom:0px">' + "<br>".join(rows) + "</p>"
