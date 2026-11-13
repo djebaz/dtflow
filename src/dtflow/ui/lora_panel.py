@@ -37,8 +37,7 @@ from dtflow.services.connection import (
     present_reconciliation,
 )
 from dtflow.services.lora_convert import COLAB_HINT, ConversionError, ConversionProgress, supported_families
-from dtflow.services.lora_convert.detect import detect_source_family
-from dtflow.services.lora_convert.source_metadata import read_source_metadata
+from dtflow.services.lora_convert.detect import inspect_source
 from dtflow.services.lora_convert.errors import UnsupportedFamilyError
 from dtflow.services.lora_convert_prepare import convert_for_prepare
 from dtflow.services.lora_digest import DigestCancelled, hash_file
@@ -635,10 +634,11 @@ class LoraAssetPanel:
                 path = Path(item)
                 if path.suffix.casefold() == ".safetensors":
                     # Header-only structural detection (#402); conversion itself still validates the source.
-                    detection = detect_source_family(path)
+                    inspected = inspect_source(path)  # one header read: structure and descriptive metadata
+                    detection = inspected.detection
                     evidence.append(LoraFamily())
                     detections.append(detection)
-                    descriptive.append(read_source_metadata(path))  # header only, display and suggestions (#414)
+                    descriptive.append(inspected.metadata)  # display and suggestions only (#414)
                     reasons.append(detection.reason if detection.outcome == "unreadable" else None)
                     continue
                 evidence.append(detect_lora_family(path))
@@ -658,9 +658,20 @@ class LoraAssetPanel:
         converter_families = await asyncio.to_thread(supported_families)
         try:
             saved_triggers = await saved_lora_trigger_words(self._state)
-        except Exception:  # saved values only protect the user's own entries; an unreadable registry must not block
-            saved_triggers = {}
-        return evidence, occupied, invalid, conversions, converter_families, detections, descriptive, saved_triggers
+            saved_unreadable = False
+        except Exception:  # Prepare still works; but then no suggestion may replace what might be a saved value
+            saved_triggers, saved_unreadable = {}, True
+        return (
+            evidence,
+            occupied,
+            invalid,
+            conversions,
+            converter_families,
+            detections,
+            descriptive,
+            saved_triggers,
+            saved_unreadable,
+        )
 
     def _inspected_prepare_editor(self, editor, eligible, result, failure) -> None:
         if self._runner.closed or not editor.active() or editor is not self._prepare_editor:
@@ -673,7 +684,7 @@ class LoraAssetPanel:
             return
         if result is not None:
             evidence, occupied, invalid, conversions, converter_families, detections, *extra = result
-            descriptive, saved_triggers = extra if len(extra) == 2 else ((), {})
+            descriptive, saved_triggers, saved_unreadable = extra if len(extra) == 3 else ((), {}, False)
             editor.set_inspection(
                 evidence,
                 eligible,
@@ -684,6 +695,7 @@ class LoraAssetPanel:
                 detections,
                 source_metadata=descriptive,
                 saved_triggers=saved_triggers,
+                saved_triggers_unreadable=saved_unreadable,
             )
 
     def _authorize_prepare(self, chosen: list[tuple[Path, LoraPrepareMetadata]]) -> None:

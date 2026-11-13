@@ -332,6 +332,7 @@ class LoraStore:
         *,
         managed_name: str,
         conversion: dict,
+        source_metadata: dict | None = None,
     ) -> RetainedFile:
         """Adopt a completed conversion from the store volume without overwriting an existing retained file.
 
@@ -387,6 +388,8 @@ class LoraStore:
                 records.append(conversion)
             matching["conversions"] = records
             matching["conversion"] = conversion
+            if source_metadata is not None:
+                matching["source_metadata"] = source_metadata  # one bounded copy per file, newest wins
             try:
                 self._write(files)
             except OSError as exc:

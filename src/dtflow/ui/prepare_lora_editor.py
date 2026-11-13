@@ -164,6 +164,7 @@ class PrepareBatchEditor:
         self._conversion_families = {}
         self._existing_conversions: dict[tuple[str, str, str], tuple[str, int]] = {}
         self._saved_triggers: dict[tuple[str, int], str] = {}
+        self._saved_triggers_unreadable = False
         self.inspected = False
         self.selected: _Row | None = None
         self._updating = False
@@ -429,11 +430,13 @@ class PrepareBatchEditor:
         *,
         source_metadata: Sequence = (),
         saved_triggers: dict[tuple[str, int], str] | None = None,
+        saved_triggers_unreadable: bool = False,
     ):
         """Apply checkpoint evidence and converted-source provenance on the GUI thread."""
         if not self.active():
             return
         self._saved_triggers = dict(saved_triggers or {})
+        self._saved_triggers_unreadable = saved_triggers_unreadable
         self.architectures = tuple(dict.fromkeys(v for v in architectures if architecture_shortcode(v) is not None))
         self.occupied = tuple(occupied)
         self._conversion_families = {spec.exact_architecture: spec for spec in converter_families}
@@ -518,6 +521,12 @@ class PrepareBatchEditor:
         identity = (row.sha256, row.size) if row.source_kind == "ckpt" else self._content_identity(row)
         saved = self._saved_triggers.get(identity) if identity[0] is not None and identity[1] is not None else None
         suggestion = getattr(row.source_metadata, "trigger", None) if row.source_kind == "safetensors" else None
+        if self._saved_triggers_unreadable and not saved:
+            # Saved words could not be read, so a suggestion might replace one: do not fill, and say why.
+            note.setText("Saved trigger words unreadable: no suggestion applied" if suggestion else "")
+            note.setVisible(bool(suggestion))
+            row.auto_triggers = field.text()
+            return
         text, origin = (saved, "Saved value") if saved else (suggestion or "", "Suggested from file metadata")
         if field.text() != text:
             field.setText(text)

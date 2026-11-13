@@ -2024,20 +2024,23 @@ class MainWindow:
     def _retained_source_details(self, identity: tuple[str, int]) -> tuple[str, ...]:
         """Read-only lines from the descriptive metadata kept with the newest conversion of this retained LoRA."""
         entry = next((e for e in self._lora_entries if (e.get("sha256"), e.get("size")) == identity), None)
+        descriptive = (entry or {}).get("source_metadata")
+        if not isinstance(descriptive, dict):
+            return ()
         conversions = (entry or {}).get("conversions")
         if not isinstance(conversions, list):
             conversions = [(entry or {}).get("conversion")]
-        newest = next(
-            (c for c in reversed(conversions) if isinstance(c, dict) and isinstance(c.get("source_metadata"), dict)),
+        # The structurally detected source family (not the family the user selected), when it was recorded.
+        found = next(
+            (
+                c["detected_family"]
+                for c in reversed(conversions)
+                if isinstance(c, dict) and isinstance(c.get("detected_family"), str)
+            ),
             None,
         )
-        if newest is None:
-            return ()
         labels = {spec.key: spec.label for spec in supported_families()}
-        family = newest.get("family") if isinstance(newest.get("family"), str) else None
-        return tuple(
-            detail_lines(newest["source_metadata"], detected_family=family, family_label=lambda k: labels.get(k, k))
-        )
+        return tuple(detail_lines(descriptive, detected_family=found, family_label=lambda k: labels.get(k, k)))
 
     def _lora_metadata_saved(self) -> None:
         self.form.statusBar().showMessage("LoRA metadata saved locally. Files and receipts unchanged.", 5000)

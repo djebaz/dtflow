@@ -8,16 +8,13 @@ and may be stale after a merge or a re-save, so they are always presented as "de
 from __future__ import annotations
 
 import json
+import math
 import re
 from dataclasses import dataclass
-from pathlib import Path
-
-from dtflow.services.lora_convert.errors import ConversionError
-from dtflow.services.lora_convert.safetensors_io import SafeTensors
 
 RECORD_VERSION = 1
 MAX_TAGS = 50  # retained training tags
-MAX_TAG_FREQUENCY_CHARS = 8 * 1024 * 1024  # a larger ss_tag_frequency string is not parsed at all
+MAX_TAG_FREQUENCY_CHARS = 1024 * 1024  # a larger ss_tag_frequency string is not parsed at all
 MAX_TRIGGER_CHARS = 200
 
 # (header key, label, maximum stored characters). Dataset folders and paths (ss_dataset_dirs, ss_datasets) and free
@@ -74,13 +71,21 @@ def _clean(value: str, limit: int) -> str:
     return text[:limit].rstrip() if text.casefold() not in _EMPTY else ""
 
 
+def _exact(value: str, limit: int) -> str | None:
+    """The cleaned text, "" when empty, or None when it is too long to be what it claims to be (never truncated)."""
+    text = re.sub(r"\s+", " ", value).strip()
+    if text.casefold() in _EMPTY:
+        return ""
+    return text if len(text) <= limit else None
+
+
 def _tag_frequency(raw: str | None) -> dict[str, dict[str, int]] | None:
     """``ss_tag_frequency``: a JSON string of dataset -> tag -> count; anything else is ignored."""
     if not raw or len(raw) > MAX_TAG_FREQUENCY_CHARS:
         return None
     try:
         parsed = json.loads(raw)
-    except ValueError:
+    except (ValueError, RecursionError):  # includes deeply nested input
         return None
     if not isinstance(parsed, dict):
         return None
@@ -91,7 +96,11 @@ def _tag_frequency(raw: str | None) -> dict[str, dict[str, int]] | None:
         counts = {
             tag: int(count)
             for tag, count in tags.items()
-            if isinstance(tag, str) and isinstance(count, int | float) and not isinstance(count, bool) and count > 0
+            if isinstance(tag, str)
+            and isinstance(count, int | float)
+            and not isinstance(count, bool)
+            and math.isfinite(count)  # JSON allows Infinity and NaN; int() of them raises
+            and count > 0
         }
         if counts:
             datasets[dataset] = counts
@@ -117,7 +126,7 @@ def _single_tag_trigger(datasets: dict[str, dict[str, int]] | None) -> str | Non
     if len(counts) != 1:
         return None
     ((tag, count),) = counts.items()
-    word = _clean(tag, MAX_TRIGGER_CHARS)
+    word = _exact(tag, MAX_TRIGGER_CHARS)
     return word if word and count == 1 and dataset == f"1_{tag}" else None
 
 
@@ -134,40 +143,31 @@ def extract(raw: dict[str, str]) -> SourceMetadata:
         if text:
             fields[key] = text
     datasets = _tag_frequency(raw.get("ss_tag_frequency"))
-    trigger = fields.get("modelspec.trigger_phrase")
+    phrase = raw.get("modelspec.trigger_phrase")
+    trigger = _exact(phrase, MAX_TRIGGER_CHARS) if isinstance(phrase, str) else ""  # too long: None, never truncated
     source = "modelspec.trigger_phrase" if trigger else None
-    if trigger is None:
+    if trigger == "":
         # Only an explicit single-tag declaration counts; the general tag vocabulary is never a trigger.
         trigger = _single_tag_trigger(datasets)
         source = "single-tag ss_tag_frequency" if trigger else None
-    return SourceMetadata(
-        fields,
-        _top_tags(datasets) if datasets else (),
-        trigger if trigger and len(trigger) <= MAX_TRIGGER_CHARS else None,
-        source if trigger and len(trigger) <= MAX_TRIGGER_CHARS else None,
-    )
+    return SourceMetadata(fields, _top_tags(datasets) if datasets else (), trigger or None, source if trigger else None)
 
 
-def read_source_metadata(path: Path) -> SourceMetadata:
-    """Header-only read of a safetensors file; a file that cannot be read has no metadata. Never reads weights."""
+def extract_safely(raw: dict[str, str]) -> SourceMetadata:
+    """Best effort: whatever goes wrong while reading descriptive metadata, the file simply has none."""
     try:
-        with SafeTensors(Path(path)) as source:
-            return extract(source.metadata)
-    except (ConversionError, OSError, ValueError):
+        return extract(raw)
+    except Exception:  # noqa: BLE001 - descriptive data must never fail Prepare or discard a conversion
         return NO_METADATA
 
 
+# Exact families only: a Flux 2 or Krea 1 label must not be shown as Flux 1 or Krea 2, so those stay unmapped.
 _DECLARED_FAMILIES = (
-    ("krea", "krea2"),
-    ("z-image", "zimage"),
-    ("z_image", "zimage"),
-    ("zimage", "zimage"),
-    ("flux", "flux1"),
-    ("stable-diffusion-xl", "sdxl"),
-    ("sdxl", "sdxl"),
-    ("stable-diffusion-v1", "sd1"),
-    ("sd_1", "sd1"),
-    ("sd1", "sd1"),
+    (re.compile(r"krea[-_ ]?2"), "krea2"),
+    (re.compile(r"z[-_ ]?image"), "zimage"),
+    (re.compile(r"flux(?![-_. ]?(?:2|klein))"), "flux1"),
+    (re.compile(r"stable-diffusion-xl-v1-base|sdxl"), "sdxl"),
+    (re.compile(r"stable-diffusion-v1|\bsd[-_ ]?1"), "sd1"),
 )
 
 
@@ -183,8 +183,10 @@ def declared_family(record: dict | None) -> str | None:
         value = fields.get(key)
         if isinstance(value, str):
             lowered = value.casefold()
-            for needle, family in _DECLARED_FAMILIES:
-                if needle in lowered:
+            if "refiner" in lowered:
+                return None
+            for pattern, family in _DECLARED_FAMILIES:
+                if pattern.search(lowered):
                     return family
     return None
 

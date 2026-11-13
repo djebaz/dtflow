@@ -1,7 +1,7 @@
 """Header-only detection of the LoRA family of a ``.safetensors`` source (#402).
 
 Reads only the safetensors header: tensor names and shapes, never weights, never the filename and
-never ``__metadata__``. A family is returned only when several independent structural signals agree:
+never ``__metadata__`` (descriptive metadata of #414 is read beside it, never used as evidence). A family is returned only when several independent structural signals agree:
 
 * every recognised LoRA module maps under that family's own resolver or tables,
 * a family specific group is present (or two independent groups when no width can be checked),
@@ -17,7 +17,8 @@ from __future__ import annotations
 
 import logging
 import re
-from collections import Counter
+import threading
+from collections import Counter, OrderedDict
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
@@ -25,6 +26,7 @@ from pathlib import Path
 from dtflow.services.lora_convert.errors import SourceReadError
 from dtflow.services.lora_convert.keys import split_key
 from dtflow.services.lora_convert.safetensors_io import SafeTensors
+from dtflow.services.lora_convert.source_metadata import SourceMetadata, extract_safely
 
 log = logging.getLogger(__name__)
 
@@ -463,10 +465,17 @@ def detect_source_family(path: Path) -> FamilyDetection:
 
     Reasons are fixed texts: no local path or exception detail reaches the Prepare row or the CLI report.
     """
+    return _detect_file(path)
+
+
+def _detect_file(path: Path, raw_metadata: dict | None = None) -> FamilyDetection:
+    """Detect from one open of the file; ``raw_metadata`` (if given) receives the header's descriptive map."""
     error_type: str | None = None
     try:
         with SafeTensors(path) as source:  # closed on exit: an open handle locks the file on Windows
             result = _detect(source)
+            if raw_metadata is not None:
+                raw_metadata.update(source.metadata)
     except OSError:
         result = FamilyDetection("unreadable", reason="Could not read the file.")
     except SourceReadError as error:
@@ -482,4 +491,46 @@ def detect_source_family(path: Path) -> FamilyDetection:
         error_type = type(error).__name__
         result = FamilyDetection("unknown", reason="Could not analyse this file; choose the family yourself.")
     _emit(path, result, error_type)
+    return result
+
+
+@dataclass(frozen=True, slots=True)
+class SourceInspection:
+    """Structural detection and descriptive metadata of one source, from a single read of its header."""
+
+    detection: FamilyDetection
+    metadata: SourceMetadata
+
+
+_INSPECTIONS: OrderedDict[tuple[str, int, int], SourceInspection] = OrderedDict()
+_INSPECTIONS_LOCK = threading.Lock()
+_INSPECTIONS_KEPT = 32
+
+
+def inspect_source(path: Path) -> SourceInspection:
+    """Detect the family and read the descriptive metadata with ONE parse of the header; never raises.
+
+    Prepare inspects a file and later converts it: the result is kept briefly per (path, size, mtime), so the
+    conversion does not parse the same header again. The two parts stay independent: metadata is never evidence.
+    """
+    path = Path(path)
+    try:
+        stat = path.stat()
+        key = (str(path), stat.st_size, stat.st_mtime_ns)
+    except OSError:
+        key = None
+    if key is not None:
+        with _INSPECTIONS_LOCK:
+            kept = _INSPECTIONS.get(key)
+            if kept is not None:
+                _INSPECTIONS.move_to_end(key)
+                return kept
+    raw: dict = {}
+    detection = _detect_file(path, raw)
+    result = SourceInspection(detection, extract_safely(raw))
+    if key is not None:
+        with _INSPECTIONS_LOCK:
+            _INSPECTIONS[key] = result
+            while len(_INSPECTIONS) > _INSPECTIONS_KEPT:
+                _INSPECTIONS.popitem(last=False)
     return result
