@@ -3,8 +3,7 @@
 The asset service reports ``PrepareEvent`` values; the panel feeds them here and renders ``snapshot()`` into the
 shared activity bar. Everything is measured on this machine: DT+ reports no progress of its own.
 
-Phases per file: ``checking`` (measure, retain, negotiate) -> ``converting`` (declared for the safetensors convert
-feature, unused until it lands) -> ``uploading`` (only when DT+ says ``upload_required``) -> ``confirming``.
+Phases per file: optional ``converting`` for safetensors, then ``checking`` (measure, retain, negotiate) -> ``uploading`` (only when DT+ says ``upload_required``) -> ``confirming``.
 The global fill is weighted by bytes through ``PHASE_COST`` (relative cost per byte, tuned from the logged phase
 timings) and never moves backwards. Upload progress counts bytes handed to the HTTP client, so it is capped at 99 %
 until the PUT returned successfully.
@@ -43,6 +42,8 @@ class PrepareEvent:
     stage: str
     done: int = 0
     total: int = 0
+    label: str = ""  # bounded, UI-authored phase label; never source paths or converter text
+    output_size: int = 0  # actual converted checkpoint bytes when known
 
 
 @dataclass(slots=True)
@@ -126,9 +127,10 @@ class PrepareProgress:
         self._files.append(file)
         return len(self._files) - 1
 
-    def start_file(self, index: int) -> None:
+    def start_file(self, index: int, *, convert: bool = False) -> None:
         self._current = index
-        self._enter(self._files[index], CHECKING)
+        file = self._files[index]
+        self._enter(file, CONVERTING if convert else CHECKING)
 
     def _enter(self, file: _File, phase: str) -> None:
         now = self._clock()
@@ -147,8 +149,12 @@ class PrepareProgress:
             return
         now = self._clock()
         stage = event.stage
+        if event.output_size > 0:
+            file.size = event.output_size
         if stage == UPLOADING:
-            if file.stage in ("pending", CHECKING):
+            if file.stage in ("pending", CHECKING, CONVERTING):
+                if file.stage == CONVERTING:
+                    file.frac[CONVERTING] = 1.0
                 file.frac[CHECKING] = 1.0
                 self._enter(file, UPLOADING)
             elif file.stage != UPLOADING:
@@ -159,20 +165,31 @@ class PrepareProgress:
             file.frac[UPLOADING] = max(file.frac.get(UPLOADING, 0.0), fraction)
             self._byte_progress(file, event.done, now)
         elif stage == EXISTS:
+            file.frac[CONVERTING] = 1.0
             file.frac[CHECKING] = 1.0
             file.skip |= {"uploading", "confirming"}
             self._enter(file, EXISTS)
             self._hide_until = now + SET_CHANGE_HIDE
         elif stage == CONFIRMING:
+            file.frac[CONVERTING] = 1.0
             file.frac[CHECKING] = 1.0
             file.frac[UPLOADING] = 1.0
             self._enter(file, CONFIRMING)
         elif stage == CONVERTING:
-            self._enter(file, CONVERTING)
-            file.frac[CONVERTING] = min(max(event.done / event.total, 0.0), UPLOAD_CAP) if event.total else 0.0
-        elif stage == CHECKING:
-            if file.stage not in ("pending", CHECKING):
+            if file.stage not in ("pending", CHECKING, CONVERTING):
                 return
+            self._enter(file, CONVERTING)
+            if event.label:
+                file.convert_label = event.label
+            if event.total:
+                file.frac[CONVERTING] = max(
+                    file.frac.get(CONVERTING, 0.0), min(max(event.done / event.total, 0.0), 1.0)
+                )
+        elif stage == CHECKING:
+            if file.stage not in ("pending", CHECKING, CONVERTING):
+                return
+            if file.stage == CONVERTING:
+                file.frac[CONVERTING] = 1.0
             self._enter(file, CHECKING)
             if event.total:
                 # Two byte passes (hash, kept copy); the phase completes when DT+ has answered.
@@ -327,8 +344,10 @@ class PrepareProgress:
                 stage = "Already on DT+"
                 wide = f"{current.name} is already on DT+"
             elif current.stage == CONVERTING:
-                stage = f"Converting {position}"
-                wide = f"Converting {current.name}" + (f" · {current.convert_label}" if current.convert_label else "")
+                percent = int(current.frac.get(CONVERTING, 0.0) * 100)
+                label = current.convert_label or "Converting"
+                stage = f"{label} {position}" + (f" · {percent}%" if percent else "")
+                wide = f"{label} {current.name}" + (f" · {percent}%" if percent else "")
             else:
                 percent = int(current.frac.get(CHECKING, 0.0) * 100)
                 stage = f"Checking {position}" + (f" · {percent}%" if percent else "")

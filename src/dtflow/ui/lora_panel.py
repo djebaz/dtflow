@@ -9,6 +9,7 @@ import asyncio
 import logging
 import os
 import re
+import threading
 import time
 from collections.abc import Callable
 from pathlib import Path
@@ -17,7 +18,6 @@ from PySide6.QtCore import Qt, QTimer
 from PySide6.QtWidgets import QListWidgetItem, QWidget
 from shiboken6 import isValid
 
-from dtflow.ui.file_dialogs import QFileDialog
 from dtflow.core.models import (
     BackendError,
     LoRASelection,
@@ -26,10 +26,9 @@ from dtflow.core.models import (
     ResolvedGenerationRequest,
     ValidationError,
 )
-from dtflow.diagnostics import event as diagnostic_event
+from dtflow.diagnostics import asset_ref_data, event as diagnostic_event
 from dtflow.logging_setup import development_mode
 from dtflow.services.catalogue import Catalogue, FAMILY_LABELS, bundled_exact_version
-from dtflow.services.lora_family import DETECTABLE_FAMILIES
 from dtflow.services.connection import (
     Presentation,
     present_asset_failure,
@@ -37,9 +36,21 @@ from dtflow.services.connection import (
     present_preflight,
     present_reconciliation,
 )
+from dtflow.services.lora_convert import COLAB_HINT, ConversionError, ConversionProgress, supported_families
+from dtflow.services.lora_convert.errors import UnsupportedFamilyError
+from dtflow.services.lora_convert_prepare import convert_for_prepare
 from dtflow.services.lora_digest import DigestCancelled, hash_file
-from dtflow.services.lora_family import detect_lora_family, validate_converted_lora
-from dtflow.services.lora_naming import LoraPrepareMetadata
+from dtflow.services.lora_family import DETECTABLE_FAMILIES, LoraFamily, detect_lora_family, validate_converted_lora
+from dtflow.services.lora_naming import LoraPrepareMetadata, display_label
+from dtflow.services.lora_store import LoraStore
+from dtflow.services.prepare_progress import (
+    CONFIRMING,
+    CONVERTING,
+    EXISTS,
+    UPLOADING,
+    PrepareEvent,
+    PrepareProgress,
+)
 from dtflow.services.session import (
     accepted_managed_identifier,
     check_loras,
@@ -49,17 +60,17 @@ from dtflow.services.session import (
     reconcile_asset,
     selection_for,
 )
-from dtflow.services.prepare_progress import CHECKING, EXISTS, PrepareEvent, PrepareProgress
 from dtflow.ui.activity_bar import clock
 from dtflow.ui.activity_strip import activity_strip
+from dtflow.ui.file_dialogs import QFileDialog
 from dtflow.ui.latest_relay import LatestRelay
-from dtflow.ui.runner import AsyncRunner
-from dtflow.services.lora_naming import display_label
 from dtflow.ui.lora_selection_editor import _display_label, edit_lora_selection
 from dtflow.ui.prepare_lora_editor import PrepareBatchEditor
+from dtflow.ui.runner import AsyncRunner
 
 UPLOAD_NOTICE = (
-    "Select converted LoRA files, review their metadata, then explicitly Prepare ready rows. "
+    "Select converted .ckpt or source .safetensors LoRAs, review metadata and conversion family, "
+    "then explicitly Prepare ready rows. "
     "Preparing may upload to DT+ without consuming credits; later generation may consume credits."
 )
 DEFAULT_LORA_WEIGHT = 1.0
@@ -68,9 +79,9 @@ log = logging.getLogger(__name__)
 
 
 def _choose_asset_file(parent: QWidget, directory: Path) -> list[str]:
-    return QFileDialog.getOpenFileNames(parent, "Prepare converted LoRA files", str(directory), "LoRA files (*.ckpt)")[
-        0
-    ]
+    return QFileDialog.getOpenFileNames(
+        parent, "Prepare LoRA files", str(directory), "LoRA files (*.ckpt *.safetensors)"
+    )[0]
 
 
 def _family_evidence_label(value: str | None, source: str | None, *, conflict: bool = False) -> str:
@@ -103,6 +114,7 @@ class LoraAssetPanel:
         self.choose_asset_file = _choose_asset_file
         self._prepare_files: tuple[str, ...] = ()
         self._prepare_metadata: dict[str, LoraPrepareMetadata] = {}
+        self._prepare_source_sha: dict[str, str] = {}
         self._prepare_editor: PrepareBatchEditor | None = None
         self._prepare_editor_context = None
         self._hash_paused: tuple | None = None
@@ -120,6 +132,8 @@ class LoraAssetPanel:
         self._prepare_progress: PrepareProgress | None = None
         self._prepare_relay: LatestRelay | None = None
         self._prepare_stop = False  # "Stop after current file": nothing new starts once set
+        self._prepare_convert_cancel = threading.Event()
+        runner.shutdown_started.connect(self._prepare_convert_cancel.set)
         self._prepare_rendered = 0.0
         self._prepare_editor_text, self._prepare_editor_at = "", 0.0
         self._prepare_timer = QTimer(page)  # keeps elapsed, ETA and the stall state moving between byte reports
@@ -585,10 +599,12 @@ class LoraAssetPanel:
             sha, size = await asyncio.to_thread(
                 hash_file, path, editor.hash_cancelled.is_set, lambda n: editor.note_read(path, n)
             )
-            try:
-                accepted = await accepted_managed_identifier(self._state, sha, size)
-            except Exception:  # an unreadable registry must not discard a good content hash
-                accepted = None
+            accepted = None
+            if path.suffix.casefold() == ".ckpt":
+                try:
+                    accepted = await accepted_managed_identifier(self._state, sha, size)
+                except Exception:  # an unreadable registry must not discard a good content hash
+                    pass
             return sha, size, accepted
 
         def done(result, failure) -> None:
@@ -606,12 +622,21 @@ class LoraAssetPanel:
 
     async def _inspect_prepare_files(self, paths: tuple[str, ...]):
         """Inspect file headers off the GUI thread and read existing canonical name reservations."""
-        evidence = await asyncio.to_thread(lambda: tuple(detect_lora_family(Path(p)) for p in paths))
+        evidence = await asyncio.to_thread(
+            lambda: tuple(
+                LoraFamily() if Path(p).suffix.casefold() == ".safetensors" else detect_lora_family(Path(p))
+                for p in paths
+            )
+        )
 
         def invalid_reasons() -> tuple[str | None, ...]:
             # The same container check Prepare runs later: a non-LoRA is flagged now, not after Prepare.
             reasons: list[str | None] = []
             for item in paths:
+                if Path(item).suffix.casefold() == ".safetensors":
+                    # Source-family detection is a separate feature (#402). Conversion itself validates the source.
+                    reasons.append(None)
+                    continue
                 try:
                     validate_converted_lora(Path(item))
                     reasons.append(None)
@@ -621,7 +646,9 @@ class LoraAssetPanel:
 
         invalid = await asyncio.to_thread(invalid_reasons)
         occupied = await occupied_managed_lora_names(self._state)
-        return evidence, occupied, invalid
+        conversions = await asyncio.to_thread(lambda: LoraStore(self._state).entries())
+        converter_families = await asyncio.to_thread(supported_families)
+        return evidence, occupied, invalid, conversions, converter_families
 
     def _inspected_prepare_editor(self, editor, eligible, result, failure) -> None:
         if self._runner.closed or not editor.active() or editor is not self._prepare_editor:
@@ -633,8 +660,8 @@ class LoraAssetPanel:
             )
             return
         if result is not None:
-            evidence, occupied, *rest = result
-            editor.set_inspection(evidence, eligible, occupied, rest[0] if rest else None)
+            evidence, occupied, invalid, conversions, converter_families = result
+            editor.set_inspection(evidence, eligible, occupied, invalid, conversions, converter_families)
 
     def _authorize_prepare(self, chosen: list[tuple[Path, LoraPrepareMetadata]]) -> None:
         """Admit only explicitly approved, metadata-complete rows under the existing owner."""
@@ -662,6 +689,11 @@ class LoraAssetPanel:
         selected = {name: metadata for path, metadata in chosen if (name := str(path)) not in queued}
         if not selected:
             return
+        editor = self._prepare_editor
+        if editor is not None:
+            self._prepare_source_sha.update(
+                {str(row.path): row.sha256 for row in editor.rows if str(row.path) in selected and row.sha256}
+            )
         if self.preparing:
             self._prepare_files += tuple(selected)
             self._prepare_metadata.update(selected)
@@ -678,6 +710,7 @@ class LoraAssetPanel:
             self._registry_generation += 1
             self._set_busy(True)
             self._prepare_stop = False
+            self._prepare_convert_cancel.clear()
             self._inspecting = False
             if self._prepare_progress is None:
                 self._prepare_progress = PrepareProgress()
@@ -702,7 +735,7 @@ class LoraAssetPanel:
                 size = Path(name).stat().st_size
             except OSError:
                 size = 0
-            self._prepare_progress.add_file(name, size)
+            self._prepare_progress.add_file(name, size, convert=Path(name).suffix.casefold() == ".safetensors")
 
     def _request_prepare_stop(self) -> None:
         """Stop after the current file: it settles normally (no half-finished upload); later files never start."""
@@ -713,7 +746,11 @@ class LoraAssetPanel:
         if progress is None:
             return
         progress.event(index, event)
-        if event.stage != CHECKING and self._prepare_editor is not None and index < len(self._prepare_files):
+        if (
+            event.stage in (EXISTS, UPLOADING, CONFIRMING)
+            and self._prepare_editor is not None
+            and index < len(self._prepare_files)
+        ):
             # Any later stage proves the registry accepted this row's name: Re-Prepare cannot be needed any more.
             # The relay is latest-wins, so a fast file may skip stages and a failure may come before any later one;
             # that path never sets ``checked`` and relies on ``row.outcome`` in ``PrepareBatchEditor.all_checked``.
@@ -749,15 +786,16 @@ class LoraAssetPanel:
             eta = f"~{clock(seconds)} left"
         detail = f"Preparing {min(self._prepare_index + 1, total)} of {total}. {snap.wide}".strip()
         editor = self._prepare_editor
-        if editor is not None and editor.active() and self._prepare_index < total and snap.stage:
-            # The open editor covers the bar, so its row and its overall line carry the same live phase text.
-            # ``editor.progress`` refreshes every row, which is costly: send it only when the text changed, at most
-            # once a second (the bar above is updated on every report).
+        if self._prepare_index < total and snap.stage:
+            # The existing bar, selected editor row and status label use one progress snapshot.
+            # Widget updates are throttled; the bottom bar itself updates on each event.
             summary = f"Preparing {self._prepare_index + 1} of {total} · {snap.stage}" + (f" · {eta}" if eta else "")
             now = time.monotonic()
             if summary != self._prepare_editor_text and now - self._prepare_editor_at >= 1.0:
                 self._prepare_editor_text, self._prepare_editor_at = summary, now
-                editor.progress(Path(self._prepare_files[self._prepare_index]), snap.stage, summary)
+                if editor is not None and editor.active():
+                    editor.progress(Path(self._prepare_files[self._prepare_index]), snap.stage, summary)
+                self._show(self.page.assetStatusLabel, Presentation("warning", "Preparing", summary))
         # Stop only acts between files: nothing to stop once the last admitted file is running.
         strip.set_stop_visible("asset", not self._prepare_stop and self._prepare_index < total - 1)
         strip.update(
@@ -814,33 +852,148 @@ class LoraAssetPanel:
         detail = f"Preparing {number} of {total}. May upload this file; waiting for receipt."
         self._show(self.page.assetStatusLabel, Presentation("warning", "Preparing", detail))
         index = self._prepare_index
+        source = Path(self._prepare_files[index])
+        metadata = self._prepare_metadata[str(source)]
+        converting = source.suffix.casefold() == ".safetensors"
         if self._prepare_relay is not None:
             self._prepare_relay.close()
             self._prepare_relay.deleteLater()
         # One relay per file: a late report of a settled file is dropped instead of moving the next one.
-        self._prepare_relay = LatestRelay(lambda event: self._on_prepare_event(index, event), self.page)
-        self._prepare_progress.start_file(index)
+        relay = self._prepare_relay = LatestRelay(lambda event: self._on_prepare_event(index, event), self.page)
+        self._prepare_progress.start_file(index, convert=converting)
         self._render_prepare()
-        self._runner.submit(
-            prepare_asset(
+        converted_sha: list[str | None] = [None]
+
+        async def run_one():
+            path = source
+            forward = relay
+            if converting:
+                spec = next(
+                    (
+                        candidate
+                        for candidate in supported_families()
+                        if candidate.exact_architecture == metadata.exact_architecture
+                    ),
+                    None,
+                )
+                if spec is None:
+                    raise UnsupportedFamilyError(
+                        "The chosen LoRA source family is not supported by the converter.",
+                        hint=COLAB_HINT,
+                    )
+
+                def conversion_progress(event: ConversionProgress) -> None:
+                    labels = {
+                        "reading": "Reading source",
+                        "converting": "Converting",
+                        "writing": "Writing checkpoint",
+                        "finishing": "Finishing conversion",
+                        "reused": "Reusing conversion",
+                    }
+                    # Preserve a monotonic conversion phase across the converter's independent
+                    # tensor-conversion and checkpoint-writing counters.
+                    fraction = min(max(event.done / event.total, 0.0), 1.0) if event.total else 0.0
+                    portion = (
+                        0.8 * fraction
+                        if event.stage == "converting"
+                        else 0.8 + 0.2 * fraction
+                        if event.stage == "writing"
+                        else 1.0
+                        if event.stage in ("finishing", "reused")
+                        else 0.0
+                    )
+                    relay(
+                        PrepareEvent(CONVERTING, int(portion * 1000), 1000, label=labels.get(event.stage, "Converting"))
+                    )
+
+                try:
+                    result = await convert_for_prepare(
+                        self._state,
+                        source,
+                        spec.key,
+                        metadata.identifier,
+                        progress=conversion_progress,
+                        cancel=self._prepare_convert_cancel,
+                        allow_experimental=spec.experimental,
+                    )
+                except (ConversionError, ValidationError):
+                    raise
+                except Exception as exc:
+                    # The provider has not been contacted; even an unexpected local error is definite.
+                    diagnostic_event(
+                        log,
+                        "lora_convert.prepare_unexpected_failure",
+                        level=logging.ERROR,
+                        data={
+                            **asset_ref_data(
+                                filename=source.name, source_sha256=self._prepare_source_sha.get(str(source))
+                            ),
+                            "family": spec.key,
+                            "error_type": type(exc).__name__,
+                        },
+                    )
+                    raise ConversionError("Local conversion failed before any upload began.") from exc
+                path = result.retained.path
+                converted_sha[0] = result.retained.sha256
+                output_size = result.retained.size
+                relay(
+                    PrepareEvent(
+                        CONVERTING,
+                        1,
+                        1,
+                        label="Reused conversion" if result.reused else "Converted",
+                        output_size=output_size,
+                    )
+                )
+
+                def forward(event: PrepareEvent) -> None:
+                    # The relay may coalesce stage changes; carry the actual output size in every asset event.
+                    relay(PrepareEvent(event.stage, event.done, event.total, event.label, output_size))
+
+            return await prepare_asset(
                 self._state,
-                Path(self._prepare_files[index]),
+                path,
                 provenance="gui",
                 saved=self._prepare_saved,
-                metadata=self._prepare_metadata[self._prepare_files[index]],
-                progress=self._prepare_relay,
-            ),
-            self._prepared,
+                metadata=metadata,
+                progress=forward,
+            )
+
+        self._runner.submit(
+            run_one(),
+            lambda record, failure: self._prepared(record, failure, converted_sha=converted_sha[0]),
         )
 
-    def _prepared(self, record, failure) -> None:
+    def _prepare_log_reference(self, record: dict | None, *, converted_sha: str | None = None) -> dict:
+        """Correlate per-file Prepare diagnostics without logging names or paths."""
+        path = Path(self._prepare_files[self._prepare_index])
+        source_sha = self._prepare_source_sha.get(str(path))
+        if source_sha is None and self._prepare_editor is not None:
+            row = next((item for item in self._prepare_editor.rows if item.path == path), None)
+            source_sha = row.sha256 if row is not None else None
+        reference = asset_ref_data(
+            filename=path.name,
+            source_sha256=source_sha,
+            sha256=(
+                record.get("sha256")
+                if record is not None
+                else converted_sha or (source_sha if path.suffix.casefold() == ".ckpt" else None)
+            ),
+            asset_id=record.get("asset_id") if record is not None else None,
+        )
+        if record is not None and record.get("state") == "confirmed" and reference.get("asset_id"):
+            # Preserve the receipt field in existing Prepare timing diagnostics.
+            reference["receipt"] = reference["asset_id"]
+        return reference
+
+    def _prepared(self, record, failure, *, converted_sha: str | None = None) -> None:
         if self._prepare_files:
             self._prepare_last = record, failure
             state = record.get("state") if record is not None and failure is None else None
             if failure is not None:
                 definite = (
                     isinstance(failure, BackendError) and failure.failure.remote_outcome != RemoteOutcome.UNKNOWN
-                ) or isinstance(failure, ValidationError)
+                ) or isinstance(failure, (ValidationError, ConversionError))
                 outcome = "failed" if definite else "unresolved"
             else:
                 outcome = "confirmed" if state == "confirmed" else "failed" if state == "failed" else "unresolved"
@@ -849,7 +1002,7 @@ class LoraAssetPanel:
                 "existing" if outcome == "confirmed" and (record or {}).get("evidence") == "already_exists" else outcome
             )
             self._prepare_final[self._prepare_files[self._prepare_index]] = settled
-            self._settle_prepare_progress(record, outcome)
+            self._settle_prepare_progress(record, outcome, converted_sha=converted_sha)
             if self._prepare_editor is not None:
                 self._prepare_editor.progress(Path(self._prepare_files[self._prepare_index]), None)
                 self._prepare_editor.completed(
@@ -875,41 +1028,48 @@ class LoraAssetPanel:
                     self._prepare_issues.append(
                         f"{self._prepare_index + 1}/{len(self._prepare_files)} {filename}: {explanation.detail}"
                     )
+                if isinstance(failure, ConversionError):
+                    reason = "conversion_failed"
+                elif isinstance(failure, NameAlreadyAcceptedError):
+                    reason = "accepted_name_conflict"
+                elif isinstance(failure, ValidationError):
+                    reason = "validation_failed"
+                elif isinstance(failure, BackendError):
+                    # An API error does not necessarily mean the remote operation failed.
+                    reason = "backend_error"
+                else:
+                    reason = "unexpected_error" if failure is not None else "receipt_not_confirmed"
                 data = {
+                    **self._prepare_log_reference(record, converted_sha=converted_sha),
                     "outcome": outcome,
-                    "reason": "service_error" if failure is not None else "receipt_not_confirmed",
+                    "reason": reason,
                     "item": self._prepare_index + 1,
                     "total": len(self._prepare_files),
-                    "remote_outcome": (
-                        failure.failure.remote_outcome.value if isinstance(failure, BackendError) else "unverified"
-                    ),
                     "code": (
                         failure.failure.code
                         if isinstance(failure, BackendError)
+                        else failure.code
+                        if isinstance(failure, ConversionError)
                         else type(failure).__name__
                         if failure is not None
                         else state or "receipt_not_confirmed"
                     ),
                 }
+                if isinstance(failure, BackendError):
+                    data["remote_outcome"] = failure.failure.remote_outcome.value
+                elif isinstance(failure, ConversionError):
+                    # Conversion runs before provider negotiation, so nothing was dispatched.
+                    data["remote_outcome"] = RemoteOutcome.NOT_STARTED.value
                 if development_mode():
-                    # Full per-file evidence stays in dev logs, without full paths.
-                    data.update(
-                        filename=Path(self._prepare_files[self._prepare_index]).name,
-                        error_headline=explanation.headline,
-                        error_detail=explanation.detail,
-                    )
+                    # Keep a stable error type, never an arbitrary provider message or full source basename.
+                    data["error_type"] = type(failure).__name__ if failure is not None else "receipt_not_confirmed"
                 diagnostic_event(
                     log,
                     "ui.asset_prepare_incomplete",
                     level=logging.WARNING,
                     data=data,
-                    # The existing sanitized diagnostic pipeline owns traceback
-                    # projection. Do not capture arbitrary provider exceptions.
-                    exc_info=(
-                        (type(failure), failure, failure.__traceback__)
-                        if development_mode() and isinstance(failure, ValidationError)
-                        else False
-                    ),
+                    # Avoid exception text/tracebacks containing the user's full source basename.
+                    # The stable error type, code, file hint and SHA prefix are sufficient here.
                 )
             if record is not None and failure is None:
                 self._records[(record["asset_id"], record["identifier"])] = record
@@ -930,7 +1090,7 @@ class LoraAssetPanel:
             return
         self._present_prepared(record, failure)
 
-    def _settle_prepare_progress(self, record, outcome: str) -> None:
+    def _settle_prepare_progress(self, record, outcome: str, *, converted_sha: str | None = None) -> None:
         """Close the file in the progress model and log its phase timings (seconds per MiB) for weight tuning."""
         progress, index = self._prepare_progress, self._prepare_index
         if progress is None:
@@ -944,7 +1104,13 @@ class LoraAssetPanel:
             log,
             "ui.asset_prepare_timing",
             level=logging.INFO,
-            data={"item": index + 1, "total": len(self._prepare_files), "outcome": outcome, **timings},
+            data={
+                **self._prepare_log_reference(record, converted_sha=converted_sha),
+                "item": index + 1,
+                "total": len(self._prepare_files),
+                "outcome": outcome,
+                **timings,
+            },
         )
         if self._prepare_relay is not None:
             self._prepare_relay.close()  # late byte reports of this file are dropped
@@ -970,6 +1136,7 @@ class LoraAssetPanel:
             self._prepare_editor.released([Path(p) for p in unstarted])
         self._prepare_files = ()
         self._prepare_metadata = {}
+        self._prepare_source_sha = {}
         self._prepare_saved = None
         self._set_busy(False)
         self._resume_hashing()

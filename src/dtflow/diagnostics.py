@@ -7,6 +7,7 @@ assign sequence numbers, parse messages, or own sinks. Disabled levels stay chea
 import logging
 import re
 from contextvars import ContextVar
+from pathlib import PureWindowsPath
 from time import monotonic_ns
 
 
@@ -30,6 +31,29 @@ def cloud_key_data(
         "credential_id": credential_id,
         "key_alias": label,
         **({"key_source": source} if source in ("saved", "environment") else {}),
+    }
+
+
+def asset_ref_data(
+    *,
+    sha256: str | None = None,
+    source_sha256: str | None = None,
+    asset_id: str | None = None,
+    operation_id: str | None = None,
+    filename: str | None = None,
+) -> dict:
+    """Project known asset identities into safe, consistent diagnostic fields.
+
+    SHA identifies content; asset and operation IDs identify local records and
+    separate attempts. This helper does not generate identities or persist state.
+    Full filenames and paths never enter its returned fields.
+    """
+    return {
+        **({"asset_sha_prefix": sha256[:12]} if sha256 else {}),
+        **({"source_sha_prefix": source_sha256[:12]} if source_sha256 else {}),
+        **({"asset_id": asset_id} if asset_id else {}),
+        **({"operation_id": operation_id} if operation_id else {}),
+        **({"filename_prefix": PureWindowsPath(filename).name[:3]} if filename else {}),
     }
 
 

@@ -259,6 +259,105 @@ class LoraStore:
         finally:
             handle.close()
 
+    def find_converted(
+        self, source_sha256: str, family: str, scale: float, converter_version: str
+    ) -> RetainedFile | None:
+        """Find verified converted bytes by source identity and converter settings, without contacting DT+."""
+        handle = self._locked()
+        try:
+            for item in self._read_recovering():
+                records = item.get("conversions")
+                if not isinstance(records, list):
+                    records = [item.get("conversion")]
+                if not any(
+                    isinstance(record, dict)
+                    and isinstance(record.get("source"), dict)
+                    and record["source"].get("sha256") == source_sha256
+                    and record.get("family") == family
+                    and record.get("scale") == scale
+                    and record.get("converter_version") == converter_version
+                    for record in records
+                    if isinstance(record, dict)
+                ):
+                    continue
+                target = self._path(item)
+                retained = RetainedFile(target.name, item["sha256"], item["size"], target)
+                self.verify(retained)
+                return retained
+        finally:
+            handle.close()
+        return None
+
+    def retain_converted(
+        self,
+        staged: Path,
+        sha256: str,
+        size: int,
+        *,
+        managed_name: str,
+        conversion: dict,
+    ) -> RetainedFile:
+        """Adopt a completed conversion from the store volume without overwriting an existing retained file.
+
+        A matching payload shares its existing managed copy; conversion provenance is additive
+        and preserved when the store index is rewritten by existing Prepare/rename operations.
+        """
+        staged = Path(staged)
+        if _safe_name(managed_name) != managed_name or not managed_name.lower().endswith(".ckpt"):
+            raise ValidationError("The converted LoRA filename is not portable.")
+        if staged.is_symlink() or not staged.is_file() or not staged.resolve().is_relative_to(self.directory.resolve()):
+            raise ValidationError("The converted LoRA staging file is not owned by the retained store.")
+        handle = self._locked()
+        try:
+            files = self._read_recovering()
+            matching = next(
+                (item for item in files if item.get("sha256") == sha256 and item.get("size") == size),
+                None,
+            )
+            created = matching is None
+            if matching is not None:
+                target = self._path(matching)
+                retained = RetainedFile(target.name, sha256, size, target)
+                self.verify(retained)
+            else:
+                if any(str(item.get("name", "")).casefold() == managed_name.casefold() for item in files):
+                    raise ValidationError("A different retained LoRA already uses the selected name.")
+                target = self.directory / managed_name
+                if os.path.lexists(target):
+                    raise ValidationError("The converted LoRA filename already exists; no file was overwritten.")
+                if _hash(staged) != (sha256, size):
+                    raise ValidationError("The converted LoRA changed before retention; nothing was kept.")
+                try:
+                    os.replace(staged, target)
+                except OSError as exc:
+                    raise ValidationError("The converted LoRA could not be retained.") from exc
+                matching = {
+                    "name": managed_name,
+                    "sha256": sha256,
+                    "size": size,
+                    "retained_at_utc": datetime.now(UTC).isoformat(),
+                }
+                files.append(matching)
+                retained = RetainedFile(managed_name, sha256, size, target)
+            records = matching.get("conversions")
+            if not isinstance(records, list):
+                previous = matching.get("conversion")
+                records = [previous] if isinstance(previous, dict) else []
+            if conversion not in records:
+                records.append(conversion)
+            matching["conversions"] = records
+            matching["conversion"] = conversion
+            try:
+                self._write(files)
+            except OSError as exc:
+                if created:
+                    # Only a newly created copy is removed. Existing retained bytes must never be deleted.
+                    target.unlink(missing_ok=True)
+                raise ValidationError("The converted LoRA index could not be saved.") from exc
+            return retained
+        finally:
+            handle.close()
+
     def rename_accepted(self, sha256: str, size: int, accepted_name: str) -> RetainedFile | None:
         """Give existing verified retained bytes their accepted canonical filename.
 
