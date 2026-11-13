@@ -17,6 +17,8 @@
 
 ## Decisions and design changes
 
+- 2026-11-13 review follow-up: correct the active deleted-script/output-path references and retired Preview-to-Drive instructions; document the GNU-timeout capture orchestrator as Linux CI-only. Harden file-derived diagnostic table/inline labels with escaped HTML code and selection notes with escaped preformatted HTML, so backticks, pipes, newlines or HTML in paths cannot break out into report markup. No new tests, fixtures or captures; focused static validation only before the next automatic Preview run.
+
 - 2026-11-13: only `preview:PART` and `preview:ALL`; no category labels or archived-label restoration. ALL wins. Manual category input stays available.
 - 2026-11-13: automatic requests skip drafts; manual dispatch is explicit and may target a draft. Recheck live draft/head before expensive capture and publication.
 - 2026-11-13: initially retained `ci-render-previews`; the owner subsequently requested **`preview-outputs`**. Rename the remote branch preserving its current image tree, migrate existing preview bot-comment links and use a shared branch constant for future publication/report URLs. Reuse existing comment markers when updating old PRs.

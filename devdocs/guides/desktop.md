@@ -363,7 +363,7 @@ Combined PR #95/#102 developer review status: thumbnail removal now checks cache
 Only when requested, run the offline renderer from the repository root:
 
 ```powershell
-uv run python tools/ui/preview_states.py --out tmp/ui-renders
+uv run python tools/ui/preview_states.py --out tmp/ui-previews
 ```
 
 The renderer defaults to `QT_QPA_PLATFORM=offscreen`. On Windows, offscreen rendering

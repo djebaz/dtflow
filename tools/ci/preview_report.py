@@ -19,6 +19,12 @@ def read_json(path, default):
     return json.loads(path.read_text(encoding="utf-8")) if path.exists() else default
 
 
+def inline_code(value):
+    """Keep file-derived text inside one Markdown table cell or inline label."""
+    escaped = html.escape(str(value)).replace("|", "&#124;").replace("`", "&#96;")
+    return "<code>" + escaped.replace("\r", "&#13;").replace("\n", "&#10;") + "</code>"
+
+
 def thumbnail_sections(pngs, by_id, base):
     """Share the comment budget across categories, not just the first filenames."""
     groups = {}
@@ -138,15 +144,15 @@ def main():
         "| Artifact retention | Requested: 2 days; manual Sweeper can delete after 30 minutes |",
     ]
     if plan.get("workflow"):
-        lines.append(f"| Workflow file | `{plan['workflow']}` (strict offline import; no execution) |")
+        lines.append(f"| Workflow file | {inline_code(plan['workflow'])} (strict offline import; no execution) |")
     for name, item in outcomes.items():
         lines.append(f"| {name} | Exit {item['exit_code']}; deadline {item['timeout_seconds']}s |")
     for name, row in combined.get("workers", {}).items():
-        lines.append(f"| Worker `{name}` | {row['elapsed_seconds']:.1f}s; exit {row['exit_code']} |")
+        lines.append(f"| Worker {inline_code(name)} | {row['elapsed_seconds']:.1f}s; exit {row['exit_code']} |")
     if missing:
-        lines += ["", "Missing: " + ", ".join(f"`{name}`" for name in missing[:20])]
+        lines += ["", "Missing: " + ", ".join(inline_code(name) for name in missing[:20])]
     if waits:
-        lines += ["", "Timed-out fixture waits: " + ", ".join(f"`{name}`" for name in waits)]
+        lines += ["", "Timed-out fixture waits: " + ", ".join(inline_code(name) for name in waits)]
     # Keep path-by-path information out of the main review flow. Deduplicate warnings
     # already present as reasons; omit no-impact paths, whose full record stays in the artifact.
     details = list(
@@ -158,7 +164,7 @@ def main():
         )
     )
     if details:
-        lines += ["", "Selection notes:", "```text", *details[:40], "```"]
+        lines += ["", "Selection notes:", "<pre>" + html.escape("\n".join(details[:40])) + "</pre>"]
     lines += [
         "",
         "Full selection, exact states, prerequisites and logs: Download → request.json / manifests.",
