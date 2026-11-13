@@ -389,7 +389,7 @@ def main(argv: list[str] | None = None) -> int:
         "-xp",
         "--experimental",
         action="store_true",
-        help="allow families that are not verified against Draw Things yet (sdxl)",
+        help="allow experimental families, whose coverage is incomplete (sdxl: some LoRAs fail to convert)",
     )
     args = ap.parse_args(argv)
     try:

@@ -1,4 +1,4 @@
-"""SDXL family (table driven). Experimental: its output has not been compared with Draw Things."""
+"""SDXL family (table driven). Experimental: converted files checked on DT+, but some SDXL LoRAs fail to convert."""
 
 from __future__ import annotations
 
@@ -14,6 +14,6 @@ register(
         experimental=True,
         kind="tables",
         run=lambda st, request, ctx: convert_tables(st, "sdxl", request.scale, request.ignore_unmatched, ctx),
-        notes="Needs a Mac reference; requires allow_experimental",
+        notes="Converted files verified on DT+ and against iOS output; some SDXL LoRAs fail to convert; requires allow_experimental",
     )
 )

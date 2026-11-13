@@ -280,9 +280,15 @@ class LoraStore:
                     if isinstance(record, dict)
                 ):
                     continue
-                target = self._path(item)
-                retained = RetainedFile(target.name, item["sha256"], item["size"], target)
-                self.verify(retained)
+                try:
+                    target = self._path(item)
+                    retained = RetainedFile(target.name, item["sha256"], item["size"], target)
+                    self.verify(retained)
+                except (ValidationError, KeyError, TypeError):
+                    # A missing, altered or unsafe earlier output is not reusable; the caller converts again and the
+                    # historic record is left untouched. An unreadable or malformed index is still an error (_read).
+                    diagnostic_event(log, "lora_store.converted_entry_skipped", level=logging.WARNING, data={})
+                    continue
                 return retained
         finally:
             handle.close()

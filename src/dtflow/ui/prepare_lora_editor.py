@@ -636,7 +636,7 @@ class PrepareBatchEditor:
                         if not family
                         else f"You chose {spec.label if spec else family} · file suggests {suggestion}"
                         if row.manual_family and suggestion and spec is not None and suggestion != spec.label
-                        else "Experimental · explicit confirmation required"
+                        else "Experimental · some LoRAs fail to convert · confirmation required"
                         if spec is not None and spec.experimental
                         else "Unverified on DT+ · try with care"
                         if spec is not None and spec.status == "unverified_on_dt_plus"
