@@ -20,7 +20,7 @@ from dtflow.services.lora_convert.source_metadata import DetailModel
 from dtflow.services.lora_metadata_edit import save_lora_metadata
 from dtflow.services.lora_naming import architecture_shortcode
 from dtflow.ui.runner import AsyncRunner
-from dtflow.ui.source_details_view import replace_with_runs
+from dtflow.ui.source_details_view import replace_with_runs, safe_tooltip
 
 _SHORT_NAME = re.compile(r"^[A-Za-z0-9_]{1,20}$")
 
@@ -98,11 +98,13 @@ class LoraMetadataOverlay(QObject):
         form = self.form
         self._details_model = source_details or DetailModel()
         model = self._details_model
-        tags_tip = "Top training tags (not necessarily trigger words): " + " · ".join(model.tags) if model.tags else ""
+        tip = safe_tooltip(model.tooltip)
         self._summary.set_runs((*model.runs, *model.note_runs) if model.runs or model.note_runs else ())
         self._summary.setVisible(bool(model))
-        self._tags_line.set_runs(model.tag_runs, tags_tip)
+        self._tags_line.set_runs(model.tag_runs)
         self._tags_line.setVisible(bool(model.tags))
+        self._summary.setToolTip(tip)
+        self._tags_line.setToolTip(tip)
         self._identity = (record["sha256"], record["size"])
         form.loraMetadataFile.setText(name)
         combo = form.loraMetadataArchitecture

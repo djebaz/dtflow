@@ -33,7 +33,7 @@ from dtflow.services.lora_naming import (
     suggest_short_name,
 )
 from dtflow.ui.inline_feedback import feedback
-from dtflow.ui.source_details_view import replace_with_runs
+from dtflow.ui.source_details_view import replace_with_runs, safe_tooltip
 
 _SHORT_NAME = re.compile(r"^[A-Za-z0-9_]{1,20}$")
 
@@ -798,10 +798,10 @@ class PrepareBatchEditor:
                 model = self._source_details(self.selected)
                 model = DetailModel() if self.selected.invalid else model
                 self._details_model = model
-                tags_tip = (
-                    "Top training tags (not necessarily trigger words): " + " · ".join(model.tags) if model.tags else ""
-                )
-                self._tags_line.set_runs(model.tag_runs, tags_tip)
+                tip = safe_tooltip(model.tooltip)  # the whole metadata area shows the full text, not just the tags
+                self._tags_line.set_runs(model.tag_runs)
+                self.form.prepareSourceSummaryCell.setToolTip(tip)
+                self._tags_line.setToolTip(tip)
                 self._summary.set_runs(
                     (*model.runs, *model.note_runs)
                     if model.runs or model.note_runs
@@ -809,6 +809,7 @@ class PrepareBatchEditor:
                     if self.selected.source_kind == "safetensors" and self.inspected
                     else ()
                 )
+                self._summary.setToolTip(tip)
                 self.form.prepareManagedFilename.setText(
                     allocation.filename if allocation and allocation.filename else "Complete required fields to preview"
                 )

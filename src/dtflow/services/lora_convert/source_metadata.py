@@ -257,6 +257,12 @@ class DetailModel:
         return " · ".join(part for part in (self.summary, self.note) if part)
 
     @property
+    def tooltip(self) -> str:
+        """Everything the two lines show, in full (plain text; the view escapes it)."""
+        tags = "Top training tags (not necessarily trigger words): " + " · ".join(self.tags) if self.tags else ""
+        return "\n".join(part for part in (self.line, tags) if part)
+
+    @property
     def tags_line(self) -> str:
         return "Top tags: " + " · ".join(self.tags) if self.tags else ""
 

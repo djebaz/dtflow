@@ -58,9 +58,8 @@ class RunsLine(QWidget):
         self.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Fixed)
         self.setFixedHeight(QFontMetrics(self._strong_font).lineSpacing() + 2)
 
-    def set_runs(self, runs: tuple[tuple[str, bool], ...], tooltip: str = "") -> None:
+    def set_runs(self, runs: tuple[tuple[str, bool], ...]) -> None:
         self._runs = runs
-        self.setToolTip(safe_tooltip(tooltip))
         self.update()
 
     def plain_text(self) -> str:
