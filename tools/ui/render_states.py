@@ -727,7 +727,10 @@ def render_lora_prepare_states(shell, out):
     )
     QTest.qWait(60)
     save(shell.form, out, "lora-edit-metadata")
-    save_tooltip(shell.form, out, "lora-edit-metadata-tooltip", shell.lora_metadata_overlay._summary)
+    save_tooltip(
+        shell.form, out, "lora-edit-metadata-tooltip",
+        shell.lora_metadata_overlay.form, hover=shell.lora_metadata_overlay._summary,
+    )
     shell.lora_metadata_overlay.close()
     shell.form.customLorasDisclosure.setChecked(False)
 
