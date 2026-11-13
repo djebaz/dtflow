@@ -50,6 +50,8 @@ def _convert_sync(
         raise ConversionError("Select a .safetensors LoRA source.")
     if cancel is not None and cancel.is_set():
         raise ConversionCancelled("Conversion stopped before starting.")
+    if progress is not None:
+        progress(ConversionProgress("reading", 0, 0))
     try:
         source_sha, source_size = hash_file(source, cancel.is_set if cancel is not None else None)
         stat = source.stat()
@@ -78,8 +80,6 @@ def _convert_sync(
         )
         return PreparedConversion(reused, True)
 
-    if progress is not None:
-        progress(ConversionProgress("reading", 0, 0))
     diagnostic_event(
         log,
         "lora_convert.prepare_started",
