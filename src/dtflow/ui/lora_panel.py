@@ -18,7 +18,6 @@ from PySide6.QtCore import Qt, QTimer
 from PySide6.QtWidgets import QListWidgetItem, QWidget
 from shiboken6 import isValid
 
-from dtflow.ui.file_dialogs import QFileDialog
 from dtflow.core.models import (
     BackendError,
     LoRASelection,
@@ -30,7 +29,6 @@ from dtflow.core.models import (
 from dtflow.diagnostics import event as diagnostic_event
 from dtflow.logging_setup import development_mode
 from dtflow.services.catalogue import Catalogue, FAMILY_LABELS, bundled_exact_version
-from dtflow.services.lora_family import DETECTABLE_FAMILIES, LoraFamily
 from dtflow.services.connection import (
     Presentation,
     present_asset_failure,
@@ -42,18 +40,9 @@ from dtflow.services.lora_convert import COLAB_HINT, ConversionError, Conversion
 from dtflow.services.lora_convert.errors import UnsupportedFamilyError
 from dtflow.services.lora_convert_prepare import convert_for_prepare
 from dtflow.services.lora_digest import DigestCancelled, hash_file
-from dtflow.services.lora_family import detect_lora_family, validate_converted_lora
-from dtflow.services.lora_naming import LoraPrepareMetadata
+from dtflow.services.lora_family import DETECTABLE_FAMILIES, LoraFamily, detect_lora_family, validate_converted_lora
+from dtflow.services.lora_naming import LoraPrepareMetadata, display_label
 from dtflow.services.lora_store import LoraStore
-from dtflow.services.session import (
-    accepted_managed_identifier,
-    check_loras,
-    list_assets,
-    occupied_managed_lora_names,
-    prepare_asset,
-    reconcile_asset,
-    selection_for,
-)
 from dtflow.services.prepare_progress import (
     CHECKING,
     CONFIRMING,
@@ -63,16 +52,25 @@ from dtflow.services.prepare_progress import (
     PrepareEvent,
     PrepareProgress,
 )
+from dtflow.services.session import (
+    accepted_managed_identifier,
+    check_loras,
+    list_assets,
+    occupied_managed_lora_names,
+    prepare_asset,
+    reconcile_asset,
+    selection_for,
+)
 from dtflow.ui.activity_bar import clock
 from dtflow.ui.activity_strip import activity_strip
+from dtflow.ui.file_dialogs import QFileDialog
 from dtflow.ui.latest_relay import LatestRelay
-from dtflow.ui.runner import AsyncRunner
-from dtflow.services.lora_naming import display_label
 from dtflow.ui.lora_selection_editor import _display_label, edit_lora_selection
 from dtflow.ui.prepare_lora_editor import PrepareBatchEditor
+from dtflow.ui.runner import AsyncRunner
 
 UPLOAD_NOTICE = (
-    "Select converted .ckpt or source .safetensors LoRAs, review metadata and conversion family, " 
+    "Select converted .ckpt or source .safetensors LoRAs, review metadata and conversion family, "
     "then explicitly Prepare ready rows. "
     "Preparing may upload to DT+ without consuming credits; later generation may consume credits."
 )
@@ -82,9 +80,9 @@ log = logging.getLogger(__name__)
 
 
 def _choose_asset_file(parent: QWidget, directory: Path) -> list[str]:
-    return QFileDialog.getOpenFileNames(parent, "Prepare LoRA files", str(directory), "LoRA files (*.ckpt *.safetensors)")[
-        0
-    ]
+    return QFileDialog.getOpenFileNames(
+        parent, "Prepare LoRA files", str(directory), "LoRA files (*.ckpt *.safetensors)"
+    )[0]
 
 
 def _family_evidence_label(value: str | None, source: str | None, *, conflict: bool = False) -> str:
