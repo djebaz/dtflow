@@ -18,7 +18,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from dtflow.core.models import ValidationError
-from dtflow.diagnostics import event as diagnostic_event
+from dtflow.diagnostics import asset_ref_data, event as diagnostic_event
 from dtflow.services.lora_convert import CONVERTER_VERSION, ConversionProgress, ConversionRequest, convert_lora
 from dtflow.services.lora_convert.errors import ConversionCancelled, ConversionError
 from dtflow.services.lora_convert.registry import lookup
@@ -60,7 +60,7 @@ def _convert_sync(
     except (OSError, ValueError) as exc:
         raise ConversionError("Could not read the selected LoRA source.") from exc
 
-    hint = {"file_prefix": source.name[:3], "source_sha_prefix": source_sha[:12], "family": family}
+    hint = {**asset_ref_data(filename=source.name, source_sha256=source_sha), "family": family}
     store = LoraStore(state)
     if spec.status != "verified":
         diagnostic_event(
@@ -76,7 +76,7 @@ def _convert_sync(
         diagnostic_event(
             log,
             "lora_convert.prepare_reused",
-            data={**hint, "output_sha_prefix": reused.sha256[:12], "size": reused.size},
+            data={**hint, **asset_ref_data(sha256=reused.sha256), "size": reused.size},
         )
         return PreparedConversion(reused, True)
 
@@ -143,7 +143,7 @@ def _convert_sync(
             "lora_convert.prepare_completed",
             data={
                 **hint,
-                "output_sha_prefix": retained.sha256[:12],
+                **asset_ref_data(sha256=retained.sha256),
                 "source_bytes": source_size,
                 "output_bytes": retained.size,
                 "tensors": result.tensors_written,
