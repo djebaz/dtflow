@@ -678,12 +678,39 @@ def render_lora_prepare_states(shell, out):
     save_tooltip(shell.form, out, "lora-picker-metadata-tooltip", picker_row)
     shell.inline.dismiss()
 
-    # Generate's prompt hint reads the currently selected LoRAs, not an entire retained library.
+    # The prompt icon toggles an in-window full-height panel below the Images action.
     selected_before = shell.generation.lora.loras
-    shell.generation.lora.loras = (LoRASelection(names[0], 0.8), LoRASelection(names[1], 1.0))
+    selected_loras = (LoRASelection(names[0], 0.8), LoRASelection(names[1], 1.0))
+    shell.generation.lora.loras = selected_loras
     try:
-        save_tooltip(shell.form, out, "lora-prompt-metadata-tooltip", shell.generation_page.promptEdit.viewport())
+        shell.form.generationNavigationButton.click()
+        QTest.qWait(65)
+        shell.generation_page.promptHintsButton.click()
+        QTest.qWait(50)
+        if not shell._prompt_hints.open:
+            raise RuntimeError("Generate LoRA hint toggle did not open the right inspector")
+        save(shell.form, out, "lora-generate-prompt-hints-panel")
+        shell.generation_page.promptHintsButton.click()
+
+        from dtflow.core.models import ResolvedGenerationRequest
+
+        shell.form.queueNavigationButton.click()
+        shell.queue._set_draft(
+            ResolvedGenerationRequest("fixture-draft", "portrait in soft light", "fake-fixture", 123,
+                                      loras=selected_loras),
+            "fake", None, (), None,
+        )
+        shell.queue.open_composer()
+        QTest.qWait(75)
+        shell.queue_page.composerPromptHintsButton.click()
+        QTest.qWait(50)
+        if not shell._prompt_hints.open:
+            raise RuntimeError("Queue LoRA hint toggle did not open the right inspector")
+        save(shell.form, out, "lora-queue-prompt-hints-panel")
+        shell.queue_page.composerPromptHintsButton.click()
+        shell.queue.close_composer()
     finally:
+        shell._prompt_hints.close()
         shell.generation.lora.loras = selected_before
 
     # Connections uses the real retained-LoRA table and editor with synthetic rows only.
