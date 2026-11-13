@@ -15,11 +15,13 @@ Changes through 6.3.0 are consolidated in [DTFlow 6.3.0](v6.3.0.md). This file t
 
 ## Fixed
 
+- Cloud Prepare distinguishes partial success from a wholly failed batch: mixed results use amber styling and a short toast, with concise per-file reasons in the side panel and full literal-text reasons in its tooltip and dev Logs. Definite failures with no successes retain red styling even while the editor stays open; a wholly failed closed-editor toast keeps full reasons. No retry, upload, receipt or uncertainty behavior changes (#419, #420). Review fixes are source-reviewed; edge-case Windows smoke remains pending.
+
 ## Upgrade and compatibility
 
 ## Validations checklist
 
 ## Release audit
 
-- PRs: #418, #417
+- PRs: #418, #417, #420
 - Scope: Version bump 6.3.0 and release-note consolidation; #414 safetensors descriptive metadata and trigger suggestions (static checks, offscreen Qt checks of the editor and dialog on synthetic files; owner Windows smoke pending).

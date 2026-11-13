@@ -69,6 +69,7 @@ from dtflow.ui.latest_relay import LatestRelay
 from dtflow.ui.lora_selection_editor import _display_label, edit_lora_selection
 from dtflow.ui.prepare_lora_editor import PrepareBatchEditor
 from dtflow.ui.runner import AsyncRunner
+from dtflow.ui.source_details_view import safe_tooltip
 
 UPLOAD_NOTICE = (
     "Select converted .ckpt or source .safetensors LoRAs, review metadata and conversion family, "
@@ -181,8 +182,9 @@ class LoraAssetPanel:
         label.style().polish(label)
         text = f"{presentation.headline}. {presentation.detail}".strip()
         # A wrapping label is as wide as its longest word: let a file name break after "_", "-" and "." inside it.
+        label.setTextFormat(Qt.TextFormat.PlainText)
         label.setText(re.sub(r"(?<=\w)([_.\-])(?=\w)", "\\1\u200b", text))
-        label.setToolTip(tooltip)
+        label.setToolTip(safe_tooltip(tooltip))
 
     def receipt_ids(self) -> tuple[str, ...]:
         selected = {item.identifier for item in self.loras}
@@ -1218,14 +1220,15 @@ class LoraAssetPanel:
         if unstarted:
             parts.append(f"{unstarted} unstarted")
         detail = ", ".join(parts) + ". No automatic retries."
+        state = "error" if failed and not mostly_fine else "partial" if failed or unresolved or unstarted else "success"
+        level = "ok" if state == "success" else "error" if state == "error" else "warning"
         if editor_open:
             # One surface at a time: the open editor shows the result, so the bar job just ends quietly.
             self._prepare_editor.set_summary(detail)
             activity_strip(self.page).finish("asset")
-            self._show(self.page.assetStatusLabel, Presentation("warning", "Cloud preparation finished", detail))
+            self._show(self.page.assetStatusLabel, Presentation(level, "Cloud preparation finished", detail))
             self.refresh_assets()
             return
-        state = "error" if failed and not mostly_fine else "partial" if failed or unresolved or unstarted else "success"
         title = "Cloud preparation finished"
         panel_detail, full_detail, toast_detail = detail, detail, detail
         if self._prepare_issues:
@@ -1242,7 +1245,7 @@ class LoraAssetPanel:
             if mostly_fine:
                 toast_detail = detail + " Details in the side panel and -x Logs."
             else:
-                toast_detail = panel_detail
+                toast_detail = full_detail
         detail = toast_detail
         if stopped and state != "error":
             state, title = "stopped", "Preparation stopped"
