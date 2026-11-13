@@ -9,6 +9,7 @@ import asyncio
 import logging
 import os
 import re
+import threading
 import time
 from collections.abc import Callable
 from pathlib import Path
@@ -29,7 +30,7 @@ from dtflow.core.models import (
 from dtflow.diagnostics import event as diagnostic_event
 from dtflow.logging_setup import development_mode
 from dtflow.services.catalogue import Catalogue, FAMILY_LABELS, bundled_exact_version
-from dtflow.services.lora_family import DETECTABLE_FAMILIES
+from dtflow.services.lora_family import DETECTABLE_FAMILIES, LoraFamily
 from dtflow.services.connection import (
     Presentation,
     present_asset_failure,
@@ -37,9 +38,13 @@ from dtflow.services.connection import (
     present_preflight,
     present_reconciliation,
 )
+from dtflow.services.lora_convert import COLAB_HINT, ConversionError, ConversionProgress, supported_families
+from dtflow.services.lora_convert.errors import UnsupportedFamilyError
+from dtflow.services.lora_convert_prepare import convert_for_prepare
 from dtflow.services.lora_digest import DigestCancelled, hash_file
 from dtflow.services.lora_family import detect_lora_family, validate_converted_lora
 from dtflow.services.lora_naming import LoraPrepareMetadata
+from dtflow.services.lora_store import LoraStore
 from dtflow.services.session import (
     accepted_managed_identifier,
     check_loras,
@@ -49,7 +54,15 @@ from dtflow.services.session import (
     reconcile_asset,
     selection_for,
 )
-from dtflow.services.prepare_progress import CHECKING, EXISTS, PrepareEvent, PrepareProgress
+from dtflow.services.prepare_progress import (
+    CHECKING,
+    CONFIRMING,
+    CONVERTING,
+    EXISTS,
+    UPLOADING,
+    PrepareEvent,
+    PrepareProgress,
+)
 from dtflow.ui.activity_bar import clock
 from dtflow.ui.activity_strip import activity_strip
 from dtflow.ui.latest_relay import LatestRelay
@@ -59,7 +72,8 @@ from dtflow.ui.lora_selection_editor import _display_label, edit_lora_selection
 from dtflow.ui.prepare_lora_editor import PrepareBatchEditor
 
 UPLOAD_NOTICE = (
-    "Select converted LoRA files, review their metadata, then explicitly Prepare ready rows. "
+    "Select converted .ckpt or source .safetensors LoRAs, review metadata and conversion family, " 
+    "then explicitly Prepare ready rows. "
     "Preparing may upload to DT+ without consuming credits; later generation may consume credits."
 )
 DEFAULT_LORA_WEIGHT = 1.0
@@ -120,6 +134,8 @@ class LoraAssetPanel:
         self._prepare_progress: PrepareProgress | None = None
         self._prepare_relay: LatestRelay | None = None
         self._prepare_stop = False  # "Stop after current file": nothing new starts once set
+        self._prepare_convert_cancel = threading.Event()
+        runner.shutdown_started.connect(self._prepare_convert_cancel.set)
         self._prepare_rendered = 0.0
         self._prepare_editor_text, self._prepare_editor_at = "", 0.0
         self._prepare_timer = QTimer(page)  # keeps elapsed, ETA and the stall state moving between byte reports
