@@ -60,7 +60,11 @@ def _convert_sync(
     except (OSError, ValueError) as exc:
         raise ConversionError("Could not read the selected LoRA source.") from exc
 
-    hint = {**asset_ref_data(filename=source.name, source_sha256=source_sha), "family": family}
+    hint = {
+        **asset_ref_data(filename=source.name, source_sha256=source_sha),
+        "file_prefix": source.name[:3],  # compatibility with older converter diagnostics
+        "family": family,
+    }
     store = LoraStore(state)
     if spec.status != "verified":
         diagnostic_event(
@@ -76,7 +80,12 @@ def _convert_sync(
         diagnostic_event(
             log,
             "lora_convert.prepare_reused",
-            data={**hint, **asset_ref_data(sha256=reused.sha256), "size": reused.size},
+            data={
+                **hint,
+                **asset_ref_data(sha256=reused.sha256),
+                "output_sha_prefix": reused.sha256[:12],
+                "size": reused.size,
+            },
         )
         return PreparedConversion(reused, True)
 
@@ -144,6 +153,7 @@ def _convert_sync(
             data={
                 **hint,
                 **asset_ref_data(sha256=retained.sha256),
+                "output_sha_prefix": retained.sha256[:12],
                 "source_bytes": source_size,
                 "output_bytes": retained.size,
                 "tensors": result.tensors_written,
