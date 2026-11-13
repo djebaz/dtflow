@@ -531,13 +531,13 @@ class PrepareBatchEditor:
         saved = self._saved_triggers.get(identity) if identity[0] is not None and identity[1] is not None else None
         suggestion = getattr(row.source_metadata, "trigger", None) if row.source_kind == "safetensors" else None
         # The badge is one short constant-height line; the explanation is in the tooltips (row heights never change).
-        if self._saved_triggers_unreadable and not saved:
+        if self._saved_triggers_unreadable and saved is None:
             # Saved words could not be read, so a suggestion might replace one: do not fill, and say why.
             note.setText("not filled" if suggestion else "")
             note.setToolTip("Saved trigger words unreadable: no suggestion applied." if suggestion else "")
             row.auto_triggers = field.text()
             return
-        text, origin = (saved, "saved") if saved else (suggestion or "", "from file")
+        text, origin = (saved, "saved") if saved is not None else (suggestion or "", "from file")
         if field.text() != text:
             field.setText(text)
         row.auto_triggers = text
@@ -545,7 +545,7 @@ class PrepareBatchEditor:
         note.setText(origin if shown else "")
         explanation = (
             "Declared by the file's metadata, not verified. Edit or clear it freely."
-            if text and not saved
+            if text and saved is None
             else "Your saved trigger words for this LoRA."
             if text
             else ""

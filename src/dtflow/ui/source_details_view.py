@@ -17,6 +17,7 @@ _GAP = 10
 
 def _label(text: str, *, muted: bool = False) -> QLabel:
     label = QLabel(text)
+    label.setTextFormat(Qt.TextFormat.PlainText)  # file content is untrusted: never rich text, never image loading
     label.setWordWrap(True)
     label.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
     label.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Minimum)
@@ -104,6 +105,7 @@ class ElidedLabel(QObject):
     def __init__(self, label: QLabel) -> None:
         super().__init__(label)
         self._label, self._text = label, ""
+        label.setTextFormat(Qt.TextFormat.PlainText)
         label.setWordWrap(False)
         label.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
         label.installEventFilter(self)
