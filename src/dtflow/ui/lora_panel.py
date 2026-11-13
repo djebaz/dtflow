@@ -883,7 +883,18 @@ class LoraAssetPanel:
                         "finishing": "Finishing conversion",
                         "reused": "Reusing conversion",
                     }
-                    relay(PrepareEvent(CONVERTING, event.done, event.total, label=labels.get(event.stage, "Converting")))
+                    # Preserve a monotonic conversion phase across the converter's independent
+                    # tensor-conversion and checkpoint-writing counters.
+                    fraction = min(max(event.done / event.total, 0.0), 1.0) if event.total else 0.0
+                    portion = (
+                        0.8 * fraction if event.stage == "converting"
+                        else 0.8 + 0.2 * fraction if event.stage == "writing"
+                        else 1.0 if event.stage in ("finishing", "reused")
+                        else 0.0
+                    )
+                    relay(
+                        PrepareEvent(CONVERTING, int(portion * 1000), 1000, label=labels.get(event.stage, "Converting"))
+                    )
 
                 try:
                     result = await convert_for_prepare(
