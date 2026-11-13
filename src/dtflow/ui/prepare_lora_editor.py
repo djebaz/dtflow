@@ -20,6 +20,7 @@ from shiboken6 import isValid
 
 from dtflow.core.models import accepted_name_changes
 from dtflow.services.catalogue import FAMILY_LABELS
+from dtflow.services.lora_convert import CONVERTER_VERSION
 from dtflow.services.lora_family import LoraFamily
 from dtflow.services.lora_naming import (
     LoraPrepareMetadata,
@@ -27,6 +28,7 @@ from dtflow.services.lora_naming import (
     NamingRequest,
     allocate_batch_names,
     architecture_shortcode,
+    managed_filename,
     suggest_short_name,
 )
 from dtflow.ui.inline_feedback import feedback
@@ -54,6 +56,7 @@ class _Row:
     widget: QWidget
     suggested: str | None
     alternatives: tuple[str, ...]
+    source_kind: str = "ckpt"
     detected: str | None = None
     manual_name: bool = False
     manual_family: bool = False
@@ -153,6 +156,8 @@ class PrepareBatchEditor:
         self.rows: list[_Row] = []
         self.occupied: tuple[ManagedName, ...] = ()
         self.architectures: tuple[str, ...] = ()
+        self._conversion_families = {}
+        self._existing_conversions: dict[tuple[str, str, str], tuple[str, int]] = {}
         self.inspected = False
         self.selected: _Row | None = None
         self._updating = False
@@ -162,12 +167,16 @@ class PrepareBatchEditor:
         for path in dict.fromkeys(Path(p) for p in paths):
             row_widget = _load("prepare_lora_row.ui", self.form.prepareBatchRows)
             suggestion = suggest_short_name(path.name)
-            row = _Row(path, row_widget, suggestion.name, suggestion.alternatives)
+            kind = "safetensors" if path.suffix.casefold() == ".safetensors" else "ckpt"
+            row = _Row(path, row_widget, suggestion.name, suggestion.alternatives, source_kind=kind)
             self.rows.append(row)
             row_widget.prepareSourceFile.setToolTip(path.name)
             row_widget.prepareSourceFile.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
             row_widget.prepareShortName.setText(suggestion.name or "")
             row_widget.prepareFormat.setCurrentIndex(1 if re.search(r"(?i)_lora_q8p\.ckpt$", path.name) else 0)
+            if kind == "safetensors":
+                row_widget.prepareFormat.removeItem(1)  # only F16 output is supported by the converter
+            row_widget.prepareExperimentalConfirm.toggled.connect(lambda _checked: self.refresh())
             row_widget.prepareReprepare.clicked.connect(lambda _checked=False, item=row: self._reprepare(item))
             row_widget.prepareCopySource.clicked.connect(
                 lambda _checked=False, name=path.name: QGuiApplication.clipboard().setText(name)
@@ -185,6 +194,7 @@ class PrepareBatchEditor:
                 row_widget.prepareSourceFile,
                 row_widget.prepareCopySource,
                 row_widget.prepareArchitecture,
+                row_widget.prepareExperimentalConfirm,
                 row_widget.prepareShortName,
                 row_widget.prepareFormat,
                 row_widget.prepareTriggerWords,
@@ -381,6 +391,7 @@ class PrepareBatchEditor:
         if self._updating:
             return
         row.manual_family = True
+        row.widget.prepareExperimentalConfirm.setChecked(False)
         self._select(row)
 
     def _edited_format(self, row: _Row):
@@ -395,43 +406,85 @@ class PrepareBatchEditor:
         architectures: Sequence[str],
         occupied: Sequence[ManagedName],
         invalid: Sequence[str | None] | None = None,
+        conversions: Sequence[dict] = (),
+        converter_families: Sequence = (),
     ):
-        """Apply read-only file evidence and verified backend choices on the GUI thread."""
+        """Apply checkpoint evidence and converted-source provenance on the GUI thread."""
         if not self.active():
             return
         self.architectures = tuple(dict.fromkeys(v for v in architectures if architecture_shortcode(v) is not None))
         self.occupied = tuple(occupied)
+        self._conversion_families = {spec.exact_architecture: spec for spec in converter_families}
+        for item in conversions:
+            sha, size = item.get("sha256"), item.get("size")
+            if not isinstance(sha, str) or type(size) is not int:
+                continue
+            entries = item.get("conversions")
+            if not isinstance(entries, list):
+                entries = [item.get("conversion")]
+            for entry in entries:
+                if not isinstance(entry, dict) or not isinstance(entry.get("source"), dict):
+                    continue
+                source = entry["source"]
+                if isinstance(source.get("sha256"), str):
+                    self._existing_conversions[
+                        (source["sha256"], entry.get("family"), entry.get("converter_version"))
+                    ] = (sha, size)
         self._updating = True
         for index, (row, result) in enumerate(zip(self.rows, evidence, strict=True)):
-            row.detected = result.family
+            row.detected = result.family if row.source_kind == "ckpt" else None
             row.invalid = invalid[index] if invalid else None
-            row.widget.prepareFileEvidence.setText("Detected from file" if result.family else "Family not detected")
             combo = row.widget.prepareArchitecture
             combo.clear()
-            combo.addItem("Select architecture…", None)
-            for version in self.architectures:
-                combo.addItem(FAMILY_LABELS.get(version, version), version)
-            index = combo.findData(row.detected)
-            combo.setCurrentIndex(max(0, index))
+            combo.addItem(
+                "Select conversion family…" if row.source_kind == "safetensors" else "Select architecture…",
+                None,
+            )
+            if row.source_kind == "safetensors":
+                for spec in self._conversion_families.values():
+                    caution = (
+                        " · Experimental"
+                        if spec.experimental
+                        else " · Unverified on DT+"
+                        if spec.status == "unverified_on_dt_plus"
+                        else ""
+                    )
+                    combo.addItem(spec.label + caution, spec.exact_architecture)
+            else:
+                for version in self.architectures:
+                    combo.addItem(FAMILY_LABELS.get(version, version), version)
+            selection = combo.findData(row.detected)
+            combo.setCurrentIndex(max(0, selection))
         self._updating = False
         self.inspected = True
         self._mark_duplicates()
         self.refresh()
 
+    def _content_identity(self, row: _Row) -> tuple[str | None, int | None]:
+        """Naming checks use converted content identity; a source hash is never a CKPT hash."""
+        if row.source_kind == "ckpt":
+            return row.sha256, row.size
+        spec = self._conversion_families.get(row.widget.prepareArchitecture.currentData())
+        if spec is None or not row.sha256:
+            return None, None
+        return self._existing_conversions.get((row.sha256, spec.key, CONVERTER_VERSION), (None, None))
+
     def _allocation(self):
-        requests = [
-            NamingRequest(
-                short_name=row.widget.prepareShortName.text().strip() or None,
-                exact_architecture=row.widget.prepareArchitecture.currentData(),
-                format_code=row.widget.prepareFormat.currentText(),
-                manually_edited=row.manual_name,
-                replace_existing=row.reprepare,
-                alternatives=row.alternatives,
-                sha256=row.sha256,
-                size=row.size,
+        requests = []
+        for row in self.rows:
+            sha256, size = self._content_identity(row)
+            requests.append(
+                NamingRequest(
+                    short_name=row.widget.prepareShortName.text().strip() or None,
+                    exact_architecture=row.widget.prepareArchitecture.currentData(),
+                    format_code=row.widget.prepareFormat.currentText(),
+                    manually_edited=row.manual_name,
+                    replace_existing=row.reprepare,
+                    alternatives=row.alternatives,
+                    sha256=sha256,
+                    size=size,
+                )
             )
-            for row in self.rows
-        ]
         return allocate_batch_names(requests, self.occupied)
 
     def refresh(self):
@@ -446,6 +499,29 @@ class PrepareBatchEditor:
             for row, allocation in zip(self.rows, allocations, strict=True):
                 row.accepted_conflict = False
                 family = row.widget.prepareArchitecture.currentData()
+                spec = self._conversion_families.get(family) if row.source_kind == "safetensors" else None
+                if row.source_kind == "safetensors":
+                    identity = self._content_identity(row)
+                    prior = next(
+                        (
+                            item
+                            for item in self.occupied
+                            if identity[0] is not None
+                            and identity[1] is not None
+                            and (item.sha256, item.size) == identity
+                        ),
+                        None,
+                    )
+                    row.accepted = (
+                        managed_filename(
+                            prior.short_name, architecture_shortcode(prior.exact_architecture), prior.format_code
+                        )
+                        if prior is not None
+                        else None
+                    )
+                row.widget.prepareExperimentalConfirm.setVisible(
+                    bool(spec is not None and spec.experimental and not row.admitted and not row.invalid)
+                )
                 if family and not row.invalid:
                     assigned += 1
                 if allocation and allocation.short_name and not row.manual_name and not row.admitted:
@@ -465,9 +541,12 @@ class PrepareBatchEditor:
                     message, state = "Needs architecture", "warning"
                 elif (
                     not row.reprepare
-                    and allocation.filename
-                    and allocation.conflict is None
-                    and accepted_name_changes(row.accepted, allocation.filename)
+                    and (allocation.filename or allocation.conflict == "content_already_named")
+                    and allocation.conflict in (None, "content_already_named")
+                    and (
+                        allocation.conflict == "content_already_named"
+                        or accepted_name_changes(row.accepted, allocation.filename)
+                    )
                 ):
                     # Known before Prepare: this content already has another accepted name. Re-Prepare is the
                     # explicit choice to rename it; until then the row is not sent (it would be refused).
@@ -478,8 +557,13 @@ class PrepareBatchEditor:
                         "Name conflict" if "collision" in allocation.conflict else "Check short name",
                         "error",
                     )
+                elif spec is not None and spec.experimental and not row.widget.prepareExperimentalConfirm.isChecked():
+                    message, state = "Confirm experimental conversion", "warning"
                 else:
-                    message, state = "Ready", "ok"
+                    message, state = (
+                        "Will convert before upload" if row.source_kind == "safetensors" else "Ready",
+                        "ok",
+                    )
                     ready += 1
 
                 row.widget.prepareRowStatus.setText(message)
@@ -497,6 +581,10 @@ class PrepareBatchEditor:
                 source_note.setText(
                     "Inspecting file…"
                     if not self.inspected
+                    else "Safetensors · user-selected family"
+                    if row.source_kind == "safetensors" and family
+                    else "Safetensors · choose family"
+                    if row.source_kind == "safetensors"
                     else "Declared by user"
                     if row.manual_family
                     else "Detected from file"
@@ -517,6 +605,16 @@ class PrepareBatchEditor:
                 elif row.invalid:
                     family_note.setText(
                         _invalid_label(row.invalid) if row.invalid.startswith(_DUPLICATE) else row.invalid
+                    )
+                elif row.source_kind == "safetensors":
+                    family_note.setText(
+                        "Select source family; auto-detection follows in #402"
+                        if not family
+                        else "Experimental · explicit confirmation required"
+                        if spec is not None and spec.experimental
+                        else "Unverified on DT+ · try with care"
+                        if spec is not None and spec.status == "unverified_on_dt_plus"
+                        else "Supported converter · F16 output"
                     )
                 elif family:
                     if row.manual_family:
@@ -617,6 +715,12 @@ class PrepareBatchEditor:
                 or not version
                 or not allocated.ready
                 or not allocated.short_name
+                or (
+                    row.source_kind == "safetensors"
+                    and (spec := self._conversion_families.get(version)) is not None
+                    and spec.experimental
+                    and not row.widget.prepareExperimentalConfirm.isChecked()
+                )
             ):
                 continue
             fmt = row.widget.prepareFormat.currentText()
@@ -633,7 +737,11 @@ class PrepareBatchEditor:
                 format_code=fmt,
                 format_source=source,
                 trigger_words=row.widget.prepareTriggerWords.text().strip(),
-                declared_version=version if row.manual_family or version != row.detected else None,
+                declared_version=(
+                    version
+                    if row.source_kind == "safetensors" or row.manual_family or version != row.detected
+                    else None
+                ),
                 replace_existing=row.reprepare,
             )
             accepted.append((row.path, metadata))
