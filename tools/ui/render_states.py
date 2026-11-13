@@ -685,8 +685,13 @@ def render_lora_prepare_states(shell, out):
     try:
         shell.form.generationNavigationButton.click()
         QTest.qWait(65)
-        shell.generation_page.promptHintsButton.click()
+        button = shell.generation_page.promptHintsButton
+        before = (button.isEnabled(), button.isVisible(), button.isChecked())
+        button.click()
+        after = (button.isEnabled(), button.isVisible(), button.isChecked())
+        print(f"LoRA Generate prompt hints: before={before}, after={after}, open={shell._prompt_hints.open}", flush=True)
         QTest.qWait(50)
+        print(f"LoRA Generate prompt hints after settle: checked={button.isChecked()}, open={shell._prompt_hints.open}", flush=True)
         if not shell._prompt_hints.open:
             raise RuntimeError("Generate LoRA hint toggle did not open the right inspector")
         save(shell.form, out, "lora-generate-prompt-hints-panel")
