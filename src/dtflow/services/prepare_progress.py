@@ -43,6 +43,7 @@ class PrepareEvent:
     stage: str
     done: int = 0
     total: int = 0
+    label: str = ""  # bounded, UI-authored phase label; never source paths or converter text
 
 
 @dataclass(slots=True)
@@ -126,9 +127,10 @@ class PrepareProgress:
         self._files.append(file)
         return len(self._files) - 1
 
-    def start_file(self, index: int) -> None:
+    def start_file(self, index: int, *, convert: bool = False) -> None:
         self._current = index
-        self._enter(self._files[index], CHECKING)
+        file = self._files[index]
+        self._enter(file, CONVERTING if convert else CHECKING)
 
     def _enter(self, file: _File, phase: str) -> None:
         now = self._clock()
@@ -169,10 +171,17 @@ class PrepareProgress:
             self._enter(file, CONFIRMING)
         elif stage == CONVERTING:
             self._enter(file, CONVERTING)
-            file.frac[CONVERTING] = min(max(event.done / event.total, 0.0), UPLOAD_CAP) if event.total else 0.0
+            if event.label:
+                file.convert_label = event.label
+            if event.total:
+                file.frac[CONVERTING] = max(
+                    file.frac.get(CONVERTING, 0.0), min(max(event.done / event.total, 0.0), 1.0)
+                )
         elif stage == CHECKING:
-            if file.stage not in ("pending", CHECKING):
+            if file.stage not in ("pending", CHECKING, CONVERTING):
                 return
+            if file.stage == CONVERTING:
+                file.frac[CONVERTING] = 1.0
             self._enter(file, CHECKING)
             if event.total:
                 # Two byte passes (hash, kept copy); the phase completes when DT+ has answered.
@@ -327,8 +336,10 @@ class PrepareProgress:
                 stage = "Already on DT+"
                 wide = f"{current.name} is already on DT+"
             elif current.stage == CONVERTING:
-                stage = f"Converting {position}"
-                wide = f"Converting {current.name}" + (f" · {current.convert_label}" if current.convert_label else "")
+                percent = int(current.frac.get(CONVERTING, 0.0) * 100)
+                label = current.convert_label or "Converting"
+                stage = f"{label} {position}" + (f" · {percent}%" if percent else "")
+                wide = f"{label} {current.name}" + (f" · {percent}%" if percent else "")
             else:
                 percent = int(current.frac.get(CHECKING, 0.0) * 100)
                 stage = f"Checking {position}" + (f" · {percent}%" if percent else "")
