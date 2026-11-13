@@ -139,9 +139,7 @@ class AssetValidator(Protocol):
     def forget(self, assets) -> None: ...
 
 
-def _guarded(
-    progress: Callable[[PrepareEvent], None] | None, reference: dict
-) -> Callable[[PrepareEvent], None] | None:
+def _guarded(progress: Callable[[PrepareEvent], None] | None, reference: dict) -> Callable[[PrepareEvent], None] | None:
     """Progress is cosmetic: a callback that raises is logged once and dropped, never an upload failure."""
     if progress is None:
         return None
