@@ -96,7 +96,6 @@ class HintLibrary:
             if model.note:
                 secondary.append(text(model.note))
             body += "<br><br>" + "<br>".join(secondary) if secondary else ""
-        body += "<br>" + text("File declarations · unverified · local metadata only")
         heading = (
             text(display_label(selection.identifier), strong=True)
             + text(f"  ·  weight {selection.weight:g}")
