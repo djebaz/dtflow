@@ -106,6 +106,7 @@ See the [CLI reference](devdocs/guides/cli.md) for backends, options and example
 
 - [Development tools](devdocs/guides/development.md), [testing](devdocs/guides/testing.md),
   [Windows builds](devdocs/guides/building.md) and [releasing](devdocs/guides/releasing.md)
+- [UI previews](devdocs/guides/ui-previews.md): the unified Preview Action, change-selected/all requests and offline screenshot tooling
 - [Architecture](devdocs/architecture/), including the [LoRA converter](devdocs/architecture/lora-convert.md), [runtime layout](devdocs/architecture/runtime-layout.md),
   [structured diagnostics](devdocs/architecture/structured-diagnostics.md) with its
   [event catalogue](devdocs/architecture/diagnostic-event-schema.md) and

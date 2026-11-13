@@ -39,7 +39,7 @@ The initial proposal below is historical where it conflicts with the resolved ow
 
 **Canvas scripts.** In the Inpaint source card a *Run script on this image* button switches to Scripts with an immutable copy of image and mask (a chip at the top of the form with Detach). JS geometry changes stay virtual until a generation.
 
-## State names for `tools/ui/render_states.py`
+## State names for `tools/ui/preview_states.py`
 
 | State | What it shows |
 | --- | --- |

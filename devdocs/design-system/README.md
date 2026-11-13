@@ -219,7 +219,7 @@ The [LoRA UI design contract](lora-ux.md) complements the canonical Qt design an
 The [editable native Qt Designer forms](ui_kits/lora/qt/README.md) provide a
 parallel **design-only** representation of Connections, Generate, Batch Prepare,
 the selected-first picker, and the single-LoRA metadata editor. The offline
-[Qt capture command](../../tools/ui/render_lora_design.py) can render these
+[Qt capture command](../../tools/ui/preview_lora_design.py) can render these
 forms with DTFlow's tracked stylesheet, including an expanded Connections library
 and a compact-width Prepare view. They are not wired into DTFlow's canonical
 runtime `.ui` forms; no native screenshots or Windows acceptance are claimed.

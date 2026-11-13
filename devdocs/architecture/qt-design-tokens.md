@@ -34,7 +34,7 @@ Primary, secondary and placeholder text contrast is checked against all four sur
 
 ## Offline visual checks
 
-`uv run python tools/ui/render_states.py --out tmp/ui-renders` renders the actual Qt forms and shared QSS, with the existing network guard enabled. It exercises empty, portrait 1:2, landscape 16:9, zoom, hover, pressed, selected, narrow-window, invalid/focus, incompatible/unknown LoRAs, busy/disabled, unknown outcome and confirmed/unknown cloud receipts. Receipt actions use the asset tests' in-memory API and transport; they do not contact DT+ or upload real model files.
+When explicitly authorized, `uv run python tools/ui/preview_states.py --out tmp/ui-previews` captures the actual Qt forms and shared QSS, with the existing network guard enabled. It exercises empty, portrait 1:2, landscape 16:9, zoom, hover, pressed, selected, narrow-window, invalid/focus, incompatible/unknown LoRAs, busy/disabled, unknown outcome and confirmed/unknown cloud receipts. Receipt actions use the asset tests' in-memory API and transport; they do not contact DT+ or upload real model files. See the [UI previews guide](../guides/ui-previews.md) for coverage and readiness limitations.
 
 The regular fake backend now lists `fake-fixture`, `fake-grid`, `fake-soft`, `fake-mismatch` and `fake-unknown`. These are explicit fixture identifiers, not real models or weights. Architecture diagnostics test the common preflight path; even a match stays application-unconfirmed. Fake cloud receipts belong only to the development renderer/tests, not the production fake backend.
 

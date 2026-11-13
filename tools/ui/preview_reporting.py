@@ -59,8 +59,8 @@ class Reporter:
         self.records, self.notices = {}, Counter()
         self.unregistered = []
         # Existing Actions runs categories concurrently in the same output root.
-        self.log_path = self.out / f"render-details-{report_key}.log"
-        self.manifest_path = self.out / f"render-manifest-{report_key}.json"
+        self.log_path = self.out / f"preview-details-{report_key}.log"
+        self.manifest_path = self.out / f"preview-manifest-{report_key}.json"
         self.log = self.log_path.open("w", encoding="utf-8", newline="\n")
 
     @contextmanager
@@ -107,9 +107,9 @@ class Reporter:
         self.previous = now
         self.records[name] = {"seconds": round(elapsed, 3), "duration_seconds": round(duration, 3), "blank": blank}
         if state is None:
-            # Rendered although missing from render_catalog.json: shown, but not counted in the selection.
+            # Rendered although missing from preview_catalog.json: shown, but not counted in the selection.
             self.unregistered.append(name)
-            print(f"[unregistered] {name}  {duration:.2f}s  (add it to render_catalog.json)", flush=True)
+            print(f"[unregistered] {name}  {duration:.2f}s  (add it to preview_catalog.json)", flush=True)
         else:
             completed = sum(s.id in self.records for s in self.selection.states if s.category == state.category)
             total = sum(s.category == state.category for s in self.selection.states)
@@ -157,7 +157,7 @@ class Reporter:
             print(f"Expected offline notices: {sum(self.notices.values())}; details in {self.log_path}")
         if self.unregistered:
             print(
-                f"WARNING: {len(self.unregistered)} rendered states are not in render_catalog.json: {', '.join(self.unregistered)}"
+                f"WARNING: {len(self.unregistered)} rendered states are not in preview_catalog.json: {', '.join(self.unregistered)}"
             )
         problems = []
         if blank:
