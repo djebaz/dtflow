@@ -332,6 +332,7 @@ class LoraStore:
         *,
         managed_name: str,
         conversion: dict,
+        source_metadata: dict | None = None,
     ) -> RetainedFile:
         """Adopt a completed conversion from the store volume without overwriting an existing retained file.
 
@@ -387,6 +388,8 @@ class LoraStore:
                 records.append(conversion)
             matching["conversions"] = records
             matching["conversion"] = conversion
+            if source_metadata is not None:
+                matching["source_metadata"] = source_metadata  # one bounded copy per file, newest wins
             try:
                 self._write(files)
             except OSError as exc:
@@ -395,6 +398,23 @@ class LoraStore:
                     target.unlink(missing_ok=True)
                 raise ValidationError("The converted LoRA index could not be saved.") from exc
             return retained
+        finally:
+            handle.close()
+
+    def update_source_metadata(self, sha256: str, size: int, metadata: dict | None) -> None:
+        """Backfill descriptive metadata when Prepare reuses already converted bytes without reconverting."""
+        if metadata is None:
+            return
+        handle = self._locked()
+        try:
+            files = self._read_recovering()
+            entry = next(
+                (item for item in files if (item.get("sha256"), item.get("size")) == (sha256, size)),
+                None,
+            )
+            if entry is not None and entry.get("source_metadata") != metadata:
+                entry["source_metadata"] = metadata
+                self._write(files)
         finally:
             handle.close()
 

@@ -37,7 +37,7 @@ from dtflow.services.connection import (
     present_reconciliation,
 )
 from dtflow.services.lora_convert import COLAB_HINT, ConversionError, ConversionProgress, supported_families
-from dtflow.services.lora_convert.detect import detect_source_family
+from dtflow.services.lora_convert.detect import inspect_source
 from dtflow.services.lora_convert.errors import UnsupportedFamilyError
 from dtflow.services.lora_convert_prepare import convert_for_prepare
 from dtflow.services.lora_digest import DigestCancelled, hash_file
@@ -57,6 +57,7 @@ from dtflow.services.session import (
     check_loras,
     list_assets,
     occupied_managed_lora_names,
+    saved_lora_trigger_words,
     prepare_asset,
     reconcile_asset,
     selection_for,
@@ -471,6 +472,9 @@ class LoraAssetPanel:
         }
         self._render_loras()
         selected = self._selected_id()
+        refresh_hints = getattr(self.page.window(), "_lora_hint_refresh", None)
+        if refresh_hints is not None:
+            refresh_hints()
         self.page.assetList.clear()
         for record in records:
             value = record.get("family")
@@ -627,31 +631,50 @@ class LoraAssetPanel:
         def inspect() -> tuple[tuple[LoraFamily, ...], tuple, tuple[str | None, ...]]:
             evidence: list[LoraFamily] = []
             detections: list = []
+            descriptive: list = []
             reasons: list[str | None] = []
             for item in paths:
                 path = Path(item)
                 if path.suffix.casefold() == ".safetensors":
                     # Header-only structural detection (#402); conversion itself still validates the source.
-                    detection = detect_source_family(path)
+                    inspected = inspect_source(path)  # one header read: structure and descriptive metadata
+                    detection = inspected.detection
                     evidence.append(LoraFamily())
                     detections.append(detection)
+                    descriptive.append(inspected.metadata)  # display and suggestions only (#414)
                     reasons.append(detection.reason if detection.outcome == "unreadable" else None)
                     continue
                 evidence.append(detect_lora_family(path))
                 detections.append(None)
+                descriptive.append(None)
                 try:
                     # The same container check Prepare runs later: a non-LoRA is flagged now, not after Prepare.
                     validate_converted_lora(path)
                     reasons.append(None)
                 except ValidationError as exc:
                     reasons.append(str(exc))
-            return tuple(evidence), tuple(detections), tuple(reasons)
+            return tuple(evidence), tuple(detections), tuple(reasons), tuple(descriptive)
 
-        evidence, detections, invalid = await asyncio.to_thread(inspect)
+        evidence, detections, invalid, descriptive = await asyncio.to_thread(inspect)
         occupied = await occupied_managed_lora_names(self._state)
         conversions = await asyncio.to_thread(lambda: LoraStore(self._state).entries())
         converter_families = await asyncio.to_thread(supported_families)
-        return evidence, occupied, invalid, conversions, converter_families, detections
+        try:
+            saved_triggers = await saved_lora_trigger_words(self._state)
+            saved_unreadable = False
+        except Exception:  # Prepare still works; but then no suggestion may replace what might be a saved value
+            saved_triggers, saved_unreadable = {}, True
+        return (
+            evidence,
+            occupied,
+            invalid,
+            conversions,
+            converter_families,
+            detections,
+            descriptive,
+            saved_triggers,
+            saved_unreadable,
+        )
 
     def _inspected_prepare_editor(self, editor, eligible, result, failure) -> None:
         if self._runner.closed or not editor.active() or editor is not self._prepare_editor:
@@ -663,8 +686,20 @@ class LoraAssetPanel:
             )
             return
         if result is not None:
-            evidence, occupied, invalid, conversions, converter_families, detections = result
-            editor.set_inspection(evidence, eligible, occupied, invalid, conversions, converter_families, detections)
+            evidence, occupied, invalid, conversions, converter_families, detections, *extra = result
+            descriptive, saved_triggers, saved_unreadable = extra if len(extra) == 3 else ((), {}, False)
+            editor.set_inspection(
+                evidence,
+                eligible,
+                occupied,
+                invalid,
+                conversions,
+                converter_families,
+                detections,
+                source_metadata=descriptive,
+                saved_triggers=saved_triggers,
+                saved_triggers_unreadable=saved_unreadable,
+            )
 
     def _authorize_prepare(self, chosen: list[tuple[Path, LoraPrepareMetadata]]) -> None:
         """Admit only explicitly approved, metadata-complete rows under the existing owner."""
