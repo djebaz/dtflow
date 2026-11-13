@@ -905,13 +905,8 @@ class LoraAssetPanel:
                     "ui.asset_prepare_incomplete",
                     level=logging.WARNING,
                     data=data,
-                    # The existing sanitized diagnostic pipeline owns traceback
-                    # projection. Do not capture arbitrary provider exceptions.
-                    exc_info=(
-                        (type(failure), failure, failure.__traceback__)
-                        if development_mode() and isinstance(failure, ValidationError)
-                        else False
-                    ),
+                    # Avoid exception text/tracebacks containing the user's full source basename.
+                    # The stable error type, code, file hint and SHA prefix are sufficient here.
                 )
             if record is not None and failure is None:
                 self._records[(record["asset_id"], record["identifier"])] = record
