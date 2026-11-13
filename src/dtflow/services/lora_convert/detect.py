@@ -286,7 +286,12 @@ def _check_resolver(rule: _ResolverRule, modules: dict[str, dict[str, tuple[int,
 
 
 def _sdxl_fixed_modules(keys: list[str], modules: dict[str, dict[str, tuple[int, ...]]]) -> set[str]:
-    """Source modules the SDXL tables send to the fixed UNet part (cross-attention key/value), via the same lookups."""
+    """Source modules the SDXL tables send to the fixed UNet part (cross-attention key/value), via the same lookups.
+
+    Keep in step with ``families/tables.py`` and ``analysis._table_maps``: there is no public lookup for this yet, so
+    the private helpers are reused on purpose (one table knowledge, no second registry). If one is renamed, detection
+    of SDXL falls back to unknown through the catch-all in ``detect_source_family``.
+    """
     from dtflow.services.lora_convert.analysis import _table_maps
     from dtflow.services.lora_convert.families import tables
 
@@ -412,7 +417,6 @@ def _detect(source: SafeTensors) -> FamilyDetection:
         _check_sd("sdxl", keys, modules),
     ]
     passed = [verdict for verdict in verdicts if verdict.ok]
-    extra: tuple[str, ...] = ()
     if len(passed) == 1:
         verdict = passed[0]
         return FamilyDetection(
@@ -420,7 +424,7 @@ def _detect(source: SafeTensors) -> FamilyDetection:
             verdict.family,
             (verdict.family,),
             f"Detected {_label(verdict.family)} from the file structure",
-            tuple((verdict.evidence or []) + list(extra))[:_MAX_EVIDENCE],
+            tuple(verdict.evidence or [])[:_MAX_EVIDENCE],
         )
     if passed:
         names = tuple(verdict.family for verdict in passed)
@@ -429,11 +433,10 @@ def _detect(source: SafeTensors) -> FamilyDetection:
             None,
             names,
             "Could be " + " or ".join(_label(name) for name in names) + "; choose one",
-            extra,
         )
     notes = [verdict.note for verdict in verdicts if verdict.note]
     reason = notes[0] if notes else "The file structure does not clearly identify a supported family; choose one"
-    return FamilyDetection("unknown", reason=reason, evidence=extra)
+    return FamilyDetection("unknown", reason=reason)
 
 
 def _emit(path: Path, result: FamilyDetection, error_type: str | None = None) -> None:

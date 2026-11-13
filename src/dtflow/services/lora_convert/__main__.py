@@ -6,7 +6,8 @@ Examples:
     uv run python -m dtflow.services.lora_convert "C:/LoRAs/*krea2*.safetensors" C:/Converted --family krea2 -w
 
 Without --family each file's family is detected from its header; a file that cannot be
-identified is reported as failed. Folder and wildcard inputs are non-recursive. Wildcards are case-insensitive filename
+identified is reported as failed. The success line shows the family only in that auto mode,
+and reports then carry "family": "auto" with a per-item family and family_source. Folder and wildcard inputs are non-recursive. Wildcards are case-insensitive filename
 globs, not regular expressions. A batch creates a new versioned JSON report per run.
 """
 
@@ -133,18 +134,16 @@ def _resolve_family(path: Path, item: dict, args: argparse.Namespace):
     reason = detection.reason or "The family could not be detected."
     if detection.candidates:
         reason += " Candidates: " + ", ".join(detection.candidates) + "."
-    item.update(
-        status="failed",
-        error_code="family_not_detected",
-        error=f"{reason} Pass --family to convert it anyway.",
-        family=None,
-    )
+    if detection.outcome in ("unknown", "ambiguous"):
+        reason += " Pass --family to convert it anyway."  # not for unreadable files: --family cannot help there
+    item.update(status="failed", error_code="family_not_detected", error=reason, family=None)
     if args.analyze:
-        item["source_family_detection"] = detection.as_report()
+        # No family to map against, but the structure summary is still worth having for a file that was not identified.
+        _analyze_item(path, item, args, None, detection)
     return None, detection
 
 
-def _analyze_item(path: Path, item: dict, args: argparse.Namespace, family: str, detection=None) -> None:
+def _analyze_item(path: Path, item: dict, args: argparse.Namespace, family: str | None, detection=None) -> None:
     """Collect optional source diagnostics before conversion, including on later failures."""
     if not args.analyze:
         return
@@ -157,7 +156,7 @@ def _analyze_item(path: Path, item: dict, args: argparse.Namespace, family: str,
     _detect_item(path, item, family, detection)
 
 
-def _detect_item(path: Path, item: dict, family: str, detection=None) -> None:
+def _detect_item(path: Path, item: dict, family: str | None, detection=None) -> None:
     """Record the source family detection (additive report field); an explicit --family is never changed."""
     try:
         if detection is None:
@@ -166,7 +165,10 @@ def _detect_item(path: Path, item: dict, family: str, detection=None) -> None:
             detection = detect_source_family(path)
             shown = detection.family or ("unreadable" if detection.outcome == "unreadable" else "unknown")
             print(f"  detected source family: {shown} (selected: {family})", flush=True)
-        item["source_family_detection"] = detection.as_report(family)
+        report = detection.as_report(family)
+        if item.get("family_source") == "detected":
+            report["matches_selected_family"] = None  # nothing was selected: the family is the detected one
+        item["source_family_detection"] = report
     except Exception as error:
         item["source_family_detection_error"] = f"{type(error).__name__}: {error}"
 
@@ -300,7 +302,7 @@ def _batch(files: list[Path], destination: Path, source: Path, args: argparse.Na
                     _record_failure(item, error)
         item["elapsed_seconds"] = round(time.monotonic() - started_item, 3)
         items.append(item)
-        shown = f" [{item['family']}]" if item.get("family") else ""
+        shown = f" [{item['family']}]" if item.get("family") and not args.family else ""
         print(f"  {item['status']}{shown}: {item.get('error', item.get('reason', output.name))}", flush=True)
 
     report = _report(source, destination, args, started, items)
@@ -330,7 +332,8 @@ def _single(source: Path, output: Path, args: argparse.Namespace) -> int:
         except (ConversionError, OSError) as error:
             print(f"error: {error}", file=sys.stderr)
             return 2
-        print(f"Converted {source.name} -> {output} ({family})")
+        suffix = "" if args.family else f" ({family})"
+        print(f"Converted {source.name} -> {output}{suffix}")
         return 0
 
     started = datetime.now(UTC).isoformat()
