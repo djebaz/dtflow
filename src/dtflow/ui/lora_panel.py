@@ -26,7 +26,7 @@ from dtflow.core.models import (
     ResolvedGenerationRequest,
     ValidationError,
 )
-from dtflow.diagnostics import event as diagnostic_event
+from dtflow.diagnostics import asset_ref_data, event as diagnostic_event
 from dtflow.logging_setup import development_mode
 from dtflow.services.catalogue import Catalogue, FAMILY_LABELS, bundled_exact_version
 from dtflow.services.connection import (
@@ -924,7 +924,9 @@ class LoraAssetPanel:
                         "lora_convert.prepare_unexpected_failure",
                         level=logging.ERROR,
                         data={
-                            "file_prefix": source.name[:3],
+                            **asset_ref_data(
+                                filename=source.name, source_sha256=self._prepare_source_sha.get(str(source))
+                            ),
                             "family": spec.key,
                             "error_type": type(exc).__name__,
                         },
@@ -964,16 +966,15 @@ class LoraAssetPanel:
         if source_sha is None and self._prepare_editor is not None:
             row = next((item for item in self._prepare_editor.rows if item.path == path), None)
             source_sha = row.sha256 if row is not None else None
-        reference = {"filename_prefix": path.name[:3]}
-        if isinstance(source_sha, str):
-            reference["source_sha_prefix"] = source_sha[:12]
-        if record is not None:
-            asset_sha = record.get("sha256")
-            if isinstance(asset_sha, str):
-                reference["asset_sha_prefix"] = asset_sha[:12]
-            receipt = record.get("asset_id")
-            if record.get("state") == "confirmed" and isinstance(receipt, str):
-                reference["receipt"] = receipt
+        reference = asset_ref_data(
+            filename=path.name,
+            source_sha256=source_sha,
+            sha256=record.get("sha256") if record is not None else None,
+            asset_id=record.get("asset_id") if record is not None else None,
+        )
+        if record is not None and record.get("state") == "confirmed" and reference.get("asset_id"):
+            # Preserve the receipt field in existing Prepare timing diagnostics.
+            reference["receipt"] = reference["asset_id"]
         return reference
 
     def _prepared(self, record, failure) -> None:
