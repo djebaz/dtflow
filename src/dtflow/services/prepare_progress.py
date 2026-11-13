@@ -3,8 +3,7 @@
 The asset service reports ``PrepareEvent`` values; the panel feeds them here and renders ``snapshot()`` into the
 shared activity bar. Everything is measured on this machine: DT+ reports no progress of its own.
 
-Phases per file: ``checking`` (measure, retain, negotiate) -> ``converting`` (declared for the safetensors convert
-feature, unused until it lands) -> ``uploading`` (only when DT+ says ``upload_required``) -> ``confirming``.
+Phases per file: optional ``converting`` for safetensors, then ``checking`` (measure, retain, negotiate) -> ``uploading`` (only when DT+ says ``upload_required``) -> ``confirming``.
 The global fill is weighted by bytes through ``PHASE_COST`` (relative cost per byte, tuned from the logged phase
 timings) and never moves backwards. Upload progress counts bytes handed to the HTTP client, so it is capped at 99 %
 until the PUT returned successfully.
