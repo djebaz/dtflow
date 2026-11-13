@@ -3,14 +3,16 @@
   "comment": "File-level component packs and small page/shared fallback samples. Packs start from fast states but include necessary populated/variant states outside -f. No automatic function, object or QSS-selector diff analysis. First matching component rule wins, then fallback page ownership. Samples are not exhaustive acceptance evidence.",
   "packs": {
     "shared": [
-      "generate-21-checkpoint-editor",
-      "queues-60-item-table",
-      "scripts_form_default",
-      "images-105-pager-default-20-first-batch",
+      "shell-01-about",
+      "connection-07-connected",
+      "generate-20-local-controls",
+      "lora-prepare-wide",
       "inpaint-03-mask-painted",
-      "logs-02-mixed-severity",
-      "shell-08-overlay-several-rows",
-      "images-08-permanent-confirmation"
+      "queues-11-running",
+      "scripts_form_default",
+      "workflows-02-editing",
+      "images-65-pager-grid-normal",
+      "logs-02-mixed-severity"
     ],
     "page.shell": [
       "shell-01-about",
@@ -243,7 +245,7 @@
         "src/dtflow/ui/workflows_page.py",
         "src/dtflow/ui/workflows_canvas.py",
         "src/dtflow/ui/forms/workflows_*.ui",
-        "tools/ui/render_workflows_states.py",
+        "tools/ui/preview_workflows_states.py",
         "src/dtflow/resources/workflows/reference_workflow_v1.json"
       ],
       "why": "production Workflows workspace and canvas: authoring, execution, branch-local pause and narrow layout"

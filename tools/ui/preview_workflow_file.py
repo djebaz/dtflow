@@ -1,11 +1,11 @@
 """Load a workflow file into the Workflows workspace (offline) and save screenshots.
 
-Unlike ``render_workflows_states.py`` (fixed fixture states), this keeps the file as written: its node positions,
+Unlike ``preview_workflows_states.py`` (fixed fixture states), this keeps the file as written: its node positions,
 parameters and links come from the JSON, parsed by the strict ``load_workflow`` importer (draft rules) the
 Workflows Import uses. It defaults to the bundled reference workflow. Offline only: no executor, provider,
 network or file writes besides the PNGs. Run from the repository root:
 
-    uv run --frozen python tools/ui/capture_workflow_preview.py --out tmp/workflow-preview
+    uv run --frozen python tools/ui/preview_workflow_file.py --out tmp/workflow-preview
 """
 
 import argparse
@@ -30,7 +30,7 @@ def parse_args():
 def offscreen_platform():
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
     if os.environ["QT_QPA_PLATFORM"] == "offscreen":
-        # Same fixed virtual screen as render_states.py (Qt defaults to 800x800); relative path avoids the
+        # Same fixed virtual screen as preview_states.py (Qt defaults to 800x800); relative path avoids the
         # Windows drive colon being read as a platform-argument separator.
         os.environ["QT_QPA_PLATFORM"] = (
             f"offscreen:configfile={os.path.relpath(ROOT / 'tools/ui/offscreen-screen.json')}"

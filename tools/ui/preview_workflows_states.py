@@ -161,7 +161,7 @@ def _fanout(graph):
     return graph
 
 
-def render_workflows_states(out, *, window_factory, state_names, capture, dimension_example=None):
+def preview_workflows_states(out, *, window_factory, state_names, capture, dimension_example=None):
     from dtflow.core import workflows as wf
     from dtflow.services import workflow_library as library
     from dtflow.services.model_provisioning import catalogue
