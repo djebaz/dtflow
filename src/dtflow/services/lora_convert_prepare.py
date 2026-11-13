@@ -100,9 +100,13 @@ def _convert_sync(
         except ValidationError as exc:
             raise ConversionError("The converted checkpoint is not a valid Draw Things LoRA.") from exc
         detected = detect_lora_family(result.destination)
-        if detected.family is not None and detected.family != spec.exact_architecture:
-            raise ConversionError("The resulting checkpoint does not match the chosen conversion family.")
-        if stat.st_size != source_size or stat.st_mtime_ns != source.stat().st_mtime_ns:
+        if detected.family != spec.exact_architecture:
+            raise ConversionError("The converted checkpoint does not match the chosen family.")
+        if (
+            result.source_sha256 != source_sha
+            or stat.st_size != source_size
+            or stat.st_mtime_ns != source.stat().st_mtime_ns
+        ):
             raise ConversionError("The source changed during conversion. Nothing was retained.")
         record = {
             "converter_version": CONVERTER_VERSION,
