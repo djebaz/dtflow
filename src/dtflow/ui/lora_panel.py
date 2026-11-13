@@ -44,7 +44,6 @@ from dtflow.services.lora_family import DETECTABLE_FAMILIES, LoraFamily, detect_
 from dtflow.services.lora_naming import LoraPrepareMetadata, display_label
 from dtflow.services.lora_store import LoraStore
 from dtflow.services.prepare_progress import (
-    CHECKING,
     CONFIRMING,
     CONVERTING,
     EXISTS,
