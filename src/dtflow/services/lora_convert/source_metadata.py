@@ -117,8 +117,8 @@ def _tag_frequency(raw: str | None) -> dict[str, dict[str, int]] | None:
             and isinstance(count, int | float)
             and not isinstance(count, bool)
             and (
-                isinstance(count, int) or math.isfinite(count)
-            )  # JSON allows Infinity and NaN; isfinite of a huge int overflows
+                isinstance(count, int) or (math.isfinite(count) and count.is_integer())
+            )  # JSON allows Infinity and NaN; frequency counts must be whole numbers
             and count > 0
         }
         if counts:
