@@ -33,7 +33,7 @@ from dtflow.services.lora_naming import (
     suggest_short_name,
 )
 from dtflow.ui.inline_feedback import feedback
-from dtflow.ui.source_details_view import ElidedLabel, safe_tooltip
+from dtflow.ui.source_details_view import replace_with_runs
 
 _SHORT_NAME = re.compile(r"^[A-Za-z0-9_]{1,20}$")
 
@@ -216,8 +216,8 @@ class PrepareBatchEditor:
             except OSError:
                 row.total_bytes = 0
         self._details_model = DetailModel()
-        self._summary = ElidedLabel(self.form.prepareSourceSummary)
-        self._tags_line = ElidedLabel(self.form.prepareSourceTags)
+        self._summary = replace_with_runs(self.form.prepareSourceSummary)
+        self._tags_line = replace_with_runs(self.form.prepareSourceTags)
         stretch = self.form.findChild(QLayout, "preparePreviewLayout")
         if stretch is not None:  # about 40% filename and label, 60% declared-metadata summary
             stretch.setStretch(0, 4)
@@ -798,20 +798,16 @@ class PrepareBatchEditor:
                 model = self._source_details(self.selected)
                 model = DetailModel() if self.selected.invalid else model
                 self._details_model = model
-                self._tags_line.set_text(model.tags_line)
-                self.form.prepareSourceTags.setToolTip(
-                    safe_tooltip(
-                        "Top training tags (not necessarily trigger words): " + " · ".join(model.tags)
-                        if model.tags
-                        else ""
-                    )
+                tags_tip = (
+                    "Top training tags (not necessarily trigger words): " + " · ".join(model.tags) if model.tags else ""
                 )
-                self._summary.set_text(
-                    model.line
-                    if model.line
-                    else "No descriptive metadata"
+                self._tags_line.set_runs(model.tag_runs, tags_tip)
+                self._summary.set_runs(
+                    (*model.runs, *model.note_runs)
+                    if model.runs or model.note_runs
+                    else (("No descriptive metadata", False),)
                     if self.selected.source_kind == "safetensors" and self.inspected
-                    else ""
+                    else ()
                 )
                 self.form.prepareManagedFilename.setText(
                     allocation.filename if allocation and allocation.filename else "Complete required fields to preview"

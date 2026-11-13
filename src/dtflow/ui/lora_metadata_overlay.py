@@ -20,7 +20,7 @@ from dtflow.services.lora_convert.source_metadata import DetailModel
 from dtflow.services.lora_metadata_edit import save_lora_metadata
 from dtflow.services.lora_naming import architecture_shortcode
 from dtflow.ui.runner import AsyncRunner
-from dtflow.ui.source_details_view import ElidedLabel, safe_tooltip
+from dtflow.ui.source_details_view import replace_with_runs
 
 _SHORT_NAME = re.compile(r"^[A-Za-z0-9_]{1,20}$")
 
@@ -75,8 +75,8 @@ class LoraMetadataOverlay(QObject):
         layout.addStretch(1)
         _Resize(host, self.overlay)
         self._details_model = DetailModel()
-        self._summary = ElidedLabel(self.form.loraMetadataSourceSummary)
-        self._tags_line = ElidedLabel(self.form.loraMetadataSourceTags)
+        self._summary = replace_with_runs(self.form.loraMetadataSourceSummary)
+        self._tags_line = replace_with_runs(self.form.loraMetadataSourceTags)
         self.form.loraMetadataCancel.clicked.connect(self.close)
         self.form.loraMetadataSave.clicked.connect(self.save)
         escape = QShortcut(QKeySequence(Qt.Key.Key_Escape), self.overlay)
@@ -97,17 +97,12 @@ class LoraMetadataOverlay(QObject):
         """
         form = self.form
         self._details_model = source_details or DetailModel()
-        form.loraMetadataSourceSummary.setVisible(bool(self._details_model))
-        form.loraMetadataSourceTags.setVisible(bool(self._details_model.tags))
-        form.loraMetadataSourceTags.setToolTip(
-            safe_tooltip(
-                "Top training tags (not necessarily trigger words): " + " · ".join(self._details_model.tags)
-                if self._details_model.tags
-                else ""
-            )
-        )
-        self._summary.set_text(self._details_model.line or "Declared by the source file")
-        self._tags_line.set_text(self._details_model.tags_line)
+        model = self._details_model
+        tags_tip = "Top training tags (not necessarily trigger words): " + " · ".join(model.tags) if model.tags else ""
+        self._summary.set_runs((*model.runs, *model.note_runs) if model.runs or model.note_runs else ())
+        self._summary.setVisible(bool(model))
+        self._tags_line.set_runs(model.tag_runs, tags_tip)
+        self._tags_line.setVisible(bool(model.tags))
         self._identity = (record["sha256"], record["size"])
         form.loraMetadataFile.setText(name)
         combo = form.loraMetadataArchitecture

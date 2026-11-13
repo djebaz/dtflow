@@ -239,6 +239,17 @@ class DetailModel:
     note: str = ""
     facts: tuple[tuple[str, str], ...] = ()
     tags: tuple[str, ...] = ()
+    # The summary as (text, strong) runs: values are strong, labels and separators muted. Display only; the view
+    # draws them as plain text, so file content is never interpreted as markup.
+    runs: tuple[tuple[str, bool], ...] = ()
+
+    @property
+    def note_runs(self) -> tuple[tuple[str, bool], ...]:
+        return ((" · " if self.runs else "", False), (self.note, False)) if self.note else ()
+
+    @property
+    def tag_runs(self) -> tuple[tuple[str, bool], ...]:
+        return (("Top tags: ", False), (" · ".join(self.tags), True)) if self.tags else ()
 
     @property
     def line(self) -> str:
@@ -283,17 +294,27 @@ def detail_model(
         seen.add(label)
     rank, alpha = fields.get("ss_network_dim"), fields.get("ss_network_alpha")
     trigger = fields.get("modelspec.trigger_phrase")
-    parts = [
-        f"Trained as {fields['ss_output_name']}" if fields.get("ss_output_name") else None,
-        f"rank {rank} / alpha {alpha}" if rank and alpha else f"rank {rank}" if rank else None,
-        fields.get("ss_resolution") or fields.get("modelspec.resolution"),
-        f"{fields['ss_num_epochs']} epochs" if fields.get("ss_num_epochs") else None,
-        f"trigger: {trigger[:40]}{'…' if len(trigger) > 40 else ''}" if trigger else None,
+    resolution = fields.get("ss_resolution") or fields.get("modelspec.resolution")
+    epochs = fields.get("ss_num_epochs")
+    parts: list[list[tuple[str, bool]]] = [
+        [("Trained as ", False), (fields["ss_output_name"], True)] if fields.get("ss_output_name") else [],
+        [("rank ", False), (rank, True), (" / alpha ", False), (alpha, True)]
+        if rank and alpha
+        else [("rank ", False), (rank, True)]
+        if rank
+        else [],
+        [(resolution, True)] if resolution else [],
+        [(epochs, True), (" epochs", False)] if epochs else [],
+        [("trigger: ", False), (f"{trigger[:40]}{'…' if len(trigger) > 40 else ''}", True)] if trigger else [],
     ]
-    summary = " · ".join(part for part in parts if part)
+    runs: list[tuple[str, bool]] = []
+    for part in (part for part in parts if part):
+        runs += [(" · ", False)] if runs else []
+        runs += part
+    summary = "".join(text for text, _strong in runs)
     note = ""
     if declared and detected_family and declared != detected_family:
         note = (
             f"Declared {family_label(declared)}, structure looks like {family_label(detected_family)} (informational)"
         )
-    return DetailModel(summary, note, tuple(facts), tags)
+    return DetailModel(summary, note, tuple(facts), tags, tuple(runs))
