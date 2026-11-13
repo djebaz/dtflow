@@ -267,7 +267,7 @@ class AssetService:
                 log,
                 "assets.copy_kept",
                 level=logging.INFO,
-                data={**asset_ref_data(sha256=digest), "size": stat.st_size},
+                data={**asset_ref_data(sha256=digest), "sha": digest[:8], "size": stat.st_size},
             )
         key = (
             self.backend.backend_id,
@@ -286,6 +286,7 @@ class AssetService:
                 level=logging.INFO,
                 data={
                     **asset_ref_data(sha256=digest),
+                    "sha": digest[:8],
                     "family": detected.family or "unknown",
                     "family_source": detected.source,
                 },
@@ -922,7 +923,8 @@ class AssetService:
             level=logging.INFO,
             data={
                 **asset_ref_data(sha256=fresh.sha256, asset_id=fresh.receipt_id),
-                "old_sha_prefix": item.sha256[:12],
+                "old_sha": item.sha256[:8],
+                "new_sha": fresh.sha256[:8],
                 **self._key_diagnostics(),
             },
         )
