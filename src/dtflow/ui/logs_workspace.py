@@ -1421,6 +1421,9 @@ class LogsWorkspace(QObject):
         table = self.form.logsTable
 
         def show(text, *, rich=False):
+            # An empty <pre> still creates a visible tooltip frame, so suppress it before wrapping.
+            if not text.strip():
+                return
             current = table.indexAt(table.viewport().mapFromGlobal(QCursor.pos()))
             if (
                 current.isValid()
@@ -1429,13 +1432,29 @@ class LogsWorkspace(QObject):
                 and self.model.refs[current.row()] == ref
                 and table.isVisible()
             ):
-                # Rich content is built only from escaped diagnostic text and shared palette colors.
-                QToolTip.showText(
-                    position,
-                    "<pre style='white-space: pre-wrap'>" + (text if rich else escape(text)) + "</pre>",
-                    table.viewport(),
-                    table.visualRect(current),
+                # Qt chooses fade before roll when showing a new tooltip. Scope the preference to
+                # this call, restore both flags (enabling fade also enables animation), and leave
+                # desktop-wide disabled effects alone. Qt owns its short native fade and lifetime.
+                effects = (Qt.UIEffect.UI_FadeTooltip, Qt.UIEffect.UI_AnimateTooltip)
+                saved_effects = (
+                    tuple(QApplication.isEffectEnabled(effect) for effect in effects)
+                    if QApplication.isEffectEnabled(Qt.UIEffect.UI_General)
+                    else None
                 )
+                try:
+                    if saved_effects is not None:
+                        QApplication.setEffectEnabled(Qt.UIEffect.UI_FadeTooltip, True)
+                    # Rich content contains only escaped diagnostic text and shared palette colors.
+                    QToolTip.showText(
+                        position,
+                        "<pre style='white-space: pre-wrap'>" + (text if rich else escape(text)) + "</pre>",
+                        table.viewport(),
+                        table.visualRect(current),
+                    )
+                finally:
+                    if saved_effects is not None:
+                        for effect, enabled in zip(effects, saved_effects, strict=True):
+                            QApplication.setEffectEnabled(effect, enabled)
 
         if column == 3:
             if self._tooltip_busy:
@@ -1449,8 +1468,8 @@ class LogsWorkspace(QObject):
             def load():
                 full = read_detail(self.directory, ref)
                 data = full.get("data")
-                if type(data) is dict and data:
-                    return characteristic_tooltip(data, colors)
+                if type(data) is dict:
+                    return characteristic_tooltip(data, colors) if data else ""
                 return escape(full.get("msg", ""))
 
             def delivered(text, error):
