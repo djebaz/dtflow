@@ -158,6 +158,8 @@ def extract(raw: dict[str, str]) -> SourceMetadata:
             continue
         if key == "ss_sd_model_name":
             value = re.split(r"[\\/]", value.strip())[-1]  # a file name at training time, never a folder
+        if key == "modelspec.trigger_phrase" and _exact(value, limit) is None:
+            continue  # a long phrase must not be retained as a misleading truncated trigger
         text = _clean(value, limit)
         if text:
             fields[key] = text
@@ -350,6 +352,11 @@ def detail_model(
     for part in (part for part in parts if part):
         runs += [(" · ", False)] if runs else []
         runs += part
+    if not runs and facts:
+        label, value = facts[0]
+        runs = [(f"{label}: ", False), (value, True)]
+    elif not runs and tags:
+        runs = [("Training tags available", False)]
     summary = "".join(text for text, _strong in runs)
     note = ""
     if declared and detected_family and declared != detected_family:
