@@ -628,7 +628,11 @@ class PrepareBatchEditor:
                 elif row.source_kind == "safetensors":
                     suggestion = self._file_family(row)
                     family_note.setText(
-                        "Required · " + (getattr(row.detection, "reason", "") or "choose the source family")
+                        (
+                            f"Required · file suggests {suggestion}"
+                            if suggestion
+                            else "Required · " + (getattr(row.detection, "reason", "") or "choose the source family")
+                        )
                         if not family
                         else f"You chose {spec.label if spec else family} · file suggests {suggestion}"
                         if row.manual_family and suggestion and spec is not None and suggestion != spec.label

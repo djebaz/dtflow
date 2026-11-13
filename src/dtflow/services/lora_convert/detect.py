@@ -78,6 +78,18 @@ def _label(key: str) -> str:
     return lookup(key).label
 
 
+def _dims(modules: dict[str, dict[str, tuple[int, ...]]], names=None) -> set[int]:
+    """Every dimension of the up/down tensors of ``names`` (all modules by default)."""
+    chosen = modules if names is None else {name: modules[name] for name in names}
+    return {int(d) for roles in chosen.values() for role in ("up", "down") for d in roles.get(role, ())}
+
+
+def _missing(label: str, what: str) -> str:
+    return (
+        f"{label} structure, but {what}: the converted-output check would not accept it, so choose the family yourself"
+    )
+
+
 def _dim_in(shape: tuple[int, ...] | None) -> int | None:
     """Input width of a LoRA: second dimension of ``lora_down``."""
     return int(shape[1]) if shape is not None and len(shape) >= 2 else None
@@ -90,6 +102,8 @@ class _ResolverRule:
     tag: Callable[[str], str | None]  # family specific group of a module, None when generic
     width_module: Callable[[str], bool]  # input projections whose input is the hidden width
     width: int | None  # expected hidden width; None when the resolver checks exact shapes itself
+    # Parts the converted-output check (lora_family.py) or a look-alike model needs: a note when one is missing.
+    require: Callable[[dict[str, dict[str, tuple[int, ...]]]], str | None]
 
 
 def _krea2_rule() -> _ResolverRule:
@@ -112,7 +126,19 @@ def _krea2_rule() -> _ResolverRule:
             return "feed-forward gate/up/down"
         return None
 
-    return _ResolverRule("krea2", krea2.resolve_krea2, tag, lambda m: bool(qkv.match(m)), _KREA2_WIDTH)
+    main_attn = re.compile(r"^(?:transformer_)?blocks_\d+_attn_")
+
+    def require(modules: dict[str, dict[str, tuple[int, ...]]]) -> str | None:
+        # Same parts as the converted check: text fusion, block attention and the 6144/1536/16384 widths.
+        if not any(tag(m) == "text fusion" for m in modules):
+            return _missing("Krea 2", "no text fusion layers")
+        if not any(main_attn.match(m) for m in modules):
+            return _missing("Krea 2", "no block attention layers")
+        if not {6144, 1536, 16384} <= _dims(modules):
+            return _missing("Krea 2", "not all of its 6144, 1536 and 16384 widths are present")
+        return None
+
+    return _ResolverRule("krea2", krea2.resolve_krea2, tag, lambda m: bool(qkv.match(m)), _KREA2_WIDTH, require)
 
 
 def _zimage_rule() -> _ResolverRule:
@@ -131,7 +157,20 @@ def _zimage_rule() -> _ResolverRule:
             return "adaLN modulation"
         return None
 
-    return _ResolverRule("zimage", zimage.resolve_zimage, tag, lambda m: bool(qkv_w13.match(m)), _ZIMAGE_WIDTH)
+    def require(modules: dict[str, dict[str, tuple[int, ...]]]) -> str | None:
+        # Same parts as the converted check: main-layer feed-forward with 3840/10240 plus attention or modulation.
+        ffn = [m for m in modules if m.startswith("layers_") and "_feed_forward_" in m]
+        if not ffn:
+            return _missing("Z Image", "no feed-forward layers")
+        if not {3840, 10240} <= _dims(modules, ffn):
+            return _missing("Z Image", "its feed-forward widths 3840 and 10240 are not both present")
+        if not any(
+            m.startswith("layers_") and ("_attention_" in m or m.endswith("adaLN_modulation_0")) for m in modules
+        ):
+            return _missing("Z Image", "no attention or modulation layers")
+        return None
+
+    return _ResolverRule("zimage", zimage.resolve_zimage, tag, lambda m: bool(qkv_w13.match(m)), _ZIMAGE_WIDTH, require)
 
 
 def _flux1_rule() -> _ResolverRule:
@@ -154,7 +193,26 @@ def _flux1_rule() -> _ResolverRule:
             return None
         return "double blocks"
 
-    return _ResolverRule("flux1", flux1.resolve_flux1, tag, lambda m: bool(qkv.match(m)), None)
+    # Names only Flux 1 uses; Hunyuan Video shares the other double/single block names and the same shapes.
+    unique = re.compile(
+        r"^(?:double_blocks_\d+_(?:img_mlp_[02]|txt_mlp_[02]|img_mod_lin|txt_mod_lin)|single_blocks_\d+_modulation_lin)$"
+    )
+    double_index = re.compile(r"^(?:double_blocks|transformer_blocks)_(\d+)_")
+    single_index = re.compile(r"^(?:single_blocks|single_transformer_blocks)_(\d+)_")
+
+    def require(modules: dict[str, dict[str, tuple[int, ...]]]) -> str | None:
+        if any(unique.match(m) for m in modules):
+            return None
+        double = {int(g.group(1)) for m in modules if (g := double_index.match(m))}
+        single = {int(g.group(1)) for m in modules if (g := single_index.match(m))}
+        if len(double) == flux1.FLUX1_DOUBLE and len(single) == flux1.FLUX1_SINGLE:
+            return None
+        return (
+            "Flux 1 structure, but nothing separates it from Hunyuan Video (shared names and shapes): "
+            "choose the family yourself"
+        )
+
+    return _ResolverRule("flux1", flux1.resolve_flux1, tag, lambda m: bool(qkv.match(m)), None, require)
 
 
 def _check_resolver(rule: _ResolverRule, modules: dict[str, dict[str, tuple[int, ...]]]) -> _Verdict:
@@ -193,6 +251,10 @@ def _check_resolver(rule: _ResolverRule, modules: dict[str, dict[str, tuple[int,
     else:
         enough = len(tags) >= 2
     if not enough:
+        return verdict
+    missing = rule.require(modules)
+    if missing:
+        verdict.note = missing
         return verdict
     verdict.ok = True
     verdict.evidence = [f"all {len(modules)} modules map to {label}"]
@@ -237,15 +299,36 @@ def _check_sd(family: str, keys: list[str], modules: dict[str, dict[str, tuple[i
         return verdict
     if _table_matches(keys, family) != set(modules):
         return verdict
+    # The same parts the converted-output check needs: text encoder tensors and the UNet widths.
+    text = [m for m in modules if "text_model_" in m]
+    second = [m for m in text if "te2_" in m or "text_encoder_2_" in m]
+    first = [m for m in text if m not in second]
+    unet_dims = _dims(modules, [m for m in modules if m not in text])
+    first_dims, second_dims = _dims(modules, first), _dims(modules, second)
+    if family == "sd1":
+        complete = (
+            _SD1_CROSS in first_dims
+            and {320, 640, 1280, 768} <= unet_dims
+            and not ({1024, 2048} & unet_dims)
+            and not ({1024, 1280} & first_dims)
+            and not second
+        )
+    else:
+        complete = (
+            _SD1_CROSS in first_dims
+            and 1280 in second_dims
+            and {640, 1280, 2048} <= unet_dims
+            and not ({384, 1536} & unet_dims)
+        )
+    if not complete:
+        verdict.note = _missing(label, "it lacks text encoder tensors or part of the UNet widths")
+        return verdict
     verdict.ok = True
     verdict.evidence = [
         f"all {len(modules)} modules map to {label} tables",
         f"cross-attention width {expected} ({sum(widths.values())} modules)",
+        "text encoder tensors present" if family == "sd1" else "both text encoders present",
     ]
-    if family == "sdxl":
-        verdict.evidence.append("second text encoder present" if has_te2 else "no second text encoder in the file")
-    else:
-        verdict.evidence.append("no SDXL text encoder namespace")
     return verdict
 
 
@@ -262,6 +345,14 @@ def _detect(source: SafeTensors) -> FamilyDetection:
     modules = {module: roles for module, roles in modules.items() if "up" in roles or "down" in roles}
     if not modules:
         return FamilyDetection("unknown", reason="No LoRA up/down tensors found in this file")
+    if other:
+        # LoHa, LoKr, DoRA, bias or diff tensors beside plain LoRA ones: the converter refuses them, so no family
+        # is suggested and its own error stays the meaningful one.
+        return FamilyDetection(
+            "unknown",
+            reason="Contains tensors that are not plain LoRA up/down/alpha (LoHa, LoKr, bias or diff); choose the family",
+            evidence=(f"{other} unsupported tensors",),
+        )
 
     verdicts = [
         _check_resolver(_krea2_rule(), modules),
@@ -271,7 +362,7 @@ def _detect(source: SafeTensors) -> FamilyDetection:
         _check_sd("sdxl", keys, modules),
     ]
     passed = [verdict for verdict in verdicts if verdict.ok]
-    extra = (f"{other} tensors are not plain LoRA up/down/alpha keys",) if other else ()
+    extra: tuple[str, ...] = ()
     if len(passed) == 1:
         verdict = passed[0]
         return FamilyDetection(
@@ -295,25 +386,43 @@ def _detect(source: SafeTensors) -> FamilyDetection:
     return FamilyDetection("unknown", reason=reason, evidence=extra)
 
 
-def _emit(result: FamilyDetection) -> None:
-    """One bounded diagnostic event: outcome, family and candidate count; no paths, names or keys."""
-    from dtflow.diagnostics import event as diagnostic_event
+def _emit(path: Path, result: FamilyDetection, error_type: str | None = None) -> None:
+    """One bounded diagnostic event: outcome, family, candidate count and a 3-character filename prefix only."""
+    from dtflow.diagnostics import asset_ref_data, event as diagnostic_event
 
-    diagnostic_event(
-        log,
-        "lora_convert.source_family_detected",
-        data={"outcome": result.outcome, "family": result.family, "candidates": len(result.candidates)},
-    )
+    data = {
+        **asset_ref_data(filename=path.name),
+        "outcome": result.outcome,
+        "family": result.family,
+        "candidates": len(result.candidates),
+    }
+    if error_type:
+        data["error_type"] = error_type
+    diagnostic_event(log, "lora_convert.source_family_detected", data=data)
 
 
 def detect_source_family(path: Path) -> FamilyDetection:
-    """Detect the family of one ``.safetensors`` LoRA from its header only; never raises for bad files."""
+    """Detect the family of one ``.safetensors`` LoRA from its header only; never raises.
+
+    Reasons are fixed texts: no local path or exception detail reaches the Prepare row or the CLI report.
+    """
+    error_type: str | None = None
     try:
         with SafeTensors(path) as source:  # closed on exit: an open handle locks the file on Windows
             result = _detect(source)
-    except (SourceReadError, OSError) as error:
-        result = FamilyDetection("unreadable", reason=str(error))
-    except (KeyError, TypeError, ValueError, IndexError) as error:
-        result = FamilyDetection("unreadable", reason=f"{path.name}: invalid tensor header ({error}).")
-    _emit(result)
+    except OSError:
+        result = FamilyDetection("unreadable", reason="Could not read the file.")
+    except SourceReadError as error:
+        reason = (
+            "Could not read the file."
+            if isinstance(error.__cause__, OSError)
+            else "Not a readable safetensors file (invalid or truncated header)."
+        )
+        result = FamilyDetection("unreadable", reason=reason)
+    except (KeyError, TypeError, ValueError, IndexError):
+        result = FamilyDetection("unreadable", reason="Not a readable safetensors file (invalid tensor header).")
+    except Exception as error:  # a detector bug must not fail the inspection of the other selected files
+        error_type = type(error).__name__
+        result = FamilyDetection("unknown", reason="Could not analyse this file; choose the family yourself.")
+    _emit(path, result, error_type)
     return result
