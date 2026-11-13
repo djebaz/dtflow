@@ -75,6 +75,17 @@ def representative_plan(changed, rules, coverage, catalog):
     components = [(rule, [glob_regex(p) for p in rule["paths"]]) for rule in coverage["components"]]
     packs = coverage["packs"]
     for path in changed:
+        rule = next((r for r, patterns in rules if any(p.match(path) for p in patterns)), None)
+        # Tooling paths can also appear in component rules (including old names
+        # during a migration). They exercise the baseline, not that component's UI.
+        if rule and rule.get("effect") == "shared":
+            selected.update(packs["shared"])
+            selected_packs.add("shared")
+            reasons.append(f"{path}: {rule['why']} -> shared")
+            warning = "preview tooling changed; one representative per view, not exhaustive coverage"
+            if warning not in warnings:
+                warnings.append(warning)
+            continue
         component = next((r for r, patterns in components if any(p.match(path) for p in patterns)), None)
         if component:
             selected.update(packs[component["pack"]])
@@ -83,7 +94,6 @@ def representative_plan(changed, rules, coverage, catalog):
             if component.get("gap"):
                 warnings.append(f"{path}: {component['gap']}")
             continue
-        rule = next((r for r, patterns in rules if any(p.match(path) for p in patterns)), None)
         if rule and "effect" in rule:
             reasons.append(f"{path}: {rule['why']} ({rule['effect']})")
             continue

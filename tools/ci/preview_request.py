@@ -15,27 +15,12 @@ from preview_catalog import CATEGORY_ORDER, Selection, load_catalog  # noqa: E40
 from preview_changes import glob_regex, plan  # noqa: E402
 
 DEFAULT_WORKFLOW = "src/dtflow/resources/workflows/reference_workflow_v1.json"
-LORA_PATHS = (
-    "src/dtflow/ui/prepare_lora_editor.py",
-    "src/dtflow/ui/forms/prepare_lora_*.ui",
-    "src/dtflow/ui/lora_*.py",
-    "src/dtflow/ui/forms/lora_*.ui",
-    "src/dtflow/ui/source_details_view.py",
-    "src/dtflow/ui/forms/main_window.ui",
-    "src/dtflow/ui/main_window.py",
-    "tools/ui/preview_states.py",
-    "tools/ui/preview_catalog.py",
-    "tools/ui/preview_catalog.json",
-)
 WORKFLOW_PATHS = (
-    "tools/ui/preview_workflow_file.py",
-    "tools/ui/preview_workflows_states.py",
     "src/dtflow/ui/workflows_*.py",
     "src/dtflow/ui/forms/workflows_*.ui",
     "src/dtflow/services/workflow_library.py",
     "src/dtflow/core/workflows.py",
     "src/dtflow/resources/workflows/**",
-    "src/dtflow/resources/styles/**",
 )
 
 
@@ -70,20 +55,6 @@ def request(event_name, event, mode, category, workflow):
         if not base:
             raise ValueError("Changed mode needs an exact PR base commit")
         selection = plan(base, "HEAD")
-        # Preserve the former scoped LoRA workflow's runtime coverage. Both explicit
-        # category and change-selected LoRA requests derive these states from the catalogue.
-        if any(glob_regex(pattern).match(path) for pattern in LORA_PATHS for path in selection["changed"]):
-            catalog = load_catalog()
-            lora = Selection(catalog, category="lora", level="f")
-            ids = set(selection["states"]) | {state.id for state in lora.states}
-            rows = [state for state in catalog if state.id in ids]
-            selection.update(
-                states=[state.id for state in rows],
-                fixtures=list(dict.fromkeys(state.fixture for state in rows)),
-                groups=sorted({state.group for state in rows}),
-                args=[arg for state in rows for arg in ("--state", state.id)],
-            )
-            selection["reasons"].append("LoRA input changed: retain the canonical fast runtime category")
         args = selection["args"]
         workflow_capture = any(
             glob_regex(pattern).match(path) for pattern in WORKFLOW_PATHS for path in selection["changed"]

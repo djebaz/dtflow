@@ -162,6 +162,8 @@ See the [UI previews guide](../../devdocs/guides/ui-previews.md) for the exact r
 
 `preview_changes.py` selects representatives in catalogue order using `preview_coverage.json` component packs and `preview_dependencies.json` page ownership. Unknown/unmapped/no-impact explicit requests use the shared pack with a coverage warning, not an exhaustive fallback. Selection metadata names exact states and prerequisite fixture groups; it is not execution or visual acceptance. Use `python tools/ui/preview_changes.py --base origin/main --head HEAD` for a Qt-free plan. Category requests use the canonical runtime catalogue, never the standalone LoRA design-reference forms.
 
+The minimal shared pack is one existing state per catalogue category (ten UI areas). Tooling-only changes use that pack without full LoRA/Workflows category expansion or extra workflow-file captures; application changes retain component/page selection, and mixed diffs combine both. Manual category/all/workflow modes retain their wider explicit scope.
+
 #### Run levels and parallel workers
 
 `preview_states.py` takes a run level: `-f` (default, key states), `-m` (common variants) and `-s` (every registered state; used for exhaustive Preview requests). The catalogue, not a documentation count, owns the current inventory. Category selection keeps the fast default unless a level is specified. Explicit `--group`, `--prefix` and `--state` selectors reach any level unless a level is specified. `-s` means `--slow`; `--state` has no short form. `--list` prints the selection without starting Qt.
