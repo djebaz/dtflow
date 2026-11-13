@@ -193,9 +193,15 @@ def _flux1_rule() -> _ResolverRule:
             return None
         return "double blocks"
 
-    # Names only Flux 1 uses; Hunyuan Video shares the other double/single block names and the same shapes.
+    # Names treated as Flux 1 only: BFL names that Hunyuan Video spells differently, and the diffusers names of
+    # the parts Krea 2 does not resolve. Not verified against a real Hunyuan diffusers LoRA (it may share the
+    # latter); the strict converted-output check still guards the result.
     unique = re.compile(
-        r"^(?:double_blocks_\d+_(?:img_mlp_[02]|txt_mlp_[02]|img_mod_lin|txt_mod_lin)|single_blocks_\d+_modulation_lin)$"
+        r"^(?:double_blocks_\d+_(?:img_mlp_[02]|txt_mlp_[02]|img_mod_lin|txt_mod_lin)"
+        r"|single_blocks_\d+_modulation_lin"
+        r"|transformer_blocks_\d+_(?:attn_add_[qkv]_proj|attn_to_add_out|ff_net_0_proj|ff_net_2"
+        r"|ff_context_net_0_proj|ff_context_net_2|norm1_linear|norm1_context_linear)"
+        r"|single_transformer_blocks_\d+_(?:norm_linear|proj_mlp))$"
     )
     double_index = re.compile(r"^(?:double_blocks|transformer_blocks)_(\d+)_")
     single_index = re.compile(r"^(?:single_blocks|single_transformer_blocks)_(\d+)_")
