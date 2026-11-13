@@ -1,6 +1,6 @@
 # Issue #373 — LoRA preparation and selection design
 
-**Status:** historical 2026-11-11 design reference. The Prepare editor foundation (#382), close/validation (#407) and phased progress/Stop (#408) are implemented on main; the converter service (#409) is source-tree CLI only, **not yet in the Prepare picker** (#401). Native/provider acceptance remains scenario-specific.  
+**Status:** historical 2026-11-11 design reference. The Prepare editor foundation (#382), close/validation (#407) and phased progress/Stop (#408) are implemented on main; the converter service (#409), `.safetensors` rows with source-family suggestion (#401/#402) and conversion before upload are implemented. Native/provider acceptance remains scenario-specific.  
 **Source of decisions:** [issue #373](https://github.com/djebaz/dtflow/issues/373), finalized on 2026-11-11.  
 **Implementation foundation:** [PR #381](https://github.com/djebaz/dtflow/pull/381), based on #378.  
 **Renders:** [LoRA UI kit](ui_kits/lora/index.html) · [wide design render](ui_kits/lora/prepare-wide.svg) · [compact render](ui_kits/lora/prepare-compact.svg).
@@ -64,6 +64,6 @@ The HTML kit and SVG graphics are **illustrative offline design renders**, not a
 - The editor closes once admitted rows pass the Re-Prepare decision and no row still needs attention. It must preserve unrelated notices; per-row errors while the editor is open become one bar summary once closed (#407).
 - The existing status bar displays real checking/uploading/confirming progress, byte counts, percentage, throughput, a useful ETA or a stalled indication. **Stop after current file** is not a mid-upload cancellation (#408).
 - The owner confirmed two real Krea 2 prepared LoRAs visibly changed DT+ generation results, and [integrated offline CI](https://github.com/djebaz/dtflow/actions/runs/43327453328) passed 695 tests, 3 skipped. Exceptional editor, stall, Stop and packaged-app scenarios have not all been independently smoke-tested.
-- Automatic `.safetensors` conversion in Prepare (#401), source family detection (#402), and extended editing (#403) are future work. The [converter guide](../guides/lora-ckpt-format.md) covers the standalone source-tree CLI.
+- `.safetensors` rows (#401/#402): a source label, a conversion-family dropdown (F16 only; SDXL carries "Experimental" and an explicit confirmation), a preselected family only when the header structure identifies exactly one ("Safetensors · detected from file"), "Required · file suggests X" after a deselect, and the reason text when the file is unknown or ambiguous. Conversion runs after the explicit Prepare action and shares the existing progress; the bottom bar shows the managed `.ckpt` name once conversion ends. Cross-version reuse (#403) is deferred. The [converter guide](../guides/lora-ckpt-format.md) covers the CLI.
 
 The HTML/Qt kit above remains a design reference, not a rendered native acceptance record. Issue #373 remains product authority, and #372 owns Queue effective LoRA stacks. Later LoRA work belongs under epic #359.

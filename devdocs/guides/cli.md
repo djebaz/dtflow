@@ -83,14 +83,15 @@ The official base/refiner and Kandinsky/SD-v1 exception rules are not pinned yet
 
 ### Convert safetensors into Draw Things CKPT (source-tree utility)
 
-The integrated converter is currently a **module command**, not a `dtflow lora convert` subcommand. It runs locally, requires the correct source family, and does not upload to DT+:
+The integrated converter is currently a **module command**, not a `dtflow lora convert` subcommand. It runs locally and does not upload to DT+. Pass the source family with `--family`, or omit it to have each file's family detected from its header:
 
 ```powershell
 uv run python -m dtflow.services.lora_convert "C:/LoRAs/example.safetensors" "C:/Converted/example.ckpt" --family krea2
 uv run python -m dtflow.services.lora_convert "C:/LoRAs/*BALL*" "C:/Converted" --family krea2 -w -a
+uv run python -m dtflow.services.lora_convert "C:/LoRAs" "C:/Converted"
 ```
 
-A quoted filename glob searches one directory, ignoring case and admitting only `.safetensors` files; the suffix can be omitted from the pattern. The second command stages explicit replacement of existing outputs and writes a version 2 source/output analysis report in `C:/Converted/reports/`. Without `-a`, batches write compact version 1 reports. Other explicit family choices are `zimage`, `flux1`, `sd1` and `sdxl` (SDXL additionally requires `--experimental`). See [the converter guide](lora-ckpt-format.md#integrated-windows-converter-409) for supported limits. In-app safetensors preparation remains future work (#401).
+A quoted filename glob searches one directory, ignoring case and admitting only `.safetensors` files; the suffix can be omitted from the pattern. The second command stages explicit replacement of existing outputs and writes a version 2 source/output analysis report in `C:/Converted/reports/`. Without `-a`, batches write compact version 1 reports. Other explicit family choices are `zimage`, `flux1`, `sd1` and `sdxl` (SDXL is experimental and additionally requires `-xp`/`--experimental`). The third command detects each file's family; a file that cannot be identified fails with the reason (a batch continues and exits 1, a single file exits 2) and `--family` overrides detection. See [the converter guide](lora-ckpt-format.md#integrated-windows-converter-409) for supported limits. The desktop Prepare editor also accepts `.safetensors` files and converts them before upload.
 
 ## Cloud asset receipts
 

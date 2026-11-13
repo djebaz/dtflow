@@ -1,6 +1,6 @@
 # Draw Things LoRA `.ckpt` format and the Python converter (#354, #355)
 
-What a Draw Things LoRA `.ckpt` contains, how the integrated `dtflow.services.lora_convert` package converts `.safetensors` locally, and where comparison to the upstream Swift importer stops being evidence. The historical Swift reference uses Draw Things rev `db37e65` (Swift 6.1.2, CPU-only Linux) unless stated otherwise. The original `tools/drawthings/` script remains unchanged as a reference proof of concept.
+What a Draw Things LoRA `.ckpt` contains, how the integrated `dtflow.services.lora_convert` package converts `.safetensors` locally (module CLI and the Prepare editor), and where comparison to the upstream Swift importer stops being evidence. The historical Swift reference uses Draw Things rev `db37e65` (Swift 6.1.2, CPU-only Linux) unless stated otherwise. The original `tools/drawthings/` script remains unchanged as a reference proof of concept.
 
 ## Container
 
@@ -46,13 +46,15 @@ A converted f16 LoRA is stored as plain f16 with no codec. The other Draw Things
 
 ## Families and status
 
-| family | status | reference compared |
-| --- | --- | --- |
-| Krea 2 | verified | 512 tensors, 0 differ |
-| Z Image Turbo | verified (refiner and context refiner names unverified) | 660 tensors, 0 differ |
-| SD 1.x | verified for the reference file (text encoder and conv paths unverified) | 588 tensors, 0 differ |
-| Flux 1 | verified on two kohya LoRAs and a synthetic diffusers file | 1596 / 1596 / 1064 tensors, 0 differ |
-| SDXL | experimental, no reference | none |
+| family | status | reference compared | DT+ generation |
+| --- | --- | --- | --- |
+| Krea 2 | verified | 512 tensors, 0 differ; two Windows files also matched iOS (474 and 512 tensors) | effect confirmed (owner) |
+| Z Image Turbo | verified (refiner and context refiner names unverified) | 660 tensors, 0 differ | effect confirmed (owner) |
+| SD 1.x | verified (text encoder and conv paths unverified) | 588 tensors, 0 differ | applied on DT+ (owner report 2026-11-13) |
+| Flux 1 | verified on two kohya LoRAs and a synthetic diffusers file | 1596 / 1596 / 1064 tensors, 0 differ | applied on DT+ (owner report 2026-11-13) |
+| SDXL | **experimental**, explicit confirmation required | no Swift reference; the converted DTFlow files were checked against iOS-converted files (owner report) | converted files passed the with/without-LoRA test (owner); **some SDXL LoRAs still fail to convert**, so coverage is incomplete |
+
+Statuses are owner smoke on specific files, not exhaustive family coverage. The registry (`FamilySpec.status`) is the single source for the Prepare badge, CLI text and this table.
 
 ### Swift reference limits
 
@@ -71,13 +73,13 @@ uv run python -m dtflow.services.lora_convert "C:/LoRAs/example.safetensors" "C:
 uv run python -m dtflow.services.lora_convert "C:/LoRAs/*ball*" "C:/Converted" --family krea2 -w -a
 ```
 
-- `--family` is required and names the **source** architecture: `krea2`, `zimage`, `flux1`, `sd1` or `sdxl`. The CLI does **not** auto-detect a safetensors source family (#402). SDXL requires `--experimental`.
+- `--family` names the **source** architecture: `krea2`, `zimage`, `flux1`, `sd1` or `sdxl`. When it is omitted, each file's family is detected from its header only (tensor names and shapes, never weights, filename or `__metadata__`): a file that cannot be identified fails with the detector's reason (a batch continues and exits 1, a single file exits 2) and an explicit `--family` always overrides detection. SDXL is experimental and requires `-xp`/`--experimental`.
 - One explicit `.safetensors` file creates one `.ckpt`; a folder or quoted filename glob selects a non-recursive batch. Filename glob patterns support `*`, `?`, and brackets, are case-insensitive and automatically filter to the `.safetensors` extension. Thus `*BALL*` can match `CockAndBall2.safetensors`. Directory names cannot contain wildcards; quote patterns in PowerShell.
 - Batch outputs use the original basenames with `.ckpt`. By default existing destinations are **skipped**; `-w/--overwrite` stages replacements and only commits them after a successful conversion. Independent batch failures do not stop other files. The service-level API itself never overwrites an existing checkpoint.
-- Normal batches write schema 1 JSON reports under `OUTPUT/reports/lora-convert-v1-<timestamp>.json`. `-a/--analyze` writes schema 2 reports for single files or batches, including source dtype/ranks/alpha, module coverage, shape warnings and the **output CKPT** structure/family check. The detector does not analyze the source family and cannot prove numeric equivalence or visual effect. Single-file reports are stored below the destination's parent `reports/` directory.
+- Normal batches write schema 1 JSON reports under `OUTPUT/reports/lora-convert-v1-<timestamp>.json`. `-a/--analyze` writes schema 2 reports for single files or batches, including source dtype/ranks/alpha, module coverage, shape warnings, a `source_family_detection` object (outcome, family, candidates, reason, evidence) and the **output CKPT** structure/family check. Without `--family` the report's top-level `family` is `"auto"` and each item records its `family` and `family_source` (`detected` or `selected`). Neither check can prove numeric equivalence or visual effect. Single-file reports are stored below the destination's parent `reports/` directory.
 - `--scale` is optional; `--ignore-unmatched` applies only to SD 1.x/SDXL. F16 output only; Q8P output and unsupported LoRA extensions are not provided. The historical `tools/drawthings/lora_to_ckpt.py` and Colab conversion route remain available for reference and research.
 
-**Desktop boundary:** The Prepare editor currently takes **converted `.ckpt`** files, not `.safetensors`. Conversion itself does not upload anything; the separate explicit **Prepare N ready LoRAs** action can upload to DT+. In-app conversion is tracked in [#401](https://github.com/djebaz/dtflow/issues/401).
+**Desktop:** The Prepare editor takes `.ckpt` files and `.safetensors` sources. A `.safetensors` row suggests its family from the header (preselected only when exactly one family fits; the choice stays editable), and the separate explicit **Prepare N ready LoRAs** action converts it locally to an F16 `.ckpt` (reusing a retained verified conversion of the same source bytes, family, scale and converter version) and then runs the usual DT+ upload. Selecting a file never converts or uploads. Details: [architecture](../architecture/lora-convert.md). Reuse across converter versions is deferred ([#403](https://github.com/djebaz/dtflow/issues/403)).
 
 ### Verified real-file evidence (2026-11-13)
 
@@ -85,4 +87,4 @@ The owner converted two Krea 2 LoRAs on Windows with `-a`, then compared the res
 
 ## Still unverified
 
-4-D conv format flag, F32 sources, alpha different from rank, `--scale`, Z Image refiner names, SDXL as a whole, and anything not listed above.
+4-D conv format flag, F32 sources, alpha different from rank, `--scale`, Z Image refiner names, the SDXL LoRAs that still fail to convert, and anything not listed above.
