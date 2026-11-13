@@ -14,6 +14,7 @@ from dtflow.ui.theme import load_tokens
 
 class LogCellDelegate(QStyledItemDelegate):
     actionRequested = Signal(int, str)
+    tooltipRequested = Signal(int, int, object)
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -88,6 +89,32 @@ class LogCellDelegate(QStyledItemDelegate):
                 painter.drawText(QRect(x, y, w, line_height), Qt.AlignmentFlag.AlignVCenter, more)
         return y - rect.y() + line_height + 6
 
+    def _compact_chips(self, painter, rect, metrics, pairs, overflow):
+        """One line of stable key colors and neutral values, without wrapped-row padding."""
+        x = rect.x()
+        parts = []
+        for key, value in pairs[:6]:
+            parts.extend(((f"{key}=", self._palette(str(key))[1]), (str(value), self._color("color.text"))))
+            parts.append(("  ·  ", self._color("color.secondary")))
+        if overflow:
+            parts.append((f"+{overflow} more", self._color("color.secondary")))
+        elif parts:
+            parts.pop()  # No trailing separator.
+        for text, color in parts:
+            available = rect.right() - x + 1
+            if available <= 0:
+                break
+            painter.setPen(color)
+            painter.drawText(
+                QRect(x, rect.y(), available, rect.height()),
+                Qt.AlignmentFlag.AlignVCenter | Qt.TextFlag.TextSingleLine,
+                metrics.elidedText(text, Qt.TextElideMode.ElideRight, available),
+            )
+            width = metrics.horizontalAdvance(text)
+            if width > available:
+                break
+            x += width
+
     def paint(self, painter, option, index):
         painter.save()
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
@@ -105,13 +132,28 @@ class LogCellDelegate(QStyledItemDelegate):
             if col == 1:
                 text = record["ts"].replace("T", " ")
             elif col == 2:
-                text = record["component"] + "  ·  " + record["event"]
+                # Prioritize the event, which otherwise disappears behind long component names.
+                width = max(1, min(rect.width(), metrics.horizontalAdvance(record["event"]) + 14))
+                text = metrics.elidedText(record["event"], Qt.TextElideMode.ElideRight, max(1, width - 14))
+                self._pill(painter, QRect(rect.x(), rect.y(), width, rect.height()), text, record["event"])
+                remaining = rect.adjusted(width + 7, 0, 0, 0)
+                painter.setPen(self._color("color.secondary"))
+                if remaining.width() > 0:
+                    painter.drawText(
+                        remaining,
+                        Qt.AlignmentFlag.AlignVCenter | Qt.TextFlag.TextSingleLine,
+                        metrics.elidedText(record["component"], Qt.TextElideMode.ElideRight, remaining.width()),
+                    )
+                painter.restore()
+                return
             else:
                 pairs, overflow = self._preview(index)
                 message = self._message(index)
-                text = message if message and not pairs else "  ·  ".join(f"{key}={value}" for key, value in pairs[:6])
-                if overflow:
-                    text += f"  ·  +{overflow} more"
+                if not message or pairs:
+                    self._compact_chips(painter, rect, metrics, pairs, overflow)
+                    painter.restore()
+                    return
+                text = message
             painter.setPen(self._color("color.text" if col == 1 else "color.secondary"))
             painter.drawText(
                 rect,
@@ -197,6 +239,12 @@ class LogCellDelegate(QStyledItemDelegate):
             return QSize(rect.width(), max(53, bounds.height() + 16))
         height = self._chips(None, rect, metrics, pairs[:6], overflow, draw=False)
         return QSize(rect.width(), max(53, height + 6))
+
+    def helpEvent(self, event, view, option, index):
+        if event.type() == QEvent.Type.ToolTip and index.isValid():
+            self.tooltipRequested.emit(index.row(), index.column(), event.globalPos())
+            return True
+        return super().helpEvent(event, view, option, index)
 
     def editorEvent(self, event, model, option, index):
         if index.column() != 4 or event.type() != QEvent.Type.MouseButtonRelease:

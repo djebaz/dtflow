@@ -10,6 +10,7 @@ import json
 import logging
 import time
 from datetime import datetime, timezone
+from html import escape
 from pathlib import Path
 from threading import Event
 
@@ -26,7 +27,7 @@ from PySide6.QtCore import (
     QTimer,
     Signal,
 )
-from PySide6.QtGui import QColor, QIcon, QKeySequence, QPainter, QPixmap, QShortcut
+from PySide6.QtGui import QColor, QCursor, QIcon, QKeySequence, QPainter, QPixmap, QShortcut
 from PySide6.QtWidgets import (
     QApplication,
     QComboBox,
@@ -36,6 +37,7 @@ from PySide6.QtWidgets import (
     QScrollBar,
     QSplitterHandle,
     QStyleOptionViewItem,
+    QToolTip,
     QWidget,
 )
 
@@ -53,7 +55,7 @@ from dtflow._diagnostic_reader import (
     snapshot,
 )
 from dtflow.diagnostic_components import COMPONENTS
-from dtflow.diagnostic_projection import characteristics
+from dtflow.diagnostic_projection import characteristic_order, characteristics, stable_color_index
 from dtflow.persistence.settings import SettingsError, load_logs_preferences, save_logs_preferences
 from dtflow.logging_setup import LOGGER
 from dtflow.ui.activity_strip import activity_strip
@@ -156,6 +158,43 @@ def row_preview(record: dict):
 
 def characteristic_label(key: str) -> str:
     return key.replace("_", " ")
+
+
+def characteristic_tooltip(data: dict, colors: tuple[str, ...]) -> str:
+    """Complete human-readable fields, using the table's stable name colors, not JSON syntax."""
+
+    def scalar(value):
+        if value is None:
+            return "null"
+        if type(value) is bool:
+            return "true" if value else "false"
+        if type(value) is dict:
+            return "No fields"
+        if type(value) is list:
+            return "No items"
+        return escape(str(value))
+
+    def lines(node, depth=0):
+        indent = "  " * depth
+        if type(node) is dict:
+            for key in sorted(node, key=characteristic_order):
+                color = escape(colors[stable_color_index(key, len(colors))], quote=True)
+                label = f'<span style="color:{color}">{escape(characteristic_label(key))}</span>'
+                value = node[key]
+                if type(value) in (dict, list) and value:
+                    yield indent + label
+                    yield from lines(value, depth + 1)
+                else:
+                    yield indent + label + ": " + scalar(value).replace("\n", "\n" + indent + "  ")
+        else:
+            for number, value in enumerate(node, 1):
+                if type(value) in (dict, list) and value:
+                    yield indent + f"{number}."
+                    yield from lines(value, depth + 1)
+                else:
+                    yield indent + f"{number}. " + scalar(value).replace("\n", "\n" + indent + "  ")
+
+    return "\n".join(lines(data))
 
 
 class _Signals(QObject):
@@ -415,7 +454,8 @@ class LogsWorkspace(QObject):
         self.delegate = LogCellDelegate(self.form.logsTable)
         self.form.logsTable.setItemDelegate(self.delegate)
         self.delegate.actionRequested.connect(self._row_action)
-        # Keyboard equivalents of painted actions; do not open the inspector on selection alone.
+        self.delegate.tooltipRequested.connect(self._cell_tooltip)
+        # Keyboard equivalents of painted actions; single-click selection does not open details.
         for key, action in (("Return", "details"), ("Ctrl+Return", "details"), ("Ctrl+Shift+C", "copy")):
             shortcut = QShortcut(QKeySequence(key), self.form.logsTable)
             shortcut.setContext(Qt.ShortcutContext.WidgetWithChildrenShortcut)
@@ -516,6 +556,7 @@ class LogsWorkspace(QObject):
         self.form.logsCopyVisible.clicked.connect(self.copy_visible)
         self.form.logsSaveMenu.clicked.connect(self._save_menu)
         self.form.logsTable.clicked.connect(self._row_clicked)
+        self.form.logsTable.doubleClicked.connect(self._row_double_clicked)
         self.form.logsSessionCombo.currentIndexChanged.connect(self._session_changed)
         for control in (
             self.form.logsSearch,
@@ -538,6 +579,8 @@ class LogsWorkspace(QObject):
         self.token = 0
         self._tokens = {}
         self._cancellations = {}
+        self._tooltip_busy = False
+        self._tooltip_pending = None
         self._query_busy = False
         self._query_key = None
         self._first_cursor = None
@@ -709,7 +752,7 @@ class LogsWorkspace(QObject):
         self.form.logsCompactButton.setText("Compact: On" if enabled else "Compact: Off")
         self._schedule_preferences()
 
-    def _run(self, func, callback, *, kind, cancel=None):
+    def _run(self, func, callback, *, kind, cancel=None, settled=None):
         old = self._cancellations.get(kind)
         if old is not None:
             old.set()
@@ -731,6 +774,8 @@ class LogsWorkspace(QObject):
                 if signals in self._jobs:
                     self._jobs.remove(signals)
                 signals.deleteLater()
+                if settled is not None:
+                    settled()
 
         signals.ready.connect(arrived, Qt.ConnectionType.QueuedConnection)
         self._jobs.append(signals)
@@ -795,6 +840,8 @@ class LogsWorkspace(QObject):
             self._preferences_timer.stop()
             self._save_preferences()
         self.active = False
+        self._tooltip_pending = None
+        QToolTip.hideText()
         self._watch_outside(False)
         self._tokens.clear()
         for cancel in self._cancellations.values():
@@ -1013,6 +1060,9 @@ class LogsWorkspace(QObject):
     def _request_page(self, *, facets=False, navigation=None):
         self._set_pending(False)
         self._cancel("pending")
+        self._cancel("tooltip")
+        self._tooltip_pending = None
+        QToolTip.hideText()
         if not self.active:
             return
         sid = self._session()
@@ -1359,8 +1409,107 @@ class LogsWorkspace(QObject):
             return False
         return True
 
+    def _cell_tooltip(self, row, column, position):
+        """Hydrate only the hovered data cell, never a page of full records."""
+        self._cancel("tooltip")
+        self._tooltip_pending = None
+        QToolTip.hideText()
+        if not self.active or row >= len(self.model.refs):
+            return
+        ref = self.model.refs[row]
+        record = self.model.rows[row]
+        table = self.form.logsTable
+
+        def show(text, *, rich=False):
+            # An empty <pre> still creates a visible tooltip frame, so suppress it before wrapping.
+            if not text.strip():
+                return
+            current = table.indexAt(table.viewport().mapFromGlobal(QCursor.pos()))
+            if (
+                current.isValid()
+                and current.column() == column
+                and current.row() < len(self.model.refs)
+                and self.model.refs[current.row()] == ref
+                and table.isVisible()
+            ):
+                # Qt chooses fade before roll when showing a new tooltip. Scope the preference to
+                # this call, restore both flags (enabling fade also enables animation), and leave
+                # desktop-wide disabled effects alone. Qt owns its short native fade and lifetime.
+                effects = (Qt.UIEffect.UI_FadeTooltip, Qt.UIEffect.UI_AnimateTooltip)
+                saved_effects = (
+                    tuple(QApplication.isEffectEnabled(effect) for effect in effects)
+                    if QApplication.isEffectEnabled(Qt.UIEffect.UI_General)
+                    else None
+                )
+                try:
+                    if saved_effects is not None:
+                        QApplication.setEffectEnabled(Qt.UIEffect.UI_FadeTooltip, True)
+                    # Rich content contains only escaped diagnostic text and shared palette colors.
+                    QToolTip.showText(
+                        position,
+                        "<pre style='white-space: pre-wrap'>" + (text if rich else escape(text)) + "</pre>",
+                        table.viewport(),
+                        table.visualRect(current),
+                    )
+                finally:
+                    if saved_effects is not None:
+                        for effect, enabled in zip(effects, saved_effects, strict=True):
+                            QApplication.setEffectEnabled(effect, enabled)
+
+        if column == 3:
+            if self._tooltip_busy:
+                # One worker plus the latest requested identity, never a queue of full records.
+                self._tooltip_pending = ref
+                return
+            self._tooltip_busy = True
+            # Snapshot plain color strings on Qt; hydration/formatting stays on the worker.
+            colors = tuple(self.model.palette[f"color.logPill{index}Fg"] for index in range(1, 9))
+
+            def load():
+                full = read_detail(self.directory, ref)
+                data = full.get("data")
+                if type(data) is dict:
+                    return characteristic_tooltip(data, colors) if data else ""
+                return escape(full.get("msg", ""))
+
+            def delivered(text, error):
+                if error:
+                    show("Cell data unavailable: " + error)
+                else:
+                    show(text, rich=True)
+
+            self._run(load, delivered, kind="tooltip", settled=self._tooltip_settled)
+        else:
+            text = {
+                0: record["level"],
+                1: record["ts"] + " (UTC)",
+                2: record["component"] + "\n" + record["event"],
+                4: "Details (Return or double-click a row) · Copy raw JSONL (Ctrl+Shift+C)",
+            }.get(column, "")
+            show(text)
+
+    def _tooltip_settled(self):
+        """Release the hover slot even when its result was invalidated or Logs was hidden."""
+        self._tooltip_busy = False
+        pending, self._tooltip_pending = self._tooltip_pending, None
+        if pending is None or not self.active:
+            return
+        table = self.form.logsTable
+        current = table.indexAt(table.viewport().mapFromGlobal(QCursor.pos()))
+        if (
+            current.isValid()
+            and current.column() == 3
+            and current.row() < len(self.model.refs)
+            and self.model.refs[current.row()] == pending
+        ):
+            self._cell_tooltip(current.row(), 3, QCursor.pos())
+
+    def _row_double_clicked(self, index):
+        if index.isValid() and index.column() != 4:
+            self._row_action(index.row(), "details")
+
     def _row_clicked(self, index):
-        # Selection alone never opens details; actions use the painted delegate.
+        # Single-click selects; double-click or the painted Details action opens JSON.
         if index.column() != 4:
             self.form.logsFollowButton.setChecked(False)
 
