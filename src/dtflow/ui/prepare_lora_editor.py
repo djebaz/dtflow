@@ -502,7 +502,8 @@ class PrepareBatchEditor:
                     prior = next(
                         (
                             item for item in self.occupied
-                            if identity is not None and (item.sha256, item.size) == identity
+                            if identity[0] is not None and identity[1] is not None
+                            and (item.sha256, item.size) == identity
                         ),
                         None,
                     )
