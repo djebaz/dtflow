@@ -271,7 +271,8 @@ class LoraStore:
                     records = [item.get("conversion")]
                 if not any(
                     isinstance(record, dict)
-                    and record.get("source", {}).get("sha256") == source_sha256
+                    and isinstance(record.get("source"), dict)
+                    and record["source"].get("sha256") == source_sha256
                     and record.get("family") == family
                     and record.get("scale") == scale
                     and record.get("converter_version") == converter_version
@@ -313,6 +314,7 @@ class LoraStore:
                 (item for item in files if item.get("sha256") == sha256 and item.get("size") == size),
                 None,
             )
+            created = matching is None
             if matching is not None:
                 target = self._path(matching)
                 retained = RetainedFile(target.name, sha256, size, target)
@@ -348,8 +350,8 @@ class LoraStore:
             try:
                 self._write(files)
             except OSError as exc:
-                if retained.name == managed_name and len(records) == 1:
-                    # This was a new indexed copy; an unindexed retained file must not be left behind.
+                if created:
+                    # Only a newly created copy is removed. Existing retained bytes must never be deleted.
                     target.unlink(missing_ok=True)
                 raise ValidationError("The converted LoRA index could not be saved.") from exc
             return retained
