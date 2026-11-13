@@ -11,6 +11,7 @@ Changes through 6.3.0 are consolidated in [DTFlow 6.3.0](v6.3.0.md). This file t
 ## Changed
 
 - Tooltips fade in quickly instead of sliding, app-wide (where the desktop allows UI effects). The Prepare rows align all their controls on one top edge.
+- LoRA prompt hints now use an icon-only toggle beside each relevant prompt instead of a hover tooltip: Generate and Queues show a full-height, scrollable overlay in the right inspector below Images; Workflows shows it over the center canvas so node parameters remain accessible. A second click closes it. Removed redundant “File declarations · unverified” text from metadata tooltips and LoRA hover cards.
 
 ## Fixed
 
