@@ -58,6 +58,7 @@ class _Row:
     alternatives: tuple[str, ...]
     source_kind: str = "ckpt"
     detected: str | None = None
+    detection: object | None = None  # FamilyDetection of a safetensors source (#402)
     manual_name: bool = False
     manual_family: bool = False
     manual_format: bool = False
@@ -383,6 +384,12 @@ class PrepareBatchEditor:
         self.selected = row
         self.refresh()
 
+    def _file_family(self, row: _Row) -> str:
+        """Label of the family the file structure suggested, or an empty string."""
+        found = getattr(row.detection, "family", None)
+        spec = next((s for s in self._conversion_families.values() if s.key == found), None)
+        return spec.label if spec is not None else ""
+
     def _edited_name(self, row: _Row):
         row.manual_name = True
         self._select(row)
@@ -408,6 +415,7 @@ class PrepareBatchEditor:
         invalid: Sequence[str | None] | None = None,
         conversions: Sequence[dict] = (),
         converter_families: Sequence = (),
+        detections: Sequence = (),
     ):
         """Apply checkpoint evidence and converted-source provenance on the GUI thread."""
         if not self.active():
@@ -434,7 +442,9 @@ class PrepareBatchEditor:
         for index, (row, result) in enumerate(zip(self.rows, evidence, strict=True)):
             row.detected = result.family if row.source_kind == "ckpt" else None
             row.invalid = invalid[index] if invalid else None
+            row.detection = detections[index] if index < len(detections) else None
             combo = row.widget.prepareArchitecture
+            kept = combo.currentData() if row.manual_family else None  # an edited choice is never overwritten
             combo.clear()
             combo.addItem(
                 "Select conversion family…" if row.source_kind == "safetensors" else "Select architecture…",
@@ -453,7 +463,14 @@ class PrepareBatchEditor:
             else:
                 for version in self.architectures:
                     combo.addItem(FAMILY_LABELS.get(version, version), version)
-            selection = combo.findData(row.detected)
+            suggested = row.detected
+            if row.source_kind == "safetensors":
+                found = getattr(row.detection, "family", None)
+                spec = next((s for s in self._conversion_families.values() if s.key == found), None)
+                suggested = spec.exact_architecture if spec is not None else None
+            if kept is not None:
+                suggested = kept
+            selection = combo.findData(suggested)
             combo.setCurrentIndex(max(0, selection))
         self._updating = False
         self.inspected = True
@@ -581,6 +598,8 @@ class PrepareBatchEditor:
                 source_note.setText(
                     "Inspecting file…"
                     if not self.inspected
+                    else "Safetensors · detected from file"
+                    if row.source_kind == "safetensors" and family and not row.manual_family and self._file_family(row)
                     else "Safetensors · user-selected family"
                     if row.source_kind == "safetensors" and family
                     else "Safetensors · choose family"
@@ -607,9 +626,12 @@ class PrepareBatchEditor:
                         _invalid_label(row.invalid) if row.invalid.startswith(_DUPLICATE) else row.invalid
                     )
                 elif row.source_kind == "safetensors":
+                    suggestion = self._file_family(row)
                     family_note.setText(
-                        "Select source family; auto-detection follows in #402"
+                        "Required · " + (getattr(row.detection, "reason", "") or "choose the source family")
                         if not family
+                        else f"You chose {spec.label if spec else family} · file suggests {suggestion}"
+                        if row.manual_family and suggestion and spec is not None and suggestion != spec.label
                         else "Experimental · explicit confirmation required"
                         if spec is not None and spec.experimental
                         else "Unverified on DT+ · try with care"

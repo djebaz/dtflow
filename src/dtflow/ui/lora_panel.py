@@ -37,6 +37,7 @@ from dtflow.services.connection import (
     present_reconciliation,
 )
 from dtflow.services.lora_convert import COLAB_HINT, ConversionError, ConversionProgress, supported_families
+from dtflow.services.lora_convert.detect import detect_source_family
 from dtflow.services.lora_convert.errors import UnsupportedFamilyError
 from dtflow.services.lora_convert_prepare import convert_for_prepare
 from dtflow.services.lora_digest import DigestCancelled, hash_file
@@ -622,33 +623,35 @@ class LoraAssetPanel:
 
     async def _inspect_prepare_files(self, paths: tuple[str, ...]):
         """Inspect file headers off the GUI thread and read existing canonical name reservations."""
-        evidence = await asyncio.to_thread(
-            lambda: tuple(
-                LoraFamily() if Path(p).suffix.casefold() == ".safetensors" else detect_lora_family(Path(p))
-                for p in paths
-            )
-        )
 
-        def invalid_reasons() -> tuple[str | None, ...]:
-            # The same container check Prepare runs later: a non-LoRA is flagged now, not after Prepare.
+        def inspect() -> tuple[tuple[LoraFamily, ...], tuple, tuple[str | None, ...]]:
+            evidence: list[LoraFamily] = []
+            detections: list = []
             reasons: list[str | None] = []
             for item in paths:
-                if Path(item).suffix.casefold() == ".safetensors":
-                    # Source-family detection is a separate feature (#402). Conversion itself validates the source.
-                    reasons.append(None)
+                path = Path(item)
+                if path.suffix.casefold() == ".safetensors":
+                    # Header-only structural detection (#402); conversion itself still validates the source.
+                    detection = detect_source_family(path)
+                    evidence.append(LoraFamily())
+                    detections.append(detection)
+                    reasons.append(detection.reason if detection.outcome == "unreadable" else None)
                     continue
+                evidence.append(detect_lora_family(path))
+                detections.append(None)
                 try:
-                    validate_converted_lora(Path(item))
+                    # The same container check Prepare runs later: a non-LoRA is flagged now, not after Prepare.
+                    validate_converted_lora(path)
                     reasons.append(None)
                 except ValidationError as exc:
                     reasons.append(str(exc))
-            return tuple(reasons)
+            return tuple(evidence), tuple(detections), tuple(reasons)
 
-        invalid = await asyncio.to_thread(invalid_reasons)
+        evidence, detections, invalid = await asyncio.to_thread(inspect)
         occupied = await occupied_managed_lora_names(self._state)
         conversions = await asyncio.to_thread(lambda: LoraStore(self._state).entries())
         converter_families = await asyncio.to_thread(supported_families)
-        return evidence, occupied, invalid, conversions, converter_families
+        return evidence, occupied, invalid, conversions, converter_families, detections
 
     def _inspected_prepare_editor(self, editor, eligible, result, failure) -> None:
         if self._runner.closed or not editor.active() or editor is not self._prepare_editor:
@@ -660,8 +663,8 @@ class LoraAssetPanel:
             )
             return
         if result is not None:
-            evidence, occupied, invalid, conversions, converter_families = result
-            editor.set_inspection(evidence, eligible, occupied, invalid, conversions, converter_families)
+            evidence, occupied, invalid, conversions, converter_families, detections = result
+            editor.set_inspection(evidence, eligible, occupied, invalid, conversions, converter_families, detections)
 
     def _authorize_prepare(self, chosen: list[tuple[Path, LoraPrepareMetadata]]) -> None:
         """Admit only explicitly approved, metadata-complete rows under the existing owner."""

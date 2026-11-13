@@ -2,7 +2,7 @@
 
 Header-only tensor inspection, apart from scalar alpha values. The report describes
 mapping recognition and common shape issues; it does not prove numerical compatibility
-with Draw Things, and it never guesses a source model family.
+with Draw Things. Source family detection lives in ``detect.py``.
 """
 
 from __future__ import annotations
@@ -180,6 +180,6 @@ def analyze_source(path: Path, family: str) -> dict:
             "limitations": (
                 "Name-based layer categories and header-only shape checks are diagnostic, "
                 "not full output validation. Table coverage is estimated. "
-                "The selected --family is not automatically detected."
+                "The selected --family is used as given; source_family_detection is a separate read-only suggestion."
             ),
         }

@@ -117,6 +117,20 @@ def _analyze_item(path: Path, item: dict, args: argparse.Namespace) -> None:
         item["analysis"] = analyze_source(path, args.family)
     except Exception as error:
         item["analysis_error"] = f"{type(error).__name__}: {error}"
+    _detect_item(path, item, args)
+
+
+def _detect_item(path: Path, item: dict, args: argparse.Namespace) -> None:
+    """Read-only source family detection (additive report field). It never chooses or changes --family."""
+    try:
+        from dtflow.services.lora_convert.detect import detect_source_family
+
+        detection = detect_source_family(path)
+        item["source_family_detection"] = detection.as_report(args.family)
+        shown = detection.family or ("unreadable" if detection.outcome == "unreadable" else "unknown")
+        print(f"  detected source family: {shown} (selected: {args.family})", flush=True)
+    except Exception as error:
+        item["source_family_detection_error"] = f"{type(error).__name__}: {error}"
 
 
 def _check_output(path: Path, item: dict, args: argparse.Namespace) -> None:
