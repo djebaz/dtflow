@@ -542,6 +542,8 @@ class LogsWorkspace(QObject):
         self.token = 0
         self._tokens = {}
         self._cancellations = {}
+        self._tooltip_busy = False
+        self._tooltip_pending = None
         self._query_busy = False
         self._query_key = None
         self._first_cursor = None
@@ -713,7 +715,7 @@ class LogsWorkspace(QObject):
         self.form.logsCompactButton.setText("Compact: On" if enabled else "Compact: Off")
         self._schedule_preferences()
 
-    def _run(self, func, callback, *, kind, cancel=None):
+    def _run(self, func, callback, *, kind, cancel=None, settled=None):
         old = self._cancellations.get(kind)
         if old is not None:
             old.set()
@@ -735,6 +737,8 @@ class LogsWorkspace(QObject):
                 if signals in self._jobs:
                     self._jobs.remove(signals)
                 signals.deleteLater()
+                if settled is not None:
+                    settled()
 
         signals.ready.connect(arrived, Qt.ConnectionType.QueuedConnection)
         self._jobs.append(signals)
@@ -799,6 +803,7 @@ class LogsWorkspace(QObject):
             self._preferences_timer.stop()
             self._save_preferences()
         self.active = False
+        self._tooltip_pending = None
         QToolTip.hideText()
         self._watch_outside(False)
         self._tokens.clear()
@@ -1019,6 +1024,7 @@ class LogsWorkspace(QObject):
         self._set_pending(False)
         self._cancel("pending")
         self._cancel("tooltip")
+        self._tooltip_pending = None
         QToolTip.hideText()
         if not self.active:
             return
@@ -1369,6 +1375,7 @@ class LogsWorkspace(QObject):
     def _cell_tooltip(self, row, column, position):
         """Hydrate only the hovered data cell, never a page of full records."""
         self._cancel("tooltip")
+        self._tooltip_pending = None
         QToolTip.hideText()
         if not self.active or row >= len(self.model.refs):
             return
@@ -1394,6 +1401,11 @@ class LogsWorkspace(QObject):
                 )
 
         if column == 3:
+            if self._tooltip_busy:
+                # One worker plus the latest requested identity, never a queue of full records.
+                self._tooltip_pending = ref
+                return
+            self._tooltip_busy = True
 
             def load():
                 full = read_detail(self.directory, ref)
@@ -1406,7 +1418,7 @@ class LogsWorkspace(QObject):
             def delivered(text, error):
                 show("Cell data unavailable: " + error if error else text)
 
-            self._run(load, delivered, kind="tooltip")
+            self._run(load, delivered, kind="tooltip", settled=self._tooltip_settled)
         else:
             text = {
                 0: record["level"],
@@ -1415,6 +1427,22 @@ class LogsWorkspace(QObject):
                 4: "Details (Return or double-click a row) · Copy raw JSONL (Ctrl+Shift+C)",
             }.get(column, "")
             show(text)
+
+    def _tooltip_settled(self):
+        """Release the hover slot even when its result was invalidated or Logs was hidden."""
+        self._tooltip_busy = False
+        pending, self._tooltip_pending = self._tooltip_pending, None
+        if pending is None or not self.active:
+            return
+        table = self.form.logsTable
+        current = table.indexAt(table.viewport().mapFromGlobal(QCursor.pos()))
+        if (
+            current.isValid()
+            and current.column() == 3
+            and current.row() < len(self.model.refs)
+            and self.model.refs[current.row()] == pending
+        ):
+            self._cell_tooltip(current.row(), 3, QCursor.pos())
 
     def _row_double_clicked(self, index):
         if index.isValid() and index.column() != 4:
