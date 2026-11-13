@@ -85,6 +85,10 @@ uv run python -m dtflow.services.lora_convert "C:/LoRAs/*ball*" "C:/Converted" -
 
 The owner converted two Krea 2 LoRAs on Windows with `-a`, then compared the results with Draw Things **iOS**-converted checkpoints. The outputs contained **474** and **512** tensors; both had zero missing/extra tensors, zero shape/datatype differences and zero tensor-data hash differences. Both generated outputs passed the existing CKPT structural check and were detected as `krea_2`. After manual Prepare, actual DT+ generation with/without each LoRA showed the expected effect. This is **two-sample owner smoke**, not broad family, packaged Windows executable or future UI-path validation. Integrated [full CI](https://github.com/djebaz/dtflow/actions/runs/43327453328) on the pre-format stack passed **695 tests, 3 skipped**; the subsequent Ruff-format fixes were not run through full CI again. [PR #409](https://github.com/djebaz/dtflow/pull/409) records details.
 
+### Descriptive metadata (#414)
+
+DTFlow reads the safetensors header's descriptive `__metadata__` (kohya `ss_*`, ModelSpec `modelspec.*`) only to show it and to suggest Trigger Words from an explicit declaration. It never decides the family or the conversion, is read best effort (anything unusable is ignored), keeps a bounded subset without dataset folders or training comments, and is not written into the `.ckpt`. Field spellings follow trainer source research, not yet a collection of real files. See the [architecture note](../architecture/lora-convert.md).
+
 ## Still unverified
 
 4-D conv format flag, F32 sources, alpha different from rank, `--scale`, Z Image refiner names, the SDXL LoRAs that still fail to convert, and anything not listed above.
