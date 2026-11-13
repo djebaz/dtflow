@@ -71,6 +71,9 @@ uv run python -m dtflow.services.lora_convert "C:/LoRAs/example.safetensors" "C:
 
 # Convert a case-insensitive filename subset with analysis.
 uv run python -m dtflow.services.lora_convert "C:/LoRAs/*ball*" "C:/Converted" --family krea2 -w -a
+
+# Report the descriptive metadata of every file in a folder (converts nothing).
+uv run python -m dtflow.services.lora_convert "C:/LoRAs" "C:/Reports" --metadata
 ```
 
 - `--family` names the **source** architecture: `krea2`, `zimage`, `flux1`, `sd1` or `sdxl`. When it is omitted, each file's family is detected from its header only (tensor names and shapes, never weights, filename or `__metadata__`): a file that cannot be identified fails with the detector's reason (a batch continues and exits 1, a single file exits 2) and an explicit `--family` always overrides detection. SDXL is experimental and requires `-xp`/`--experimental`. Detection is a suggestion, not a guarantee: a partial Flux 1 file with Flux-only module names is detected and converted by the CLI, but the converted-output check cannot identify it, so the app's Prepare refuses that output.
@@ -87,7 +90,7 @@ The owner converted two Krea 2 LoRAs on Windows with `-a`, then compared the res
 
 ### Descriptive metadata (#414)
 
-DTFlow reads the safetensors header's descriptive `__metadata__` (kohya `ss_*`, ModelSpec `modelspec.*`) only to show it and to suggest Trigger Words from an explicit declaration. It never decides the family or the conversion, is read best effort (anything unusable is ignored), keeps a bounded subset without dataset folders or training comments, and is not written into the `.ckpt`. Field spellings follow trainer source research, not yet a collection of real files. See the [architecture note](../architecture/lora-convert.md).
+DTFlow reads the safetensors header's descriptive `__metadata__` (kohya `ss_*`, ModelSpec `modelspec.*`) only to show it and to suggest Trigger Words from an explicit declaration. It never decides the family or the conversion, is read best effort (anything unusable is ignored), keeps a bounded subset without dataset folders or training comments, and is not written into the `.ckpt`. Field spellings follow trainer source research, not yet a collection of real files. `--metadata` writes a JSON report of these fields for a file, folder or glob (see the [CLI guide](cli.md)). See the [architecture note](../architecture/lora-convert.md).
 
 ## Still unverified
 

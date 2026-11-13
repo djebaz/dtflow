@@ -5,7 +5,11 @@ Examples:
     uv run python -m dtflow.services.lora_convert "C:/LoRAs/*.safetensors" C:/Converted
     uv run python -m dtflow.services.lora_convert "C:/LoRAs/*krea2*.safetensors" C:/Converted --family krea2 -w
 
-Without --family each file's family is detected from its header; a file that cannot be
+    uv run python -m dtflow.services.lora_convert "C:/LoRAs" C:/Reports --metadata
+
+With --metadata nothing is converted: the descriptive header metadata of every selected file
+(title, declared architecture, trigger phrase, tags and the other fields Prepare shows) is written
+to a report under DESTINATION/reports. Without --family each file's family is detected from its header; a file that cannot be
 identified is reported as failed. The success line shows the family only in that auto mode,
 and reports then carry "family": "auto" with a per-item family and family_source. Folder and wildcard inputs are non-recursive. Wildcards are case-insensitive filename
 globs, not regular expressions. A batch creates a new versioned JSON report per run.
@@ -364,7 +368,12 @@ def _single(source: Path, output: Path, args: argparse.Namespace) -> int:
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(prog="python -m dtflow.services.lora_convert", description=__doc__.splitlines()[0])
     ap.add_argument("source", type=Path, help="A .safetensors file, folder, or quoted filename glob (case-insensitive)")
-    ap.add_argument("destination", type=Path, help="Output .ckpt file or, for a batch, an output folder")
+    ap.add_argument(
+        "destination",
+        type=Path,
+        nargs="?",
+        help="Output .ckpt file or, for a batch, an output folder; with --metadata, the report folder (default: .)",
+    )
     ap.add_argument(
         "--family",
         choices=sorted(spec.key for spec in supported_families()),
@@ -378,7 +387,8 @@ def main(argv: list[str] | None = None) -> int:
         "-a",
         "--analyze",
         action="store_true",
-        help="Include source mapping and output checkpoint checks in a version 2 JSON report",
+        help="Include source mapping and output checkpoint checks in a version 2 JSON report "
+        "(with --metadata: also the structural family and whether the declared one agrees)",
     )
     ap.add_argument(
         "--ignore-unmatched",
@@ -391,7 +401,30 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="allow experimental families, whose coverage is incomplete (sdxl: some LoRAs fail to convert)",
     )
+    ap.add_argument(
+        "-m",
+        "--metadata",
+        action="store_true",
+        help="report the descriptive metadata of each file instead of converting (best effort, per-file failures)",
+    )
     args = ap.parse_args(argv)
+    if args.metadata:
+        ignored = [
+            flag
+            for flag, used in (
+                ("--family", args.family),
+                ("--scale", args.scale != 1.0),
+                ("-w/--overwrite", args.overwrite),
+                ("--ignore-unmatched", args.ignore_unmatched),
+                ("-xp/--experimental", args.experimental),
+            )
+            if used
+        ]
+        if ignored:
+            print(f"error: {', '.join(ignored)} do not apply with --metadata (nothing is converted).", file=sys.stderr)
+            return 2
+    elif args.destination is None:
+        ap.error("the following arguments are required: destination")
     try:
         files, batch = _sources(args.source)
     except (OSError, ValueError) as error:
@@ -400,6 +433,10 @@ def main(argv: list[str] | None = None) -> int:
     if not files:
         print(f"error: No matching .safetensors files found for {args.source}", file=sys.stderr)
         return 2
+    if args.metadata:
+        from dtflow.services.lora_convert.metadata_report import run
+
+        return run(files, args.source, args.destination or Path("."), analyze=args.analyze)
     if batch:
         return _batch(files, args.destination, args.source, args)
 
