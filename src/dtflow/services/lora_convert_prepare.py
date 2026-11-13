@@ -76,6 +76,18 @@ def _convert_sync(
         )
     reused = store.find_converted(source_sha, family, 1.0, CONVERTER_VERSION)
     if reused is not None:
+        # Reuse existing CKPT bytes, but allow a later source selection to populate descriptive details that
+        # older conversions did not store. Metadata is optional: an index write failure cannot block Prepare.
+        try:
+            inspected = inspect_source(source)
+            store.update_source_metadata(reused.sha256, reused.size, inspected.metadata.retained_record())
+        except (OSError, ValidationError):
+            diagnostic_event(
+                log,
+                "lora_convert.source_metadata_not_retained",
+                level=logging.WARNING,
+                data={**hint, "reason": "metadata_backfill_failed"},
+            )
         if progress is not None:
             progress(ConversionProgress("reused", 1, 1))
         diagnostic_event(
