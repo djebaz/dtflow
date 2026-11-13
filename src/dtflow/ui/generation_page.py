@@ -403,10 +403,6 @@ class GenerationPage:
         page.modelCombo.setToolTip("Select a checkpoint. Search matches any part of its name.")
         page.promptEdit.setTabChangesFocus(True)
         self._prompt_tags = style_prompt_tags(page.promptEdit)
-        self._lora_prompt_hints = tuple(
-            bind_prompt_hint(edit, lambda: tuple(self.lora.loras))
-            for edit in (page.promptEdit, page.negativePromptEdit)
-        )
         self._submit_shortcut = SubmitShortcut(page.promptEdit, lambda: page.generateButton)
         icons = Path(__file__).parents[1] / "resources" / "images" / "gallery"
         self._expand_icon = QIcon(str(icons / "fullscreen.svg"))
