@@ -32,6 +32,7 @@ def open_window(
 
     ``before_show`` receives the window just before ``show()`` so a caller can watch its first paint without a race.
     """
+    _prefer_tooltip_fade()  # the one place: every launch path (including the splash one) reaches open_window
     configure(no_cache=no_cache)
     thumbnail_cache.configure(no_cache=no_cache, thumbnail_format=thumbnail_format)
     if gallery_limits is not None:
@@ -120,7 +121,6 @@ def run_gui(
 ) -> int:
     application = QApplication.instance() or QApplication(argv if argv is not None else sys.argv[:1])
     _enable_native_crash_trace()
-    _prefer_tooltip_fade()
     window = open_window(
         application,
         no_cache=no_cache,

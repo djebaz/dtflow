@@ -424,9 +424,7 @@ class MainWindow:
         )
         # One shared overlay occupies only the right inspector's scroll viewport,
         # below the persistent Images navigation header, for Generate and Queue prompts.
-        self._prompt_hints = PromptHintOverlay(
-            self.shell.rightScroll.viewport(), on_toggle=self._responsive_workspace
-        )
+        self._prompt_hints = PromptHintOverlay(self.shell.rightScroll.viewport(), on_toggle=self._responsive_workspace)
         self._prompt_hints.bind(
             self.generation_page.promptHintsButton,
             lambda: tuple(self.generation.lora.loras),
@@ -1185,9 +1183,7 @@ class MainWindow:
         hint_open = self._prompt_hints.open if hasattr(self, "_prompt_hints") else False
         # The hint toggle can reveal the right rail at narrow widths, with Images still above it.
         shell.rightRail.setVisible(not images and not logs and (workflows or not narrow or hint_open))
-        self._place_images_header(
-            images=images, logs=logs, narrow=narrow and not workflows and not hint_open
-        )
+        self._place_images_header(images=images, logs=logs, narrow=narrow and not workflows and not hint_open)
         if self._logs_form is not None:
             self._logs_form.logsBrandSlot.setVisible(logs)
             self._logs_form.logsNavigationSlot.setVisible(logs)
@@ -1897,14 +1893,14 @@ class MainWindow:
 
     def _refresh_lora_hint_data(self) -> None:
         """Refresh presentation metadata off Qt after Prepare or metadata edits; never hash or call a provider."""
+
         def read():
             return LoraStore(self.state_dir).entries(), self._read_lora_records_sync(self.state_dir)
 
         def delivered(result, error):
             hints = self.form._lora_hint_library
             if error is not None or result is None:
-                hints.entries, hints.records = [], {}
-                return
+                return  # keep what the other reads already filled; never wipe it on a failed refresh
             hints.entries, hints.records = result
 
         self._read_summary("lora_hints", read, delivered)
@@ -2087,7 +2083,6 @@ class MainWindow:
         return detail_model(descriptive, detected_family=found, family_label=lambda k: labels.get(k, k))
 
     def _lora_metadata_saved(self) -> None:
-        self._refresh_lora_hint_data()
         self.form.statusBar().showMessage("LoRA metadata saved locally. Files and receipts unchanged.", 5000)
         self.refresh_custom_loras(background=True)
 

@@ -327,7 +327,8 @@ def save_tooltip(window, out, name, target, *, hover=None, tooltip_text=None):
         QToolTip.showText(global_position, tooltip_text, target)
         QTest.qWait(120)
         tips = [
-            widget for widget in QApplication.topLevelWidgets()
+            widget
+            for widget in QApplication.topLevelWidgets()
             if widget.isVisible() and widget.windowType() == Qt.WindowType.ToolTip
         ]
     if not tips:
@@ -632,7 +633,9 @@ def render_lora_prepare_states(shell, out):
         metadata = portrait_metadata if index == 0 else cinematic_metadata if index == 1 else None
         hint_entries.append(
             {
-                "name": name, "sha256": sha, "size": size,
+                "name": name,
+                "sha256": sha,
+                "size": size,
                 "source_metadata": metadata.retained_record() if metadata else None,
             }
         )
@@ -668,7 +671,8 @@ def render_lora_prepare_states(shell, out):
     save(shell.form, out, "lora-picker")
     picker_row = next(
         (
-            row for row in shell.inline.form.findChildren(QWidget, "loraSelectionRow")
+            row
+            for row in shell.inline.form.findChildren(QWidget, "loraSelectionRow")
             if row.property("identifier") == names[0]
         ),
         None,
@@ -696,9 +700,13 @@ def render_lora_prepare_states(shell, out):
 
         shell.form.queueNavigationButton.click()
         shell.queue._set_draft(
-            ResolvedGenerationRequest("fixture-draft", "portrait in soft light", "fake-fixture", 123,
-                                      loras=selected_loras),
-            "fake", None, (), None,
+            ResolvedGenerationRequest(
+                "fixture-draft", "portrait in soft light", "fake-fixture", 123, loras=selected_loras
+            ),
+            "fake",
+            None,
+            (),
+            None,
         )
         shell.queue.open_composer()
         QTest.qWait(75)
@@ -730,7 +738,10 @@ def render_lora_prepare_states(shell, out):
         metadata = portrait_metadata if index == 0 else cinematic_metadata if index == 1 else None
         entries.append(
             {
-                "name": name, "sha256": sha, "size": size, "detected_family": None,
+                "name": name,
+                "sha256": sha,
+                "size": size,
+                "detected_family": None,
                 "source_metadata": metadata.retained_record() if metadata else None,
                 "conversions": [{"detected_family": "krea2" if index == 0 else "zimage"}] if metadata else [],
             }
@@ -765,14 +776,15 @@ def render_lora_prepare_states(shell, out):
     tip = metadata_tooltip(source_details)
     if not tip:
         raise RuntimeError("Offline Edit metadata fixture must contain descriptive metadata")
-    shell.lora_metadata_overlay.open(
-        records[identity], first["name"], ("krea_2", "z_image", "flux1"), source_details
-    )
+    shell.lora_metadata_overlay.open(records[identity], first["name"], ("krea_2", "z_image", "flux1"), source_details)
     QTest.qWait(60)
     save(shell.form, out, "lora-edit-metadata")
     save_tooltip(
-        shell.form, out, "lora-edit-metadata-tooltip",
-        shell.lora_metadata_overlay.form, hover=shell.lora_metadata_overlay._summary,
+        shell.form,
+        out,
+        "lora-edit-metadata-tooltip",
+        shell.lora_metadata_overlay.form,
+        hover=shell.lora_metadata_overlay._summary,
         tooltip_text=tip,
     )
     shell.lora_metadata_overlay.close()

@@ -1284,9 +1284,7 @@ class WorkflowsPage(QObject):
 
                 def node_loras():
                     values = self.canvas.node_params(node_id) if self.canvas is not None else None
-                    return tuple(
-                        LoRASelection(name, float(weight)) for name, weight in (values or {}).get("loras", ())
-                    )
+                    return tuple(LoRASelection(name, float(weight)) for name, weight in (values or {}).get("loras", ()))
 
                 self.prompt_hints.bind(hint_button, node_loras, title=f"LoRAs · node {node_id}")
                 row.addWidget(hint_button)

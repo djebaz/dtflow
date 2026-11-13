@@ -518,7 +518,7 @@ class PrepareBatchEditor:
     def _prefill_triggers(self, row: _Row) -> None:
         """Fill Trigger Words from what the user already saved, else from an explicit file-declared trigger.
 
-        A value the user typed or cleared always wins, and so does a saved one over a file suggestion. The result
+        A value the user typed or cleared always wins, and so does a saved non-empty one over a file suggestion (an empty saved value counts as not set). The result
         stays editable; nothing here is saved or uploaded until the user prepares the row.
         """
         field, note = row.widget.prepareTriggerWords, row.widget.prepareTriggerNote
@@ -543,15 +543,13 @@ class PrepareBatchEditor:
         if field.text() != text:
             field.setText(text)
         row.auto_triggers = text
-        shown = (saved is not None or bool(text)) and not (self.inspected and row.invalid)
+        shown = bool(text) and not (self.inspected and row.invalid)
         note.setText(origin if shown else "")
         explanation = (
             "Suggested by the source metadata. Edit or clear it freely."
             if text and saved is None
             else "Your saved trigger words for this LoRA."
             if text
-            else "Your saved Trigger Words value is blank."
-            if saved is not None
             else ""
         )
         note.setToolTip(explanation if shown else "")
@@ -863,7 +861,13 @@ class PrepareBatchEditor:
                 exact_architecture=version,
                 format_code=fmt,
                 format_source=source,
-                trigger_words=row.widget.prepareTriggerWords.text().strip(),
+                trigger_words=(
+                    None
+                    if self._saved_triggers_unreadable
+                    and not row.manual_triggers
+                    and not row.widget.prepareTriggerWords.text().strip()
+                    else row.widget.prepareTriggerWords.text().strip()
+                ),
                 declared_version=(
                     version
                     if row.source_kind == "safetensors" or row.manual_family or version != row.detected

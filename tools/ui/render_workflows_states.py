@@ -305,27 +305,34 @@ def render_workflows_states(out, *, window_factory, state_names, capture, dimens
             elif name.endswith("prompt-hints"):
                 from dtflow.services.lora_convert.source_metadata import extract
 
-                source = extract({
-                    "ss_output_name": "Workflow portrait style",
-                    "modelspec.trigger_phrase": "portrait style",
-                    "ss_network_dim": "16",
-                    "ss_num_epochs": "8",
-                    "ss_tag_frequency": json.dumps({
-                        "training": {"portrait style": 88, "soft light": 34, "natural skin": 21}
-                    }),
-                })
+                source = extract(
+                    {
+                        "ss_output_name": "Workflow portrait style",
+                        "modelspec.trigger_phrase": "portrait style",
+                        "ss_network_dim": "16",
+                        "ss_num_epochs": "8",
+                        "ss_tag_frequency": json.dumps(
+                            {"training": {"portrait style": 88, "soft light": 34, "natural skin": 21}}
+                        ),
+                    }
+                )
                 identifier = "PLACEHOLDER_lora_b.safetensors"
                 sha, size = "f" * 64, 1000000
-                owner.form._lora_hint_library.entries = [{
-                    "name": identifier, "sha256": sha, "size": size,
-                    "source_metadata": source.retained_record(),
-                }]
+                owner.form._lora_hint_library.entries = [
+                    {
+                        "name": identifier,
+                        "sha256": sha,
+                        "size": size,
+                        "source_metadata": source.retained_record(),
+                    }
+                ]
                 owner.form._lora_hint_library.records = {
                     (sha, size): {"managed_identifier": identifier, "trigger_words": "portrait style"}
                 }
                 button = next(
                     (
-                        widget for widget in page.inspector.workflowParamsHost.findChildren(QToolButton)
+                        widget
+                        for widget in page.inspector.workflowParamsHost.findChildren(QToolButton)
                         if widget.accessibleName() == "Show LoRA prompt hints"
                     ),
                     None,

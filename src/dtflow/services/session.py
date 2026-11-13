@@ -925,14 +925,15 @@ async def occupied_managed_lora_names(state: Path) -> tuple[ManagedName, ...]:
 async def saved_lora_trigger_words(state: Path) -> dict[tuple[str, int], str]:
     """Trigger words the user already saved per content identity (Prepare must never replace them by a suggestion).
 
-    A saved blank is kept as ``""`` so "saved blank" differs from "no saved value" (absent key)."""
+    An empty saved value counts as not set (it is also what every record holds before it is ever edited), so it is
+    left out and the file's declared trigger can be offered again."""
     registry = AssetRegistry(state)
     await registry.open()
     try:
         return {
             (record["sha256"], record["size"]): record["trigger_words"]
             for record in await registry.lora_records()
-            if isinstance(record.get("trigger_words"), str)
+            if isinstance(record.get("trigger_words"), str) and record["trigger_words"].strip()
         }
     finally:
         await registry.aclose()

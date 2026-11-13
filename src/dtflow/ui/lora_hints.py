@@ -10,13 +10,12 @@ from collections.abc import Callable, Sequence
 
 from PySide6.QtCore import QEvent, QObject, QSize, Qt
 from PySide6.QtGui import QIcon
-from PySide6.QtWidgets import QFrame, QLabel, QTextBrowser, QToolButton, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QFrame, QLabel, QTextBrowser, QToolButton, QToolTip, QVBoxLayout, QWidget
 from shiboken6 import isValid
 
 from dtflow.core.models import LoRASelection
 from dtflow.services.lora_convert.source_metadata import detail_model
 from dtflow.services.lora_naming import display_label
-from dtflow.ui.source_details_view import show_fading_tooltip
 from dtflow.ui.theme import load_tokens
 
 MAX_HINT_GROUPS = 8
@@ -42,7 +41,9 @@ class HintLibrary:
             if identifier.casefold()
             in {
                 str(entry.get("name", "")).casefold(),
-                str(self.records.get((entry.get("sha256"), entry.get("size")), {}).get("managed_identifier", "")).casefold(),
+                str(
+                    self.records.get((entry.get("sha256"), entry.get("size")), {}).get("managed_identifier", "")
+                ).casefold(),
             }
         ]
         identities = {(e.get("sha256"), e.get("size")) for e in matches}
@@ -99,14 +100,11 @@ class HintLibrary:
             if model.note:
                 secondary.append(text(model.note))
             body += "<br><br>" + "<br>".join(secondary) if secondary else ""
-        heading = (
-            text(display_label(selection.identifier), strong=True)
-            + text(f"  ·  weight {selection.weight:g}")
-        )
+        heading = text(display_label(selection.identifier), strong=True) + text(f"  ·  weight {selection.weight:g}")
         return (
             f'<table width="100%" cellspacing="0" cellpadding="6" style="border:1px solid {tokens["color.border"]}">'
             f'<tr><td bgcolor="{tokens["color.sectionHeader"]}">{heading}</td></tr>'
-            f'<tr><td>{body}</td></tr></table>'
+            f"<tr><td>{body}</td></tr></table>"
         )
 
     def tooltip(self, groups, *, detailed=False) -> str:
@@ -129,11 +127,7 @@ class HintLibrary:
             sections.append(html.escape(f"Showing the first {MAX_HINT_GROUPS} of {len(groups)} LoRA sets."))
         if not sections:
             return ""
-        return (
-            f'<div style="font-size:{tokens["type.small"]};white-space:pre-wrap">'
-            + "<br>".join(sections)
-            + "</div>"
-        )
+        return f'<div style="font-size:{tokens["type.small"]};white-space:pre-wrap">' + "<br>".join(sections) + "</div>"
 
 
 def library(widget: QWidget) -> HintLibrary | None:
@@ -214,6 +208,12 @@ class PromptHintOverlay(QObject):
             return
         selected = tuple(self._selected())
         source = library(self.host)
+        bar = self.content.verticalScrollBar()
+        scroll = bar.value()
+        self._set_content(selected, source)
+        bar.setValue(min(scroll, bar.maximum()))
+
+    def _set_content(self, selected, source) -> None:
         if not selected:
             self.content.setHtml("<p>No LoRAs selected for this prompt.</p>")
         elif source is None:
@@ -242,9 +242,11 @@ class PromptHintOverlay(QObject):
 class LoRAHover(QObject):
     """Fetch current selection at hover time; parent filters and viewport filters die with the input/row."""
 
-    def __init__(self, widget: QWidget, groups: Callable, *, detailed=False, descendants=False):
+    def __init__(
+        self, widget: QWidget, groups: Callable, *, detailed=False, descendants=False, lead: Callable | None = None
+    ):
         super().__init__(widget)
-        self._widget, self._groups, self._detailed = widget, groups, detailed
+        self._widget, self._groups, self._detailed, self._lead = widget, groups, detailed, lead
         watched = [widget]
         if descendants:
             watched.extend(widget.findChildren(QWidget))
@@ -255,15 +257,17 @@ class LoRAHover(QObject):
 
     def eventFilter(self, watched, event) -> bool:  # noqa: N802 - Qt override
         if event.type() == QEvent.Type.ToolTip:
-            # Keep existing per-control hints (e.g. family, weight) available in the LoRA selector.
+            # Keep any other per-control hint (e.g. weight) available in the LoRA selector.
             if watched is not self._widget and isinstance(watched, QWidget) and watched.toolTip():
                 return False
             source = library(self._widget)
             if source is not None:
                 tip = source.tooltip(self._groups(), detailed=self._detailed)
+                lead = self._lead() if self._lead is not None else ""
+                if lead:
+                    tip = f"<p style='white-space:pre-wrap;margin:0 0 6px 0'>{html.escape(lead)}</p>" + tip
                 if tip:
-                    show_fading_tooltip(event.globalPos(), tip, self._widget)
+                    QToolTip.showText(event.globalPos(), tip, self._widget)
                     event.accept()
                     return True
         return False
-

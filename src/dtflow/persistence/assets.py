@@ -355,7 +355,7 @@ class AssetRegistry:
                     raise ValidationError("Prepare must use the accepted managed technical filename.")
                 if lora_metadata.format_source not in ("converter_default", "filename_hint", "user"):
                     raise ValidationError("Choose a valid LoRA format provenance.")
-                if not isinstance(lora_metadata.trigger_words, str):
+                if lora_metadata.trigger_words is not None and not isinstance(lora_metadata.trigger_words, str):
                     raise ValidationError("LoRA trigger words must be text.")
                 declared = lora_metadata.declared_version
                 if declared is not None and declared != lora_metadata.exact_architecture:
@@ -386,7 +386,7 @@ class AssetRegistry:
                 db.execute(
                     "UPDATE lora_records SET short_name=?, managed_identifier=?, "
                     "declared_version=COALESCE(?, declared_version), "
-                    "format_code=?, format_source=?, trigger_words=?, updated_at_utc=? "
+                    "format_code=?, format_source=?, trigger_words=COALESCE(?, trigger_words), updated_at_utc=? "
                     "WHERE sha256=? AND size=?",
                     (
                         lora_metadata.short_name,
