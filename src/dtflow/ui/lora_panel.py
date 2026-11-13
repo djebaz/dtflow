@@ -957,6 +957,25 @@ class LoraAssetPanel:
 
         self._runner.submit(run_one(), self._prepared)
 
+    def _prepare_log_reference(self, record: dict | None) -> dict:
+        """Correlate per-file Prepare diagnostics without logging names or paths."""
+        path = Path(self._prepare_files[self._prepare_index])
+        source_sha = self._prepare_source_sha.get(str(path))
+        if source_sha is None and self._prepare_editor is not None:
+            row = next((item for item in self._prepare_editor.rows if item.path == path), None)
+            source_sha = row.sha256 if row is not None else None
+        reference = {"filename_prefix": path.name[:3]}
+        if isinstance(source_sha, str):
+            reference["source_sha_prefix"] = source_sha[:12]
+        if record is not None:
+            asset_sha = record.get("sha256")
+            if isinstance(asset_sha, str):
+                reference["asset_sha_prefix"] = asset_sha[:12]
+            receipt = record.get("asset_id")
+            if record.get("state") == "confirmed" and isinstance(receipt, str):
+                reference["receipt"] = receipt
+        return reference
+
     def _prepared(self, record, failure) -> None:
         if self._prepare_files:
             self._prepare_last = record, failure
@@ -999,20 +1018,25 @@ class LoraAssetPanel:
                     self._prepare_issues.append(
                         f"{self._prepare_index + 1}/{len(self._prepare_files)} {filename}: {explanation.detail}"
                     )
-                source_path = Path(self._prepare_files[self._prepare_index])
-                editor = self._prepare_editor
-                row = next((r for r in editor.rows if r.path == source_path), None) if editor is not None else None
-                source_sha = self._prepare_source_sha.get(str(source_path)) or (row.sha256 if row else None)
+                reason = (
+                    "conversion_failed"
+                    if isinstance(failure, ConversionError)
+                    else "accepted_name_conflict"
+                    if isinstance(failure, NameAlreadyAcceptedError)
+                    else "validation_failed"
+                    if isinstance(failure, ValidationError)
+                    else "backend_failed"
+                    if isinstance(failure, BackendError)
+                    else "unexpected_error"
+                    if failure is not None
+                    else "receipt_not_confirmed"
+                )
                 data = {
-                    "filename_prefix": source_path.name[:3],
-                    **({"source_sha_prefix": source_sha[:12]} if source_sha else {}),
+                    **self._prepare_log_reference(record),
                     "outcome": outcome,
-                    "reason": "service_error" if failure is not None else "receipt_not_confirmed",
+                    "reason": reason,
                     "item": self._prepare_index + 1,
                     "total": len(self._prepare_files),
-                    "remote_outcome": (
-                        failure.failure.remote_outcome.value if isinstance(failure, BackendError) else "unverified"
-                    ),
                     "code": (
                         failure.failure.code
                         if isinstance(failure, BackendError)
@@ -1023,6 +1047,11 @@ class LoraAssetPanel:
                         else state or "receipt_not_confirmed"
                     ),
                 }
+                if isinstance(failure, BackendError):
+                    data["remote_outcome"] = failure.failure.remote_outcome.value
+                elif isinstance(failure, ConversionError):
+                    # Conversion runs before provider negotiation, so nothing was dispatched.
+                    data["remote_outcome"] = RemoteOutcome.NOT_STARTED.value
                 if development_mode():
                     # Keep a stable error type, never an arbitrary provider message or full source basename.
                     data["error_type"] = type(failure).__name__ if failure is not None else "receipt_not_confirmed"
@@ -1067,7 +1096,13 @@ class LoraAssetPanel:
             log,
             "ui.asset_prepare_timing",
             level=logging.INFO,
-            data={"item": index + 1, "total": len(self._prepare_files), "outcome": outcome, **timings},
+            data={
+                **self._prepare_log_reference(record),
+                "item": index + 1,
+                "total": len(self._prepare_files),
+                "outcome": outcome,
+                **timings,
+            },
         )
         if self._prepare_relay is not None:
             self._prepare_relay.close()  # late byte reports of this file are dropped
