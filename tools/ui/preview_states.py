@@ -1,6 +1,6 @@
 """Render real Qt widgets against offline fixtures. Never admits provider network traffic.
 
-Run with the locked dev environment: uv run python tools/ui/render_states.py --out tmp/ui-renders
+Run with the locked dev environment: uv run python tools/ui/preview_states.py --out tmp/ui-previews
 Scripts fixtures include normal, armed and narrow 14 px library-removal controls with padded 22 px hit targets,
 plus step Retry/Continue buttons at normal/narrow widths and the generation-limit Continue-only variant.
 The calibration grid is a fixture, not a generated photograph. Cloud receipts use the
@@ -28,14 +28,14 @@ for _stream in (sys.stdout, sys.stderr):
     # Piped Windows output defaults to cp1252, which cannot print the arrows in progress lines.
     if hasattr(_stream, "reconfigure"):
         _stream.reconfigure(errors="replace")
-from render_catalog import parse_inputs  # noqa: E402
-from render_reporting import Reporter  # noqa: E402
+from preview_catalog import parse_inputs  # noqa: E402
+from preview_reporting import Reporter  # noqa: E402
 
 # Help/list/selector validation must not import Qt or construct fixture state.
 PREPARED_ARGS = parse_inputs(ROOT) if __name__ == "__main__" else None
 if PREPARED_ARGS is not None and PREPARED_ARGS.workers:
     # Independent window groups run as separate processes; this parent never imports Qt.
-    from render_launcher import run_workers  # noqa: E402
+    from preview_launcher import run_workers  # noqa: E402
 
     raise SystemExit(run_workers(PREPARED_ARGS, ROOT))
 sys.path.insert(0, str(ROOT / "tests"))
@@ -4338,9 +4338,9 @@ def _render_selection(app, args):
         state = Path(temporary)
         if wants("workflows"):
             phase("workflows workspace")
-            from render_workflows_states import render_workflows_states
+            from preview_workflows_states import preview_workflows_states
 
-            render_workflows_states(
+            preview_workflows_states(
                 args.out,
                 window_factory=lambda: MainWindow(
                     saved=SavedCredentials(Vault()),
@@ -4362,7 +4362,7 @@ def _render_selection(app, args):
             scripts_done = True
             phase("scripts window")
             # Includes parser-limit, inspection, mixer and Setup fixtures; no JS/queues are started.
-            from render_scripts_states import render_scripts_states
+            from preview_scripts_states import preview_scripts_states
 
             def script_window():
                 return MainWindow(
@@ -4372,7 +4372,7 @@ def _render_selection(app, args):
                     no_cache=True,
                 )
 
-            render_scripts_states(
+            preview_scripts_states(
                 args.out,
                 window_factory=script_window,
                 state_names=[item.id for item in SELECTION.states if item.category == "scripts"],

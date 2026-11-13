@@ -30,7 +30,7 @@ def _worker_command(args, root, worker):
     command = [
         sys.executable,
         "-u",
-        str(root / "tools/ui/render_states.py"),
+        str(root / "tools/ui/preview_states.py"),
         "--out",
         str(args.out.resolve()),
         "--category",
@@ -55,7 +55,7 @@ def run_workers(args, root):
     out.mkdir(parents=True, exist_ok=True)
     started = time.monotonic()
     lock = threading.Lock()
-    log = (out / f"render-details-{args.report_key}.log").open("w", encoding="utf-8", newline="\n")
+    log = (out / f"preview-details-{args.report_key}.log").open("w", encoding="utf-8", newline="\n")
     width = max(len(name) for name in args.workers)
     level = {"f": "fast", "m": "medium", "s": "slow (all)"}[args.level]
 
@@ -181,7 +181,7 @@ def run_workers(args, root):
 
     manifests = {}
     for worker, _code, _seconds in results:
-        path = out / f"render-manifest-{args.report_key}-{worker}.json"
+        path = out / f"preview-manifest-{args.report_key}-{worker}.json"
         try:
             manifests[worker] = json.loads(path.read_text(encoding="utf-8"))
         except (OSError, ValueError):
@@ -228,7 +228,7 @@ def run_workers(args, root):
         "expected_notices": notices,
         "error": "; ".join(f"worker {item} failed" for item in failed) or None,
     }
-    target = out / f"render-manifest-{args.report_key}.json"
+    target = out / f"preview-manifest-{args.report_key}.json"
     temporary = target.with_suffix(".json.tmp")
     temporary.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8", newline="\n")
     temporary.replace(target)
@@ -246,7 +246,7 @@ def run_workers(args, root):
             f"WARNING: fixture waits timed out ({len(timed_out)}), rendered as they stood: {', '.join(sorted(timed_out))}"
         )
     if unregistered:
-        emit(f"WARNING: rendered states missing from render_catalog.json: {', '.join(unregistered)}")
+        emit(f"WARNING: rendered states missing from preview_catalog.json: {', '.join(unregistered)}")
     log.close()
     problems = []
     if failed:

@@ -22,7 +22,7 @@ are **synthetic design samples**, not claims about the currently connected backe
 Use DTFlow's locked development environment from the repository root:
 
 ```powershell
-uv run --frozen python tools/ui/render_lora_design.py --out tmp/lora-design --connections-expanded --compact-prepare
+uv run --frozen python tools/ui/preview_lora_design.py --out tmp/lora-design --connections-expanded --compact-prepare
 ```
 
 The command loads the canonical Prepare form plus the remaining design reference forms with the **shared DTFlow Qt stylesheet**, writes PNGs
@@ -35,19 +35,11 @@ six-column batch editor at 760 px wide.
 On Windows, inspect Qt font/DPI behavior separately. The offline screenshots are
 synthetic design evidence, **not** runtime behavior or Windows acceptance.
 
-## Fast PR rendering
+## Preview on pull requests
 
-The [LoRA Prepare UI workflow](../../../../../../.github/workflows/lora-design-render.yml)
-runs automatically for PRs changing the canonical Prepare UI or its targeted renderer.
-**No label is required.** It captures two real in-window Prepare states (wide and
-compact) with synthetic data and DTFlow's global Qt stylesheet. A GitHub Actions
-artifact (2 days) is linked in the PR comment and the job summary, which show the captures as a 3-column thumbnail table hosted on the CI-owned `ci-render-previews` branch (latest run per PR, one parentless commit); there is no Drive upload.
+Use the single [Preview Action](../../../../../.github/workflows/preview-ui.yml). Relevant non-draft PR updates select representative runtime states automatically; `preview:PART` explicitly requests changed views and `preview:ALL` requests all registered states. Every automatic path skips drafts, including label additions. Manual `mode: category`, `category: lora` captures the fast canonical runtime LoRA states, including existing Prepare, picker, metadata-tooltip and Connections views—not these standalone Designer-reference forms.
 
-For an explicit targeted rerun, select `category: lora` in the existing
-[UI renders workflow](../../../../../../.github/workflows/main.yml). The broad
-Generate/Connection fixtures and seven standalone Designer references are not run
-by this targeted category. Those standalone forms remain manually previewable
-through `tools/ui/render_lora_design.py`.
+All modes share GitHub artifacts (two-day requested retention, subject to the manual Artifact Sweeper), latest-per-PR publication on the compatibility `ci-render-previews` branch and one three-column thumbnail comment. See [UI previews](../../../../guides/ui-previews.md) for details and coverage limits. The separate design references remain available locally through `tools/ui/preview_lora_design.py` after owner authorization; no separate LoRA Action or Drive upload remains.
 
 ## Integration boundary
 

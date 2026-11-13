@@ -148,7 +148,7 @@ def _prepare_inpaint_entry(window):
     window._leave_scripts(inpaint=True)
 
 
-def render_scripts_states(
+def preview_scripts_states(
     out: Path,
     *,
     window_factory: Callable,

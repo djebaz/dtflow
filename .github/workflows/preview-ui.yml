@@ -1,0 +1,215 @@
+name: Preview
+
+run-name: >-
+  Preview · ${{ github.event_name == 'pull_request' && format('PR #{0}', github.event.pull_request.number)
+  || inputs.pr != '' && format('PR #{0}', inputs.pr) || format('branch {0}', github.ref_name) }}
+
+# No native paths filter: explicit label requests must work even for unmapped/docs-only PRs.
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review, labeled]
+  workflow_dispatch:
+    inputs:
+      pr:
+        description: "Same-repository PR number (required for changed mode; otherwise empty uses this ref)"
+        type: string
+        default: ""
+      mode:
+        description: "Preview scope (manual requests may target drafts)"
+        required: true
+        type: choice
+        default: changed
+        options: [changed, category, all, workflow]
+      category:
+        description: "Category mode only: canonical runtime views at fast level"
+        type: choice
+        default: lora
+        options: [connection, generate, lora, images, image-navigation, queues, shell, inpaint, logs, scripts, workflows]
+      workflow:
+        description: "Workflow JSON path for workflow mode (other modes use the bundled reference)"
+        type: string
+        default: src/dtflow/resources/workflows/reference_workflow_v1.json
+
+permissions:
+  contents: read
+  pull-requests: read
+
+env:
+  UV_LOCKED: "1"
+  UV_LINK_MODE: copy
+  UV_SYSTEM_CERTS: "true"
+  UV_PYTHON_PREFERENCE: only-managed
+  QT_QPA_PLATFORM: offscreen
+  PYTHONUNBUFFERED: "1"
+  PYTHONFAULTHANDLER: "1"
+
+jobs:
+  plan:
+    name: Plan preview request
+    if: >-
+      github.event_name == 'workflow_dispatch'
+      || (!github.event.pull_request.draft
+        && github.event.pull_request.head.repo.full_name == github.repository
+        && (github.event.action != 'labeled'
+          || github.event.label.name == 'preview:PART' || github.event.label.name == 'preview:ALL'))
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      run: ${{ steps.request.outputs.run }}
+      request: ${{ steps.request.outputs.plan }}
+      sha: ${{ steps.target.outputs.sha }}
+      pr: ${{ steps.target.outputs.pr }}
+    steps:
+      - name: Pin exact source and refuse forks or stale automatic events
+        id: target
+        env:
+          GH_TOKEN: ${{ github.token }}
+          INPUT_PR: ${{ github.event.pull_request.number || inputs.pr }}
+          EVENT_SHA: ${{ github.event.pull_request.head.sha }}
+        shell: bash
+        run: |
+          sha="$GITHUB_SHA"
+          base=""
+          if [ -n "$INPUT_PR" ]; then
+            [[ "$INPUT_PR" =~ ^[1-9][0-9]*$ ]] || { echo "::error::pr must be a positive integer"; exit 1; }
+            pr=$(gh api "repos/$GITHUB_REPOSITORY/pulls/$INPUT_PR")
+            [ "$(jq -r '.head.repo.full_name // ""' <<<"$pr")" = "$GITHUB_REPOSITORY" ] || {
+              echo "::error::Only same-repository PRs are supported"; exit 1; }
+            sha=$(jq -r .head.sha <<<"$pr")
+            base=$(jq -r .base.sha <<<"$pr")
+            if [ "$GITHUB_EVENT_NAME" = pull_request ]; then
+              if [ "$(jq -r .draft <<<"$pr")" = true ] || [ "$sha" != "$EVENT_SHA" ]; then
+                echo "Draft or superseded event; no automatic preview." >> "$GITHUB_STEP_SUMMARY"
+                echo "eligible=false" >> "$GITHUB_OUTPUT"
+                exit 0
+              fi
+              sha="$EVENT_SHA"
+            fi
+          fi
+          echo "eligible=true" >> "$GITHUB_OUTPUT"
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+          echo "base=$base" >> "$GITHUB_OUTPUT"
+          echo "pr=$INPUT_PR" >> "$GITHUB_OUTPUT"
+          echo "Preview source: $sha" >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/checkout@v7.0.1
+        if: steps.target.outputs.eligible == 'true'
+        with:
+          ref: ${{ steps.target.outputs.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Gate this update and select states without Qt setup
+        id: request
+        if: steps.target.outputs.eligible == 'true'
+        env:
+          PR_NUMBER: ${{ steps.target.outputs.pr }}
+          BASE_SHA: ${{ steps.target.outputs.base }}
+          INPUT_MODE: ${{ inputs.mode }}
+          INPUT_CATEGORY: ${{ inputs.category }}
+          INPUT_WORKFLOW: ${{ inputs.mode == 'workflow' && inputs.workflow || '' }}
+        run: python3 tools/ci/preview_request.py
+
+  capture:
+    name: Capture and publish previews
+    needs: plan
+    if: needs.plan.outputs.run == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: write # Dedicated compatibility branch only; never main/source branch.
+      pull-requests: write
+      issues: write
+    # Gate first: irrelevant updates do not cancel useful captures. One publisher per PR.
+    concurrency:
+      group: ui-preview-${{ needs.plan.outputs.pr || github.ref }}
+      cancel-in-progress: true
+    env:
+      HEAD_SHA: ${{ needs.plan.outputs.sha }}
+      PR_NUMBER: ${{ needs.plan.outputs.pr }}
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          ref: ${{ needs.plan.outputs.sha }}
+          persist-credentials: false
+
+      - name: Retain exact request and recheck live draft/head
+        id: live
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REQUEST: ${{ needs.plan.outputs.request }}
+        run: |
+          python3 - <<'PY'
+          import json, os, sys
+          from pathlib import Path
+          sys.path.insert(0, 'tools/ci')
+          from preview_publish import current
+          out = Path('tmp/ui-previews')
+          out.mkdir(parents=True, exist_ok=True)
+          request = json.loads(os.environ['REQUEST'])
+          request.update(sha=os.environ['HEAD_SHA'], pr=os.environ.get('PR_NUMBER'))
+          (out / 'request.json').write_text(json.dumps(request, indent=2) + '\n', encoding='utf-8')
+          with open(os.environ['GITHUB_OUTPUT'], 'a', encoding='utf-8') as stream:
+              stream.write(f"run={str(current()).lower()}\n")
+          PY
+
+      - name: Install Qt runtime library
+        if: steps.live.outputs.run == 'true'
+        run: |
+          sudo apt-get install -y --no-install-recommends libegl1 \
+            || { sudo apt-get update && sudo apt-get install -y --no-install-recommends libegl1; }
+
+      - uses: astral-sh/setup-uv@v10.3.3
+        if: steps.live.outputs.run == 'true'
+        with:
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+
+      - name: Sync locked environment including offline support dependencies
+        if: steps.live.outputs.run == 'true'
+        run: uv sync --locked
+
+      - name: Capture planned states and workflow file independently
+        id: capture
+        if: steps.live.outputs.run == 'true'
+        timeout-minutes: 9
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # Do not pass the GitHub token into the offline capture processes.
+          python3 - <<'PY'
+          import sys
+          sys.path.insert(0, 'tools/ci')
+          from preview_publish import current
+          if not current():
+              raise SystemExit('Request superseded or converted to draft before capture')
+          PY
+          unset GH_TOKEN
+          .venv/bin/python tools/ci/preview_capture.py
+
+      - name: Upload PNGs, selection, manifests and failure diagnostics
+        id: artifact
+        if: always() && steps.live.outputs.run == 'true'
+        uses: actions/upload-artifact@v7.0.2
+        with:
+          name: ui-preview-${{ needs.plan.outputs.pr || 'branch' }}-${{ needs.plan.outputs.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: tmp/ui-previews/
+          if-no-files-found: warn
+          retention-days: 2
+
+      - name: Publish latest-per-PR inline images (artifact fallback on failure)
+        id: publish
+        if: always() && steps.live.outputs.run == 'true' && needs.plan.outputs.pr != ''
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 tools/ci/preview_publish.py
+
+      - name: Summarize results and update one Preview comment
+        if: always() && steps.live.outputs.run == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CAPTURE_OUTCOME: ${{ steps.capture.outcome }}
+          PUBLISHED: ${{ steps.publish.outputs.published }}
+          ARTIFACT_URL: ${{ steps.artifact.outputs.artifact-url }}
+        run: python3 tools/ci/preview_report.py

@@ -1,6 +1,6 @@
 """Choose UI render representatives for a pull request (no Qt, standard library only).
 
-    python tools/ui/render_changes.py --base origin/main --head HEAD [--force-all] [--json OUT]
+    python tools/ui/preview_changes.py --base origin/main --head HEAD [--force-all] [--json OUT]
 
 Prints changed paths, mapping reasons and exact representative states. Uncertain impact uses page representatives
 or the shared fallback pack with an explicit coverage-incomplete warning. Only force-all selects every state."""
@@ -13,9 +13,9 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
-RULES = ROOT / "tools" / "ui" / "render_dependencies.json"
-CATALOG = ROOT / "tools" / "ui" / "render_catalog.json"
-COVERAGE = ROOT / "tools" / "ui" / "render_coverage.json"
+RULES = ROOT / "tools" / "ui" / "preview_dependencies.json"
+CATALOG = ROOT / "tools" / "ui" / "preview_catalog.json"
+COVERAGE = ROOT / "tools" / "ui" / "preview_coverage.json"
 
 
 def glob_regex(pattern):
@@ -40,7 +40,7 @@ def load_rules(path=RULES):
 def load_coverage(catalog):
     coverage = json.loads(COVERAGE.read_text(encoding="utf-8"))
     if coverage.get("schema_version") != 1:
-        raise ValueError("Unsupported render coverage schema")
+        raise ValueError("Unsupported preview coverage schema")
     packs = coverage["packs"]
     known = {state["id"] for state in catalog}
     for name, states in packs.items():
@@ -131,9 +131,18 @@ def plan(base, head, force_all=False):
         )
         result["groups"] = sorted({f"{s['category']}/{s['subcategory']}" for s in catalog if s["id"] in states})
     else:
-        # Keep the existing cheap startup smoke for docs-only/non-render changes.
-        result.update(mode="fast", states=[], args=["-f"])
-        result["reasons"].append("no screenshot-impacting paths; rendering the fast level")
+        # Explicit PART requests must remain small even when no UI path is mapped.
+        states = coverage["packs"]["shared"]
+        result.update(
+            mode="representatives",
+            states=states,
+            args=[arg for state in states for arg in ("--state", state)],
+            packs=["shared"],
+            coverage_complete=False,
+        )
+        warning = "no screenshot-impacting paths; sampling shared representatives, not exhaustive coverage"
+        result["warnings"].append(warning)
+        result["reasons"].append(warning)
     selected_ids = set(states) if states else {state["id"] for state in catalog if state["level"] == "f"}
     selected_rows = [state for state in catalog if state["id"] in selected_ids]
     result["states"] = [state["id"] for state in selected_rows]
@@ -150,10 +159,10 @@ def main(argv=None):
     args = parser.parse_args(argv)
     result = plan(args.base, args.head, args.force_all)
     if result["mode"] == "full":
-        print("Render selection: full (-s, explicit exhaustive override)")
+        print("Preview selection: full (-s, explicit exhaustive override)")
     else:
         print(
-            f"Render selection: {result['mode']}; {len(result['states'])} screenshots, "
+            f"Preview selection: {result['mode']}; {len(result['states'])} screenshots, "
             f"{len(result['fixtures'])} prerequisite fixture groups"
         )
         if result["packs"]:

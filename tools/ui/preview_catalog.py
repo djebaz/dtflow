@@ -149,14 +149,14 @@ def load_catalog(path=CATALOG_PATH):
     ids, paths = set(), set()
     for state in states:
         if state.id in ids or state.path in paths:
-            raise ValueError(f"Duplicate render catalogue identity/path: {state.id}")
+            raise ValueError(f"Duplicate preview catalogue identity/path: {state.id}")
         if state.level not in LEVEL_ORDER:
-            raise ValueError(f"Unknown render level: {state.id}")
+            raise ValueError(f"Unknown preview level: {state.id}")
         if state.category not in CATEGORY_ORDER or state.stage not in STAGE_ORDER:
-            raise ValueError(f"Unknown render category/stage: {state.id}")
+            raise ValueError(f"Unknown preview category/stage: {state.id}")
         relative = Path(state.path)
         if relative.is_absolute() or ".." in relative.parts or relative.stem != state.id:
-            raise ValueError(f"Invalid render output path: {state.path}")
+            raise ValueError(f"Invalid preview output path: {state.path}")
         ids.add(state.id)
         paths.add(state.path)
     return states
@@ -219,7 +219,7 @@ def parse_inputs(root, argv=None):
     parser = argparse.ArgumentParser(
         description="Select and render real Qt widgets with offline fixtures; no providers."
     )
-    parser.add_argument("-o", "--out", type=Path, default=root / "tmp/ui-renders", help="Screenshot/report directory")
+    parser.add_argument("-o", "--out", type=Path, default=root / "tmp/ui-previews", help="Screenshot/report directory")
     parser.add_argument("-c", "--category", choices=("all", *CATEGORY_ORDER, "image-navigation"), default="all")
     parser.add_argument("-g", "--group", action="append", default=[], help="Select category/subcategory; repeatable")
     parser.add_argument("--state", action="append", default=[], help="Select an exact stable state ID; repeatable")
