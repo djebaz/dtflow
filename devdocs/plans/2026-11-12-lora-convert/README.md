@@ -11,3 +11,7 @@ Docs-only record of the plan for using the pure-Python LoRA converter (#391-#393
 
 Work items (one PR each): #398 close rule, #399 real progress, #400 move the converter, #401 Prepare accepts `.safetensors`, #402 safetensors family detection, #403 metadata-editor convert from source, #404 optional drag and drop and CLI, plus the final validation issue.
 Statements such as "project file" inside these documents refer to the original working copies; the files in this folder are the canonical ones.
+
+## Closing status (2026-11-13, #405)
+
+Shipped: #398, #399, #400, #401 and #402 (the Prepare editor accepts `.safetensors`, converts after explicit Prepare and suggests the source family from the header). Differences from this plan: conversion runs one file at a time inside the existing Prepare flow; family detection is its own `detect.py` and does not use `FamilySpec.landmarks` (removed); the CLI auto-detects when `--family` is omitted. Deferred: #403 (cross-version reuse and naming; revisit at the first `CONVERTER_VERSION` bump) and the metadata-editor "convert from source" action it superseded; optional: #404, #414. Final family statuses, evidence and current behavior are in [the converter guide](../../guides/lora-ckpt-format.md) and [the architecture reference](../../architecture/lora-convert.md); these plan files stay as the historical record.

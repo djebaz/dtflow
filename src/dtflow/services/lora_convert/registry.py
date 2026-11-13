@@ -34,8 +34,6 @@ class FamilySpec:
     kind: Literal["resolver", "tables"]
     run: FamilyRunner
     notes: str = ""
-    # Reserved for the later safetensors detector (landmark module patterns); unused in this change.
-    landmarks: tuple[str, ...] | None = None
 
 
 _REGISTRY: dict[str, FamilySpec] = {}

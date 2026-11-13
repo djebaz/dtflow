@@ -119,10 +119,10 @@ register(
         key="flux1",
         label="Flux 1",
         exact_architecture="flux1",
-        status="unverified_on_dt_plus",
+        status="verified",
         experimental=False,
         kind="resolver",
         run=lambda st, request, ctx: run_resolver(st, "flux1", resolve_flux1, request.scale, ctx),
-        notes="Swift-compared, not yet run on DT+",
+        notes="Swift-compared on three files; generation effect confirmed on DT+ by the owner (2026-11-13)",
     )
 )
