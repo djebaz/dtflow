@@ -506,6 +506,10 @@ class PrepareBatchEditor:
             for row, allocation in zip(self.rows, allocations, strict=True):
                 row.accepted_conflict = False
                 family = row.widget.prepareArchitecture.currentData()
+                spec = self._conversion_families.get(family) if row.source_kind == "safetensors" else None
+                row.widget.prepareExperimentalConfirm.setVisible(
+                    bool(spec is not None and spec.experimental and not row.admitted and not row.invalid)
+                )
                 if family and not row.invalid:
                     assigned += 1
                 if allocation and allocation.short_name and not row.manual_name and not row.admitted:
@@ -538,8 +542,13 @@ class PrepareBatchEditor:
                         "Name conflict" if "collision" in allocation.conflict else "Check short name",
                         "error",
                     )
+                elif spec is not None and spec.experimental and not row.widget.prepareExperimentalConfirm.isChecked():
+                    message, state = "Confirm experimental conversion", "warning"
                 else:
-                    message, state = "Ready", "ok"
+                    message, state = (
+                        "Will convert before upload" if row.source_kind == "safetensors" else "Ready",
+                        "ok",
+                    )
                     ready += 1
 
                 row.widget.prepareRowStatus.setText(message)
@@ -557,10 +566,10 @@ class PrepareBatchEditor:
                 source_note.setText(
                     "Inspecting file…"
                     if not self.inspected
-                    else "Declared by user"
-                    if row.manual_family
-                    else "Detected from file"
-                    if row.detected
+                    else "Safetensors · user-selected family" if row.source_kind == "safetensors" and family
+                    else "Safetensors · choose family" if row.source_kind == "safetensors"
+                    else "Declared by user" if row.manual_family
+                    else "Detected from file" if row.detected
                     else "Family not detected"
                 )
                 family_note = row.widget.prepareArchitectureSource
@@ -577,6 +586,16 @@ class PrepareBatchEditor:
                 elif row.invalid:
                     family_note.setText(
                         _invalid_label(row.invalid) if row.invalid.startswith(_DUPLICATE) else row.invalid
+                    )
+                elif row.source_kind == "safetensors":
+                    family_note.setText(
+                        "Select source family; auto-detection follows in #402"
+                        if not family
+                        else "Experimental · explicit confirmation required"
+                        if spec is not None and spec.experimental
+                        else "Unverified on DT+ · try with care"
+                        if spec is not None and spec.status == "unverified_on_dt_plus"
+                        else "Supported converter · F16 output"
                     )
                 elif family:
                     if row.manual_family:
@@ -677,6 +696,12 @@ class PrepareBatchEditor:
                 or not version
                 or not allocated.ready
                 or not allocated.short_name
+                or (
+                    row.source_kind == "safetensors"
+                    and (spec := self._conversion_families.get(version)) is not None
+                    and spec.experimental
+                    and not row.widget.prepareExperimentalConfirm.isChecked()
+                )
             ):
                 continue
             fmt = row.widget.prepareFormat.currentText()
@@ -693,7 +718,10 @@ class PrepareBatchEditor:
                 format_code=fmt,
                 format_source=source,
                 trigger_words=row.widget.prepareTriggerWords.text().strip(),
-                declared_version=version if row.manual_family or version != row.detected else None,
+                declared_version=(
+                    version if row.source_kind == "safetensors"
+                    or row.manual_family or version != row.detected else None
+                ),
                 replace_existing=row.reprepare,
             )
             accepted.append((row.path, metadata))
