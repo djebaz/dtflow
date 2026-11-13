@@ -443,8 +443,10 @@ class PrepareBatchEditor:
             if row.source_kind == "safetensors":
                 for spec in self._conversion_families.values():
                     caution = (
-                        " · Experimental" if spec.experimental
-                        else " · Unverified on DT+" if spec.status == "unverified_on_dt_plus"
+                        " · Experimental"
+                        if spec.experimental
+                        else " · Unverified on DT+"
+                        if spec.status == "unverified_on_dt_plus"
                         else ""
                     )
                     combo.addItem(spec.label + caution, spec.exact_architecture)
@@ -502,8 +504,10 @@ class PrepareBatchEditor:
                     identity = self._content_identity(row)
                     prior = next(
                         (
-                            item for item in self.occupied
-                            if identity[0] is not None and identity[1] is not None
+                            item
+                            for item in self.occupied
+                            if identity[0] is not None
+                            and identity[1] is not None
                             and (item.sha256, item.size) == identity
                         ),
                         None,
@@ -511,7 +515,9 @@ class PrepareBatchEditor:
                     row.accepted = (
                         managed_filename(
                             prior.short_name, architecture_shortcode(prior.exact_architecture), prior.format_code
-                        ) if prior is not None else None
+                        )
+                        if prior is not None
+                        else None
                     )
                 row.widget.prepareExperimentalConfirm.setVisible(
                     bool(spec is not None and spec.experimental and not row.admitted and not row.invalid)
@@ -575,10 +581,14 @@ class PrepareBatchEditor:
                 source_note.setText(
                     "Inspecting file…"
                     if not self.inspected
-                    else "Safetensors · user-selected family" if row.source_kind == "safetensors" and family
-                    else "Safetensors · choose family" if row.source_kind == "safetensors"
-                    else "Declared by user" if row.manual_family
-                    else "Detected from file" if row.detected
+                    else "Safetensors · user-selected family"
+                    if row.source_kind == "safetensors" and family
+                    else "Safetensors · choose family"
+                    if row.source_kind == "safetensors"
+                    else "Declared by user"
+                    if row.manual_family
+                    else "Detected from file"
+                    if row.detected
                     else "Family not detected"
                 )
                 family_note = row.widget.prepareArchitectureSource
@@ -728,8 +738,9 @@ class PrepareBatchEditor:
                 format_source=source,
                 trigger_words=row.widget.prepareTriggerWords.text().strip(),
                 declared_version=(
-                    version if row.source_kind == "safetensors"
-                    or row.manual_family or version != row.detected else None
+                    version
+                    if row.source_kind == "safetensors" or row.manual_family or version != row.detected
+                    else None
                 ),
                 replace_existing=row.reprepare,
             )

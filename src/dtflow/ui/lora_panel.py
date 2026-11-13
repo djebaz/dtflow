@@ -624,8 +624,8 @@ class LoraAssetPanel:
         """Inspect file headers off the GUI thread and read existing canonical name reservations."""
         evidence = await asyncio.to_thread(
             lambda: tuple(
-                LoraFamily() if Path(p).suffix.casefold() == ".safetensors"
-                else detect_lora_family(Path(p)) for p in paths
+                LoraFamily() if Path(p).suffix.casefold() == ".safetensors" else detect_lora_family(Path(p))
+                for p in paths
             )
         )
 
@@ -746,7 +746,11 @@ class LoraAssetPanel:
         if progress is None:
             return
         progress.event(index, event)
-        if event.stage in (EXISTS, UPLOADING, CONFIRMING) and self._prepare_editor is not None and index < len(self._prepare_files):
+        if (
+            event.stage in (EXISTS, UPLOADING, CONFIRMING)
+            and self._prepare_editor is not None
+            and index < len(self._prepare_files)
+        ):
             # Any later stage proves the registry accepted this row's name: Re-Prepare cannot be needed any more.
             # The relay is latest-wins, so a fast file may skip stages and a failure may come before any later one;
             # that path never sets ``checked`` and relies on ``row.outcome`` in ``PrepareBatchEditor.all_checked``.
@@ -864,8 +868,11 @@ class LoraAssetPanel:
             forward = relay
             if converting:
                 spec = next(
-                    (candidate for candidate in supported_families()
-                     if candidate.exact_architecture == metadata.exact_architecture),
+                    (
+                        candidate
+                        for candidate in supported_families()
+                        if candidate.exact_architecture == metadata.exact_architecture
+                    ),
                     None,
                 )
                 if spec is None:
@@ -886,9 +893,12 @@ class LoraAssetPanel:
                     # tensor-conversion and checkpoint-writing counters.
                     fraction = min(max(event.done / event.total, 0.0), 1.0) if event.total else 0.0
                     portion = (
-                        0.8 * fraction if event.stage == "converting"
-                        else 0.8 + 0.2 * fraction if event.stage == "writing"
-                        else 1.0 if event.stage in ("finishing", "reused")
+                        0.8 * fraction
+                        if event.stage == "converting"
+                        else 0.8 + 0.2 * fraction
+                        if event.stage == "writing"
+                        else 1.0
+                        if event.stage in ("finishing", "reused")
                         else 0.0
                     )
                     relay(

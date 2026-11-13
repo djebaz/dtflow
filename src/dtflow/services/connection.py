@@ -256,12 +256,14 @@ def present_asset_failure(exc: Exception) -> Presentation:
     if isinstance(exc, ConversionError):
         hint = exc.hint
         if hint is None and exc.code in {
-            "unsupported_family", "unmatched_modules", "unsupported_format", "shape_mismatch", "source_unreadable"
+            "unsupported_family",
+            "unmatched_modules",
+            "unsupported_format",
+            "shape_mismatch",
+            "source_unreadable",
         }:
             hint = COLAB_HINT
-        return Presentation(
-            "error", "LoRA conversion failed", exc.user_message + (" " + hint if hint else "")
-        )
+        return Presentation("error", "LoRA conversion failed", exc.user_message + (" " + hint if hint else ""))
     if isinstance(exc, AssetsBusyError):
         return Presentation(
             "warning", "Assets busy", "Another DTFlow process is preparing assets. Nothing was uploaded or changed."
