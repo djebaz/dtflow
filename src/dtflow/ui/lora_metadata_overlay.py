@@ -16,9 +16,11 @@ from PySide6.QtWidgets import QFrame, QVBoxLayout, QWidget
 
 from dtflow.core.models import ValidationError
 from dtflow.services.catalogue import FAMILY_LABELS
+from dtflow.services.lora_convert.source_metadata import DetailModel
 from dtflow.services.lora_metadata_edit import save_lora_metadata
 from dtflow.services.lora_naming import architecture_shortcode
 from dtflow.ui.runner import AsyncRunner
+from dtflow.ui.source_details_view import RegionTooltip, metadata_tooltip, replace_with_runs
 
 _SHORT_NAME = re.compile(r"^[A-Za-z0-9_]{1,20}$")
 
@@ -72,6 +74,10 @@ class LoraMetadataOverlay(QObject):
         layout.addWidget(self.form, 0, Qt.AlignmentFlag.AlignHCenter)
         layout.addStretch(1)
         _Resize(host, self.overlay)
+        self._details_model = DetailModel()
+        self._summary = replace_with_runs(self.form.loraMetadataSourceSummary)
+        self._tags_line = replace_with_runs(self.form.loraMetadataSourceTags)
+        self._region_tip = RegionTooltip(self.form, [self._summary, self._tags_line], margin=6)
         self.form.loraMetadataCancel.clicked.connect(self.close)
         self.form.loraMetadataSave.clicked.connect(self.save)
         escape = QShortcut(QKeySequence(Qt.Key.Key_Escape), self.overlay)
@@ -83,9 +89,24 @@ class LoraMetadataOverlay(QObject):
     def is_open(self) -> bool:
         return self.overlay.isVisible()
 
-    def open(self, record: dict, name: str, architectures: tuple[str, ...]) -> None:
-        """Show one record. ``architectures`` are the backend-verified LoRA choices; the saved declaration stays listed."""
+    def open(
+        self, record: dict, name: str, architectures: tuple[str, ...], source_details: DetailModel | None = None
+    ) -> None:
+        """Show one record. ``architectures`` are the backend-verified LoRA choices; the saved declaration stays listed.
+
+        ``source_details`` is read-only content from the retained source metadata (#414); they are never editable.
+        """
         form = self.form
+        self._details_model = source_details or DetailModel()
+        model = self._details_model
+        tip = metadata_tooltip(model)
+        self._region_tip.set_text(tip)
+        self._summary.set_runs(model.runs)
+        self._summary.setVisible(bool(model))
+        self._tags_line.set_runs(model.tag_runs)
+        self._tags_line.setVisible(bool(model.tags))
+        self._summary.setToolTip(tip)
+        self._tags_line.setToolTip(tip)
         self._identity = (record["sha256"], record["size"])
         form.loraMetadataFile.setText(name)
         combo = form.loraMetadataArchitecture

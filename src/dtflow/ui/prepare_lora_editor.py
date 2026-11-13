@@ -15,12 +15,13 @@ from typing import Callable, Sequence
 from PySide6.QtCore import QEvent, QFile, QIODevice, QObject, Qt, QTimer
 from PySide6.QtGui import QGuiApplication
 from PySide6.QtUiTools import QUiLoader
-from PySide6.QtWidgets import QSizePolicy, QWidget
+from PySide6.QtWidgets import QLayout, QSizePolicy, QWidget
 from shiboken6 import isValid
 
 from dtflow.core.models import accepted_name_changes
 from dtflow.services.catalogue import FAMILY_LABELS
 from dtflow.services.lora_convert import CONVERTER_VERSION
+from dtflow.services.lora_convert.source_metadata import DetailModel, detail_model
 from dtflow.services.lora_family import LoraFamily
 from dtflow.services.lora_naming import (
     LoraPrepareMetadata,
@@ -32,6 +33,7 @@ from dtflow.services.lora_naming import (
     suggest_short_name,
 )
 from dtflow.ui.inline_feedback import feedback
+from dtflow.ui.source_details_view import RegionTooltip, metadata_tooltip, replace_with_runs
 
 _SHORT_NAME = re.compile(r"^[A-Za-z0-9_]{1,20}$")
 
@@ -62,6 +64,9 @@ class _Row:
     manual_name: bool = False
     manual_family: bool = False
     manual_format: bool = False
+    manual_triggers: bool = False  # the user typed (or cleared) Trigger Words: no suggestion replaces it
+    auto_triggers: str = ""  # the last Trigger Words text filled in here, to tell it from the user's own edit
+    source_metadata: object | None = None  # descriptive header metadata of a safetensors source (#414)
     admitted: bool = False
     outcome: str | None = None
     reprepare: bool = False
@@ -159,6 +164,8 @@ class PrepareBatchEditor:
         self.architectures: tuple[str, ...] = ()
         self._conversion_families = {}
         self._existing_conversions: dict[tuple[str, str, str], tuple[str, int]] = {}
+        self._saved_triggers: dict[tuple[str, int], str] = {}
+        self._saved_triggers_unreadable = False
         self.inspected = False
         self.selected: _Row | None = None
         self._updating = False
@@ -185,6 +192,7 @@ class PrepareBatchEditor:
             row_widget.prepareShortName.textEdited.connect(lambda _s, item=row: self._edited_name(item))
             row_widget.prepareArchitecture.currentIndexChanged.connect(lambda _idx, item=row: self._edited_family(item))
             row_widget.prepareFormat.currentIndexChanged.connect(lambda _idx, item=row: self._edited_format(item))
+            row_widget.prepareTriggerWords.textEdited.connect(lambda _s, item=row: self._edited_triggers(item))
             row_widget.prepareTriggerWords.textChanged.connect(lambda _s: self.refresh())
             row_widget.mousePressEvent = lambda event, item=row: self._select(item)
             self.form.prepareBatchRowsLayout.insertWidget(len(self.rows) - 1, row_widget)
@@ -207,6 +215,16 @@ class PrepareBatchEditor:
                 row.total_bytes = row.path.stat().st_size
             except OSError:
                 row.total_bytes = 0
+        self._details_model = DetailModel()
+        self._summary = replace_with_runs(self.form.prepareSourceSummary)
+        self._tags_line = replace_with_runs(self.form.prepareSourceTags)
+        self._region_tip = RegionTooltip(
+            self.form.preparePreviewPanel, [self.form.prepareSourceSummaryCell], margin=10, full_height=True
+        )
+        stretch = self.form.findChild(QLayout, "preparePreviewLayout")
+        if stretch is not None:  # about 40% filename and label, 60% declared-metadata summary
+            stretch.setStretch(0, 4)
+            stretch.setStretch(1, 6)
         self._tick_timer = QTimer(self.form)
         self._tick_timer.setInterval(200)
         self._tick_timer.timeout.connect(self._tick_inspection)
@@ -394,6 +412,10 @@ class PrepareBatchEditor:
         row.manual_name = True
         self._select(row)
 
+    def _edited_triggers(self, row: _Row):
+        row.manual_triggers = True
+        self._select(row)
+
     def _edited_family(self, row: _Row):
         if self._updating:
             return
@@ -416,10 +438,16 @@ class PrepareBatchEditor:
         conversions: Sequence[dict] = (),
         converter_families: Sequence = (),
         detections: Sequence = (),
+        *,
+        source_metadata: Sequence = (),
+        saved_triggers: dict[tuple[str, int], str] | None = None,
+        saved_triggers_unreadable: bool = False,
     ):
         """Apply checkpoint evidence and converted-source provenance on the GUI thread."""
         if not self.active():
             return
+        self._saved_triggers = dict(saved_triggers or {})
+        self._saved_triggers_unreadable = saved_triggers_unreadable
         self.architectures = tuple(dict.fromkeys(v for v in architectures if architecture_shortcode(v) is not None))
         self.occupied = tuple(occupied)
         self._conversion_families = {spec.exact_architecture: spec for spec in converter_families}
@@ -443,6 +471,7 @@ class PrepareBatchEditor:
             row.detected = result.family if row.source_kind == "ckpt" else None
             row.invalid = invalid[index] if invalid else None
             row.detection = detections[index] if index < len(detections) else None
+            row.source_metadata = source_metadata[index] if index < len(source_metadata) else None
             combo = row.widget.prepareArchitecture
             kept = combo.currentData() if row.manual_family else None  # an edited choice is never overwritten
             combo.clear()
@@ -485,6 +514,51 @@ class PrepareBatchEditor:
         if spec is None or not row.sha256:
             return None, None
         return self._existing_conversions.get((row.sha256, spec.key, CONVERTER_VERSION), (None, None))
+
+    def _prefill_triggers(self, row: _Row) -> None:
+        """Fill Trigger Words from what the user already saved, else from an explicit file-declared trigger.
+
+        A value the user typed or cleared always wins, and so does a saved non-empty one over a file suggestion (an empty saved value counts as not set). The result
+        stays editable; nothing here is saved or uploaded until the user prepares the row.
+        """
+        field, note = row.widget.prepareTriggerWords, row.widget.prepareTriggerNote
+        if row.admitted:
+            return
+        if not row.manual_triggers and field.text() != row.auto_triggers:
+            row.manual_triggers = True  # whatever differs from what was filled in came from the user
+        if row.manual_triggers:
+            note.setText("")
+            return
+        identity = (row.sha256, row.size) if row.source_kind == "ckpt" else self._content_identity(row)
+        saved = self._saved_triggers.get(identity) if identity[0] is not None and identity[1] is not None else None
+        suggestion = getattr(row.source_metadata, "trigger", None) if row.source_kind == "safetensors" else None
+        # The badge is one short constant-height line; the explanation is in the tooltips (row heights never change).
+        if self._saved_triggers_unreadable and saved is None:
+            # Saved words could not be read, so a suggestion might replace one: do not fill, and say why.
+            note.setText("not filled" if suggestion else "")
+            note.setToolTip("Saved trigger words unreadable: no suggestion applied." if suggestion else "")
+            row.auto_triggers = field.text()
+            return
+        text, origin = (saved, "saved") if saved is not None else (suggestion or "", "from file")
+        if field.text() != text:
+            field.setText(text)
+        row.auto_triggers = text
+        shown = bool(text) and not (self.inspected and row.invalid)
+        note.setText(origin if shown else "")
+        explanation = (
+            "Suggested by the source metadata. Edit or clear it freely."
+            if text and saved is None
+            else "Your saved trigger words for this LoRA."
+            if text
+            else ""
+        )
+        note.setToolTip(explanation if shown else "")
+        field.setToolTip(explanation)
+
+    def _source_details(self, row: _Row) -> DetailModel:
+        """Read-only descriptive content of the row's source file."""
+        record = getattr(row.source_metadata, "record", lambda: None)()
+        return detail_model(record)
 
     def _allocation(self):
         requests = []
@@ -536,6 +610,7 @@ class PrepareBatchEditor:
                         if prior is not None
                         else None
                     )
+                self._prefill_triggers(row)
                 row.widget.prepareExperimentalConfirm.setVisible(
                     bool(spec is not None and spec.experimental and not row.admitted and not row.invalid)
                 )
@@ -636,7 +711,7 @@ class PrepareBatchEditor:
                         if not family
                         else f"You chose {spec.label if spec else family} · file suggests {suggestion}"
                         if row.manual_family and suggestion and spec is not None and suggestion != spec.label
-                        else "Experimental · some LoRAs fail to convert · confirmation required"
+                        else "Experimental · may fail to convert"
                         if spec is not None and spec.experimental
                         else "Unverified on DT+ · try with care"
                         if spec is not None and spec.status == "unverified_on_dt_plus"
@@ -659,6 +734,12 @@ class PrepareBatchEditor:
                     family_note.setText(
                         "Required · family not detected, choose it" + (f" · name suggests {hint}" if hint else "")
                     )
+                # A hint that does not fit its column is cut by the cell: the full sentence stays one hover away.
+                family_note.setToolTip(
+                    "Experimental family: some LoRAs of it fail to convert, so confirmation is required."
+                    if spec is not None and spec.experimental and row.source_kind == "safetensors"
+                    else family_note.text()
+                )
                 family_note.setProperty(
                     "state", "error" if (not family or row.invalid) and self.inspected else "unknown"
                 )
@@ -715,6 +796,22 @@ class PrepareBatchEditor:
             if self.selected is not None:
                 index = self.rows.index(self.selected)
                 allocation = allocations[index]
+                model = self._source_details(self.selected)
+                model = DetailModel() if self.selected.invalid else model
+                self._details_model = model
+                tip = metadata_tooltip(model)  # the whole metadata region shares the full selected training details
+                self._region_tip.set_text(tip)
+                self._tags_line.set_runs(model.tag_runs)
+                self.form.prepareSourceSummaryCell.setToolTip(tip)
+                self._tags_line.setToolTip(tip)
+                self._summary.set_runs(
+                    model.runs
+                    if model.runs
+                    else (("No descriptive metadata", False),)
+                    if self.selected.source_kind == "safetensors" and self.inspected
+                    else ()
+                )
+                self._summary.setToolTip(tip)
                 self.form.prepareManagedFilename.setText(
                     allocation.filename if allocation and allocation.filename else "Complete required fields to preview"
                 )
@@ -762,7 +859,13 @@ class PrepareBatchEditor:
                 exact_architecture=version,
                 format_code=fmt,
                 format_source=source,
-                trigger_words=row.widget.prepareTriggerWords.text().strip(),
+                trigger_words=(
+                    None
+                    if self._saved_triggers_unreadable
+                    and not row.manual_triggers
+                    and not row.widget.prepareTriggerWords.text().strip()
+                    else row.widget.prepareTriggerWords.text().strip()
+                ),
                 declared_version=(
                     version
                     if row.source_kind == "safetensors" or row.manual_family or version != row.detected

@@ -21,6 +21,7 @@ from dtflow.core.models import ValidationError
 from dtflow.diagnostics import asset_ref_data, event as diagnostic_event
 from dtflow.services.lora_convert import CONVERTER_VERSION, ConversionProgress, ConversionRequest, convert_lora
 from dtflow.services.lora_convert.errors import ConversionCancelled, ConversionError
+from dtflow.services.lora_convert.detect import inspect_source
 from dtflow.services.lora_convert.registry import lookup
 from dtflow.services.lora_digest import DigestCancelled, hash_file
 from dtflow.services.lora_family import detect_lora_family, validate_converted_lora
@@ -75,6 +76,18 @@ def _convert_sync(
         )
     reused = store.find_converted(source_sha, family, 1.0, CONVERTER_VERSION)
     if reused is not None:
+        # Reuse existing CKPT bytes, but allow a later source selection to populate descriptive details that
+        # older conversions did not store. Metadata is optional: an index write failure cannot block Prepare.
+        try:
+            inspected = inspect_source(source)
+            store.update_source_metadata(reused.sha256, reused.size, inspected.metadata.retained_record())
+        except (OSError, ValidationError):
+            diagnostic_event(
+                log,
+                "lora_convert.source_metadata_not_retained",
+                level=logging.WARNING,
+                data={**hint, "reason": "metadata_backfill_failed"},
+            )
         if progress is not None:
             progress(ConversionProgress("reused", 1, 1))
         diagnostic_event(
@@ -143,12 +156,16 @@ def _convert_sync(
             },
             "converted_at_utc": datetime.now(UTC).isoformat(),
         }
+        # Descriptive header metadata (#414): bounded, display-only, never evidence for the family or the output.
+        # It is kept once per retained file (not per conversion record).
+        inspected = inspect_source(source)
         retained = store.retain_converted(
             result.destination,
             result.destination_sha256,
             result.destination_size,
             managed_name=managed_name,
             conversion=record,
+            source_metadata=inspected.metadata.retained_record(),
         )
         diagnostic_event(
             log,

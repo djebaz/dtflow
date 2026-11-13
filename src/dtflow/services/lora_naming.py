@@ -54,7 +54,7 @@ class LoraPrepareMetadata:
     exact_architecture: str
     format_code: str
     format_source: str
-    trigger_words: str = ""
+    trigger_words: str | None = ""  # None keeps the stored value (used when the saved value could not be read)
     declared_version: str | None = None
     replace_existing: bool = False
 

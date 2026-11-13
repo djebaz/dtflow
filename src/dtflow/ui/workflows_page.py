@@ -54,6 +54,7 @@ from dtflow.services import lora_relink
 from dtflow.ui.activity_strip import activity_strip
 from dtflow.ui.inline_feedback import InlineNotice, confirm_action, edit_text, feedback
 from dtflow.ui.prompt_tags import style_prompt_tags
+from dtflow.ui.lora_hints import PromptHintOverlay
 from dtflow.ui.search_select import SearchableComboBox
 
 log = logging.getLogger(__name__)
@@ -300,6 +301,7 @@ class WorkflowsPage(QObject):
         self.start_created = start_created  # QueuePage.start_created(queue_id, done)
         self.open_image = open_image
         self.canvas = None
+        self.prompt_hints = PromptHintOverlay(self.workspace.workflowCanvasHost)
         self.path: Path | None = None
         self.name = ""
         self.entries: list[library.LibraryEntry] = []
@@ -898,6 +900,8 @@ class WorkflowsPage(QObject):
         i, w = self.inspector, self.workspace
         params = self.canvas.node_params(node_id) if (self.canvas is not None and node_id is not None) else None
         self._sync_lock()
+        if self._inspected != node_id:
+            self.prompt_hints.close()
         if params is None:
             self._inspected = None
             _clear(i.workflowParamsHost.layout())
@@ -1267,7 +1271,26 @@ class WorkflowsPage(QObject):
         if param.hint:
             label.setToolTip(param.hint)
         if param.kind != "bool":
-            layout.addWidget(label)
+            if param.kind == "text" and param.name in {"prompt", "negative_prompt"}:
+                # The node inspector is the input; hints occupy the center canvas beside it.
+                row = QHBoxLayout()
+                row.setContentsMargins(0, 0, 0, 0)
+                row.addWidget(label)
+                row.addStretch(1)
+                hint_button = QToolButton(host)
+                hint_button.setObjectName(
+                    "workflowPromptHintsButton" if param.name == "prompt" else "workflowNegativePromptHintsButton"
+                )
+
+                def node_loras():
+                    values = self.canvas.node_params(node_id) if self.canvas is not None else None
+                    return tuple(LoRASelection(name, float(weight)) for name, weight in (values or {}).get("loras", ()))
+
+                self.prompt_hints.bind(hint_button, node_loras, title=f"LoRAs · node {node_id}")
+                row.addWidget(hint_button)
+                layout.addLayout(row)
+            else:
+                layout.addWidget(label)
         try:
             checked = wf.check_param(param, value, draft=True)
         except wf.WorkflowError as exc:
@@ -1452,9 +1475,15 @@ class WorkflowsPage(QObject):
         except wf.WorkflowError as exc:
             InlineNotice.error(self.workspace, "LoRAs not changed", str(exc))
             return
+        pinned_control = self.prompt_hints._button.objectName() if self.prompt_hints.open else None
         self._set(node_id, param.name, value)
         self._inspected = None
         self._show_node(node_id)
+        if pinned_control:
+            # The LoRA picker rebuilds this node's parameter widgets. Keep a pinned hint panel open.
+            replacement = self.inspector.workflowParamsHost.findChild(QToolButton, pinned_control)
+            if replacement is not None:
+                replacement.setChecked(True)
 
     @staticmethod
     def _step_text(step: dict) -> str:

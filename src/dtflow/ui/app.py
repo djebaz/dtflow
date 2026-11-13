@@ -5,7 +5,7 @@ import sys
 import threading
 import time
 
-from PySide6.QtCore import QTimer
+from PySide6.QtCore import Qt, QTimer
 from PySide6.QtWidgets import QApplication
 
 from dtflow import startup
@@ -32,6 +32,7 @@ def open_window(
 
     ``before_show`` receives the window just before ``show()`` so a caller can watch its first paint without a race.
     """
+    _prefer_tooltip_fade()  # the one place: every launch path (including the splash one) reaches open_window
     configure(no_cache=no_cache)
     thumbnail_cache.configure(no_cache=no_cache, thumbnail_format=thumbnail_format)
     if gallery_limits is not None:
@@ -101,6 +102,13 @@ def _enable_native_crash_trace() -> None:
         atexit.register(_cleanup)
     except Exception:
         _CRASH_TRACE = None  # diagnostics are optional
+
+
+def _prefer_tooltip_fade() -> None:
+    """App-wide: show every tooltip with Qt's quick fade-in instead of the slide (Qt prefers fade over roll when both
+    are on). A desktop that disables UI effects altogether stays untouched."""
+    if QApplication.isEffectEnabled(Qt.UIEffect.UI_General):
+        QApplication.setEffectEnabled(Qt.UIEffect.UI_FadeTooltip, True)
 
 
 def run_gui(

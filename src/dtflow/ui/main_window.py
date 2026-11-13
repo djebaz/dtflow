@@ -76,7 +76,9 @@ from dtflow.ui.brand import connection_icon, status_dot, tinted_icon
 from dtflow.ui.button_focus import KeyboardFocusGuard
 from dtflow.ui.current_page_stack import CurrentPageStack
 from dtflow.ui.cloud_usage_panel import CloudUsagePanel
+from dtflow.services.lora_convert.source_metadata import DetailModel, detail_model
 from dtflow.ui.lora_metadata_overlay import LoraMetadataOverlay
+from dtflow.ui.lora_hints import HintLibrary, PromptHintOverlay
 from dtflow.ui.lora_trigger_panel import LoraTriggerPanel
 from dtflow.ui.workflow_defaults_panel import WorkflowDefaultsPanel
 from dtflow.ui.gallery_page import GalleryPage
@@ -218,6 +220,8 @@ class MainWindow:
         startup.mark("first widget polished")
         # Disposable font/input probes belong in tools/ui/probe_line_edit.py, not desktop startup.
         self.form = load_form()
+        self.form._lora_hint_library = HintLibrary()
+        self.form._lora_hint_refresh = self._refresh_lora_hint_data
         self.form.statusGlyphLabel.setPixmap(status_dot())
         startup.mark("main form")
         self.generation_page = load_ui(GENERATION_UI_FILE)
@@ -416,6 +420,19 @@ class MainWindow:
             generate_hook=self._show_generation,
             reuse_hook=self._reuse_queue_request,
             activity=self.activity,
+        )
+        # One shared overlay occupies only the right inspector's scroll viewport,
+        # below the persistent Images navigation header, for Generate and Queue prompts.
+        self._prompt_hints = PromptHintOverlay(self.shell.rightScroll.viewport(), on_toggle=self._responsive_workspace)
+        self._prompt_hints.bind(
+            self.generation_page.promptHintsButton,
+            lambda: tuple(self.generation.lora.loras),
+            title="Applied LoRAs",
+        )
+        self._prompt_hints.bind(
+            self.queue_page.composerPromptHintsButton,
+            lambda: tuple(self.queue._draft[0].loras) if self.queue._draft is not None else (),
+            title="Queue LoRAs",
         )
         self.scripts.run_start = self.queue.start_script
         self.workflows.start_workflow = self.queue.start_workflow
@@ -954,6 +971,8 @@ class MainWindow:
 
     def _workspace_changed(self, index: int) -> None:
         """Switch mounted workspaces without resetting active operations."""
+        self._prompt_hints.close()
+        self.workflows.prompt_hints.close()
         logs_active = self.form.workspaceStack.currentWidget() is self.logs_marker
         if logs_active:
             self.logs_button.setChecked(True)
@@ -1160,8 +1179,10 @@ class MainWindow:
         # Logs and Images use the full-width center workspace, regardless of
         # whether the Images page changed during this navigation.
         shell.leftRail.setVisible(not images and not logs and not folded)
-        shell.rightRail.setVisible(not images and not logs and (workflows or not narrow))
-        self._place_images_header(images=images, logs=logs, narrow=narrow and not workflows)
+        hint_open = self._prompt_hints.open if hasattr(self, "_prompt_hints") else False
+        # The hint toggle can reveal the right rail at narrow widths, with Images still above it.
+        shell.rightRail.setVisible(not images and not logs and (workflows or not narrow or hint_open))
+        self._place_images_header(images=images, logs=logs, narrow=narrow and not workflows and not hint_open)
         if self._logs_form is not None:
             self._logs_form.logsBrandSlot.setVisible(logs)
             self._logs_form.logsNavigationSlot.setVisible(logs)
@@ -1869,6 +1890,20 @@ class MainWindow:
 
         self._read_summary("loras", read, self._custom_loras_read)
 
+    def _refresh_lora_hint_data(self) -> None:
+        """Refresh presentation metadata off Qt after Prepare or metadata edits; never hash or call a provider."""
+
+        def read():
+            return LoraStore(self.state_dir).entries(), self._read_lora_records_sync(self.state_dir)
+
+        def delivered(result, error):
+            hints = self.form._lora_hint_library
+            if error is not None or result is None:
+                return  # keep what the other reads already filled; never wipe it on a failed refresh
+            hints.entries, hints.records = result
+
+        self._read_summary("lora_hints", read, delivered)
+
     def _custom_loras_read(self, result, error) -> None:
         if self._removing_retained_lora:
             return
@@ -1893,6 +1928,9 @@ class MainWindow:
             else "No locally retained LoRAs."
         )
         self._lora_entries = entries
+        self.form._lora_hint_library.entries = entries
+        self._prompt_hints.refresh()
+        self.workflows.prompt_hints.refresh()
         self._render_lora_table()  # the retained files show at once; metadata columns follow from a separate read
         self._read_summary("lora_records", self._read_lora_records, self._lora_records_read)
         self._read_summary("lora_families", self._read_lora_families, self._lora_families_read)
@@ -1945,6 +1983,9 @@ class MainWindow:
         if error is not None or records is None:
             return  # the table keeps showing the retained files without local metadata
         self._lora_records = records
+        self.form._lora_hint_library.records = records
+        self._prompt_hints.refresh()
+        self.workflows.prompt_hints.refresh()
         set_label_overrides(label_overrides(records.values()))
         self.generation.lora.refresh_labels()
         self.gallery.refresh_lora_labels()
@@ -2013,8 +2054,19 @@ class MainWindow:
             )
             return
         self.lora_metadata_overlay.open(
-            record, self._lora_names.get(identity, "LoRA"), self.generation.lora.eligible_architectures()
+            record,
+            self._lora_names.get(identity, "LoRA"),
+            self.generation.lora.eligible_architectures(),
+            self._retained_source_details(identity),
         )
+
+    def _retained_source_details(self, identity: tuple[str, int]) -> DetailModel:
+        """Read-only content from the descriptive metadata kept with the newest conversion of this retained LoRA."""
+        entry = next((e for e in self._lora_entries if (e.get("sha256"), e.get("size")) == identity), None)
+        descriptive = (entry or {}).get("source_metadata")
+        if not isinstance(descriptive, dict):
+            return DetailModel()
+        return detail_model(descriptive)
 
     def _lora_metadata_saved(self) -> None:
         self.form.statusBar().showMessage("LoRA metadata saved locally. Files and receipts unchanged.", 5000)
