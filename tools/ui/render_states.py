@@ -61,7 +61,7 @@ if sys.platform == "win32" and platform_name == "offscreen":
     os.environ.setdefault("QT_QPA_FONTDIR", str(Path(os.environ.get("WINDIR", r"C:\Windows")) / "Fonts"))
 
 from PySide6.QtCore import QCoreApplication, QEvent, QPoint, QRect, Qt  # noqa: E402
-from PySide6.QtGui import QColor, QGuiApplication, QImage, QPainter, QPixmap, QTextDocument, QTextOption  # noqa: E402
+from PySide6.QtGui import QColor, QGuiApplication, QHelpEvent, QImage, QPainter, QPixmap, QTextDocument, QTextOption  # noqa: E402
 from PySide6.QtTest import QTest  # noqa: E402
 from PySide6.QtWidgets import (  # noqa: E402
     QApplication,
@@ -294,6 +294,47 @@ def save(widget, out, name):
     if not write_capture(target, lambda: widget.grab()):
         raise RuntimeError(f"Could not save {target.name}")
     report(target)
+
+
+def save_tooltip(window, out, name, target, *, hover=None):
+    """Capture a real Qt tooltip window over its owning form, without moving the user's pointer.
+
+    Tooltip widgets are separate top-level Qt windows, so QWidget.grab() of the form alone excludes them.
+    Send the ordinary help event through the installed event filter and composite the visible native tooltip.
+    """
+    if not category_selected(Path(name + ".png")):
+        return
+    from PySide6.QtWidgets import QToolTip
+
+    QToolTip.hideText()
+    QApplication.processEvents()
+    hovered = hover or target
+    global_position = hovered.mapToGlobal(hovered.rect().center())
+    local_position = target.mapFromGlobal(global_position)
+    QApplication.sendEvent(
+        target,
+        QHelpEvent(QEvent.Type.ToolTip, local_position, global_position),
+    )
+    QTest.qWait(80)
+    tips = [
+        widget
+        for widget in QApplication.topLevelWidgets()
+        if widget.isVisible() and widget.windowType() == Qt.WindowType.ToolTip
+    ]
+    if not tips:
+        raise RuntimeError(f"Native tooltip not displayed for offline UI state {name}")
+    image = window.grab()
+    painter = QPainter(image)
+    for tip in tips:
+        at = window.mapFromGlobal(tip.mapToGlobal(QPoint(0, 0)))
+        painter.drawPixmap(at, tip.grab())
+    painter.end()
+    target_path = out / f"{name}.png"
+    if not write_capture(target_path, lambda: image):
+        raise RuntimeError(f"Could not save {target_path.name}")
+    report(target_path)
+    QToolTip.hideText()
+    QApplication.processEvents()
 
 
 def render_inspector_fit_states(shell, out, category):
