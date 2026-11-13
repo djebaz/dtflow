@@ -76,10 +76,12 @@ def _convert(request: ConversionRequest, ctx: ConversionContext) -> ConversionRe
     if spec.experimental:
         if not request.allow_experimental:
             raise ExperimentalFamilyError(
-                f"{request.family} is experimental: its output has not been compared with Draw Things yet. "
+                f"{request.family} is experimental: some of its LoRAs still fail to convert, so coverage is incomplete. "
                 "Pass --experimental to convert anyway, or " + COLAB_HINT[:1].lower() + COLAB_HINT[1:]
             )
-        ctx.log(f"warning: {request.family} is experimental, its output has not been compared with Draw Things yet.")
+        ctx.log(
+            f"warning: {request.family} is experimental, some of its LoRAs still fail to convert (coverage is incomplete)."
+        )
     # Cheap checks before any work; write_ckpt checks the name again at the rename.
     if request.destination.exists():
         raise DestinationError(f"{request.destination} already exists; refusing to overwrite.")

@@ -280,13 +280,49 @@ class LoraStore:
                     if isinstance(record, dict)
                 ):
                     continue
+                # An unsafe name or a link is tampering, not damage: it stays an error here (before any reconversion).
                 target = self._path(item)
-                retained = RetainedFile(target.name, item["sha256"], item["size"], target)
-                self.verify(retained)
+                try:
+                    retained = RetainedFile(target.name, item["sha256"], item["size"], target)
+                    self.verify(retained)
+                except (ValidationError, KeyError, TypeError):
+                    # A missing or altered earlier output is not reusable; the caller converts again and
+                    # retain_converted() repairs the entry from the fresh bytes. An unreadable or malformed index
+                    # is still an error (_read).
+                    diagnostic_event(log, "lora_store.converted_entry_skipped", level=logging.WARNING, data={})
+                    continue
                 return retained
         finally:
             handle.close()
         return None
+
+    def _repair_damaged(self, target: Path, staged: Path, sha256: str, size: int) -> None:
+        """Put freshly converted, hash-checked bytes where a missing or altered indexed copy was.
+
+        An altered copy is moved aside to a hidden ``.<id>.damaged`` file in the store, never deleted; a link or
+        another non-file is not touched. The staged file is consumed only after the target is free.
+        """
+        if _hash(staged) != (sha256, size):
+            raise ValidationError("The converted LoRA changed before retention; nothing was kept.")
+        aside: Path | None = None
+        if os.path.lexists(target):
+            if target.is_symlink() or not target.is_file():
+                raise ValidationError("A retained LoRA is not a regular file; nothing was changed.")
+            aside = self.directory / f".{uuid.uuid4().hex}.damaged"
+            try:
+                os.replace(target, aside)
+            except OSError as exc:
+                raise ValidationError("The damaged retained LoRA could not be set aside; nothing was changed.") from exc
+        try:
+            os.replace(staged, target)
+        except OSError as exc:
+            if aside is not None:
+                try:
+                    os.replace(aside, target)  # put the damaged copy back; nothing is lost
+                except OSError:
+                    pass
+            raise ValidationError("The damaged retained LoRA could not be repaired; nothing was changed.") from exc
+        diagnostic_event(log, "lora_store.converted_entry_repaired", level=logging.WARNING, data={})
 
     def retain_converted(
         self,
@@ -318,7 +354,11 @@ class LoraStore:
             if matching is not None:
                 target = self._path(matching)
                 retained = RetainedFile(target.name, sha256, size, target)
-                self.verify(retained)
+                try:
+                    self.verify(retained)
+                except ValidationError:
+                    # The same bytes were just converted again, so a missing or altered earlier copy can be repaired.
+                    self._repair_damaged(target, staged, sha256, size)
             else:
                 if any(str(item.get("name", "")).casefold() == managed_name.casefold() for item in files):
                     raise ValidationError("A different retained LoRA already uses the selected name.")
