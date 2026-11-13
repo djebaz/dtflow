@@ -920,7 +920,11 @@ class AssetService:
             log,
             "assets.outdated_receipt_refreshed",
             level=logging.INFO,
-            data={"old_sha": item.sha256[:8], "new_sha": fresh.sha256[:8], **self._key_diagnostics()},
+            data={
+                **asset_ref_data(sha256=fresh.sha256, asset_id=fresh.receipt_id),
+                "old_sha_prefix": item.sha256[:12],
+                **self._key_diagnostics(),
+            },
         )
         return fresh
 
@@ -975,7 +979,11 @@ class AssetService:
             log,
             "assets.outdated_refresh_failed",
             level=logging.WARNING,
-            data={"reason": reason, "limited": limited},
+            data={
+                **asset_ref_data(sha256=item.sha256, asset_id=item.receipt_id),
+                "reason": reason,
+                "limited": limited,
+            },
         )
         return error
 
@@ -1098,7 +1106,11 @@ class AssetService:
             ),
             level=logging.INFO,
             data={
-                "asset": asset,
+                **asset_ref_data(
+                    sha256=prepared.sha256,
+                    asset_id=prepared.receipt_id,
+                    filename=PureWindowsPath(prepared.identifier).name,
+                ),
                 "answer": answers[0] if answers else "unknown",
                 "evidence": result.evidence,
                 "restoring": restoring,
@@ -1254,7 +1266,10 @@ class AssetService:
                     log,
                     "assets.restore_blocked",
                     level=logging.WARNING,
-                    data={"reason": "no_local_copy"},
+                    data={
+                        **asset_ref_data(sha256=prepared.sha256, asset_id=prepared.receipt_id),
+                        "reason": "no_local_copy",
+                    },
                 )
                 raise _failure(
                     ErrorCategory.VALIDATION,
@@ -1268,7 +1283,10 @@ class AssetService:
                 log,
                 "assets.restore_blocked",
                 level=logging.WARNING,
-                data={"reason": "local_copy_invalid"},
+                data={
+                    **asset_ref_data(sha256=prepared.sha256, asset_id=prepared.receipt_id),
+                    "reason": "local_copy_invalid",
+                },
             )
             raise _failure(
                 ErrorCategory.VALIDATION,
