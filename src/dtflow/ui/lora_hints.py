@@ -97,8 +97,6 @@ class HintLibrary:
                 for label, value in model.facts
                 if label not in {"Trigger phrase", "Class tokens", "Usage hint"}
             ]
-            if model.note:
-                secondary.append(text(model.note))
             body += "<br><br>" + "<br>".join(secondary) if secondary else ""
         heading = text(display_label(selection.identifier), strong=True) + text(f"  ·  weight {selection.weight:g}")
         return (

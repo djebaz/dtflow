@@ -101,7 +101,7 @@ class LoraMetadataOverlay(QObject):
         model = self._details_model
         tip = metadata_tooltip(model)
         self._region_tip.set_text(tip)
-        self._summary.set_runs((*model.runs, *model.note_runs) if model.runs or model.note_runs else ())
+        self._summary.set_runs(model.runs)
         self._summary.setVisible(bool(model))
         self._tags_line.set_runs(model.tag_runs)
         self._tags_line.setVisible(bool(model.tags))

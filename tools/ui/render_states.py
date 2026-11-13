@@ -772,7 +772,7 @@ def render_lora_prepare_states(shell, out):
     from dtflow.services.lora_convert.source_metadata import detail_model
     from dtflow.ui.source_details_view import metadata_tooltip
 
-    source_details = detail_model(first["source_metadata"], detected_family="krea2")
+    source_details = detail_model(first["source_metadata"])
     tip = metadata_tooltip(source_details)
     if not tip:
         raise RuntimeError("Offline Edit metadata fixture must contain descriptive metadata")

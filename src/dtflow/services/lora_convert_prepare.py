@@ -157,11 +157,8 @@ def _convert_sync(
             "converted_at_utc": datetime.now(UTC).isoformat(),
         }
         # Descriptive header metadata (#414): bounded, display-only, never evidence for the family or the output.
-        # It is kept once per retained file (not per conversion record); the structural family it is compared with
-        # comes from the same single header read Prepare already did.
+        # It is kept once per retained file (not per conversion record).
         inspected = inspect_source(source)
-        if inspected.detection.outcome == "detected":
-            record["detected_family"] = inspected.detection.family
         retained = store.retain_converted(
             result.destination,
             result.destination_sha256,

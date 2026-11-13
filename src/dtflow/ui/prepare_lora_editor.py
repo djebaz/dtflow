@@ -558,9 +558,7 @@ class PrepareBatchEditor:
     def _source_details(self, row: _Row) -> DetailModel:
         """Read-only descriptive content of the row's source file."""
         record = getattr(row.source_metadata, "record", lambda: None)()
-        found = getattr(row.detection, "family", None)
-        labels = {spec.key: spec.label for spec in self._conversion_families.values()}
-        return detail_model(record, detected_family=found, family_label=lambda key: labels.get(key, key))
+        return detail_model(record)
 
     def _allocation(self):
         requests = []
@@ -807,8 +805,8 @@ class PrepareBatchEditor:
                 self.form.prepareSourceSummaryCell.setToolTip(tip)
                 self._tags_line.setToolTip(tip)
                 self._summary.set_runs(
-                    (*model.runs, *model.note_runs)
-                    if model.runs or model.note_runs
+                    model.runs
+                    if model.runs
                     else (("No descriptive metadata", False),)
                     if self.selected.source_kind == "safetensors" and self.inspected
                     else ()

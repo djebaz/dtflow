@@ -74,9 +74,6 @@ class SourceMetadata:
             "fields": fields,
             "tags": [[tag, count] for tag, count in self.tags],
         }
-        declared = declared_family({"fields": self.fields})
-        if declared:
-            record["declared_family"] = declared
         return record
 
 
@@ -198,11 +195,8 @@ _DECLARED_FAMILIES = (
 def declared_family(record: dict | None) -> str | None:
     """Converter family key the file *declares* (``modelspec.architecture``, else ``ss_base_model_version``).
 
-    For display and an informational comparison only: never an input to detection, suggestion or conversion.
+    Used by the CLI report only: never an input to detection, suggestion or conversion.
     """
-    kept = (record or {}).get("declared_family")
-    if isinstance(kept, str) and kept:  # older retained records may have only the derived family
-        return kept
     fields = (record or {}).get("fields")
     if not isinstance(fields, dict):
         return None
@@ -244,7 +238,6 @@ class DetailModel:
     """Presentation-neutral content of a details view (no Qt): a one-line summary, label/value facts, tags."""
 
     summary: str = ""
-    note: str = ""
     facts: tuple[tuple[str, str], ...] = ()
     tags: tuple[str, ...] = ()
     # The summary as (text, strong) runs: values are strong, labels and separators muted. Display only; the view
@@ -253,17 +246,13 @@ class DetailModel:
     tag_counts: tuple[tuple[str, int], ...] = ()
 
     @property
-    def note_runs(self) -> tuple[tuple[str, bool], ...]:
-        return ((" · " if self.runs else "", False), (self.note, False)) if self.note else ()
-
-    @property
     def tag_runs(self) -> tuple[tuple[str, bool], ...]:
         return (("Top tags: ", False), (" · ".join(self.tags), True)) if self.tags else ()
 
     @property
     def line(self) -> str:
-        """The one-line form (summary, then the informational mismatch note when there is one)."""
-        return " · ".join(part for part in (self.summary, self.note) if part)
+        """The one-line form."""
+        return self.summary
 
     @property
     def tooltip(self) -> str:
@@ -271,8 +260,6 @@ class DetailModel:
         lines = [f"{label}: {value}" for label, value in self.facts]
         if not lines and self.summary:
             lines.append(self.summary)
-        if self.note:
-            lines.append(self.note)
         tags = " · ".join(f"{tag} ({count})" for tag, count in self.tag_counts)
         if not tags:
             tags = " · ".join(self.tags)
@@ -288,9 +275,7 @@ class DetailModel:
         return bool(self.summary or self.facts or self.tags)
 
 
-def detail_model(
-    record: dict | None, *, detected_family: str | None = None, family_label=lambda key: key
-) -> DetailModel:
+def detail_model(record: dict | None) -> DetailModel:
     """Everything a details view shows, from a bounded record. Never raises on a malformed record."""
     fields = (record or {}).get("fields")
     fields = (
@@ -315,7 +300,6 @@ def detail_model(
     )
     if not fields and not tags:
         return DetailModel()
-    declared = declared_family(record)
     # Display one phrase, not a list of activations. Keep the source record and editable Trigger Words untouched.
     trigger = next(
         (part.strip() for part in re.split(r"[,;\n]", fields.get("modelspec.trigger_phrase", "")) if part.strip()), None
@@ -361,9 +345,4 @@ def detail_model(
     elif not runs and tags:
         runs = [("Training tags available", False)]
     summary = "".join(text for text, _strong in runs)
-    note = ""
-    if declared and detected_family and declared != detected_family:
-        note = (
-            f"Declared {family_label(declared)}, structure looks like {family_label(detected_family)} (informational)"
-        )
-    return DetailModel(summary, note, tuple(facts), tags, tuple(runs), tag_counts)
+    return DetailModel(summary, tuple(facts), tags, tuple(runs), tag_counts)

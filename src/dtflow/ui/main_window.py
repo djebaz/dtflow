@@ -76,7 +76,6 @@ from dtflow.ui.brand import connection_icon, status_dot, tinted_icon
 from dtflow.ui.button_focus import KeyboardFocusGuard
 from dtflow.ui.current_page_stack import CurrentPageStack
 from dtflow.ui.cloud_usage_panel import CloudUsagePanel
-from dtflow.services.lora_convert import supported_families
 from dtflow.services.lora_convert.source_metadata import DetailModel, detail_model
 from dtflow.ui.lora_metadata_overlay import LoraMetadataOverlay
 from dtflow.ui.lora_hints import HintLibrary, PromptHintOverlay
@@ -2067,20 +2066,7 @@ class MainWindow:
         descriptive = (entry or {}).get("source_metadata")
         if not isinstance(descriptive, dict):
             return DetailModel()
-        conversions = (entry or {}).get("conversions")
-        if not isinstance(conversions, list):
-            conversions = [(entry or {}).get("conversion")]
-        # The structurally detected source family (not the family the user selected), when it was recorded.
-        found = next(
-            (
-                c["detected_family"]
-                for c in reversed(conversions)
-                if isinstance(c, dict) and isinstance(c.get("detected_family"), str)
-            ),
-            None,
-        )
-        labels = {spec.key: spec.label for spec in supported_families()}
-        return detail_model(descriptive, detected_family=found, family_label=lambda k: labels.get(k, k))
+        return detail_model(descriptive)
 
     def _lora_metadata_saved(self) -> None:
         self.form.statusBar().showMessage("LoRA metadata saved locally. Files and receipts unchanged.", 5000)
