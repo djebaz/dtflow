@@ -278,7 +278,7 @@ class DetailModel:
             tags = " · ".join(self.tags)
         if tags:
             lines.append("Top training tags (not necessarily trigger words): " + tags)
-        return "Declared by the file (unverified)\n" + "\n".join(lines) if lines else ""
+        return "\n".join(lines)
 
     @property
     def tags_line(self) -> str:
