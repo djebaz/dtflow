@@ -1278,6 +1278,9 @@ class WorkflowsPage(QObject):
                 row.addWidget(label)
                 row.addStretch(1)
                 hint_button = QToolButton(host)
+                hint_button.setObjectName(
+                    "workflowPromptHintsButton" if param.name == "prompt" else "workflowNegativePromptHintsButton"
+                )
 
                 def node_loras():
                     values = self.canvas.node_params(node_id) if self.canvas is not None else None
@@ -1474,9 +1477,15 @@ class WorkflowsPage(QObject):
         except wf.WorkflowError as exc:
             InlineNotice.error(self.workspace, "LoRAs not changed", str(exc))
             return
+        pinned_control = self.prompt_hints._button.objectName() if self.prompt_hints.open else None
         self._set(node_id, param.name, value)
         self._inspected = None
         self._show_node(node_id)
+        if pinned_control:
+            # The LoRA picker rebuilds this node's parameter widgets. Keep a pinned hint panel open.
+            replacement = self.inspector.workflowParamsHost.findChild(QToolButton, pinned_control)
+            if replacement is not None:
+                replacement.setChecked(True)
 
     @staticmethod
     def _step_text(step: dict) -> str:
