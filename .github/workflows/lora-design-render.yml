@@ -68,8 +68,9 @@ jobs:
             .venv/bin/python tools/ui/render_states.py \
               --category lora --fast --jobs 1 --out tmp/lora-ui
           count=$(find tmp/lora-ui -maxdepth 1 -name 'lora-*.png' -type f | wc -l)
-          [ "$count" -eq 5 ] || { echo "::error::Expected 5 LoRA captures, got $count."; exit 1; }
-          echo "Captured LoRA Prepare wide/compact, shared picker, and Connections collapsed/expanded." >> "$GITHUB_STEP_SUMMARY"
+          expected=$(python3 -c 'import json; states = json.load(open("tools/ui/render_catalog.json", encoding="utf-8"))["states"]; print(sum(s["category"] == "lora" and s["level"] == "f" for s in states))')
+          [ "$count" -eq "$expected" ] || { echo "::error::Expected $expected LoRA captures, got $count."; exit 1; }
+          echo "Captured $count LoRA Prepare, picker, hover-tooltip, and Connections views." >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upload GitHub screenshot artifact
         if: steps.capture.outcome == 'success'
@@ -119,7 +120,7 @@ jobs:
           names = sorted(path.name for path in Path("tmp/lora-ui").glob("lora-*.png"))
           lines = [
               "<!-- dtflow-lora-designer-renders -->",
-              "## Canonical LoRA views — 5 captures",
+              f"## Canonical LoRA views — {len(names)} captures",
               "",
               f"[GitHub Actions run and PNG artifact]({os.environ['RUN_URL']})",
               "",
