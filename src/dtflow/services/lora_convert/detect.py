@@ -393,7 +393,7 @@ def _detect(source: SafeTensors) -> FamilyDetection:
 
 
 def _emit(path: Path, result: FamilyDetection, error_type: str | None = None) -> None:
-    """One bounded diagnostic event: outcome, family, candidate count and a 3-character filename prefix only."""
+    """One bounded diagnostic event: outcome, family, candidates, fixed reason/evidence and a 3-character filename prefix."""
     from dtflow.diagnostics import asset_ref_data, event as diagnostic_event
 
     data = {
@@ -402,6 +402,10 @@ def _emit(path: Path, result: FamilyDetection, error_type: str | None = None) ->
         "family": result.family,
         "candidates": len(result.candidates),
     }
+    if result.evidence:
+        data["evidence"] = list(result.evidence)  # fixed counts and group names, never tensor names
+    if result.outcome != "detected" and result.reason:
+        data["reason"] = result.reason  # fixed text, no path or exception detail
     if error_type:
         data["error_type"] = error_type
     diagnostic_event(log, "lora_convert.source_family_detected", data=data)
