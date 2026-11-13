@@ -117,7 +117,10 @@ def _convert_sync(
             raise ConversionError("The converted checkpoint is not a valid Draw Things LoRA.") from exc
         detected = detect_lora_family(result.destination)
         if detected.family != spec.exact_architecture:
-            raise ConversionError("The converted checkpoint does not match the chosen family.")
+            raise ConversionError(
+                "The converted output could not be verified as the selected family. A partial LoRA can be "
+                "recognised from its source yet still miss what the converted check requires. Nothing was retained."
+            )
         if (
             result.source_sha256 != source_sha
             or stat.st_size != source_size

@@ -44,6 +44,7 @@ class PrepareEvent:
     total: int = 0
     label: str = ""  # bounded, UI-authored phase label; never source paths or converter text
     output_size: int = 0  # actual converted checkpoint bytes when known
+    name: str = ""  # file name to show from now on (the managed checkpoint after conversion or an accepted rename)
 
 
 @dataclass(slots=True)
@@ -149,6 +150,8 @@ class PrepareProgress:
             return
         now = self._clock()
         stage = event.stage
+        if event.name:
+            file.name = event.name  # display only: the row identity stays the selected source path
         if event.output_size > 0:
             file.size = event.output_size
         if stage == UPLOADING:

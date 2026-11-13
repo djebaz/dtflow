@@ -77,7 +77,7 @@ def _convert(request: ConversionRequest, ctx: ConversionContext) -> ConversionRe
         if not request.allow_experimental:
             raise ExperimentalFamilyError(
                 f"{request.family} is experimental: its output has not been compared with Draw Things yet. "
-                "Pass --experimental to convert anyway, or " + COLAB_HINT
+                "Pass --experimental to convert anyway, or " + COLAB_HINT[:1].lower() + COLAB_HINT[1:]
             )
         ctx.log(f"warning: {request.family} is experimental, its output has not been compared with Draw Things yet.")
     # Cheap checks before any work; write_ckpt checks the name again at the rename.
