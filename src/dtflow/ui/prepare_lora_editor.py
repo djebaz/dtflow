@@ -21,7 +21,7 @@ from shiboken6 import isValid
 from dtflow.core.models import accepted_name_changes
 from dtflow.services.catalogue import FAMILY_LABELS
 from dtflow.services.lora_convert import CONVERTER_VERSION
-from dtflow.services.lora_convert.source_metadata import detail_lines
+from dtflow.services.lora_convert.source_metadata import compact_lines, detail_lines
 from dtflow.services.lora_family import LoraFamily
 from dtflow.services.lora_naming import (
     LoraPrepareMetadata,
@@ -549,10 +549,7 @@ class PrepareBatchEditor:
         lines = detail_lines(record, detected_family=found, family_label=lambda key: labels.get(key, key))
         if not lines:
             return "", ""
-        shown = lines[:6]
-        if len(lines) > len(shown):
-            shown.append(f"… {len(lines) - len(shown)} more (hover for all)")
-        return "\n".join(shown), "\n".join(lines)
+        return compact_lines(lines)
 
     def _allocation(self):
         requests = []
@@ -705,7 +702,7 @@ class PrepareBatchEditor:
                         if not family
                         else f"You chose {spec.label if spec else family} · file suggests {suggestion}"
                         if row.manual_family and suggestion and spec is not None and suggestion != spec.label
-                        else "Experimental · some LoRAs fail to convert · confirmation required"
+                        else "Experimental · may fail to convert"
                         if spec is not None and spec.experimental
                         else "Unverified on DT+ · try with care"
                         if spec is not None and spec.status == "unverified_on_dt_plus"
@@ -728,6 +725,12 @@ class PrepareBatchEditor:
                     family_note.setText(
                         "Required · family not detected, choose it" + (f" · name suggests {hint}" if hint else "")
                     )
+                # A hint that does not fit its column is cut by the cell: the full sentence stays one hover away.
+                family_note.setToolTip(
+                    "Experimental family: some LoRAs of it fail to convert, so confirmation is required."
+                    if spec is not None and spec.experimental and row.source_kind == "safetensors"
+                    else family_note.text()
+                )
                 family_note.setProperty(
                     "state", "error" if (not family or row.invalid) and self.inspected else "unknown"
                 )

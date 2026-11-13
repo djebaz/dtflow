@@ -10,6 +10,7 @@ from __future__ import annotations
 import json
 import math
 import re
+import textwrap
 from dataclasses import dataclass
 
 RECORD_VERSION = 1
@@ -21,7 +22,7 @@ _MAX_COUNT = 10**12
 # (header key, label, maximum stored characters). Dataset folders and paths (ss_dataset_dirs, ss_datasets) and free
 # training comments are deliberately not kept: they can hold local paths or personal text.
 _FIELDS: tuple[tuple[str, str, int], ...] = (
-    ("modelspec.title", "Title", 120),
+    ("modelspec.title", "Title in file", 120),
     ("ss_output_name", "Output name", 120),
     ("modelspec.author", "Author", 120),
     ("modelspec.description", "Description", 400),
@@ -194,6 +195,39 @@ def declared_family(record: dict | None) -> str | None:
     return None
 
 
+# What a compact panel shows first: what describes this LoRA's training, then the file's own descriptive text, which
+# is often inherited from the base model (a finetune can carry its base model's title and author).
+_DISPLAY_ORDER = (
+    "ss_output_name",
+    "modelspec.trigger_phrase",
+    "modelspec.architecture",
+    "ss_base_model_version",
+    "ss_sd_model_name",
+    "ss_network_module",
+    "ss_network_dim",
+    "ss_network_alpha",
+    "ss_resolution",
+    "modelspec.resolution",
+    "ss_num_epochs",
+    "ss_class_tokens",
+    "modelspec.title",
+    "modelspec.author",
+    "modelspec.license",
+    "modelspec.date",
+    "modelspec.usage_hint",
+    "modelspec.description",
+)
+
+
+def compact_lines(lines: list[str], *, count: int = 5, width: int = 72) -> tuple[str, str]:
+    """(panel text, tooltip text): at most ``count`` single-line entries cut to ``width``; the tooltip has it all."""
+    shown = [line if len(line) <= width else line[: width - 1].rstrip() + "…" for line in lines[:count]]
+    if len(lines) > count:
+        shown[-1] = f"… {len(lines) - count + 1} more (hover for all)"
+    full = "\n".join(textwrap.fill(line, 90) for line in lines)
+    return "\n".join(shown), full
+
+
 def detail_lines(record: dict | None, *, detected_family: str | None = None, family_label=lambda key: key) -> list[str]:
     """Read-only, scannable lines for a details panel. Essential fields first; long text is already capped."""
     fields = (record or {}).get("fields")
@@ -201,16 +235,17 @@ def detail_lines(record: dict | None, *, detected_family: str | None = None, fam
         return _tag_line(record)
     lines: list[str] = []
     shown: set[str] = set()
-    for key, label, _limit in _FIELDS:
+    for key in _DISPLAY_ORDER:
         value = fields.get(key)
+        label = _LABELS[key]
         if isinstance(value, str) and value and label not in shown:
             lines.append(f"{label}: {value}")
             shown.add(label)
     declared = declared_family(record)
     if declared and detected_family and declared != detected_family:
-        lines.append(
-            f"Note: the file declares {family_label(declared)}, but its structure looks like "
-            f"{family_label(detected_family)}. Declared metadata is informational only."
+        lines.insert(
+            0,
+            f"Declared {family_label(declared)}, structure looks like {family_label(detected_family)} (informational)",
         )
     lines.extend(_tag_line(record))
     return lines
