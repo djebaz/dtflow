@@ -68,7 +68,7 @@ log = logging.getLogger(__name__)
 
 
 def _choose_asset_file(parent: QWidget, directory: Path) -> list[str]:
-    return QFileDialog.getOpenFileNames(parent, "Prepare converted LoRA files", str(directory), "LoRA files (*.ckpt)")[
+    return QFileDialog.getOpenFileNames(parent, "Prepare LoRA files", str(directory), "LoRA files (*.ckpt *.safetensors)")[
         0
     ]
 
