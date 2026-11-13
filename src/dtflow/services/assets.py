@@ -341,8 +341,13 @@ class AssetService:
         transferred = False
         try:
             if managed_name is not None and self.store is not None and retained_name != managed_name:
-                # Only previously retained copies can need an in-place name change.
-                await asyncio.to_thread(self.store.rename_accepted, content.sha256, content.size, managed_name)
+                # A converted source may already live inside the retained store. Upload from the
+                # new path after an accepted-name rename, never from the now-missing old path.
+                renamed = await asyncio.to_thread(
+                    self.store.rename_accepted, content.sha256, content.size, managed_name
+                )
+                if renamed is not None and path.parent == self.store.directory:
+                    path = renamed.path
             negotiation = negotiation or await backend.negotiate_asset(content)
             if negotiation.status == "exists":
                 if progress is not None:
