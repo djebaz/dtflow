@@ -41,9 +41,9 @@ def thumbnail_sections(pngs, by_id, base):
     lines = []
     for category, paths in groups.items():
         title = "LoRA" if category == "lora" else category.title()
-        # No `open` attribute: every category starts collapsed. GitHub strips inline CSS;
-        # a semantic heading supplies the requested larger, clickable title instead.
-        lines += [f"<details><summary><h3>{html.escape(title)} · {len(paths)} previews</h3></summary>", ""]
+        # Inline emphasis keeps the toggle compact; headings add excessive vertical margins.
+        # No `open` attribute: every category starts collapsed.
+        lines += [f"<details><summary><strong>{html.escape(title)}</strong> [{len(paths)}]</summary>", ""]
         visible = chosen[category]
         if len(visible) != len(paths):
             lines += [
