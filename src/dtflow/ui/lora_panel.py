@@ -1018,19 +1018,17 @@ class LoraAssetPanel:
                     self._prepare_issues.append(
                         f"{self._prepare_index + 1}/{len(self._prepare_files)} {filename}: {explanation.detail}"
                     )
-                reason = (
-                    "conversion_failed"
-                    if isinstance(failure, ConversionError)
-                    else "accepted_name_conflict"
-                    if isinstance(failure, NameAlreadyAcceptedError)
-                    else "validation_failed"
-                    if isinstance(failure, ValidationError)
-                    else "backend_failed"
-                    if isinstance(failure, BackendError)
-                    else "unexpected_error"
-                    if failure is not None
-                    else "receipt_not_confirmed"
-                )
+                if isinstance(failure, ConversionError):
+                    reason = "conversion_failed"
+                elif isinstance(failure, NameAlreadyAcceptedError):
+                    reason = "accepted_name_conflict"
+                elif isinstance(failure, ValidationError):
+                    reason = "validation_failed"
+                elif isinstance(failure, BackendError):
+                    # An API error does not necessarily mean the remote operation failed.
+                    reason = "backend_error"
+                else:
+                    reason = "unexpected_error" if failure is not None else "receipt_not_confirmed"
                 data = {
                     **self._prepare_log_reference(record),
                     "outcome": outcome,
