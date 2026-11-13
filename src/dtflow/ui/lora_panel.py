@@ -894,7 +894,7 @@ class LoraAssetPanel:
                 if development_mode():
                     # Full per-file evidence stays in dev logs, without full paths.
                     data.update(
-                        filename=Path(self._prepare_files[self._prepare_index]).name,
+                        filename_prefix=Path(self._prepare_files[self._prepare_index]).name[:3],
                         error_headline=explanation.headline,
                         error_detail=explanation.detail,
                     )
