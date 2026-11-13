@@ -55,7 +55,7 @@ from dtflow._diagnostic_reader import (
     snapshot,
 )
 from dtflow.diagnostic_components import COMPONENTS
-from dtflow.diagnostic_projection import characteristic_order, characteristics
+from dtflow.diagnostic_projection import characteristic_order, characteristics, stable_color_index
 from dtflow.persistence.settings import SettingsError, load_logs_preferences, save_logs_preferences
 from dtflow.logging_setup import LOGGER
 from dtflow.ui.activity_strip import activity_strip
@@ -158,6 +158,43 @@ def row_preview(record: dict):
 
 def characteristic_label(key: str) -> str:
     return key.replace("_", " ")
+
+
+def characteristic_tooltip(data: dict, colors: tuple[str, ...]) -> str:
+    """Complete human-readable fields, using the table's stable name colors, not JSON syntax."""
+
+    def scalar(value):
+        if value is None:
+            return "null"
+        if type(value) is bool:
+            return "true" if value else "false"
+        if type(value) is dict:
+            return "No fields"
+        if type(value) is list:
+            return "No items"
+        return escape(str(value))
+
+    def lines(node, depth=0):
+        indent = "  " * depth
+        if type(node) is dict:
+            for key in sorted(node, key=characteristic_order):
+                color = escape(colors[stable_color_index(key, len(colors))], quote=True)
+                label = f'<span style="color:{color}">{escape(characteristic_label(key))}</span>'
+                value = node[key]
+                if type(value) in (dict, list) and value:
+                    yield indent + label
+                    yield from lines(value, depth + 1)
+                else:
+                    yield indent + label + ": " + scalar(value).replace("\n", "\n" + indent + "  ")
+        else:
+            for number, value in enumerate(node, 1):
+                if type(value) in (dict, list) and value:
+                    yield indent + f"{number}."
+                    yield from lines(value, depth + 1)
+                else:
+                    yield indent + f"{number}. " + scalar(value).replace("\n", "\n" + indent + "  ")
+
+    return "\n".join(lines(data))
 
 
 class _Signals(QObject):
@@ -1383,7 +1420,7 @@ class LogsWorkspace(QObject):
         record = self.model.rows[row]
         table = self.form.logsTable
 
-        def show(text):
+        def show(text, *, rich=False):
             current = table.indexAt(table.viewport().mapFromGlobal(QCursor.pos()))
             if (
                 current.isValid()
@@ -1392,10 +1429,10 @@ class LogsWorkspace(QObject):
                 and self.model.refs[current.row()] == ref
                 and table.isVisible()
             ):
-                # Escape diagnostic text so HTML-looking values remain literal. No preview truncation.
+                # Rich content is built only from escaped diagnostic text and shared palette colors.
                 QToolTip.showText(
                     position,
-                    "<pre style='white-space: pre-wrap'>" + escape(text) + "</pre>",
+                    "<pre style='white-space: pre-wrap'>" + (text if rich else escape(text)) + "</pre>",
                     table.viewport(),
                     table.visualRect(current),
                 )
@@ -1406,17 +1443,21 @@ class LogsWorkspace(QObject):
                 self._tooltip_pending = ref
                 return
             self._tooltip_busy = True
+            # Snapshot plain color strings on Qt; hydration/formatting stays on the worker.
+            colors = tuple(self.model.palette[f"color.logPill{index}Fg"] for index in range(1, 9))
 
             def load():
                 full = read_detail(self.directory, ref)
                 data = full.get("data")
                 if type(data) is dict and data:
-                    ordered = {key: data[key] for key in sorted(data, key=characteristic_order)}
-                    return json.dumps(ordered, ensure_ascii=False, indent=2)
-                return full.get("msg", "")
+                    return characteristic_tooltip(data, colors)
+                return escape(full.get("msg", ""))
 
             def delivered(text, error):
-                show("Cell data unavailable: " + error if error else text)
+                if error:
+                    show("Cell data unavailable: " + error)
+                else:
+                    show(text, rich=True)
 
             self._run(load, delivered, kind="tooltip", settled=self._tooltip_settled)
         else:
