@@ -274,6 +274,26 @@ def _check_resolver(rule: _ResolverRule, modules: dict[str, dict[str, tuple[int,
     return verdict
 
 
+def _sdxl_fixed_modules(keys: list[str], modules: dict[str, dict[str, tuple[int, ...]]]) -> set[str]:
+    """Source modules the SDXL tables send to the fixed UNet part (cross-attention key/value), via the same lookups."""
+    from dtflow.services.lora_convert.analysis import _table_maps
+    from dtflow.services.lora_convert.families import tables
+
+    fixed_map = _table_maps("sdxl")[1]
+    found: set[str] = set()
+    if not fixed_map:
+        return found
+    for normalized, original in tables._normalize_state(keys, "te1").items():
+        if not normalized.endswith((".lora_up.weight", ".lora_down.weight")):
+            continue
+        parts = normalized.split("_")
+        if len(parts) > 2 and tables._find(fixed_map, tables._derive_keys(parts)):
+            parsed = split_key(original)
+            if parsed is not None and parsed.module in modules:
+                found.add(parsed.module)
+    return found
+
+
 def _check_sd(family: str, keys: list[str], modules: dict[str, dict[str, tuple[int, ...]]]) -> _Verdict:
     from dtflow.services.lora_convert.analysis import _table_matches
 
@@ -309,7 +329,8 @@ def _check_sd(family: str, keys: list[str], modules: dict[str, dict[str, tuple[i
     text = [m for m in modules if "text_model_" in m]
     second = [m for m in text if "te2_" in m or "text_encoder_2_" in m]
     first = [m for m in text if m not in second]
-    unet_dims = _dims(modules, [m for m in modules if m not in text])
+    fixed = _sdxl_fixed_modules(keys, modules) if family == "sdxl" else set()
+    unet_dims = _dims(modules, [m for m in modules if m not in text and m not in fixed])
     first_dims, second_dims = _dims(modules, first), _dims(modules, second)
     if family == "sd1":
         complete = (
@@ -320,11 +341,15 @@ def _check_sd(family: str, keys: list[str], modules: dict[str, dict[str, tuple[i
             and not second
         )
     else:
+        # The converter accepts swapped text encoder tags (OpenCLIP-G under te1), so does the suggestion.
+        encoders = (_SD1_CROSS in first_dims and 1280 in second_dims) or (
+            1280 in first_dims and _SD1_CROSS in second_dims
+        )
         complete = (
-            _SD1_CROSS in first_dims
-            and 1280 in second_dims
-            and {640, 1280, 2048} <= unet_dims
+            encoders
+            and {640, 1280} <= unet_dims
             and not ({384, 1536} & unet_dims)
+            and _SDXL_CROSS in _dims(modules, fixed)  # the converted check needs the fixed conditioning path
         )
     if not complete:
         verdict.note = _missing(label, "it lacks text encoder tensors or part of the UNet widths")
@@ -342,15 +367,23 @@ def _detect(source: SafeTensors) -> FamilyDetection:
     keys = source.keys()
     modules: dict[str, dict[str, tuple[int, ...]]] = {}
     other = 0
+    duplicate = False
     for key in keys:
         parsed = split_key(key)
         if parsed is None:
             other += 1
             continue
-        modules.setdefault(parsed.module, {})[parsed.role] = source.shape(key)
+        roles = modules.setdefault(parsed.module, {})
+        if parsed.role in roles:
+            duplicate = True  # the converter refuses two keys with the same module and role
+        roles[parsed.role] = source.shape(key)
     modules = {module: roles for module, roles in modules.items() if "up" in roles or "down" in roles}
     if not modules:
         return FamilyDetection("unknown", reason="No LoRA up/down tensors found in this file")
+    if duplicate or any("up" not in roles or "down" not in roles for roles in modules.values()):
+        return FamilyDetection(
+            "unknown", reason="Some modules repeat a tensor or lack their up/down pair; the converter would refuse it"
+        )
     if other:
         # LoHa, LoKr, DoRA, bias or diff tensors beside plain LoRA ones: the converter refuses them, so no family
         # is suggested and its own error stays the meaningful one.
