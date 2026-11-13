@@ -156,6 +156,7 @@ WIRED_CONTROLS = (
     "saveQueueTemplateButton",
     "loadQueueTemplateButton",
     "composerPromptEdit",
+    "composerPromptHintsButton",
     "queueCopyPromptButton",
     "refreshQueuesButton",
     "clearQueuesButton",
