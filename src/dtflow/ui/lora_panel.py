@@ -472,6 +472,9 @@ class LoraAssetPanel:
         }
         self._render_loras()
         selected = self._selected_id()
+        refresh_hints = getattr(self.page.window(), "_lora_hint_refresh", None)
+        if refresh_hints is not None:
+            refresh_hints()
         self.page.assetList.clear()
         for record in records:
             value = record.get("family")

@@ -79,6 +79,7 @@ from dtflow.ui.cloud_usage_panel import CloudUsagePanel
 from dtflow.services.lora_convert import supported_families
 from dtflow.services.lora_convert.source_metadata import DetailModel, detail_model
 from dtflow.ui.lora_metadata_overlay import LoraMetadataOverlay
+from dtflow.ui.lora_hints import HintLibrary
 from dtflow.ui.lora_trigger_panel import LoraTriggerPanel
 from dtflow.ui.workflow_defaults_panel import WorkflowDefaultsPanel
 from dtflow.ui.gallery_page import GalleryPage
@@ -220,6 +221,8 @@ class MainWindow:
         startup.mark("first widget polished")
         # Disposable font/input probes belong in tools/ui/probe_line_edit.py, not desktop startup.
         self.form = load_form()
+        self.form._lora_hint_library = HintLibrary()
+        self.form._lora_hint_refresh = self._refresh_lora_hint_data
         self.form.statusGlyphLabel.setPixmap(status_dot())
         startup.mark("main form")
         self.generation_page = load_ui(GENERATION_UI_FILE)
@@ -1871,6 +1874,20 @@ class MainWindow:
 
         self._read_summary("loras", read, self._custom_loras_read)
 
+    def _refresh_lora_hint_data(self) -> None:
+        """Refresh presentation metadata off Qt after Prepare or metadata edits; never hash or call a provider."""
+        def read():
+            return LoraStore(self.state_dir).entries(), self._read_lora_records_sync(self.state_dir)
+
+        def delivered(result, error):
+            hints = self.form._lora_hint_library
+            if error is not None or result is None:
+                hints.entries, hints.records = [], {}
+                return
+            hints.entries, hints.records = result
+
+        self._read_summary("lora_hints", read, delivered)
+
     def _custom_loras_read(self, result, error) -> None:
         if self._removing_retained_lora:
             return
@@ -1895,6 +1912,7 @@ class MainWindow:
             else "No locally retained LoRAs."
         )
         self._lora_entries = entries
+        self.form._lora_hint_library.entries = entries
         self._render_lora_table()  # the retained files show at once; metadata columns follow from a separate read
         self._read_summary("lora_records", self._read_lora_records, self._lora_records_read)
         self._read_summary("lora_families", self._read_lora_families, self._lora_families_read)
@@ -1947,6 +1965,7 @@ class MainWindow:
         if error is not None or records is None:
             return  # the table keeps showing the retained files without local metadata
         self._lora_records = records
+        self.form._lora_hint_library.records = records
         set_label_overrides(label_overrides(records.values()))
         self.generation.lora.refresh_labels()
         self.gallery.refresh_lora_labels()
@@ -2043,6 +2062,7 @@ class MainWindow:
         return detail_model(descriptive, detected_family=found, family_label=lambda k: labels.get(k, k))
 
     def _lora_metadata_saved(self) -> None:
+        self._refresh_lora_hint_data()
         self.form.statusBar().showMessage("LoRA metadata saved locally. Files and receipts unchanged.", 5000)
         self.refresh_custom_loras(background=True)
 

@@ -126,6 +126,24 @@ class RunsLine(QWidget):
         painter.end()
 
 
+def show_fading_tooltip(position, text: str, widget: QWidget) -> None:
+    """Use Qt's short native fade for this show only, preserving desktop effect preferences."""
+    effects = (Qt.UIEffect.UI_FadeTooltip, Qt.UIEffect.UI_AnimateTooltip)
+    saved_effects = (
+        tuple(QApplication.isEffectEnabled(effect) for effect in effects)
+        if QApplication.isEffectEnabled(Qt.UIEffect.UI_General)
+        else None
+    )
+    try:
+        if saved_effects is not None:
+            QApplication.setEffectEnabled(Qt.UIEffect.UI_FadeTooltip, True)
+        QToolTip.showText(position, text, widget)
+    finally:
+        if saved_effects is not None:
+            for effect, enabled in zip(effects, saved_effects, strict=True):
+                QApplication.setEffectEnabled(effect, enabled)
+
+
 class RegionTooltip(QObject):
     """One tooltip for a whole region: the union of ``members`` (and ``margin`` px around it, full height of ``root``).
 
@@ -161,23 +179,7 @@ class RegionTooltip(QObject):
     def eventFilter(self, watched, event) -> bool:  # noqa: N802 - Qt override
         if event.type() == QEvent.Type.ToolTip and self._text and isinstance(watched, QWidget):
             if self._area().contains(self._root.mapFromGlobal(event.globalPos())):
-                # Match the Logs hover: Qt's short native fade takes precedence over its roll animation.
-                # Scope the preference to this show and respect desktop-wide disabled effects.
-                effects = (Qt.UIEffect.UI_FadeTooltip, Qt.UIEffect.UI_AnimateTooltip)
-                saved_effects = (
-                    tuple(QApplication.isEffectEnabled(effect) for effect in effects)
-                    if QApplication.isEffectEnabled(Qt.UIEffect.UI_General)
-                    else None
-                )
-                try:
-                    if saved_effects is not None:
-                        QApplication.setEffectEnabled(Qt.UIEffect.UI_FadeTooltip, True)
-                    QToolTip.showText(event.globalPos(), self._text, self._root)
-                finally:
-                    # Enabling fade also enables animation; restore both flags, even if showing fails.
-                    if saved_effects is not None:
-                        for effect, enabled in zip(effects, saved_effects, strict=True):
-                            QApplication.setEffectEnabled(effect, enabled)
+                show_fading_tooltip(event.globalPos(), self._text, self._root)
                 event.accept()
                 return True
         return False

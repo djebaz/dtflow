@@ -11,6 +11,7 @@ from PySide6.QtWidgets import QPushButton, QSlider, QWidget
 from dtflow.core.models import LoRASelection
 from dtflow.services.lora_naming import display_label
 from dtflow.ui.inline_feedback import feedback
+from dtflow.ui.lora_hints import LoRAHover
 
 WEIGHT_STEPS = 20  # slider ticks per 1.0 of weight: 0.05 per tick, per arrow key and per mouse-wheel notch
 DEFAULT_WEIGHT = 1.0
@@ -207,6 +208,12 @@ def edit_lora_selection(
             + (f"\nCatalogue suggests weight {suggestion:g}." if suggestion is not None else "")
         )
         weights[name] = weight
+        row.metadata_hint = LoRAHover(
+            row,
+            lambda: [("LoRA metadata", (LoRASelection(name, weights[name]),))],
+            detailed=True,
+            descendants=True,
+        )
         slider.setValue(max(slider.minimum(), min(slider.maximum(), round(weight * WEIGHT_STEPS))))
         slider.setAccessibleName(f"{_display_label(name)} weight")
         label.setText(format_weight(weight))
