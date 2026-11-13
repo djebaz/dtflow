@@ -79,7 +79,7 @@ from dtflow.ui.cloud_usage_panel import CloudUsagePanel
 from dtflow.services.lora_convert import supported_families
 from dtflow.services.lora_convert.source_metadata import DetailModel, detail_model
 from dtflow.ui.lora_metadata_overlay import LoraMetadataOverlay
-from dtflow.ui.lora_hints import HintLibrary
+from dtflow.ui.lora_hints import HintLibrary, PromptHintOverlay
 from dtflow.ui.lora_trigger_panel import LoraTriggerPanel
 from dtflow.ui.workflow_defaults_panel import WorkflowDefaultsPanel
 from dtflow.ui.gallery_page import GalleryPage
@@ -421,6 +421,21 @@ class MainWindow:
             generate_hook=self._show_generation,
             reuse_hook=self._reuse_queue_request,
             activity=self.activity,
+        )
+        # One shared overlay occupies only the right inspector's scroll viewport,
+        # below the persistent Images navigation header, for Generate and Queue prompts.
+        self._prompt_hints = PromptHintOverlay(
+            self.shell.rightScroll.viewport(), on_toggle=self._responsive_workspace
+        )
+        self._prompt_hints.bind(
+            self.generation_page.promptHintsButton,
+            lambda: tuple(self.generation.lora.loras),
+            title="Applied LoRAs",
+        )
+        self._prompt_hints.bind(
+            self.queue_page.composerPromptHintsButton,
+            lambda: tuple(self.queue._draft[0].loras) if self.queue._draft is not None else (),
+            title="Queue LoRAs",
         )
         self.scripts.run_start = self.queue.start_script
         self.workflows.start_workflow = self.queue.start_workflow
@@ -959,6 +974,8 @@ class MainWindow:
 
     def _workspace_changed(self, index: int) -> None:
         """Switch mounted workspaces without resetting active operations."""
+        self._prompt_hints.close()
+        self.workflows.prompt_hints.close()
         logs_active = self.form.workspaceStack.currentWidget() is self.logs_marker
         if logs_active:
             self.logs_button.setChecked(True)
@@ -1165,8 +1182,12 @@ class MainWindow:
         # Logs and Images use the full-width center workspace, regardless of
         # whether the Images page changed during this navigation.
         shell.leftRail.setVisible(not images and not logs and not folded)
-        shell.rightRail.setVisible(not images and not logs and (workflows or not narrow))
-        self._place_images_header(images=images, logs=logs, narrow=narrow and not workflows)
+        hint_open = self._prompt_hints.open if hasattr(self, "_prompt_hints") else False
+        # The hint toggle can reveal the right rail at narrow widths, with Images still above it.
+        shell.rightRail.setVisible(not images and not logs and (workflows or not narrow or hint_open))
+        self._place_images_header(
+            images=images, logs=logs, narrow=narrow and not workflows and not hint_open
+        )
         if self._logs_form is not None:
             self._logs_form.logsBrandSlot.setVisible(logs)
             self._logs_form.logsNavigationSlot.setVisible(logs)
@@ -1913,6 +1934,8 @@ class MainWindow:
         )
         self._lora_entries = entries
         self.form._lora_hint_library.entries = entries
+        self._prompt_hints.refresh()
+        self.workflows.prompt_hints.refresh()
         self._render_lora_table()  # the retained files show at once; metadata columns follow from a separate read
         self._read_summary("lora_records", self._read_lora_records, self._lora_records_read)
         self._read_summary("lora_families", self._read_lora_families, self._lora_families_read)
@@ -1966,6 +1989,8 @@ class MainWindow:
             return  # the table keeps showing the retained files without local metadata
         self._lora_records = records
         self.form._lora_hint_library.records = records
+        self._prompt_hints.refresh()
+        self.workflows.prompt_hints.refresh()
         set_label_overrides(label_overrides(records.values()))
         self.generation.lora.refresh_labels()
         self.gallery.refresh_lora_labels()
