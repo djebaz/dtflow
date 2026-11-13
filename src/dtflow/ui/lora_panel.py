@@ -875,7 +875,13 @@ class LoraAssetPanel:
                     self._prepare_issues.append(
                         f"{self._prepare_index + 1}/{len(self._prepare_files)} {filename}: {explanation.detail}"
                     )
+                source_path = Path(self._prepare_files[self._prepare_index])
+                editor = self._prepare_editor
+                row = next((r for r in editor.rows if r.path == source_path), None) if editor is not None else None
+                source_sha = row.sha256 if row is not None else None
                 data = {
+                    "filename_prefix": source_path.name[:3],
+                    **({"source_sha_prefix": source_sha[:12]} if source_sha else {}),
                     "outcome": outcome,
                     "reason": "service_error" if failure is not None else "receipt_not_confirmed",
                     "item": self._prepare_index + 1,
@@ -892,12 +898,8 @@ class LoraAssetPanel:
                     ),
                 }
                 if development_mode():
-                    # Full per-file evidence stays in dev logs, without full paths.
-                    data.update(
-                        filename_prefix=Path(self._prepare_files[self._prepare_index]).name[:3],
-                        error_headline=explanation.headline,
-                        error_detail=explanation.detail,
-                    )
+                    # Keep a stable error type, never an arbitrary provider message or full source basename.
+                    data["error_type"] = type(failure).__name__ if failure is not None else "receipt_not_confirmed"
                 diagnostic_event(
                     log,
                     "ui.asset_prepare_incomplete",
