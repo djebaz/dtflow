@@ -16,7 +16,6 @@ from PySide6.QtWidgets import QFrame, QVBoxLayout, QWidget
 
 from dtflow.core.models import ValidationError
 from dtflow.services.catalogue import FAMILY_LABELS
-from dtflow.services.lora_convert.source_metadata import compact_lines
 from dtflow.services.lora_metadata_edit import save_lora_metadata
 from dtflow.services.lora_naming import architecture_shortcode
 from dtflow.ui.runner import AsyncRunner
@@ -92,10 +91,9 @@ class LoraMetadataOverlay(QObject):
         ``source_details`` are read-only lines from the retained source metadata (#414); they are never editable.
         """
         form = self.form
-        brief, full = compact_lines(list(source_details), count=7)
-        form.loraMetadataSourceDetails.setText("Declared by the source file:\n" + brief)
-        form.loraMetadataSourceDetails.setToolTip(full)
+        form.loraMetadataSourceDetails.setPlainText("\n".join(source_details))
         form.loraMetadataSourceDetails.setVisible(bool(source_details))
+        form.loraMetadataSourceCaption.setVisible(bool(source_details))
         self._identity = (record["sha256"], record["size"])
         form.loraMetadataFile.setText(name)
         combo = form.loraMetadataArchitecture

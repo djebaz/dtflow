@@ -21,7 +21,7 @@ from shiboken6 import isValid
 from dtflow.core.models import accepted_name_changes
 from dtflow.services.catalogue import FAMILY_LABELS
 from dtflow.services.lora_convert import CONVERTER_VERSION
-from dtflow.services.lora_convert.source_metadata import compact_lines, detail_lines
+from dtflow.services.lora_convert.source_metadata import detail_lines
 from dtflow.services.lora_family import LoraFamily
 from dtflow.services.lora_naming import (
     LoraPrepareMetadata,
@@ -541,15 +541,13 @@ class PrepareBatchEditor:
             else ""
         )
 
-    def _source_details(self, row: _Row) -> tuple[str, str]:
-        """(short text, full text) of the read-only descriptive details of the row's source file."""
+    def _source_details(self, row: _Row) -> list[str]:
+        """Every read-only descriptive line of the row's source file (the details area wraps and scrolls)."""
         record = getattr(row.source_metadata, "record", lambda: None)()
         found = getattr(row.detection, "family", None)
         labels = {spec.key: spec.label for spec in self._conversion_families.values()}
         lines = detail_lines(record, detected_family=found, family_label=lambda key: labels.get(key, key))
-        if not lines:
-            return "", ""
-        return compact_lines(lines)
+        return lines
 
     def _allocation(self):
         requests = []
@@ -787,10 +785,12 @@ class PrepareBatchEditor:
             if self.selected is not None:
                 index = self.rows.index(self.selected)
                 allocation = allocations[index]
-                brief, full = self._source_details(self.selected)
-                self.form.prepareSourceDetails.setText("Declared by the file:\n" + brief if brief else "")
-                self.form.prepareSourceDetails.setToolTip(full)
-                self.form.prepareSourceDetails.setVisible(bool(brief) and not self.selected.invalid)
+                details = self._source_details(self.selected)
+                text = "\n".join(details)
+                if self.form.prepareSourceDetailsText.toPlainText() != text:
+                    self.form.prepareSourceDetailsText.setPlainText(text)
+                self.form.prepareSourceDetailsCaption.setText(f"Declared by the file · {self.selected.path.name}")
+                self.form.prepareSourceDetailsPanel.setVisible(bool(details) and not self.selected.invalid)
                 self.form.prepareManagedFilename.setText(
                     allocation.filename if allocation and allocation.filename else "Complete required fields to preview"
                 )
