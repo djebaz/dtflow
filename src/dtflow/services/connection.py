@@ -251,6 +251,11 @@ def present_preflight(diagnostics) -> Presentation:
 
 def present_asset_failure(exc: Exception) -> Presentation:
     """An asset action that raised; an interrupted or unconfirmed transfer is never shown as a plain failure."""
+    from dtflow.services.lora_convert.errors import ConversionError
+
+    if isinstance(exc, ConversionError):
+        return Presentation("error", "LoRA conversion failed",
+                            exc.user_message + (" " + exc.hint if exc.hint else ""))
     if isinstance(exc, AssetsBusyError):
         return Presentation(
             "warning", "Assets busy", "Another DTFlow process is preparing assets. Nothing was uploaded or changed."
