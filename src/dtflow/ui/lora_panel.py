@@ -862,6 +862,7 @@ class LoraAssetPanel:
         relay = self._prepare_relay = LatestRelay(lambda event: self._on_prepare_event(index, event), self.page)
         self._prepare_progress.start_file(index, convert=converting)
         self._render_prepare()
+        converted_sha: list[str | None] = [None]
 
         async def run_one():
             path = source
@@ -933,6 +934,7 @@ class LoraAssetPanel:
                     )
                     raise ConversionError("Local conversion failed before any upload began.") from exc
                 path = result.retained.path
+                converted_sha[0] = result.retained.sha256
                 output_size = result.retained.size
                 relay(
                     PrepareEvent(
@@ -957,9 +959,12 @@ class LoraAssetPanel:
                 progress=forward,
             )
 
-        self._runner.submit(run_one(), self._prepared)
+        self._runner.submit(
+            run_one(),
+            lambda record, failure: self._prepared(record, failure, converted_sha=converted_sha[0]),
+        )
 
-    def _prepare_log_reference(self, record: dict | None) -> dict:
+    def _prepare_log_reference(self, record: dict | None, *, converted_sha: str | None = None) -> dict:
         """Correlate per-file Prepare diagnostics without logging names or paths."""
         path = Path(self._prepare_files[self._prepare_index])
         source_sha = self._prepare_source_sha.get(str(path))
@@ -969,7 +974,11 @@ class LoraAssetPanel:
         reference = asset_ref_data(
             filename=path.name,
             source_sha256=source_sha,
-            sha256=record.get("sha256") if record is not None else None,
+            sha256=(
+                record.get("sha256")
+                if record is not None
+                else converted_sha or (source_sha if path.suffix.casefold() == ".ckpt" else None)
+            ),
             asset_id=record.get("asset_id") if record is not None else None,
         )
         if record is not None and record.get("state") == "confirmed" and reference.get("asset_id"):
@@ -977,7 +986,7 @@ class LoraAssetPanel:
             reference["receipt"] = reference["asset_id"]
         return reference
 
-    def _prepared(self, record, failure) -> None:
+    def _prepared(self, record, failure, *, converted_sha: str | None = None) -> None:
         if self._prepare_files:
             self._prepare_last = record, failure
             state = record.get("state") if record is not None and failure is None else None
@@ -993,7 +1002,7 @@ class LoraAssetPanel:
                 "existing" if outcome == "confirmed" and (record or {}).get("evidence") == "already_exists" else outcome
             )
             self._prepare_final[self._prepare_files[self._prepare_index]] = settled
-            self._settle_prepare_progress(record, outcome)
+            self._settle_prepare_progress(record, outcome, converted_sha=converted_sha)
             if self._prepare_editor is not None:
                 self._prepare_editor.progress(Path(self._prepare_files[self._prepare_index]), None)
                 self._prepare_editor.completed(
@@ -1031,7 +1040,7 @@ class LoraAssetPanel:
                 else:
                     reason = "unexpected_error" if failure is not None else "receipt_not_confirmed"
                 data = {
-                    **self._prepare_log_reference(record),
+                    **self._prepare_log_reference(record, converted_sha=converted_sha),
                     "outcome": outcome,
                     "reason": reason,
                     "item": self._prepare_index + 1,
@@ -1081,7 +1090,7 @@ class LoraAssetPanel:
             return
         self._present_prepared(record, failure)
 
-    def _settle_prepare_progress(self, record, outcome: str) -> None:
+    def _settle_prepare_progress(self, record, outcome: str, *, converted_sha: str | None = None) -> None:
         """Close the file in the progress model and log its phase timings (seconds per MiB) for weight tuning."""
         progress, index = self._prepare_progress, self._prepare_index
         if progress is None:
@@ -1096,7 +1105,7 @@ class LoraAssetPanel:
             "ui.asset_prepare_timing",
             level=logging.INFO,
             data={
-                **self._prepare_log_reference(record),
+                **self._prepare_log_reference(record, converted_sha=converted_sha),
                 "item": index + 1,
                 "total": len(self._prepare_files),
                 "outcome": outcome,
