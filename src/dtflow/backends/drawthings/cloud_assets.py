@@ -22,7 +22,7 @@ import httpx
 
 from dtflow.backends.drawthings.cloud_auth import CloudAuth
 from dtflow.backends.drawthings.errors import api_error, diagnostics
-from dtflow.diagnostics import api_error_data, event
+from dtflow.diagnostics import api_error_data, asset_ref_data, event
 from dtflow.core.models import (
     AssetContent,
     AssetNegotiation,
@@ -196,7 +196,12 @@ def _observe_upload(upload, digest: str) -> None:
         )
         if encoding != "opaque":
             evidence["server_checksum_decoded_matches_local"] = matches
-    event(logging.getLogger(__name__), "backend.byom_upload_evidence", level=logging.INFO, data=evidence)
+    event(
+        logging.getLogger(__name__),
+        "backend.byom_upload_evidence",
+        level=logging.INFO,
+        data={**asset_ref_data(sha256=digest), **evidence},
+    )
 
 
 def _usable_upload(upload) -> bool:
@@ -287,7 +292,7 @@ async def negotiate_lora_asset(auth: CloudAuth, content: AssetContent) -> AssetN
             logging.getLogger(__name__),
             "backend.asset_negotiated",
             level=logging.DEBUG,
-            data={"outcome": "exists"},
+            data={**asset_ref_data(sha256=content.sha256), "outcome": "exists"},
         )
         return result
     if not _usable_upload(upload):
@@ -310,7 +315,7 @@ async def negotiate_lora_asset(auth: CloudAuth, content: AssetContent) -> AssetN
         logging.getLogger(__name__),
         "backend.asset_negotiated",
         level=logging.DEBUG,
-        data={"outcome": "upload_required"},
+        data={**asset_ref_data(sha256=content.sha256), "outcome": "upload_required"},
     )
     return result
 
@@ -431,6 +436,7 @@ async def upload_signed(
                 data={
                     "transport": "http",
                     "operation": "asset_storage_put",
+                    **asset_ref_data(sha256=content.sha256),
                     "http_status": status,
                     "bytes_yielded": yielded,
                     "elapsed_ms": elapsed(),
