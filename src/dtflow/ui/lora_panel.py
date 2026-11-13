@@ -778,15 +778,16 @@ class LoraAssetPanel:
             eta = f"~{clock(seconds)} left"
         detail = f"Preparing {min(self._prepare_index + 1, total)} of {total}. {snap.wide}".strip()
         editor = self._prepare_editor
-        if editor is not None and editor.active() and self._prepare_index < total and snap.stage:
-            # The open editor covers the bar, so its row and its overall line carry the same live phase text.
-            # ``editor.progress`` refreshes every row, which is costly: send it only when the text changed, at most
-            # once a second (the bar above is updated on every report).
+        if self._prepare_index < total and snap.stage:
+            # The existing bar, selected editor row and status label use one progress snapshot.
+            # Widget updates are throttled; the bottom bar itself updates on each event.
             summary = f"Preparing {self._prepare_index + 1} of {total} · {snap.stage}" + (f" · {eta}" if eta else "")
             now = time.monotonic()
             if summary != self._prepare_editor_text and now - self._prepare_editor_at >= 1.0:
                 self._prepare_editor_text, self._prepare_editor_at = summary, now
-                editor.progress(Path(self._prepare_files[self._prepare_index]), snap.stage, summary)
+                if editor is not None and editor.active():
+                    editor.progress(Path(self._prepare_files[self._prepare_index]), snap.stage, summary)
+                self._show(self.page.assetStatusLabel, Presentation("warning", "Preparing", summary))
         # Stop only acts between files: nothing to stop once the last admitted file is running.
         strip.set_stop_visible("asset", not self._prepare_stop and self._prepare_index < total - 1)
         strip.update(
@@ -922,7 +923,7 @@ class LoraAssetPanel:
             if failure is not None:
                 definite = (
                     isinstance(failure, BackendError) and failure.failure.remote_outcome != RemoteOutcome.UNKNOWN
-                ) or isinstance(failure, ValidationError)
+                ) or isinstance(failure, (ValidationError, ConversionError))
                 outcome = "failed" if definite else "unresolved"
             else:
                 outcome = "confirmed" if state == "confirmed" else "failed" if state == "failed" else "unresolved"
@@ -974,6 +975,8 @@ class LoraAssetPanel:
                     "code": (
                         failure.failure.code
                         if isinstance(failure, BackendError)
+                        else failure.code
+                        if isinstance(failure, ConversionError)
                         else type(failure).__name__
                         if failure is not None
                         else state or "receipt_not_confirmed"
