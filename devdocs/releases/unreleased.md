@@ -10,6 +10,8 @@ Changes through 6.3.0 are consolidated in [DTFlow 6.3.0](v6.3.0.md). This file t
 
 ## Changed
 
+- Tooltips fade in quickly instead of sliding, app-wide (where the desktop allows UI effects). The Prepare rows align all their controls on one top edge.
+
 ## Fixed
 
 ## Upgrade and compatibility

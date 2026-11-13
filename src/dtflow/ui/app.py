@@ -5,7 +5,7 @@ import sys
 import threading
 import time
 
-from PySide6.QtCore import QTimer
+from PySide6.QtCore import Qt, QTimer
 from PySide6.QtWidgets import QApplication
 
 from dtflow import startup
@@ -103,6 +103,13 @@ def _enable_native_crash_trace() -> None:
         _CRASH_TRACE = None  # diagnostics are optional
 
 
+def _prefer_tooltip_fade() -> None:
+    """App-wide: show every tooltip with Qt's quick fade-in instead of the slide (Qt prefers fade over roll when both
+    are on). A desktop that disables UI effects altogether stays untouched."""
+    if QApplication.isEffectEnabled(Qt.UIEffect.UI_General):
+        QApplication.setEffectEnabled(Qt.UIEffect.UI_FadeTooltip, True)
+
+
 def run_gui(
     argv: list[str] | None = None,
     *,
@@ -113,6 +120,7 @@ def run_gui(
 ) -> int:
     application = QApplication.instance() or QApplication(argv if argv is not None else sys.argv[:1])
     _enable_native_crash_trace()
+    _prefer_tooltip_fade()
     window = open_window(
         application,
         no_cache=no_cache,
