@@ -36,7 +36,9 @@ permissions:
 
 env:
   UV_LOCKED: "1"
-  UV_LINK_MODE: copy
+  # Linux-only optimization: cache and .venv share the workspace filesystem.
+  # Local Windows/agent environments retain their documented copy policy.
+  UV_LINK_MODE: hardlink
   UV_SYSTEM_CERTS: "true"
   UV_PYTHON_PREFERENCE: only-managed
   QT_QPA_PLATFORM: offscreen
@@ -149,10 +151,13 @@ jobs:
         with:
           enable-cache: true
           cache-dependency-glob: uv.lock
+          cache-local-path: ${{ github.workspace }}/tmp/uv-preview-cache
+          cache-python: true
+          cache-suffix: preview-runtime-v1
 
-      - name: Sync locked environment including offline support dependencies
+      - name: Sync locked runtime dependencies only (no test/browser/lint tools)
         if: steps.live.outputs.run == 'true'
-        run: uv sync --locked
+        run: uv sync --locked --no-dev
 
       - name: Capture planned states and workflow file independently
         id: capture

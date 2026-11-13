@@ -26,6 +26,8 @@
 
 ## Open questions
 
+Performance follow-up: compare the next automatic Preview run with `43499855118` at `701c36e4` (59-second job, 18-second dependency sync including 14.21-second installation, 12-second capture). Try Linux-only hardlinks with a workspace-local package cache, managed-Python caching and `--no-dev` to omit unused browser/test/lint dependencies. Keep all runtime dependencies and `uv.lock` unchanged. The separate `preview-runtime-v1` cache starts cold; warm-cache gains remain unverified until measured. No local tests/renders or manual Actions dispatches.
+
 None blocking. Implementation details and limitations will be recorded here.
 
 ## Validation
