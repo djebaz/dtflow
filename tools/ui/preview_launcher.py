@@ -100,9 +100,8 @@ def run_workers(args, root):
             log.flush()
             print(text, flush=True)
 
-    emit(
-        f"Level {level}: selected {len(args.selection.states)} states in {len(args.selection.fixtures)} fixture groups."
-    )
+    scope = "Explicit selection" if args.selection.explicit else f"Level {level}"
+    emit(f"{scope}: selected {len(args.selection.states)} states in {len(args.selection.fixtures)} fixture groups.")
     emit(f"Workers ({min(args.jobs, len(args.workers))} at a time): {', '.join(args.workers)}")
     tags = {worker: f"p{index}" for index, worker in enumerate(args.workers, 1)}
     for worker, tag in tags.items():

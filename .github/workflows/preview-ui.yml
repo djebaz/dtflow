@@ -44,8 +44,8 @@ env:
   PYTHONFAULTHANDLER: "1"
 
 jobs:
-  plan:
-    name: Plan preview request
+  preview:
+    name: Plan, capture and publish previews
     if: >-
       github.event_name == 'workflow_dispatch'
       || (!github.event.pull_request.draft
@@ -53,12 +53,17 @@ jobs:
         && (github.event.action != 'labeled'
           || github.event.label.name == 'preview:PART' || github.event.label.name == 'preview:ALL'))
     runs-on: ubuntu-24.04
-    timeout-minutes: 5
-    outputs:
-      run: ${{ steps.request.outputs.run }}
-      request: ${{ steps.request.outputs.plan }}
-      sha: ${{ steps.target.outputs.sha }}
-      pr: ${{ steps.target.outputs.pr }}
+    timeout-minutes: 15
+    permissions:
+      contents: write # Only publication on preview-outputs; never main/source branch.
+      pull-requests: write
+      issues: write
+    # One runner avoids a separately rounded planning job. Serialize instead of
+    # cancelling blindly: docs-only updates must not abort a useful capture.
+    # Live-head checks reject obsolete work before setup/capture/publication.
+    concurrency:
+      group: ui-preview-${{ github.event.pull_request.number || inputs.pr || github.ref }}
+      cancel-in-progress: false
     steps:
       - name: Pin exact source and refuse forks or stale automatic events
         id: target
@@ -90,6 +95,8 @@ jobs:
           echo "sha=$sha" >> "$GITHUB_OUTPUT"
           echo "base=$base" >> "$GITHUB_OUTPUT"
           echo "pr=$INPUT_PR" >> "$GITHUB_OUTPUT"
+          echo "HEAD_SHA=$sha" >> "$GITHUB_ENV"
+          echo "PR_NUMBER=$INPUT_PR" >> "$GITHUB_ENV"
           echo "Preview source: $sha" >> "$GITHUB_STEP_SUMMARY"
 
       - uses: actions/checkout@v7.0.1
@@ -110,34 +117,12 @@ jobs:
           INPUT_WORKFLOW: ${{ inputs.mode == 'workflow' && inputs.workflow || '' }}
         run: python3 tools/ci/preview_request.py
 
-  capture:
-    name: Capture and publish previews
-    needs: plan
-    if: needs.plan.outputs.run == 'true'
-    runs-on: ubuntu-24.04
-    timeout-minutes: 15
-    permissions:
-      contents: write # Dedicated compatibility branch only; never main/source branch.
-      pull-requests: write
-      issues: write
-    # Gate first: irrelevant updates do not cancel useful captures. One publisher per PR.
-    concurrency:
-      group: ui-preview-${{ needs.plan.outputs.pr || github.ref }}
-      cancel-in-progress: true
-    env:
-      HEAD_SHA: ${{ needs.plan.outputs.sha }}
-      PR_NUMBER: ${{ needs.plan.outputs.pr }}
-    steps:
-      - uses: actions/checkout@v7.0.1
-        with:
-          ref: ${{ needs.plan.outputs.sha }}
-          persist-credentials: false
-
       - name: Retain exact request and recheck live draft/head
         id: live
+        if: steps.request.outputs.run == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
-          REQUEST: ${{ needs.plan.outputs.request }}
+          REQUEST: ${{ steps.request.outputs.plan }}
         run: |
           python3 - <<'PY'
           import json, os, sys
@@ -192,14 +177,14 @@ jobs:
         if: always() && steps.live.outputs.run == 'true'
         uses: actions/upload-artifact@v7.0.2
         with:
-          name: ui-preview-${{ needs.plan.outputs.pr || 'branch' }}-${{ needs.plan.outputs.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
+          name: ui-preview-${{ steps.target.outputs.pr || 'branch' }}-${{ steps.target.outputs.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
           path: tmp/ui-previews/
           if-no-files-found: warn
           retention-days: 2
 
       - name: Publish latest-per-PR inline images (artifact fallback on failure)
         id: publish
-        if: always() && steps.live.outputs.run == 'true' && needs.plan.outputs.pr != ''
+        if: always() && steps.live.outputs.run == 'true' && steps.target.outputs.pr != ''
         continue-on-error: true
         env:
           GH_TOKEN: ${{ github.token }}

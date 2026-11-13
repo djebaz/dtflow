@@ -132,10 +132,10 @@ REPORTER = None
 
 
 class _FlowComplete(BaseException):
-    """Internal control flow: the generation flow has saved every state this run selected."""
+    """Internal control flow: a safely stoppable capture group saved every selected state."""
 
 
-FLOW_STOP = []  # ids the generation flow must still save; empty list means "run to the end"
+FLOW_STOP = []  # ids the current stoppable group must still save; empty list means "run to the end"
 FLOW_FOLLOWERS = ("queue", "shell", "inpaint", "logs")  # later fixtures in the same window
 WORKSPACE_GROUPS = {
     "connection": ("connection-setup", "connection-outcomes", "connection-management", "connection-usage"),
@@ -150,12 +150,15 @@ WORKSPACE_GROUPS = {
 def fixture_scope(name):
     """Start a fixture's timing interval.
 
-    Fixtures run to their end so their own cleanup is never skipped. The only exception is the generation flow:
-    when no fixture that shares its window follows, it stops after the last selected state, because the rest of
-    the flow (real fake generations, cloud receipts, regenerate) would only produce discarded captures.
+    Stop the generation flow early only when no shared-window follower needs its state.
+    Gallery composition is the terminal group in its workspace window; after its last selected
+    capture, unwind its patch contexts and let the workspace owner's finally block shut down
+    and dispose the window. Do not replay unselected navigation/readiness scenarios afterwards.
     """
     REPORTER.begin()
-    stop_early = name == "generation-flow" and not any(needs_fixture(group) for group in FLOW_FOLLOWERS)
+    stop_early = name == "gallery-composition" or (
+        name == "generation-flow" and not any(needs_fixture(group) for group in FLOW_FOLLOWERS)
+    )
     if stop_early:
         FLOW_STOP.append(SELECTION.fixture_ids(name))
     try:
