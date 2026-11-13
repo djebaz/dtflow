@@ -601,10 +601,12 @@ class LoraAssetPanel:
             sha, size = await asyncio.to_thread(
                 hash_file, path, editor.hash_cancelled.is_set, lambda n: editor.note_read(path, n)
             )
-            try:
-                accepted = await accepted_managed_identifier(self._state, sha, size)
-            except Exception:  # an unreadable registry must not discard a good content hash
-                accepted = None
+            accepted = None
+            if path.suffix.casefold() == ".ckpt":
+                try:
+                    accepted = await accepted_managed_identifier(self._state, sha, size)
+                except Exception:  # an unreadable registry must not discard a good content hash
+                    pass
             return sha, size, accepted
 
         def done(result, failure) -> None:
@@ -622,12 +624,21 @@ class LoraAssetPanel:
 
     async def _inspect_prepare_files(self, paths: tuple[str, ...]):
         """Inspect file headers off the GUI thread and read existing canonical name reservations."""
-        evidence = await asyncio.to_thread(lambda: tuple(detect_lora_family(Path(p)) for p in paths))
+        evidence = await asyncio.to_thread(
+            lambda: tuple(
+                LoraFamily() if Path(p).suffix.casefold() == ".safetensors"
+                else detect_lora_family(Path(p)) for p in paths
+            )
+        )
 
         def invalid_reasons() -> tuple[str | None, ...]:
             # The same container check Prepare runs later: a non-LoRA is flagged now, not after Prepare.
             reasons: list[str | None] = []
             for item in paths:
+                if Path(item).suffix.casefold() == ".safetensors":
+                    # Source-family detection is a separate feature (#402). Conversion itself validates the source.
+                    reasons.append(None)
+                    continue
                 try:
                     validate_converted_lora(Path(item))
                     reasons.append(None)
@@ -637,7 +648,8 @@ class LoraAssetPanel:
 
         invalid = await asyncio.to_thread(invalid_reasons)
         occupied = await occupied_managed_lora_names(self._state)
-        return evidence, occupied, invalid
+        conversions = await asyncio.to_thread(lambda: LoraStore(self._state).entries())
+        return evidence, occupied, invalid, conversions
 
     def _inspected_prepare_editor(self, editor, eligible, result, failure) -> None:
         if self._runner.closed or not editor.active() or editor is not self._prepare_editor:
@@ -649,8 +661,8 @@ class LoraAssetPanel:
             )
             return
         if result is not None:
-            evidence, occupied, *rest = result
-            editor.set_inspection(evidence, eligible, occupied, rest[0] if rest else None)
+            evidence, occupied, invalid, conversions = result
+            editor.set_inspection(evidence, eligible, occupied, invalid, conversions)
 
     def _authorize_prepare(self, chosen: list[tuple[Path, LoraPrepareMetadata]]) -> None:
         """Admit only explicitly approved, metadata-complete rows under the existing owner."""
@@ -694,6 +706,7 @@ class LoraAssetPanel:
             self._registry_generation += 1
             self._set_busy(True)
             self._prepare_stop = False
+            self._prepare_convert_cancel.clear()
             self._inspecting = False
             if self._prepare_progress is None:
                 self._prepare_progress = PrepareProgress()
@@ -718,7 +731,7 @@ class LoraAssetPanel:
                 size = Path(name).stat().st_size
             except OSError:
                 size = 0
-            self._prepare_progress.add_file(name, size)
+            self._prepare_progress.add_file(name, size, convert=Path(name).suffix.casefold() == ".safetensors")
 
     def _request_prepare_stop(self) -> None:
         """Stop after the current file: it settles normally (no half-finished upload); later files never start."""
@@ -729,7 +742,7 @@ class LoraAssetPanel:
         if progress is None:
             return
         progress.event(index, event)
-        if event.stage != CHECKING and self._prepare_editor is not None and index < len(self._prepare_files):
+        if event.stage in (EXISTS, UPLOADING, CONFIRMING) and self._prepare_editor is not None and index < len(self._prepare_files):
             # Any later stage proves the registry accepted this row's name: Re-Prepare cannot be needed any more.
             # The relay is latest-wins, so a fast file may skip stages and a failure may come before any later one;
             # that path never sets ``checked`` and relies on ``row.outcome`` in ``PrepareBatchEditor.all_checked``.
