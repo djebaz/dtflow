@@ -939,6 +939,7 @@ class LoraAssetPanel:
                 path = result.retained.path
                 converted_sha[0] = result.retained.sha256
                 output_size = result.retained.size
+                shown_name = result.retained.path.name  # the managed checkpoint, not the selected source
                 relay(
                     PrepareEvent(
                         CONVERTING,
@@ -946,12 +947,16 @@ class LoraAssetPanel:
                         1,
                         label="Reused conversion" if result.reused else "Converted",
                         output_size=output_size,
+                        name=shown_name,
                     )
                 )
 
                 def forward(event: PrepareEvent) -> None:
-                    # The relay may coalesce stage changes; carry the actual output size in every asset event.
-                    relay(PrepareEvent(event.stage, event.done, event.total, event.label, output_size))
+                    # The relay may coalesce stage changes; carry the actual output size and the latest managed
+                    # checkpoint name (an accepted-name rename replaces it) in every asset event.
+                    nonlocal shown_name
+                    shown_name = event.name or shown_name
+                    relay(PrepareEvent(event.stage, event.done, event.total, event.label, output_size, shown_name))
 
             return await prepare_asset(
                 self._state,
