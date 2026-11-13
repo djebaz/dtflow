@@ -22,6 +22,7 @@ from dtflow.diagnostics import asset_ref_data, event as diagnostic_event
 from dtflow.services.lora_convert import CONVERTER_VERSION, ConversionProgress, ConversionRequest, convert_lora
 from dtflow.services.lora_convert.errors import ConversionCancelled, ConversionError
 from dtflow.services.lora_convert.registry import lookup
+from dtflow.services.lora_convert.source_metadata import read_source_metadata
 from dtflow.services.lora_digest import DigestCancelled, hash_file
 from dtflow.services.lora_family import detect_lora_family, validate_converted_lora
 from dtflow.services.lora_store import LoraStore, RetainedFile
@@ -143,6 +144,9 @@ def _convert_sync(
             },
             "converted_at_utc": datetime.now(UTC).isoformat(),
         }
+        # Descriptive header metadata (#414): bounded, display-only, never evidence for the family or the output.
+        if (descriptive := read_source_metadata(source).record()) is not None:
+            record["source_metadata"] = descriptive
         retained = store.retain_converted(
             result.destination,
             result.destination_sha256,

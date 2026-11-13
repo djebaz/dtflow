@@ -25,6 +25,7 @@ class SafeTensors:
     def __init__(self, path: Path) -> None:
         self.path = path
         self._file = None
+        self.metadata: dict[str, str] = {}
         try:
             size = path.stat().st_size
             if size < 8:
@@ -38,6 +39,13 @@ class SafeTensors:
                 raise SourceReadError(f"{path.name}: not a safetensors file (bad header).")
             self._base = 8 + header_len
             self.entries = {k: v for k, v in header.items() if k != "__metadata__"}
+            declared = header.get("__metadata__")
+            # Descriptive only: a flat string map. Anything else is ignored, never an error.
+            self.metadata = (
+                {k: v for k, v in declared.items() if isinstance(k, str) and isinstance(v, str)}
+                if isinstance(declared, dict)
+                else {}
+            )
             for key, entry in self.entries.items():
                 begin, end = entry["data_offsets"]
                 if not 0 <= begin <= end <= size - self._base:

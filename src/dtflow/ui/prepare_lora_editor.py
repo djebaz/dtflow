@@ -21,6 +21,7 @@ from shiboken6 import isValid
 from dtflow.core.models import accepted_name_changes
 from dtflow.services.catalogue import FAMILY_LABELS
 from dtflow.services.lora_convert import CONVERTER_VERSION
+from dtflow.services.lora_convert.source_metadata import detail_lines
 from dtflow.services.lora_family import LoraFamily
 from dtflow.services.lora_naming import (
     LoraPrepareMetadata,
@@ -62,6 +63,8 @@ class _Row:
     manual_name: bool = False
     manual_family: bool = False
     manual_format: bool = False
+    manual_triggers: bool = False  # the user typed (or cleared) Trigger Words: no suggestion replaces it
+    source_metadata: object | None = None  # descriptive header metadata of a safetensors source (#414)
     admitted: bool = False
     outcome: str | None = None
     reprepare: bool = False
@@ -159,6 +162,7 @@ class PrepareBatchEditor:
         self.architectures: tuple[str, ...] = ()
         self._conversion_families = {}
         self._existing_conversions: dict[tuple[str, str, str], tuple[str, int]] = {}
+        self._saved_triggers: dict[tuple[str, int], str] = {}
         self.inspected = False
         self.selected: _Row | None = None
         self._updating = False
@@ -185,6 +189,7 @@ class PrepareBatchEditor:
             row_widget.prepareShortName.textEdited.connect(lambda _s, item=row: self._edited_name(item))
             row_widget.prepareArchitecture.currentIndexChanged.connect(lambda _idx, item=row: self._edited_family(item))
             row_widget.prepareFormat.currentIndexChanged.connect(lambda _idx, item=row: self._edited_format(item))
+            row_widget.prepareTriggerWords.textEdited.connect(lambda _s, item=row: self._edited_triggers(item))
             row_widget.prepareTriggerWords.textChanged.connect(lambda _s: self.refresh())
             row_widget.mousePressEvent = lambda event, item=row: self._select(item)
             self.form.prepareBatchRowsLayout.insertWidget(len(self.rows) - 1, row_widget)
@@ -394,6 +399,10 @@ class PrepareBatchEditor:
         row.manual_name = True
         self._select(row)
 
+    def _edited_triggers(self, row: _Row):
+        row.manual_triggers = True
+        self._select(row)
+
     def _edited_family(self, row: _Row):
         if self._updating:
             return
@@ -416,10 +425,14 @@ class PrepareBatchEditor:
         conversions: Sequence[dict] = (),
         converter_families: Sequence = (),
         detections: Sequence = (),
+        *,
+        source_metadata: Sequence = (),
+        saved_triggers: dict[tuple[str, int], str] | None = None,
     ):
         """Apply checkpoint evidence and converted-source provenance on the GUI thread."""
         if not self.active():
             return
+        self._saved_triggers = dict(saved_triggers or {})
         self.architectures = tuple(dict.fromkeys(v for v in architectures if architecture_shortcode(v) is not None))
         self.occupied = tuple(occupied)
         self._conversion_families = {spec.exact_architecture: spec for spec in converter_families}
@@ -443,6 +456,7 @@ class PrepareBatchEditor:
             row.detected = result.family if row.source_kind == "ckpt" else None
             row.invalid = invalid[index] if invalid else None
             row.detection = detections[index] if index < len(detections) else None
+            row.source_metadata = source_metadata[index] if index < len(source_metadata) else None
             combo = row.widget.prepareArchitecture
             kept = combo.currentData() if row.manual_family else None  # an edited choice is never overwritten
             combo.clear()
@@ -485,6 +499,44 @@ class PrepareBatchEditor:
         if spec is None or not row.sha256:
             return None, None
         return self._existing_conversions.get((row.sha256, spec.key, CONVERTER_VERSION), (None, None))
+
+    def _prefill_triggers(self, row: _Row) -> None:
+        """Fill Trigger Words from what the user already saved, else from an explicit file-declared trigger.
+
+        A value the user typed or cleared always wins, and so does a saved one over a file suggestion. The result
+        stays editable; nothing here is saved or uploaded until the user prepares the row.
+        """
+        field, note = row.widget.prepareTriggerWords, row.widget.prepareTriggerNote
+        if row.manual_triggers or row.admitted:
+            return
+        identity = (row.sha256, row.size) if row.source_kind == "ckpt" else self._content_identity(row)
+        saved = self._saved_triggers.get(identity) if identity[0] is not None and identity[1] is not None else None
+        suggestion = getattr(row.source_metadata, "trigger", None) if row.source_kind == "safetensors" else None
+        text, origin = (saved, "Saved value") if saved else (suggestion or "", "Suggested from file metadata")
+        if field.text() != text:
+            field.setText(text)
+        note.setText(origin if text else "")
+        note.setVisible(bool(text) and not (self.inspected and row.invalid))
+        field.setToolTip(
+            "Declared by the file's metadata, not verified. Edit or clear it freely."
+            if text and not saved
+            else "Your saved trigger words for this LoRA."
+            if text
+            else ""
+        )
+
+    def _source_details(self, row: _Row) -> tuple[str, str]:
+        """(short text, full text) of the read-only descriptive details of the row's source file."""
+        record = getattr(row.source_metadata, "record", lambda: None)()
+        found = getattr(row.detection, "family", None)
+        labels = {spec.key: spec.label for spec in self._conversion_families.values()}
+        lines = detail_lines(record, detected_family=found, family_label=lambda key: labels.get(key, key))
+        if not lines:
+            return "", ""
+        shown = lines[:6]
+        if len(lines) > len(shown):
+            shown.append(f"… {len(lines) - len(shown)} more (hover for all)")
+        return "\n".join(shown), "\n".join(lines)
 
     def _allocation(self):
         requests = []
@@ -536,6 +588,7 @@ class PrepareBatchEditor:
                         if prior is not None
                         else None
                     )
+                self._prefill_triggers(row)
                 row.widget.prepareExperimentalConfirm.setVisible(
                     bool(spec is not None and spec.experimental and not row.admitted and not row.invalid)
                 )
@@ -715,6 +768,10 @@ class PrepareBatchEditor:
             if self.selected is not None:
                 index = self.rows.index(self.selected)
                 allocation = allocations[index]
+                brief, full = self._source_details(self.selected)
+                self.form.prepareSourceDetails.setText("Declared by the file:\n" + brief if brief else "")
+                self.form.prepareSourceDetails.setToolTip(full)
+                self.form.prepareSourceDetails.setVisible(bool(brief) and not self.selected.invalid)
                 self.form.prepareManagedFilename.setText(
                     allocation.filename if allocation and allocation.filename else "Complete required fields to preview"
                 )

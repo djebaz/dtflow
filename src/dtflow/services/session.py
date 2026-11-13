@@ -922,6 +922,20 @@ async def occupied_managed_lora_names(state: Path) -> tuple[ManagedName, ...]:
         await registry.aclose()
 
 
+async def saved_lora_trigger_words(state: Path) -> dict[tuple[str, int], str]:
+    """Trigger words the user already saved per content identity (Prepare must never replace them by a suggestion)."""
+    registry = AssetRegistry(state)
+    await registry.open()
+    try:
+        return {
+            (record["sha256"], record["size"]): record["trigger_words"]
+            for record in await registry.lora_records()
+            if isinstance(record.get("trigger_words"), str) and record["trigger_words"].strip()
+        }
+    finally:
+        await registry.aclose()
+
+
 async def reconcile_asset(
     state: Path, asset_id: str, *, identifier: str | None = None, saved: CredentialProvider | None = None
 ) -> tuple[dict, AssetReconciliation]:

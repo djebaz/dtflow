@@ -76,6 +76,8 @@ from dtflow.ui.brand import connection_icon, status_dot, tinted_icon
 from dtflow.ui.button_focus import KeyboardFocusGuard
 from dtflow.ui.current_page_stack import CurrentPageStack
 from dtflow.ui.cloud_usage_panel import CloudUsagePanel
+from dtflow.services.lora_convert import supported_families
+from dtflow.services.lora_convert.source_metadata import detail_lines
 from dtflow.ui.lora_metadata_overlay import LoraMetadataOverlay
 from dtflow.ui.lora_trigger_panel import LoraTriggerPanel
 from dtflow.ui.workflow_defaults_panel import WorkflowDefaultsPanel
@@ -2013,7 +2015,28 @@ class MainWindow:
             )
             return
         self.lora_metadata_overlay.open(
-            record, self._lora_names.get(identity, "LoRA"), self.generation.lora.eligible_architectures()
+            record,
+            self._lora_names.get(identity, "LoRA"),
+            self.generation.lora.eligible_architectures(),
+            self._retained_source_details(identity),
+        )
+
+    def _retained_source_details(self, identity: tuple[str, int]) -> tuple[str, ...]:
+        """Read-only lines from the descriptive metadata kept with the newest conversion of this retained LoRA."""
+        entry = next((e for e in self._lora_entries if (e.get("sha256"), e.get("size")) == identity), None)
+        conversions = (entry or {}).get("conversions")
+        if not isinstance(conversions, list):
+            conversions = [(entry or {}).get("conversion")]
+        newest = next(
+            (c for c in reversed(conversions) if isinstance(c, dict) and isinstance(c.get("source_metadata"), dict)),
+            None,
+        )
+        if newest is None:
+            return ()
+        labels = {spec.key: spec.label for spec in supported_families()}
+        family = newest.get("family") if isinstance(newest.get("family"), str) else None
+        return tuple(
+            detail_lines(newest["source_metadata"], detected_family=family, family_label=lambda k: labels.get(k, k))
         )
 
     def _lora_metadata_saved(self) -> None:

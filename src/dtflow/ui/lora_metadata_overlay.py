@@ -83,9 +83,16 @@ class LoraMetadataOverlay(QObject):
     def is_open(self) -> bool:
         return self.overlay.isVisible()
 
-    def open(self, record: dict, name: str, architectures: tuple[str, ...]) -> None:
-        """Show one record. ``architectures`` are the backend-verified LoRA choices; the saved declaration stays listed."""
+    def open(
+        self, record: dict, name: str, architectures: tuple[str, ...], source_details: tuple[str, ...] = ()
+    ) -> None:
+        """Show one record. ``architectures`` are the backend-verified LoRA choices; the saved declaration stays listed.
+
+        ``source_details`` are read-only lines from the retained source metadata (#414); they are never editable.
+        """
         form = self.form
+        form.loraMetadataSourceDetails.setText("Declared by the source file:\n" + "\n".join(source_details))
+        form.loraMetadataSourceDetails.setVisible(bool(source_details))
         self._identity = (record["sha256"], record["size"])
         form.loraMetadataFile.setText(name)
         combo = form.loraMetadataArchitecture
