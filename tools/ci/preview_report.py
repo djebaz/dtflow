@@ -13,10 +13,56 @@ from preview_publish import BRANCH, OUT, ROOT, current, gh
 
 MARKER = "<!-- dtflow-ui-preview -->"
 LEGACY_MARKERS = ("<!-- dtflow-ui-renders -->", "<!-- dtflow-lora-designer-renders -->")
+THUMBNAIL_LIMIT = 48
 
 
 def read_json(path, default):
     return json.loads(path.read_text(encoding="utf-8")) if path.exists() else default
+
+
+def thumbnail_sections(pngs, by_id, base):
+    """Share the comment budget across categories, not just the first filenames."""
+    groups = {}
+    for png in pngs:
+        relative = png.relative_to(OUT)
+        category = (
+            "workflow file" if relative.parts[0] == "workflow" else by_id.get(png.stem, {}).get("category", "other")
+        )
+        groups.setdefault(category, []).append(png)
+    groups = dict(sorted(groups.items()))
+    chosen = {category: [] for category in groups}
+    shown = 0
+    while shown < min(THUMBNAIL_LIMIT, len(pngs)):
+        for category, paths in groups.items():
+            index = len(chosen[category])
+            if index < len(paths) and shown < THUMBNAIL_LIMIT:
+                chosen[category].append(paths[index])
+                shown += 1
+    lines = []
+    for category, paths in groups.items():
+        title = "LoRA" if category == "lora" else category.title()
+        # No `open` attribute: every category starts collapsed. GitHub strips inline CSS;
+        # a semantic heading supplies the requested larger, clickable title instead.
+        lines += [f"<details><summary><h3>{html.escape(title)} · {len(paths)} previews</h3></summary>", ""]
+        visible = chosen[category]
+        if len(visible) != len(paths):
+            lines += [
+                f"Showing {len(visible)} of {len(paths)} previews in this category; browse/download all images below.",
+                "",
+            ]
+        lines.append("<table>")
+        for start in range(0, len(visible), 3):
+            lines.append("<tr>")
+            for png in visible[start : start + 3]:
+                name = png.relative_to(OUT).as_posix()
+                url = html.escape(f"{base}/{quote(name)}", quote=True)
+                label = html.escape(name, quote=True)
+                lines.append(
+                    f'<td width="33%" valign="top"><a href="{url}"><img src="{url}" width="100%" alt="{label}"></a><br><sub>{label}</sub></td>'
+                )
+            lines.append("</tr>")
+        lines += ["</table>", "", "</details>", ""]
+    return lines, shown
 
 
 def main():
@@ -92,21 +138,9 @@ def main():
     ]
     if pngs and os.environ.get("PUBLISHED") == "true" and pr:
         base = f"{os.environ['GITHUB_SERVER_URL']}/{os.environ['GITHUB_REPOSITORY']}/raw/{BRANCH}/pr{pr}/{sha}"
-        lines += ["<table>"]
-        # Bound comment size even for ALL; every PNG is retained on the preview branch and in the artifact.
-        for start in range(0, min(len(pngs), 48), 3):
-            lines.append("<tr>")
-            for png in pngs[start : start + 3]:
-                name = png.relative_to(OUT).as_posix()
-                url = html.escape(f"{base}/{quote(name)}", quote=True)
-                label = html.escape(name, quote=True)
-                lines.append(
-                    f'<td width="33%" valign="top"><a href="{url}"><img src="{url}" width="100%" alt="{label}"></a><br><sub>{label}</sub></td>'
-                )
-            lines.append("</tr>")
-        lines += ["</table>", ""]
+        sections, shown = thumbnail_sections(pngs, by_id, base)
+        lines += sections
         tree = f"{os.environ['GITHUB_SERVER_URL']}/{os.environ['GITHUB_REPOSITORY']}/tree/{BRANCH}/pr{pr}/{sha}"
-        shown = min(len(pngs), 48)
         count = f"all {shown}" if shown == len(pngs) else f"{shown} of {len(pngs)}"
         lines.append(f"Showing {count} previews. [Browse image files]({tree}); the artifact also contains every image.")
     elif pngs:
