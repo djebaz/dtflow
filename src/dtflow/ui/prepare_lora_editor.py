@@ -549,10 +549,12 @@ class PrepareBatchEditor:
                     message, state = "Needs architecture", "warning"
                 elif (
                     not row.reprepare
-                    and allocation.filename
+                    and (allocation.filename or allocation.conflict == "content_already_named")
                     and allocation.conflict in (None, "content_already_named")
-                    and (allocation.conflict == "content_already_named" or
-                         accepted_name_changes(row.accepted, allocation.filename))
+                    and (
+                        allocation.conflict == "content_already_named"
+                        or accepted_name_changes(row.accepted, allocation.filename)
+                    )
                 ):
                     # Known before Prepare: this content already has another accepted name. Re-Prepare is the
                     # explicit choice to rename it; until then the row is not sent (it would be refused).
