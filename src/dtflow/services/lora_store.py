@@ -401,6 +401,23 @@ class LoraStore:
         finally:
             handle.close()
 
+    def update_source_metadata(self, sha256: str, size: int, metadata: dict | None) -> None:
+        """Backfill descriptive metadata when Prepare reuses already converted bytes without reconverting."""
+        if metadata is None:
+            return
+        handle = self._locked()
+        try:
+            files = self._read_recovering()
+            entry = next(
+                (item for item in files if (item.get("sha256"), item.get("size")) == (sha256, size)),
+                None,
+            )
+            if entry is not None and entry.get("source_metadata") != metadata:
+                entry["source_metadata"] = metadata
+                self._write(files)
+        finally:
+            handle.close()
+
     def rename_accepted(self, sha256: str, size: int, accepted_name: str) -> RetainedFile | None:
         """Give existing verified retained bytes their accepted canonical filename.
 
