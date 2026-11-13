@@ -80,7 +80,7 @@ jobs:
           name: lora-runtime-pr${{ github.event.pull_request.number }}-${{ github.event.pull_request.head.sha }}
           path: tmp/lora-ui/lora-*.png
           if-no-files-found: error
-          retention-days: 14
+          retention-days: 2
 
       - name: Publish review links to PR
         if: always() && steps.capture.outcome == 'success'
@@ -101,7 +101,7 @@ jobs:
               "<!-- dtflow-lora-designer-renders -->",
               f"## Canonical LoRA views — {len(names)} captures",
               "",
-              f"Download the PNGs: artifact **{os.environ['ARTIFACT_NAME']}** (kept 14 days) at the bottom of the "
+              f"Download the PNGs: artifact **{os.environ['ARTIFACT_NAME']}** (kept 2 days) at the bottom of the "
               f"[workflow run]({os.environ['RUN_URL']})"
               + (f", or [direct download]({os.environ['ARTIFACT_URL']})." if os.environ.get("ARTIFACT_URL") else "."),
               "",

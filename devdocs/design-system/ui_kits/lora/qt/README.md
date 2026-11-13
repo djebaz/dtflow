@@ -41,7 +41,7 @@ The [LoRA Prepare UI workflow](../../../../../../.github/workflows/lora-design-r
 runs automatically for PRs changing the canonical Prepare UI or its targeted renderer.
 **No label is required.** It captures two real in-window Prepare states (wide and
 compact) with synthetic data and DTFlow's global Qt stylesheet. A GitHub Actions
-artifact (14 days) is linked in the PR comment and the job summary; there is no Drive upload.
+artifact (2 days) is linked in the PR comment and the job summary; there is no Drive upload.
 
 For an explicit targeted rerun, select `category: lora` in the existing
 [UI renders workflow](../../../../../../.github/workflows/main.yml). The broad
