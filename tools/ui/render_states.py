@@ -631,6 +631,7 @@ def render_lora_prepare_states(shell, out):
             "managed_identifier": name,
             "trigger_words": "portrait style" if index == 0 else "my saved cinematic token" if index == 1 else "",
         }
+    shell._summary_reads.pop("lora_hints", None)  # discard an older asynchronous projection
     hints = shell.form._lora_hint_library
     hints.entries, hints.records = hint_entries, hint_records
 
