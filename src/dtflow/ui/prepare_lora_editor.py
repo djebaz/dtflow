@@ -28,6 +28,7 @@ from dtflow.services.lora_naming import (
     NamingRequest,
     allocate_batch_names,
     architecture_shortcode,
+    managed_filename,
     suggest_short_name,
 )
 from dtflow.ui.inline_feedback import feedback
@@ -509,6 +510,23 @@ class PrepareBatchEditor:
                 row.accepted_conflict = False
                 family = row.widget.prepareArchitecture.currentData()
                 spec = self._conversion_families.get(family) if row.source_kind == "safetensors" else None
+                if row.source_kind == "safetensors":
+                    identity = (
+                        self._existing_conversions.get((row.sha256, spec.key, CONVERTER_VERSION))
+                        if spec is not None and row.sha256 else None
+                    )
+                    prior = next(
+                        (
+                            item for item in self.occupied
+                            if identity is not None and (item.sha256, item.size) == identity
+                        ),
+                        None,
+                    )
+                    row.accepted = (
+                        managed_filename(
+                            prior.short_name, architecture_shortcode(prior.exact_architecture), prior.format_code
+                        ) if prior is not None else None
+                    )
                 row.widget.prepareExperimentalConfirm.setVisible(
                     bool(spec is not None and spec.experimental and not row.admitted and not row.invalid)
                 )
@@ -532,8 +550,9 @@ class PrepareBatchEditor:
                 elif (
                     not row.reprepare
                     and allocation.filename
-                    and allocation.conflict is None
-                    and accepted_name_changes(row.accepted, allocation.filename)
+                    and allocation.conflict in (None, "content_already_named")
+                    and (allocation.conflict == "content_already_named" or
+                         accepted_name_changes(row.accepted, allocation.filename))
                 ):
                     # Known before Prepare: this content already has another accepted name. Re-Prepare is the
                     # explicit choice to rename it; until then the row is not sent (it would be refused).
