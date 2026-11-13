@@ -543,13 +543,15 @@ class PrepareBatchEditor:
         if field.text() != text:
             field.setText(text)
         row.auto_triggers = text
-        shown = bool(text) and not (self.inspected and row.invalid)
+        shown = (saved is not None or bool(text)) and not (self.inspected and row.invalid)
         note.setText(origin if shown else "")
         explanation = (
             "Declared by the file's metadata, not verified. Edit or clear it freely."
             if text and saved is None
             else "Your saved trigger words for this LoRA."
             if text
+            else "Your saved Trigger Words value is blank."
+            if saved is not None
             else ""
         )
         note.setToolTip(explanation if shown else "")
