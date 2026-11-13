@@ -6,7 +6,7 @@ often inherited from the base model). No information is hover-only and the view 
 
 from __future__ import annotations
 
-from PySide6.QtCore import QEvent, QObject, QSize, Qt
+from PySide6.QtCore import QEvent, QObject, QSize, Qt, QTimer
 from PySide6.QtWidgets import QFrame, QGridLayout, QLabel, QScrollArea, QSizePolicy, QVBoxLayout, QWidget
 
 from dtflow.services.lora_convert.source_metadata import DetailModel
@@ -55,11 +55,10 @@ class SourceDetailsView(QWidget):
             "Top training tags (not necessarily trigger words): " + " · ".join(model.tags) if model.tags else ""
         )
         self._tags.setVisible(bool(model.tags))
-        self._tags.setMaximumHeight(2 * self._tags.fontMetrics().lineSpacing() + 2)
         self._rebuild(force=True)
 
     def _rebuild(self, *, force: bool = False) -> None:
-        columns = 3 if self.width() >= 1000 else 2 if self.width() >= 640 else 1  # compact: few rows
+        columns = 3 if self.width() >= 1000 else 2 if self.width() >= 440 else 1  # compact: few rows
         if columns != self._columns or force:
             self._columns = columns
             while self._grid.count():
@@ -127,7 +126,7 @@ class SourceDetailsPopup(QFrame):
     """Floating panel above its anchor (outside every layout): closes on a click outside or Escape, scrolls only
     past its height cap, and never changes the window or the rows list underneath."""
 
-    MAX_HEIGHT = 220
+    MAX_HEIGHT = 260
 
     def __init__(self, parent: QWidget) -> None:
         super().__init__(parent, Qt.WindowType.Popup)
@@ -145,17 +144,26 @@ class SourceDetailsPopup(QFrame):
 
     def show_above(self, anchor: QWidget, model: DetailModel, *, width: int = 560) -> None:
         window = anchor.window()
-        width = max(260, min(width, window.width() - 24))
+        self._width = max(260, min(width, window.width() - 24))
+        self._anchor = anchor
         self.view.set_model(model)
-        inner = width - 16 - 4
-        self.view.resize(inner, 10)
-        self.view.layout().activate()
+        self._fit()
+        self.show()
+        QTimer.singleShot(0, self._fit)  # fonts and styles are final once shown: re-measure, never cut the content
+
+    def _fit(self) -> None:
+        """Grow to the content up to the cap (scrolling only past it) and sit just above the anchor."""
+        anchor = self._anchor
+        inner = self._width - 16 - 4
+        self.view.setFixedWidth(inner)
         self.view._rebuild(force=True)
-        self.view.layout().activate()
-        height = min(self.MAX_HEIGHT, self.view.layout().totalMinimumSize().height() + 4) + 12
-        self.setFixedSize(width, height)
+        layout = self.view.layout()
+        layout.activate()
+        needed = max(layout.totalHeightForWidth(inner), layout.sizeHint().height())
+        height = min(self.MAX_HEIGHT, needed + 4) + 12
+        self.setFixedSize(self._width, height)
+        window = anchor.window()
         top_left = anchor.mapToGlobal(anchor.rect().topLeft())
         right = anchor.mapToGlobal(anchor.rect().topRight())
-        x = max(window.mapToGlobal(window.rect().topLeft()).x() + 8, right.x() - width)
+        x = max(window.mapToGlobal(window.rect().topLeft()).x() + 8, right.x() - self._width)
         self.move(x, top_left.y() - height - 4)
-        self.show()
