@@ -22,7 +22,7 @@ on:
       - '.github/workflows/lora-design-render.yml'
 
 permissions:
-  contents: read
+  contents: write   # only to publish previews on the ci-render-previews branch
   issues: write
   pull-requests: write
 
@@ -82,12 +82,52 @@ jobs:
           if-no-files-found: error
           retention-days: 2
 
+      - name: Publish previews on the ci-render-previews branch
+        id: previews
+        if: steps.capture.outcome == 'success'
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          # A CI-owned branch holding one parentless commit with each PR's latest renders, so history never grows.
+          branch=ci-render-previews
+          short="${HEAD_SHA:0:7}"
+          url="https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+          for attempt in 1 2 3; do
+            rm -rf tmp/previews && mkdir -p tmp/previews && cd tmp/previews
+            git init -q && git remote add origin "$url"
+            old=""
+            if git fetch -q --depth 1 origin "$branch"; then
+              old=$(git rev-parse FETCH_HEAD)
+              git checkout -q -b "$branch" FETCH_HEAD
+            else
+              git checkout -q --orphan "$branch"
+            fi
+            rm -rf "pr${PR_NUMBER}" && mkdir -p "pr${PR_NUMBER}/${short}"
+            cp ../lora-ui/lora-*.png "pr${PR_NUMBER}/${short}/"
+            git add -A
+            commit=$(git -c user.name=github-actions[bot] -c user.email=41898282+github-actions[bot]@users.noreply.github.com \
+              commit-tree "$(git write-tree)" -m "CI render previews (latest per PR)")
+            if git push -q --force-with-lease="refs/heads/${branch}:${old}" origin "${commit}:refs/heads/${branch}"; then
+              echo "published=true" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+            cd ../..
+            sleep $((attempt * 3))
+          done
+          echo "::warning::Could not publish previews; the artifact remains available."
+          exit 1
+
       - name: Publish review links to PR
         if: always() && steps.capture.outcome == 'success'
         env:
           GH_TOKEN: ${{ github.token }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          PREVIEWS: ${{ steps.previews.outputs.published }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
           ARTIFACT_URL: ${{ steps.artifact.outputs.artifact-url }}
           ARTIFACT_NAME: lora-runtime-pr${{ github.event.pull_request.number }}-${{ github.event.pull_request.head.sha }}
         run: |
@@ -106,7 +146,23 @@ jobs:
               + (f", or [direct download]({os.environ['ARTIFACT_URL']})." if os.environ.get("ARTIFACT_URL") else "."),
               "",
           ]
-          lines.extend(f"- {name}" for name in names)
+          if os.environ.get("PREVIEWS") == "true":
+              base = (
+                  f"{os.environ['GITHUB_SERVER_URL']}/{os.environ['GITHUB_REPOSITORY']}/raw/ci-render-previews/"
+                  f"pr{os.environ['PR_NUMBER']}/{os.environ['HEAD_SHA'][:7]}"
+              )
+              lines.extend(["<table>"])
+              for start in range(0, len(names), 3):
+                  lines.append("<tr>")
+                  for name in names[start : start + 3]:
+                      lines.append(
+                          f'<td width="33%" valign="top"><a href="{base}/{name}"><img src="{base}/{name}" width="100%" '
+                          f'alt="{name}"></a><br><sub>{name}</sub></td>'
+                      )
+                  lines.extend(["</tr>"])
+              lines.extend(["</table>", ""])
+          else:
+              lines.extend(f"- {name}" for name in names)
           lines.extend(["", "_Canonical Qt editor with synthetic offline rows; not Windows or provider acceptance._", ""])
           note = "\n".join(lines)
           Path("tmp/lora-render-note.md").write_text(note, encoding="utf-8")
