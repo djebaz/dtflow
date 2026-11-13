@@ -21,7 +21,7 @@ from shiboken6 import isValid
 from dtflow.core.models import accepted_name_changes
 from dtflow.services.catalogue import FAMILY_LABELS
 from dtflow.services.lora_convert import CONVERTER_VERSION
-from dtflow.services.lora_convert.source_metadata import detail_lines
+from dtflow.services.lora_convert.source_metadata import detail_groups
 from dtflow.services.lora_family import LoraFamily
 from dtflow.services.lora_naming import (
     LoraPrepareMetadata,
@@ -541,13 +541,25 @@ class PrepareBatchEditor:
             else ""
         )
 
-    def _source_details(self, row: _Row) -> list[str]:
-        """Every read-only descriptive line of the row's source file (the details area wraps and scrolls)."""
+    def _fit_details(self) -> None:
+        """Size each details box to its wrapped text (two columns across the window), at most 132 px, then it scrolls."""
+        if not self.active():
+            return
+        boxes = (self.form.prepareSourceDetailsText, self.form.prepareSourceDetailsOwnText)
+        heights = []
+        for box in boxes:
+            lines = max(1, int(box.document().documentLayout().documentSize().height()))
+            heights.append(lines * box.fontMetrics().lineSpacing() + int(2 * box.document().documentMargin()) + 4)
+        height = max(40, min(132, max(heights)))
+        for box in boxes:
+            box.setFixedHeight(height)
+
+    def _source_details(self, row: _Row) -> tuple[list[str], list[str]]:
+        """Read-only descriptive lines of the row's source file: training facts, and the file's own text."""
         record = getattr(row.source_metadata, "record", lambda: None)()
         found = getattr(row.detection, "family", None)
         labels = {spec.key: spec.label for spec in self._conversion_families.values()}
-        lines = detail_lines(record, detected_family=found, family_label=lambda key: labels.get(key, key))
-        return lines
+        return detail_groups(record, detected_family=found, family_label=lambda key: labels.get(key, key))
 
     def _allocation(self):
         requests = []
@@ -785,12 +797,21 @@ class PrepareBatchEditor:
             if self.selected is not None:
                 index = self.rows.index(self.selected)
                 allocation = allocations[index]
-                details = self._source_details(self.selected)
-                text = "\n".join(details)
-                if self.form.prepareSourceDetailsText.toPlainText() != text:
-                    self.form.prepareSourceDetailsText.setPlainText(text)
+                facts, own = self._source_details(self.selected)
+                shown = (
+                    ("\n".join(facts), "\n".join(own)),
+                    (self.form.prepareSourceDetailsText, self.form.prepareSourceDetailsOwnText),
+                )
+                for text, box in zip(*shown, strict=True):
+                    if box.toPlainText() != text:
+                        box.setPlainText(text)
+                        QTimer.singleShot(0, self._fit_details)
+                self.form.prepareSourceDetailsOwnText.setVisible(bool(own))
+                self.form.prepareSourceDetailsOwnTextCaption.setVisible(bool(own))
+                self.form.prepareSourceDetailsTextCaption.setVisible(bool(facts))
+                self.form.prepareSourceDetailsText.setVisible(bool(facts))
                 self.form.prepareSourceDetailsCaption.setText(f"Declared by the file · {self.selected.path.name}")
-                self.form.prepareSourceDetailsPanel.setVisible(bool(details) and not self.selected.invalid)
+                self.form.prepareSourceDetailsPanel.setVisible(bool(facts or own) and not self.selected.invalid)
                 self.form.prepareManagedFilename.setText(
                     allocation.filename if allocation and allocation.filename else "Complete required fields to preview"
                 )

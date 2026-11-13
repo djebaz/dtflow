@@ -226,11 +226,17 @@ _DISPLAY_ORDER = (
 )
 
 
-def detail_lines(record: dict | None, *, detected_family: str | None = None, family_label=lambda key: key) -> list[str]:
-    """Read-only lines for a details area (which wraps and scrolls): the training facts first, then the file's own text."""
+def detail_groups(
+    record: dict | None, *, detected_family: str | None = None, family_label=lambda key: key
+) -> tuple[list[str], list[str]]:
+    """(training facts, the file's own text) as read-only lines for a details area, which wraps and scrolls.
+
+    The first group describes this LoRA's training; the second is the file's descriptive text, which is often inherited
+    from the base model it was trained on (a finetune can carry its base model's title and author).
+    """
     fields = (record or {}).get("fields")
     if not isinstance(fields, dict) or not fields:
-        return _tag_line(record)
+        return _tag_line(record), []
     training: list[str] = []
     own_text: list[str] = []
     shown: set[str] = set()
@@ -247,9 +253,20 @@ def detail_lines(record: dict | None, *, detected_family: str | None = None, fam
             0,
             f"Declared {family_label(declared)}, structure looks like {family_label(detected_family)} (informational)",
         )
+    return lines, own_text
+
+
+def detail_lines(record: dict | None, *, detected_family: str | None = None, family_label=lambda key: key) -> list[str]:
+    """The same content as one flat list (training facts, then the file's own text under a heading)."""
+    training, own_text = detail_groups(record, detected_family=detected_family, family_label=family_label)
     if own_text:
-        lines += ["", "The file's own text (often inherited from the base model it was trained on):", *own_text]
-    return lines
+        training = [
+            *training,
+            "",
+            "The file's own text (often inherited from the base model it was trained on):",
+            *own_text,
+        ]
+    return training
 
 
 def _tag_line(record: dict | None) -> list[str]:
