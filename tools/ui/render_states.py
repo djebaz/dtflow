@@ -296,7 +296,7 @@ def save(widget, out, name):
     report(target)
 
 
-def save_tooltip(window, out, name, target, *, hover=None):
+def save_tooltip(window, out, name, target, *, hover=None, tooltip_text=None):
     """Capture a real Qt tooltip window over its owning form, without moving the user's pointer.
 
     Tooltip widgets are separate top-level Qt windows, so QWidget.grab() of the form alone excludes them.
@@ -321,6 +321,15 @@ def save_tooltip(window, out, name, target, *, hover=None):
         for widget in QApplication.topLevelWidgets()
         if widget.isVisible() and widget.windowType() == Qt.WindowType.ToolTip
     ]
+    if not tips and tooltip_text:
+        # Offscreen Qt can skip a synthetic help event on a modal child. Present the
+        # exact HTML that the editor assigns to its real tooltip, without fake text.
+        QToolTip.showText(global_position, tooltip_text, target)
+        QTest.qWait(120)
+        tips = [
+            widget for widget in QApplication.topLevelWidgets()
+            if widget.isVisible() and widget.windowType() == Qt.WindowType.ToolTip
+        ]
     if not tips:
         raise RuntimeError(f"Native tooltip not displayed for offline UI state {name}")
     image = window.grab()
@@ -722,14 +731,22 @@ def render_lora_prepare_states(shell, out):
 
     first = entries[0]
     identity = first["sha256"], first["size"]
+    from dtflow.services.lora_convert.source_metadata import detail_model
+    from dtflow.ui.source_details_view import metadata_tooltip
+
+    source_details = detail_model(first["source_metadata"], detected_family="krea2")
+    tip = metadata_tooltip(source_details)
+    if not tip:
+        raise RuntimeError("Offline Edit metadata fixture must contain descriptive metadata")
     shell.lora_metadata_overlay.open(
-        records[identity], first["name"], ("krea_2", "z_image", "flux1"), shell._retained_source_details(identity)
+        records[identity], first["name"], ("krea_2", "z_image", "flux1"), source_details
     )
     QTest.qWait(60)
     save(shell.form, out, "lora-edit-metadata")
     save_tooltip(
         shell.form, out, "lora-edit-metadata-tooltip",
         shell.lora_metadata_overlay.form, hover=shell.lora_metadata_overlay._summary,
+        tooltip_text=tip,
     )
     shell.lora_metadata_overlay.close()
     shell.form.customLorasDisclosure.setChecked(False)
