@@ -1,14 +1,17 @@
-"""Read-only LoRA metadata hints from the window's worker-loaded local projections.
+"""Read-only LoRA hints from the window-owned local metadata projection.
 
-Hover never reads files, resolves receipts, uploads or changes a prompt. Each prompt supplies its own selection.
+Prompt panels and picker hover cards only display saved data; neither reads providers nor changes prompts.
 """
 
 import html
 import re
+from pathlib import Path
 from collections.abc import Callable, Sequence
 
-from PySide6.QtCore import QEvent, QObject
-from PySide6.QtWidgets import QWidget
+from PySide6.QtCore import QEvent, QObject, QSize, Qt
+from PySide6.QtGui import QIcon
+from PySide6.QtWidgets import QFrame, QLabel, QTextBrowser, QToolButton, QVBoxLayout, QWidget
+from shiboken6 import isValid
 
 from dtflow.core.models import LoRASelection
 from dtflow.services.lora_convert.source_metadata import detail_model
@@ -137,6 +140,105 @@ def library(widget: QWidget) -> HintLibrary | None:
     return getattr(widget.window(), "_lora_hint_library", None)
 
 
+class PromptHintOverlay(QObject):
+    """One icon-button-controlled, scrollable LoRA hint panel above an existing inspector or canvas.
+
+    The host owns the geometry. On Generate/Queues it is the right inspector scroll viewport,
+    which sits below the persistent Images navigation button; in Workflows it is the canvas host.
+    """
+
+    def __init__(self, host: QWidget, *, on_toggle: Callable[[], None] | None = None):
+        super().__init__(host)
+        self.host = host
+        self._button: QToolButton | None = None
+        self._selected: Callable[[], Sequence[LoRASelection]] | None = None
+        self._title = ""
+        self._on_toggle = on_toggle
+        self.frame = QFrame(host)
+        self.frame.setObjectName("promptHintsOverlay")
+        self.frame.setProperty("role", "sectionCard")
+        self.frame.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+        column = QVBoxLayout(self.frame)
+        column.setContentsMargins(12, 12, 12, 12)
+        column.setSpacing(8)
+        heading = QLabel("LoRA prompt hints", self.frame)
+        heading.setProperty("textRole", "section")
+        column.addWidget(heading)
+        self.content = QTextBrowser(self.frame)
+        self.content.setObjectName("promptHintsContent")
+        self.content.setOpenExternalLinks(False)
+        self.content.setOpenLinks(False)
+        self.content.setFrameShape(QFrame.Shape.NoFrame)
+        column.addWidget(self.content, 1)
+        self.frame.hide()
+        host.installEventFilter(self)
+
+    @property
+    def open(self) -> bool:
+        return self._button is not None and self.frame.isVisible()
+
+    def bind(
+        self, button: QToolButton, selected: Callable[[], Sequence[LoRASelection]], *, title: str = "Applied LoRAs"
+    ) -> None:
+        """Attach a fresh or persistent icon control; switching controls closes the old one."""
+        button.setText("")
+        button.setCheckable(True)
+        button.setAutoRaise(True)
+        button.setFixedSize(30, 30)
+        button.setIcon(QIcon(str(Path(__file__).parents[1] / "resources" / "images" / "gallery" / "info.svg")))
+        button.setIconSize(QSize(16, 16))
+        button.setToolTip("Show LoRA prompt hints")
+        button.setAccessibleName("Show LoRA prompt hints")
+
+        def toggled(checked: bool) -> None:
+            if not checked:
+                if self._button is button:
+                    self.close()
+                return
+            self.close()
+            self._button, self._selected, self._title = button, selected, title
+            button.setToolTip("Hide LoRA prompt hints")
+            button.setAccessibleName("Hide LoRA prompt hints")
+            self.refresh()
+            self.frame.setGeometry(self.host.rect())
+            self.frame.show()
+            self.frame.raise_()
+            if self._on_toggle:
+                self._on_toggle()
+
+        button.toggled.connect(toggled)
+
+    def refresh(self) -> None:
+        """Reproject current LoRA selections and locally retained metadata while the panel is visible."""
+        if self._selected is None:
+            return
+        selected = tuple(self._selected())
+        source = library(self.host)
+        if not selected:
+            self.content.setHtml("<p>No LoRAs selected for this prompt.</p>")
+        elif source is None:
+            self.content.setHtml("<p>Local LoRA metadata is unavailable.</p>")
+        else:
+            self.content.setHtml(source.tooltip([(self._title, selected)], detailed=True))
+
+    def close(self) -> None:
+        button = self._button
+        self._button = None
+        self._selected = None
+        self.frame.hide()
+        if button is not None and isValid(button):
+            button.setChecked(False)
+            button.setToolTip("Show LoRA prompt hints")
+            button.setAccessibleName("Show LoRA prompt hints")
+        if button is not None and self._on_toggle:
+            self._on_toggle()
+
+    def eventFilter(self, watched, event) -> bool:  # noqa: N802 - Qt override
+        if watched is self.host and event.type() in {QEvent.Type.Resize, QEvent.Type.Show}:
+            self.frame.setGeometry(self.host.rect())
+        return False
+
+
 class LoRAHover(QObject):
     """Fetch current selection at hover time; parent filters and viewport filters die with the input/row."""
 
@@ -165,6 +267,3 @@ class LoRAHover(QObject):
                     return True
         return False
 
-
-def bind_prompt_hint(widget: QWidget, selected: Callable[[], Sequence[LoRASelection]], *, title="Applied LoRAs"):
-    return LoRAHover(widget, lambda: [(title, tuple(selected()))])
