@@ -84,12 +84,15 @@ NO_METADATA = SourceMetadata({})
 
 
 def _clean(value: str, limit: int) -> str:
-    text = re.sub(r"\s+", " ", value).strip()
+    # Normalize only a bounded prefix: an untrusted header can contain very large text fields.
+    text = re.sub(r"\s+", " ", value[: limit * 4]).strip()
     return text[:limit].rstrip() if text.casefold() not in _EMPTY else ""
 
 
 def _exact(value: str, limit: int) -> str | None:
     """The cleaned text, "" when empty, or None when it is too long to be what it claims to be (never truncated)."""
+    if len(value) > limit:
+        return None
     text = re.sub(r"\s+", " ", value).strip()
     if text.casefold() in _EMPTY:
         return ""
@@ -157,7 +160,7 @@ def extract(raw: dict[str, str]) -> SourceMetadata:
         if not isinstance(value, str):
             continue
         if key == "ss_sd_model_name":
-            value = re.split(r"[\\/]", value.strip())[-1]  # a file name at training time, never a folder
+            value = re.split(r"[\\/]", value[-limit * 4 :].strip())[-1]  # last path component only
         if key == "modelspec.trigger_phrase" and _exact(value, limit) is None:
             continue  # a long phrase must not be retained as a misleading truncated trigger
         text = _clean(value, limit)
