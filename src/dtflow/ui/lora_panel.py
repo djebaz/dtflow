@@ -117,6 +117,7 @@ class LoraAssetPanel:
         self.choose_asset_file = _choose_asset_file
         self._prepare_files: tuple[str, ...] = ()
         self._prepare_metadata: dict[str, LoraPrepareMetadata] = {}
+        self._prepare_source_sha: dict[str, str] = {}
         self._prepare_editor: PrepareBatchEditor | None = None
         self._prepare_editor_context = None
         self._hash_paused: tuple | None = None
@@ -690,6 +691,11 @@ class LoraAssetPanel:
         selected = {name: metadata for path, metadata in chosen if (name := str(path)) not in queued}
         if not selected:
             return
+        editor = self._prepare_editor
+        if editor is not None:
+            self._prepare_source_sha.update(
+                {str(row.path): row.sha256 for row in editor.rows if str(row.path) in selected and row.sha256}
+            )
         if self.preparing:
             self._prepare_files += tuple(selected)
             self._prepare_metadata.update(selected)
@@ -961,7 +967,7 @@ class LoraAssetPanel:
                 source_path = Path(self._prepare_files[self._prepare_index])
                 editor = self._prepare_editor
                 row = next((r for r in editor.rows if r.path == source_path), None) if editor is not None else None
-                source_sha = row.sha256 if row is not None else None
+                source_sha = self._prepare_source_sha.get(str(source_path)) or (row.sha256 if row else None)
                 data = {
                     "filename_prefix": source_path.name[:3],
                     **({"source_sha_prefix": source_sha[:12]} if source_sha else {}),
@@ -1052,6 +1058,7 @@ class LoraAssetPanel:
             self._prepare_editor.released([Path(p) for p in unstarted])
         self._prepare_files = ()
         self._prepare_metadata = {}
+        self._prepare_source_sha = {}
         self._prepare_saved = None
         self._set_busy(False)
         self._resume_hashing()
