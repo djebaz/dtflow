@@ -383,6 +383,7 @@ def main(argv: list[str] | None = None) -> int:
         help="sd1 and sdxl only: skip LoRA tensors that have no place in the model, as Draw Things does",
     )
     ap.add_argument(
+        "-xp",
         "--experimental",
         action="store_true",
         help="allow families that are not verified against Draw Things yet (sdxl)",

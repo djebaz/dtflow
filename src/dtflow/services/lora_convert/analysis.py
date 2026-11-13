@@ -180,6 +180,7 @@ def analyze_source(path: Path, family: str) -> dict:
             "limitations": (
                 "Name-based layer categories and header-only shape checks are diagnostic, "
                 "not full output validation. Table coverage is estimated. "
-                "The selected --family is used as given; source_family_detection is a separate read-only suggestion."
+                "The family used is the one passed with --family or, when it was omitted, the detected one (see family_source); "
+                "source_family_detection is the read-only header detection."
             ),
         }
