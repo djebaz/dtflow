@@ -20,6 +20,7 @@ from shiboken6 import isValid
 
 from dtflow.core.models import accepted_name_changes
 from dtflow.services.catalogue import FAMILY_LABELS
+from dtflow.services.lora_convert import CONVERTER_VERSION, supported_families
 from dtflow.services.lora_family import LoraFamily
 from dtflow.services.lora_naming import (
     LoraPrepareMetadata,
@@ -54,6 +55,7 @@ class _Row:
     widget: QWidget
     suggested: str | None
     alternatives: tuple[str, ...]
+    source_kind: str = "ckpt"
     detected: str | None = None
     manual_name: bool = False
     manual_family: bool = False
@@ -153,6 +155,8 @@ class PrepareBatchEditor:
         self.rows: list[_Row] = []
         self.occupied: tuple[ManagedName, ...] = ()
         self.architectures: tuple[str, ...] = ()
+        self._conversion_families = {spec.exact_architecture: spec for spec in supported_families()}
+        self._existing_conversions: dict[tuple[str, str, str], tuple[str, int]] = {}
         self.inspected = False
         self.selected: _Row | None = None
         self._updating = False
@@ -162,12 +166,16 @@ class PrepareBatchEditor:
         for path in dict.fromkeys(Path(p) for p in paths):
             row_widget = _load("prepare_lora_row.ui", self.form.prepareBatchRows)
             suggestion = suggest_short_name(path.name)
-            row = _Row(path, row_widget, suggestion.name, suggestion.alternatives)
+            kind = "safetensors" if path.suffix.casefold() == ".safetensors" else "ckpt"
+            row = _Row(path, row_widget, suggestion.name, suggestion.alternatives, source_kind=kind)
             self.rows.append(row)
             row_widget.prepareSourceFile.setToolTip(path.name)
             row_widget.prepareSourceFile.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
             row_widget.prepareShortName.setText(suggestion.name or "")
             row_widget.prepareFormat.setCurrentIndex(1 if re.search(r"(?i)_lora_q8p\.ckpt$", path.name) else 0)
+            if kind == "safetensors":
+                row_widget.prepareFormat.removeItem(1)  # only F16 output is supported by the converter
+            row_widget.prepareExperimentalConfirm.toggled.connect(lambda _checked: self.refresh())
             row_widget.prepareReprepare.clicked.connect(lambda _checked=False, item=row: self._reprepare(item))
             row_widget.prepareCopySource.clicked.connect(
                 lambda _checked=False, name=path.name: QGuiApplication.clipboard().setText(name)
@@ -381,6 +389,7 @@ class PrepareBatchEditor:
         if self._updating:
             return
         row.manual_family = True
+        row.widget.prepareExperimentalConfirm.setChecked(False)
         self._select(row)
 
     def _edited_format(self, row: _Row):
