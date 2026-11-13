@@ -361,6 +361,8 @@ class AssetService:
                 )
                 if renamed is not None and path.parent == self.store.directory:
                     path = renamed.path
+                if renamed is not None and progress is not None:
+                    progress(PrepareEvent(CHECKING, name=renamed.path.name))  # show the final managed name
             negotiation = negotiation or await backend.negotiate_asset(content)
             if negotiation.status == "exists":
                 if progress is not None:
