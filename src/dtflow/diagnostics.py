@@ -7,6 +7,7 @@ assign sequence numbers, parse messages, or own sinks. Disabled levels stay chea
 import logging
 import re
 from contextvars import ContextVar
+from pathlib import PureWindowsPath
 from time import monotonic_ns
 
 
@@ -52,7 +53,7 @@ def asset_ref_data(
         **({"source_sha_prefix": source_sha256[:12]} if source_sha256 else {}),
         **({"asset_id": asset_id} if asset_id else {}),
         **({"operation_id": operation_id} if operation_id else {}),
-        **({"filename_prefix": filename[:3]} if filename else {}),
+        **({"filename_prefix": PureWindowsPath(filename).name[:3]} if filename else {}),
     }
 
 
