@@ -546,7 +546,7 @@ class PrepareBatchEditor:
         shown = (saved is not None or bool(text)) and not (self.inspected and row.invalid)
         note.setText(origin if shown else "")
         explanation = (
-            "Declared by the file's metadata, not verified. Edit or clear it freely."
+            "Suggested by the source metadata. Edit or clear it freely."
             if text and saved is None
             else "Your saved trigger words for this LoRA."
             if text
