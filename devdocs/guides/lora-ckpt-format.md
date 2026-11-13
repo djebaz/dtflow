@@ -90,7 +90,7 @@ The owner converted two Krea 2 LoRAs on Windows with `-a`, then compared the res
 
 ### Descriptive metadata (#414)
 
-DTFlow reads the safetensors header's descriptive `__metadata__` (kohya `ss_*`, ModelSpec `modelspec.*`) only to show it and to suggest Trigger Words from an explicit declaration. It never decides the family or the conversion, is read best effort (anything unusable is ignored), keeps a bounded subset without dataset folders or training comments (the app stores and shows only training facts and tags; the CLI report lists everything selected), and is not written into the `.ckpt`. Field spellings follow trainer source research, not yet a collection of real files. `--metadata` writes a JSON report of these fields for a file, folder or glob (see the [CLI guide](cli.md)). See the [architecture note](../architecture/lora-convert.md).
+DTFlow reads the safetensors header's descriptive `__metadata__` (kohya `ss_*`, ModelSpec `modelspec.*`) only to show it and to suggest Trigger Words from an explicit declaration. It never decides the family or the conversion, is read best effort (anything unusable is ignored), keeps a bounded subset without dataset folders or training comments (the app stores and shows only training facts (including the declared base model) and tags; the CLI report lists everything selected), and is not written into the `.ckpt`. Field spellings follow trainer source research, not yet a collection of real files. `--metadata` writes a JSON report of these fields for a file, folder or glob (see the [CLI guide](cli.md)). See the [architecture note](../architecture/lora-convert.md).
 
 ## Still unverified
 
