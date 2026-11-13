@@ -156,7 +156,7 @@ def _convert_sync(
             result.destination_size,
             managed_name=managed_name,
             conversion=record,
-            source_metadata=inspected.metadata.record(),
+            source_metadata=inspected.metadata.retained_record(),
         )
         diagnostic_event(
             log,

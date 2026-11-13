@@ -15,13 +15,13 @@ from typing import Callable, Sequence
 from PySide6.QtCore import QEvent, QFile, QIODevice, QObject, Qt, QTimer
 from PySide6.QtGui import QGuiApplication
 from PySide6.QtUiTools import QUiLoader
-from PySide6.QtWidgets import QSizePolicy, QWidget
+from PySide6.QtWidgets import QLayout, QSizePolicy, QWidget
 from shiboken6 import isValid
 
 from dtflow.core.models import accepted_name_changes
 from dtflow.services.catalogue import FAMILY_LABELS
 from dtflow.services.lora_convert import CONVERTER_VERSION
-from dtflow.services.lora_convert.source_metadata import detail_groups
+from dtflow.services.lora_convert.source_metadata import DetailModel, detail_model
 from dtflow.services.lora_family import LoraFamily
 from dtflow.services.lora_naming import (
     LoraPrepareMetadata,
@@ -33,6 +33,7 @@ from dtflow.services.lora_naming import (
     suggest_short_name,
 )
 from dtflow.ui.inline_feedback import feedback
+from dtflow.ui.source_details_view import SourceDetailsView
 
 _SHORT_NAME = re.compile(r"^[A-Za-z0-9_]{1,20}$")
 
@@ -214,6 +215,14 @@ class PrepareBatchEditor:
                 row.total_bytes = row.path.stat().st_size
             except OSError:
                 row.total_bytes = 0
+        self._details_view = SourceDetailsView(self.form.prepareSourceDetailsHost)
+        self.form.prepareSourceDetailsHostLayout.addWidget(self._details_view)
+        self._details_model = DetailModel()
+        self.form.prepareSourceDetailsToggle.toggled.connect(self._toggle_details)
+        stretch = self.form.findChild(QLayout, "preparePreviewLayout")
+        if stretch is not None:  # about 40% filename and label, 60% declared-metadata summary
+            stretch.setStretch(0, 4)
+            stretch.setStretch(1, 6)
         self._tick_timer = QTimer(self.form)
         self._tick_timer.setInterval(200)
         self._tick_timer.timeout.connect(self._tick_inspection)
@@ -516,50 +525,45 @@ class PrepareBatchEditor:
         if not row.manual_triggers and field.text() != row.auto_triggers:
             row.manual_triggers = True  # whatever differs from what was filled in came from the user
         if row.manual_triggers:
-            note.setVisible(False)
+            note.setText("")
             return
         identity = (row.sha256, row.size) if row.source_kind == "ckpt" else self._content_identity(row)
         saved = self._saved_triggers.get(identity) if identity[0] is not None and identity[1] is not None else None
         suggestion = getattr(row.source_metadata, "trigger", None) if row.source_kind == "safetensors" else None
+        # The badge is one short constant-height line; the explanation is in the tooltips (row heights never change).
         if self._saved_triggers_unreadable and not saved:
             # Saved words could not be read, so a suggestion might replace one: do not fill, and say why.
-            note.setText("Saved trigger words unreadable: no suggestion applied" if suggestion else "")
-            note.setVisible(bool(suggestion))
+            note.setText("not filled" if suggestion else "")
+            note.setToolTip("Saved trigger words unreadable: no suggestion applied." if suggestion else "")
             row.auto_triggers = field.text()
             return
-        text, origin = (saved, "Saved value") if saved else (suggestion or "", "Suggested from file metadata")
+        text, origin = (saved, "saved") if saved else (suggestion or "", "from file")
         if field.text() != text:
             field.setText(text)
         row.auto_triggers = text
-        note.setText(origin if text else "")
-        note.setVisible(bool(text) and not (self.inspected and row.invalid))
-        field.setToolTip(
+        shown = bool(text) and not (self.inspected and row.invalid)
+        note.setText(origin if shown else "")
+        explanation = (
             "Declared by the file's metadata, not verified. Edit or clear it freely."
             if text and not saved
             else "Your saved trigger words for this LoRA."
             if text
             else ""
         )
+        note.setToolTip(explanation if shown else "")
+        field.setToolTip(explanation)
 
-    def _fit_details(self) -> None:
-        """Size each details box to its wrapped text (two columns across the window), at most 132 px, then it scrolls."""
-        if not self.active():
-            return
-        boxes = (self.form.prepareSourceDetailsText, self.form.prepareSourceDetailsOwnText)
-        heights = []
-        for box in boxes:
-            lines = max(1, int(box.document().documentLayout().documentSize().height()))
-            heights.append(lines * box.fontMetrics().lineSpacing() + int(2 * box.document().documentMargin()) + 4)
-        height = max(40, min(132, max(heights)))
-        for box in boxes:
-            box.setFixedHeight(height)
+    def _toggle_details(self, expanded: bool) -> None:
+        """Show or hide the full-width grid; the one-line summary stays, so the rows list changes only on request."""
+        self.form.prepareSourceDetailsToggle.setText("Details ▾" if expanded else "Details ▸")
+        self.form.prepareSourceDetailsPanel.setVisible(expanded and bool(self._details_model))
 
-    def _source_details(self, row: _Row) -> tuple[list[str], list[str]]:
-        """Read-only descriptive lines of the row's source file: training facts, and the file's own text."""
+    def _source_details(self, row: _Row) -> DetailModel:
+        """Read-only descriptive content of the row's source file."""
         record = getattr(row.source_metadata, "record", lambda: None)()
         found = getattr(row.detection, "family", None)
         labels = {spec.key: spec.label for spec in self._conversion_families.values()}
-        return detail_groups(record, detected_family=found, family_label=lambda key: labels.get(key, key))
+        return detail_model(record, detected_family=found, family_label=lambda key: labels.get(key, key))
 
     def _allocation(self):
         requests = []
@@ -797,21 +801,23 @@ class PrepareBatchEditor:
             if self.selected is not None:
                 index = self.rows.index(self.selected)
                 allocation = allocations[index]
-                facts, own = self._source_details(self.selected)
-                shown = (
-                    ("\n".join(facts), "\n".join(own)),
-                    (self.form.prepareSourceDetailsText, self.form.prepareSourceDetailsOwnText),
+                model = self._source_details(self.selected)
+                model = DetailModel() if self.selected.invalid else model
+                if model != self._details_model:
+                    self._details_model = model
+                    self._details_view.set_model(model)
+                toggle = self.form.prepareSourceDetailsToggle
+                toggle.setVisible(bool(model))
+                self.form.prepareSourceSummary.setText(
+                    ("Declared by the file: " + model.summary)
+                    if model.summary
+                    else "Declared by the file: details below"
+                    if model
+                    else "No descriptive metadata in this file"
+                    if self.selected.source_kind == "safetensors" and self.inspected
+                    else ""
                 )
-                for text, box in zip(*shown, strict=True):
-                    if box.toPlainText() != text:
-                        box.setPlainText(text)
-                        QTimer.singleShot(0, self._fit_details)
-                self.form.prepareSourceDetailsOwnText.setVisible(bool(own))
-                self.form.prepareSourceDetailsOwnTextCaption.setVisible(bool(own))
-                self.form.prepareSourceDetailsTextCaption.setVisible(bool(facts))
-                self.form.prepareSourceDetailsText.setVisible(bool(facts))
-                self.form.prepareSourceDetailsCaption.setText(f"Declared by the file · {self.selected.path.name}")
-                self.form.prepareSourceDetailsPanel.setVisible(bool(facts or own) and not self.selected.invalid)
+                self.form.prepareSourceDetailsPanel.setVisible(toggle.isChecked() and bool(model))
                 self.form.prepareManagedFilename.setText(
                     allocation.filename if allocation and allocation.filename else "Complete required fields to preview"
                 )

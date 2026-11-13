@@ -63,6 +63,22 @@ class SourceMetadata:
             "tags": [[tag, count] for tag, count in self.tags],
         }
 
+    def retained_record(self) -> dict | None:
+        """The record kept with a retained conversion: only what describes this LoRA's training (never the file's
+        own title, author, license, date, description or base-model lines), plus the derived declared family."""
+        fields = {key: value for key, value in self.fields.items() if key in _RETAINED}
+        if not fields and not self.tags:
+            return None
+        record = {
+            "version": RECORD_VERSION,
+            "fields": fields,
+            "tags": [[tag, count] for tag, count in self.tags],
+        }
+        declared = declared_family({"fields": self.fields})
+        if declared:
+            record["declared_family"] = declared
+        return record
+
 
 NO_METADATA = SourceMetadata({})
 
@@ -169,7 +185,7 @@ _DECLARED_FAMILIES = (
     (re.compile(r"krea[-_ ]?2"), "krea2"),
     (re.compile(r"z[-_ ]?image"), "zimage"),
     (re.compile(r"flux(?![-_. ]?(?:2|klein))"), "flux1"),
-    (re.compile(r"stable-diffusion-xl-v1-base|sdxl"), "sdxl"),
+    (re.compile(r"stable[-_ ]diffusion[-_ ]xl[-_ ]v?1(?:\.0)?[-_ ]base|sdxl"), "sdxl"),
     (re.compile(r"stable-diffusion-v1|\bsd[-_ ]?1"), "sd1"),
 )
 
@@ -179,6 +195,9 @@ def declared_family(record: dict | None) -> str | None:
 
     For display and an informational comparison only: never an input to detection, suggestion or conversion.
     """
+    kept = (record or {}).get("declared_family")
+    if isinstance(kept, str) and kept:  # a retained record keeps the derived family, not the raw declaration
+        return kept
     fields = (record or {}).get("fields")
     if not isinstance(fields, dict):
         return None
@@ -194,84 +213,75 @@ def declared_family(record: dict | None) -> str | None:
     return None
 
 
-# What a compact panel shows first: what describes this LoRA's training, then the file's own descriptive text, which
-# is often inherited from the base model (a finetune can carry its base model's title and author).
-_OWN_TEXT = {
-    "modelspec.title",
-    "modelspec.author",
-    "modelspec.license",
-    "modelspec.date",
-    "modelspec.usage_hint",
-    "modelspec.description",
-}
-_DISPLAY_ORDER = (
+# Only what describes this LoRA's training is shown. The file's own title, author, license, date, description and base
+# model lines (often inherited from the base model) stay out of the app; the CLI JSON report keeps them.
+_FACT_ORDER = (
     "ss_output_name",
     "modelspec.trigger_phrase",
-    "modelspec.architecture",
-    "ss_base_model_version",
-    "ss_sd_model_name",
+    "ss_class_tokens",
     "ss_network_module",
     "ss_network_dim",
     "ss_network_alpha",
     "ss_resolution",
     "modelspec.resolution",
     "ss_num_epochs",
-    "ss_class_tokens",
-    "modelspec.title",
-    "modelspec.author",
-    "modelspec.license",
-    "modelspec.date",
     "modelspec.usage_hint",
-    "modelspec.description",
 )
+_RETAINED = frozenset(_FACT_ORDER)
+_TAGS_SHOWN = 12
 
 
-def detail_groups(
+@dataclass(frozen=True, slots=True)
+class DetailModel:
+    """Presentation-neutral content of a details view (no Qt): a one-line summary, label/value facts, tags."""
+
+    summary: str = ""
+    note: str = ""
+    facts: tuple[tuple[str, str], ...] = ()
+    tags: tuple[str, ...] = ()
+
+    def __bool__(self) -> bool:
+        return bool(self.summary or self.facts or self.tags)
+
+
+def detail_model(
     record: dict | None, *, detected_family: str | None = None, family_label=lambda key: key
-) -> tuple[list[str], list[str]]:
-    """(training facts, the file's own text) as read-only lines for a details area, which wraps and scrolls.
-
-    The first group describes this LoRA's training; the second is the file's descriptive text, which is often inherited
-    from the base model it was trained on (a finetune can carry its base model's title and author).
-    """
+) -> DetailModel:
+    """Everything a details view shows, from a bounded record. Never raises on a malformed record."""
     fields = (record or {}).get("fields")
-    if not isinstance(fields, dict) or not fields:
-        return _tag_line(record), []
-    training: list[str] = []
-    own_text: list[str] = []
-    shown: set[str] = set()
-    for key in _DISPLAY_ORDER:
-        value = fields.get(key)
-        label = _LABELS[key]
-        if isinstance(value, str) and value and label not in shown:
-            (own_text if key in _OWN_TEXT else training).append(f"{label}: {value}")
-            shown.add(label)
-    lines = training + _tag_line(record)
+    fields = (
+        {k: v for k, v in fields.items() if isinstance(k, str) and isinstance(v, str) and v}
+        if isinstance(fields, dict)
+        else {}
+    )
+    tags_raw = (record or {}).get("tags")
+    tags = tuple(
+        item[0]
+        for item in (tags_raw if isinstance(tags_raw, list) else [])[:_TAGS_SHOWN]
+        if isinstance(item, list) and item and isinstance(item[0], str)
+    )
+    if not fields and not tags:
+        return DetailModel()
     declared = declared_family(record)
+    facts: list[tuple[str, str]] = []
+    seen: set[str] = set()
+    for key in _FACT_ORDER:
+        value = fields.get(key)
+        label = "Trained as" if key == "ss_output_name" else _LABELS[key]
+        if not value or label in seen:
+            continue
+        facts.append((label, value))
+        seen.add(label)
+    rank, alpha = fields.get("ss_network_dim"), fields.get("ss_network_alpha")
+    parts = [
+        f"rank {rank} / alpha {alpha}" if rank and alpha else f"rank {rank}" if rank else None,
+        fields.get("ss_resolution") or fields.get("modelspec.resolution"),
+        f"{fields['ss_num_epochs']} epochs" if fields.get("ss_num_epochs") else None,
+    ]
+    summary = " · ".join(part for part in parts if part)
+    note = ""
     if declared and detected_family and declared != detected_family:
-        lines.insert(
-            0,
-            f"Declared {family_label(declared)}, structure looks like {family_label(detected_family)} (informational)",
+        note = (
+            f"Declared {family_label(declared)}, structure looks like {family_label(detected_family)} (informational)"
         )
-    return lines, own_text
-
-
-def detail_lines(record: dict | None, *, detected_family: str | None = None, family_label=lambda key: key) -> list[str]:
-    """The same content as one flat list (training facts, then the file's own text under a heading)."""
-    training, own_text = detail_groups(record, detected_family=detected_family, family_label=family_label)
-    if own_text:
-        training = [
-            *training,
-            "",
-            "The file's own text (often inherited from the base model it was trained on):",
-            *own_text,
-        ]
-    return training
-
-
-def _tag_line(record: dict | None) -> list[str]:
-    tags = (record or {}).get("tags")
-    if not isinstance(tags, list) or not tags:
-        return []
-    names = [item[0] for item in tags[:12] if isinstance(item, list) and item and isinstance(item[0], str)]
-    return ["Top training tags (not necessarily trigger words): " + ", ".join(names)] if names else []
+    return DetailModel(summary, note, tuple(facts), tags)

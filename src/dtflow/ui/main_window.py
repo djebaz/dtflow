@@ -77,7 +77,7 @@ from dtflow.ui.button_focus import KeyboardFocusGuard
 from dtflow.ui.current_page_stack import CurrentPageStack
 from dtflow.ui.cloud_usage_panel import CloudUsagePanel
 from dtflow.services.lora_convert import supported_families
-from dtflow.services.lora_convert.source_metadata import detail_lines
+from dtflow.services.lora_convert.source_metadata import DetailModel, detail_model
 from dtflow.ui.lora_metadata_overlay import LoraMetadataOverlay
 from dtflow.ui.lora_trigger_panel import LoraTriggerPanel
 from dtflow.ui.workflow_defaults_panel import WorkflowDefaultsPanel
@@ -2021,12 +2021,12 @@ class MainWindow:
             self._retained_source_details(identity),
         )
 
-    def _retained_source_details(self, identity: tuple[str, int]) -> tuple[str, ...]:
-        """Read-only lines from the descriptive metadata kept with the newest conversion of this retained LoRA."""
+    def _retained_source_details(self, identity: tuple[str, int]) -> DetailModel:
+        """Read-only content from the descriptive metadata kept with the newest conversion of this retained LoRA."""
         entry = next((e for e in self._lora_entries if (e.get("sha256"), e.get("size")) == identity), None)
         descriptive = (entry or {}).get("source_metadata")
         if not isinstance(descriptive, dict):
-            return ()
+            return DetailModel()
         conversions = (entry or {}).get("conversions")
         if not isinstance(conversions, list):
             conversions = [(entry or {}).get("conversion")]
@@ -2040,7 +2040,7 @@ class MainWindow:
             None,
         )
         labels = {spec.key: spec.label for spec in supported_families()}
-        return tuple(detail_lines(descriptive, detected_family=found, family_label=lambda k: labels.get(k, k)))
+        return detail_model(descriptive, detected_family=found, family_label=lambda k: labels.get(k, k))
 
     def _lora_metadata_saved(self) -> None:
         self.form.statusBar().showMessage("LoRA metadata saved locally. Files and receipts unchanged.", 5000)

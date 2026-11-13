@@ -16,9 +16,11 @@ from PySide6.QtWidgets import QFrame, QVBoxLayout, QWidget
 
 from dtflow.core.models import ValidationError
 from dtflow.services.catalogue import FAMILY_LABELS
+from dtflow.services.lora_convert.source_metadata import DetailModel
 from dtflow.services.lora_metadata_edit import save_lora_metadata
 from dtflow.services.lora_naming import architecture_shortcode
 from dtflow.ui.runner import AsyncRunner
+from dtflow.ui.source_details_view import SourceDetailsView
 
 _SHORT_NAME = re.compile(r"^[A-Za-z0-9_]{1,20}$")
 
@@ -72,6 +74,9 @@ class LoraMetadataOverlay(QObject):
         layout.addWidget(self.form, 0, Qt.AlignmentFlag.AlignHCenter)
         layout.addStretch(1)
         _Resize(host, self.overlay)
+        self._details_view = SourceDetailsView(self.form.loraMetadataSourceHost)
+        self.form.loraMetadataSourceHostLayout.addWidget(self._details_view)
+        self.form.loraMetadataSourceToggle.toggled.connect(self._toggle_source)
         self.form.loraMetadataCancel.clicked.connect(self.close)
         self.form.loraMetadataSave.clicked.connect(self.save)
         escape = QShortcut(QKeySequence(Qt.Key.Key_Escape), self.overlay)
@@ -80,20 +85,27 @@ class LoraMetadataOverlay(QObject):
         self._identity: tuple[str, int] | None = None
         self._saving = False
 
+    def _toggle_source(self, expanded: bool) -> None:
+        self.form.loraMetadataSourceToggle.setText(
+            "Declared by the source file ▾" if expanded else "Declared by the source file ▸"
+        )
+        self.form.loraMetadataSourceHost.setVisible(expanded)
+
     def is_open(self) -> bool:
         return self.overlay.isVisible()
 
     def open(
-        self, record: dict, name: str, architectures: tuple[str, ...], source_details: tuple[str, ...] = ()
+        self, record: dict, name: str, architectures: tuple[str, ...], source_details: DetailModel | None = None
     ) -> None:
         """Show one record. ``architectures`` are the backend-verified LoRA choices; the saved declaration stays listed.
 
-        ``source_details`` are read-only lines from the retained source metadata (#414); they are never editable.
+        ``source_details`` is read-only content from the retained source metadata (#414); they are never editable.
         """
         form = self.form
-        form.loraMetadataSourceDetails.setPlainText("\n".join(source_details))
-        form.loraMetadataSourceDetails.setVisible(bool(source_details))
-        form.loraMetadataSourceCaption.setVisible(bool(source_details))
+        self._details_view.set_model(source_details or DetailModel())
+        form.loraMetadataSourceToggle.setVisible(bool(source_details))
+        form.loraMetadataSourceToggle.setChecked(False)  # closed by default: only the dialog itself ever scrolls
+        form.loraMetadataSourceHost.setVisible(False)
         self._identity = (record["sha256"], record["size"])
         form.loraMetadataFile.setText(name)
         combo = form.loraMetadataArchitecture
