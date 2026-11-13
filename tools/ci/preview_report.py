@@ -9,7 +9,7 @@ from collections import Counter
 from pathlib import Path
 from urllib.parse import quote
 
-from preview_publish import OUT, ROOT, current, gh
+from preview_publish import BRANCH, OUT, ROOT, current, gh
 
 MARKER = "<!-- dtflow-ui-preview -->"
 LEGACY_MARKERS = ("<!-- dtflow-ui-renders -->", "<!-- dtflow-lora-designer-renders -->")
@@ -91,9 +91,7 @@ def main():
         "",
     ]
     if pngs and os.environ.get("PUBLISHED") == "true" and pr:
-        base = (
-            f"{os.environ['GITHUB_SERVER_URL']}/{os.environ['GITHUB_REPOSITORY']}/raw/ci-render-previews/pr{pr}/{sha}"
-        )
+        base = f"{os.environ['GITHUB_SERVER_URL']}/{os.environ['GITHUB_REPOSITORY']}/raw/{BRANCH}/pr{pr}/{sha}"
         lines += ["<table>"]
         # Bound comment size even for ALL; every PNG is retained on the preview branch and in the artifact.
         for start in range(0, min(len(pngs), 48), 3):
@@ -107,12 +105,10 @@ def main():
                 )
             lines.append("</tr>")
         lines += ["</table>", ""]
-        tree = (
-            f"{os.environ['GITHUB_SERVER_URL']}/{os.environ['GITHUB_REPOSITORY']}/tree/ci-render-previews/pr{pr}/{sha}"
-        )
-        lines.append(
-            f"Showing up to 48 thumbnails. [Browse all {len(pngs)} PNGs]({tree}); the artifact also contains every image."
-        )
+        tree = f"{os.environ['GITHUB_SERVER_URL']}/{os.environ['GITHUB_REPOSITORY']}/tree/{BRANCH}/pr{pr}/{sha}"
+        shown = min(len(pngs), 48)
+        count = f"all {shown}" if shown == len(pngs) else f"{shown} of {len(pngs)}"
+        lines.append(f"Showing {count} previews. [Browse image files]({tree}); the artifact also contains every image.")
     elif pngs:
         lines += ["Inline previews unavailable/not requested; all PNGs are in the artifact."]
     reasons = selection.get("reasons", [])

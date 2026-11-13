@@ -1,6 +1,6 @@
 """Publish latest-per-PR PNGs without keeping screenshot history in source branches.
 
-Retains the existing ci-render-previews branch for old links. A lease-protected,
+Publishes on the dedicated preview-outputs branch. A lease-protected,
 parentless commit preserves the other PR directories and bounds branch history.
 """
 
@@ -17,7 +17,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 OUT = ROOT / "tmp/ui-previews"
-BRANCH = "ci-render-previews"
+BRANCH = "preview-outputs"
 
 
 def gh(*args):

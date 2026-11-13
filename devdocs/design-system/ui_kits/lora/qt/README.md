@@ -39,7 +39,7 @@ synthetic design evidence, **not** runtime behavior or Windows acceptance.
 
 Use the single [Preview Action](../../../../../.github/workflows/preview-ui.yml). Relevant non-draft PR updates select representative runtime states automatically; `preview:PART` explicitly requests changed views and `preview:ALL` requests all registered states. Every automatic path skips drafts, including label additions. Manual `mode: category`, `category: lora` captures the fast canonical runtime LoRA states, including existing Prepare, picker, metadata-tooltip and Connections views—not these standalone Designer-reference forms.
 
-All modes share GitHub artifacts (two-day requested retention, subject to the manual Artifact Sweeper), latest-per-PR publication on the compatibility `ci-render-previews` branch and one three-column thumbnail comment. See [UI previews](../../../../guides/ui-previews.md) for details and coverage limits. The separate design references remain available locally through `tools/ui/preview_lora_design.py` after owner authorization; no separate LoRA Action or Drive upload remains.
+All modes share GitHub artifacts (two-day requested retention, subject to the manual Artifact Sweeper), latest-per-PR publication on the dedicated `preview-outputs` branch and one three-column thumbnail comment. See [UI previews](../../../../guides/ui-previews.md) for details and coverage limits. The separate design references remain available locally through `tools/ui/preview_lora_design.py` after owner authorization; no separate LoRA Action or Drive upload remains.
 
 ## Integration boundary
 
