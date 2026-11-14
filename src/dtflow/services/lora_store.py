@@ -455,6 +455,7 @@ class LoraStore:
                 ),
                 None,
             )
+            history_count_before = len(records)
             if existing is None:
                 records.append(conversion)
             matching["conversions"] = records
@@ -468,6 +469,23 @@ class LoraStore:
                     # Only a newly created copy is removed. Existing retained bytes must never be deleted.
                     target.unlink(missing_ok=True)
                 raise ValidationError("The converted LoRA index could not be saved.") from exc
+            source = conversion.get("source")
+            source_sha = source.get("sha256") if isinstance(source, dict) else None
+            version = _converter_number(conversion.get("converter_version"))
+            diagnostic_event(
+                log,
+                "lora_store.provenance_updated",
+                data={
+                    **asset_ref_data(
+                        source_sha256=source_sha if isinstance(source_sha, str) else None,
+                        sha256=sha256,
+                    ),
+                    "action": "added" if existing is None else "deduplicated",
+                    "history_count_before": history_count_before,
+                    "history_count_after": len(records),
+                    **({"converter_version": version} if version is not None else {}),
+                },
+            )
             return retained
         finally:
             handle.close()
