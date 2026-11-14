@@ -231,12 +231,16 @@ class DtStorageOverlay(QObject):
         if key is not None and listing.free_space is not None:
             self._free[key] = listing.free_space
         self.form.dtStorageList.setVisible(bool(listing.files))
-        free = f"Free: {_bold(gigabytes(listing.free_space))}." if listing.free_space is not None else "Free: unknown."
         total = sum(item.size for item in listing.files)
+        count = _bold(_files(len(listing.files)))
+        if listing.free_space is not None:
+            # the account limit is stored + free; DT+ does not state it, so this is derived
+            limit = _bold(gigabytes(total + listing.free_space))
+            line = f"{_bold(gigabytes(listing.free_space))} free of {limit}, {count} stored."
+        else:
+            line = f"{count} stored, {_bold(gigabytes(total))}. Free space unknown."
         skipped = f" {listing.skipped} entries could not be read and are not shown." if listing.skipped else ""
-        self.form.dtStorageStatus.setText(
-            f"{lead}Stored: {_bold(_files(len(listing.files)))}, {_bold(gigabytes(total))}. {free}{skipped}"
-        )
+        self.form.dtStorageStatus.setText(f"{lead}{line}{skipped}")
         self.form.dtStorageList.blockSignals(True)
         for index, item in enumerate(listing.files):
             row = QListWidgetItem(f"{item.name}    {megabytes(item.size)}")
