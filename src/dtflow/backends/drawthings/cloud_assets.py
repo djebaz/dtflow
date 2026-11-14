@@ -298,6 +298,28 @@ def _invalid(
     )
 
 
+def _storage_limit_error(response, reason: str):
+    """DT+ reports the account's storage limit as ``data.storageLimitExceeded`` instead of a lookup result.
+
+    Only the member's presence is interpreted; its content is neither trusted nor logged beyond schema-like names.
+    """
+    data = response.get("data")
+    limit = data.get("storageLimitExceeded") if isinstance(data, dict) else None
+    if limit is None or limit is False:
+        return None
+    shape = _member_shape(limit, "storage_limit") if isinstance(limit, dict) else {}
+    return api_error(
+        ErrorCategory.RESOURCE_LIMIT,
+        "cloud_storage_limit_exceeded",
+        "DT+ reports that this account's LoRA storage limit is exceeded, so DTFlow cannot check or upload this file. "
+        "Free storage on the account or use another key; nothing was uploaded.",
+        operation="/get_byom_urls",
+        transport="http",
+        response=getattr(response, "error_data", None),
+        diagnostics=diagnostics(http_status=200, validation_reason=reason, **shape),
+    )
+
+
 def _signed_destination(value: object, *, response=None) -> UploadTicket:
     if not _safe_destination(value):
         raise _invalid(response=response, reason="unsafe_or_missing_upload_destination")
@@ -323,7 +345,9 @@ async def negotiate_lora_assets(
         else:
             upload = urls.get(content.identifier)
             if not _usable_upload(upload):
-                raise _invalid(response=response, reason="missing_or_invalid_batched_asset_evidence")
+                raise _storage_limit_error(response, "storage_limit_exceeded") or _invalid(
+                    response=response, reason="missing_or_invalid_batched_asset_evidence"
+                )
             result = AssetNegotiation(
                 "upload_required", ticket=_signed_destination(upload.get("url"), response=response)
             )
@@ -378,6 +402,9 @@ async def negotiate_lora_asset(auth: CloudAuth, content: AssetContent) -> AssetN
                 )
         elif content.sha256 in already:
             reason = "unusable_existing_reference"
+        limit_error = _storage_limit_error(response, "storage_limit_exceeded")
+        if limit_error is not None:
+            raise limit_error
         shape = _match_shape(response, already, urls, content)
         event(
             logging.getLogger(__name__),
