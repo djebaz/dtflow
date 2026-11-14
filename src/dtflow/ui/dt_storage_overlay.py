@@ -287,6 +287,15 @@ class DtStorageOverlay(QObject):
     def _disarm(self) -> None:
         self._armed = False
         self.form.dtStorageDelete.setText(_DELETE_TEXT)
+        self._mark_danger(False)
+
+    def _mark_danger(self, armed: bool) -> None:
+        # Same red armed treatment as Confirm delete in the Images gallery.
+        button = self.form.dtStorageDelete
+        button.setProperty("confirmationPending", armed)
+        button.setProperty("confirmationDanger", armed)
+        button.style().unpolish(button)
+        button.style().polish(button)
 
     def _chosen(self) -> tuple[StoredAsset, ...]:
         chosen = []
@@ -442,6 +451,7 @@ class DtStorageOverlay(QObject):
         if not self._armed:
             self._armed = True
             self.form.dtStorageDelete.setText(f"Confirm: delete {_files(len(chosen))}, {total}")
+            self._mark_danger(True)
             self._error("")
             self.form.dtStorageSelection.setText(
                 f"This permanently deletes {_bold(_files(len(chosen)))} ({_bold(total)}) from the selected DT+ key. "
