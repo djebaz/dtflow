@@ -21,7 +21,7 @@ from dtflow.ui.runner import AsyncRunner
 
 _DELETE_TEXT = "Delete selected from DT+…"
 _PROBE_NAME = "dtflow-storage-probe.ckpt"
-_PROBE_FALLBACK = 10 * 1024**3  # TEMPORARY 10 GiB trial (#440), revert after the owner run
+_PROBE_FALLBACK = 10 * 1024**3  # free space unknown: larger than a typical account's headroom (10 GiB worked)
 
 
 def megabytes(size: int) -> str:
@@ -180,7 +180,7 @@ class DtStorageOverlay(QObject):
         The hash is random per click and never stored; nothing is uploaded and any upload URL DT+ returns is ignored."""
         if self._busy or self.runner.closed:
             return
-        size = _PROBE_FALLBACK  # TEMPORARY: always the trial size
+        size = (self._free + 1024**2) if self._free is not None else _PROBE_FALLBACK
         self._content = AssetContent("lora", _PROBE_NAME, secrets.token_hex(32), size, provenance="storage probe")
         self.refresh()
 
