@@ -403,6 +403,16 @@ def test_prepare_source_space_warning_is_amber_and_advisory(window, quota, qtbot
     editor.refresh()
     assert label.property("state") == "info"
     assert window.inline.form.inlineEditorAcceptButton.isEnabled()
+    editor.set_storage(1_250_000)
+    editor.refresh()
+    assert label.property("state") == "info"
+    assert "only 80.0%" in label.text()
+    editor.set_storage(1_111_111)
+    editor.refresh()
+    assert label.property("state") == "warning"
+    assert "90.0%" in label.text() and "only" not in label.text()
+    assert label.text().endswith("Warning: this leaves little free space.")
+    assert window.inline.form.inlineEditorAcceptButton.isEnabled()
     editor.set_storage(None)
     editor.refresh()
     assert "free space unknown" in label.text()

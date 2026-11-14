@@ -395,6 +395,7 @@ class PrepareBatchEditor:
 
         amount = size(total)
         insufficient = self._storage_free is not None and total > self._storage_free
+        tight = self._storage_free is not None and total * 100 > self._storage_free * 80
         if self._storage_free is None:
             status = "checking free space" if not self._storage_read else "free space unknown"
             text = f"This Prepare will use about {amount} — {status} on this DT+ key."
@@ -403,12 +404,14 @@ class PrepareBatchEditor:
             text = f"This Prepare will use about {amount} / {free} free"
             if self._storage_free > 0:
                 share = total * 100 / self._storage_free
-                qualifier = "only " if share < 100 else ""
+                qualifier = "" if tight else "only "
                 text += f" — {qualifier}{share:.1f}% of your free space on this DT+ key."
             else:
                 text += " on this DT+ key."
             if insufficient:
                 text += " There may not be enough space."
+            elif tight:
+                text += " Warning: this leaves little free space."
         if self._storage_needed is not None:
             text += f" Last refused file needs {storage_size(self._storage_needed)}. Free space, then Re-Prepare."
         label = self.form.prepareStorageStatus
@@ -416,7 +419,7 @@ class PrepareBatchEditor:
         refused = self._storage_needed is not None and (
             self._storage_free is None or self._storage_needed > self._storage_free
         )
-        label.setProperty("state", "warning" if insufficient or refused else "info")
+        label.setProperty("state", "warning" if tight or refused else "info")
         label.style().unpolish(label)
         label.style().polish(label)
 

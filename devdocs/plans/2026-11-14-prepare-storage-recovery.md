@@ -43,3 +43,5 @@ The owner screenshot confirmed the advisory is visible but exposed low contrast 
 ## Immediate batch-size wording
 
 At the owner's request, show the sum of all selected input file sizes from filesystem metadata immediately, without waiting for content inspection or hashing. Start the owner-scoped free-space lookup when the editor opens, independently of inspection; inspection completion must not clear that observation. Show approximate batch usage against free space and its percentage, with no five-percent uplift or technical explanation. Actual converted/held-file usage may differ; the advisory never changes approval or receipt authority. Earlier CI does not validate this revision.
+
+Owner threshold refinement: above 80% of known free space, show amber, omit 'only', and end with a low-space warning. At exactly 80% keep informational blue; above 100% retain the insufficient-space warning. This remains advisory and never blocks Prepare. Revised boundary/color checks are Actions-only.
