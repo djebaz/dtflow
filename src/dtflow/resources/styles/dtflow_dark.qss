@@ -570,6 +570,22 @@ QProgressBar#computeUnitsMeter[state="unavailable"] {
   color: ${color.placeholder};
   font-weight: 400;
 }
+/* DT+ storage meter (design-system ProgressBar): used share of the key's storage. Accent below 80%, warning from 80%, error from 90%. */
+QProgressBar#dtStorageMeter {
+  background-color: ${color.barTrack};
+  border: 1px solid ${color.border};
+  border-radius: ${size.radiusSm};
+}
+QProgressBar#dtStorageMeter::chunk {
+  background-color: ${color.accent};
+  border-radius: ${size.radiusXs};
+}
+QProgressBar#dtStorageMeter[state="warn"]::chunk {
+  background-color: ${color.warning};
+}
+QProgressBar#dtStorageMeter[state="over"]::chunk {
+  background-color: ${color.error};
+}
 QMenuBar::item:selected,
 QMenu::item:selected {
   background-color: #343434;

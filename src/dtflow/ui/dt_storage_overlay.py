@@ -34,6 +34,10 @@ def megabytes(size: int) -> str:
     return f"{value:.1f} MB" if value < 10 else f"{value:.0f} MB"
 
 
+_METER_WARN_FROM = 0.8  # the meter turns amber once this share of the storage is used
+_METER_RED_FROM = 0.9  # and red from here
+
+
 def gigabytes(size: int) -> str:
     """Decimal GB with one decimal, for totals and free space."""
     return f"{size / 1_000_000_000:.1f} GB"
@@ -132,6 +136,7 @@ class DtStorageOverlay(QObject):
         self._files = ()
         self.form.dtStorageList.clear()
         self.form.dtStorageList.setVisible(False)
+        self.form.dtStorageMeter.setVisible(False)
         self._selection_changed()
         self.overlay.setGeometry(self.overlay.parentWidget().rect())
         self.overlay.raise_()
@@ -169,6 +174,20 @@ class DtStorageOverlay(QObject):
                 chosen.append(self._files[item.data(Qt.ItemDataRole.UserRole)])
         return tuple(chosen)
 
+    def _meter(self, used: int, limit: int | None) -> None:
+        meter = self.form.dtStorageMeter
+        meter.setVisible(bool(limit))
+        if not limit:
+            return
+        share = min(max(used / limit, 0.0), 1.0)
+        meter.setValue(round(share * meter.maximum()))
+        state = "over" if share >= _METER_RED_FROM else "warn" if share >= _METER_WARN_FROM else "ok"
+        if meter.property("state") != state:
+            meter.setProperty("state", state)
+            meter.style().unpolish(meter)
+            meter.style().polish(meter)
+        meter.setToolTip(f"{share:.0%} of this key's storage is used.")
+
     def _toggle_row(self, item: QListWidgetItem) -> None:
         if self._busy:
             return
@@ -194,6 +213,7 @@ class DtStorageOverlay(QObject):
         self._files = ()
         self.form.dtStorageList.clear()
         self.form.dtStorageList.setVisible(False)
+        self.form.dtStorageMeter.setVisible(False)
         self.form.dtStorageStatus.setText("Reading DT+ storage…")
         self._set_busy(True)
         self.runner.submit(self._read(), self._listed)
@@ -237,6 +257,7 @@ class DtStorageOverlay(QObject):
             # the account limit is stored + free; DT+ does not state it, so this is derived
             limit = _bold(gigabytes(total + listing.free_space))
             line = f"{_bold(gigabytes(listing.free_space))} free of {limit}, {count} stored."
+            self._meter(total, total + listing.free_space)
         else:
             line = f"{count} stored, {_bold(gigabytes(total))}. Free space unknown."
         skipped = f" {listing.skipped} entries could not be read and are not shown." if listing.skipped else ""
