@@ -14,6 +14,7 @@ about: Define a change before implementation
      Default to ⬛ Should. Use 🟦 Must only for an explicit merge-blocking requirement:
      essential behavior or a concrete data/state/billing safety requirement.
      Being included in owner smoke does not automatically make a criterion Must.
+     A ⬛ Should (for example an obscure or unlikely case) may merge unverified if listed under Deviations & Limitations; smoke is welcome but not required.
      Copy this list into the PR body, where the checkboxes live. Keep this body in sync with the PR. -->
 - 🟦 AC-1 —
 - ⬛ AC-2 —
