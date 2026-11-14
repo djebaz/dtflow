@@ -564,6 +564,21 @@ class AssetRegistry:
                 confirmed_at_utc=row["scoped_confirmed"],
             )
 
+    async def confirmed_scope_references(self, credential_id: str) -> tuple[tuple[str, str, str], ...]:
+        """``(asset_id, identifier, remote_id)`` of this key's confirmed receipts, read-only."""
+        return await self._run(self._confirmed_scope_references, credential_id)
+
+    def _confirmed_scope_references(self, credential_id: str) -> tuple[tuple[str, str, str], ...]:
+        if not self.path.exists():
+            return ()
+        with closing(self._connect()) as db:
+            rows = db.execute(
+                "SELECT asset_id, identifier, remote_id FROM asset_key_receipts "
+                "WHERE credential_id=? AND state='confirmed'",
+                (credential_id,),
+            ).fetchall()
+        return tuple((row["asset_id"], row["identifier"], row["remote_id"]) for row in rows)
+
     async def invalidate_scope(self, asset_id: str, credential_id: str, identifier: str) -> None:
         """Invalidate only this key/name receipt; shared bytes and other key records remain valid."""
         return await self._run(self._write, self._invalidate_scope, asset_id, credential_id, identifier)

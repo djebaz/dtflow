@@ -77,6 +77,7 @@ from dtflow.ui.button_focus import KeyboardFocusGuard
 from dtflow.ui.current_page_stack import CurrentPageStack
 from dtflow.ui.cloud_usage_panel import CloudUsagePanel
 from dtflow.services.lora_convert.source_metadata import DetailModel, detail_model
+from dtflow.ui.dt_storage_overlay import DtStorageOverlay
 from dtflow.ui.lora_metadata_overlay import LoraMetadataOverlay
 from dtflow.ui.lora_hints import HintLibrary, PromptHintOverlay
 from dtflow.ui.lora_trigger_panel import LoraTriggerPanel
@@ -586,6 +587,16 @@ class MainWindow:
             on_saved=self._lora_metadata_saved,
             on_closed=lambda: form.retainedLorasTable.setFocus(),
         )
+        self.dt_storage_overlay = DtStorageOverlay(
+            form.connectionWorkspaceScroll,
+            self.runner,
+            self.state_dir,
+            lambda: self._optional_saved,
+            active_credential=self._active_credential_id,
+            on_changed=lambda: None,
+            on_closed=lambda: form.retainedLorasTable.setFocus(),
+        )
+        form.dtStorageButton.clicked.connect(self.open_dt_storage)
         self._remove_lora_shortcut = QShortcut(QKeySequence("Delete"), form.retainedLorasTable)
         self._remove_lora_shortcut.setContext(Qt.ShortcutContext.WidgetWithChildrenShortcut)
         self._remove_lora_shortcut.activated.connect(self.remove_retained_lora)
@@ -2088,6 +2099,12 @@ class MainWindow:
         selected = self._selected_lora_identity() is not None
         self.form.removeRetainedLoraButton.setEnabled(not self._removing_retained_lora and selected)
         self.form.editLoraMetadataButton.setEnabled(not self._removing_retained_lora and selected)
+        self.form.dtStorageButton.setEnabled(not self._removing_retained_lora)
+
+    def open_dt_storage(self) -> None:
+        """Open the DT+ storage panel; it reads the selected key's stored files with one dummy-file lookup."""
+        if not self._removing_retained_lora:
+            self.dt_storage_overlay.open()
 
     def remove_retained_lora(self) -> None:
         """Click Remove or press Delete on a selected retained copy: no confirmation or other deletion."""

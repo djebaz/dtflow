@@ -1,0 +1,484 @@
+"""In-window DT+ storage panel over Connections (#440): list the selected key's stored files, delete chosen ones.
+
+Listing is one explicit metadata request made for a retained LoRA's real identity; DT+ answers with its file list only
+when the account is over its storage limit. Delete is owner-confirmed (a second click on the same button), runs once
+with no retry, and never touches local files, retained copies or saved results."""
+
+from __future__ import annotations
+
+import html
+import secrets
+from pathlib import Path
+from typing import Awaitable, Callable
+
+from PySide6.QtCore import QEvent, QFile, QIODevice, QObject, QRectF, QSize, Qt
+from PySide6.QtGui import QColor, QKeySequence, QPainter, QShortcut
+from PySide6.QtUiTools import QUiLoader
+from PySide6.QtWidgets import (
+    QComboBox,
+    QFrame,
+    QHBoxLayout,
+    QLineEdit,
+    QListWidget,
+    QListWidgetItem,
+    QSizePolicy,
+    QSpacerItem,
+    QVBoxLayout,
+    QWidget,
+)
+
+from dtflow.core.models import AssetContent, StorageListing, StoredAsset
+from dtflow.services.session import delete_storage, storage_listing
+from dtflow.ui.runner import AsyncRunner
+from dtflow.ui.theme import load_tokens
+
+_DELETE_TEXT = "Delete selected from DT+…"
+_PROBE_NAME = "dtflow-storage-probe.ckpt"
+_PROBE_FALLBACK = (
+    30 * 1024**3
+)  # free space unknown: larger than any account headroom we expect (10 GiB worked, 30 GiB for margin)
+
+
+def megabytes(size: int) -> str:
+    """Decimal MB, the unit DT+ account screens use; one decimal below 10 MB."""
+    value = size / 1_000_000
+    return f"{value:.1f} MB" if value < 10 else f"{value:.0f} MB"
+
+
+_METER_WARN_FROM = 0.8  # the meter turns amber once this share of the storage is used
+_METER_RED_FROM = 0.9  # and red from here
+
+
+def gigabytes(size: int) -> str:
+    """Decimal GB with one decimal, for totals and free space."""
+    return f"{size / 1_000_000_000:.1f} GB"
+
+
+def _bold(text: str) -> str:
+    """A value drawn with the emphasis weight; the labels using it are rich text."""
+    return f'<span style="font-weight:{load_tokens()["type.weightEmphasis"]}">{html.escape(text)}</span>'
+
+
+def _files(count: int) -> str:
+    return f"{count} file" + ("" if count == 1 else "s")
+
+
+def _load_form() -> QWidget:
+    file = QFile(str(Path(__file__).with_name("forms") / "dt_storage_overlay.ui"))
+    if not file.open(QIODevice.OpenModeFlag.ReadOnly):
+        raise OSError("DT+ storage form unavailable.")
+    try:
+        form = QUiLoader().load(file)
+    finally:
+        file.close()
+    if form is None:
+        raise OSError("DT+ storage form could not be loaded.")
+    return form
+
+
+class SegmentMeter(QWidget):
+    """Used share of the key's storage as a row of small blocks: accent, warning from 80%, error from 90%."""
+
+    HEIGHT, WIDTH, GAP = 10, 23, 3
+    TONES = {"ok": 0.42, "warn": 0.62, "over": 0.72}  # share of the status colour over the track (muted, not flashing)
+
+    def __init__(self, parent: QWidget | None = None):
+        super().__init__(parent)
+        self.setObjectName("dtStorageMeter")
+        self.setFixedHeight(self.HEIGHT)
+        self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        colors = load_tokens()
+        self._track = QColor(colors["color.barTrack"])
+        self._fills = {
+            state: self._muted(QColor(colors[token]), self.TONES[state])
+            for state, token in (("ok", "color.accent"), ("warn", "color.warning"), ("over", "color.error"))
+        }
+        self.share = 0.0
+        self.state = "ok"
+
+    def _muted(self, color: QColor, t: float) -> QColor:
+        return QColor(
+            round(self._track.red() + (color.red() - self._track.red()) * t),
+            round(self._track.green() + (color.green() - self._track.green()) * t),
+            round(self._track.blue() + (color.blue() - self._track.blue()) * t),
+        )
+
+    def set_share(self, share: float) -> None:
+        self.share = min(max(share, 0.0), 1.0)
+        self.state = "over" if self.share >= _METER_RED_FROM else "warn" if self.share >= _METER_WARN_FROM else "ok"
+        self.setToolTip(f"{self.share:.0%} of this key's storage is used.")
+        self.setAccessibleDescription(f"{self.share:.0%} of this key's storage is used.")
+        self.update()
+
+    def count(self) -> int:
+        return max(1, (self.width() + self.GAP) // (self.WIDTH + self.GAP))
+
+    def filled(self) -> int:
+        return round(self.share * self.count())
+
+    def sizeHint(self) -> QSize:
+        return QSize(200, self.HEIGHT)
+
+    def paintEvent(self, event) -> None:
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        painter.setPen(Qt.PenStyle.NoPen)
+        count, filled = self.count(), self.filled()
+        step = (self.width() - self.WIDTH) / max(1, count - 1) if count > 1 else 0
+        for index in range(count):
+            painter.setBrush(self._fills[self.state] if index < filled else self._track)
+            painter.drawRoundedRect(QRectF(index * step, 0, self.WIDTH, self.HEIGHT), 2, 2)
+        painter.end()
+
+
+class _RangeSelect(QObject):
+    """Shift+click ticks every visible row between the last clicked row and this one; a plain click toggles as usual."""
+
+    def __init__(self, listing: QListWidget):
+        super().__init__(listing)
+        self.listing = listing
+        self.anchor: int | None = None
+        listing.viewport().installEventFilter(self)
+
+    def eventFilter(self, watched, event):
+        if event.type() != QEvent.Type.MouseButtonPress or event.button() != Qt.MouseButton.LeftButton:
+            return False
+        item = self.listing.itemAt(event.position().toPoint())
+        if item is None:
+            return False
+        row = self.listing.row(item)
+        if event.modifiers() & Qt.KeyboardModifier.ShiftModifier and self.anchor is not None:
+            low, high = sorted((self.anchor, row))
+            self.listing.blockSignals(True)
+            for index in range(low, high + 1):
+                candidate = self.listing.item(index)
+                if not candidate.isHidden():
+                    candidate.setSelected(True)
+            self.listing.blockSignals(False)
+            self.listing.itemSelectionChanged.emit()
+            self.anchor = row
+            return True  # the range is already applied; do not also toggle the clicked row
+        self.anchor = row
+        return False
+
+
+class _Resize(QObject):
+    def __init__(self, host: QWidget, overlay: QWidget):
+        super().__init__(overlay)
+        self.host, self.overlay = host, overlay
+        host.installEventFilter(self)
+
+    def eventFilter(self, watched, event):
+        if watched is self.host and event.type() in (QEvent.Type.Resize, QEvent.Type.Show):
+            self.overlay.setGeometry(self.host.rect())
+        return False
+
+
+class DtStorageOverlay(QObject):
+    """Opens over ``host``; ``saved`` returns the credential provider; ``on_changed`` runs after files were deleted."""
+
+    def __init__(
+        self,
+        host: QWidget,
+        runner: AsyncRunner,
+        state_dir: Path,
+        saved: Callable[[], object],
+        *,
+        active_credential: Callable[[], Awaitable[tuple[str, str | None] | None]],
+        on_changed: Callable[[], None],
+        on_closed: Callable[[], None],
+    ):
+        super().__init__(host)
+        self.runner, self.state_dir, self._saved = runner, Path(state_dir), saved
+        self._on_changed, self._on_closed = on_changed, on_closed
+        self._active_credential = active_credential
+        self.overlay = QFrame(host)
+        self.overlay.setObjectName("dtStorageOverlay")
+        self.overlay.setStyleSheet("#dtStorageOverlay { background-color: rgba(0, 0, 0, 150); }")
+        self.overlay.setVisible(False)
+        layout = QVBoxLayout(self.overlay)
+        self.form = _load_form()
+        layout.setContentsMargins(16, 16, 16, 16)
+        layout.addWidget(self.form, 1)  # the card takes the room of the central panel
+        _Resize(host, self.overlay)
+        self.form.dtStorageClose.clicked.connect(self.close)
+        self.form.dtStorageRefresh.clicked.connect(self.refresh)
+        self.form.dtStorageDelete.clicked.connect(self._delete_clicked)
+        self.sort_combo = QComboBox(self.form)
+        self.sort_combo.setAccessibleName("Sort files")
+        self.sort_combo.addItems(["Largest first", "Name A\u2013Z"])
+        self.sort_combo.setToolTip("Order of the stored files.")
+        self.sort_combo.currentIndexChanged.connect(self._sort_changed)
+        buttons = self.form.findChild(QHBoxLayout, "dtStorageButtons")
+        buttons.insertWidget(1, self.sort_combo)
+        self.meter = SegmentMeter(self.form)
+        layout = self.form.layout()
+        layout.insertWidget(layout.indexOf(self.form.dtStorageStatus) + 1, self.meter)
+        self.meter.setVisible(False)
+        self.form.dtStorageList.itemChanged.connect(self._selection_changed)
+        self.search = QLineEdit(self.form)
+        self.search.setObjectName("dtStorageSearch")
+        self.search.setPlaceholderText("Search anywhere in the name…")
+        self.search.setAccessibleName("Stored files search")
+        self.search.setClearButtonEnabled(True)
+        self.search.textChanged.connect(self._filter_rows)
+        layout.insertWidget(layout.indexOf(self.form.dtStorageList), self.search)
+        layout.setStretchFactor(self.form.dtStorageList, 1)
+        # While the list is hidden (reading, or nothing to list) a spacer takes the spare height, so the texts and
+        # buttons keep their natural spacing instead of the layout spreading them out.
+        self._filler = QSpacerItem(0, 0, QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Expanding)
+        layout.insertItem(layout.indexOf(self.form.dtStorageSelection), self._filler)
+        layout.setStretch(layout.indexOf(self._filler), 1)
+        # A click anywhere on a row ticks it: the list is multi-select and the check marks follow the selection.
+        self.form.dtStorageList.itemSelectionChanged.connect(self._sync_checks)
+        self._range = _RangeSelect(self.form.dtStorageList)
+        for label in (self.form.dtStorageStatus, self.form.dtStorageSelection):
+            label.setTextFormat(Qt.TextFormat.RichText)
+        escape = QShortcut(QKeySequence(Qt.Key.Key_Escape), self.overlay)
+        escape.setContext(Qt.ShortcutContext.WidgetWithChildrenShortcut)
+        escape.activated.connect(self.close)
+        self._files: tuple[StoredAsset, ...] = ()
+        self._busy = False
+        self._armed = False
+        self._free: dict[
+            str, int
+        ] = {}  # free space DT+ last reported, by opaque key identity, to size the re-read lookup
+        self._note = ""  # outcome of the last delete, kept above the re-read listing
+
+    def is_open(self) -> bool:
+        return self.overlay.isVisible()
+
+    def open(self) -> None:
+        """Show the panel and read the listing once with a dummy-file lookup (see ``_probe_content``).
+
+        Free space learned on an earlier open belongs to whichever key was selected then, so each open starts from the
+        large unknown-size lookup; only re-reads within this open reuse the key's own free space."""
+        self._free = {}
+        self._error("")
+        self._files = ()
+        self._clear_list()
+        self._show_list(False)
+        self.meter.setVisible(False)
+        self._selection_changed()
+        self.overlay.setGeometry(self.overlay.parentWidget().rect())
+        self.overlay.raise_()
+        self.overlay.setVisible(True)
+        self.refresh()
+        self.form.dtStorageClose.setFocus()
+
+    def close(self) -> None:
+        if self._busy:
+            return
+        self.overlay.setVisible(False)
+        self._on_closed()
+
+    # -- state helpers --------------------------------------------------------------------------------------------
+    def _error(self, text: str) -> None:
+        self.form.dtStorageError.setText(text)
+        self.form.dtStorageError.setVisible(bool(text))
+
+    def _set_busy(self, busy: bool) -> None:
+        self._busy = busy
+        self.form.dtStorageRefresh.setEnabled(not busy)
+        self.form.dtStorageClose.setEnabled(not busy)
+        self.form.dtStorageList.setEnabled(not busy)
+        self._selection_changed()
+
+    def _disarm(self) -> None:
+        self._armed = False
+        self.form.dtStorageDelete.setText(_DELETE_TEXT)
+        self._mark_danger(False)
+
+    def _mark_danger(self, armed: bool) -> None:
+        # Same red armed treatment as Confirm delete in the Images gallery.
+        button = self.form.dtStorageDelete
+        button.setProperty("confirmationPending", armed)
+        button.setProperty("confirmationDanger", armed)
+        button.style().unpolish(button)
+        button.style().polish(button)
+
+    def _chosen(self) -> tuple[StoredAsset, ...]:
+        chosen = []
+        for row in range(self.form.dtStorageList.count()):
+            item = self.form.dtStorageList.item(row)
+            index = item.data(Qt.ItemDataRole.UserRole)
+            if item.checkState() == Qt.CheckState.Checked and isinstance(index, int) and 0 <= index < len(self._files):
+                chosen.append(self._files[index])
+        return tuple(chosen)
+
+    def _sorted(self, files: tuple[StoredAsset, ...]) -> tuple[StoredAsset, ...]:
+        if self.sort_combo.currentIndex() == 1:
+            return tuple(sorted(files, key=lambda item: (item.name.casefold(), item.size)))
+        return tuple(sorted(files, key=lambda item: (-item.size, item.name.casefold())))
+
+    def _fill_rows(self, keep: tuple[StoredAsset, ...]) -> None:
+        """Show the files in the chosen order, re-ticking those in ``keep``."""
+        self._files = self._sorted(self._files)
+        kept = {item.key for item in keep}
+        self._disarm()
+        self.form.dtStorageList.blockSignals(True)
+        self.form.dtStorageList.clear()
+        for index, item in enumerate(self._files):
+            row = QListWidgetItem(f"{item.name}    {megabytes(item.size)}")
+            row.setCheckState(Qt.CheckState.Checked if item.key in kept else Qt.CheckState.Unchecked)
+            row.setData(Qt.ItemDataRole.UserRole, index)
+            self.form.dtStorageList.addItem(row)
+            row.setSelected(item.key in kept)
+        self.form.dtStorageList.blockSignals(False)
+        self._filter_rows(self.search.text())
+        self._selection_changed()
+
+    def _sort_changed(self, _index: int) -> None:
+        if self._files and not self._busy:
+            self._fill_rows(keep=self._chosen())
+
+    def _show_meter(self, used: int, limit: int | None) -> None:
+        self.meter.setVisible(bool(limit))
+        if limit:
+            self.meter.set_share(used / limit)
+
+    def _clear_list(self) -> None:
+        """Empty the list without its selection signal running against the file tuple being replaced."""
+        listing = self.form.dtStorageList
+        listing.blockSignals(True)
+        listing.clear()
+        listing.blockSignals(False)
+
+    def _show_list(self, visible: bool) -> None:
+        self.form.dtStorageList.setVisible(visible)
+        self.search.setVisible(visible)
+        self._filler.changeSize(
+            0, 0, QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Minimum if visible else QSizePolicy.Policy.Expanding
+        )
+        layout = self.form.layout()
+        layout.setStretch(layout.indexOf(self._filler), 0 if visible else 1)
+        layout.invalidate()
+
+    def _sync_checks(self) -> None:
+        """Ticked rows are the selected rows; the check mark and the selection style follow each other."""
+        listing = self.form.dtStorageList
+        listing.blockSignals(True)
+        for row in range(listing.count()):
+            item = listing.item(row)
+            item.setCheckState(Qt.CheckState.Checked if item.isSelected() else Qt.CheckState.Unchecked)
+        listing.blockSignals(False)
+        self._selection_changed()
+
+    def _filter_rows(self, text: str) -> None:
+        needle = text.strip().casefold()
+        listing = self.form.dtStorageList
+        for row in range(listing.count()):
+            item = listing.item(row)
+            name = self._files[item.data(Qt.ItemDataRole.UserRole)].name
+            item.setHidden(bool(needle) and needle not in name.casefold())
+
+    def _selection_changed(self, *_args) -> None:
+        self._disarm()
+        chosen = self._chosen()
+        total = sum(item.size for item in chosen)
+        self.form.dtStorageSelection.setText(
+            f"{_bold(str(len(chosen)))} of {len(self._files)} selected, {_bold(gigabytes(total))}."
+            if self._files
+            else ""
+        )
+        self.form.dtStorageDelete.setEnabled(bool(chosen) and not self._busy)
+
+    # -- listing --------------------------------------------------------------------------------------------------
+    def refresh(self) -> None:
+        if self._busy or self.runner.closed:
+            return
+        self._error("")
+        self._files = ()
+        self._clear_list()
+        self._show_list(False)
+        self.meter.setVisible(False)
+        self.form.dtStorageStatus.setText("Reading DT+ storage…")
+        self._set_busy(True)
+        self.runner.submit(self._read(), self._listed)
+
+    async def _read(self) -> tuple[str | None, StorageListing]:
+        """Lookup sized for the key that is selected right now; its identity comes back with the answer."""
+        identity = await self._active_credential()
+        key = identity[0] if identity else None
+        listing = await storage_listing(self.state_dir, self._probe_content(key), saved=self._saved())
+        return key, listing
+
+    def _probe_content(self, key: str | None) -> AssetContent:
+        """A made-up file bigger than the free space, so DT+ answers with its over-limit list when the key is full.
+
+        The hash is random per lookup and never stored; nothing is uploaded and any upload URL DT+ returns is ignored."""
+        free = self._free.get(key) if key is not None else None
+        size = (free + 1024**2) if free is not None else _PROBE_FALLBACK
+        return AssetContent("lora", _PROBE_NAME, secrets.token_hex(32), size, provenance="storage probe")
+
+    def _listed(self, result: tuple[str | None, StorageListing] | None, failure) -> None:
+        self._set_busy(False)
+        key, listing = result if result is not None else (None, None)
+        note, self._note = self._note, ""
+        lead = f"{html.escape(note)} " if note else ""
+        if failure is not None:
+            self.form.dtStorageStatus.setText(html.escape(note))
+            self._error(str(failure) or "DT+ storage could not be read.")
+            return
+        if listing is None or not listing.over_limit:
+            self.form.dtStorageStatus.setText(
+                lead + "DT+ returned no file list. This key has plenty of free space, so there is nothing to free."
+            )
+            return
+        self._files = listing.files
+        if key is not None and listing.free_space is not None:
+            self._free[key] = listing.free_space
+        self._show_list(bool(listing.files))
+        total = sum(item.size for item in listing.files)
+        count = _bold(_files(len(listing.files)))
+        if listing.free_space is not None:
+            # the account limit is stored + free; DT+ does not state it, so this is derived
+            limit = _bold(gigabytes(total + listing.free_space))
+            line = f"{_bold(gigabytes(listing.free_space))} free of {limit}, {count} stored."
+            self._show_meter(total, total + listing.free_space)
+        else:
+            line = f"{count} stored, {_bold(gigabytes(total))}. Free space unknown."
+        skipped = f" {listing.skipped} entries could not be read and are not shown." if listing.skipped else ""
+        self.form.dtStorageStatus.setText(f"{lead}{line}{skipped}")
+        self._fill_rows(keep=())
+
+    # -- delete ---------------------------------------------------------------------------------------------------
+    def _delete_clicked(self) -> None:
+        chosen = self._chosen()
+        if self._busy or not chosen or self.runner.closed:
+            return
+        total = gigabytes(sum(item.size for item in chosen))
+        if not self._armed:
+            self._armed = True
+            self.form.dtStorageDelete.setText(f"Confirm: delete {_files(len(chosen))}, {total}")
+            self._mark_danger(True)
+            self._error("")
+            self.form.dtStorageSelection.setText(
+                f"This permanently deletes {_bold(_files(len(chosen)))} ({_bold(total)}) from the selected DT+ key. "
+                "Click the button again to confirm, or change the selection to cancel."
+            )
+            return
+        self._disarm()
+        self._error("")
+        self.form.dtStorageStatus.setText("Deleting from DT+…")
+        self._set_busy(True)
+        self.runner.submit(delete_storage(self.state_dir, chosen, saved=self._saved()), self._deleted)
+
+    def _deleted(self, result: dict | None, failure) -> None:
+        self._set_busy(False)
+        if failure is not None:
+            self.form.dtStorageStatus.setText("")
+            self._error(str(failure) or "The files were not deleted.")
+            return
+        deleted = int(result.get("deleted", 0)) if result else 0
+        updated = result.get("receipts_updated", True) if result else True
+        matched = int(result.get("receipts_invalidated", 0)) if result else 0
+        note = (
+            f" {matched} local upload record{'' if matched == 1 else 's'} updated."
+            if updated
+            else " Local upload records could not be updated; they will be re-checked on the next run."
+        )
+        self._free = {}  # deleting changed the free space of the key just used
+        self._on_changed()
+        self._note = f"Deleted {_files(deleted)} from DT+.{note}"
+        self.refresh()

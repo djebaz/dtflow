@@ -802,6 +802,11 @@
                    <property name="toolTip"><string>Edit the selected LoRA's architecture, short name, format and trigger words. Prepared files are not uploaded or renamed.</string></property>
                    <property name="enabled"><bool>false</bool></property>
                   </widget></item>
+                   <item><widget class="QPushButton" name="dtStorageButton">
+                   <property name="text"><string>DT+ storage…</string></property>
+                   <property name="toolTip"><string>Read the selected DT+ key's stored files and free space, and delete files from DT+ if you choose. Sends one lookup for a made-up file; nothing is uploaded.</string></property>
+                   
+                  </widget></item>
                    <item><widget class="QPushButton" name="removeRetainedLoraButton">
                    <property name="text"><string>Remove selected</string></property>
                    <property name="toolTip"><string>Local only: deletes the selected retained copy. Original files, DT+ assets and saved results are unchanged.</string></property>

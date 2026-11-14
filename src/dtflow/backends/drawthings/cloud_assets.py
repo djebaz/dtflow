@@ -30,6 +30,8 @@ from dtflow.core.models import (
     FileIdentity,
     LoRABackendAvailability,
     RemoteOutcome,
+    StorageListing,
+    StoredAsset,
     SubmissionStage,
     ValidationError,
 )
@@ -309,6 +311,12 @@ def _storage_limit_error(response, reason: str):
         return None
     shape = _member_shape(limit, "storage_limit") if isinstance(limit, dict) else {}
     free = limit.get("freeSpace") if isinstance(limit, dict) else None
+    files = limit.get("files") if isinstance(limit, dict) else None
+    if isinstance(files, list):
+        shape["storage_limit_file_entry_types"] = _type_counts(files)
+        if files and isinstance(files[0], dict):
+            # Names, types and lengths of the first entry only: tells whether entries carry the fields a delete needs.
+            shape.update(_member_shape(files[0], "storage_limit_first_entry"))
     left = ""
     if type(free) in (int, float) and math.isfinite(free) and free >= 0:
         shape["storage_limit_free_space"] = free
@@ -369,6 +377,101 @@ async def negotiate_lora_assets(
         },
     )
     return results
+
+
+_MAX_STORED_ENTRIES = 5000
+_MAX_TEXT = 1024
+
+
+def _entry_shape(limit: dict) -> dict:
+    """Field names with value types of the answer and its entries: structure only, never a value."""
+    raw = limit.get("files")
+    fields: dict[str, set[str]] = {}
+    for item in raw[:_MAX_STORED_ENTRIES] if isinstance(raw, list) else ():
+        if isinstance(item, dict):
+            for name, value in item.items():
+                fields.setdefault(str(name)[:40], set()).add(type(value).__name__)
+    return {
+        "limit_fields": sorted(str(name)[:40] for name in limit)[:20],
+        "entry_fields": {name: "/".join(sorted(kinds)) for name, kinds in sorted(fields.items())[:20]},
+    }
+
+
+def _parse_listing(limit: dict) -> StorageListing:
+    """Usable ``{file, key, size}`` entries of the over-limit answer; anything else is counted, never shown."""
+    raw = limit.get("files")
+    entries, skipped = [], 0
+    for item in raw[:_MAX_STORED_ENTRIES] if isinstance(raw, list) else ():
+        key = item.get("key") if isinstance(item, dict) else None
+        name = item.get("file") if isinstance(item, dict) else None
+        size = item.get("size") if isinstance(item, dict) else None
+        if (
+            isinstance(key, str)
+            and 0 < len(key) <= _MAX_TEXT
+            and isinstance(name, str)
+            and 0 < len(name) <= _MAX_TEXT
+            and type(size) is int
+            and size >= 0
+        ):
+            entries.append(StoredAsset(key, name, size))
+        else:
+            skipped += 1
+    if isinstance(raw, list) and len(raw) > _MAX_STORED_ENTRIES:
+        skipped += len(raw) - _MAX_STORED_ENTRIES
+    free = limit.get("freeSpace")
+    free_space = free if type(free) is int and free >= 0 else None
+    return StorageListing(True, tuple(entries), free_space, skipped)
+
+
+async def list_stored_assets(auth: CloudAuth, content: AssetContent) -> StorageListing:
+    """Ask DT+ about one real local identity; the stored-file list comes with the over-limit answer only."""
+    response = await auth.authenticated_json(
+        "/get_byom_urls", {"files": [{"file": content.identifier, "sha256": content.sha256, "size": content.size}]}
+    )
+    _response_branches(response)
+    data = response.get("data")
+    limit = data.get("storageLimitExceeded") if isinstance(data, dict) else None
+    if not isinstance(limit, dict):
+        event(
+            logging.getLogger(__name__),
+            "backend.storage_listed",
+            level=logging.INFO,
+            data={
+                "over_limit": False,
+                **asset_ref_data(sha256=content.sha256),
+                "size_mib": round(content.size / 2**20, 1),
+            },
+        )
+        return StorageListing(False)
+    listing = _parse_listing(limit)
+    event(
+        logging.getLogger(__name__),
+        "backend.storage_listed",
+        level=logging.INFO,
+        data={
+            "over_limit": True,
+            **asset_ref_data(sha256=content.sha256),
+            "size_mib": round(content.size / 2**20, 1),
+            "files": len(listing.files),
+            "skipped": listing.skipped,
+            "free_space": listing.free_space if listing.free_space is not None else "absent",
+            **_entry_shape(limit),
+        },
+    )
+    return listing
+
+
+async def delete_stored_assets(auth: CloudAuth, keys: tuple[str, ...]) -> None:
+    """One delete request for provider keys taken from this key's own listing; HTTP 200 is DT+'s acceptance."""
+    if not keys or any(not isinstance(key, str) or not key for key in keys):
+        raise ValidationError("Delete needs provider keys from the storage listing.")
+    await auth.authenticated_delete(tuple(keys))
+    event(
+        logging.getLogger(__name__),
+        "backend.storage_delete_accepted",
+        level=logging.INFO,
+        data={"requested": len(keys)},
+    )
 
 
 async def negotiate_lora_asset(auth: CloudAuth, content: AssetContent) -> AssetNegotiation:

@@ -1346,7 +1346,8 @@ QTableWidget#galleryListTable::indicator,
 QTableWidget#galleryListTable QCheckBox::indicator,
 QCheckBox#galleryCardCheck::indicator,
 QCheckBox#galleryDetailSelectionCheck::indicator,
-QListWidget#layerList::indicator {
+QListWidget#layerList::indicator,
+QListWidget#dtStorageList::indicator {
   width: 14px;
   height: 14px;
   border: 1px solid ${color.checkBorder};
@@ -1358,14 +1359,16 @@ QTableWidget#galleryListTable::indicator:hover,
 QTableWidget#galleryListTable QCheckBox::indicator:hover,
 QCheckBox#galleryCardCheck::indicator:hover,
 QCheckBox#galleryDetailSelectionCheck::indicator:hover,
-QListWidget#layerList::indicator:hover {
+QListWidget#layerList::indicator:hover,
+QListWidget#dtStorageList::indicator:hover {
   border-color: ${color.focus};
 }
 QTableWidget#galleryListTable::indicator:checked,
 QTableWidget#galleryListTable QCheckBox::indicator:checked,
 QCheckBox#galleryCardCheck::indicator:checked,
 QCheckBox#galleryDetailSelectionCheck::indicator:checked,
-QListWidget#layerList::indicator:checked {
+QListWidget#layerList::indicator:checked,
+QListWidget#dtStorageList::indicator:checked {
   background: ${color.accent};
   border-color: ${color.focus};
   image: url(../images/controls/check.svg);
@@ -1374,7 +1377,8 @@ QTableWidget#galleryListTable::indicator:indeterminate,
 QTableWidget#galleryListTable QCheckBox::indicator:indeterminate,
 QCheckBox#galleryCardCheck::indicator:indeterminate,
 QCheckBox#galleryDetailSelectionCheck::indicator:indeterminate,
-QListWidget#layerList::indicator:indeterminate {
+QListWidget#layerList::indicator:indeterminate,
+QListWidget#dtStorageList::indicator:indeterminate {
   background: ${color.accent};
   border-color: ${color.focus};
   image: url(../images/controls/check-partial.svg);
@@ -1383,7 +1387,8 @@ QTableWidget#galleryListTable::indicator:disabled,
 QTableWidget#galleryListTable QCheckBox::indicator:disabled,
 QCheckBox#galleryCardCheck::indicator:disabled,
 QCheckBox#galleryDetailSelectionCheck::indicator:disabled,
-QListWidget#layerList::indicator:disabled {
+QListWidget#layerList::indicator:disabled,
+QListWidget#dtStorageList::indicator:disabled {
   background: ${color.disabledBorder};
   border-color: ${color.checkDisabledBorder};
 }
@@ -2620,6 +2625,20 @@ QWidget#loraSelectionRow { background: transparent; border: 1px solid transparen
 QWidget#loraSelectionRow:hover { background-color: ${color.buttonHover}; }
 QWidget#loraSelectionRow[checkedSelection="true"] {
   background-color: ${color.selection};
+  border-left: 3px solid ${color.accentEdge};
+  border-bottom: 1px solid ${color.selectionBorder};
+}
+
+/* DT+ storage list: rows read like the shared LoRA picker (hover, ticked rows use the selection tokens). */
+QListWidget#dtStorageList::item {
+  padding: 5px 6px;
+  background: transparent;
+  border: 1px solid transparent;
+}
+QListWidget#dtStorageList::item:hover { background-color: ${color.buttonHover}; }
+QListWidget#dtStorageList::item:selected {
+  background-color: ${color.selection};
+  color: ${color.selectionText};
   border-left: 3px solid ${color.accentEdge};
   border-bottom: 1px solid ${color.selectionBorder};
 }

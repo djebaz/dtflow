@@ -76,7 +76,7 @@ Permit explicit reconciliation using a verified metadata/deduplication check bef
 
 Receipts survive restart and cache cleanup. They record past server acknowledgement, not perpetual remote availability. Reuse needs a documented validation policy; stale/deleted/inaccessible assets fail clearly without silently changing the request or starting a hidden upload. Queue requests preserve immutable checksum/identifier references and cannot depend solely on a mutable local filename.
 
-The inspected LoRAStore.list explicitly throws because no public list endpoint is exposed. Upload returns no usable delete key; deletion requires keys not obtainable from that receipt. Expose local known-upload inspection clearly, never complete account listing. Remote listing, deletion and authoritative remaining storage stay unavailable until independently verified.
+The inspected LoRAStore.list explicitly throws because no public list endpoint is exposed. Upload returns no usable delete key; deletion requires keys not obtainable from that receipt. Expose local known-upload inspection clearly, never complete account listing. Remote listing, deletion and authoritative remaining storage stay unavailable until independently verified. Update 2026-11-14 (#440): DT+ lists a key's stored files (`file`, `key`, `size`) and `freeSpace` in bytes only inside the over-limit `/get_byom_urls` answer, and `/delete_uploaded_files` deletes by those keys; see [cloud integration](../architecture/cloud-integration.md). The list has no hash or family, so it cannot replace a receipt for generation.
 
 ## Acceptance ownership
 
