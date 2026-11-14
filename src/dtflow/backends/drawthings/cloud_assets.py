@@ -308,6 +308,9 @@ def _storage_limit_error(response, reason: str):
     if limit is None or limit is False:
         return None
     shape = _member_shape(limit, "storage_limit") if isinstance(limit, dict) else {}
+    free = limit.get("freeSpace") if isinstance(limit, dict) else None
+    if type(free) in (int, float) and math.isfinite(free):
+        shape["storage_limit_free_space"] = free  # unit unverified; recorded to establish it, not displayed
     return api_error(
         ErrorCategory.RESOURCE_LIMIT,
         "cloud_storage_limit_exceeded",
