@@ -208,7 +208,10 @@ def test_asset_writer_contention_is_a_clear_busy_message(window, cloud, qtbot, t
         prepare(window, qtbot, lora_file(tmp_path))
         page = window.generation_page
         qtbot.waitUntil(lambda: page.assetStatusLabel.text().startswith("Assets busy"), timeout=30000)
-        assert cloud.puts == [] and cloud.api_calls == []
+        assert cloud.puts == []
+        # Inspection may read advisory key headroom without the writer lock. The actual selected file must
+        # still never negotiate or upload while another writer owns the registry.
+        assert all(call["entry"]["file"] == "dtflow-storage-probe.ckpt" for call in cloud.api_calls)
     finally:
         loop.run_until_complete(other.aclose())
         loop.close()
