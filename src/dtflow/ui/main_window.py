@@ -79,7 +79,7 @@ from dtflow.ui.button_focus import KeyboardFocusGuard
 from dtflow.ui.current_page_stack import CurrentPageStack
 from dtflow.ui.cloud_usage_panel import CloudUsagePanel
 from dtflow.services.lora_convert.source_metadata import DetailModel, detail_model
-from dtflow.ui.dt_storage_overlay import DtStorageOverlay, gigabytes
+from dtflow.ui.dt_storage_overlay import DtStorageOverlay, SegmentMeter, gigabytes
 from dtflow.ui.lora_metadata_overlay import LoraMetadataOverlay
 from dtflow.ui.lora_hints import HintLibrary, PromptHintOverlay
 from dtflow.ui.lora_trigger_panel import LoraTriggerPanel
@@ -599,6 +599,10 @@ class MainWindow:
             on_closed=lambda: form.retainedLorasTable.setFocus(),
         )
         form.dtStorageButton.clicked.connect(self.open_dt_storage)
+        self.dt_free_meter = SegmentMeter(form.dtFreeSpaceLabel.parentWidget())  # same bar as the storage panel
+        self.dt_free_meter.setVisible(False)
+        free_layout = form.dtFreeSpaceLabel.parentWidget().layout()
+        free_layout.insertWidget(free_layout.indexOf(form.dtFreeSpaceLabel) + 1, self.dt_free_meter)
         self._remove_lora_shortcut = QShortcut(QKeySequence("Delete"), form.retainedLorasTable)
         self._remove_lora_shortcut.setContext(Qt.ShortcutContext.WidgetWithChildrenShortcut)
         self._remove_lora_shortcut.activated.connect(self.remove_retained_lora)
@@ -2108,10 +2112,12 @@ class MainWindow:
         label = self.form.dtFreeSpaceLabel
         if self.form.backendCombo.currentText() != "cloud" or self.runner.closed:
             label.setVisible(False)
+            self.dt_free_meter.setVisible(False)
             return
         token = self._free_space_token = object()
         label.setText("DT+ free space on this key: reading\u2026")
         label.setVisible(True)
+        self.dt_free_meter.setVisible(False)
         self.runner.submit(self._free_space(), lambda result, failure: self._free_space_read(result, failure, token))
 
     async def _free_space(self):
@@ -2125,7 +2131,11 @@ class MainWindow:
         if failure is not None or listing is None:
             label.setText("DT+ free space on this key: could not be read.")
         elif listing.over_limit and listing.free_space is not None:
-            label.setText(f"DT+ free space on this key: {gigabytes(listing.free_space)}.")
+            total = sum(item.size for item in listing.files) + listing.free_space
+            label.setText(f"DT+ free space on this key: {gigabytes(listing.free_space)} of {gigabytes(total)}.")
+            if total > 0:
+                self.dt_free_meter.set_share((total - listing.free_space) / total)
+                self.dt_free_meter.setVisible(True)
         elif listing.over_limit:
             label.setText("DT+ free space on this key: not reported.")
         else:
