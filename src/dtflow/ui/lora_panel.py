@@ -41,7 +41,7 @@ from dtflow.services.connection import (
 )
 from dtflow.services.lora_convert import COLAB_HINT, ConversionError, ConversionProgress, supported_families
 from dtflow.services.lora_convert.detect import inspect_source
-from dtflow.services.lora_convert.errors import UnsupportedFamilyError
+from dtflow.services.lora_convert.errors import UnsupportedFamilyError, UnsupportedLoraFormatError
 from dtflow.services.lora_convert_prepare import convert_for_prepare
 from dtflow.services.lora_digest import DigestCancelled, hash_file
 from dtflow.services.lora_family import DETECTABLE_FAMILIES, LoraFamily, detect_lora_family, validate_converted_lora
@@ -1278,6 +1278,9 @@ class LoraAssetPanel:
                 elif isinstance(failure, ConversionError):
                     # Conversion runs before provider negotiation, so nothing was dispatched.
                     data["remote_outcome"] = RemoteOutcome.NOT_STARTED.value
+                if isinstance(failure, UnsupportedLoraFormatError) and failure.alpha_value_count is not None:
+                    data["failure_detail"] = "alpha_cardinality"
+                    data["alpha_value_count"] = failure.alpha_value_count
                 if development_mode():
                     # Keep a stable error type, never an arbitrary provider message or full source basename.
                     data["error_type"] = type(failure).__name__ if failure is not None else "receipt_not_confirmed"

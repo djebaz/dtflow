@@ -443,10 +443,23 @@ class LoraStore:
             if not isinstance(records, list):
                 previous = matching.get("conversion")
                 records = [previous] if isinstance(previous, dict) else []
-            if conversion not in records:
+            # Repeating the same conversion with a new timestamp is not new provenance.
+            # Keep source observations and converter versions distinct.
+            identity = {key: value for key, value in conversion.items() if key != "converted_at_utc"}
+            existing = next(
+                (
+                    record
+                    for record in records
+                    if isinstance(record, dict)
+                    and {key: value for key, value in record.items() if key != "converted_at_utc"} == identity
+                ),
+                None,
+            )
+            history_count_before = len(records)
+            if existing is None:
                 records.append(conversion)
             matching["conversions"] = records
-            matching["conversion"] = conversion
+            matching["conversion"] = existing if existing is not None else conversion
             if source_metadata is not None:
                 matching["source_metadata"] = source_metadata  # one bounded copy per file, newest wins
             try:
@@ -456,6 +469,23 @@ class LoraStore:
                     # Only a newly created copy is removed. Existing retained bytes must never be deleted.
                     target.unlink(missing_ok=True)
                 raise ValidationError("The converted LoRA index could not be saved.") from exc
+            source = conversion.get("source")
+            source_sha = source.get("sha256") if isinstance(source, dict) else None
+            version = _converter_number(conversion.get("converter_version"))
+            diagnostic_event(
+                log,
+                "lora_store.provenance_updated",
+                data={
+                    **asset_ref_data(
+                        source_sha256=source_sha if isinstance(source_sha, str) else None,
+                        sha256=sha256,
+                    ),
+                    "action": "added" if existing is None else "deduplicated",
+                    "history_count_before": history_count_before,
+                    "history_count_after": len(records),
+                    **({"converter_version": version} if version is not None else {}),
+                },
+            )
             return retained
         finally:
             handle.close()
