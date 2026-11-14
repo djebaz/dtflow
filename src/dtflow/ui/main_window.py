@@ -55,6 +55,8 @@ from dtflow.services.lora_auto_naming import normalize_previous_retained
 from dtflow.services.lora_metadata_edit import read_lora_rows
 from dtflow.services.lora_naming import label_overrides, set_label_overrides
 from dtflow.services.preflight import checkpoint_exact_version
+from dtflow.services.session import storage_listing
+from dtflow.services.storage_probe import probe_content
 from dtflow.services.lora_store import LoraStore
 from dtflow.services.connection import Presentation, check_connection, present_failure, present_status
 from dtflow.services.cloud_usage import key_identity
@@ -77,7 +79,7 @@ from dtflow.ui.button_focus import KeyboardFocusGuard
 from dtflow.ui.current_page_stack import CurrentPageStack
 from dtflow.ui.cloud_usage_panel import CloudUsagePanel
 from dtflow.services.lora_convert.source_metadata import DetailModel, detail_model
-from dtflow.ui.dt_storage_overlay import DtStorageOverlay
+from dtflow.ui.dt_storage_overlay import DtStorageOverlay, SegmentMeter, gigabytes
 from dtflow.ui.lora_metadata_overlay import LoraMetadataOverlay
 from dtflow.ui.lora_hints import HintLibrary, PromptHintOverlay
 from dtflow.ui.lora_trigger_panel import LoraTriggerPanel
@@ -593,12 +595,20 @@ class MainWindow:
             self.state_dir,
             lambda: self._optional_saved,
             active_credential=self._active_credential_id,
-            on_changed=lambda: None,
+            on_changed=self._read_dt_free_space,
             on_closed=self._dt_storage_closed,
         )
         self.generation.lora.open_storage = self.open_dt_storage
         self._storage_suspended_editor = None
         form.dtStorageButton.clicked.connect(self.open_dt_storage)
+        self.dt_free_meter = SegmentMeter(form.dtFreeSpaceLabel.parentWidget())  # same bar as the storage panel
+        # The line and the bar keep their place while empty or hidden, so the blocks below never shift on repaint.
+        retain = self.dt_free_meter.sizePolicy()
+        retain.setRetainSizeWhenHidden(True)
+        self.dt_free_meter.setSizePolicy(retain)
+        self.dt_free_meter.setVisible(False)
+        free_layout = form.dtFreeSpaceLabel.parentWidget().layout()
+        free_layout.insertWidget(free_layout.indexOf(form.dtFreeSpaceLabel) + 1, self.dt_free_meter)
         self._remove_lora_shortcut = QShortcut(QKeySequence("Delete"), form.retainedLorasTable)
         self._remove_lora_shortcut.setContext(Qt.ShortcutContext.WidgetWithChildrenShortcut)
         self._remove_lora_shortcut.activated.connect(self.remove_retained_lora)
@@ -2103,6 +2113,45 @@ class MainWindow:
         self.form.editLoraMetadataButton.setEnabled(not self._removing_retained_lora and selected)
         self.form.dtStorageButton.setEnabled(not self._removing_retained_lora)
 
+    def _read_dt_free_space(self) -> None:
+        """Show the selected DT+ key's free space; one metadata lookup for a made-up file, nothing uploaded or changed."""
+        label = self.form.dtFreeSpaceLabel
+        if self.form.backendCombo.currentText() != "cloud" or self.runner.closed:
+            label.setText("\u00a0")
+            self.dt_free_meter.setVisible(False)
+            return
+        token = self._free_space_token = object()
+        label.setText("DT+ free space on this key: reading\u2026")
+        self.dt_free_meter.setVisible(False)
+        self.runner.submit(self._free_space(), lambda result, failure: self._free_space_read(result, failure, token))
+
+    async def _free_space(self):
+        listing = await storage_listing(self.state_dir, probe_content(), saved=self._optional_saved)
+        return listing
+
+    def _free_space_read(self, listing, failure, token) -> None:
+        if token is not getattr(self, "_free_space_token", None):
+            return  # a newer read (another key or a later check) supersedes this one
+        label = self.form.dtFreeSpaceLabel
+        if failure is not None or listing is None:
+            label.setText("DT+ free space on this key: could not be read.")
+        elif listing.over_limit and listing.free_space is not None:
+            total = sum(item.size for item in listing.files) + listing.free_space
+            label.setText(f"DT+ free space on this key: {gigabytes(listing.free_space)} of {gigabytes(total)}.")
+            if total > 0:
+                self.dt_free_meter.set_share((total - listing.free_space) / total)
+                self.dt_free_meter.setVisible(True)
+        elif listing.over_limit:
+            label.setText("DT+ free space on this key: not reported.")
+        else:
+            label.setText(f"DT+ free space on this key: more than {gigabytes(probe_content().size)}.")
+        diagnostic_event(
+            log,
+            "app.dt_free_space_read",
+            level=logging.INFO,
+            data={"read": failure is None and listing is not None, "free_bytes": getattr(listing, "free_space", None)},
+        )
+
     def open_dt_storage(self) -> None:
         """Open the DT+ storage panel; it reads the selected key's stored files with one dummy-file lookup."""
         if self._removing_retained_lora or not self.dt_storage_overlay.overlay.isHidden():
@@ -2321,6 +2370,7 @@ class MainWindow:
         self._present(shown)
         if failure is None and shown.level == "ok":
             self.remember()
+            self._read_dt_free_space()
 
     def save_key(self) -> None:
         try:

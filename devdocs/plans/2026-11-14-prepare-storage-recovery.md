@@ -7,7 +7,7 @@ Start with #442 on merged #441 (`01d4c9e9`): recover an explicit Prepare after s
 ## Implementation plan
 
 - Reuse the read-only dummy-size storage probe for a best-effort key-scoped snapshot alongside the locally inspected editor. Neither a pending snapshot nor a read failure holds readiness or explicit approval.
-- Show free space and a source-plus-5% conversion estimate as an advisory only. Use the latest real storage-refusal free-space observation for exact needed/free feedback.
+- Show free space and a whole-batch input-size estimate as an advisory only. Use the latest real storage-refusal free-space observation for exact needed/free feedback.
 - Keep storage-refused rows in the editor. Re-Prepare unlocks those rows without granting accepted-name replacement; another explicit Prepare action is required.
 - Open the existing storage overlay within the shared center panel without navigating away or losing selected files. Keep the side panels uncovered. Revalidate backend, saved-provider identity and ownership revision; never silently switch keys.
 - Prefer identifiable held rows in a new approved batch using the advisory listing, without using name/size observations as receipt or upload authority. Unknown conversion outputs retain relative order.
@@ -21,7 +21,7 @@ The first comment on #442 owns AC-1 through AC-5 and levels. Source/static check
 
 - Source implementation complete: canonical editor storage row, shared probe helper, read-only registry composition, current-owner checks, explicit storage retry and center-panel storage overlay.
 - AC-3 is best-effort prioritization only: the provider listing exposes names and sizes, not a verified content hash. Matching observations only reorder already-approved rows; they never bypass service verification or authorize an upload. New/unknown converted bytes cannot be classified in advance.
-- AC-4 estimate is selected-source bytes plus 5%, without dtype analysis; it is deliberately approximate and never gates readiness. Unknown free space is shown as unknown.
+- AC-4 estimate is total selected input bytes without an uplift, without dtype analysis; it is deliberately approximate and never gates readiness. Unknown free space is shown as unknown.
 - `assets.prepare_storage_unavailable` records only the selected-file count when the advisory snapshot cannot be read; arbitrary exception text is not logged.
 - Review follow-up: keep the advisory network read separate from local inspection. Unknown headroom remains explicit if approval happens before the answer; stale snapshot callbacks are dropped by editor/owner checks and a read revision, including after a newer storage-refusal observation.
 - Prescribed environment readiness passed (Python 3.13.13, SQLite 3.53.1), changed-module imports/AST and Designer XML syntax passed, and focused Ruff lint/format and diff checks passed. No source-only check is counted as live acceptance.
@@ -32,7 +32,7 @@ The owner could not practically fill the live key (about 3 GB free), then explic
 
 ## Owner UX correction
 
-The owner rejected storage appearing underneath Prepare, then hiding Prepare and exposing the side panels. Storage now opens as a smaller centered popup above the still-visible disabled Prepare editor. Its backdrop dims Prepare; the shared workspace scrim stays behind Prepare and blocks both side panels. Closing storage restores only the same draft and focus under the same owner. Replacement, navigation and shutdown must not resurrect a stale editor. Connection storage remains center-panel-sized. Estimates are blue normally and amber only for insufficient known space or an unresolved refusal; they never block approval.
+The owner rejected storage appearing underneath Prepare, then hiding Prepare and exposing the side panels. Storage now opens as a smaller centered popup above the still-visible disabled Prepare editor. Its backdrop dims Prepare; the shared workspace scrim stays behind Prepare and blocks both side panels. Closing storage restores only the same draft and focus under the same owner. Replacement, navigation and shutdown must not resurrect a stale editor. Connection storage remains center-panel-sized. Estimates are blue normally and amber above 80% of known free space or an unresolved refusal; they never block approval.
 
 ## Updated evidence
 
@@ -45,3 +45,7 @@ The owner screenshot confirmed the advisory is visible but exposed low contrast 
 At the owner's request, show the sum of all selected input file sizes from filesystem metadata immediately, without waiting for content inspection or hashing. Start the owner-scoped free-space lookup when the editor opens, independently of inspection; inspection completion must not clear that observation. Show approximate batch usage against free space and its percentage, with no five-percent uplift or technical explanation. Actual converted/held-file usage may differ; the advisory never changes approval or receipt authority. Earlier CI does not validate this revision.
 
 Owner threshold refinement: above 80% of known free space, show amber, omit 'only', and end with a low-space warning. At exactly 80% keep informational blue; above 100% retain the insufficient-space warning. This remains advisory and never blocks Prepare. Revised boundary/color checks are Actions-only.
+
+## Owner acceptance and integration
+
+On 2026-11-14 the owner reported the revised UX passed: immediate total-input-size wording, blue information through 80% and amber above 80% with a warning rather than 'only', compact storage popup over visible Prepare, preserved draft and side-panel dimming. This is owner-reported native UX evidence, not a live full-key recovery claim. Integrated current main's #448 converter repair and #449 Connection free-space display/unused-file marking; preserve Connection refresh after deletion and use its shared probe helper. Final integrated-head CI remains required before merge. No local tests/renders ran.

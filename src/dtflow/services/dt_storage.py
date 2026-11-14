@@ -1,15 +1,8 @@
 """Read-only DT+ storage probe identity and advisory Prepare storage presentation data."""
 
-import secrets
 from decimal import Decimal, InvalidOperation
 
-from dtflow.core.models import AssetContent, BackendError, RemoteOutcome
-
-
-def storage_probe_content(free_space: int | None = None) -> AssetContent:
-    """A fresh made-up identity sized above observed headroom; never upload any returned URL."""
-    size = free_space + 1024**2 if free_space is not None else 30 * 1024**3
-    return AssetContent("lora", "dtflow-storage-probe.ckpt", secrets.token_hex(32), size, provenance="storage probe")
+from dtflow.core.models import BackendError, RemoteOutcome
 
 
 def storage_refusal(failure) -> bool:

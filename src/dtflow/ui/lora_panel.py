@@ -29,7 +29,8 @@ from dtflow.core.models import (
 from dtflow.diagnostics import asset_ref_data, event as diagnostic_event
 from dtflow.logging_setup import development_mode
 from dtflow.services.catalogue import Catalogue, FAMILY_LABELS, bundled_exact_version
-from dtflow.services.dt_storage import reported_free_space, storage_probe_content, storage_refusal, storage_size
+from dtflow.services.dt_storage import reported_free_space, storage_refusal, storage_size
+from dtflow.services.storage_probe import probe_content
 from dtflow.services.connection import (
     Presentation,
     present_asset_failure,
@@ -768,7 +769,7 @@ class LoraAssetPanel:
                 listing.files if listing and failure is None else (),
             )
 
-        self._runner.submit(storage_listing(self._state, storage_probe_content(), saved=context[2]), listed)
+        self._runner.submit(storage_listing(self._state, probe_content(), saved=context[2]), listed)
 
     def _authorize_prepare(self, chosen: list[tuple[Path, LoraPrepareMetadata]]) -> None:
         """Admit only explicitly approved, metadata-complete rows under the existing owner."""

@@ -21,6 +21,7 @@ from PySide6.QtWidgets import (
     QLineEdit,
     QListWidget,
     QListWidgetItem,
+    QPushButton,
     QSizePolicy,
     QSpacerItem,
     QVBoxLayout,
@@ -29,7 +30,7 @@ from PySide6.QtWidgets import (
 
 from dtflow.core.models import AssetContent, StorageListing, StoredAsset
 from dtflow.services.session import delete_storage, storage_listing
-from dtflow.services.dt_storage import storage_probe_content
+from dtflow.services.storage_probe import probe_content
 from dtflow.ui.runner import AsyncRunner
 from dtflow.ui.theme import load_tokens
 
@@ -210,8 +211,13 @@ class DtStorageOverlay(QObject):
         self.sort_combo.addItems(["Largest first", "Name A\u2013Z"])
         self.sort_combo.setToolTip("Order of the stored files.")
         self.sort_combo.currentIndexChanged.connect(self._sort_changed)
-        buttons = self.form.findChild(QHBoxLayout, "dtStorageButtons")
-        buttons.insertWidget(1, self.sort_combo)
+        self.select_unused = QPushButton("Select not used here", self.form)
+        self.select_unused.setToolTip(
+            "Tick every stored file without a local upload record on this computer, for example files added from "
+            "another app. Nothing is deleted until you confirm."
+        )
+        self.select_unused.clicked.connect(self._select_unused)
+        self.select_unused.setVisible(False)
         self.meter = SegmentMeter(self.form)
         layout = self.form.layout()
         layout.insertWidget(layout.indexOf(self.form.dtStorageStatus) + 1, self.meter)
@@ -223,7 +229,19 @@ class DtStorageOverlay(QObject):
         self.search.setAccessibleName("Stored files search")
         self.search.setClearButtonEnabled(True)
         self.search.textChanged.connect(self._filter_rows)
-        layout.insertWidget(layout.indexOf(self.form.dtStorageList), self.search)
+        # Search, order and the bulk-select action share one row above the list, so the bottom buttons keep their room.
+        self._tools = QWidget(self.form)
+        tools = QHBoxLayout(self._tools)
+        tools.setContentsMargins(0, 0, 0, 0)
+        tools.setSpacing(6)
+        self.search.setMinimumWidth(60)  # the search box gives way first; the two buttons keep their full text
+        for fixed in (self.sort_combo, self.select_unused):
+            fixed.setMinimumWidth(fixed.sizeHint().width())
+            fixed.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
+        tools.addWidget(self.search, 1)
+        tools.addWidget(self.sort_combo)
+        tools.addWidget(self.select_unused)
+        layout.insertWidget(layout.indexOf(self.form.dtStorageList), self._tools)
         layout.setStretchFactor(self.form.dtStorageList, 1)
         # While the list is hidden (reading, or nothing to list) a spacer takes the spare height, so the texts and
         # buttons keep their natural spacing instead of the layout spreading them out.
@@ -239,6 +257,7 @@ class DtStorageOverlay(QObject):
         escape.setContext(Qt.ShortcutContext.WidgetWithChildrenShortcut)
         escape.activated.connect(self.close)
         self._files: tuple[StoredAsset, ...] = ()
+        self._local: frozenset[str] | None = None  # delete keys with a local receipt; None when not known
         self._busy = False
         self._armed = False
         self._free: dict[
@@ -280,6 +299,7 @@ class DtStorageOverlay(QObject):
         self._free = {}
         self._error("")
         self._files = ()
+        self._local = None
         self._clear_list()
         self._show_list(False)
         self.meter.setVisible(False)
@@ -343,7 +363,7 @@ class DtStorageOverlay(QObject):
         self.form.dtStorageList.blockSignals(True)
         self.form.dtStorageList.clear()
         for index, item in enumerate(self._files):
-            row = QListWidgetItem(f"{item.name}    {megabytes(item.size)}")
+            row = QListWidgetItem(f"{item.name}    {megabytes(item.size)}{self._origin(item)}")
             row.setCheckState(Qt.CheckState.Checked if item.key in kept else Qt.CheckState.Unchecked)
             row.setData(Qt.ItemDataRole.UserRole, index)
             self.form.dtStorageList.addItem(row)
@@ -351,6 +371,25 @@ class DtStorageOverlay(QObject):
         self.form.dtStorageList.blockSignals(False)
         self._filter_rows(self.search.text())
         self._selection_changed()
+
+    def _origin(self, item: StoredAsset) -> str:
+        """Whether this computer has an upload record for the file; nothing is claimed when the records were unreadable."""
+        if self._local is None:
+            return ""
+        return "    \u00b7 used here" if item.key in self._local else "    \u00b7 unknown here"
+
+    def _select_unused(self) -> None:
+        """Tick the files without a local upload record, replacing the current selection; delete still asks again."""
+        if self._busy or self._local is None:
+            return
+        listing = self.form.dtStorageList
+        listing.blockSignals(True)
+        for row in range(listing.count()):
+            item = listing.item(row)
+            stored = self._files[item.data(Qt.ItemDataRole.UserRole)]
+            item.setSelected(stored.key not in self._local and not item.isHidden())
+        listing.blockSignals(False)
+        self._sync_checks()
 
     def _sort_changed(self, _index: int) -> None:
         if self._files and not self._busy:
@@ -370,7 +409,7 @@ class DtStorageOverlay(QObject):
 
     def _show_list(self, visible: bool) -> None:
         self.form.dtStorageList.setVisible(visible)
-        self.search.setVisible(visible)
+        self._tools.setVisible(visible)
         self._filler.changeSize(
             0, 0, QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Minimum if visible else QSizePolicy.Policy.Expanding
         )
@@ -406,6 +445,9 @@ class DtStorageOverlay(QObject):
             else ""
         )
         self.form.dtStorageDelete.setEnabled(bool(chosen) and not self._busy)
+        self.select_unused.setEnabled(
+            not self._busy and self._local is not None and any(item.key not in self._local for item in self._files)
+        )
 
     # -- listing --------------------------------------------------------------------------------------------------
     def refresh(self) -> None:
@@ -413,6 +455,8 @@ class DtStorageOverlay(QObject):
             return
         self._error("")
         self._files = ()
+        self._local = None
+        self.select_unused.setVisible(False)
         self._clear_list()
         self._show_list(False)
         self.meter.setVisible(False)
@@ -431,8 +475,7 @@ class DtStorageOverlay(QObject):
         """A made-up file bigger than the free space, so DT+ answers with its over-limit list when the key is full.
 
         The hash is random per lookup and never stored; nothing is uploaded and any upload URL DT+ returns is ignored."""
-        free = self._free.get(key) if key is not None else None
-        return storage_probe_content(free)
+        return probe_content(self._free.get(key) if key is not None else None)
 
     def _listed(self, result: tuple[str | None, StorageListing] | None, failure) -> None:
         self._set_busy(False)
@@ -449,6 +492,8 @@ class DtStorageOverlay(QObject):
             )
             return
         self._files = listing.files
+        self._local = listing.local_keys
+        self.select_unused.setVisible(self._local is not None and bool(listing.files))
         if key is not None and listing.free_space is not None:
             self._free[key] = listing.free_space
         self._show_list(bool(listing.files))
@@ -461,6 +506,9 @@ class DtStorageOverlay(QObject):
             self._show_meter(total, total + listing.free_space)
         else:
             line = f"{count} stored, {_bold(gigabytes(total))}. Free space unknown."
+        if self._local is not None and listing.files:
+            unknown = sum(item.key not in self._local for item in listing.files)
+            line += f" {_bold(str(unknown))} not used here."
         skipped = f" {listing.skipped} entries could not be read and are not shown." if listing.skipped else ""
         self.form.dtStorageStatus.setText(f"{lead}{line}{skipped}")
         self._fill_rows(keep=())
