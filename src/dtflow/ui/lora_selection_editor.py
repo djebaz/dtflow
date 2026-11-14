@@ -6,7 +6,7 @@ from pathlib import Path
 from PySide6.QtCore import QEvent, QFile, QIODevice, QObject, Qt
 from PySide6.QtGui import QKeySequence, QShortcut
 from PySide6.QtUiTools import QUiLoader
-from PySide6.QtWidgets import QPushButton, QSlider, QWidget
+from PySide6.QtWidgets import QLabel, QPushButton, QSizePolicy, QSlider, QWidget
 
 from dtflow.core.models import LoRASelection
 from dtflow.services.lora_naming import display_label
@@ -108,6 +108,10 @@ class _ClickToAdd(QObject):
         return False
 
 
+#: The picker hint value for a LoRA the selected DT+ key is not known to hold (see ``LoraAssetPanel.storage_marks``).
+NOT_ON_KEY = "needs re-attach"
+
+
 def format_weight(weight: float) -> str:
     """Shortest exact digits, at least one decimal (``1.0``, ``0.65``)."""
     text = f"{weight:g}"
@@ -202,9 +206,18 @@ def edit_lora_selection(
         check, slider, label = row.loraSelectionCheck, row.loraSelectionSlider, row.loraSelectionWeight
         family = families.get(name, "Unknown")
         mark = marks.get(name)
-        check.setText(f"{shown(name)} · {family}" + (f" · {mark}" if mark else ""))
+        check.setText(f"{shown(name)} · {family}")
         check.setChecked(checked)
-        check.setAccessibleName(f"Use {_display_label(name)}, family {family}")
+        check.setAccessibleName(
+            f"Use {_display_label(name)}, family {family}" + (", not on the DT+ key" if mark == NOT_ON_KEY else "")
+        )
+        if mark == NOT_ON_KEY:
+            # A small amber pill marks only what the key does not hold; held LoRAs carry no extra text.
+            pill = QLabel("not on key", row)
+            pill.setObjectName("loraKeyPill")
+            pill.setProperty("state", "warning")
+            pill.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
+            row.loraSelectionRowLayout.insertWidget(1, pill)
         suggestion = suggestions.get(name)
         lead = f"{name}\nFamily: {family}" + (
             f"\nDT+ key: {mark}. A LoRA that needs a re-attach is restored automatically at generation and may use key storage."

@@ -70,7 +70,7 @@ from dtflow.ui.activity_bar import clock
 from dtflow.ui.activity_strip import activity_strip
 from dtflow.ui.file_dialogs import QFileDialog
 from dtflow.ui.latest_relay import LatestRelay
-from dtflow.ui.lora_selection_editor import _display_label, edit_lora_selection
+from dtflow.ui.lora_selection_editor import NOT_ON_KEY, _display_label, edit_lora_selection
 from dtflow.ui.prepare_lora_editor import PrepareBatchEditor
 from dtflow.ui.runner import AsyncRunner
 from dtflow.ui.source_details_view import safe_tooltip
@@ -321,7 +321,7 @@ class LoraAssetPanel:
             if name in holdings.held:
                 marks[name] = "on DT+ key" if holdings.checked else "receipt on key"
             else:
-                marks[name] = "needs re-attach"
+                marks[name] = NOT_ON_KEY
         return marks
 
     def missing_size(self) -> int:
