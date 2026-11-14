@@ -1004,9 +1004,13 @@ async def observe_key(
     return listing, replace(holdings, marked_stale=changed)
 
 
-async def delete_storage(state: Path, selected: tuple, *, saved: CredentialProvider | None = None) -> dict:
+async def delete_storage(
+    state: Path, selected: tuple, *, saved: CredentialProvider | None = None, expected_owner: str | None = None
+) -> dict:
     """Owner-confirmed delete of the chosen stored files under the selected DT+ key, once and without retry."""
     async with open_assets(state, saved=saved) as service:
+        if expected_owner is not None and await service.backend.asset_credential_identity() != expected_owner:
+            raise ValidationError("The selected DT+ key changed. Read its storage again before deleting.")
         return await service.delete_storage(selected)
 
 

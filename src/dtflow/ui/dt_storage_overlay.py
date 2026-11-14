@@ -275,6 +275,9 @@ class DtStorageOverlay(QObject):
         self._needed: int | None = None  # bytes a failed generation needed, set only by that offer
         self._missing: int | None = None
         self._busy = False
+        self._revision = 0
+        self._listed_key: str | None = None
+        self._refresh_pending = False
         self._armed = False
         self._free: dict[
             str, int
@@ -397,14 +400,12 @@ class DtStorageOverlay(QObject):
             label = QLabel(title, card)
             label.setTextFormat(Qt.TextFormat.PlainText)
             layout.addWidget(label, 1)
-            if self._file_keys is not None:
-                local = item.key in self._file_keys
-                pill = QLabel("File" if local else "Cloud only", card)
-                pill.setObjectName("storageFilePill" if local else "storageCloudPill")
+            cloud_only = self._file_keys is not None and item.key not in self._file_keys
+            if cloud_only:
+                pill = QLabel("Cloud only", card)
+                pill.setObjectName("storageCloudPill")
                 pill.setToolTip(
-                    "Matching managed file exists in lora_files; contents are checked before use."
-                    if local
-                    else "Stored on this DT+ key; no matching managed file is known in lora_files. Other folders are not checked."
+                    "Stored on this DT+ key; no matching managed file is known in lora_files. Other folders are not checked."
                 )
                 layout.addWidget(pill)
                 row.setData(Qt.ItemDataRole.AccessibleTextRole, f"{title}, {pill.text()}")
@@ -412,7 +413,7 @@ class DtStorageOverlay(QObject):
             # Measure after parenting/polishing so the inherited font and pill QSS are included.
             card.ensurePolished()
             label.ensurePolished()
-            if self._file_keys is not None:
+            if cloud_only:
                 pill.ensurePolished()
             layout.invalidate()
             layout.activate()
@@ -508,6 +509,46 @@ class DtStorageOverlay(QObject):
         )
 
     # -- listing --------------------------------------------------------------------------------------------------
+    def key_changed(self) -> None:
+        """Discard the old key's presentation/consent immediately and re-read an open panel."""
+        self._revision += 1
+        self._listed_key = None
+        self._free, self._seen = {}, {}
+        self._files, self._local, self._file_keys = (), None, None
+        self._needed = self._missing = None
+        self._note = ""
+        self._disarm()
+        self._clear_list()
+        self._selection_changed()
+        self._show_list(False)
+        self.meter.hide()
+        self._error("")
+        if self.overlay.isHidden() or self.runner.closed:
+            return
+        self.form.dtStorageStatus.setText("Reading DT+ storage…")
+        if self._busy:
+            self._refresh_pending = True
+        else:
+            self.refresh()
+
+    def _finished(self, revision, result, failure, *, deleting=False) -> None:
+        if revision != self._revision:
+            self._set_busy(False)
+            if deleting:
+                self._on_changed()  # an already admitted deletion may have completed on the previous key
+            pending, self._refresh_pending = self._refresh_pending, False
+            if pending and not self.overlay.isHidden() and not self.runner.closed:
+                self.refresh()
+            if deleting and failure is not None:
+                self._error(
+                    "Deletion on the previous key did not finish successfully. Check that key's storage before retrying."
+                )
+            return
+        if deleting:
+            self._deleted(result, failure)
+        else:
+            self._listed(result, failure)
+
     def refresh(self) -> None:
         if self._busy or self.runner.closed:
             return
@@ -522,7 +563,8 @@ class DtStorageOverlay(QObject):
         self.meter.setVisible(False)
         self.form.dtStorageStatus.setText("Reading DT+ storage…")
         self._set_busy(True)
-        self.runner.submit(self._read(), self._listed)
+        revision = self._revision
+        self.runner.submit(self._read(), lambda result, failure: self._finished(revision, result, failure))
 
     async def _read(self) -> tuple[str | None, StorageListing]:
         """Lookup sized for the key that is selected right now; its identity comes back with the answer."""
@@ -540,6 +582,7 @@ class DtStorageOverlay(QObject):
     def _listed(self, result: tuple[str | None, StorageListing] | None, failure) -> None:
         self._set_busy(False)
         key, listing = result if result is not None else (None, None)
+        self._listed_key = key
         note, self._note = self._note, ""
         lead = f"{html.escape(note)} " if note else ""
         if failure is not None:
@@ -588,7 +631,7 @@ class DtStorageOverlay(QObject):
     # -- delete ---------------------------------------------------------------------------------------------------
     def _delete_clicked(self) -> None:
         chosen = self._chosen()
-        if self._busy or not chosen or self.runner.closed:
+        if self._busy or not chosen or self.runner.closed or self._listed_key is None:
             return
         total = gigabytes(sum(item.size for item in chosen))
         if not self._armed:
@@ -605,7 +648,11 @@ class DtStorageOverlay(QObject):
         self._error("")
         self.form.dtStorageStatus.setText("Deleting from DT+…")
         self._set_busy(True)
-        self.runner.submit(delete_storage(self.state_dir, chosen, saved=self._saved()), self._deleted)
+        revision = self._revision
+        self.runner.submit(
+            delete_storage(self.state_dir, chosen, saved=self._saved(), expected_owner=self._listed_key),
+            lambda result, failure: self._finished(revision, result, failure, deleting=True),
+        )
 
     def _deleted(self, result: dict | None, failure) -> None:
         self._set_busy(False)

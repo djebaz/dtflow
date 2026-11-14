@@ -1619,6 +1619,7 @@ class MainWindow:
             self.refresh_credentials()
             return
         self._forget_holdings()  # hints and reads in flight belong to the previous key
+        self.dt_storage_overlay.key_changed()
         source = "environment" if choice == ENVIRONMENT else "saved"
         status = getattr(self, "_credential_status_for_switch", {})
         alias = None
