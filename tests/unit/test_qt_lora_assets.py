@@ -276,7 +276,7 @@ def quota(window, monkeypatch):
 
 
 def test_storage_refusal_free_space_and_explicit_reprepare_without_reselection(window, quota, qtbot, tmp_path):
-    file = lora_file(tmp_path)
+    file = lora_file(tmp_path, data=bytes(range(256)) * 512)
     assert prepare(window, qtbot, file) == [file.name]
     panel = window.generation.lora
     editor = panel._prepare_editor
@@ -285,7 +285,7 @@ def test_storage_refusal_free_space_and_explicit_reprepare_without_reselection(w
     assert row.outcome == "Failed" and row.storage_failed and row.can_reprepare
     assert not row.reprepare  # storage recovery did not grant accepted-name replacement
     assert not row.widget.prepareReprepare.isHidden()
-    assert storage_size(file.stat().st_size) in editor.form.prepareStorageStatus.text()
+    assert f"Last refused file needs {storage_size(file.stat().st_size)}" in editor.form.prepareStorageStatus.text()
     assert "0.0 MB free" in editor.form.prepareStorageStatus.text()
     assert quota.put_attempts == 0 and quota.deletes == []
 
