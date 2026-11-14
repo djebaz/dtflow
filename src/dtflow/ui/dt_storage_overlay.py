@@ -219,7 +219,12 @@ class DtStorageOverlay(QObject):
             return
         deleted = int(result.get("deleted", 0)) if result else 0
         updated = result.get("receipts_updated", True) if result else True
-        note = "" if updated else " Local upload records could not be updated; they will be re-checked on the next run."
+        matched = int(result.get("receipts_invalidated", 0)) if result else 0
+        note = (
+            f" {matched} local upload record{'' if matched == 1 else 's'} updated."
+            if updated
+            else " Local upload records could not be updated; they will be re-checked on the next run."
+        )
         self._on_changed()
         self._note = f"Deleted {_files(deleted)} from DT+.{note}"
         self.refresh()
