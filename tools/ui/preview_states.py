@@ -276,9 +276,11 @@ def wait_for(predicate, timeout=8):
         if time.monotonic() >= until:
             # A stale wait must not abort the category; the screenshot still shows what the UI reached.
             print(f"WARNING: offline UI fixture wait timed out after {timeout}s; rendering the current state.")
-            return
+            REPORTER.wait_timeout(timeout)
+            return False
         QTest.qWait(10)
     QTest.qWait(30)
+    return True
 
 
 def settle(name, milliseconds=0):
@@ -4613,15 +4615,59 @@ def _render_selection(app, args):
                     # Real asset-service composition, in-memory transport. Never generates through cloud.
                     shell.form.backendCombo.setCurrentText("cloud")
                     panel = controller.lora
-                    panel.confirm_upload = lambda *_: True
+                    prepared = []
+
+                    def require_asset_ready(predicate, stage):
+                        if not wait_for(predicate, timeout=60):
+                            raise RuntimeError(f"Offline LoRA Prepare did not reach {stage}")
+
                     for name in ("fixture-style.ckpt", "fixture-soft.ckpt"):
                         fixture = lora_file(state, name, data=name.encode() * 200)
-                        panel.choose_asset_file = lambda *_, fixture=fixture: str(fixture)
-                        page.prepareAssetButton.click()
-                        wait_for(settled, timeout=60)
-                        wait_for(lambda name=name: page.assetList.count() >= (1 if "style" in name else 2))
-                    page.assetList.setCurrentRow(0)
-                    controller.lora.set_loras((LoRASelection("fixture-soft.ckpt", 0.8),))
+                        with patch.object(panel, "choose_asset_file", return_value=[str(fixture)]):
+                            page.prepareAssetButton.click()
+                        editor = panel._prepare_editor
+                        if editor is None:
+                            raise RuntimeError("Offline LoRA Prepare editor did not open")
+                        require_asset_ready(
+                            lambda editor=editor: (
+                                editor.active() and editor.inspected and not any(row.hashing for row in editor.rows)
+                            ),
+                            f"inspection of {name}",
+                        )
+                        row = editor.rows[0]
+                        # Dummy tensor pairs validate as LoRAs but deliberately have Unknown architecture.
+                        # Declare it in the real editor, never in a bypassed inspection/service callback.
+                        architecture = row.widget.prepareArchitecture
+                        index = architecture.findData("krea_2")
+                        if index < 0:
+                            raise RuntimeError("Offline Prepare editor does not offer Krea 2")
+                        architecture.setCurrentIndex(index)
+                        row.widget.prepareShortName.setText(Path(name).stem.replace("-", "_"))
+                        editor.refresh()
+                        approve = editor.panel.form.inlineEditorAcceptButton
+                        require_asset_ready(
+                            lambda approve=approve: approve.isEnabled(), f"metadata readiness for {name}"
+                        )
+                        identifier = editor._allocation()[0].filename
+                        approve.click()  # The ordinary explicit Prepare N ready LoRAs approval.
+                        require_asset_ready(
+                            lambda identifier=identifier: (
+                                settled()
+                                and panel._prepare_editor is None
+                                and any(
+                                    record["identifier"] == identifier and record["state"] == "confirmed"
+                                    for record in panel._records.values()
+                                )
+                                and page.assetList.count() == len(prepared) + 1
+                            ),
+                            f"confirmed receipt and editor cleanup for {name}",
+                        )
+                        prepared.append(identifier)
+                    for index in range(page.assetList.count()):
+                        if page.assetList.item(index).data(Qt.ItemDataRole.UserRole)[1] == prepared[-1]:
+                            page.assetList.setCurrentRow(index)
+                            break
+                    controller.lora.set_loras((LoRASelection(prepared[-1], 0.8),))
                     page.assetNoteLabel.setText(
                         "OFFLINE FIXTURE · in-memory cloud receipts. No provider traffic or real upload."
                     )

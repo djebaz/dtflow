@@ -90,7 +90,13 @@ def main():
     passed = passed and bool(pngs) and not missing
     manifests = [read_json(path, {}) for path in (OUT / "states").glob("preview-manifest-*.json")]
     combined = next((data for data in manifests if "workers" in data), {})
-    waits = combined.get("wait_timeouts", [])
+    # Without a parent manifest (single-worker execution), aggregate only worker manifests.
+    timeout_manifests = [combined] if combined else manifests
+    waits = sorted({state for data in timeout_manifests for state in data.get("wait_timeouts", [])})
+    wait_counts_known = all("wait_timeout_count" in data for data in timeout_manifests)
+    wait_count = sum(data.get("wait_timeout_count", 0) for data in timeout_manifests)
+    unattributed = sum(data.get("unattributed_wait_timeout_count", 0) for data in timeout_manifests)
+    passed = passed and not waits and not wait_count
     warnings = selection.get("warnings", [])
     artifact = os.environ.get("ARTIFACT_URL")
     repo_url = f"{os.environ['GITHUB_SERVER_URL']}/{os.environ['GITHUB_REPOSITORY']}"
@@ -116,8 +122,14 @@ def main():
     ]
     if warnings:
         lines += ["⚠ Representative sample, not exhaustive; mapping details in Diagnostics.", ""]
-    if waits:
-        lines += [f"⚠ {len(waits)} fixture waits timed out; captured states may be incomplete.", ""]
+    if waits or wait_count:
+        count = str(wait_count) if wait_counts_known else "an unknown number of"
+        lines += [
+            f"⚠ {len(waits)} capture(s) affected by {count} timed-out waits; captured states may be incomplete.",
+            "",
+        ]
+        if unattributed:
+            lines += [f"⚠ {unattributed} timed-out wait(s) had no subsequent saved capture.", ""]
     failures = [f"{name}: exit {item['exit_code']}" for name, item in outcomes.items() if item["exit_code"] != 0]
     problems = ([f"{len(missing)} missing states"] if missing else []) + failures
     if not outcomes:
@@ -152,7 +164,13 @@ def main():
     if missing:
         lines += ["", "Missing: " + ", ".join(inline_code(name) for name in missing[:20])]
     if waits:
-        lines += ["", "Timed-out fixture waits: " + ", ".join(inline_code(name) for name in waits)]
+        lines += ["", "Captures following timed-out fixture waits: " + ", ".join(inline_code(name) for name in waits)]
+    if waits or wait_count:
+        lines += [
+            "",
+            "Wait attribution uses the next saved capture in the same worker, not necessarily the originating fixture. "
+            "Individual events (including waits without a later capture) remain in manifests and logs.",
+        ]
     # Keep path-by-path information out of the main review flow. Deduplicate warnings
     # already present as reasons; omit no-impact paths, whose full record stays in the artifact.
     details = list(

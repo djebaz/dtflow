@@ -107,7 +107,7 @@ def run_workers(args, root):
     for worker, tag in tags.items():
         emit(f"  {tag} = {worker}")
 
-    timed_out = []
+    wait_events = []
     running = []
 
     def run_one(worker):
@@ -123,7 +123,7 @@ def run_workers(args, root):
         )
         running.append(process)
         failing = False
-        waits = 0
+        waits = []
         progressed = [time.monotonic()]
         stalled = []
         done_reading = threading.Event()
@@ -149,17 +149,23 @@ def run_workers(args, root):
                 progress(worker, match)
                 if waits:
                     # A fixture wait timed out while preparing this state; it was rendered as it stood.
-                    timed_out.append(match["id"])
-                    emit(f"  ^ {match['id']}: fixture wait timed out, rendered as it stood")
-                    waits = 0
+                    for event in waits:
+                        event["capture"] = match["id"]
+                    emit(f"  ^ {match['id']}: {len(waits)} fixture waits timed out; capture may be incomplete")
+                    waits = []
                 continue
-            waits += line.startswith("WARNING: offline UI fixture wait timed out")
+            if line.startswith("WARNING: offline UI fixture wait timed out"):
+                event = {"worker": worker, "capture": None, "message": line}
+                waits.append(event)
+                wait_events.append(event)
             failing = failing or line.startswith("Traceback")
             # Window headers, summaries and expected Qt notices stay in the log; problems reach the console.
             loud = failing or line.startswith("WARNING")
             emit(f"{worker:<{width}} | {line}", show=loud)
         done_reading.set()
         code = process.wait()
+        if waits:
+            emit(f"WARNING: worker {worker}: {len(waits)} timed-out waits with no subsequent saved capture.")
         if stalled:
             code = code or -9
         seconds = time.monotonic() - begun
@@ -185,6 +191,8 @@ def run_workers(args, root):
             manifests[worker] = json.loads(path.read_text(encoding="utf-8"))
         except (OSError, ValueError):
             manifests[worker] = None
+    timed_out = sorted({event["capture"] for event in wait_events if event["capture"] is not None})
+    unattributed = sum(event["capture"] is None for event in wait_events)
     records = {}
     duplicates = []
     notices, unregistered = {}, []
@@ -195,7 +203,12 @@ def run_workers(args, root):
             if row["status"] == "saved":
                 if row["id"] in records:
                     duplicates.append(row["id"])
-                records[row["id"]] = {**row, "worker": worker, "wait_timed_out": row["id"] in timed_out}
+                records[row["id"]] = {
+                    **row,
+                    "worker": worker,
+                    "wait_timed_out": row["id"] in timed_out,
+                    "wait_timeout_count": sum(event["capture"] == row["id"] for event in wait_events),
+                }
         for name, count in data.get("expected_notices", {}).items():
             notices[name] = notices.get(name, 0) + count
         unregistered += data.get("unregistered_states", [])
@@ -222,6 +235,12 @@ def run_workers(args, root):
             worker: {"exit_code": code, "elapsed_seconds": round(seconds, 3)} for worker, code, seconds in results
         },
         "wait_timeouts": sorted(timed_out),
+        "wait_timeout_capture_count": len(timed_out),
+        "wait_timeout_count": len(wait_events),
+        "wait_timeout_events": wait_events,
+        "unattributed_wait_timeout_count": unattributed,
+        "wait_timeout_attribution": "Next saved capture in the same worker, not necessarily the originating fixture; "
+        "null capture means no subsequent saved capture. Events are observed from worker output, even on failure.",
         "states": states,
         "unregistered_states": unregistered,
         "expected_notices": notices,
@@ -240,9 +259,10 @@ def run_workers(args, root):
     emit(f"Rendered {len(states) - len(missing)} states in {wall:.1f}s wall time (workers: {timings}).")
     if notices:
         emit(f"Expected offline notices: {sum(notices.values())}; details in the per-worker logs next to {target.name}")
-    if timed_out:
+    if wait_events:
         emit(
-            f"WARNING: fixture waits timed out ({len(timed_out)}), rendered as they stood: {', '.join(sorted(timed_out))}"
+            f"WARNING: {len(timed_out)} captures affected by {len(wait_events)} timed-out waits "
+            f"({unattributed} waits without a subsequent capture); captures may be incomplete: {', '.join(timed_out)}"
         )
     if unregistered:
         emit(f"WARNING: rendered states missing from preview_catalog.json: {', '.join(unregistered)}")
