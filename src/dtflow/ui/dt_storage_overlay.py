@@ -6,6 +6,7 @@ with no retry, and never touches local files, retained copies or saved results."
 
 from __future__ import annotations
 
+import html
 import secrets
 from pathlib import Path
 from typing import Awaitable, Callable
@@ -18,6 +19,7 @@ from PySide6.QtWidgets import QFrame, QListWidgetItem, QVBoxLayout, QWidget
 from dtflow.core.models import AssetContent, StorageListing, StoredAsset
 from dtflow.services.session import delete_storage, storage_listing
 from dtflow.ui.runner import AsyncRunner
+from dtflow.ui.theme import load_tokens
 
 _DELETE_TEXT = "Delete selected from DT+…"
 _PROBE_NAME = "dtflow-storage-probe.ckpt"
@@ -30,6 +32,16 @@ def megabytes(size: int) -> str:
     """Decimal MB, the unit DT+ account screens use; one decimal below 10 MB."""
     value = size / 1_000_000
     return f"{value:.1f} MB" if value < 10 else f"{value:.0f} MB"
+
+
+def gigabytes(size: int) -> str:
+    """Decimal GB with one decimal, for totals and free space."""
+    return f"{size / 1_000_000_000:.1f} GB"
+
+
+def _bold(text: str) -> str:
+    """A value drawn with the emphasis weight; the labels using it are rich text."""
+    return f'<span style="font-weight:{load_tokens()["type.weightEmphasis"]}">{html.escape(text)}</span>'
 
 
 def _files(count: int) -> str:
@@ -93,6 +105,8 @@ class DtStorageOverlay(QObject):
         self.form.dtStorageRefresh.clicked.connect(self.refresh)
         self.form.dtStorageDelete.clicked.connect(self._delete_clicked)
         self.form.dtStorageList.itemChanged.connect(self._selection_changed)
+        for label in (self.form.dtStorageStatus, self.form.dtStorageSelection):
+            label.setTextFormat(Qt.TextFormat.RichText)
         escape = QShortcut(QKeySequence(Qt.Key.Key_Escape), self.overlay)
         escape.setContext(Qt.ShortcutContext.WidgetWithChildrenShortcut)
         escape.activated.connect(self.close)
@@ -159,7 +173,9 @@ class DtStorageOverlay(QObject):
         chosen = self._chosen()
         total = sum(item.size for item in chosen)
         self.form.dtStorageSelection.setText(
-            f"{len(chosen)} of {len(self._files)} selected, {megabytes(total)}." if self._files else ""
+            f"{_bold(str(len(chosen)))} of {len(self._files)} selected, {_bold(gigabytes(total))}."
+            if self._files
+            else ""
         )
         self.form.dtStorageDelete.setEnabled(bool(chosen) and not self._busy)
 
@@ -194,9 +210,9 @@ class DtStorageOverlay(QObject):
         self._set_busy(False)
         key, listing = result if result is not None else (None, None)
         note, self._note = self._note, ""
-        lead = f"{note} " if note else ""
+        lead = f"{html.escape(note)} " if note else ""
         if failure is not None:
-            self.form.dtStorageStatus.setText(note)
+            self.form.dtStorageStatus.setText(html.escape(note))
             self._error(str(failure) or "DT+ storage could not be read.")
             return
         if listing is None or not listing.over_limit:
@@ -209,12 +225,14 @@ class DtStorageOverlay(QObject):
             self._free[key] = listing.free_space
         self.form.dtStorageList.setVisible(bool(listing.files))
         free = (
-            f"About {megabytes(listing.free_space)} free." if listing.free_space is not None else "Free space unknown."
+            f"About {_bold(gigabytes(listing.free_space))} free."
+            if listing.free_space is not None
+            else "Free space unknown."
         )
         total = sum(item.size for item in listing.files)
         skipped = f" {listing.skipped} entries could not be read and are not shown." if listing.skipped else ""
         self.form.dtStorageStatus.setText(
-            f"{lead}{free} {_files(len(listing.files))} stored, {megabytes(total)}.{skipped}"
+            f"{lead}{free} {_bold(_files(len(listing.files)))} stored, {_bold(gigabytes(total))}.{skipped}"
         )
         self.form.dtStorageList.blockSignals(True)
         for index, item in enumerate(listing.files):
@@ -231,13 +249,13 @@ class DtStorageOverlay(QObject):
         chosen = self._chosen()
         if self._busy or not chosen or self.runner.closed:
             return
-        total = megabytes(sum(item.size for item in chosen))
+        total = gigabytes(sum(item.size for item in chosen))
         if not self._armed:
             self._armed = True
             self.form.dtStorageDelete.setText(f"Confirm: delete {_files(len(chosen))}, {total}")
             self._error("")
             self.form.dtStorageSelection.setText(
-                f"This permanently deletes {_files(len(chosen))} ({total}) from the selected DT+ key. "
+                f"This permanently deletes {_bold(_files(len(chosen)))} ({_bold(total)}) from the selected DT+ key. "
                 "Click the button again to confirm, or change the selection to cancel."
             )
             return
