@@ -220,8 +220,8 @@ def edit_lora_selection(
             row.loraSelectionRowLayout.insertWidget(1, pill)
         suggestion = suggestions.get(name)
         lead = f"{name}\nFamily: {family}" + (
-            f"\nDT+ key: {mark}. A LoRA that needs a re-attach is restored automatically at generation and may use key storage."
-            if mark
+            "\nNot on the selected DT+ key. It is restored automatically at generation and may use key storage."
+            if mark == NOT_ON_KEY
             else ""
         )
         lead += f"\nCatalogue suggests weight {suggestion:g}." if suggestion is not None else ""
