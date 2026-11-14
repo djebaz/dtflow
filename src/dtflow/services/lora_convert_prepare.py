@@ -19,13 +19,21 @@ from pathlib import Path
 
 from dtflow.core.models import ValidationError
 from dtflow.diagnostics import asset_ref_data, event as diagnostic_event
+from dtflow.persistence.assets import AssetRegistry
 from dtflow.services.lora_convert import CONVERTER_VERSION, ConversionProgress, ConversionRequest, convert_lora
 from dtflow.services.lora_convert.errors import ConversionCancelled, ConversionError
 from dtflow.services.lora_convert.detect import inspect_source
 from dtflow.services.lora_convert.registry import lookup
 from dtflow.services.lora_digest import DigestCancelled, hash_file
 from dtflow.services.lora_family import detect_lora_family, validate_converted_lora
-from dtflow.services.lora_store import LoraStore, RetainedFile
+from dtflow.services.lora_naming import (
+    LoraPrepareMetadata,
+    ManagedName,
+    NamingRequest,
+    allocate_batch_names,
+    occupied_from_snapshot,
+)
+from dtflow.services.lora_store import LoraStore, RetainedFile, RetainedNameConflict
 
 log = logging.getLogger(__name__)
 
@@ -34,6 +42,38 @@ log = logging.getLogger(__name__)
 class PreparedConversion:
     retained: RetainedFile
     reused: bool
+    metadata: LoraPrepareMetadata | None = None
+
+
+def _prepared(retained: RetainedFile, reused: bool, metadata: LoraPrepareMetadata | None) -> PreparedConversion:
+    try:
+        final = metadata.for_retained_identifier(retained.name) if metadata is not None else None
+    except ValueError as exc:
+        raise ConversionError(str(exc)) from exc
+    return PreparedConversion(retained, reused, final)
+
+
+def _collision_name(
+    store: LoraStore,
+    metadata: LoraPrepareMetadata,
+    sha256: str,
+    size: int,
+    occupied: tuple[ManagedName, ...],
+) -> str:
+    # Read current store names only after the output bytes are known. Retention rechecks under its lock.
+    indexed = occupied_from_snapshot([{**item, "managed_identifier": item.get("name")} for item in store.entries()])
+    requested = ManagedName(metadata.short_name, metadata.exact_architecture, metadata.format_code)
+    request = NamingRequest(
+        metadata.short_name,
+        metadata.exact_architecture,
+        metadata.format_code,
+        sha256=sha256,
+        size=size,
+    )
+    allocation = allocate_batch_names((request,), (*occupied, *indexed, requested))[0]
+    if not allocation.ready or allocation.filename is None:
+        raise ConversionError("No safe managed name is available for the converted LoRA; nothing was overwritten.")
+    return allocation.filename
 
 
 def _convert_sync(
@@ -44,9 +84,15 @@ def _convert_sync(
     progress: Callable[[ConversionProgress], None] | None,
     cancel: threading.Event | None,
     allow_experimental: bool,
+    metadata: LoraPrepareMetadata | None = None,
+    occupied: tuple[ManagedName, ...] = (),
 ) -> PreparedConversion:
     start = time.monotonic()
     spec = lookup(family)
+    if metadata is not None and (
+        metadata.exact_architecture != spec.exact_architecture or metadata.format_code != "F16"
+    ):
+        raise ConversionError("Prepare metadata disagrees with the selected converter family or output format.")
     if source.suffix.casefold() != ".safetensors":
         raise ConversionError("Select a .safetensors LoRA source.")
     if cancel is not None and cancel.is_set():
@@ -100,7 +146,10 @@ def _convert_sync(
                 "size": reused.size,
             },
         )
-        return PreparedConversion(reused, True)
+        latest = source.stat()
+        if (latest.st_mtime_ns, latest.st_size) != (stat.st_mtime_ns, source_size) or stat.st_size != source_size:
+            raise ConversionError("The source changed during conversion lookup. Nothing was prepared.")
+        return _prepared(reused, True, metadata)
 
     diagnostic_event(
         log,
@@ -159,14 +208,33 @@ def _convert_sync(
         # Descriptive header metadata (#414): bounded, display-only, never evidence for the family or the output.
         # It is kept once per retained file (not per conversion record).
         inspected = inspect_source(source)
-        retained = store.retain_converted(
-            result.destination,
-            result.destination_sha256,
-            result.destination_size,
-            managed_name=managed_name,
-            conversion=record,
-            source_metadata=inspected.metadata.retained_record(),
-        )
+
+        def retain(name):
+            return store.retain_converted(
+                result.destination,
+                result.destination_sha256,
+                result.destination_size,
+                managed_name=name,
+                conversion=record,
+                source_metadata=inspected.metadata.retained_record(),
+            )
+
+        final_name = managed_name
+        if metadata is not None and any(
+            name.short_name.casefold() == metadata.short_name.casefold()
+            and name.exact_architecture == metadata.exact_architecture
+            and name.format_code == metadata.format_code
+            and (name.sha256, name.size) != (result.destination_sha256, result.destination_size)
+            for name in occupied
+        ):
+            final_name = _collision_name(store, metadata, result.destination_sha256, result.destination_size, occupied)
+        try:
+            retained = retain(final_name)
+        except RetainedNameConflict:
+            if metadata is None:
+                raise  # Legacy callers without authoring metadata retain their strict no-overwrite contract.
+            final_name = _collision_name(store, metadata, result.destination_sha256, result.destination_size, occupied)
+            retained = retain(final_name)  # One bounded retry; a second collision fails without overwriting.
         diagnostic_event(
             log,
             "lora_convert.prepare_completed",
@@ -182,7 +250,7 @@ def _convert_sync(
                 "verification": spec.status,
             },
         )
-        return PreparedConversion(retained, False)
+        return _prepared(retained, False, metadata)
     finally:
         shutil.rmtree(folder, ignore_errors=True)
 
@@ -196,8 +264,19 @@ async def convert_for_prepare(
     progress: Callable[[ConversionProgress], None] | None = None,
     cancel: threading.Event | None = None,
     allow_experimental: bool = False,
+    metadata: LoraPrepareMetadata | None = None,
 ) -> PreparedConversion:
     """Reuse or convert a source LoRA on a worker; the returned path is retained and verified."""
+    occupied: tuple[ManagedName, ...] = ()
+    if metadata is not None:
+        if metadata.identifier != managed_name:
+            raise ConversionError("Prepare metadata disagrees with the requested conversion name.")
+        registry = AssetRegistry(state)
+        await registry.open()
+        try:
+            occupied = occupied_from_snapshot(await registry.lora_name_snapshot())
+        finally:
+            await registry.aclose()
     return await asyncio.to_thread(
         _convert_sync,
         state,
@@ -207,4 +286,6 @@ async def convert_for_prepare(
         progress,
         cancel,
         allow_experimental,
+        metadata,
+        occupied,
     )

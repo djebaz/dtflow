@@ -965,6 +965,7 @@ class LoraAssetPanel:
                         progress=conversion_progress,
                         cancel=self._prepare_convert_cancel,
                         allow_experimental=spec.experimental,
+                        metadata=metadata,
                     )
                 except (ConversionError, ValidationError):
                     raise
@@ -984,6 +985,7 @@ class LoraAssetPanel:
                     )
                     raise ConversionError("Local conversion failed before any upload began.") from exc
                 path = result.retained.path
+                prepared_metadata = result.metadata or metadata
                 converted_sha[0] = result.retained.sha256
                 output_size = result.retained.size
                 shown_name = result.retained.path.name  # the managed checkpoint, not the selected source
@@ -1010,7 +1012,7 @@ class LoraAssetPanel:
                 path,
                 provenance="gui",
                 saved=self._prepare_saved,
-                metadata=metadata,
+                metadata=prepared_metadata if converting else metadata,
                 progress=forward,
             )
 
