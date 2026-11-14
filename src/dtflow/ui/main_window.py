@@ -34,7 +34,7 @@ from dtflow import startup
 from dtflow.build import display_identity
 from dtflow.composition import BACKENDS, BackendSelection
 from dtflow.core.gallery import GalleryQuery
-from dtflow.core.models import BackendError, ValidationError, eligible_model_ids
+from dtflow.core.models import AssetContent, BackendError, ValidationError, eligible_model_ids
 from dtflow.diagnostics import cloud_key_data, event as diagnostic_event
 from dtflow.logging_setup import configured_directory, development_mode
 from dtflow.paths import application_state_dir
@@ -77,6 +77,7 @@ from dtflow.ui.button_focus import KeyboardFocusGuard
 from dtflow.ui.current_page_stack import CurrentPageStack
 from dtflow.ui.cloud_usage_panel import CloudUsagePanel
 from dtflow.services.lora_convert.source_metadata import DetailModel, detail_model
+from dtflow.ui.dt_storage_overlay import DtStorageOverlay
 from dtflow.ui.lora_metadata_overlay import LoraMetadataOverlay
 from dtflow.ui.lora_hints import HintLibrary, PromptHintOverlay
 from dtflow.ui.lora_trigger_panel import LoraTriggerPanel
@@ -586,6 +587,15 @@ class MainWindow:
             on_saved=self._lora_metadata_saved,
             on_closed=lambda: form.retainedLorasTable.setFocus(),
         )
+        self.dt_storage_overlay = DtStorageOverlay(
+            form.connectionWorkspaceScroll,
+            self.runner,
+            self.state_dir,
+            lambda: self._optional_saved,
+            on_changed=lambda: None,
+            on_closed=lambda: form.retainedLorasTable.setFocus(),
+        )
+        form.dtStorageButton.clicked.connect(self.open_dt_storage)
         self._remove_lora_shortcut = QShortcut(QKeySequence("Delete"), form.retainedLorasTable)
         self._remove_lora_shortcut.setContext(Qt.ShortcutContext.WidgetWithChildrenShortcut)
         self._remove_lora_shortcut.activated.connect(self.remove_retained_lora)
@@ -1913,6 +1923,7 @@ class MainWindow:
             self.form.clearCustomLorasButton.setEnabled(False)
             self.form.removeRetainedLoraButton.setEnabled(False)
             self.form.editLoraMetadataButton.setEnabled(False)
+            self.form.dtStorageButton.setEnabled(False)
             return
         count, entries, (stored_count, stored_bytes) = result
         self.form.customLorasStatusLabel.setText(
@@ -2088,6 +2099,21 @@ class MainWindow:
         selected = self._selected_lora_identity() is not None
         self.form.removeRetainedLoraButton.setEnabled(not self._removing_retained_lora and selected)
         self.form.editLoraMetadataButton.setEnabled(not self._removing_retained_lora and selected)
+        self.form.dtStorageButton.setEnabled(not self._removing_retained_lora and selected)
+
+    def open_dt_storage(self) -> None:
+        """Open the DT+ storage panel using the selected retained LoRA as the real-identity metadata lookup."""
+        identity = self._selected_lora_identity()
+        if identity is None or self._removing_retained_lora:
+            return
+        sha256, size = identity
+        name = self._lora_names.get(identity, "LoRA")
+        try:
+            content = AssetContent("lora", name, sha256, size, provenance="storage listing")
+        except ValidationError as exc:
+            InlineNotice.error(self.form, "DT+ storage not read", str(exc))
+            return
+        self.dt_storage_overlay.open(content)
 
     def remove_retained_lora(self) -> None:
         """Click Remove or press Delete on a selected retained copy: no confirmation or other deletion."""

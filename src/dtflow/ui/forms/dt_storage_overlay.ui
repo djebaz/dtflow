@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ui version="4.0"><class>DtStorageOverlay</class>
+<widget class="QFrame" name="dtStorageCard"><property name="role" stdset="0"><string>galleryCard</string></property>
+<property name="sizePolicy"><sizepolicy hsizetype="Fixed" vsizetype="Maximum"/></property>
+<property name="minimumSize"><size><width>480</width><height>0</height></size></property>
+<property name="accessibleName"><string>DT+ storage</string></property>
+<layout class="QVBoxLayout" name="dtStorageLayout"><property name="leftMargin"><number>14</number></property><property name="topMargin"><number>12</number></property><property name="rightMargin"><number>14</number></property><property name="bottomMargin"><number>12</number></property><property name="spacing"><number>6</number></property>
+<item><widget class="QLabel" name="dtStorageTitle"><property name="text"><string>DT+ storage</string></property><property name="textRole" stdset="0"><string>panelHeading</string></property></widget></item>
+<item><widget class="QLabel" name="dtStorageIntro"><property name="text"><string>Files stored on the selected DT+ key. DT+ lists them only when the account is over its storage limit. Deleting frees space on this key for every app that uses it; local files and saved results are not touched.</string></property><property name="role" stdset="0"><string>secondary</string></property><property name="wordWrap"><bool>true</bool></property></widget></item>
+<item><widget class="QLabel" name="dtStorageStatus"><property name="text"><string /></property><property name="wordWrap"><bool>true</bool></property></widget></item>
+<item><widget class="QListWidget" name="dtStorageList"><property name="minimumSize"><size><width>0</width><height>180</height></size></property><property name="accessibleName"><string>Stored files</string></property><property name="selectionMode"><enum>QAbstractItemView::NoSelection</enum></property></widget></item>
+<item><widget class="QLabel" name="dtStorageSelection"><property name="text"><string /></property><property name="role" stdset="0"><string>secondary</string></property><property name="wordWrap"><bool>true</bool></property></widget></item>
+<item><widget class="QLabel" name="dtStorageError"><property name="text"><string /></property><property name="visible"><bool>false</bool></property><property name="wordWrap"><bool>true</bool></property><property name="state" stdset="0"><string>error</string></property></widget></item>
+<item><layout class="QHBoxLayout" name="dtStorageButtons"><item><widget class="QPushButton" name="dtStorageRefresh"><property name="text"><string>Read again</string></property><property name="toolTip"><string>Ask DT+ for the stored files again. Nothing is uploaded or changed.</string></property></widget></item>
+<item><spacer name="dtStorageButtonSpacer"><property name="orientation"><enum>Qt::Horizontal</enum></property><property name="sizeHint" stdset="0"><size><width>40</width><height>20</height></size></property></spacer></item>
+<item><widget class="QPushButton" name="dtStorageClose"><property name="text"><string>Close</string></property></widget></item>
+<item><widget class="QPushButton" name="dtStorageDelete"><property name="text"><string>Delete selected from DT+…</string></property><property name="enabled"><bool>false</bool></property><property name="toolTip"><string>Permanently delete the ticked files from the selected DT+ key. Asks to confirm first.</string></property></widget></item></layout></item>
+</layout></widget><resources/><connections/></ui>
