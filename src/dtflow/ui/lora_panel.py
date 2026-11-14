@@ -131,6 +131,7 @@ class LoraAssetPanel:
         self.open_storage: Callable[..., None] = lambda **_: None  # the window mounts the shared overlay
         self.refresh_holdings: Callable[[], None] = lambda: None  # the window re-reads the key's stored list
         self._holdings: KeyHoldings | None = None
+        self._picker_marks: Callable[[dict[str, str]], None] | None = None  # updates the open picker's pills
         self._prepare_storage_revision = 0
         self._prepare_files: tuple[str, ...] = ()
         self._prepare_metadata: dict[str, LoraPrepareMetadata] = {}
@@ -310,6 +311,11 @@ class LoraAssetPanel:
         self._holdings = holdings
         if holdings is not None and holdings.marked_stale and not self._runner.closed:
             self.refresh_assets()  # receipts just marked stale must stop looking confirmed here
+        if self._picker_marks is not None:
+            try:
+                self._picker_marks(self.storage_marks())  # a picker already open shows the late answer
+            except RuntimeError:
+                self._picker_marks = None  # the picker was closed and its widgets deleted
 
     def storage_marks(self) -> dict[str, str]:
         """Picker hint per custom LoRA: held by the key, or would need a re-attach. Nothing is hidden or blocked."""
@@ -468,7 +474,7 @@ class LoraAssetPanel:
                 if item.identifier not in before:
                     self._auto_bind(item.identifier)
 
-        edit_lora_selection(
+        self._picker_marks = edit_lora_selection(
             self.page,
             candidates=[name for name, _ in candidates],
             selected=self.loras,
