@@ -55,7 +55,7 @@ from dtflow.services.lora_auto_naming import normalize_previous_retained
 from dtflow.services.lora_metadata_edit import read_lora_rows
 from dtflow.services.lora_naming import label_overrides, set_label_overrides
 from dtflow.services.preflight import checkpoint_exact_version
-from dtflow.services.session import key_holdings, storage_listing
+from dtflow.services.session import observe_key
 from dtflow.services.storage_probe import probe_content
 from dtflow.services.lora_store import LoraStore
 from dtflow.services.connection import Presentation, check_connection, present_failure, present_status
@@ -238,6 +238,8 @@ class MainWindow:
 
         self._saved = saved or SavedCredentials()
         self._optional_saved = OptionalSavedCredentials(self._saved)
+        self._free_space_revision = 0  # bumps on every key/backend change and request; only the newest answer shows
+        self._free_space_busy = self._free_space_again = False
         self._summary_reads = {}
         self._startup_check_started = False
         self._check_token = None
@@ -1401,6 +1403,7 @@ class MainWindow:
         )
         self.form.endpointEdit.setEnabled(name == "local")
         self.form.credentialBox.setEnabled(name == "cloud")
+        self._forget_holdings()
         self._selection_changed()
 
     def _selection_changed(self, *_) -> None:
@@ -1615,6 +1618,7 @@ class MainWindow:
             self.form.credentialStatusLabel.setText(f"Key not switched: {code}")
             self.refresh_credentials()
             return
+        self._forget_holdings()  # hints and reads in flight belong to the previous key
         source = "environment" if choice == ENVIRONMENT else "saved"
         status = getattr(self, "_credential_status_for_switch", {})
         alias = None
@@ -2114,35 +2118,54 @@ class MainWindow:
         self.form.editLoraMetadataButton.setEnabled(not self._removing_retained_lora and selected)
         self.form.dtStorageButton.setEnabled(not self._removing_retained_lora)
 
+    def _forget_holdings(self) -> None:
+        """The key or backend changed: hints and any read still in flight belong to the old one, so show unknown."""
+        self._free_space_revision = self._free_space_revision + 1
+        self.generation.lora.set_holdings(None)
+
     def _read_dt_free_space(self) -> None:
-        """Show the selected DT+ key's free space; one metadata lookup for a made-up file, nothing uploaded or changed."""
+        """Show the selected DT+ key's free space; one metadata lookup for a made-up file, nothing uploaded or changed.
+
+        Overlapping requests coalesce: one read runs at a time and a request made meanwhile runs once after it,
+        and only the newest request's answer is shown."""
         label = self.form.dtFreeSpaceLabel
+        self._free_space_revision = self._free_space_revision + 1
         if self.form.backendCombo.currentText() != "cloud" or self.runner.closed:
             label.setText("\u00a0")
             self.dt_free_meter.setVisible(False)
             self.generation.lora.set_holdings(None)
             return
-        token = self._free_space_token = object()
         label.setText("DT+ free space on this key: reading\u2026")
         self.dt_free_meter.setVisible(False)
-        self.runner.submit(self._free_space(), lambda result, failure: self._free_space_read(result, failure, token))
+        if self._free_space_busy:
+            self._free_space_again = True
+            return
+        self._start_free_space_read()
+
+    def _start_free_space_read(self) -> None:
+        revision = self._free_space_revision
+        self._free_space_busy, self._free_space_again = True, False
+        self.runner.submit(self._free_space(), lambda result, failure: self._free_space_read(result, failure, revision))
 
     async def _free_space(self):
-        listing = await storage_listing(self.state_dir, probe_content(), saved=self._optional_saved)
-        # The same answer also tells which receipts DT+ no longer holds; a failed comparison never fails the read.
-        try:
-            holdings = await key_holdings(self.state_dir, listing, saved=self._optional_saved)
-        except Exception as exc:
-            diagnostic_event(
-                log, "app.dt_holdings_unavailable", level=logging.WARNING, data={"reason": type(exc).__name__}
-            )
+        # One backend resolves the key once: the list and the receipts compared with it belong to the same key.
+        listing, holdings = await observe_key(self.state_dir, probe_content(), saved=self._optional_saved)
+        # The selection may have moved while DT+ answered; never present one key's evidence as another's.
+        active = await self._active_credential_id()
+        if holdings.owner is not None and (active is None or active[0] != holdings.owner):
+            diagnostic_event(log, "app.dt_holdings_owner_changed", level=logging.INFO)
             holdings = None
         return listing, holdings
 
-    def _free_space_read(self, result, failure, token) -> None:
-        if token is not getattr(self, "_free_space_token", None):
-            return  # a newer read (another key or a later check) supersedes this one
+    def _free_space_read(self, result, failure, revision) -> None:
+        self._free_space_busy = False
+        if self._free_space_again and not self.runner.closed:
+            self._start_free_space_read()  # a newer request arrived while this one ran: only its answer counts
+            return
+        if revision != self._free_space_revision:
+            return  # the key or backend changed meanwhile
         listing, holdings = result if result is not None else (None, None)
+        # A failed read is unknown, never "not on key" and never "held".
         self.generation.lora.set_holdings(holdings if failure is None else None)
         label = self.form.dtFreeSpaceLabel
         if failure is not None or listing is None:
@@ -2409,6 +2432,7 @@ class MainWindow:
             level=logging.INFO,
             data={},
         )
+        self._forget_holdings()  # a saved key may become the selected one
         self.refresh_credentials()
         self._selection_changed()
         self.generation.credentials_changed()
@@ -2440,6 +2464,7 @@ class MainWindow:
                 level=logging.INFO,
                 data={},
             )
+            self._forget_holdings()
             self.refresh_credentials()
             self._selection_changed()
             self.generation.credentials_changed()

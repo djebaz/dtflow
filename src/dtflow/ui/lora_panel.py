@@ -1387,6 +1387,7 @@ class LoraAssetPanel:
             activity_strip(self.page).finish("asset")
             self._show(self.page.assetStatusLabel, Presentation(level, "Cloud preparation finished", detail))
             self.refresh_assets()
+            self.refresh_holdings()  # Prepare changed what the key holds
             return
         title = "Cloud preparation finished"
         panel_detail, full_detail, toast_detail = detail, detail, detail
@@ -1412,6 +1413,7 @@ class LoraAssetPanel:
         level = "ok" if state == "success" else "error" if state == "error" else "warning"
         self._show(self.page.assetStatusLabel, Presentation(level, title, panel_detail), tooltip=full_detail)
         self.refresh_assets()
+        self.refresh_holdings()  # Prepare changed what the key holds
 
     def _present_prepared(self, record, failure, *, bind: bool = True) -> None:
         self._set_busy(False)
@@ -1454,6 +1456,7 @@ class LoraAssetPanel:
             if bind:
                 self._bind_after_list, self._add_when_bound = record["identifier"], True
         self.refresh_assets()
+        self.refresh_holdings()  # a single Prepare changed what the key holds
 
     def _start_reconcile(self, asset_id: str, bind: str | None = None) -> None:
         if self._is_busy() or self._backend()[0] != "cloud":
@@ -1476,6 +1479,7 @@ class LoraAssetPanel:
         if bind is not None and failure is None and outcome[1].status == "confirmed":
             self._bind_after_list = bind
         self.refresh_assets()
+        self.refresh_holdings()  # a metadata check may have found the key no longer holds it
 
     def _auto_bind(self, identifier: str) -> None:
         """On cloud, reconcile the receipt of a LoRA that was just added (a metadata check) and bind it if confirmed."""

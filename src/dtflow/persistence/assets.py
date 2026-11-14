@@ -175,9 +175,11 @@ def _record(row: sqlite3.Row) -> dict[str, Any]:
 class AssetRegistry:
     """Open with ``writer=True`` to prepare/reconcile (exclusive), or read-only for inspection."""
 
-    def __init__(self, directory: Path, *, writer: bool = False):
+    def __init__(self, directory: Path, *, writer: bool = False, recover: bool = True):
         self.directory = Path(directory).resolve()
         self.writer = writer
+        # ``recover=False`` is a scoped writer: it takes the lock but leaves other operations' states alone.
+        self.recover = recover
         self._lock = None
         self._ready = False
 
@@ -215,7 +217,7 @@ class AssetRegistry:
                 db.execute("BEGIN IMMEDIATE")
                 try:
                     # Writers are exclusive, so an unresolved operation here belongs to a process that no longer runs.
-                    for table in ("asset_operations", "assets"):
+                    for table in ("asset_operations", "assets") if self.recover else ():
                         db.execute(
                             f"UPDATE {table} SET state='unknown', evidence='interrupted', updated_at_utc=? "
                             "WHERE state IN ('intent','transferring')",
@@ -597,6 +599,27 @@ class AssetRegistry:
     async def invalidate_scope(self, asset_id: str, credential_id: str, identifier: str) -> None:
         """Invalidate only this key/name receipt; shared bytes and other key records remain valid."""
         return await self._run(self._write, self._invalidate_scope, asset_id, credential_id, identifier)
+
+    async def invalidate_observed(self, credential_id: str, observed: tuple[tuple[str, str, str], ...]) -> int:
+        """Mark only the observed receipts of this key missing, in one transaction; returns how many changed.
+
+        ``observed`` are ``(asset_id, identifier, remote_id)``. A receipt that changed since it was observed (another
+        remote reference, or no longer confirmed) is left alone, so a later Prepare is never undone by an old list."""
+        return await self._run(self._write, self._invalidate_observed, credential_id, observed)
+
+    @classmethod
+    def _invalidate_observed(cls, db, credential_id: str, observed) -> int:
+        changed = 0
+        for asset_id, identifier, remote_id in observed:
+            current = db.execute(
+                "SELECT 1 FROM asset_key_receipts WHERE asset_id=? AND credential_id=? AND identifier=? "
+                "AND remote_id=? AND state='confirmed'",
+                (asset_id, credential_id, identifier, remote_id),
+            ).fetchone()
+            if current:
+                cls._invalidate_scope(db, asset_id, credential_id, identifier)
+                changed += 1
+        return changed
 
     @staticmethod
     def _invalidate_scope(db, asset_id: str, credential_id: str, identifier: str) -> None:

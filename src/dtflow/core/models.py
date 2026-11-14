@@ -182,6 +182,7 @@ class StorageListing:
     files: tuple[StoredAsset, ...] = ()
     free_space: int | None = None  # as reported by DT+; bytes are inferred, not confirmed
     skipped: int = 0  # entries DTFlow could not use (never shown or deleted)
+    complete: bool = False  # DT+ gave an explicit entry list (possibly empty) that was read in full, nothing skipped
     local_keys: frozenset[str] | None = field(
         default=None, repr=False
     )  # delete keys with a local receipt; None = unread
@@ -202,6 +203,10 @@ class KeyHoldings:
     receipts: int
     marked_stale: int
     updated: bool
+    owner: str | None = None  # opaque identity of the key this observation belongs to; never applies to another key
+    stale: tuple[tuple[str, str, str], ...] = field(
+        default=(), repr=False, compare=False
+    )  # (asset_id, identifier, remote_id) of receipts the complete list lacks; written by the caller, not here
 
 
 @dataclass(frozen=True, slots=True)

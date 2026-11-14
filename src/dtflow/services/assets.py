@@ -1368,44 +1368,29 @@ class AssetService:
                 seen[item.key] = max(times)
         return frozenset(seen), seen
 
-    async def key_holdings(self, listing: StorageListing, *, mark: bool = True) -> KeyHoldings:
-        """Compare this key's confirmed receipts with a complete stored list; receipts the list lacks become stale.
+    async def key_holdings(self, listing: StorageListing) -> KeyHoldings:
+        """Compare this key's confirmed receipts with a complete stored list (read-only; nothing is changed here).
 
-        Only a list DT+ gave in full (over-limit answer, no skipped entry) is evidence. Without one nothing is marked
-        and the receipts alone say what the key probably holds. ``mark`` needs the exclusive asset writer; a registry
-        that cannot be written leaves the receipts as they were and reports ``updated=False``."""
+        Only an explicit list DT+ gave in full (over-limit answer, nothing skipped; an empty list counts) is evidence.
+        Without one nothing is judged missing and the receipts alone say what the key probably holds. Receipts the
+        list lacks come back in ``stale`` with this key's opaque identity for the caller to apply through
+        ``AssetRegistry.invalidate_observed``; this method never opens the exclusive writer."""
         try:
             credential = await self.backend.asset_credential_identity()
             rows = await self.registry.confirmed_scope_rows(credential)
         except (PersistenceError, AssetsBusyError, BackendError, ValidationError, OSError) as exc:
             diagnostic_event(log, "assets.holdings_unread", level=logging.WARNING, data={"reason": type(exc).__name__})
             return KeyHoldings(False, frozenset(), 0, 0, False)
-        complete = listing.over_limit and not listing.skipped and bool(listing.files)
+        complete = listing.over_limit and listing.complete
         stale = (
             tuple(
-                (asset_id, identifier)
+                (asset_id, identifier, remote_id)
                 for asset_id, identifier, remote_id, _ in rows
                 if not any(_receipt_matches(remote_id, item.key) for item in listing.files)
             )
             if complete
             else ()
         )
-        marked, updated = 0, True
-        if stale and mark:
-            try:
-                for asset_id, identifier in stale:
-                    await self.registry.invalidate_scope(asset_id, credential, identifier)
-                    marked += 1
-            except (PersistenceError, AssetsBusyError, BackendError, ValidationError, OSError) as exc:
-                updated = False
-                diagnostic_event(
-                    log,
-                    "assets.stale_receipts_not_updated",
-                    level=logging.WARNING,
-                    data={"reason": type(exc).__name__, "stale": len(stale)},
-                )
-        elif stale:
-            updated = False
         diagnostic_event(
             log,
             "assets.holdings_compared",
@@ -1415,13 +1400,18 @@ class AssetService:
                 "receipts": len(rows),
                 "complete": complete,
                 "stale": len(stale),
-                "marked": marked,
                 **self._key_diagnostics(),
             },
         )
-        gone = {identifier for _, identifier in stale}
+        gone = {identifier for _, identifier, _ in stale}
         return KeyHoldings(
-            complete, frozenset(identifier for _, identifier, _, _ in rows) - gone, len(rows), marked, updated
+            complete,
+            frozenset(identifier for _, identifier, _, _ in rows) - gone,
+            len(rows),
+            0,
+            True,
+            credential,
+            stale,
         )
 
     async def delete_storage(self, selected: tuple) -> dict:

@@ -53,7 +53,7 @@ from dtflow.persistence.assets import AssetRegistry, AssetsBusyError, newest_per
 from dtflow.persistence.gallery_snapshot import schedule_publish
 from dtflow.persistence.inventory_cache import load_inventory, save_inventory
 from dtflow.persistence.settings import load_cloud_concurrency
-from dtflow.persistence.store import SQLiteAttempts
+from dtflow.persistence.store import PersistenceError, SQLiteAttempts
 from dtflow.services.assets import AssetService, possible_missing_asset
 from dtflow.services.credentials import EnvironmentCredentials, resolve_credentials
 from dtflow.services.generation import GenerationService
@@ -962,15 +962,37 @@ async def storage_listing(
         return await service.storage_listing(content)
 
 
-async def key_holdings(state: Path, listing: StorageListing, *, saved: CredentialProvider | None = None) -> KeyHoldings:
-    """Compare the selected key's receipts with a stored list and mark the missing ones stale (writer, best effort)."""
+async def observe_key(
+    state: Path, content: AssetContent, *, saved: CredentialProvider | None = None
+) -> tuple[StorageListing, KeyHoldings]:
+    """One read of the selected key: its stored list and the comparison with this computer's receipts.
+
+    A single backend resolves the key once, so the list and the receipts always belong to the same key, and the
+    result carries that key's opaque identity (``KeyHoldings.owner``). The read is read-only. Receipts the complete
+    list lacks are then marked stale for that same identity in a scoped write (no startup recovery of other
+    operations); a busy or unwritable registry leaves them as they were and reports ``updated=False``."""
+    async with open_assets(state, saved=saved, read_only=True) as service:
+        listing = await service.storage_listing(content)
+        holdings = await service.key_holdings(listing)
+    if not holdings.stale or holdings.owner is None:
+        return listing, holdings
+    registry = AssetRegistry(state, writer=True, recover=False)
     try:
-        async with open_assets(state, saved=saved) as service:
-            return await service.key_holdings(listing)
-    except AssetsBusyError:
-        # Another process is writing assets: report what the receipts say without touching them.
-        async with open_assets(state, saved=saved, read_only=True) as service:
-            return await service.key_holdings(listing, mark=False)
+        try:
+            await registry.open()
+            changed = await registry.invalidate_observed(holdings.owner, holdings.stale)
+        finally:
+            await registry.aclose()
+    except (PersistenceError, AssetsBusyError, OSError) as exc:
+        diagnostic_event(
+            log,
+            "assets.stale_receipts_not_updated",
+            level=logging.WARNING,
+            data={"reason": type(exc).__name__, "stale": len(holdings.stale)},
+        )
+        return listing, replace(holdings, updated=False)
+    diagnostic_event(log, "assets.stale_receipts_marked", data={"stale": len(holdings.stale), "marked": changed})
+    return listing, replace(holdings, marked_stale=changed)
 
 
 async def delete_storage(state: Path, selected: tuple, *, saved: CredentialProvider | None = None) -> dict:
