@@ -657,14 +657,16 @@ class AssetRegistry:
             *_effective_version(row),
         )
 
-    async def choices(self) -> tuple[PreparedAsset, ...]:
+    async def choices(self, *, include_missing: bool = False) -> tuple[PreparedAsset, ...]:
         """Known logical names, including those sharing content but prepared under different keys.
 
         These are local *candidates*. Dispatch must still resolve each one in the selected key's bucket.
+        ``include_missing`` additionally exposes previously confirmed key receipts marked missing, solely as
+        candidates for a fresh dispatch-time check/restoration; it does not treat them as currently confirmed.
         """
-        return await self._run(self._choices)
+        return await self._run(self._choices, include_missing)
 
-    def _choices(self) -> tuple[PreparedAsset, ...]:
+    def _choices(self, include_missing: bool = False) -> tuple[PreparedAsset, ...]:
         if not self.path.exists():
             return ()
         with closing(self._connect()) as db:
@@ -678,7 +680,8 @@ class AssetRegistry:
                 f"SELECT a.*, {_LORA_COLUMNS}, k.identifier AS logical_name, "
                 "k.remote_id AS logical_remote, k.confirmed_at_utc AS logical_confirmed "
                 f"FROM assets a{_LORA_JOIN} JOIN asset_key_receipts k ON a.asset_id=k.asset_id "
-                "WHERE a.kind='lora' AND k.state='confirmed'"
+                "WHERE a.kind='lora' AND "
+                + ("k.state IN ('confirmed','missing')" if include_missing else "k.state='confirmed'")
             ):
                 from dataclasses import replace
 

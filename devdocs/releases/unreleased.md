@@ -1,5 +1,7 @@
 # Unreleased
 
+- Generation now resolves known custom LoRA selections through saved content evidence even when the picker could not bind a currently confirmed receipt. Previously confirmed missing-key records are candidates for fresh verification/restoration, not proof of availability. If DT+ requires upload but the managed file is absent, generation stops before submission and explains that the original file must be obtained again or the LoRA removed. It must not silently generate without the selected custom override. Static checks only; owner reproduction recheck pending (#443, PR #450).
+
 - Generation storage recovery excludes its required LoRAs from automatic free-space selection and explains when remaining visible candidates cannot cover the shortfall. Shared ownership invalidation also clears open storage after saving/removing keys or switching backend; Local does not trigger cloud reads. Explicit deletion consent and owner validation remain unchanged. Source/static checks only; owner smoke pending (#443, PR #450).
 
 - Storage's **☑︎ Cloud only** action and summary count now use the same managed-file evidence as the amber Cloud only pill, replacing the unrelated not-used-here record check. The action selects visible matching rows only and never deletes without confirmation. Static checks only; owner visual recheck pending (PR #450).

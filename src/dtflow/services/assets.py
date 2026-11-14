@@ -30,6 +30,7 @@ from dtflow.core.models import (
     KeyHoldings,
     PreparedAsset,
     RemoteOutcome,
+    ResolvedGenerationRequest,
     StorageListing,
     SubmissionStage,
     ValidationError,
@@ -1283,8 +1284,9 @@ class AssetService:
                 raise _failure(
                     ErrorCategory.VALIDATION,
                     "prepared_asset_no_local_copy",
-                    f"LoRA {asset} is missing on DT+ and no verified local copy is kept; run `assets prepare` again."
-                    " Nothing was submitted.",
+                    f"DT+ requires a local file for LoRA {asset}, but its managed copy is missing. "
+                    "Prepare it again if you can obtain the original file, or remove it from this generation. "
+                    "Nothing was submitted.",
                 )
             await asyncio.to_thread(store.verify, retained)
         except ValidationError as exc:
@@ -1335,6 +1337,42 @@ class AssetService:
         return restored
 
     # -- DT+ storage ------------------------------------------------------------------------------------------------
+
+    async def resolve_selected(self, request: ResolvedGenerationRequest) -> ResolvedGenerationRequest:
+        """Bind known custom selections for dispatch-time verification, never treating missing receipts as held."""
+        if self.state is None or not request.loras:
+            return request
+        registry = AssetRegistry(self.state)
+        await registry.open()
+        try:
+            choices = await registry.choices(include_missing=True)
+            records = await registry.list()
+            current = await asyncio.to_thread(self.store.current_by_name) if self.store is not None else {}
+            newest = {item.identifier: item for item in newest_per_name(choices, current)}
+            known = {record["identifier"] for record in records}
+            known.update(record.get("managed_identifier") for record in records)
+            bound = {item.identifier: item for item in request.prepared_assets}
+            added = 0
+            for selection in request.loras:
+                name = selection.identifier
+                if name in bound:
+                    continue
+                if name in newest:
+                    bound[name] = newest[name]
+                    added += 1
+                elif name in known:
+                    raise _failure(
+                        ErrorCategory.VALIDATION,
+                        "prepared_asset_reference_missing",
+                        f"LoRA {PureWindowsPath(name).name} has no usable saved cloud reference. "
+                        "Prepare it again from the original file, or remove it from this generation. Nothing was submitted.",
+                    )
+            prepared = await registry.resolve_prepared(tuple(bound.values()))
+        finally:
+            await registry.aclose()
+        if added:
+            diagnostic_event(log, "assets.selected_bound", data={"count": added})
+        return replace(request, prepared_assets=prepared)
 
     async def storage_listing(self, content: AssetContent, *, protect: tuple[str, ...] = ()) -> StorageListing:
         """The selected key's stored files as DT+ reports them. Read-only; nothing is uploaded or changed."""
