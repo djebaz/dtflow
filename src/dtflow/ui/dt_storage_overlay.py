@@ -87,13 +87,12 @@ class DtStorageOverlay(QObject):
         _Resize(host, self.overlay)
         self.form.dtStorageClose.clicked.connect(self.close)
         self.form.dtStorageRefresh.clicked.connect(self.refresh)
-        self.form.dtStorageProbe.clicked.connect(self.probe)
         self.form.dtStorageDelete.clicked.connect(self._delete_clicked)
         self.form.dtStorageList.itemChanged.connect(self._selection_changed)
         escape = QShortcut(QKeySequence(Qt.Key.Key_Escape), self.overlay)
         escape.setContext(Qt.ShortcutContext.WidgetWithChildrenShortcut)
         escape.activated.connect(self.close)
-        self._content: AssetContent | None = None
+        self._content: AssetContent | None = None  # the lookup in flight
         self._files: tuple[StoredAsset, ...] = ()
         self._busy = False
         self._armed = False
@@ -103,9 +102,8 @@ class DtStorageOverlay(QObject):
     def is_open(self) -> bool:
         return self.overlay.isVisible()
 
-    def open(self, content: AssetContent | None) -> None:
-        """Show the panel; with a retained LoRA's real local identity, read the listing once."""
-        self._content = content
+    def open(self) -> None:
+        """Show the panel and read the listing once with a dummy-file lookup (see ``probe``)."""
         self._error("")
         self._files = ()
         self.form.dtStorageList.clear()
@@ -114,12 +112,7 @@ class DtStorageOverlay(QObject):
         self.overlay.setGeometry(self.overlay.parentWidget().rect())
         self.overlay.raise_()
         self.overlay.setVisible(True)
-        if content is None:
-            self.form.dtStorageStatus.setText(
-                "No LoRA selected. Use Check with dummy file, or close this and select a LoRA first."
-            )
-        else:
-            self.refresh()
+        self.refresh()
         self.form.dtStorageClose.setFocus()
 
     def close(self) -> None:
@@ -135,8 +128,7 @@ class DtStorageOverlay(QObject):
 
     def _set_busy(self, busy: bool) -> None:
         self._busy = busy
-        self.form.dtStorageRefresh.setEnabled(not busy and self._content is not None)
-        self.form.dtStorageProbe.setEnabled(not busy)
+        self.form.dtStorageRefresh.setEnabled(not busy)
         self.form.dtStorageClose.setEnabled(not busy)
         self.form.dtStorageList.setEnabled(not busy)
         self._selection_changed()
@@ -164,8 +156,9 @@ class DtStorageOverlay(QObject):
 
     # -- listing --------------------------------------------------------------------------------------------------
     def refresh(self) -> None:
-        if self._busy or self._content is None or self.runner.closed:
+        if self._busy or self.runner.closed:
             return
+        self._content = self._probe_content()
         self._error("")
         self._files = ()
         self.form.dtStorageList.clear()
@@ -174,15 +167,12 @@ class DtStorageOverlay(QObject):
         self._set_busy(True)
         self.runner.submit(storage_listing(self.state_dir, self._content, saved=self._saved()), self._listed)
 
-    def probe(self) -> None:
-        """One lookup for a made-up file bigger than the free space, so DT+ answers with its over-limit list.
+    def _probe_content(self) -> AssetContent:
+        """A made-up file bigger than the free space, so DT+ answers with its over-limit list when the key is full.
 
-        The hash is random per click and never stored; nothing is uploaded and any upload URL DT+ returns is ignored."""
-        if self._busy or self.runner.closed:
-            return
+        The hash is random per lookup and never stored; nothing is uploaded and any upload URL DT+ returns is ignored."""
         size = (self._free + 1024**2) if self._free is not None else _PROBE_FALLBACK
-        self._content = AssetContent("lora", _PROBE_NAME, secrets.token_hex(32), size, provenance="storage probe")
-        self.refresh()
+        return AssetContent("lora", _PROBE_NAME, secrets.token_hex(32), size, provenance="storage probe")
 
     def _listed(self, listing: StorageListing | None, failure) -> None:
         self._set_busy(False)

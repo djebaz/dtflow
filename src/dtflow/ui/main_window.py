@@ -34,7 +34,7 @@ from dtflow import startup
 from dtflow.build import display_identity
 from dtflow.composition import BACKENDS, BackendSelection
 from dtflow.core.gallery import GalleryQuery
-from dtflow.core.models import AssetContent, BackendError, ValidationError, eligible_model_ids
+from dtflow.core.models import BackendError, ValidationError, eligible_model_ids
 from dtflow.diagnostics import cloud_key_data, event as diagnostic_event
 from dtflow.logging_setup import configured_directory, development_mode
 from dtflow.paths import application_state_dir
@@ -2101,21 +2101,9 @@ class MainWindow:
         self.form.dtStorageButton.setEnabled(not self._removing_retained_lora)
 
     def open_dt_storage(self) -> None:
-        """Open the DT+ storage panel using the selected retained LoRA as the real-identity metadata lookup."""
-        identity = self._selected_lora_identity()
-        if self._removing_retained_lora:
-            return
-        if identity is None:
-            self.dt_storage_overlay.open(None)
-            return
-        sha256, size = identity
-        name = self._lora_names.get(identity, "LoRA")
-        try:
-            content = AssetContent("lora", name, sha256, size, provenance="storage listing")
-        except ValidationError as exc:
-            InlineNotice.error(self.form, "DT+ storage not read", str(exc))
-            return
-        self.dt_storage_overlay.open(content)
+        """Open the DT+ storage panel; it reads the selected key's stored files with one dummy-file lookup."""
+        if not self._removing_retained_lora:
+            self.dt_storage_overlay.open()
 
     def remove_retained_lora(self) -> None:
         """Click Remove or press Delete on a selected retained copy: no confirmation or other deletion."""

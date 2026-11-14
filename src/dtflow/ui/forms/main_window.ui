@@ -804,7 +804,7 @@
                   </widget></item>
                    <item><widget class="QPushButton" name="dtStorageButton">
                    <property name="text"><string>DT+ storage…</string></property>
-                   <property name="toolTip"><string>Read the selected DT+ key's stored files and free space, and delete files from DT+ if you choose. Sends one metadata request for the selected LoRA, or for a made-up file if you choose Check with dummy file; nothing is uploaded.</string></property>
+                   <property name="toolTip"><string>Read the selected DT+ key's stored files and free space, and delete files from DT+ if you choose. Sends one lookup for a made-up file; nothing is uploaded.</string></property>
                    
                   </widget></item>
                    <item><widget class="QPushButton" name="removeRetainedLoraButton">
