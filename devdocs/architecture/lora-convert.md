@@ -10,6 +10,11 @@
 - `detect.py` holds the header-only source-family detector and `services/lora_convert_prepare.py` the Prepare-time conversion (below). `__main__.py` exposes `uv run python -m dtflow.services.lora_convert`. Single files write one destination; folders and filename globs are non-recursive and case-insensitive, and select only `.safetensors`. A batch skips existing outputs unless `-w/--overwrite` stages explicit replacement. Individual failures do not prevent other items from proceeding. Every batch writes a schema 1 JSON report.
 - `-a/--analyze` enables schema 2 reports for batch **or single-file** conversions. `analysis.py` reports source dtype/rank/alpha, mapping coverage and possible shape problems. After a successful conversion, the CLI invokes existing `services.lora_family` functions to check the **output CKPT** structure and detect its family. This output check is not proof of numerical equivalence or applied LoRA effect; source detection lives in `detect.py` (below).
 
+## Conversion correctness and history (#452)
+
+- An alpha tensor is optional, but when present it must contain exactly one value. The shared numeric reader rejects empty or multi-value alpha tensors with a converter-domain error before any Prepare upload; valid scalar scaling is unchanged.
+- Retaining an identical conversion no longer adds provenance whose only difference is `converted_at_utc`. The earliest matching history record and its timestamp are kept; source observations, converter versions and other meaningful differences remain separate. Existing historical entries are not rewritten, and content retention, no-overwrite and explicit upload consent are unchanged.
+
 ## Prepare integration (#401, #402)
 
 - **Picker and rows.** The Prepare picker takes `.ckpt` and `.safetensors`. A `.safetensors` row is labelled as a source, offers the registry families (F16 output only) and keeps the family dropdown empty and required until one is chosen or detected. Selecting a file never converts, uploads or saves metadata.

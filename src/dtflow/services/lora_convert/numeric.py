@@ -141,7 +141,14 @@ def to_f16(values: np.ndarray) -> np.ndarray:
 
 
 def scalar(array: np.ndarray) -> np.float32:
-    return np.float32(np.asarray(array, dtype=np.float32).reshape(-1)[0])
+    """Read one LoRA alpha value, rejecting malformed alpha tensors."""
+    values = np.asarray(array, dtype=np.float32).reshape(-1)
+    if values.size != 1:
+        raise UnsupportedLoraFormatError(
+            f"LoRA alpha must contain exactly one value; found {values.size}.",
+            alpha_value_count=int(values.size),
+        )
+    return np.float32(values[0])
 
 
 def scale_up(tensor_f16: np.ndarray, alpha: np.float32 | None, scale: float, rank: int) -> np.ndarray:
