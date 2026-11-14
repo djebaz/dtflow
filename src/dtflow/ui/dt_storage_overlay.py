@@ -1,13 +1,12 @@
-"""In-window DT+ storage panel over Connections (#440): list the selected key's stored files, delete chosen ones.
+"""In-window DT+ storage panel (#440/#442): list the selected key's stored files, delete chosen ones.
 
-Listing is one explicit metadata request made for a retained LoRA's real identity; DT+ answers with its file list only
+Listing is one explicit metadata request for a made-up oversized identity; DT+ answers with its file list only
 when the account is over its storage limit. Delete is owner-confirmed (a second click on the same button), runs once
 with no retry, and never touches local files, retained copies or saved results."""
 
 from __future__ import annotations
 
 import html
-import secrets
 from pathlib import Path
 from typing import Awaitable, Callable
 
@@ -29,14 +28,11 @@ from PySide6.QtWidgets import (
 
 from dtflow.core.models import AssetContent, StorageListing, StoredAsset
 from dtflow.services.session import delete_storage, storage_listing
+from dtflow.services.dt_storage import storage_probe_content
 from dtflow.ui.runner import AsyncRunner
 from dtflow.ui.theme import load_tokens
 
 _DELETE_TEXT = "Delete selected from DT+…"
-_PROBE_NAME = "dtflow-storage-probe.ckpt"
-_PROBE_FALLBACK = (
-    30 * 1024**3
-)  # free space unknown: larger than any account headroom we expect (10 GiB worked, 30 GiB for margin)
 
 
 def megabytes(size: int) -> str:
@@ -408,8 +404,7 @@ class DtStorageOverlay(QObject):
 
         The hash is random per lookup and never stored; nothing is uploaded and any upload URL DT+ returns is ignored."""
         free = self._free.get(key) if key is not None else None
-        size = (free + 1024**2) if free is not None else _PROBE_FALLBACK
-        return AssetContent("lora", _PROBE_NAME, secrets.token_hex(32), size, provenance="storage probe")
+        return storage_probe_content(free)
 
     def _listed(self, result: tuple[str | None, StorageListing] | None, failure) -> None:
         self._set_busy(False)

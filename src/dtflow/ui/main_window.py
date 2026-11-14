@@ -588,14 +588,15 @@ class MainWindow:
             on_closed=lambda: form.retainedLorasTable.setFocus(),
         )
         self.dt_storage_overlay = DtStorageOverlay(
-            form.connectionWorkspaceScroll,
+            form.centralWidget(),
             self.runner,
             self.state_dir,
             lambda: self._optional_saved,
             active_credential=self._active_credential_id,
             on_changed=lambda: None,
-            on_closed=lambda: form.retainedLorasTable.setFocus(),
+            on_closed=self._dt_storage_closed,
         )
+        self.generation.lora.open_storage = self.open_dt_storage
         form.dtStorageButton.clicked.connect(self.open_dt_storage)
         self._remove_lora_shortcut = QShortcut(QKeySequence("Delete"), form.retainedLorasTable)
         self._remove_lora_shortcut.setContext(Qt.ShortcutContext.WidgetWithChildrenShortcut)
@@ -2105,6 +2106,12 @@ class MainWindow:
         """Open the DT+ storage panel; it reads the selected key's stored files with one dummy-file lookup."""
         if not self._removing_retained_lora:
             self.dt_storage_overlay.open()
+
+    def _dt_storage_closed(self) -> None:
+        if self.generation.lora._prepare_editor is not None:
+            self.generation.lora.refresh_prepare_storage()
+        else:
+            self.form.retainedLorasTable.setFocus()
 
     def remove_retained_lora(self) -> None:
         """Click Remove or press Delete on a selected retained copy: no confirmation or other deletion."""

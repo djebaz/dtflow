@@ -29,6 +29,7 @@ from dtflow.core.models import (
 from dtflow.diagnostics import asset_ref_data, event as diagnostic_event
 from dtflow.logging_setup import development_mode
 from dtflow.services.catalogue import Catalogue, FAMILY_LABELS, bundled_exact_version
+from dtflow.services.dt_storage import reported_free_space, storage_probe_content, storage_refusal, storage_size
 from dtflow.services.connection import (
     Presentation,
     present_asset_failure,
@@ -61,6 +62,7 @@ from dtflow.services.session import (
     prepare_asset,
     reconcile_asset,
     selection_for,
+    storage_listing,
 )
 from dtflow.ui.activity_bar import clock
 from dtflow.ui.activity_strip import activity_strip
@@ -124,6 +126,7 @@ class LoraAssetPanel:
         self._runner, self._backend, self._saved = runner, backend_source, saved_source
         self._state, self._build, self._is_busy, self._set_busy = Path(state_dir), build_request, is_busy, set_busy
         self.choose_asset_file = _choose_asset_file
+        self.open_storage: Callable[[], None] = lambda: None  # the window mounts the shared overlay
         self._prepare_files: tuple[str, ...] = ()
         self._prepare_metadata: dict[str, LoraPrepareMetadata] = {}
         self._prepare_source_sha: dict[str, str] = {}
@@ -549,6 +552,7 @@ class LoraAssetPanel:
             paths,
             on_prepare=self._authorize_prepare,
             on_inspect_progress=lambda *report: self._inspect_progress(holder[0] if holder else None, *report),
+            on_storage=self._open_prepare_storage,
         )
         editor = self._prepare_editor
         holder.append(editor)
@@ -676,6 +680,13 @@ class LoraAssetPanel:
             saved_unreadable = False
         except Exception:  # Prepare still works; but then no suggestion may replace what might be a saved value
             saved_triggers, saved_unreadable = {}, True
+        listing = None
+        if not self.preparing:
+            try:
+                listing = await storage_listing(self._state, storage_probe_content(), saved=self._saved())
+            except Exception:
+                # A read-only advisory failure must not prevent explicit ordinary Prepare. No raw exception details.
+                diagnostic_event(log, "assets.prepare_storage_unavailable", data={"count": len(paths)})
         return (
             evidence,
             occupied,
@@ -686,6 +697,7 @@ class LoraAssetPanel:
             descriptive,
             saved_triggers,
             saved_unreadable,
+            listing,
         )
 
     def _inspected_prepare_editor(self, editor, eligible, result, failure) -> None:
@@ -698,8 +710,12 @@ class LoraAssetPanel:
             )
             return
         if result is not None:
+            context = self._prepare_editor_context
+            if not self._owns_prepare_context(context):
+                return  # a late advisory/inspection result belongs to another owner
             evidence, occupied, invalid, conversions, converter_families, detections, *extra = result
-            descriptive, saved_triggers, saved_unreadable = extra if len(extra) == 3 else ((), {}, False)
+            descriptive, saved_triggers, saved_unreadable = extra[:3] if len(extra) >= 3 else ((), {}, False)
+            listing = extra[3] if len(extra) > 3 else None
             editor.set_inspection(
                 evidence,
                 eligible,
@@ -712,6 +728,50 @@ class LoraAssetPanel:
                 saved_triggers=saved_triggers,
                 saved_triggers_unreadable=saved_unreadable,
             )
+            editor.set_storage(listing.free_space if listing else None, listing.files if listing else ())
+
+    def _owns_prepare_context(self, context) -> bool:
+        return (
+            context is not None
+            and self._backend()[0] == "cloud"
+            and context[0] == self._backend()
+            and context[1] == self._ownership_revision
+            and context[2] is self._saved()
+        )
+
+    def _open_prepare_storage(self) -> None:
+        context = self._prepare_editor_context
+        if self._runner.closed or self.preparing or self._is_busy() or not self._owns_prepare_context(context):
+            return
+        self.open_storage()
+
+    def refresh_prepare_storage(self) -> None:
+        """Refresh an open editor after closing storage, never retry its failed rows."""
+        editor, context = self._prepare_editor, self._prepare_editor_context
+        if (
+            self._runner.closed
+            or self.preparing
+            or self._is_busy()
+            or editor is None
+            or not editor.active()
+            or not self._owns_prepare_context(context)
+        ):
+            return
+
+        def listed(listing, failure):
+            if (
+                self._runner.closed
+                or editor is not self._prepare_editor
+                or not editor.active()
+                or not self._owns_prepare_context(context)
+            ):
+                return
+            editor.set_storage(
+                listing.free_space if listing and failure is None else None,
+                listing.files if listing and failure is None else (),
+            )
+
+        self._runner.submit(storage_listing(self._state, storage_probe_content(), saved=context[2]), listed)
 
     def _authorize_prepare(self, chosen: list[tuple[Path, LoraPrepareMetadata]]) -> None:
         """Admit only explicitly approved, metadata-complete rows under the existing owner."""
@@ -734,6 +794,8 @@ class LoraAssetPanel:
             or self._saved() is not self._prepare_saved
         ):
             return
+        if self._prepare_editor is not None:
+            chosen = self._prepare_editor.prioritize_held(chosen)
         # A file that already settled may be sent again by an explicit Re-Prepare; one still queued may not.
         queued = set(self._prepare_files[self._prepare_index :]) if self.preparing else set()
         selected = {name: metadata for path, metadata in chosen if (name := str(path)) not in queued}
@@ -777,6 +839,7 @@ class LoraAssetPanel:
             self._prepare_next()
         if self._prepare_editor is not None:
             self._prepare_editor.admitted([Path(p) for p in selected])
+            self._prepare_editor.form.prepareStorageButton.setEnabled(False)
 
     def _track_prepare_files(self, selected) -> None:
         """Register admitted files with the progress model, in the same order as ``_prepare_files``."""
@@ -916,6 +979,7 @@ class LoraAssetPanel:
         self._prepare_progress.start_file(index, convert=converting)
         self._render_prepare()
         converted_sha: list[str | None] = [None]
+        converted_size: list[int | None] = [None]
 
         async def run_one():
             path = source
@@ -990,6 +1054,7 @@ class LoraAssetPanel:
                 path = result.retained.path
                 prepared_metadata = result.metadata or metadata
                 converted_sha[0] = result.retained.sha256
+                converted_size[0] = result.retained.size
                 output_size = result.retained.size
                 shown_name = result.retained.path.name  # the managed checkpoint, not the selected source
                 relay(
@@ -1021,7 +1086,9 @@ class LoraAssetPanel:
 
         self._runner.submit(
             run_one(),
-            lambda record, failure: self._prepared(record, failure, converted_sha=converted_sha[0]),
+            lambda record, failure: self._prepared(
+                record, failure, converted_sha=converted_sha[0], converted_size=converted_size[0]
+            ),
         )
 
     def _prepare_log_reference(self, record: dict | None, *, converted_sha: str | None = None) -> dict:
@@ -1046,7 +1113,9 @@ class LoraAssetPanel:
             reference["receipt"] = reference["asset_id"]
         return reference
 
-    def _prepared(self, record, failure, *, converted_sha: str | None = None) -> None:
+    def _prepared(
+        self, record, failure, *, converted_sha: str | None = None, converted_size: int | None = None
+    ) -> None:
         if self._prepare_files:
             self._prepare_last = record, failure
             state = record.get("state") if record is not None and failure is None else None
@@ -1064,13 +1133,26 @@ class LoraAssetPanel:
             self._prepare_final[self._prepare_files[self._prepare_index]] = settled
             self._settle_prepare_progress(record, outcome, converted_sha=converted_sha)
             if self._prepare_editor is not None:
+                detail = present_asset_failure(failure).detail if failure is not None else None
+                if storage_refusal(failure):
+                    free = reported_free_space(failure)
+                    size = converted_size
+                    if size is None and Path(self._prepare_files[self._prepare_index]).suffix.casefold() == ".ckpt":
+                        try:
+                            size = Path(self._prepare_files[self._prepare_index]).stat().st_size
+                        except OSError:
+                            pass
+                    needed = storage_size(size) if size is not None else "unknown size"
+                    available = storage_size(free) if free is not None else "unknown free space"
+                    detail = f"Needs {needed}; {available} on this DT+ key. Free storage, then explicitly Re-Prepare."
+                    self._prepare_editor.set_storage(free, needed=size)
                 self._prepare_editor.progress(Path(self._prepare_files[self._prepare_index]), None)
                 self._prepare_editor.completed(
                     Path(self._prepare_files[self._prepare_index]),
                     "Prepared" if outcome == "confirmed" else "Failed" if outcome == "failed" else "Outcome unknown",
-                    # Re-Prepare only answers the accepted-managed-filename refusal; every other failure is final.
-                    can_reprepare=isinstance(failure, NameAlreadyAcceptedError),
-                    detail=present_asset_failure(failure).detail if failure is not None else None,
+                    can_reprepare=isinstance(failure, NameAlreadyAcceptedError) or storage_refusal(failure),
+                    storage_failure=storage_refusal(failure),
+                    detail=detail,
                 )
                 self._release_prepare_editor_if_all_checked()
             if outcome != "confirmed":
@@ -1200,6 +1282,8 @@ class LoraAssetPanel:
         self._prepare_saved = None
         self._set_busy(False)
         self._resume_hashing()
+        if self._prepare_editor is not None and self._prepare_editor.active():
+            self._prepare_editor.form.prepareStorageButton.setEnabled(True)
         if total == 1 and done == 1:
             same_owner = self._backend() == self._prepare_backend and self._ownership_revision == self._prepare_revision
             self._present_prepared(*self._prepare_last, bind=same_owner)
