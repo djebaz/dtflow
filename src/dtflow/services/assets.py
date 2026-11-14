@@ -158,6 +158,11 @@ def _guarded(progress: Callable[[PrepareEvent], None] | None, reference: dict) -
     return call
 
 
+def _receipt_matches(remote_id: str, stored_key: str) -> bool:
+    """Whether a receipt's remote reference points at the stored file with this delete key."""
+    return remote_id == stored_key or (len(remote_id) >= 32 and remote_id in stored_key)
+
+
 class AssetService:
     def __init__(
         self,
@@ -1335,7 +1340,25 @@ class AssetService:
         lister = getattr(self.backend, "list_stored_assets", None)
         if lister is None:
             raise ValidationError("The selected backend cannot list DT+ storage.")
-        return await lister(content)
+        listing = await lister(content)
+        if not listing.files:
+            return listing
+        return replace(listing, local_keys=await self._local_receipt_keys(listing.files))
+
+    async def _local_receipt_keys(self, files: tuple) -> frozenset[str] | None:
+        """Delete keys of listed files that one of this key's confirmed local receipts refers to; None if unreadable."""
+        try:
+            credential = await self.backend.asset_credential_identity()
+            references = await self.registry.confirmed_scope_references(credential)
+        except (PersistenceError, AssetsBusyError, BackendError, ValidationError, OSError) as exc:
+            diagnostic_event(
+                log,
+                "assets.storage_receipts_unread",
+                level=logging.WARNING,
+                data={"reason": type(exc).__name__, "files": len(files)},
+            )
+            return None
+        return frozenset(item.key for item in files if any(_receipt_matches(ref[2], item.key) for ref in references))
 
     async def delete_storage(self, selected: tuple) -> dict:
         """Delete the owner-selected stored files under this key, once, then invalidate matching local receipts.
@@ -1356,7 +1379,7 @@ class AssetService:
             credential = await self.backend.asset_credential_identity()
             deleted = set(keys)
             for asset_id, identifier, remote_id in await self.registry.confirmed_scope_references(credential):
-                if remote_id in deleted or (len(remote_id) >= 32 and any(remote_id in key for key in deleted)):
+                if any(_receipt_matches(remote_id, key) for key in deleted):
                     await self.registry.invalidate_scope(asset_id, credential, identifier)
                     invalidated += 1
         except (PersistenceError, AssetsBusyError, BackendError, ValidationError, OSError) as exc:
