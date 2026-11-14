@@ -388,18 +388,29 @@ class PrepareBatchEditor:
         self._storage_text()
 
     def _storage_text(self) -> None:
-        free = storage_size(self._storage_free) if self._storage_free is not None else "unknown"
-        text = f"Selected DT+ key: {free} free." if self._storage_read else "Reading selected key storage…"
+        total = sum(row.total_bytes for row in self.rows)
+
+        def size(value):
+            return f"{value / 1_000_000_000:.2f} GB" if value >= 100_000_000 else storage_size(value)
+
+        amount = size(total)
+        insufficient = self._storage_free is not None and total > self._storage_free
+        if self._storage_free is None:
+            status = "checking free space" if not self._storage_read else "free space unknown"
+            text = f"This Prepare will use about {amount} — {status} on this DT+ key."
+        else:
+            free = size(self._storage_free)
+            text = f"This Prepare will use about {amount} / {free} free"
+            if self._storage_free > 0:
+                share = total * 100 / self._storage_free
+                qualifier = "only " if share < 100 else ""
+                text += f" — {qualifier}{share:.1f}% of your free space on this DT+ key."
+            else:
+                text += " on this DT+ key."
+            if insufficient:
+                text += " There may not be enough space."
         if self._storage_needed is not None:
             text += f" Last refused file needs {storage_size(self._storage_needed)}. Free space, then Re-Prepare."
-        row = self.selected
-        source = row is not None and row.source_kind == "safetensors"
-        insufficient = False
-        if source:
-            estimate = (row.total_bytes * 105 + 99) // 100
-            insufficient = self._storage_free is not None and estimate > self._storage_free
-            text += f" Before conversion: estimated space needed {storage_size(estimate)} (source + 5%)."
-            text += " Estimate only; held files may need no extra space. Prepare is not blocked."
         label = self.form.prepareStorageStatus
         label.setText(text)
         refused = self._storage_needed is not None and (

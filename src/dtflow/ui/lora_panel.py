@@ -563,6 +563,7 @@ class LoraAssetPanel:
             self._inspecting = False
         self._prepare_progress = PrepareProgress()
         self._prepare_editor_context = (backend, revision, self._saved())
+        self.refresh_prepare_storage()
         # The provider's current LoRA inventory is the only authority for selectable
         # architectures. A catalogue label or filename is never support evidence.
         eligible = self.eligible_architectures()
@@ -720,9 +721,6 @@ class LoraAssetPanel:
                 saved_triggers=saved_triggers,
                 saved_triggers_unreadable=saved_unreadable,
             )
-            editor.set_storage(None)
-            # Do not hold metadata readiness or explicit approval behind an advisory network request.
-            self.refresh_prepare_storage()
 
     def _owns_prepare_context(self, context) -> bool:
         return (

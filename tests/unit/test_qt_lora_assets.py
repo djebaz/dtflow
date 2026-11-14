@@ -396,8 +396,8 @@ def test_prepare_source_space_warning_is_amber_and_advisory(window, quota, qtbot
     editor.refresh()
     label = editor.form.prepareStorageStatus
     assert label.property("state") == "warning"
-    assert f"Before conversion: estimated space needed {storage_size(1_050_000)}" in label.text()
-    assert "0.5 MB free" in label.text() and "source + 5%" in label.text()
+    assert "This Prepare will use about 1.0 MB / 0.5 MB free" in label.text()
+    assert "200.0%" in label.text() and "+ 5%" not in label.text()
     assert window.inline.form.inlineEditorAcceptButton.isEnabled()
     editor.set_storage(10_500_000)
     editor.refresh()
@@ -405,6 +405,6 @@ def test_prepare_source_space_warning_is_amber_and_advisory(window, quota, qtbot
     assert window.inline.form.inlineEditorAcceptButton.isEnabled()
     editor.set_storage(None)
     editor.refresh()
-    assert "unknown free" in label.text()
+    assert "free space unknown" in label.text()
     assert window.inline.form.inlineEditorAcceptButton.isEnabled()
     assert quota.put_attempts == 0
