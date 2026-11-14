@@ -175,8 +175,10 @@ class Reporter:
         if self.wait_events:
             affected = {event["capture"] for event in self.wait_events if event["capture"] is not None}
             unattributed = sum(event["capture"] is None for event in self.wait_events)
+            captures = "capture" if len(affected) == 1 else "captures"
+            waits = "wait" if len(self.wait_events) == 1 else "waits"
             print(
-                f"WARNING: {len(affected)} captures affected by {len(self.wait_events)} timed-out waits "
+                f"WARNING: {len(affected)} {captures} affected by {len(self.wait_events)} timed-out {waits} "
                 f"({unattributed} waits without a subsequent capture); captures may be incomplete."
             )
         if self.notices:

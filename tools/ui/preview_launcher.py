@@ -151,7 +151,8 @@ def run_workers(args, root):
                     # A fixture wait timed out while preparing this state; it was rendered as it stood.
                     for event in waits:
                         event["capture"] = match["id"]
-                    emit(f"  ^ {match['id']}: {len(waits)} fixture waits timed out; capture may be incomplete")
+                    noun = "wait" if len(waits) == 1 else "waits"
+                    emit(f"  ^ {match['id']}: {len(waits)} fixture {noun} timed out; capture may be incomplete")
                     waits = []
                 continue
             if line.startswith("WARNING: offline UI fixture wait timed out"):
@@ -191,6 +192,16 @@ def run_workers(args, root):
             manifests[worker] = json.loads(path.read_text(encoding="utf-8"))
         except (OSError, ValueError):
             manifests[worker] = None
+    # Completed worker manifests retain structured timeout durations and exact saved attribution.
+    # A crashed/stalled worker may have no final manifest; retain its observed stdout events instead.
+    observed_events = wait_events
+    wait_events = []
+    for worker, data in manifests.items():
+        structured = data.get("wait_timeout_events") if data is not None and data.get("status") != "running" else None
+        if structured is not None:
+            wait_events.extend({**event, "worker": worker} for event in structured)
+        else:
+            wait_events.extend(event for event in observed_events if event["worker"] == worker)
     timed_out = sorted({event["capture"] for event in wait_events if event["capture"] is not None})
     unattributed = sum(event["capture"] is None for event in wait_events)
     records = {}
@@ -240,7 +251,8 @@ def run_workers(args, root):
         "wait_timeout_events": wait_events,
         "unattributed_wait_timeout_count": unattributed,
         "wait_timeout_attribution": "Next saved capture in the same worker, not necessarily the originating fixture; "
-        "null capture means no subsequent saved capture. Events are observed from worker output, even on failure.",
+        "null capture means no subsequent saved capture. Completed worker manifests are authoritative; "
+        "stdout events are the fallback for missing, incomplete or legacy manifests.",
         "states": states,
         "unregistered_states": unregistered,
         "expected_notices": notices,
@@ -260,8 +272,10 @@ def run_workers(args, root):
     if notices:
         emit(f"Expected offline notices: {sum(notices.values())}; details in the per-worker logs next to {target.name}")
     if wait_events:
+        captures = "capture" if len(timed_out) == 1 else "captures"
+        waits = "wait" if len(wait_events) == 1 else "waits"
         emit(
-            f"WARNING: {len(timed_out)} captures affected by {len(wait_events)} timed-out waits "
+            f"WARNING: {len(timed_out)} {captures} affected by {len(wait_events)} timed-out {waits} "
             f"({unattributed} waits without a subsequent capture); captures may be incomplete: {', '.join(timed_out)}"
         )
     if unregistered:

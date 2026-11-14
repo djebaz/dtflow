@@ -124,12 +124,15 @@ def main():
         lines += ["⚠ Representative sample, not exhaustive; mapping details in Diagnostics.", ""]
     if waits or wait_count:
         count = str(wait_count) if wait_counts_known else "an unknown number of"
+        capture_noun = "capture" if len(waits) == 1 else "captures"
+        wait_noun = "wait" if wait_counts_known and wait_count == 1 else "waits"
         lines += [
-            f"⚠ {len(waits)} capture(s) affected by {count} timed-out waits; captured states may be incomplete.",
+            f"⚠ {len(waits)} {capture_noun} affected by {count} timed-out {wait_noun}; captured states may be incomplete.",
             "",
         ]
         if unattributed:
-            lines += [f"⚠ {unattributed} timed-out wait(s) had no subsequent saved capture.", ""]
+            noun = "wait" if unattributed == 1 else "waits"
+            lines += [f"⚠ {unattributed} timed-out {noun} had no subsequent saved capture.", ""]
     failures = [f"{name}: exit {item['exit_code']}" for name, item in outcomes.items() if item["exit_code"] != 0]
     problems = ([f"{len(missing)} missing states"] if missing else []) + failures
     if not outcomes:
