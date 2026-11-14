@@ -1,5 +1,10 @@
 # Diagnostic events v1 — contract and legacy migration inventory
 
+## Conversion staging (#451)
+
+- `lora_convert.staging_cleanup` records integer `examined`, `removed` (job directories), `bytes_removed` (successfully unlinked logical bytes), `skipped`, `errors` and boolean `bounded`. Busy, missing or unreadable ownership is skipped, never treated as proof of inactivity. A partial deletion counts its successfully removed bytes even if the job remains. Errors use WARNING; other sweeps use INFO. No names, paths or exception strings are included.
+- `lora_convert.staging_cleanup_pending` (WARNING) reports fixed `reason=budget|io_or_safety` when the current job's final cleanup could not finish. It does not change the conversion result or authorize retries; a later explicit Prepare can reclaim an abandoned owned job within the same limits.
+
 ## Prepare conversion reuse (#403)
 
 - `lora_store.conversion_candidates` (INFO) records matched and eligible counts plus the installed numeric converter version; source identity uses `asset_ref_data` only.

@@ -8,8 +8,6 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import shutil
-import tempfile
 import threading
 import time
 from collections.abc import Callable
@@ -34,6 +32,7 @@ from dtflow.services.lora_naming import (
     occupied_from_snapshot,
 )
 from dtflow.services.lora_store import LoraStore, RetainedFile, RetainedNameConflict
+from dtflow.services.lora_staging import cleanup_staging, conversion_job
 
 log = logging.getLogger(__name__)
 
@@ -134,6 +133,7 @@ def _convert_sync(
         "family": family,
     }
     store = LoraStore(state)
+    cleanup_staging(store.directory)
     if spec.status != "verified":
         diagnostic_event(
             log,
@@ -181,10 +181,7 @@ def _convert_sync(
         level=logging.DEBUG,
         data={**hint, "source_bytes": source_size, "converter_version": CONVERTER_VERSION},
     )
-    staging_root = store.directory / ".convert"
-    staging_root.mkdir(parents=True, exist_ok=True)
-    folder = Path(tempfile.mkdtemp(prefix="job-", dir=staging_root))
-    try:
+    with conversion_job(store.directory) as folder:
         result = convert_lora(
             ConversionRequest(
                 source=source,
@@ -280,8 +277,6 @@ def _convert_sync(
             },
         )
         return _prepared(retained, False, metadata, allocated_name=final_name != managed_name)
-    finally:
-        shutil.rmtree(folder, ignore_errors=True)
 
 
 async def convert_for_prepare(
