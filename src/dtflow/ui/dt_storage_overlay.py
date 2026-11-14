@@ -213,10 +213,11 @@ class DtStorageOverlay(QObject):
         self.sort_combo.addItems(["Largest first", "Name A\u2013Z"])
         self.sort_combo.setToolTip("Order of the stored files.")
         self.sort_combo.currentIndexChanged.connect(self._sort_changed)
-        self.select_unused = QPushButton("Select not used here", self.form)
+        self.select_unused = QPushButton("\u2611\ufe0e Cloud only", self.form)
+        self.select_unused.setAccessibleName("Select Cloud only files")
         self.select_unused.setToolTip(
-            "Tick every stored file without a local upload record on this computer, for example files added from "
-            "another app. Nothing is deleted until you confirm."
+            "Select all visible Cloud only files: no matching managed copy is known in lora_files. "
+            "Nothing is deleted until you confirm."
         )
         self.select_unused.clicked.connect(self._select_unused)
         self.select_unused.setVisible(False)
@@ -425,15 +426,15 @@ class DtStorageOverlay(QObject):
         self._selection_changed()
 
     def _select_unused(self) -> None:
-        """Tick the files without a local upload record, replacing the current selection; delete still asks again."""
-        if self._busy or self._local is None:
+        """Tick visible Cloud only rows, replacing the selection; delete still asks again."""
+        if self._busy or self._file_keys is None:
             return
         listing = self.form.dtStorageList
         listing.blockSignals(True)
         for row in range(listing.count()):
             item = listing.item(row)
             stored = self._files[item.data(Qt.ItemDataRole.UserRole)]
-            item.setSelected(stored.key not in self._local and not item.isHidden())
+            item.setSelected(stored.key not in self._file_keys and not item.isHidden())
         listing.blockSignals(False)
         self._sync_checks()
 
@@ -505,7 +506,9 @@ class DtStorageOverlay(QObject):
         )
         self.form.dtStorageDelete.setEnabled(bool(chosen) and not self._busy)
         self.select_unused.setEnabled(
-            not self._busy and self._local is not None and any(item.key not in self._local for item in self._files)
+            not self._busy
+            and self._file_keys is not None
+            and any(item.key not in self._file_keys for item in self._files)
         )
 
     # -- listing --------------------------------------------------------------------------------------------------
@@ -598,7 +601,7 @@ class DtStorageOverlay(QObject):
         self._local = listing.local_keys
         self._file_keys = listing.file_keys
         self._seen = dict(listing.local_seen)
-        self.select_unused.setVisible(self._local is not None and bool(listing.files))
+        self.select_unused.setVisible(self._file_keys is not None and bool(listing.files))
         if key is not None and listing.free_space is not None:
             self._free[key] = listing.free_space
         self._show_list(bool(listing.files))
@@ -611,9 +614,9 @@ class DtStorageOverlay(QObject):
             self._show_meter(total, total + listing.free_space)
         else:
             line = f"{count} stored, {_bold(gigabytes(total))}. Free space unknown."
-        if self._local is not None and listing.files:
-            unknown = sum(item.key not in self._local for item in listing.files)
-            line += f" {_bold(str(unknown))} not used here."
+        if self._file_keys is not None and listing.files:
+            cloud_only = sum(item.key not in self._file_keys for item in listing.files)
+            line += f" {_bold(str(cloud_only))} Cloud only."
         self._missing = shortfall(self._needed, listing.free_space) if self._needed is not None else None
         if self._needed is not None:
             if self._missing:

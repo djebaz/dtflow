@@ -1,5 +1,7 @@
 # Unreleased
 
+- Storage's **☑︎ Cloud only** action and summary count now use the same managed-file evidence as the amber Cloud only pill, replacing the unrelated not-used-here record check. The action selects visible matching rows only and never deletes without confirmation. Static checks only; owner visual recheck pending (PR #450).
+
 - Storage list pill rows measure their height after inheriting the application font/styles and use one vertical inset, preventing clipped filenames and pills. Source/static checks only; owner native recheck pending (PR #450).
 
 - DT+ storage rows replace used/unknown text with an amber **Cloud only** pill when no matching managed copy is known in `lora_files`; known matching files have no pill. Unreadable local evidence shows neither pill. This checks indexed file presence/size off the UI thread, never hashes contents or scans other folders. The picker retains its separate **not on key** meaning. Static checks only; native appearance and revised-head execution pending (#443, PR #450).
