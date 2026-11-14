@@ -231,11 +231,7 @@ class DtStorageOverlay(QObject):
         if key is not None and listing.free_space is not None:
             self._free[key] = listing.free_space
         self.form.dtStorageList.setVisible(bool(listing.files))
-        free = (
-            f"Free: about {_bold(gigabytes(listing.free_space))}."
-            if listing.free_space is not None
-            else "Free: unknown."
-        )
+        free = f"Free: {_bold(gigabytes(listing.free_space))}." if listing.free_space is not None else "Free: unknown."
         total = sum(item.size for item in listing.files)
         skipped = f" {listing.skipped} entries could not be read and are not shown." if listing.skipped else ""
         self.form.dtStorageStatus.setText(
