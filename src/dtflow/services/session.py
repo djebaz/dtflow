@@ -850,12 +850,16 @@ def asset_view(record: dict) -> dict:
 
 @asynccontextmanager
 async def open_assets(
-    state: Path, *, saved: CredentialProvider | None = None, timeouts: TimeoutPolicy | None = None
+    state: Path,
+    *,
+    saved: CredentialProvider | None = None,
+    timeouts: TimeoutPolicy | None = None,
+    read_only: bool = False,
 ) -> AsyncIterator[AssetService]:
-    """The explicit cloud backend plus the exclusive asset writer registry; the backend is built before any state."""
+    """Cloud asset service; mutations use an exclusive writer, storage inspection opens a read-only registry."""
     policy = timeouts or TimeoutPolicy()
     backend = create_backend(BackendSelection("cloud"), timeouts=policy, saved=saved)
-    registry = AssetRegistry(state, writer=True)
+    registry = AssetRegistry(state, writer=not read_only)
     try:
         if not hasattr(backend, "negotiate_asset"):
             raise ValidationError("The selected backend cannot prepare cloud assets.")
@@ -953,7 +957,7 @@ async def storage_listing(
     state: Path, content: AssetContent, *, saved: CredentialProvider | None = None
 ) -> StorageListing:
     """Explicit read of the selected DT+ key's stored files (one metadata request; nothing is uploaded or changed)."""
-    async with open_assets(state, saved=saved) as service:
+    async with open_assets(state, saved=saved, read_only=True) as service:
         return await service.storage_listing(content)
 
 

@@ -23,6 +23,7 @@ from dtflow.services.catalogue import FAMILY_LABELS
 from dtflow.services.lora_convert import CONVERTER_VERSION
 from dtflow.services.lora_convert.source_metadata import DetailModel, detail_model
 from dtflow.services.lora_family import LoraFamily
+from dtflow.services.dt_storage import storage_size
 from dtflow.services.lora_naming import (
     LoraPrepareMetadata,
     ManagedName,
@@ -72,6 +73,7 @@ class _Row:
     reprepare: bool = False
     checked: bool = False
     can_reprepare: bool = False
+    storage_failed: bool = False  # retry permission is not accepted-name replacement consent
     invalid: str | None = None
     failure: str | None = None
     sha256: str | None = None
@@ -150,6 +152,7 @@ class PrepareBatchEditor:
         *,
         on_prepare: Callable[[list[tuple[Path, LoraPrepareMetadata]]], None],
         on_inspect_progress: Callable[[int | None, int, int, int], None] | None = None,
+        on_storage: Callable[[], None] | None = None,
     ):
         self._on_inspect_progress = on_inspect_progress
         self.parent = parent
@@ -158,6 +161,12 @@ class PrepareBatchEditor:
         self._refresh_pending = False
         self.read_bytes: dict[Path, int] = {}  # written by the background hash thread, read by the GUI timer
         self.form = _load("prepare_lora_batch.ui")
+        self._storage_free: int | None = None
+        self._storage_needed: int | None = None
+        self._storage_read = False
+        self._storage_files = ()
+        self.form.prepareStorageButton.clicked.connect(on_storage or (lambda: None))
+        self.form.prepareStorageButton.setEnabled(on_storage is not None)
         self.panel = feedback(parent)
         self._on_prepare = on_prepare
         self.rows: list[_Row] = []
@@ -366,6 +375,66 @@ class PrepareBatchEditor:
                 break
         if summary is not None:
             self.form.prepareFileCount.setText(f"{len(self.rows)} selected files · {summary}")
+
+    def set_storage(self, free_space: int | None, files=(), *, needed: int | None = None) -> None:
+        """Advisory, owner-scoped observations only: never change readiness or upload authorization."""
+        if not self.active():
+            return
+        self._storage_read = True
+        self._storage_free = free_space
+        self._storage_files = tuple(files)
+        if needed is not None:
+            self._storage_needed = needed
+        self._storage_text()
+
+    def _storage_text(self) -> None:
+        total = sum(row.total_bytes for row in self.rows)
+
+        def size(value):
+            return f"{value / 1_000_000_000:.2f} GB" if value >= 100_000_000 else storage_size(value)
+
+        amount = size(total)
+        insufficient = self._storage_free is not None and total > self._storage_free
+        tight = self._storage_free is not None and total * 100 > self._storage_free * 80
+        if self._storage_free is None:
+            status = "checking free space" if not self._storage_read else "free space unknown"
+            text = f"This Prepare will use about {amount} — {status} on this DT+ key."
+        else:
+            free = size(self._storage_free)
+            text = f"This Prepare will use about {amount} / {free} free"
+            if self._storage_free > 0:
+                share = total * 100 / self._storage_free
+                qualifier = "" if tight else "only "
+                text += f" — {qualifier}{share:.1f}% of your free space on this DT+ key."
+            else:
+                text += " on this DT+ key."
+            if insufficient:
+                text += " There may not be enough space."
+            elif tight:
+                text += " Warning: this leaves little free space."
+        refused = self._storage_needed is not None and (
+            self._storage_free is None or self._storage_needed > self._storage_free
+        )
+        if refused:
+            text += f" Last refused file needs {storage_size(self._storage_needed)}. Free space, then Re-Prepare."
+        label = self.form.prepareStorageStatus
+        label.setText(text)
+        label.setProperty("state", "warning" if tight or refused else "info")
+        label.style().unpolish(label)
+        label.style().polish(label)
+
+    def prioritize_held(self, chosen):
+        """Name/size hints affect order only; ordinary Prepare still verifies every content identity."""
+        held = {(item.name, item.size) for item in self._storage_files}
+        rows = {row.path: row for row in self.rows}
+
+        def priority(item):
+            path, metadata = item
+            row = rows.get(path)
+            size = self._content_identity(row)[1] if row is not None else None
+            return 0 if size is not None and (metadata.identifier, size) in held else 1
+
+        return sorted(chosen, key=priority)
 
     def set_summary(self, text: str) -> None:
         """One-line run result shown inside the editor while it stays open."""
@@ -606,6 +675,7 @@ class PrepareBatchEditor:
             return
         self._updating = True
         try:
+            self._storage_text()
             allocations = self._allocation() if self.inspected else [None] * len(self.rows)
             ready = 0
             assigned = 0
@@ -796,6 +866,12 @@ class PrepareBatchEditor:
                         "here: a new filename and a new DT+ upload; earlier receipts keep the old name. "
                         "Nothing is sent until you press the Prepare button."
                     )
+                elif row.storage_failed:
+                    row.widget.prepareReprepare.setToolTip(
+                        "Free space in DT+ storage, then unlock this row. Nothing retries until you explicitly Prepare."
+                    )
+                else:
+                    row.widget.prepareReprepare.setToolTip("Unlock this row for explicit Re-Prepare.")
                 row.widget.setProperty("checkedSelection", row is self.selected)
                 row.widget.style().unpolish(row.widget)
                 row.widget.style().polish(row.widget)
@@ -912,6 +988,7 @@ class PrepareBatchEditor:
                 continue
             row.admitted = True
             row.outcome = None
+            row.storage_failed = False
             row.prepared_identifier = None
             row.checked = False
             for control in (
@@ -933,7 +1010,10 @@ class PrepareBatchEditor:
             return
         if not row.admitted or row.outcome != "Failed" or not row.can_reprepare:
             return
-        row.admitted, row.outcome, row.reprepare, row.checked = False, None, True, False
+        replace_existing = row.reprepare if row.storage_failed else True
+        row.admitted, row.outcome, row.reprepare, row.checked = False, None, replace_existing, False
+        row.storage_failed = False
+        row.failure = None
         for control in (
             row.widget.prepareArchitecture,
             row.widget.prepareShortName,
@@ -960,7 +1040,15 @@ class PrepareBatchEditor:
                     control.setEnabled(True)
         self.refresh()
 
-    def completed(self, path: Path, outcome: str, *, can_reprepare: bool = False, detail: str | None = None):
+    def completed(
+        self,
+        path: Path,
+        outcome: str,
+        *,
+        can_reprepare: bool = False,
+        storage_failure: bool = False,
+        detail: str | None = None,
+    ):
         """Reflect the provider result without automatically authorizing another row."""
         if not self.active():
             return
@@ -968,6 +1056,7 @@ class PrepareBatchEditor:
             if row.path == path:
                 row.outcome = outcome
                 row.can_reprepare = outcome == "Failed" and can_reprepare
+                row.storage_failed = outcome == "Failed" and storage_failure
                 row.failure = detail
                 break
         self.refresh()
