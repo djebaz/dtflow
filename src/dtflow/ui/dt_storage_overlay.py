@@ -14,7 +14,7 @@ from typing import Awaitable, Callable
 from PySide6.QtCore import QEvent, QFile, QIODevice, QObject, QRectF, QSize, Qt
 from PySide6.QtGui import QColor, QKeySequence, QPainter, QShortcut
 from PySide6.QtUiTools import QUiLoader
-from PySide6.QtWidgets import QFrame, QListWidgetItem, QSizePolicy, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QComboBox, QFrame, QHBoxLayout, QListWidgetItem, QSizePolicy, QVBoxLayout, QWidget
 
 from dtflow.core.models import AssetContent, StorageListing, StoredAsset
 from dtflow.services.session import delete_storage, storage_listing
@@ -163,6 +163,13 @@ class DtStorageOverlay(QObject):
         self.form.dtStorageClose.clicked.connect(self.close)
         self.form.dtStorageRefresh.clicked.connect(self.refresh)
         self.form.dtStorageDelete.clicked.connect(self._delete_clicked)
+        self.sort_combo = QComboBox(self.form)
+        self.sort_combo.setAccessibleName("Sort files")
+        self.sort_combo.addItems(["Largest first", "Name A\u2013Z"])
+        self.sort_combo.setToolTip("Order of the stored files.")
+        self.sort_combo.currentIndexChanged.connect(self._sort_changed)
+        buttons = self.form.findChild(QHBoxLayout, "dtStorageButtons")
+        buttons.insertWidget(1, self.sort_combo)
         self.meter = SegmentMeter(self.form)
         layout = self.form.layout()
         layout.insertWidget(layout.indexOf(self.form.dtStorageStatus) + 1, self.meter)
@@ -232,6 +239,30 @@ class DtStorageOverlay(QObject):
             if item.checkState() == Qt.CheckState.Checked:
                 chosen.append(self._files[item.data(Qt.ItemDataRole.UserRole)])
         return tuple(chosen)
+
+    def _sorted(self, files: tuple[StoredAsset, ...]) -> tuple[StoredAsset, ...]:
+        if self.sort_combo.currentIndex() == 1:
+            return tuple(sorted(files, key=lambda item: (item.name.casefold(), item.size)))
+        return tuple(sorted(files, key=lambda item: (-item.size, item.name.casefold())))
+
+    def _fill_rows(self, keep: tuple[StoredAsset, ...]) -> None:
+        """Show the files in the chosen order, re-ticking those in ``keep``."""
+        self._files = self._sorted(self._files)
+        kept = {item.key for item in keep}
+        self._disarm()
+        self.form.dtStorageList.blockSignals(True)
+        self.form.dtStorageList.clear()
+        for index, item in enumerate(self._files):
+            row = QListWidgetItem(f"{item.name}    {megabytes(item.size)}")
+            row.setCheckState(Qt.CheckState.Checked if item.key in kept else Qt.CheckState.Unchecked)
+            row.setData(Qt.ItemDataRole.UserRole, index)
+            self.form.dtStorageList.addItem(row)
+        self.form.dtStorageList.blockSignals(False)
+        self._selection_changed()
+
+    def _sort_changed(self, _index: int) -> None:
+        if self._files and not self._busy:
+            self._fill_rows(keep=self._chosen())
 
     def _show_meter(self, used: int, limit: int | None) -> None:
         self.meter.setVisible(bool(limit))
@@ -312,14 +343,7 @@ class DtStorageOverlay(QObject):
             line = f"{count} stored, {_bold(gigabytes(total))}. Free space unknown."
         skipped = f" {listing.skipped} entries could not be read and are not shown." if listing.skipped else ""
         self.form.dtStorageStatus.setText(f"{lead}{line}{skipped}")
-        self.form.dtStorageList.blockSignals(True)
-        for index, item in enumerate(listing.files):
-            row = QListWidgetItem(f"{item.name}    {megabytes(item.size)}")
-            row.setCheckState(Qt.CheckState.Unchecked)
-            row.setData(Qt.ItemDataRole.UserRole, index)
-            self.form.dtStorageList.addItem(row)
-        self.form.dtStorageList.blockSignals(False)
-        self._selection_changed()
+        self._fill_rows(keep=())
 
     # -- delete ---------------------------------------------------------------------------------------------------
     def _delete_clicked(self) -> None:
