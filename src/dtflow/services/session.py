@@ -23,6 +23,7 @@ from dtflow.core.image_inputs import ImageInputSnapshot, PreparedImageInputs
 from dtflow.core.image_operations import ImageOperationPermit, ImageOperationSupport, inspect_image_operation
 from dtflow.core.model_profiles import exact_model_description_digest
 from dtflow.core.models import (
+    AssetContent,
     AssetReconciliation,
     BackendError,
     BackendEvent,
@@ -34,6 +35,7 @@ from dtflow.core.models import (
     PreflightDiagnostic,
     PreparedAsset,
     ResolvedGenerationRequest,
+    StorageListing,
     TimeoutPolicy,
     ValidationError,
 )
@@ -945,6 +947,20 @@ async def reconcile_asset(
     """Metadata-only check of the named LoRA under the selected DT+ key; never uploads."""
     async with open_assets(state, saved=saved) as service:
         return await service.reconcile(asset_id, identifier)
+
+
+async def storage_listing(
+    state: Path, content: AssetContent, *, saved: CredentialProvider | None = None
+) -> StorageListing:
+    """Explicit read of the selected DT+ key's stored files (one metadata request; nothing is uploaded or changed)."""
+    async with open_assets(state, saved=saved) as service:
+        return await service.storage_listing(content)
+
+
+async def delete_storage(state: Path, selected: tuple, *, saved: CredentialProvider | None = None) -> dict:
+    """Owner-confirmed delete of the chosen stored files under the selected DT+ key, once and without retry."""
+    async with open_assets(state, saved=saved) as service:
+        return await service.delete_storage(selected)
 
 
 async def list_assets(state: Path, *, named: bool = False) -> list[dict]:

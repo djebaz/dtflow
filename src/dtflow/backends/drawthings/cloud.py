@@ -10,6 +10,8 @@ from dtflow.backends.drawthings.backend import DrawThingsBackend, DrawThingsEndp
 from dtflow.backends.drawthings.cloud_assets import (
     AssetUploadPolicy,
     UploadTicket,
+    delete_stored_assets,
+    list_stored_assets,
     lookup_lora_assets,
     negotiate_lora_asset,
     negotiate_lora_assets,
@@ -26,6 +28,7 @@ from dtflow.core.models import (
     ConnectionStatus,
     FileIdentity,
     LoRABackendAvailability,
+    StorageListing,
     ValidationError,
 )
 
@@ -87,6 +90,14 @@ class DirectCloudBackend(DrawThingsBackend):
     async def negotiate_asset(self, content: AssetContent) -> AssetNegotiation:
         """Metadata-only BYOM negotiation for one converted LoRA; never transfers bytes."""
         return await negotiate_lora_asset(self._auth, content)
+
+    async def list_stored_assets(self, content: AssetContent) -> StorageListing:
+        """The selected key's stored LoRAs as DT+ reports them (over-limit answer only); transfers nothing."""
+        return await list_stored_assets(self._auth, content)
+
+    async def delete_stored_assets(self, keys: tuple[str, ...]) -> None:
+        """One owner-confirmed delete request for provider keys from this key's own listing."""
+        await delete_stored_assets(self._auth, keys)
 
     async def asset_credential_identity(self) -> str:
         """Resolve the selected DT+ key to a stable, non-secret bucket identity."""

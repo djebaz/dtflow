@@ -29,6 +29,7 @@ from dtflow.core.models import (
     ErrorCategory,
     PreparedAsset,
     RemoteOutcome,
+    StorageListing,
     SubmissionStage,
     ValidationError,
 )
@@ -1326,6 +1327,53 @@ class AssetService:
             )
         _CURRENT[(restored.backend_id, restored.origin, self.backend.scope, restored.receipt_id)] = restored
         return restored
+
+    # -- DT+ storage ------------------------------------------------------------------------------------------------
+
+    async def storage_listing(self, content: AssetContent) -> StorageListing:
+        """The selected key's stored files as DT+ reports them. Read-only; nothing is uploaded or changed."""
+        lister = getattr(self.backend, "list_stored_assets", None)
+        if lister is None:
+            raise ValidationError("The selected backend cannot list DT+ storage.")
+        return await lister(content)
+
+    async def delete_storage(self, selected: tuple) -> dict:
+        """Delete the owner-selected stored files under this key, once, then invalidate matching local receipts.
+
+        ``selected`` are ``StoredAsset`` entries from this key's own listing. After DT+ accepts the request, this key's
+        confirmed receipts whose remote reference matches a deleted entry stop counting as confirmed; shared bytes,
+        retained copies and other keys' receipts are untouched. No retry: a failure leaves receipts as they were.
+        """
+        deleter = getattr(self.backend, "delete_stored_assets", None)
+        if deleter is None:
+            raise ValidationError("The selected backend cannot delete DT+ storage.")
+        keys = tuple(item.key for item in selected)
+        if not keys:
+            raise ValidationError("Choose at least one stored file to delete.")
+        await deleter(keys)
+        invalidated = 0
+        try:
+            credential = await self.backend.asset_credential_identity()
+            deleted = set(keys)
+            for asset_id, identifier, remote_id in await self.registry.confirmed_scope_references(credential):
+                if remote_id in deleted or (len(remote_id) >= 32 and any(remote_id in key for key in deleted)):
+                    await self.registry.invalidate_scope(asset_id, credential, identifier)
+                    invalidated += 1
+        except (PersistenceError, AssetsBusyError, BackendError, ValidationError, OSError) as exc:
+            diagnostic_event(
+                log,
+                "assets.storage_receipts_not_updated",
+                level=logging.WARNING,
+                data={"reason": type(exc).__name__, "deleted": len(keys)},
+            )
+            return {"deleted": len(keys), "receipts_invalidated": invalidated, "receipts_updated": False}
+        diagnostic_event(
+            log,
+            "assets.storage_deleted",
+            level=logging.INFO,
+            data={"deleted": len(keys), "receipts_invalidated": invalidated, **self._key_diagnostics()},
+        )
+        return {"deleted": len(keys), "receipts_invalidated": invalidated, "receipts_updated": True}
 
     async def reconcile(self, asset_id: str, identifier: str | None = None) -> tuple[dict, AssetReconciliation]:
         """Check one named LoRA against the selected DT+ key without uploading or changing other keys."""

@@ -16,7 +16,14 @@ from dataclasses import dataclass, field
 import httpx
 
 from dtflow.backends.drawthings.errors import api_error, diagnostics, error
-from dtflow.core.models import BackendError, CredentialProvider, ErrorCategory, ValidationError
+from dtflow.core.models import (
+    BackendError,
+    CredentialProvider,
+    ErrorCategory,
+    RemoteOutcome,
+    SubmissionStage,
+    ValidationError,
+)
 from dtflow.diagnostics import api_error_data, cloud_key_data, event
 from dtflow.services.cloud_usage import key_identity
 
@@ -252,9 +259,43 @@ class CloudAuth:
         already = data.get("alreadyExists") if isinstance(data, dict) else None
         if isinstance(already, dict):
             private += tuple(value for value in already.values() if isinstance(value, str))
+        limit = data.get("storageLimitExceeded") if isinstance(data, dict) else None
+        stored = limit.get("files") if isinstance(limit, dict) else None
+        if isinstance(stored, list):
+            # Stored-file names and delete keys are owner-visible only; they never reach logs or errors.
+            private += tuple(
+                value
+                for item in stored
+                if isinstance(item, dict)
+                for value in (item.get("key"), item.get("file"))
+                if isinstance(value, str) and value
+            )
         return CloudJSONResponse(
             decoded, {**self._response_data(reply, private=private), "elapsed_ms": round(reply.elapsed_ms)}
         )
+
+    async def authenticated_delete(self, keys: tuple[str, ...]) -> None:
+        """POST the owner-confirmed delete keys once; no retry. The reply body is not interpreted.
+
+        A failure after the request may have been sent is reported with an unknown remote outcome, because DT+ may
+        already have removed files; the caller's way to find out is to read the listing again.
+        """
+        token = await self.token()
+        try:
+            await self._post("/delete_uploaded_files", {"keys": list(keys)}, token=token, private=keys)
+        except BackendError as exc:
+            if exc.failure.category not in (ErrorCategory.TIMEOUT, ErrorCategory.CONNECTIVITY):
+                raise
+            raise api_error(
+                exc.failure.category,
+                "cloud_storage_delete_unknown",
+                "DT+ may or may not have deleted the selected files. Read the storage list again to see what remains.",
+                stage=SubmissionStage.POSSIBLY_SUBMITTED,
+                outcome=RemoteOutcome.UNKNOWN,
+                operation="/delete_uploaded_files",
+                transport="http",
+                diagnostics=diagnostics(cause=exc.failure.code),
+            ) from None
 
     def _response_data(self, reply: _HTTPReply, *, private=()) -> dict:
         return api_error_data(body=reply.body, headers=reply.headers, private=(*private, self._key, self._token))
