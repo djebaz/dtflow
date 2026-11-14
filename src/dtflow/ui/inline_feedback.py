@@ -8,6 +8,7 @@ from PySide6.QtCore import QEvent, QFile, QIODevice, QObject, Qt
 from PySide6.QtGui import QKeySequence, QShortcut
 from PySide6.QtUiTools import QUiLoader
 from PySide6.QtWidgets import QApplication, QLineEdit
+from shiboken6 import isValid
 
 from dtflow.ui.app_filters import install_app_filter, remove_app_filter
 from dtflow.ui.activity_strip import activity_strip
@@ -38,6 +39,8 @@ class InlineFeedback(QObject):
         self._armed = None
         self._outside = False
         self._editor = None
+        self._suspended_editor = None
+        self._suspended_shortcuts = (False, False)
         self._editor_focus = None
         self._accept_callback = None
         self._accept_button = None
@@ -60,7 +63,12 @@ class InlineFeedback(QObject):
 
     def _keep_editor_focus(self, previous, current):
         """Keep keyboard traversal in the editor, without trapping other windows."""
-        if self._editor is None or current is None or not self.strip.scrim.isVisible():
+        if (
+            self._editor is None
+            or self._suspended_editor is not None
+            or current is None
+            or not self.strip.scrim.isVisible()
+        ):
             return
         if current.window() is not self.window:
             return
@@ -86,13 +94,43 @@ class InlineFeedback(QObject):
 
     def active(self) -> bool:
         """True while a pending consent, editor or notice owns Escape."""
-        return bool(self._armed or self._editor or self.form.isVisible())
+        return self._suspended_editor is None and bool(self._armed or self._editor or self.form.isVisible())
+
+    def suspend_editor(self, editor) -> bool:
+        """Park this editor's presentation for an in-window child workflow, without destroying its draft."""
+        if self._editor is not editor or self._suspended_editor is not None or not isValid(editor):
+            return False
+        self._suspended_editor = editor
+        self._suspended_shortcuts = (self.escape.isEnabled(), self.button_escape.isEnabled())
+        self.escape.setEnabled(False)
+        self.button_escape.setEnabled(False)
+        self.form.hide()
+        self.strip.set_editor_dimming(False)
+        self.strip._position()
+        return True
+
+    def resume_editor(self, editor) -> bool:
+        """Restore only the same parked editor; navigation/replacement/reset invalidates this permission."""
+        if self._suspended_editor is not editor or self._editor is not editor or not isValid(editor):
+            return False
+        self._suspended_editor = None
+        self.escape.setEnabled(self._suspended_shortcuts[0])
+        self.button_escape.setEnabled(self._suspended_shortcuts[1])
+        self.form.show()
+        self.strip.set_editor_dimming(True)
+        target = self._editor_focus
+        if target is None or not isValid(target) or not self.form.isAncestorOf(target):
+            target = self.form.inlineEditorCancelButton
+        target.setFocus(Qt.FocusReason.OtherFocusReason)
+        return True
 
     def owns_keyboard(self) -> bool:
         """True while a pending consent or inline editor takes keyboard input; a plain notice does not."""
         return self._armed is not None or self._editor is not None
 
     def reset(self):
+        self._suspended_editor = None
+        self._suspended_shortcuts = (False, False)
         self._watch_outside(False)
         self.escape.setEnabled(False)
         self.button_escape.setEnabled(False)

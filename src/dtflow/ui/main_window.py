@@ -597,6 +597,7 @@ class MainWindow:
             on_closed=self._dt_storage_closed,
         )
         self.generation.lora.open_storage = self.open_dt_storage
+        self._storage_suspended_editor = None
         form.dtStorageButton.clicked.connect(self.open_dt_storage)
         self._remove_lora_shortcut = QShortcut(QKeySequence("Delete"), form.retainedLorasTable)
         self._remove_lora_shortcut.setContext(Qt.ShortcutContext.WidgetWithChildrenShortcut)
@@ -2104,10 +2105,25 @@ class MainWindow:
 
     def open_dt_storage(self) -> None:
         """Open the DT+ storage panel; it reads the selected key's stored files with one dummy-file lookup."""
-        if not self._removing_retained_lora:
-            self.dt_storage_overlay.open()
+        if self._removing_retained_lora or not self.dt_storage_overlay.overlay.isHidden():
+            return
+        editor = self.generation.lora._prepare_editor
+        if editor is not None and editor.active():
+            if not self.inline.suspend_editor(editor.form):
+                return
+            self._storage_suspended_editor = editor.form
+        self.dt_storage_overlay.open()
 
     def _dt_storage_closed(self) -> None:
+        parked, self._storage_suspended_editor = self._storage_suspended_editor, None
+        if self.runner.closed:
+            return
+        if parked is not None:
+            panel = self.generation.lora
+            if panel._owns_prepare_context(panel._prepare_editor_context):
+                self.inline.resume_editor(parked)
+            elif self.inline._editor is parked:
+                self.inline.dismiss()  # ownership changed: discard only this stale editor, never a replacement
         if self.generation.lora._prepare_editor is not None:
             self.generation.lora.refresh_prepare_storage()
         else:

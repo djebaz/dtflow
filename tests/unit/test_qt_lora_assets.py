@@ -15,7 +15,7 @@ import pytest
 pytest.importorskip("pytestqt")
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-from PySide6.QtWidgets import QCheckBox, QLineEdit, QPushButton, QSlider, QWidget  # noqa: E402
+from PySide6.QtWidgets import QApplication, QCheckBox, QLineEdit, QPushButton, QSlider, QWidget  # noqa: E402
 from support.cloud_assets import DtPlus, lora_file  # noqa: E402
 from support.fake_vault import Vault  # noqa: E402
 
@@ -276,6 +276,7 @@ def quota(window, monkeypatch):
 
 
 def test_storage_refusal_free_space_and_explicit_reprepare_without_reselection(window, quota, qtbot, tmp_path):
+    window.form.show()
     file = lora_file(tmp_path, data=bytes(range(256)) * 512)
     assert prepare(window, qtbot, file) == [file.name]
     panel = window.generation.lora
@@ -296,6 +297,9 @@ def test_storage_refusal_free_space_and_explicit_reprepare_without_reselection(w
     assert not overlay.overlay.isHidden()
     assert overlay.overlay.parentWidget() is window.shell.centerStack
     assert panel._prepare_editor is editor and editor.active()
+    assert window.inline.form.isHidden() and window.inline.strip.scrim.isHidden()
+    overlay.search.setFocus()
+    qtbot.waitUntil(lambda: QApplication.focusWidget() is overlay.search, timeout=5000)
     overlay.form.dtStorageList.item(0).setSelected(True)
     overlay.form.dtStorageDelete.click()
     assert quota.deletes == [] and overlay._armed
@@ -304,6 +308,8 @@ def test_storage_refusal_free_space_and_explicit_reprepare_without_reselection(w
     assert quota.put_attempts == 0
     overlay.form.dtStorageClose.click()
     qtbot.waitUntil(lambda: "1.0 MB free" in editor.form.prepareStorageStatus.text(), timeout=10000)
+    assert not window.inline.form.isHidden()
+    assert panel._prepare_editor is editor and editor.active()
     assert row.outcome == "Failed" and quota.put_attempts == 0  # freeing never retries Prepare
 
     row.widget.prepareReprepare.click()
@@ -362,3 +368,35 @@ def test_storage_snapshot_does_not_recover_interrupted_registry_operations(tmp_p
             await reader.aclose()
 
     asyncio.run(check())
+
+
+def test_suspended_prepare_editor_is_not_resurrected_after_replacement(window, qtbot):
+    first, replacement = QWidget(), QWidget()
+    window.inline.editor("Original", first, "Apply", lambda: None)
+    assert window.inline.suspend_editor(first)
+    assert window.inline.form.isHidden() and not window.inline.active()
+    window.inline.editor("Replacement", replacement, "Apply", lambda: None)
+    assert not window.inline.resume_editor(first)
+    assert window.inline._editor is replacement and window.inline.active()
+
+
+def test_prepare_source_space_warning_is_amber_and_advisory(window, quota, qtbot, tmp_path):
+    prepare(window, qtbot, lora_file(tmp_path))
+    editor = window.generation.lora._prepare_editor
+    row = editor.rows[0]
+    row.widget.prepareReprepare.click()
+    # Presentation-only source scenario: no conversion is submitted by this check.
+    row.source_kind = "safetensors"
+    row.total_bytes = 1_000_000
+    editor.set_storage(500_000)
+    editor.refresh()
+    label = editor.form.prepareStorageStatus
+    assert label.property("state") == "warning"
+    assert f"Before conversion: estimated space needed {storage_size(1_050_000)}" in label.text()
+    assert "0.5 MB free" in label.text() and "source + 5%" in label.text()
+    assert window.inline.form.inlineEditorAcceptButton.isEnabled()
+    editor.set_storage(None)
+    editor.refresh()
+    assert "unknown free" in label.text()
+    assert window.inline.form.inlineEditorAcceptButton.isEnabled()
+    assert quota.put_attempts == 0
