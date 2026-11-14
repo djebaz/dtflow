@@ -309,13 +309,16 @@ def _storage_limit_error(response, reason: str):
         return None
     shape = _member_shape(limit, "storage_limit") if isinstance(limit, dict) else {}
     free = limit.get("freeSpace") if isinstance(limit, dict) else None
-    if type(free) in (int, float) and math.isfinite(free):
-        shape["storage_limit_free_space"] = free  # unit unverified; recorded to establish it, not displayed
+    left = ""
+    if type(free) in (int, float) and math.isfinite(free) and free >= 0:
+        shape["storage_limit_free_space"] = free
+        # DT+ reports bytes (47091712 left was smaller than the 218 MB file it refused); shown in decimal MB.
+        left = f" About {free / 1_000_000:.1f} MB are free."
     return api_error(
         ErrorCategory.RESOURCE_LIMIT,
         "cloud_storage_limit_exceeded",
-        "DT+ reports that this account's LoRA storage limit is exceeded, so DTFlow cannot check or upload this file. "
-        "Free storage on the account or use another key; nothing was uploaded.",
+        "DT+ reports that this account's LoRA storage limit is exceeded, so DTFlow cannot check or upload this file."
+        f"{left} Free storage on the account or use another key; nothing was uploaded.",
         operation="/get_byom_urls",
         transport="http",
         response=getattr(response, "error_data", None),
