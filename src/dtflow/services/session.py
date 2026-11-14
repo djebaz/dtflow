@@ -217,9 +217,22 @@ async def bind_prepared(
     registry = AssetRegistry(state)
     await registry.open()
     try:
-        prepared = tuple([await registry.prepared(asset_id) for asset_id in asset_ids])
+        choices = await registry.choices(include_missing=True)
+        prepared = []
+        for asset_id in asset_ids:
+            try:
+                item = await registry.prepared(asset_id)
+            except ValidationError:
+                # A still-bound receipt may have become missing since selection. Its acknowledged history can
+                # enter the ordinary fresh check/restore path, but never admits unknown or interrupted-only work.
+                item = next(
+                    (choice for choice in choices if choice.receipt_id == asset_id and choice.identifier in selected),
+                    None,
+                )
+                if item is None:
+                    raise
+            prepared.append(item)
         # A receipt ID identifies content; keep the logical name that was selected.
-        choices = await registry.choices()
         ids = {item.receipt_id for item in prepared}
         named = {
             (item.receipt_id, item.identifier): item
