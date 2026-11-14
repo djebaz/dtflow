@@ -19,5 +19,9 @@ The first issue comment owns AC-1 through AC-13 and their Must/Should levels. Th
 
 ## Progress
 
-- Initial source implementation prepared; source review and documentation reconciliation are in progress.
-- Environment readiness and changed-module imports passed; no tests or renders ran.
+- Source implementation and focused review completed; draft PR #435 tracks source/static evidence separately from pending runtime ACs.
+- Environment readiness, changed-module imports and focused Ruff checks passed; no tests or renders ran. The exact final source is rechecked before push. No source conversions, uploads, providers, model downloads or inference ran.
+
+## Runtime evidence to collect later
+
+Use the first-comment checks as a plan, not commands that already exist. There is no complete #403 synthetic runner, and creating one is not authorized under the current no-tests/no-fixtures rule. A future authorized real-source smoke can observe `lora_convert.prepare_started`, `lora_convert.prepare_completed` and repeat `lora_convert.prepare_reused`; the new `lora_store.conversion_candidates`/`conversion_selected` events explain numeric version selection. Do not treat log presence alone as proof of retained bytes, provider identity or cancellation. Synthetic provenance edits and different-output substitution, if later authorized, use disposable state only and establish plumbing behavior, not real cross-release compatibility.

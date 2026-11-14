@@ -45,9 +45,17 @@ class PreparedConversion:
     metadata: LoraPrepareMetadata | None = None
 
 
-def _prepared(retained: RetainedFile, reused: bool, metadata: LoraPrepareMetadata | None) -> PreparedConversion:
+def _prepared(
+    retained: RetainedFile,
+    reused: bool,
+    metadata: LoraPrepareMetadata | None,
+    *,
+    allocated_name: bool = False,
+) -> PreparedConversion:
     try:
-        final = metadata.for_retained_identifier(retained.name) if metadata is not None else None
+        final = metadata
+        if metadata is not None and (allocated_name or not metadata.replace_existing):
+            final = metadata.for_retained_identifier(retained.name)
     except ValueError as exc:
         raise ConversionError(str(exc)) from exc
     return PreparedConversion(retained, reused, final)
@@ -134,6 +142,9 @@ def _convert_sync(
                 level=logging.WARNING,
                 data={**hint, "reason": "metadata_backfill_failed"},
             )
+        latest = source.stat()
+        if (latest.st_mtime_ns, latest.st_size) != (stat.st_mtime_ns, source_size) or stat.st_size != source_size:
+            raise ConversionError("The source changed during conversion lookup. Nothing was prepared.")
         if progress is not None:
             progress(ConversionProgress("reused", 1, 1))
         diagnostic_event(
@@ -146,9 +157,6 @@ def _convert_sync(
                 "size": reused.size,
             },
         )
-        latest = source.stat()
-        if (latest.st_mtime_ns, latest.st_size) != (stat.st_mtime_ns, source_size) or stat.st_size != source_size:
-            raise ConversionError("The source changed during conversion lookup. Nothing was prepared.")
         return _prepared(reused, True, metadata)
 
     diagnostic_event(
@@ -250,7 +258,7 @@ def _convert_sync(
                 "verification": spec.status,
             },
         )
-        return _prepared(retained, False, metadata)
+        return _prepared(retained, False, metadata, allocated_name=final_name != managed_name)
     finally:
         shutil.rmtree(folder, ignore_errors=True)
 
