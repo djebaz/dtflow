@@ -418,6 +418,7 @@ async def list_stored_assets(auth: CloudAuth, content: AssetContent) -> StorageL
     data = response.get("data")
     limit = data.get("storageLimitExceeded") if isinstance(data, dict) else None
     if not isinstance(limit, dict):
+        event(logging.getLogger(__name__), "backend.storage_listed", level=logging.INFO, data={"over_limit": False})
         return StorageListing(False)
     listing = _parse_listing(limit)
     event(
@@ -425,6 +426,7 @@ async def list_stored_assets(auth: CloudAuth, content: AssetContent) -> StorageL
         "backend.storage_listed",
         level=logging.INFO,
         data={
+            "over_limit": True,
             "files": len(listing.files),
             "skipped": listing.skipped,
             "free_space": listing.free_space if listing.free_space is not None else "absent",

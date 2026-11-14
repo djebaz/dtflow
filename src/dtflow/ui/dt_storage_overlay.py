@@ -153,6 +153,7 @@ class DtStorageOverlay(QObject):
         self._error("")
         self._files = ()
         self.form.dtStorageList.clear()
+        self.form.dtStorageList.setVisible(False)
         self.form.dtStorageStatus.setText("Reading DT+ storage…")
         self._set_busy(True)
         self.runner.submit(storage_listing(self.state_dir, self._content, saved=self._saved()), self._listed)
@@ -172,6 +173,7 @@ class DtStorageOverlay(QObject):
             )
             return
         self._files = listing.files
+        self.form.dtStorageList.setVisible(bool(listing.files))
         free = (
             f"About {megabytes(listing.free_space)} free." if listing.free_space is not None else "Free space unknown."
         )
