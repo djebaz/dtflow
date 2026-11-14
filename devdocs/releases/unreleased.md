@@ -1,5 +1,7 @@
 # Unreleased
 
+- Storage list pill rows measure their height after inheriting the application font/styles and use one vertical inset, preventing clipped filenames and pills. Source/static checks only; owner native recheck pending (PR #450).
+
 - DT+ storage rows replace used/unknown text with a green **File** pill for a known matching managed copy present in `lora_files`, or amber **Cloud only** when no matching managed copy is known. Unreadable local evidence shows neither pill. This checks indexed file presence/size off the UI thread, never hashes contents or scans other folders. The picker retains its separate **not on key** meaning. Static checks only; native appearance and revised-head execution pending (#443, PR #450).
 
 - Prepare review follow-up: show the final managed name in editor row status, refresh accepted-name reservations after conversion, and explain non-canonical retained-name failures before metadata updates. Source-reviewed only; revised-head runtime acceptance remains separate.

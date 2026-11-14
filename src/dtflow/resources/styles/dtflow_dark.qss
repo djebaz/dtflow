@@ -2653,7 +2653,7 @@ QWidget#loraSelectionRow[checkedSelection="true"] {
 
 /* DT+ storage list: rows read like the shared LoRA picker (hover, ticked rows use the selection tokens). */
 QListWidget#dtStorageList::item {
-  padding: 5px 6px;
+  padding: 0 6px;
   background: transparent;
   border: 1px solid transparent;
 }
