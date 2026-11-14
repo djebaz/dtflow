@@ -127,6 +127,7 @@ class LoraAssetPanel:
         self._state, self._build, self._is_busy, self._set_busy = Path(state_dir), build_request, is_busy, set_busy
         self.choose_asset_file = _choose_asset_file
         self.open_storage: Callable[[], None] = lambda: None  # the window mounts the shared overlay
+        self._prepare_storage_revision = 0
         self._prepare_files: tuple[str, ...] = ()
         self._prepare_metadata: dict[str, LoraPrepareMetadata] = {}
         self._prepare_source_sha: dict[str, str] = {}
@@ -680,13 +681,6 @@ class LoraAssetPanel:
             saved_unreadable = False
         except Exception:  # Prepare still works; but then no suggestion may replace what might be a saved value
             saved_triggers, saved_unreadable = {}, True
-        listing = None
-        if not self.preparing:
-            try:
-                listing = await storage_listing(self._state, storage_probe_content(), saved=self._saved())
-            except Exception:
-                # A read-only advisory failure must not prevent explicit ordinary Prepare. No raw exception details.
-                diagnostic_event(log, "assets.prepare_storage_unavailable", data={"count": len(paths)})
         return (
             evidence,
             occupied,
@@ -697,7 +691,6 @@ class LoraAssetPanel:
             descriptive,
             saved_triggers,
             saved_unreadable,
-            listing,
         )
 
     def _inspected_prepare_editor(self, editor, eligible, result, failure) -> None:
@@ -715,7 +708,6 @@ class LoraAssetPanel:
                 return  # a late advisory/inspection result belongs to another owner
             evidence, occupied, invalid, conversions, converter_families, detections, *extra = result
             descriptive, saved_triggers, saved_unreadable = extra[:3] if len(extra) >= 3 else ((), {}, False)
-            listing = extra[3] if len(extra) > 3 else None
             editor.set_inspection(
                 evidence,
                 eligible,
@@ -728,7 +720,9 @@ class LoraAssetPanel:
                 saved_triggers=saved_triggers,
                 saved_triggers_unreadable=saved_unreadable,
             )
-            editor.set_storage(listing.free_space if listing else None, listing.files if listing else ())
+            editor.set_storage(None)
+            # Do not hold metadata readiness or explicit approval behind an advisory network request.
+            self.refresh_prepare_storage()
 
     def _owns_prepare_context(self, context) -> bool:
         return (
@@ -757,15 +751,20 @@ class LoraAssetPanel:
             or not self._owns_prepare_context(context)
         ):
             return
+        self._prepare_storage_revision += 1
+        revision = self._prepare_storage_revision
 
         def listed(listing, failure):
             if (
                 self._runner.closed
+                or revision != self._prepare_storage_revision
                 or editor is not self._prepare_editor
                 or not editor.active()
                 or not self._owns_prepare_context(context)
             ):
                 return
+            if failure is not None:
+                diagnostic_event(log, "assets.prepare_storage_unavailable", data={"count": len(editor.rows)})
             editor.set_storage(
                 listing.free_space if listing and failure is None else None,
                 listing.files if listing and failure is None else (),
@@ -1135,6 +1134,7 @@ class LoraAssetPanel:
             if self._prepare_editor is not None:
                 detail = present_asset_failure(failure).detail if failure is not None else None
                 if storage_refusal(failure):
+                    self._prepare_storage_revision += 1  # discard any older advisory snapshot still in flight
                     free = reported_free_space(failure)
                     size = converted_size
                     if size is None and Path(self._prepare_files[self._prepare_index]).suffix.casefold() == ".ckpt":
