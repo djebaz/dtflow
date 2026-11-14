@@ -600,6 +600,10 @@ class MainWindow:
         )
         form.dtStorageButton.clicked.connect(self.open_dt_storage)
         self.dt_free_meter = SegmentMeter(form.dtFreeSpaceLabel.parentWidget())  # same bar as the storage panel
+        # The line and the bar keep their place while empty or hidden, so the blocks below never shift on repaint.
+        retain = self.dt_free_meter.sizePolicy()
+        retain.setRetainSizeWhenHidden(True)
+        self.dt_free_meter.setSizePolicy(retain)
         self.dt_free_meter.setVisible(False)
         free_layout = form.dtFreeSpaceLabel.parentWidget().layout()
         free_layout.insertWidget(free_layout.indexOf(form.dtFreeSpaceLabel) + 1, self.dt_free_meter)
@@ -2111,12 +2115,11 @@ class MainWindow:
         """Show the selected DT+ key's free space; one metadata lookup for a made-up file, nothing uploaded or changed."""
         label = self.form.dtFreeSpaceLabel
         if self.form.backendCombo.currentText() != "cloud" or self.runner.closed:
-            label.setVisible(False)
+            label.setText("\u00a0")
             self.dt_free_meter.setVisible(False)
             return
         token = self._free_space_token = object()
         label.setText("DT+ free space on this key: reading\u2026")
-        label.setVisible(True)
         self.dt_free_meter.setVisible(False)
         self.runner.submit(self._free_space(), lambda result, failure: self._free_space_read(result, failure, token))
 

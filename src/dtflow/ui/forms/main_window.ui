@@ -349,8 +349,7 @@
                  </property>
                  <item>
                   <widget class="QLabel" name="dtFreeSpaceLabel">
-                   <property name="text"><string /></property>
-                   <property name="visible"><bool>false</bool></property>
+                   <property name="text"><string>&#160;</string></property>
                    <property name="toolTip"><string>Free DT+ storage on the selected key, from one lookup for a made-up file after a connection check. Nothing is uploaded. Other keys have their own space.</string></property>
                    <property name="wordWrap"><bool>true</bool></property>
                    <property name="role" stdset="0"><string>secondary</string></property>
