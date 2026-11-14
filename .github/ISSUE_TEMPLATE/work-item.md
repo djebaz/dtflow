@@ -14,5 +14,5 @@ about: Define a change before implementation
      Must = essential behavior, anything the owner's smoke covers, or data/state/billing risk. When unsure, choose Must.
      Should = polish or other non-blocking criteria.
      Copy this list into the PR body, where the checkboxes live. Keep this body in sync with the PR. -->
-- AC-1 Must:
-- AC-2 Should:
+- AC-1 Must —
+- AC-2 Should —
