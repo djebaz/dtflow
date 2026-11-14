@@ -1368,24 +1368,31 @@ class AssetService:
                 seen[item.key] = max(times)
         return frozenset(seen), seen
 
-    async def key_holdings(self, listing: StorageListing) -> KeyHoldings:
+    async def receipt_snapshot(self) -> tuple[str, tuple[tuple[str, str, str, str], ...]]:
+        """This key's opaque identity and its confirmed receipts, read before a stored-list request is made."""
+        credential = await self.backend.asset_credential_identity()
+        return credential, await self.registry.confirmed_scope_rows(credential)
+
+    async def key_holdings(
+        self, listing: StorageListing, snapshot: tuple[str, tuple[tuple[str, str, str, str], ...]] | None = None
+    ) -> KeyHoldings:
         """Compare this key's confirmed receipts with a complete stored list (read-only; nothing is changed here).
 
         Only an explicit list DT+ gave in full (over-limit answer, nothing skipped; an empty list counts) is evidence.
-        Without one nothing is judged missing and the receipts alone say what the key probably holds. Receipts the
-        list lacks come back in ``stale`` with this key's opaque identity for the caller to apply through
-        ``AssetRegistry.invalidate_observed``; this method never opens the exclusive writer."""
+        Without one nothing is judged missing and the receipts alone say what the key probably holds. ``snapshot`` is
+        the receipts read *before* the list was requested, so a receipt confirmed while the request ran is never judged
+        against the older list. Receipts the list lacks come back in ``stale`` with this key's opaque identity for the
+        caller to apply through ``AssetRegistry.invalidate_observed``; this method never opens the exclusive writer."""
         try:
-            credential = await self.backend.asset_credential_identity()
-            rows = await self.registry.confirmed_scope_rows(credential)
+            credential, rows = snapshot if snapshot is not None else await self.receipt_snapshot()
         except (PersistenceError, AssetsBusyError, BackendError, ValidationError, OSError) as exc:
             diagnostic_event(log, "assets.holdings_unread", level=logging.WARNING, data={"reason": type(exc).__name__})
             return KeyHoldings(False, frozenset(), 0, 0, False)
         complete = listing.over_limit and listing.complete
         stale = (
             tuple(
-                (asset_id, identifier, remote_id)
-                for asset_id, identifier, remote_id, _ in rows
+                (asset_id, identifier, remote_id, seen)
+                for asset_id, identifier, remote_id, seen in rows
                 if not any(_receipt_matches(remote_id, item.key) for item in listing.files)
             )
             if complete
@@ -1403,7 +1410,7 @@ class AssetService:
                 **self._key_diagnostics(),
             },
         )
-        gone = {identifier for _, identifier, _ in stale}
+        gone = {identifier for _, identifier, _, _ in stale}
         return KeyHoldings(
             complete,
             frozenset(identifier for _, identifier, _, _ in rows) - gone,

@@ -972,8 +972,13 @@ async def observe_key(
     list lacks are then marked stale for that same identity in a scoped write (no startup recovery of other
     operations); a busy or unwritable registry leaves them as they were and reports ``updated=False``."""
     async with open_assets(state, saved=saved, read_only=True) as service:
+        # Receipts are read before the request: a Prepare finishing meanwhile is newer than the list and must win.
+        try:
+            snapshot = await service.receipt_snapshot()
+        except (PersistenceError, BackendError, ValidationError, OSError):
+            snapshot = None
         listing = await service.storage_listing(content)
-        holdings = await service.key_holdings(listing)
+        holdings = await service.key_holdings(listing, snapshot)
     if not holdings.stale or holdings.owner is None:
         return listing, holdings
     registry = AssetRegistry(state, writer=True, recover=False)

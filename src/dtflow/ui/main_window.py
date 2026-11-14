@@ -2133,6 +2133,7 @@ class MainWindow:
         if self.form.backendCombo.currentText() != "cloud" or self.runner.closed:
             label.setText("\u00a0")
             self.dt_free_meter.setVisible(False)
+            self._free_space_again = False
             self.generation.lora.set_holdings(None)
             return
         label.setText("DT+ free space on this key: reading\u2026")
@@ -2159,10 +2160,13 @@ class MainWindow:
 
     def _free_space_read(self, result, failure, revision) -> None:
         self._free_space_busy = False
-        if self._free_space_again and not self.runner.closed:
-            self._start_free_space_read()  # a newer request arrived while this one ran: only its answer counts
-            return
-        if revision != self._free_space_revision:
+        cloud = self.form.backendCombo.currentText() == "cloud" and not self.runner.closed
+        if self._free_space_again:
+            self._free_space_again = False
+            if cloud:
+                self._start_free_space_read()  # a newer request arrived while this one ran: only its answer counts
+                return
+        if revision != self._free_space_revision or not cloud:
             return  # the key or backend changed meanwhile
         listing, holdings = result if result is not None else (None, None)
         # A failed read is unknown, never "not on key" and never "held".

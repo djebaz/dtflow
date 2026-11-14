@@ -204,9 +204,9 @@ class KeyHoldings:
     marked_stale: int
     updated: bool
     owner: str | None = None  # opaque identity of the key this observation belongs to; never applies to another key
-    stale: tuple[tuple[str, str, str], ...] = field(
+    stale: tuple[tuple[str, str, str, str], ...] = field(
         default=(), repr=False, compare=False
-    )  # (asset_id, identifier, remote_id) of receipts the complete list lacks; written by the caller, not here
+    )  # (asset_id, identifier, remote_id, seen) of receipts the complete list lacks; written by the caller, not here
 
 
 @dataclass(frozen=True, slots=True)
