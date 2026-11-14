@@ -1345,7 +1345,36 @@ class AssetService:
         if not listing.files:
             return listing
         keys, seen = await self._local_receipt_keys(listing.files)
-        return replace(listing, local_keys=keys, local_seen=seen)
+        file_keys = await self._local_file_keys(listing.files)
+        return replace(listing, local_keys=keys, local_seen=seen, file_keys=file_keys)
+
+    async def _local_file_keys(self, files: tuple) -> frozenset[str] | None:
+        """Match remote references to indexed managed copies without reading or hashing file contents."""
+        if self.store is None:
+            return None
+        try:
+            records = await self.registry.list()
+            credential = await self.backend.asset_credential_identity()
+            scoped = await self.registry.confirmed_scope_rows(credential)
+            present = await asyncio.to_thread(self.store.present_identities)
+            by_id = {record["asset_id"]: record for record in records}
+            references = [(record["remote_id"], record) for record in records]
+            references.extend((remote, by_id[asset]) for asset, _, remote, _ in scoped if asset in by_id)
+            return frozenset(
+                item.key
+                for item in files
+                if any(
+                    isinstance(remote, str)
+                    and _receipt_matches(remote, item.key)
+                    and (record["sha256"], record["size"]) in present
+                    for remote, record in references
+                )
+            )
+        except (PersistenceError, BackendError, ValidationError, OSError, KeyError, TypeError) as exc:
+            diagnostic_event(
+                log, "assets.storage_files_unread", level=logging.WARNING, data={"reason": type(exc).__name__}
+            )
+            return None
 
     async def _local_receipt_keys(self, files: tuple) -> tuple[frozenset[str] | None, dict[str, str]]:
         """Delete keys of listed files that one of this key's confirmed local receipts refers to (None if unreadable),

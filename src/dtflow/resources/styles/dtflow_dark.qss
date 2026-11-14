@@ -518,7 +518,7 @@ QLabel#usagePill[state="error"] {
   color: ${color.error};
 }
 /* Picker pill for a LoRA the selected DT+ key does not hold; same amber as the warning usage pill. */
-QLabel#loraKeyPill {
+QLabel#loraKeyPill, QLabel#storageCloudPill, QLabel#storageFilePill {
   background: ${color.warningSurface};
   border: 1px solid ${color.statusWarningBorder};
   border-radius: ${size.radiusXs};
@@ -526,6 +526,11 @@ QLabel#loraKeyPill {
   font-size: 8pt;
   font-weight: ${type.weightStrong};
   padding: 0 7px;
+}
+QLabel#storageFilePill {
+  background: ${color.connectionSurface};
+  border-color: ${color.success};
+  color: ${color.success};
 }
 QToolButton#aboutButton {
   border: 0;

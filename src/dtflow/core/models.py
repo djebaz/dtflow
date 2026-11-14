@@ -183,6 +183,7 @@ class StorageListing:
     free_space: int | None = None  # as reported by DT+; bytes are inferred, not confirmed
     skipped: int = 0  # entries DTFlow could not use (never shown or deleted)
     complete: bool = False  # DT+ gave an explicit entry list (possibly empty) that was read in full, nothing skipped
+    file_keys: frozenset[str] | None = field(default=None, repr=False)  # known managed copies present; None = unread
     local_keys: frozenset[str] | None = field(
         default=None, repr=False
     )  # delete keys with a local receipt; None = unread

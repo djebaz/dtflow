@@ -1,5 +1,7 @@
 # Unreleased
 
+- DT+ storage rows replace used/unknown text with a green **File** pill for a known matching managed copy present in `lora_files`, or amber **Cloud only** when no matching managed copy is known. Unreadable local evidence shows neither pill. This checks indexed file presence/size off the UI thread, never hashes contents or scans other folders. The picker retains its separate **not on key** meaning. Static checks only; native appearance and revised-head execution pending (#443, PR #450).
+
 - Prepare review follow-up: show the final managed name in editor row status, refresh accepted-name reservations after conversion, and explain non-canonical retained-name failures before metadata updates. Source-reviewed only; revised-head runtime acceptance remains separate.
 
 Changes through 6.3.0 are consolidated in [DTFlow 6.3.0](v6.3.0.md). This file tracks subsequent changes; release publication and exact-artifact acceptance remain separate gates.

@@ -1,5 +1,7 @@
 # Current development status
 
+**Storage file pills (#443 / PR #450):** storage rows show green File when a matching indexed managed copy exists with its recorded size in `lora_files`; otherwise amber Cloud only means no known matching managed copy, not absence from arbitrary folders. Failed local evidence shows neither pill. Presence checks run off Qt with no content hashing; they do not authorize restoration or change deletion/receipt behavior. Source/static checks only; owner native smoke pending.
+
 **#443 review follow-up:** a failed pre-request receipt snapshot leaves holdings unknown and skips stale-receipt writes; it never falls back to observing receipts after the network response. Key/backend changes immediately clear the free-space text, meter, queued refresh and picker hints. Source/static inspection only; revised-path execution remains pending.
 
 **Stored LoRAs at generation (#443, PR #450):** generation already relinks/restores a missing LoRA; the free-space read now also marks this key's receipts that DT+'s stored list lacks as stale, the Generate LoRA picker shows an amber "not on key" pill (filled in late if the read finishes while it is open), and a storage refusal offers DT+ storage with a "Select to free space" helper (no automatic deletes). Owner Windows logs and screenshots (2026-11-14) cover stale marking, delete-then-generate relink and the pills; the full-key offer and re-attach on a full key are unexecuted. See [desktop guide](guides/desktop.md) and [cloud integration](architecture/cloud-integration.md).

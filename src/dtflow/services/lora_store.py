@@ -679,6 +679,19 @@ class LoraStore:
     def entries(self) -> list[dict]:
         return self._read()
 
+    def present_identities(self) -> frozenset[tuple[str, int]]:
+        """Indexed managed copies present on disk; metadata checks only, not content verification."""
+        present = set()
+        for item in self._read():
+            path = self._path(item)
+            try:
+                stat = path.stat()
+            except FileNotFoundError:
+                continue
+            if path.is_file() and stat.st_size == item["size"]:
+                present.add((item["sha256"], item["size"]))
+        return frozenset(present)
+
     def remove(self, sha256: str, size: int) -> bool:
         """Delete only the managed copy; refuse removal while an asset writer may be uploading it."""
         self.directory.parent.mkdir(parents=True, exist_ok=True)

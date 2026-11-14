@@ -19,6 +19,7 @@ from PySide6.QtWidgets import (
     QFrame,
     QHBoxLayout,
     QLineEdit,
+    QLabel,
     QListWidget,
     QListWidgetItem,
     QPushButton,
@@ -269,6 +270,7 @@ class DtStorageOverlay(QObject):
         escape.activated.connect(self.close)
         self._files: tuple[StoredAsset, ...] = ()
         self._local: frozenset[str] | None = None  # delete keys with a local receipt; None when not known
+        self._file_keys: frozenset[str] | None = None
         self._seen: dict[str, str] = {}  # delete key -> last local confirmation, to order what to free first
         self._needed: int | None = None  # bytes a failed generation needed, set only by that offer
         self._missing: int | None = None
@@ -382,20 +384,36 @@ class DtStorageOverlay(QObject):
         self.form.dtStorageList.blockSignals(True)
         self.form.dtStorageList.clear()
         for index, item in enumerate(self._files):
-            row = QListWidgetItem(f"{item.name}    {megabytes(item.size)}{self._origin(item)}")
+            title = f"{item.name}    {megabytes(item.size)}"
+            row = QListWidgetItem()
+            row.setData(Qt.ItemDataRole.AccessibleTextRole, title)
             row.setCheckState(Qt.CheckState.Checked if item.key in kept else Qt.CheckState.Unchecked)
             row.setData(Qt.ItemDataRole.UserRole, index)
             self.form.dtStorageList.addItem(row)
+            card = QWidget()
+            card.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
+            layout = QHBoxLayout(card)
+            layout.setContentsMargins(28, 3, 8, 3)
+            label = QLabel(title, card)
+            label.setTextFormat(Qt.TextFormat.PlainText)
+            layout.addWidget(label, 1)
+            if self._file_keys is not None:
+                local = item.key in self._file_keys
+                pill = QLabel("File" if local else "Cloud only", card)
+                pill.setObjectName("storageFilePill" if local else "storageCloudPill")
+                pill.setToolTip(
+                    "Matching managed file exists in lora_files; contents are checked before use."
+                    if local
+                    else "Stored on this DT+ key; no matching managed file is known in lora_files. Other folders are not checked."
+                )
+                layout.addWidget(pill)
+                row.setData(Qt.ItemDataRole.AccessibleTextRole, f"{title}, {pill.text()}")
+            row.setSizeHint(card.sizeHint())
+            self.form.dtStorageList.setItemWidget(row, card)
             row.setSelected(item.key in kept)
         self.form.dtStorageList.blockSignals(False)
         self._filter_rows(self.search.text())
         self._selection_changed()
-
-    def _origin(self, item: StoredAsset) -> str:
-        """Whether this computer has an upload record for the file; nothing is claimed when the records were unreadable."""
-        if self._local is None:
-            return ""
-        return "    \u00b7 used here" if item.key in self._local else "    \u00b7 unknown here"
 
     def _select_unused(self) -> None:
         """Tick the files without a local upload record, replacing the current selection; delete still asks again."""
@@ -527,6 +545,7 @@ class DtStorageOverlay(QObject):
             return
         self._files = listing.files
         self._local = listing.local_keys
+        self._file_keys = listing.file_keys
         self._seen = dict(listing.local_seen)
         self.select_unused.setVisible(self._local is not None and bool(listing.files))
         if key is not None and listing.free_space is not None:
