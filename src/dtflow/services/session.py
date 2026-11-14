@@ -975,9 +975,13 @@ async def observe_key(
         # Receipts are read before the request: a Prepare finishing meanwhile is newer than the list and must win.
         try:
             snapshot = await service.receipt_snapshot()
-        except (PersistenceError, BackendError, ValidationError, OSError):
+        except (PersistenceError, BackendError, ValidationError, OSError) as exc:
+            diagnostic_event(log, "assets.holdings_unread", level=logging.WARNING, data={"reason": type(exc).__name__})
             snapshot = None
         listing = await service.storage_listing(content)
+        if snapshot is None:
+            # No pre-request evidence: never judge newer receipts against this older remote list.
+            return listing, KeyHoldings(False, frozenset(), 0, 0, False)
         holdings = await service.key_holdings(listing, snapshot)
     if not holdings.stale or holdings.owner is None:
         return listing, holdings

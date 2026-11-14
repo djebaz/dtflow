@@ -36,6 +36,8 @@ Changes through 6.3.0 are consolidated in [DTFlow 6.3.0](v6.3.0.md). This file t
 
 ## Upgrade and compatibility
 
+- DT+ holdings refresh fails closed when the pre-request receipt snapshot cannot be read: no replacement post-response snapshot or stale-receipt mutation. Changing key/backend immediately clears free-space text, meter, queued refresh and picker hints. Static checks only; revised-path execution pending (#443, PR #450).
+
 - Prepare's DT+ storage action opens a smaller in-window popup above the still-visible inactive editor; the shared workspace scrim keeps both side panels behind Prepare. Closing storage restores the same draft and focus. Storage estimates are blue through 80% of known free space and amber above 80% or for an unresolved refusal. Owner reported the revised native UX passed on 2026-11-14; live full-key recovery remains separate.
 
 ## Validations checklist

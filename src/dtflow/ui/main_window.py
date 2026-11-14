@@ -2121,6 +2121,9 @@ class MainWindow:
     def _forget_holdings(self) -> None:
         """The key or backend changed: hints and any read still in flight belong to the old one, so show unknown."""
         self._free_space_revision = self._free_space_revision + 1
+        self._free_space_again = False
+        self.form.dtFreeSpaceLabel.setText("\u00a0")
+        self.dt_free_meter.setVisible(False)
         self.generation.lora.set_holdings(None)
 
     def _read_dt_free_space(self) -> None:
