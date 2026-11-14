@@ -1,5 +1,7 @@
 # Unreleased
 
+- Reject malformed LoRA alpha tensors containing zero or multiple values before Prepare can upload a converted checkpoint. Repeated conversions with equivalent provenance no longer add timestamp-only history entries; source/converter distinctions and retained assets are preserved (#452; source inspection only, no CI or Windows smoke).
+
 - Keep Logs filters from overlapping at narrow window widths by allowing session/component/event controls to shrink; full-value tooltips remain. Correct the storage-recovery smoke test to select the same in-memory key as its backend, preserving deletion ownership guards. Owner-authorized local rerun of only the two reported failures: 2 passed; no full suite, renders or Actions run.
 
 - Retire the transient storage view when opening a new Prepare editor, auto-closing Prepare, changing workspace or starting Generate/Retry, so it cannot remain underneath the generation workspace. Already-admitted storage work settles before dismissal; no cancellation or replay is introduced. Source/static checks only; owner UI recheck pending (PR #450).

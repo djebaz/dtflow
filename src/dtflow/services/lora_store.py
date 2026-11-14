@@ -443,10 +443,22 @@ class LoraStore:
             if not isinstance(records, list):
                 previous = matching.get("conversion")
                 records = [previous] if isinstance(previous, dict) else []
-            if conversion not in records:
+            # Repeating the same conversion with a new timestamp is not new provenance.
+            # Keep source observations and converter versions distinct.
+            identity = {key: value for key, value in conversion.items() if key != "converted_at_utc"}
+            existing = next(
+                (
+                    record
+                    for record in records
+                    if isinstance(record, dict)
+                    and {key: value for key, value in record.items() if key != "converted_at_utc"} == identity
+                ),
+                None,
+            )
+            if existing is None:
                 records.append(conversion)
             matching["conversions"] = records
-            matching["conversion"] = conversion
+            matching["conversion"] = existing if existing is not None else conversion
             if source_metadata is not None:
                 matching["source_metadata"] = source_metadata  # one bounded copy per file, newest wins
             try:
