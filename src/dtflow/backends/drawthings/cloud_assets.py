@@ -127,6 +127,10 @@ def _response_branches(response) -> tuple[dict, dict]:
     fields = {"data_type": type(data).__name__}
     if isinstance(data, dict):
         fields["data_member_count"] = len(data)
+        fields.update(_member_shape(data, "data"))
+    if isinstance(response, dict):
+        fields["response_member_count"] = len(response)
+        fields.update(_member_shape(response, "response"))
     for name in ("alreadyExists", "signedUrls"):
         branch = data.get(name) if isinstance(data, dict) else None
         fields[name + "_present"] = isinstance(data, dict) and name in data
@@ -152,6 +156,69 @@ def _response_branches(response) -> tuple[dict, dict]:
     )
     already = data.get("alreadyExists") if isinstance(data, dict) else None
     return already if isinstance(already, dict) else {}, urls if isinstance(urls, dict) else {}
+
+
+_EXTENSIONS = frozenset({".ckpt", ".safetensors"})
+
+
+def _type_counts(values, limit: int = 4) -> str:
+    """Bounded ``type:count`` summary of branch values; dynamic keys and values never appear."""
+    counts: dict[str, int] = {}
+    for value in values:
+        name = type(value).__name__
+        counts[name] = counts.get(name, 0) + 1
+    return ",".join(f"{name}:{counts[name]}" for name in sorted(counts)[:limit])
+
+
+def _match_shape(response, already: dict, urls: dict, content: AssetContent) -> dict:
+    """Allowlisted matching evidence for one request: counts, formats and booleans, never keys, hashes or URLs."""
+    data = response.get("data")
+    branches = data if isinstance(data, dict) else {}
+    raw_already = branches.get("alreadyExists")
+    signed = branches.get("signedUrls")
+    raw_urls = signed.get("urls") if isinstance(signed, dict) else None
+    digest = content.sha256.lower()
+    identifier = content.identifier
+    suffix = Path(identifier).suffix.lower()
+    already_keys = [key for key in already if isinstance(key, str)]
+    url_keys = [key for key in urls if isinstance(key, str)]
+    shape = {
+        "request_identifier_length": len(identifier),
+        "request_identifier_extension": suffix if suffix in _EXTENSIONS else "other",
+        "already_branch_is_dict": isinstance(raw_already, dict),
+        "already_branch_is_list": isinstance(raw_already, list),
+        "already_key_hex64_count": sum(bool(re.fullmatch(r"[0-9a-fA-F]{64}", key)) for key in already_keys),
+        "already_key_exact_match": content.sha256 in already,
+        "already_key_casefold_match": any(key.lower() == digest for key in already_keys),
+        "already_value_types": _type_counts(already.values()),
+        "url_branch_is_dict": isinstance(raw_urls, dict),
+        "url_branch_is_list": isinstance(raw_urls, list),
+        "url_key_exact_match": identifier in urls,
+        "url_key_casefold_match": any(key.casefold() == identifier.casefold() for key in url_keys),
+        "url_key_same_extension_count": sum(Path(key).suffix.lower() == suffix for key in url_keys),
+        "url_key_same_length_count": sum(len(key) == len(identifier) for key in url_keys),
+        "url_value_types": _type_counts(urls.values()),
+    }
+    if isinstance(raw_already, list):
+        shape["already_list_item_types"] = _type_counts(raw_already)
+    if isinstance(raw_urls, list):
+        shape["url_list_item_types"] = _type_counts(raw_urls)
+    return shape
+
+
+_SCHEMA_NAME = re.compile(r"[A-Za-z][A-Za-z0-9_]{0,31}")
+
+
+def _member_shape(mapping: dict, prefix: str, limit: int = 8) -> dict:
+    """Schema-like member names with value type and size; hash-like or free-form keys are only counted."""
+    named, other = [], 0
+    for key, value in mapping.items():
+        if isinstance(key, str) and _SCHEMA_NAME.fullmatch(key) and not re.fullmatch(r"[0-9a-fA-F]{16,}", key):
+            size = f"[{len(value)}]" if isinstance(value, (dict, list, str)) else ""
+            named.append(f"{key}:{type(value).__name__}{size}")
+        else:
+            other += 1
+    return {f"{prefix}_member_schema": ",".join(sorted(named)[:limit]), f"{prefix}_member_other_count": other}
 
 
 def _valid_reference(reference) -> bool:
@@ -217,7 +284,9 @@ def _safe_destination(value) -> bool:
         return False
 
 
-def _invalid(code: str = "cloud_byom_response_invalid", *, response=None, reason="no_usable_asset_evidence"):
+def _invalid(
+    code: str = "cloud_byom_response_invalid", *, response=None, reason="no_usable_asset_evidence", shape=None
+):
     return api_error(
         ErrorCategory.PROTOCOL,
         code,
@@ -225,7 +294,35 @@ def _invalid(code: str = "cloud_byom_response_invalid", *, response=None, reason
         operation="/get_byom_urls",
         transport="http",
         response=getattr(response, "error_data", None),
-        diagnostics=diagnostics(http_status=200, validation_reason=reason),
+        diagnostics=diagnostics(http_status=200, validation_reason=reason, **(shape or {})),
+    )
+
+
+def _storage_limit_error(response, reason: str):
+    """DT+ reports the account's storage limit as ``data.storageLimitExceeded`` instead of a lookup result.
+
+    Only the member's presence is interpreted; its content is neither trusted nor logged beyond schema-like names.
+    """
+    data = response.get("data")
+    limit = data.get("storageLimitExceeded") if isinstance(data, dict) else None
+    if limit is None or limit is False:
+        return None
+    shape = _member_shape(limit, "storage_limit") if isinstance(limit, dict) else {}
+    free = limit.get("freeSpace") if isinstance(limit, dict) else None
+    left = ""
+    if type(free) in (int, float) and math.isfinite(free) and free >= 0:
+        shape["storage_limit_free_space"] = free
+        # DT+ reports bytes (47091712 left was smaller than the 218 MB file it refused); shown in decimal MB.
+        left = f" About {free / 1_000_000:.1f} MB are free."
+    return api_error(
+        ErrorCategory.RESOURCE_LIMIT,
+        "cloud_storage_limit_exceeded",
+        "DT+ reports that this account's LoRA storage limit is exceeded, so DTFlow cannot check or upload this file."
+        f"{left} Free storage on the account or use another key; nothing was uploaded.",
+        operation="/get_byom_urls",
+        transport="http",
+        response=getattr(response, "error_data", None),
+        diagnostics=diagnostics(http_status=200, validation_reason=reason, **shape),
     )
 
 
@@ -254,7 +351,9 @@ async def negotiate_lora_assets(
         else:
             upload = urls.get(content.identifier)
             if not _usable_upload(upload):
-                raise _invalid(response=response, reason="missing_or_invalid_batched_asset_evidence")
+                raise _storage_limit_error(response, "storage_limit_exceeded") or _invalid(
+                    response=response, reason="missing_or_invalid_batched_asset_evidence"
+                )
             result = AssetNegotiation(
                 "upload_required", ticket=_signed_destination(upload.get("url"), response=response)
             )
@@ -309,7 +408,17 @@ async def negotiate_lora_asset(auth: CloudAuth, content: AssetContent) -> AssetN
                 )
         elif content.sha256 in already:
             reason = "unusable_existing_reference"
-        raise _invalid(response=response, reason=reason)
+        limit_error = _storage_limit_error(response, "storage_limit_exceeded")
+        if limit_error is not None:
+            raise limit_error
+        shape = _match_shape(response, already, urls, content)
+        event(
+            logging.getLogger(__name__),
+            "backend.byom_match_failed",
+            level=logging.INFO,
+            data={**asset_ref_data(sha256=content.sha256), "validation_reason": reason, **shape},
+        )
+        raise _invalid(response=response, reason=reason, shape=shape)
     result = AssetNegotiation("upload_required", ticket=_signed_destination(upload.get("url"), response=response))
     event(
         logging.getLogger(__name__),
