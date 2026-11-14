@@ -16,7 +16,7 @@ pytest.importorskip("pytestqt")
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from PySide6.QtWidgets import QApplication, QCheckBox, QLineEdit, QPushButton, QSlider, QWidget  # noqa: E402
-from support.cloud_assets import DtPlus, lora_file  # noqa: E402
+from support.cloud_assets import API_KEY, DtPlus, lora_file  # noqa: E402
 from support.fake_vault import Vault  # noqa: E402
 
 from dtflow.backends.fake import FakeBackend  # noqa: E402
@@ -276,6 +276,8 @@ def quota(window, monkeypatch):
 
 
 def test_storage_refusal_free_space_and_explicit_reprepare_without_reselection(window, quota, qtbot, tmp_path):
+    # The UI and in-memory backend must agree on the listed owner before deletion can be armed.
+    window._saved.save(API_KEY, "Fixture key")
     window.form.show()
     file = lora_file(tmp_path, data=bytes(range(256)) * 512)
     assert prepare(window, qtbot, file) == [file.name]
