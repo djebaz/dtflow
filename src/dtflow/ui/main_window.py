@@ -1923,7 +1923,6 @@ class MainWindow:
             self.form.clearCustomLorasButton.setEnabled(False)
             self.form.removeRetainedLoraButton.setEnabled(False)
             self.form.editLoraMetadataButton.setEnabled(False)
-            self.form.dtStorageButton.setEnabled(False)
             return
         count, entries, (stored_count, stored_bytes) = result
         self.form.customLorasStatusLabel.setText(
@@ -2099,12 +2098,15 @@ class MainWindow:
         selected = self._selected_lora_identity() is not None
         self.form.removeRetainedLoraButton.setEnabled(not self._removing_retained_lora and selected)
         self.form.editLoraMetadataButton.setEnabled(not self._removing_retained_lora and selected)
-        self.form.dtStorageButton.setEnabled(not self._removing_retained_lora and selected)
+        self.form.dtStorageButton.setEnabled(not self._removing_retained_lora)
 
     def open_dt_storage(self) -> None:
         """Open the DT+ storage panel using the selected retained LoRA as the real-identity metadata lookup."""
         identity = self._selected_lora_identity()
-        if identity is None or self._removing_retained_lora:
+        if self._removing_retained_lora:
+            return
+        if identity is None:
+            self.dt_storage_overlay.open(None)
             return
         sha256, size = identity
         name = self._lora_names.get(identity, "LoRA")

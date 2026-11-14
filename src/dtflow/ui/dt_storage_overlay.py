@@ -6,6 +6,7 @@ with no retry, and never touches local files, retained copies or saved results."
 
 from __future__ import annotations
 
+import secrets
 from pathlib import Path
 from typing import Callable
 
@@ -19,6 +20,8 @@ from dtflow.services.session import delete_storage, storage_listing
 from dtflow.ui.runner import AsyncRunner
 
 _DELETE_TEXT = "Delete selected from DT+…"
+_PROBE_NAME = "dtflow-storage-probe.ckpt"
+_PROBE_FALLBACK = 1024**3  # free space unknown: a size no normal account has left
 
 
 def megabytes(size: int) -> str:
@@ -84,6 +87,7 @@ class DtStorageOverlay(QObject):
         _Resize(host, self.overlay)
         self.form.dtStorageClose.clicked.connect(self.close)
         self.form.dtStorageRefresh.clicked.connect(self.refresh)
+        self.form.dtStorageProbe.clicked.connect(self.probe)
         self.form.dtStorageDelete.clicked.connect(self._delete_clicked)
         self.form.dtStorageList.itemChanged.connect(self._selection_changed)
         escape = QShortcut(QKeySequence(Qt.Key.Key_Escape), self.overlay)
@@ -93,18 +97,29 @@ class DtStorageOverlay(QObject):
         self._files: tuple[StoredAsset, ...] = ()
         self._busy = False
         self._armed = False
+        self._free: int | None = None  # last free space DT+ reported, to size the dummy lookup
         self._note = ""  # outcome of the last delete, kept above the re-read listing
 
     def is_open(self) -> bool:
         return self.overlay.isVisible()
 
-    def open(self, content: AssetContent) -> None:
-        """Show the panel and read the listing once; ``content`` is a retained LoRA's real local identity."""
+    def open(self, content: AssetContent | None) -> None:
+        """Show the panel; with a retained LoRA's real local identity, read the listing once."""
         self._content = content
+        self._error("")
+        self._files = ()
+        self.form.dtStorageList.clear()
+        self.form.dtStorageList.setVisible(False)
+        self._selection_changed()
         self.overlay.setGeometry(self.overlay.parentWidget().rect())
         self.overlay.raise_()
         self.overlay.setVisible(True)
-        self.refresh()
+        if content is None:
+            self.form.dtStorageStatus.setText(
+                "No LoRA selected. Use Check with dummy file, or close this and select a LoRA first."
+            )
+        else:
+            self.refresh()
         self.form.dtStorageClose.setFocus()
 
     def close(self) -> None:
@@ -120,7 +135,8 @@ class DtStorageOverlay(QObject):
 
     def _set_busy(self, busy: bool) -> None:
         self._busy = busy
-        self.form.dtStorageRefresh.setEnabled(not busy)
+        self.form.dtStorageRefresh.setEnabled(not busy and self._content is not None)
+        self.form.dtStorageProbe.setEnabled(not busy)
         self.form.dtStorageClose.setEnabled(not busy)
         self.form.dtStorageList.setEnabled(not busy)
         self._selection_changed()
@@ -158,6 +174,16 @@ class DtStorageOverlay(QObject):
         self._set_busy(True)
         self.runner.submit(storage_listing(self.state_dir, self._content, saved=self._saved()), self._listed)
 
+    def probe(self) -> None:
+        """One lookup for a made-up file bigger than the free space, so DT+ answers with its over-limit list.
+
+        The hash is random per click and never stored; nothing is uploaded and any upload URL DT+ returns is ignored."""
+        if self._busy or self.runner.closed:
+            return
+        size = (self._free + 1024**2) if self._free is not None else _PROBE_FALLBACK
+        self._content = AssetContent("lora", _PROBE_NAME, secrets.token_hex(32), size, provenance="storage probe")
+        self.refresh()
+
     def _listed(self, listing: StorageListing | None, failure) -> None:
         self._set_busy(False)
         note, self._note = self._note, ""
@@ -173,6 +199,7 @@ class DtStorageOverlay(QObject):
             )
             return
         self._files = listing.files
+        self._free = listing.free_space if listing.free_space is not None else self._free
         self.form.dtStorageList.setVisible(bool(listing.files))
         free = (
             f"About {megabytes(listing.free_space)} free." if listing.free_space is not None else "Free space unknown."
