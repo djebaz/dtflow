@@ -383,6 +383,20 @@ _MAX_STORED_ENTRIES = 5000
 _MAX_TEXT = 1024
 
 
+def _entry_shape(limit: dict) -> dict:
+    """Field names with value types of the answer and its entries: structure only, never a value."""
+    raw = limit.get("files")
+    fields: dict[str, set[str]] = {}
+    for item in raw[:_MAX_STORED_ENTRIES] if isinstance(raw, list) else ():
+        if isinstance(item, dict):
+            for name, value in item.items():
+                fields.setdefault(str(name)[:40], set()).add(type(value).__name__)
+    return {
+        "limit_fields": sorted(str(name)[:40] for name in limit)[:20],
+        "entry_fields": {name: "/".join(sorted(kinds)) for name, kinds in sorted(fields.items())[:20]},
+    }
+
+
 def _parse_listing(limit: dict) -> StorageListing:
     """Usable ``{file, key, size}`` entries of the over-limit answer; anything else is counted, never shown."""
     raw = limit.get("files")
@@ -441,6 +455,7 @@ async def list_stored_assets(auth: CloudAuth, content: AssetContent) -> StorageL
             "files": len(listing.files),
             "skipped": listing.skipped,
             "free_space": listing.free_space if listing.free_space is not None else "absent",
+            **_entry_shape(limit),
         },
     )
     return listing
