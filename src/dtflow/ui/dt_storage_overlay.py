@@ -11,10 +11,10 @@ import secrets
 from pathlib import Path
 from typing import Awaitable, Callable
 
-from PySide6.QtCore import QEvent, QFile, QIODevice, QObject, Qt
-from PySide6.QtGui import QKeySequence, QShortcut
+from PySide6.QtCore import QEvent, QFile, QIODevice, QObject, QRectF, QSize, Qt
+from PySide6.QtGui import QColor, QKeySequence, QPainter, QShortcut
 from PySide6.QtUiTools import QUiLoader
-from PySide6.QtWidgets import QFrame, QListWidgetItem, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QFrame, QListWidgetItem, QSizePolicy, QVBoxLayout, QWidget
 
 from dtflow.core.models import AssetContent, StorageListing, StoredAsset
 from dtflow.services.session import delete_storage, storage_listing
@@ -65,6 +65,54 @@ def _load_form() -> QWidget:
     return form
 
 
+class SegmentMeter(QWidget):
+    """Used share of the key's storage as a row of small squares: accent, warning from 80%, error from 90%."""
+
+    SIZE, GAP = 10, 3
+
+    def __init__(self, parent: QWidget | None = None):
+        super().__init__(parent)
+        self.setObjectName("dtStorageMeter")
+        self.setFixedHeight(self.SIZE)
+        self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
+        colors = load_tokens()
+        self._track = QColor(colors["color.barTrack"])
+        self._fills = {
+            "ok": QColor(colors["color.accent"]),
+            "warn": QColor(colors["color.warning"]),
+            "over": QColor(colors["color.error"]),
+        }
+        self.share = 0.0
+        self.state = "ok"
+
+    def set_share(self, share: float) -> None:
+        self.share = min(max(share, 0.0), 1.0)
+        self.state = "over" if self.share >= _METER_RED_FROM else "warn" if self.share >= _METER_WARN_FROM else "ok"
+        self.setToolTip(f"{self.share:.0%} of this key's storage is used.")
+        self.setAccessibleDescription(f"{self.share:.0%} of this key's storage is used.")
+        self.update()
+
+    def count(self) -> int:
+        return max(1, (self.width() + self.GAP) // (self.SIZE + self.GAP))
+
+    def filled(self) -> int:
+        return round(self.share * self.count())
+
+    def sizeHint(self) -> QSize:
+        return QSize(200, self.SIZE)
+
+    def paintEvent(self, event) -> None:
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        painter.setPen(Qt.PenStyle.NoPen)
+        count, filled = self.count(), self.filled()
+        step = (self.width() - self.SIZE) / max(1, count - 1) if count > 1 else 0
+        for index in range(count):
+            painter.setBrush(self._fills[self.state] if index < filled else self._track)
+            painter.drawRoundedRect(QRectF(index * step, 0, self.SIZE, self.SIZE), 2, 2)
+        painter.end()
+
+
 class _Resize(QObject):
     def __init__(self, host: QWidget, overlay: QWidget):
         super().__init__(overlay)
@@ -108,6 +156,10 @@ class DtStorageOverlay(QObject):
         self.form.dtStorageClose.clicked.connect(self.close)
         self.form.dtStorageRefresh.clicked.connect(self.refresh)
         self.form.dtStorageDelete.clicked.connect(self._delete_clicked)
+        self.meter = SegmentMeter(self.form)
+        layout = self.form.layout()
+        layout.insertWidget(layout.indexOf(self.form.dtStorageStatus) + 1, self.meter)
+        self.meter.setVisible(False)
         self.form.dtStorageList.itemChanged.connect(self._selection_changed)
         self.form.dtStorageList.itemClicked.connect(self._toggle_row)  # a click anywhere on the row ticks it
         for label in (self.form.dtStorageStatus, self.form.dtStorageSelection):
@@ -136,7 +188,7 @@ class DtStorageOverlay(QObject):
         self._files = ()
         self.form.dtStorageList.clear()
         self.form.dtStorageList.setVisible(False)
-        self.form.dtStorageMeter.setVisible(False)
+        self.meter.setVisible(False)
         self._selection_changed()
         self.overlay.setGeometry(self.overlay.parentWidget().rect())
         self.overlay.raise_()
@@ -174,19 +226,10 @@ class DtStorageOverlay(QObject):
                 chosen.append(self._files[item.data(Qt.ItemDataRole.UserRole)])
         return tuple(chosen)
 
-    def _meter(self, used: int, limit: int | None) -> None:
-        meter = self.form.dtStorageMeter
-        meter.setVisible(bool(limit))
-        if not limit:
-            return
-        share = min(max(used / limit, 0.0), 1.0)
-        meter.setValue(round(share * meter.maximum()))
-        state = "over" if share >= _METER_RED_FROM else "warn" if share >= _METER_WARN_FROM else "ok"
-        if meter.property("state") != state:
-            meter.setProperty("state", state)
-            meter.style().unpolish(meter)
-            meter.style().polish(meter)
-        meter.setToolTip(f"{share:.0%} of this key's storage is used.")
+    def _show_meter(self, used: int, limit: int | None) -> None:
+        self.meter.setVisible(bool(limit))
+        if limit:
+            self.meter.set_share(used / limit)
 
     def _toggle_row(self, item: QListWidgetItem) -> None:
         if self._busy:
@@ -213,7 +256,7 @@ class DtStorageOverlay(QObject):
         self._files = ()
         self.form.dtStorageList.clear()
         self.form.dtStorageList.setVisible(False)
-        self.form.dtStorageMeter.setVisible(False)
+        self.meter.setVisible(False)
         self.form.dtStorageStatus.setText("Reading DT+ storage…")
         self._set_busy(True)
         self.runner.submit(self._read(), self._listed)
@@ -257,7 +300,7 @@ class DtStorageOverlay(QObject):
             # the account limit is stored + free; DT+ does not state it, so this is derived
             limit = _bold(gigabytes(total + listing.free_space))
             line = f"{_bold(gigabytes(listing.free_space))} free of {limit}, {count} stored."
-            self._meter(total, total + listing.free_space)
+            self._show_meter(total, total + listing.free_space)
         else:
             line = f"{count} stored, {_bold(gigabytes(total))}. Free space unknown."
         skipped = f" {listing.skipped} entries could not be read and are not shown." if listing.skipped else ""
