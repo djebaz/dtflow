@@ -229,6 +229,10 @@ class DtStorageOverlay(QObject):
         tools = QHBoxLayout(self._tools)
         tools.setContentsMargins(0, 0, 0, 0)
         tools.setSpacing(6)
+        self.search.setMinimumWidth(60)  # the search box gives way first; the two buttons keep their full text
+        for fixed in (self.sort_combo, self.select_unused):
+            fixed.setMinimumWidth(fixed.sizeHint().width())
+            fixed.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
         tools.addWidget(self.search, 1)
         tools.addWidget(self.sort_combo)
         tools.addWidget(self.select_unused)
