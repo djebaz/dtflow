@@ -166,6 +166,25 @@ class AssetContent:
 
 
 @dataclass(frozen=True, slots=True)
+class StoredAsset:
+    """One file DT+ reports as stored under the selected key. ``key`` is the provider's delete key, never logged."""
+
+    key: str = field(repr=False)
+    name: str = field(repr=False)
+    size: int
+
+
+@dataclass(frozen=True, slots=True)
+class StorageListing:
+    """What DT+ says about the selected key's stored LoRAs. Files are listed only when the account is over its limit."""
+
+    over_limit: bool
+    files: tuple[StoredAsset, ...] = ()
+    free_space: int | None = None  # as reported by DT+; bytes are inferred, not confirmed
+    skipped: int = 0  # entries DTFlow could not use (never shown or deleted)
+
+
+@dataclass(frozen=True, slots=True)
 class PreparedAsset:
     """A server-acknowledged reference to uploaded content, scoped to one backend origin and tied to a local receipt."""
 
