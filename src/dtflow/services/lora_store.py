@@ -21,7 +21,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from dtflow.core.models import ValidationError
-from dtflow.diagnostics import event as diagnostic_event
+from dtflow.diagnostics import asset_ref_data, event as diagnostic_event
 from dtflow.persistence.assets import _lock_file
 from dtflow.services.lora_naming import display_label
 
@@ -40,6 +40,28 @@ class RetainedFile:
     sha256: str
     size: int
     path: Path
+
+
+class RetainedNameConflict(ValidationError):
+    """Different content already owns the requested retained filename."""
+
+
+def _converter_number(value: object) -> int | None:
+    # Stored versions are simple decimal strings, not application/semantic versions.
+    if not isinstance(value, str) or not re.fullmatch(r"[0-9]{1,32}", value):
+        return None
+    return int(value)
+
+
+def _conversion_time(value: object) -> datetime:
+    if isinstance(value, str):
+        try:
+            moment = datetime.fromisoformat(value)
+            if moment.tzinfo is not None:
+                return moment.astimezone(UTC)
+        except (ValueError, OverflowError):
+            pass
+    return datetime.min.replace(tzinfo=UTC)
 
 
 def _safe_name(name: str) -> str:
@@ -262,26 +284,54 @@ class LoraStore:
     def find_converted(
         self, source_sha256: str, family: str, scale: float, converter_version: str
     ) -> RetainedFile | None:
-        """Find verified converted bytes by source identity and converter settings, without contacting DT+."""
+        """Prefer verified current-version bytes, then the newest eligible converter; never downgrade.
+
+        Unknown/older provenance is not eligible. This lookup runs only after explicit Prepare, not inspection.
+        """
+        current = _converter_number(converter_version)
         handle = self._locked()
         try:
+            candidates = []
+            matches = 0
             for item in self._read_recovering():
                 records = item.get("conversions")
                 if not isinstance(records, list):
                     records = [item.get("conversion")]
-                if not any(
-                    isinstance(record, dict)
-                    and isinstance(record.get("source"), dict)
-                    and record["source"].get("sha256") == source_sha256
-                    and record.get("family") == family
-                    and record.get("scale") == scale
-                    and record.get("converter_version") == converter_version
-                    for record in records
-                    if isinstance(record, dict)
-                ):
-                    continue
+                for record in records:
+                    if not (
+                        isinstance(record, dict)
+                        and isinstance(record.get("source"), dict)
+                        and record["source"].get("sha256") == source_sha256
+                        and record.get("family") == family
+                        and record.get("scale") == scale
+                    ):
+                        continue
+                    matches += 1
+                    version = _converter_number(record.get("converter_version"))
+                    if current is None or version is None or version < current:
+                        continue
+                    candidates.append(
+                        (version == current, version, _conversion_time(record.get("converted_at_utc")), item)
+                    )
+            candidates.sort(key=lambda candidate: candidate[:3], reverse=True)
+            diagnostic_event(
+                log,
+                "lora_store.conversion_candidates",
+                data={
+                    **asset_ref_data(source_sha256=source_sha256),
+                    "matched_count": matches,
+                    "eligible_count": len(candidates),
+                    "converter_version": current,
+                },
+            )
+            checked = set()
+            for is_current, version, _moment, item in candidates:
                 # An unsafe name or a link is tampering, not damage: it stays an error here (before any reconversion).
                 target = self._path(item)
+                identity = (target.name, str(item.get("sha256")), str(item.get("size")))
+                if identity in checked:
+                    continue
+                checked.add(identity)
                 try:
                     retained = RetainedFile(target.name, item["sha256"], item["size"], target)
                     self.verify(retained)
@@ -291,6 +341,15 @@ class LoraStore:
                     # is still an error (_read).
                     diagnostic_event(log, "lora_store.converted_entry_skipped", level=logging.WARNING, data={})
                     continue
+                diagnostic_event(
+                    log,
+                    "lora_store.conversion_selected",
+                    data={
+                        **asset_ref_data(source_sha256=source_sha256, sha256=retained.sha256),
+                        "converter_version": version,
+                        "match": "current" if is_current else "newer",
+                    },
+                )
                 return retained
         finally:
             handle.close()
@@ -362,10 +421,10 @@ class LoraStore:
                     self._repair_damaged(target, staged, sha256, size)
             else:
                 if any(str(item.get("name", "")).casefold() == managed_name.casefold() for item in files):
-                    raise ValidationError("A different retained LoRA already uses the selected name.")
+                    raise RetainedNameConflict("A different retained LoRA already uses the selected name.")
                 target = self.directory / managed_name
                 if os.path.lexists(target):
-                    raise ValidationError("The converted LoRA filename already exists; no file was overwritten.")
+                    raise RetainedNameConflict("The converted LoRA filename already exists; no file was overwritten.")
                 if _hash(staged) != (sha256, size):
                     raise ValidationError("The converted LoRA changed before retention; nothing was kept.")
                 try:
