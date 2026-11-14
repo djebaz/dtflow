@@ -105,7 +105,11 @@ class DtStorageOverlay(QObject):
         return self.overlay.isVisible()
 
     def open(self) -> None:
-        """Show the panel and read the listing once with a dummy-file lookup (see ``probe``)."""
+        """Show the panel and read the listing once with a dummy-file lookup (see ``_probe_content``).
+
+        Free space learned on an earlier open belongs to whichever key was selected then, so each open starts from the
+        large unknown-size lookup; only re-reads within this open reuse the key's own free space."""
+        self._free = None
         self._error("")
         self._files = ()
         self.form.dtStorageList.clear()
