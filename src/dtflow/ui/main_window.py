@@ -55,6 +55,8 @@ from dtflow.services.lora_auto_naming import normalize_previous_retained
 from dtflow.services.lora_metadata_edit import read_lora_rows
 from dtflow.services.lora_naming import label_overrides, set_label_overrides
 from dtflow.services.preflight import checkpoint_exact_version
+from dtflow.services.session import storage_listing
+from dtflow.services.storage_probe import probe_content
 from dtflow.services.lora_store import LoraStore
 from dtflow.services.connection import Presentation, check_connection, present_failure, present_status
 from dtflow.services.cloud_usage import key_identity
@@ -77,7 +79,7 @@ from dtflow.ui.button_focus import KeyboardFocusGuard
 from dtflow.ui.current_page_stack import CurrentPageStack
 from dtflow.ui.cloud_usage_panel import CloudUsagePanel
 from dtflow.services.lora_convert.source_metadata import DetailModel, detail_model
-from dtflow.ui.dt_storage_overlay import DtStorageOverlay
+from dtflow.ui.dt_storage_overlay import DtStorageOverlay, gigabytes
 from dtflow.ui.lora_metadata_overlay import LoraMetadataOverlay
 from dtflow.ui.lora_hints import HintLibrary, PromptHintOverlay
 from dtflow.ui.lora_trigger_panel import LoraTriggerPanel
@@ -593,7 +595,7 @@ class MainWindow:
             self.state_dir,
             lambda: self._optional_saved,
             active_credential=self._active_credential_id,
-            on_changed=lambda: None,
+            on_changed=self._read_dt_free_space,
             on_closed=lambda: form.retainedLorasTable.setFocus(),
         )
         form.dtStorageButton.clicked.connect(self.open_dt_storage)
@@ -2101,6 +2103,40 @@ class MainWindow:
         self.form.editLoraMetadataButton.setEnabled(not self._removing_retained_lora and selected)
         self.form.dtStorageButton.setEnabled(not self._removing_retained_lora)
 
+    def _read_dt_free_space(self) -> None:
+        """Show the selected DT+ key's free space; one metadata lookup for a made-up file, nothing uploaded or changed."""
+        label = self.form.dtFreeSpaceLabel
+        if self.form.backendCombo.currentText() != "cloud" or self.runner.closed:
+            label.setVisible(False)
+            return
+        token = self._free_space_token = object()
+        label.setText("DT+ free space on this key: reading\u2026")
+        label.setVisible(True)
+        self.runner.submit(self._free_space(), lambda result, failure: self._free_space_read(result, failure, token))
+
+    async def _free_space(self):
+        listing = await storage_listing(self.state_dir, probe_content(), saved=self._optional_saved)
+        return listing
+
+    def _free_space_read(self, listing, failure, token) -> None:
+        if token is not getattr(self, "_free_space_token", None):
+            return  # a newer read (another key or a later check) supersedes this one
+        label = self.form.dtFreeSpaceLabel
+        if failure is not None or listing is None:
+            label.setText("DT+ free space on this key: could not be read.")
+        elif listing.over_limit and listing.free_space is not None:
+            label.setText(f"DT+ free space on this key: {gigabytes(listing.free_space)}.")
+        elif listing.over_limit:
+            label.setText("DT+ free space on this key: not reported.")
+        else:
+            label.setText(f"DT+ free space on this key: more than {gigabytes(probe_content().size)}.")
+        diagnostic_event(
+            log,
+            "app.dt_free_space_read",
+            level=logging.INFO,
+            data={"read": failure is None and listing is not None, "free_bytes": getattr(listing, "free_space", None)},
+        )
+
     def open_dt_storage(self) -> None:
         """Open the DT+ storage panel; it reads the selected key's stored files with one dummy-file lookup."""
         if not self._removing_retained_lora:
@@ -2296,6 +2332,7 @@ class MainWindow:
         self._present(shown)
         if failure is None and shown.level == "ok":
             self.remember()
+            self._read_dt_free_space()
 
     def save_key(self) -> None:
         try:
