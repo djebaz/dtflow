@@ -154,6 +154,54 @@ def _response_branches(response) -> tuple[dict, dict]:
     return already if isinstance(already, dict) else {}, urls if isinstance(urls, dict) else {}
 
 
+_EXTENSIONS = frozenset({".ckpt", ".safetensors"})
+
+
+def _type_counts(values, limit: int = 4) -> str:
+    """Bounded ``type:count`` summary of branch values; dynamic keys and values never appear."""
+    counts: dict[str, int] = {}
+    for value in values:
+        name = type(value).__name__
+        counts[name] = counts.get(name, 0) + 1
+    return ",".join(f"{name}:{counts[name]}" for name in sorted(counts)[:limit])
+
+
+def _match_shape(response, already: dict, urls: dict, content: AssetContent) -> dict:
+    """Allowlisted matching evidence for one request: counts, formats and booleans, never keys, hashes or URLs."""
+    data = response.get("data")
+    branches = data if isinstance(data, dict) else {}
+    raw_already = branches.get("alreadyExists")
+    signed = branches.get("signedUrls")
+    raw_urls = signed.get("urls") if isinstance(signed, dict) else None
+    digest = content.sha256.lower()
+    identifier = content.identifier
+    suffix = Path(identifier).suffix.lower()
+    already_keys = [key for key in already if isinstance(key, str)]
+    url_keys = [key for key in urls if isinstance(key, str)]
+    shape = {
+        "request_identifier_length": len(identifier),
+        "request_identifier_extension": suffix if suffix in _EXTENSIONS else "other",
+        "already_branch_is_dict": isinstance(raw_already, dict),
+        "already_branch_is_list": isinstance(raw_already, list),
+        "already_key_hex64_count": sum(bool(re.fullmatch(r"[0-9a-fA-F]{64}", key)) for key in already_keys),
+        "already_key_exact_match": content.sha256 in already,
+        "already_key_casefold_match": any(key.lower() == digest for key in already_keys),
+        "already_value_types": _type_counts(already.values()),
+        "url_branch_is_dict": isinstance(raw_urls, dict),
+        "url_branch_is_list": isinstance(raw_urls, list),
+        "url_key_exact_match": identifier in urls,
+        "url_key_casefold_match": any(key.casefold() == identifier.casefold() for key in url_keys),
+        "url_key_same_extension_count": sum(Path(key).suffix.lower() == suffix for key in url_keys),
+        "url_key_same_length_count": sum(len(key) == len(identifier) for key in url_keys),
+        "url_value_types": _type_counts(urls.values()),
+    }
+    if isinstance(raw_already, list):
+        shape["already_list_item_types"] = _type_counts(raw_already)
+    if isinstance(raw_urls, list):
+        shape["url_list_item_types"] = _type_counts(raw_urls)
+    return shape
+
+
 def _valid_reference(reference) -> bool:
     try:
         AssetNegotiation("exists", reference)
@@ -217,7 +265,9 @@ def _safe_destination(value) -> bool:
         return False
 
 
-def _invalid(code: str = "cloud_byom_response_invalid", *, response=None, reason="no_usable_asset_evidence"):
+def _invalid(
+    code: str = "cloud_byom_response_invalid", *, response=None, reason="no_usable_asset_evidence", shape=None
+):
     return api_error(
         ErrorCategory.PROTOCOL,
         code,
@@ -225,7 +275,7 @@ def _invalid(code: str = "cloud_byom_response_invalid", *, response=None, reason
         operation="/get_byom_urls",
         transport="http",
         response=getattr(response, "error_data", None),
-        diagnostics=diagnostics(http_status=200, validation_reason=reason),
+        diagnostics=diagnostics(http_status=200, validation_reason=reason, **(shape or {})),
     )
 
 
@@ -309,7 +359,14 @@ async def negotiate_lora_asset(auth: CloudAuth, content: AssetContent) -> AssetN
                 )
         elif content.sha256 in already:
             reason = "unusable_existing_reference"
-        raise _invalid(response=response, reason=reason)
+        shape = _match_shape(response, already, urls, content)
+        event(
+            logging.getLogger(__name__),
+            "backend.byom_match_failed",
+            level=logging.INFO,
+            data={**asset_ref_data(sha256=content.sha256), "validation_reason": reason, **shape},
+        )
+        raise _invalid(response=response, reason=reason, shape=shape)
     result = AssetNegotiation("upload_required", ticket=_signed_destination(upload.get("url"), response=response))
     event(
         logging.getLogger(__name__),
