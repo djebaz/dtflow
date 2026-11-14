@@ -1,5 +1,11 @@
 # Diagnostic events v1 — contract and legacy migration inventory
 
+## Prepare conversion reuse (#403)
+
+- `lora_store.conversion_candidates` (INFO) records matched and eligible counts plus the installed numeric converter version; source identity uses `asset_ref_data` only.
+- `lora_store.conversion_selected` (INFO) records the verified result's numeric converter version and fixed `match` value (`current` or `newer`), with source/output references through `asset_ref_data`.
+- Existing `lora_convert.prepare_started`, `prepare_completed` and `prepare_reused` distinguish conversion from reuse; existing `lora_store.converted_entry_skipped`/`converted_entry_repaired` retain #416 semantics. Selection diagnostics are not provider submission or success evidence. No new sink, raw path/name/version-string capture or schema version is introduced. Source/static review does not establish runtime privacy or failure acceptance.
+
 ## API response events (PR #156)
 
 - `backend.byom_upload_evidence` (INFO) precedes upload-entry interpretation in negotiation and lookup. It records only fixed type/format labels, lengths, text comparison and (for recognized hex/Base64 SHA-256 forms) decoded comparison results, reference usability and `comparison_required: false`. Neither digest, filename, server value nor URL is recorded. Opaque values have no decoded-comparison result; they are not claimed to be content hashes.

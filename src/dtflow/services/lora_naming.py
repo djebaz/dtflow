@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import re
 from collections.abc import Collection, Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 
 
@@ -65,6 +65,23 @@ class LoraPrepareMetadata:
         if tag is None:
             raise ValueError("The selected exact architecture has no approved managed-name shortcode.")
         return managed_filename(self.short_name, tag, self.format_code)
+
+    def for_retained_identifier(self, identifier: str) -> LoraPrepareMetadata:
+        """Carry the final converted name forward without changing family, format or user authorizations."""
+        if identifier == self.identifier:
+            return self
+        match = _MANAGED_NAME.fullmatch(identifier)
+        tag = architecture_shortcode(self.exact_architecture)
+        if (
+            match is None
+            or match["tag"].casefold() != (tag or "").casefold()
+            or match["fmt"].upper() != self.format_code
+        ):
+            raise ValueError("The retained conversion name disagrees with the selected architecture or format.")
+        updated = replace(self, short_name=match["name"])
+        if updated.identifier != identifier:
+            raise ValueError("The retained conversion does not have a canonical managed filename.")
+        return updated
 
 
 @dataclass(frozen=True, slots=True)

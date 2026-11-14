@@ -1,5 +1,7 @@
 # Unreleased
 
+- Prepare review follow-up: show the final managed name in editor row status, refresh accepted-name reservations after conversion, and explain non-canonical retained-name failures before metadata updates. Source-reviewed only; revised-head runtime acceptance remains separate.
+
 Changes through 6.3.0 are consolidated in [DTFlow 6.3.0](v6.3.0.md). This file tracks subsequent changes; release publication and exact-artifact acceptance remain separate gates.
 
 ## Highlights
@@ -9,6 +11,8 @@ Changes through 6.3.0 are consolidated in [DTFlow 6.3.0](v6.3.0.md). This file t
 - Prepare reads a `.safetensors` LoRA's descriptive header metadata: two inline lines with bold values and muted labels (training facts including the declared base model, top tags) with a styled selected-training-metadata tooltip (one trigger phrase, emphasized values, and a separate section of up to 50 retained tags with counts) in the preview band and in Edit metadata (training facts only: not the file's own title, author, license, date or description, which are also not stored; the CLI JSON report is unchanged), a Trigger Words suggestion only from an explicit trigger declaration (a typed value or a non-empty saved value wins; an empty saved value counts as not set, so the file's trigger is offered again), and the same details in Edit metadata after conversion without the original file. The metadata is display-only and never affects family detection or conversion. The converter CLI gains `--metadata` (`-m`), which converts nothing and writes a JSON report of the descriptive metadata of a file, folder or glob.
 
 ## Changed
+
+- Prepare automatically reuses verified current-version conversions, or a verified newer-version result when no current result is usable; older/unknown converter provenance converts again. Changed output receives a safe managed name without replacing old accepted assets, and that name is carried through Prepare and progress. The shipped damaged-output fallback is preserved (#403, PR #435; source/static checks only, runtime acceptance pending).
 
 - CI selects the **Fast** offline suite when an ordinary PR becomes Ready for review, the **Full** suite when a PR from a `release`-named source branch becomes Ready, and **Full** again when a release PR is merged into `main`. Manual Fast/Full dispatch remains available; intermediate PR commits do not automatically rerun CI. Documentation-only PRs remain excluded by the workflow path filter.
 - Developer UI screenshots use one **Preview** Action (`preview-ui.yml`) with change-selected, category, all-state and workflow-file modes; `preview:PART`/`preview:ALL` requests, automatic draft guards, shared GitHub artifacts/thumbnail comments and `preview_*` tooling names replace the separate render workflows. A native PR-path allowlist now prevents runs for documentation-only or unrelated YAML PRs, including label requests; explicit manual dispatch remains available. Preview capture and native acceptance remain separately evidenced (#421).
@@ -26,5 +30,5 @@ Changes through 6.3.0 are consolidated in [DTFlow 6.3.0](v6.3.0.md). This file t
 
 ## Release audit
 
-- PRs: #418, #417, #420, #422, #432
-- Scope: Version bump 6.3.0 and release-note consolidation; #414 safetensors descriptive metadata and trigger suggestions (static checks, offscreen Qt checks of the editor and dialog on synthetic files; owner Windows smoke pending); partial Cloud Prepare result presentation (#420); unified developer Preview workflow and tooling naming (#422, static checks only; captures/publication pending); legacy Preview Prepare readiness and timeout accounting (#432, static checks plus owner ALL at `52215e8` and authorized revised-source targeted capture; revised-head ALL/failure recovery remain separate).
+- PRs: #418, #417, #420, #422, #432, #435
+- Scope: Version bump 6.3.0 and release-note consolidation; #414 safetensors descriptive metadata and trigger suggestions (static checks, offscreen Qt checks of the editor and dialog on synthetic files; owner Windows smoke pending); partial Cloud Prepare result presentation (#420); unified developer Preview workflow and tooling naming (#422, static checks only; captures/publication pending); legacy Preview Prepare readiness and timeout accounting (#432, static checks plus owner ALL at `52215e8` and authorized revised-source targeted capture; revised-head ALL/failure recovery remain separate); automatic Prepare conversion reuse and collision-safe name propagation (#435, static checks only; runtime acceptance pending).

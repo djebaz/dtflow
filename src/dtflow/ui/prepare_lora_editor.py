@@ -78,6 +78,7 @@ class _Row:
     size: int | None = None
     total_bytes: int = 0
     phase: str | None = None  # live "Uploading 43%" style text while this row is being prepared
+    prepared_identifier: str | None = None  # actual managed name, which may differ from the typed draft
     accepted: str | None = None  # managed filename this exact content already has in the local registry
     accepted_conflict: bool = False
     hashing: bool = True  # background content hash still running (cleared when it ends, even if unreadable)
@@ -328,6 +329,16 @@ class PrepareBatchEditor:
 
         QTimer.singleShot(150, run)
 
+    def prepared_name(self, path: Path, identifier: str) -> None:
+        """Reflect the final managed identity without reallocating names or granting new consent."""
+        if not self.active():
+            return
+        for row in self.rows:
+            if row.path == path:
+                row.prepared_identifier = identifier
+                row.widget.prepareRowStatus.setText(f"{row.outcome or row.phase or 'Preparing…'} · {identifier}")
+                return
+
     def progress(self, path: Path, text: str | None, summary: str | None = None) -> None:
         """Show the live phase of one row (``None`` clears it) and an overall line beside the file count.
 
@@ -340,7 +351,10 @@ class PrepareBatchEditor:
             if row.path == path:
                 row.phase = text
                 if row.admitted and row.outcome is None and not row.widget.prepareRowStatus.isHidden():
-                    row.widget.prepareRowStatus.setText(text or "Preparing…")
+                    shown = text or "Preparing…"
+                    if row.prepared_identifier:
+                        shown += f" · {row.prepared_identifier}"
+                    row.widget.prepareRowStatus.setText(shown)
                 break
         if summary is not None:
             self.form.prepareFileCount.setText(f"{len(self.rows)} selected files · {summary}")
@@ -658,6 +672,8 @@ class PrepareBatchEditor:
                     )
                     ready += 1
 
+                if row.prepared_identifier:
+                    message += f" · {row.prepared_identifier}"
                 row.widget.prepareRowStatus.setText(message)
                 row.widget.prepareRowStatus.setToolTip(
                     row.invalid
@@ -888,6 +904,7 @@ class PrepareBatchEditor:
                 continue
             row.admitted = True
             row.outcome = None
+            row.prepared_identifier = None
             row.checked = False
             for control in (
                 row.widget.prepareArchitecture,
