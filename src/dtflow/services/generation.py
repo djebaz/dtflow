@@ -225,6 +225,8 @@ class GenerationService:
                     diagnostics=unsupported,
                 )
             )
+        if isinstance(self.assets, AssetService) and request.loras:
+            request = await self.assets.resolve_selected(request)
         if request.prepared_assets:
             preparation("validating_assets")
             # A fresh DT+ metadata check validates each bound LoRA before the attempt exists.

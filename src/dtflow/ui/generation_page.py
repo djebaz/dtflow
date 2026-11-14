@@ -1104,6 +1104,7 @@ class GenerationPage:
 
     def _submit(self, request, name, endpoint, asset_ids, prefix, simulation, edit, note) -> None:
         """Send one validated request snapshot; Generate and Retry both end here."""
+        self.lora.dismiss_storage()
         self._submitted_backend, self._submitted_endpoint = name, endpoint
         self._request = request
         self._run_edit = edit is not None
@@ -1270,6 +1271,8 @@ class GenerationPage:
         self._generating = False
         self._activity.set(generating=False, run_state=RunState())
         self._sync_generate()
+        if self.lora.loras:
+            self.lora.refresh_holdings()  # a restore or a refusal changed what the key holds
         if failure is not None:
             diagnostic_event(
                 log,
@@ -1280,6 +1283,7 @@ class GenerationPage:
             presentation = present_generation_failure(failure)
             self._status(presentation)
             activity_strip(self.page).complete("generation-result", presentation.headline, presentation.detail, "error")
+            self.lora.offer_storage(failure)
             self._offer_retry(True)
             if dev_enabled():
                 self._show_failure_details(failure)

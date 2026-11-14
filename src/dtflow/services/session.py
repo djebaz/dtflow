@@ -32,6 +32,7 @@ from dtflow.core.models import (
     EventSink,
     RemoteOutcome,
     InventorySnapshot,
+    KeyHoldings,
     PreflightDiagnostic,
     PreparedAsset,
     ResolvedGenerationRequest,
@@ -48,11 +49,11 @@ from dtflow.core.retry_policy import (
 )
 from dtflow.core.tasks import settle
 from dtflow.diagnostics import event as diagnostic_event
-from dtflow.persistence.assets import AssetRegistry, newest_per_name
+from dtflow.persistence.assets import AssetRegistry, AssetsBusyError, newest_per_name
 from dtflow.persistence.gallery_snapshot import schedule_publish
 from dtflow.persistence.inventory_cache import load_inventory, save_inventory
 from dtflow.persistence.settings import load_cloud_concurrency
-from dtflow.persistence.store import SQLiteAttempts
+from dtflow.persistence.store import PersistenceError, SQLiteAttempts
 from dtflow.services.assets import AssetService, possible_missing_asset
 from dtflow.services.credentials import EnvironmentCredentials, resolve_credentials
 from dtflow.services.generation import GenerationService
@@ -216,9 +217,22 @@ async def bind_prepared(
     registry = AssetRegistry(state)
     await registry.open()
     try:
-        prepared = tuple([await registry.prepared(asset_id) for asset_id in asset_ids])
+        choices = await registry.choices(include_missing=True)
+        prepared = []
+        for asset_id in asset_ids:
+            try:
+                item = await registry.prepared(asset_id)
+            except ValidationError:
+                # A still-bound receipt may have become missing since selection. Its acknowledged history can
+                # enter the ordinary fresh check/restore path, but never admits unknown or interrupted-only work.
+                item = next(
+                    (choice for choice in choices if choice.receipt_id == asset_id and choice.identifier in selected),
+                    None,
+                )
+                if item is None:
+                    raise
+            prepared.append(item)
         # A receipt ID identifies content; keep the logical name that was selected.
-        choices = await registry.choices()
         ids = {item.receipt_id for item in prepared}
         named = {
             (item.receipt_id, item.identifier): item
@@ -954,16 +968,62 @@ async def reconcile_asset(
 
 
 async def storage_listing(
-    state: Path, content: AssetContent, *, saved: CredentialProvider | None = None
+    state: Path, content: AssetContent, *, saved: CredentialProvider | None = None, protect: tuple[str, ...] = ()
 ) -> StorageListing:
     """Explicit read of the selected DT+ key's stored files (one metadata request; nothing is uploaded or changed)."""
     async with open_assets(state, saved=saved, read_only=True) as service:
-        return await service.storage_listing(content)
+        return await service.storage_listing(content, protect=protect)
 
 
-async def delete_storage(state: Path, selected: tuple, *, saved: CredentialProvider | None = None) -> dict:
+async def observe_key(
+    state: Path, content: AssetContent, *, saved: CredentialProvider | None = None
+) -> tuple[StorageListing, KeyHoldings]:
+    """One read of the selected key: its stored list and the comparison with this computer's receipts.
+
+    A single backend resolves the key once, so the list and the receipts always belong to the same key, and the
+    result carries that key's opaque identity (``KeyHoldings.owner``). The read is read-only. Receipts the complete
+    list lacks are then marked stale for that same identity in a scoped write (no startup recovery of other
+    operations); a busy or unwritable registry leaves them as they were and reports ``updated=False``."""
+    async with open_assets(state, saved=saved, read_only=True) as service:
+        # Receipts are read before the request: a Prepare finishing meanwhile is newer than the list and must win.
+        try:
+            snapshot = await service.receipt_snapshot()
+        except (PersistenceError, BackendError, ValidationError, OSError) as exc:
+            diagnostic_event(log, "assets.holdings_unread", level=logging.WARNING, data={"reason": type(exc).__name__})
+            snapshot = None
+        listing = await service.storage_listing(content)
+        if snapshot is None:
+            # No pre-request evidence: never judge newer receipts against this older remote list.
+            return listing, KeyHoldings(False, frozenset(), 0, 0, False)
+        holdings = await service.key_holdings(listing, snapshot)
+    if not holdings.stale or holdings.owner is None:
+        return listing, holdings
+    registry = AssetRegistry(state, writer=True, recover=False)
+    try:
+        try:
+            await registry.open()
+            changed = await registry.invalidate_observed(holdings.owner, holdings.stale)
+        finally:
+            await registry.aclose()
+    except (PersistenceError, AssetsBusyError, OSError) as exc:
+        diagnostic_event(
+            log,
+            "assets.stale_receipts_not_updated",
+            level=logging.WARNING,
+            data={"reason": type(exc).__name__, "stale": len(holdings.stale)},
+        )
+        return listing, replace(holdings, updated=False)
+    diagnostic_event(log, "assets.stale_receipts_marked", data={"stale": len(holdings.stale), "marked": changed})
+    return listing, replace(holdings, marked_stale=changed)
+
+
+async def delete_storage(
+    state: Path, selected: tuple, *, saved: CredentialProvider | None = None, expected_owner: str | None = None
+) -> dict:
     """Owner-confirmed delete of the chosen stored files under the selected DT+ key, once and without retry."""
     async with open_assets(state, saved=saved) as service:
+        if expected_owner is not None and await service.backend.asset_credential_identity() != expected_owner:
+            raise ValidationError("The selected DT+ key changed. Read its storage again before deleting.")
         return await service.delete_storage(selected)
 
 

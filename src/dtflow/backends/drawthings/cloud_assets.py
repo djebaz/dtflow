@@ -420,7 +420,9 @@ def _parse_listing(limit: dict) -> StorageListing:
         skipped += len(raw) - _MAX_STORED_ENTRIES
     free = limit.get("freeSpace")
     free_space = free if type(free) is int and free >= 0 else None
-    return StorageListing(True, tuple(entries), free_space, skipped)
+    # Only an explicit list read in full is evidence; a missing, malformed or truncated one is not (an empty list is).
+    complete = isinstance(raw, list) and len(raw) <= _MAX_STORED_ENTRIES and not skipped
+    return StorageListing(True, tuple(entries), free_space, skipped, complete)
 
 
 async def list_stored_assets(auth: CloudAuth, content: AssetContent) -> StorageListing:

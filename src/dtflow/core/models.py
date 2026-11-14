@@ -182,9 +182,35 @@ class StorageListing:
     files: tuple[StoredAsset, ...] = ()
     free_space: int | None = None  # as reported by DT+; bytes are inferred, not confirmed
     skipped: int = 0  # entries DTFlow could not use (never shown or deleted)
+    complete: bool = False  # DT+ gave an explicit entry list (possibly empty) that was read in full, nothing skipped
+    file_keys: frozenset[str] | None = field(default=None, repr=False)  # known managed copies present; None = unread
+    protected_keys: frozenset[str] | None = field(
+        default=None, repr=False
+    )  # automatic cleanup exclusions; None = unread
     local_keys: frozenset[str] | None = field(
         default=None, repr=False
     )  # delete keys with a local receipt; None = unread
+    local_seen: dict[str, str] = field(
+        default_factory=dict, repr=False, compare=False
+    )  # delete key -> when this computer last confirmed it for this key (UTC text); recency proxy, not a use time
+
+
+@dataclass(frozen=True, slots=True)
+class KeyHoldings:
+    """What this computer's receipts say the selected DT+ key holds, checked against DT+'s stored list when it gave one.
+
+    ``checked`` is true only after a complete list was compared; ``held`` are LoRA identifiers with a confirmed receipt on
+    this key that the list still shows (or, unchecked, that are merely recorded). Not a quota or dispatch authority."""
+
+    checked: bool
+    held: frozenset[str]
+    receipts: int
+    marked_stale: int
+    updated: bool
+    owner: str | None = None  # opaque identity of the key this observation belongs to; never applies to another key
+    stale: tuple[tuple[str, str, str, str], ...] = field(
+        default=(), repr=False, compare=False
+    )  # (asset_id, identifier, remote_id, seen) of receipts the complete list lacks; written by the caller, not here
 
 
 @dataclass(frozen=True, slots=True)

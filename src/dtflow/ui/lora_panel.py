@@ -29,6 +29,7 @@ from dtflow.core.models import (
 from dtflow.diagnostics import asset_ref_data, event as diagnostic_event
 from dtflow.logging_setup import development_mode
 from dtflow.services.catalogue import Catalogue, FAMILY_LABELS, bundled_exact_version
+from dtflow.core.models import KeyHoldings
 from dtflow.services.dt_storage import reported_free_space, storage_refusal, storage_size
 from dtflow.services.storage_probe import probe_content
 from dtflow.services.connection import (
@@ -69,7 +70,7 @@ from dtflow.ui.activity_bar import clock
 from dtflow.ui.activity_strip import activity_strip
 from dtflow.ui.file_dialogs import QFileDialog
 from dtflow.ui.latest_relay import LatestRelay
-from dtflow.ui.lora_selection_editor import _display_label, edit_lora_selection
+from dtflow.ui.lora_selection_editor import NOT_ON_KEY, _display_label, edit_lora_selection
 from dtflow.ui.prepare_lora_editor import PrepareBatchEditor
 from dtflow.ui.runner import AsyncRunner
 from dtflow.ui.source_details_view import safe_tooltip
@@ -127,7 +128,11 @@ class LoraAssetPanel:
         self._runner, self._backend, self._saved = runner, backend_source, saved_source
         self._state, self._build, self._is_busy, self._set_busy = Path(state_dir), build_request, is_busy, set_busy
         self.choose_asset_file = _choose_asset_file
-        self.open_storage: Callable[[], None] = lambda: None  # the window mounts the shared overlay
+        self.open_storage: Callable[..., None] = lambda **_: None  # the window mounts the shared overlay
+        self.dismiss_storage: Callable[[], None] = lambda: None
+        self.refresh_holdings: Callable[[], None] = lambda: None  # the window re-reads the key's stored list
+        self._holdings: KeyHoldings | None = None
+        self._picker_marks: Callable[[dict[str, str]], None] | None = None  # updates the open picker's pills
         self._prepare_storage_revision = 0
         self._prepare_files: tuple[str, ...] = ()
         self._prepare_metadata: dict[str, LoraPrepareMetadata] = {}
@@ -301,6 +306,62 @@ class LoraAssetPanel:
         )
         self._show(self.page.compatibilityStatusLabel, Presentation("unknown", text, ""))
 
+    # -- DT+ key holdings (hints only) -------------------------------------------------------------------------------
+    def set_holdings(self, holdings: KeyHoldings | None) -> None:
+        """Latest comparison of this key's receipts with DT+'s stored list; None when unknown (not cloud, unread)."""
+        self._holdings = holdings
+        if holdings is not None and holdings.marked_stale and not self._runner.closed:
+            self.refresh_assets()  # receipts just marked stale must stop looking confirmed here
+        if self._picker_marks is not None:
+            try:
+                self._picker_marks(self.storage_marks())  # a picker already open shows the late answer
+            except RuntimeError:
+                self._picker_marks = None  # the picker was closed and its widgets deleted
+
+    def storage_marks(self) -> dict[str, str]:
+        """Picker hint per custom LoRA: held by the key, or would need a re-attach. Nothing is hidden or blocked."""
+        holdings = self._holdings
+        if holdings is None or self._backend()[0] != "cloud":
+            return {}
+        marks = {}
+        for name in {record["identifier"] for record in self._records.values()}:
+            if name in holdings.held:
+                marks[name] = "on DT+ key" if holdings.checked else "receipt on key"
+            else:
+                marks[name] = NOT_ON_KEY
+        return marks
+
+    def missing_size(self) -> int:
+        """Total size of the selected custom LoRAs this key is not known to hold (what a re-attach could cost)."""
+        holdings = self._holdings
+        if holdings is None:
+            return 0
+        sizes = {record["identifier"]: record["size"] for record in self._records.values()}
+        return sum(sizes.get(item.identifier, 0) for item in self.loras if item.identifier not in holdings.held)
+
+    def offer_storage(self, failure) -> bool:
+        """After a storage refusal: show what was needed and offer the storage panel. Nothing is deleted here."""
+        if not storage_refusal(failure):
+            return False
+        needed = self.missing_size() or None
+        protected = tuple(item.identifier for item in self.loras)
+        free = reported_free_space(failure)
+        text = (
+            f"Needs about {storage_size(needed)}; "
+            f"{storage_size(free) if free is not None else 'unknown free space'} on this DT+ key. "
+            "Open DT+ storage to choose what to delete. Nothing is deleted without your confirmation."
+            if needed
+            else "Open DT+ storage to choose what to delete. Nothing is deleted without your confirmation."
+        )
+        feedback = self.page.window()._inline_feedback
+        if feedback.active():
+            return False  # never replace an editor or pending consent
+        feedback.show("DT+ storage is full", text, "warning")
+        feedback.set_accept(
+            "Open DT+ storage", lambda: (feedback.dismiss(), self.open_storage(needed=needed, protect=protected))
+        )
+        return True
+
     def family_labels(self) -> dict[str, str]:
         """Family evidence for display only; actual identifiers remain unchanged in requests.
 
@@ -389,6 +450,19 @@ class LoraAssetPanel:
     def add(self) -> None:
         """Edit the whole selection: check, uncheck and weigh every offered LoRA, then apply once."""
         candidates = self.choices()
+        marks = self.storage_marks()
+        diagnostic_event(
+            log,
+            "ui.lora_picker_marks",
+            data={
+                "offered": len(candidates),
+                "marked": len(marks),
+                "records": len(self._records),
+                "holdings": self._holdings is not None,
+            },
+        )
+        if self._holdings is None:
+            self.refresh_holdings()  # no read yet for this key: ask for one; the next opening shows its result
 
         def apply_selection(chosen):
             if self._is_busy():
@@ -404,12 +478,13 @@ class LoraAssetPanel:
                 if item.identifier not in before:
                     self._auto_bind(item.identifier)
 
-        edit_lora_selection(
+        self._picker_marks = edit_lora_selection(
             self.page,
             candidates=[name for name, _ in candidates],
             selected=self.loras,
             suggestions=dict(candidates),
             families=self.family_labels(),
+            marks=marks,
             callback=apply_selection,
         )
 
@@ -546,6 +621,7 @@ class LoraAssetPanel:
         for path in chosen:
             unique.setdefault(os.path.normcase(os.path.realpath(path)), os.path.abspath(path))
         paths = tuple(unique.values())
+        self.dismiss_storage()
         if self._prepare_editor is not None:
             self._prepare_editor.cancel_hashing()  # a replaced editor must not keep reading files
         holder: list[PrepareBatchEditor] = []
@@ -943,6 +1019,7 @@ class LoraAssetPanel:
         editor = self._prepare_editor
         if editor is None or not editor.all_checked():
             return
+        self.dismiss_storage()
         editor.close()
         self._prepare_editor = self._prepare_editor_context = None
 
@@ -1316,6 +1393,7 @@ class LoraAssetPanel:
             activity_strip(self.page).finish("asset")
             self._show(self.page.assetStatusLabel, Presentation(level, "Cloud preparation finished", detail))
             self.refresh_assets()
+            self.refresh_holdings()  # Prepare changed what the key holds
             return
         title = "Cloud preparation finished"
         panel_detail, full_detail, toast_detail = detail, detail, detail
@@ -1341,6 +1419,7 @@ class LoraAssetPanel:
         level = "ok" if state == "success" else "error" if state == "error" else "warning"
         self._show(self.page.assetStatusLabel, Presentation(level, title, panel_detail), tooltip=full_detail)
         self.refresh_assets()
+        self.refresh_holdings()  # Prepare changed what the key holds
 
     def _present_prepared(self, record, failure, *, bind: bool = True) -> None:
         self._set_busy(False)
@@ -1383,6 +1462,7 @@ class LoraAssetPanel:
             if bind:
                 self._bind_after_list, self._add_when_bound = record["identifier"], True
         self.refresh_assets()
+        self.refresh_holdings()  # a single Prepare changed what the key holds
 
     def _start_reconcile(self, asset_id: str, bind: str | None = None) -> None:
         if self._is_busy() or self._backend()[0] != "cloud":
@@ -1405,6 +1485,7 @@ class LoraAssetPanel:
         if bind is not None and failure is None and outcome[1].status == "confirmed":
             self._bind_after_list = bind
         self.refresh_assets()
+        self.refresh_holdings()  # a metadata check may have found the key no longer holds it
 
     def _auto_bind(self, identifier: str) -> None:
         """On cloud, reconcile the receipt of a LoRA that was just added (a metadata check) and bind it if confirmed."""

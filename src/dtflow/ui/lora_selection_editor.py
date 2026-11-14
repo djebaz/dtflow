@@ -6,7 +6,7 @@ from pathlib import Path
 from PySide6.QtCore import QEvent, QFile, QIODevice, QObject, Qt
 from PySide6.QtGui import QKeySequence, QShortcut
 from PySide6.QtUiTools import QUiLoader
-from PySide6.QtWidgets import QPushButton, QSlider, QWidget
+from PySide6.QtWidgets import QLabel, QPushButton, QSizePolicy, QSlider, QWidget
 
 from dtflow.core.models import LoRASelection
 from dtflow.services.lora_naming import display_label
@@ -108,6 +108,10 @@ class _ClickToAdd(QObject):
         return False
 
 
+#: The picker hint value for a LoRA the selected DT+ key is not known to hold (see ``LoraAssetPanel.storage_marks``).
+NOT_ON_KEY = "needs re-attach"
+
+
 def format_weight(weight: float) -> str:
     """Shortest exact digits, at least one decimal (``1.0``, ``0.65``)."""
     text = f"{weight:g}"
@@ -122,10 +126,11 @@ def edit_lora_selection(
     callback: Callable[[list[tuple[str, float]]], None],
     suggestions: dict[str, float | None] | None = None,
     families: dict[str, str] | None = None,
+    marks: dict[str, str] | None = None,
     title: str = "Edit LoRAs",
     hint: str | None = None,
     multi_weight: bool = False,
-) -> None:
+) -> Callable[[dict[str, str]], None]:
     """Show every offered LoRA with a checkbox and a 0.0–3.0 weight slider; Apply replaces the selection once.
 
     Selected LoRAs come first, checked, at their weights. Unchecked LoRAs start at 1.0. A loaded weight outside the
@@ -143,6 +148,7 @@ def edit_lora_selection(
     empty = editor.loraSelectionEmpty
     suggestions = suggestions or {}
     families = families or {}
+    marks = marks or {}  # DT+ storage hint per LoRA; display only, never filters or blocks
     names = list(dict.fromkeys([*candidates, *(item.identifier for item in selected)]))
     taken = [_display_label(name) for name in names]
 
@@ -194,6 +200,37 @@ def edit_lora_selection(
         update_order_summary()
         reorder_rows()
 
+    current_marks = dict(marks)
+
+    def sync_pill(name: str) -> None:
+        """A small amber pill marks only what the key does not hold; held LoRAs carry no extra text."""
+        row = rows.get(name)
+        if row is None:
+            return
+        wanted = current_marks.get(name) == NOT_ON_KEY
+        pill = row.findChild(QLabel, "loraKeyPill")
+        if wanted and pill is None:
+            pill = QLabel("not on key", row)
+            pill.setObjectName("loraKeyPill")
+            pill.setProperty("state", "warning")
+            pill.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
+            row.loraSelectionRowLayout.insertWidget(1, pill)
+        elif not wanted and pill is not None:
+            row.loraSelectionRowLayout.removeWidget(pill)
+            pill.deleteLater()
+        check = row.loraSelectionCheck
+        family = families.get(name, "Unknown")
+        check.setAccessibleName(
+            f"Use {_display_label(name)}, family {family}" + (", not on the DT+ key" if wanted else "")
+        )
+
+    def apply_marks(new: dict[str, str]) -> None:
+        """Late storage hints (the key's stored list arrived while this editor was open)."""
+        current_marks.clear()
+        current_marks.update(new)
+        for name in list(rows):
+            sync_pill(name)
+
     def add_row(name: str, *, checked: bool, weight: float, top: bool = False) -> QWidget:
         row = _load("lora_selection_row.ui", editor.loraSelectionRows)
         row.setProperty("identifier", name)
@@ -201,18 +238,25 @@ def edit_lora_selection(
         family = families.get(name, "Unknown")
         check.setText(f"{shown(name)} · {family}")
         check.setChecked(checked)
-        check.setAccessibleName(f"Use {_display_label(name)}, family {family}")
+        rows[name] = row
+        sync_pill(name)
         suggestion = suggestions.get(name)
-        lead = f"{name}\nFamily: {family}" + (
-            f"\nCatalogue suggests weight {suggestion:g}." if suggestion is not None else ""
-        )
+
+        def lead(name=name, family=family, suggestion=suggestion) -> str:
+            text = f"{name}\nFamily: {family}"
+            if current_marks.get(name) == NOT_ON_KEY:
+                text += (
+                    "\nNot on the selected DT+ key. It is restored automatically at generation and may use key storage."
+                )
+            return text + (f"\nCatalogue suggests weight {suggestion:g}." if suggestion is not None else "")
+
         weights[name] = weight
         row.metadata_hint = LoRAHover(
             row,
             lambda: [("LoRA metadata", (LoRASelection(name, weights[name]),))],
             detailed=True,
             descendants=True,
-            lead=lambda: lead,  # the checkbox carries no tooltip of its own, so the card shows over it too
+            lead=lead,  # the checkbox carries no tooltip of its own, so the card shows over it too
         )
         slider.setValue(max(slider.minimum(), min(slider.maximum(), round(weight * WEIGHT_STEPS))))
         slider.setAccessibleName(f"{_display_label(name)} weight")
@@ -347,3 +391,4 @@ def edit_lora_selection(
     editor.loraSelectionScroll.setMinimumHeight(min(content, limit))
     panel.editor(title, editor, "Apply", accept, primary=True)
     editor.loraSelectionSearch.setFocus()
+    return apply_marks
