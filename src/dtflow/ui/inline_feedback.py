@@ -194,13 +194,17 @@ class InlineFeedback(QObject):
         if browser.height() != height:
             browser.setFixedHeight(height)
 
-    def editor(self, title, widget, accept, callback, *, primary=False):
+    def editor(self, title, widget, accept, callback, *, primary=False, dismiss_text="Cancel", dismiss_tooltip=None):
         self.show(title, "")
         self._editor = widget
         self.escape.setEnabled(True)
         self.form.inlineEditorLayout.addWidget(widget)
         self.form.inlineDismissButton.hide()
         self.form.inlineEditorActions.show()
+        dismiss = self.form.inlineEditorCancelButton
+        dismiss.setText(dismiss_text)
+        dismiss.setAccessibleName(dismiss_text)
+        dismiss.setToolTip(dismiss_tooltip or dismiss_text)
         self.set_accept(accept, callback, editor_action=True, primary=primary)
         widget.show()
         self.strip.set_editor_dimming(True)

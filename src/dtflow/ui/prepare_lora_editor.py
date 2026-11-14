@@ -235,7 +235,15 @@ class PrepareBatchEditor:
         for row in self.rows:
             row.widget.prepareSourceFile.installEventFilter(self._elision)
         self.form.prepareFileCount.setText(f"{len(self.rows)} selected files")
-        self.panel.editor("Prepare LoRAs", self.form, "Inspecting files…", self.authorize, primary=True)
+        self.panel.editor(
+            "Prepare LoRAs",
+            self.form,
+            "Inspecting files…",
+            self.authorize,
+            primary=True,
+            dismiss_text="Close editor",
+            dismiss_tooltip="Close this editor without stopping Prepare. Use Stop after current file to stop later files.",
+        )
         self.refresh()
         QTimer.singleShot(0, self._elision.refresh)
 
