@@ -309,6 +309,12 @@ def _storage_limit_error(response, reason: str):
         return None
     shape = _member_shape(limit, "storage_limit") if isinstance(limit, dict) else {}
     free = limit.get("freeSpace") if isinstance(limit, dict) else None
+    files = limit.get("files") if isinstance(limit, dict) else None
+    if isinstance(files, list):
+        shape["storage_limit_file_entry_types"] = _type_counts(files)
+        if files and isinstance(files[0], dict):
+            # Names, types and lengths of the first entry only: tells whether entries carry the fields a delete needs.
+            shape.update(_member_shape(files[0], "storage_limit_first_entry"))
     left = ""
     if type(free) in (int, float) and math.isfinite(free) and free >= 0:
         shape["storage_limit_free_space"] = free
