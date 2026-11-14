@@ -9,7 +9,7 @@ Start with #442 on merged #441 (`01d4c9e9`): recover an explicit Prepare after s
 - Reuse the read-only dummy-size storage probe for a best-effort key-scoped snapshot alongside the locally inspected editor. Neither a pending snapshot nor a read failure holds readiness or explicit approval.
 - Show free space and a source-plus-5% conversion estimate as an advisory only. Use the latest real storage-refusal free-space observation for exact needed/free feedback.
 - Keep storage-refused rows in the editor. Re-Prepare unlocks those rows without granting accepted-name replacement; another explicit Prepare action is required.
-- Open the existing storage overlay above the current workspace without navigating away or losing selected files. Revalidate backend, saved-provider identity and ownership revision; never silently switch keys.
+- Open the existing storage overlay within the shared center panel without navigating away or losing selected files. Keep the side panels uncovered. Revalidate backend, saved-provider identity and ownership revision; never silently switch keys.
 - Prefer identifiable held rows in a new approved batch using the advisory listing, without using name/size observations as receipt or upload authority. Unknown conversion outputs retain relative order.
 - Keep retry, receipt and upload services unchanged. No assumed re-attach-on-full or cross-key behavior.
 
@@ -19,7 +19,7 @@ The first comment on #442 owns AC-1 through AC-5 and levels. Source/static check
 
 ## Source progress and limitations
 
-- Source implementation complete: canonical editor storage row, shared probe helper, read-only registry composition, current-owner checks, explicit storage retry and window-level storage overlay.
+- Source implementation complete: canonical editor storage row, shared probe helper, read-only registry composition, current-owner checks, explicit storage retry and center-panel storage overlay.
 - AC-3 is best-effort prioritization only: the provider listing exposes names and sizes, not a verified content hash. Matching observations only reorder already-approved rows; they never bypass service verification or authorize an upload. New/unknown converted bytes cannot be classified in advance.
 - AC-4 estimate is selected-source bytes plus 5%, without dtype analysis; it is deliberately approximate and never gates readiness. Unknown free space is shown as unknown.
 - `assets.prepare_storage_unavailable` records only the selected-file count when the advisory snapshot cannot be read; arbitrary exception text is not logged.

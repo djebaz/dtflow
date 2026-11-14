@@ -588,7 +588,7 @@ class MainWindow:
             on_closed=lambda: form.retainedLorasTable.setFocus(),
         )
         self.dt_storage_overlay = DtStorageOverlay(
-            form.centralWidget(),
+            self.shell.centerStack,
             self.runner,
             self.state_dir,
             lambda: self._optional_saved,
