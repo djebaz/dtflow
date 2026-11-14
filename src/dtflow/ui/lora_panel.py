@@ -796,6 +796,9 @@ class LoraAssetPanel:
         if progress is None:
             return
         progress.event(index, event)
+        editor = self._prepare_editor
+        if editor is not None and event.name and index < len(self._prepare_files):
+            editor.prepared_name(Path(self._prepare_files[index]), event.name)
         if (
             event.stage in (EXISTS, UPLOADING, CONFIRMING)
             and self._prepare_editor is not None

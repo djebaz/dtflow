@@ -19,6 +19,10 @@ The first issue comment owns AC-1 through AC-13 and their Must/Should levels. Th
 
 ## Progress
 
+- PR review follow-up: show the actual managed identifier in editor row status without changing the typed draft or consent. Reuse preserves the retained name; explicit Re-Prepare remains the rename path.
+- Validate non-canonical retained identities before metadata backfill or successful-reuse reporting; fail with an explicit backup-recovery message rather than silently renaming accepted data or reconverting into the same invalid index.
+- Refresh accepted-name reservations after conversion and again before the bounded retention retry. Authoritative retention/registry checks still handle concurrent changes after that snapshot.
+- Follow-up validation is static only; earlier owner smoke and CI apply to `18191665`, not the revised head. No tests or renders added or run.
 - Source implementation and focused review completed; draft PR #435 tracks source/static evidence separately from pending runtime ACs.
 - Environment readiness, changed-module imports and focused Ruff checks passed; no tests or renders ran. The exact final source is rechecked before push. No source conversions, uploads, providers, model downloads or inference ran.
 

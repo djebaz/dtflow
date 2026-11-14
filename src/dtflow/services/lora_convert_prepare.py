@@ -57,8 +57,21 @@ def _prepared(
         if metadata is not None and (allocated_name or not metadata.replace_existing):
             final = metadata.for_retained_identifier(retained.name)
     except ValueError as exc:
-        raise ConversionError(str(exc)) from exc
+        raise ConversionError(
+            "The retained conversion has a non-canonical name for the selected family or format. "
+            "Nothing was uploaded or renamed. Restore the retained-store index from a known-good backup "
+            "before preparing this source again."
+        ) from exc
     return PreparedConversion(retained, reused, final)
+
+
+async def _occupied_names(state: Path) -> tuple[ManagedName, ...]:
+    registry = AssetRegistry(state)
+    await registry.open()
+    try:
+        return occupied_from_snapshot(await registry.lora_name_snapshot())
+    finally:
+        await registry.aclose()
 
 
 def _collision_name(
@@ -130,6 +143,9 @@ def _convert_sync(
         )
     reused = store.find_converted(source_sha, family, 1.0, CONVERTER_VERSION)
     if reused is not None:
+        # Validate the managed identity before metadata writes or reporting successful reuse. Do not rename
+        # accepted bytes or reconvert into the same corrupt index as an implicit recovery strategy.
+        prepared = _prepared(reused, True, metadata)
         # Reuse existing CKPT bytes, but allow a later source selection to populate descriptive details that
         # older conversions did not store. Metadata is optional: an index write failure cannot block Prepare.
         try:
@@ -157,7 +173,7 @@ def _convert_sync(
                 "size": reused.size,
             },
         )
-        return _prepared(reused, True, metadata)
+        return prepared
 
     diagnostic_event(
         log,
@@ -228,6 +244,10 @@ def _convert_sync(
             )
 
         final_name = managed_name
+        if metadata is not None:
+            # Conversion may take minutes. Read accepted reservations now, not before starting the worker.
+            # This is advisory; retention and registry.begin still enforce their authoritative checks.
+            occupied = asyncio.run(_occupied_names(state))
         if metadata is not None and any(
             name.short_name.casefold() == metadata.short_name.casefold()
             and name.exact_architecture == metadata.exact_architecture
@@ -241,6 +261,7 @@ def _convert_sync(
         except RetainedNameConflict:
             if metadata is None:
                 raise  # Legacy callers without authoring metadata retain their strict no-overwrite contract.
+            occupied = asyncio.run(_occupied_names(state))
             final_name = _collision_name(store, metadata, result.destination_sha256, result.destination_size, occupied)
             retained = retain(final_name)  # One bounded retry; a second collision fails without overwriting.
         diagnostic_event(
@@ -275,16 +296,9 @@ async def convert_for_prepare(
     metadata: LoraPrepareMetadata | None = None,
 ) -> PreparedConversion:
     """Reuse or convert a source LoRA on a worker; the returned path is retained and verified."""
-    occupied: tuple[ManagedName, ...] = ()
     if metadata is not None:
         if metadata.identifier != managed_name:
             raise ConversionError("Prepare metadata disagrees with the requested conversion name.")
-        registry = AssetRegistry(state)
-        await registry.open()
-        try:
-            occupied = occupied_from_snapshot(await registry.lora_name_snapshot())
-        finally:
-            await registry.aclose()
     return await asyncio.to_thread(
         _convert_sync,
         state,
@@ -295,5 +309,4 @@ async def convert_for_prepare(
         cancel,
         allow_experimental,
         metadata,
-        occupied,
     )

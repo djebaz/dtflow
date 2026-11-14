@@ -1,5 +1,7 @@
 # Unreleased
 
+- Prepare review follow-up: show the final managed name in editor row status, refresh accepted-name reservations after conversion, and explain non-canonical retained-name failures before metadata updates. Source-reviewed only; revised-head runtime acceptance remains separate.
+
 Changes through 6.3.0 are consolidated in [DTFlow 6.3.0](v6.3.0.md). This file tracks subsequent changes; release publication and exact-artifact acceptance remain separate gates.
 
 ## Highlights
