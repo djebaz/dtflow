@@ -32,4 +32,10 @@ The owner could not practically fill the live key (about 3 GB free), then explic
 
 ## Owner UX correction
 
-The owner found the center-panel storage card underneath the still-active Prepare editor. Opening storage now parks the original editor's presentation, scrim and Escape/focus handling without destroying the draft; closing storage restores only that same editor under the same owner. Reset, replacement, navigation and shutdown must not resurrect it. The storage card remains center-panel-sized. The pre-conversion advisory uses the existing shared amber warning state and explicit Before conversion wording, rather than only muted text. Focus/lifecycle and advisory-readiness checks run in Actions under the owner's existing authorization; no local tests or renders run.
+The owner rejected storage appearing underneath Prepare, then hiding Prepare and exposing the side panels. Storage now opens as a smaller centered popup above the still-visible disabled Prepare editor. Its backdrop dims Prepare; the shared workspace scrim stays behind Prepare and blocks both side panels. Closing storage restores only the same draft and focus under the same owner. Replacement, navigation and shutdown must not resurrect a stale editor. Connection storage remains center-panel-sized. Estimates are blue normally and amber only for insufficient known space or an unresolved refusal; they never block approval.
+
+## Updated evidence
+
+[Actions Full](https://github.com/djebaz/dtflow/actions/runs/43582923995) at exact target `d4f811c9f8d254e73808efecbab2550ed4d67da1` passed **700 tests, 3 skipped in 68.84 seconds**, including lint and format. Controlled checks cover explicit recovery without reselection, visible inactive Prepare/scrim, smaller popup, focus, owner change, replacement safety, read-only registry preservation, and advisory readiness/color with insufficient and ten-times-sufficient headroom. This is in-memory/offscreen execution, not live provider or native visual acceptance.
+
+The owner screenshot confirmed the advisory is visible but exposed low contrast and missing side insets. Later `25fc672b` uses the existing pale-blue selection-text token and 12 px horizontal padding on both introductory lines. This later presentation change has static diff checks only; owner visual checking continues. No local tests or renders ran.
