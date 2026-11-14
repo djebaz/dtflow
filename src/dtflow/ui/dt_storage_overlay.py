@@ -14,7 +14,17 @@ from typing import Awaitable, Callable
 from PySide6.QtCore import QEvent, QFile, QIODevice, QObject, QRectF, QSize, Qt
 from PySide6.QtGui import QColor, QKeySequence, QPainter, QShortcut
 from PySide6.QtUiTools import QUiLoader
-from PySide6.QtWidgets import QComboBox, QFrame, QHBoxLayout, QListWidgetItem, QSizePolicy, QVBoxLayout, QWidget
+from PySide6.QtWidgets import (
+    QComboBox,
+    QFrame,
+    QHBoxLayout,
+    QLineEdit,
+    QListWidget,
+    QListWidgetItem,
+    QSizePolicy,
+    QVBoxLayout,
+    QWidget,
+)
 
 from dtflow.core.models import AssetContent, StorageListing, StoredAsset
 from dtflow.services.session import delete_storage, storage_listing
@@ -120,6 +130,37 @@ class SegmentMeter(QWidget):
         painter.end()
 
 
+class _RangeSelect(QObject):
+    """Shift+click ticks every visible row between the last clicked row and this one; a plain click toggles as usual."""
+
+    def __init__(self, listing: QListWidget):
+        super().__init__(listing)
+        self.listing = listing
+        self.anchor: int | None = None
+        listing.viewport().installEventFilter(self)
+
+    def eventFilter(self, watched, event):
+        if event.type() != QEvent.Type.MouseButtonPress or event.button() != Qt.MouseButton.LeftButton:
+            return False
+        item = self.listing.itemAt(event.position().toPoint())
+        if item is None:
+            return False
+        row = self.listing.row(item)
+        if event.modifiers() & Qt.KeyboardModifier.ShiftModifier and self.anchor is not None:
+            low, high = sorted((self.anchor, row))
+            self.listing.blockSignals(True)
+            for index in range(low, high + 1):
+                candidate = self.listing.item(index)
+                if not candidate.isHidden():
+                    candidate.setSelected(True)
+            self.listing.blockSignals(False)
+            self.listing.itemSelectionChanged.emit()
+            self.anchor = row
+            return True  # the range is already applied; do not also toggle the clicked row
+        self.anchor = row
+        return False
+
+
 class _Resize(QObject):
     def __init__(self, host: QWidget, overlay: QWidget):
         super().__init__(overlay)
@@ -156,9 +197,8 @@ class DtStorageOverlay(QObject):
         self.overlay.setVisible(False)
         layout = QVBoxLayout(self.overlay)
         self.form = _load_form()
-        layout.addStretch(1)
-        layout.addWidget(self.form, 0, Qt.AlignmentFlag.AlignHCenter)
-        layout.addStretch(1)
+        layout.setContentsMargins(16, 16, 16, 16)
+        layout.addWidget(self.form, 1)  # the card takes the room of the central panel
         _Resize(host, self.overlay)
         self.form.dtStorageClose.clicked.connect(self.close)
         self.form.dtStorageRefresh.clicked.connect(self.refresh)
@@ -175,7 +215,17 @@ class DtStorageOverlay(QObject):
         layout.insertWidget(layout.indexOf(self.form.dtStorageStatus) + 1, self.meter)
         self.meter.setVisible(False)
         self.form.dtStorageList.itemChanged.connect(self._selection_changed)
-        self.form.dtStorageList.itemClicked.connect(self._toggle_row)  # a click anywhere on the row ticks it
+        self.search = QLineEdit(self.form)
+        self.search.setObjectName("dtStorageSearch")
+        self.search.setPlaceholderText("Search anywhere in the name…")
+        self.search.setAccessibleName("Stored files search")
+        self.search.setClearButtonEnabled(True)
+        self.search.textChanged.connect(self._filter_rows)
+        layout.insertWidget(layout.indexOf(self.form.dtStorageList), self.search)
+        layout.setStretchFactor(self.form.dtStorageList, 1)
+        # A click anywhere on a row ticks it: the list is multi-select and the check marks follow the selection.
+        self.form.dtStorageList.itemSelectionChanged.connect(self._sync_checks)
+        self._range = _RangeSelect(self.form.dtStorageList)
         for label in (self.form.dtStorageStatus, self.form.dtStorageSelection):
             label.setTextFormat(Qt.TextFormat.RichText)
         escape = QShortcut(QKeySequence(Qt.Key.Key_Escape), self.overlay)
@@ -257,7 +307,9 @@ class DtStorageOverlay(QObject):
             row.setCheckState(Qt.CheckState.Checked if item.key in kept else Qt.CheckState.Unchecked)
             row.setData(Qt.ItemDataRole.UserRole, index)
             self.form.dtStorageList.addItem(row)
+            row.setSelected(item.key in kept)
         self.form.dtStorageList.blockSignals(False)
+        self._filter_rows(self.search.text())
         self._selection_changed()
 
     def _sort_changed(self, _index: int) -> None:
@@ -269,11 +321,23 @@ class DtStorageOverlay(QObject):
         if limit:
             self.meter.set_share(used / limit)
 
-    def _toggle_row(self, item: QListWidgetItem) -> None:
-        if self._busy:
-            return
-        ticked = item.checkState() == Qt.CheckState.Checked
-        item.setCheckState(Qt.CheckState.Unchecked if ticked else Qt.CheckState.Checked)
+    def _sync_checks(self) -> None:
+        """Ticked rows are the selected rows; the check mark and the selection style follow each other."""
+        listing = self.form.dtStorageList
+        listing.blockSignals(True)
+        for row in range(listing.count()):
+            item = listing.item(row)
+            item.setCheckState(Qt.CheckState.Checked if item.isSelected() else Qt.CheckState.Unchecked)
+        listing.blockSignals(False)
+        self._selection_changed()
+
+    def _filter_rows(self, text: str) -> None:
+        needle = text.strip().casefold()
+        listing = self.form.dtStorageList
+        for row in range(listing.count()):
+            item = listing.item(row)
+            name = self._files[item.data(Qt.ItemDataRole.UserRole)].name
+            item.setHidden(bool(needle) and needle not in name.casefold())
 
     def _selection_changed(self, *_args) -> None:
         self._disarm()
