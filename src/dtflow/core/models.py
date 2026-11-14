@@ -182,6 +182,9 @@ class StorageListing:
     files: tuple[StoredAsset, ...] = ()
     free_space: int | None = None  # as reported by DT+; bytes are inferred, not confirmed
     skipped: int = 0  # entries DTFlow could not use (never shown or deleted)
+    local_keys: frozenset[str] | None = field(
+        default=None, repr=False
+    )  # delete keys with a local receipt; None = unread
 
 
 @dataclass(frozen=True, slots=True)

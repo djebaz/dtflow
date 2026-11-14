@@ -348,16 +348,11 @@
                   <number>8</number>
                  </property>
                  <item>
-                  <widget class="QLabel" name="credentialHelpLabel">
-                   <property name="text">
-                    <string>Keys are saved securely in Windows Credential Manager. The selected key is used for all DT+ work; the DRAWTHINGS_API_KEY variable is read at launch and used only when nothing is saved or when selected here.</string>
-                   </property>
-                   <property name="wordWrap">
-                    <bool>true</bool>
-                   </property>
-                   <property name="role" stdset="0">
-                    <string>secondary</string>
-                   </property>
+                  <widget class="QLabel" name="dtFreeSpaceLabel">
+                   <property name="text"><string>&#160;</string></property>
+                   <property name="toolTip"><string>Free DT+ storage on the selected key, from one lookup for a made-up file after a connection check. Nothing is uploaded. Other keys have their own space.</string></property>
+                   <property name="wordWrap"><bool>true</bool></property>
+                   <property name="role" stdset="0"><string>secondary</string></property>
                   </widget>
                  </item>
                  <item>
@@ -375,6 +370,7 @@
                  </item>
                  <item>
                   <widget class="QComboBox" name="keySelectCombo">
+                   <property name="toolTip"><string>Keys are saved securely in Windows Credential Manager. The selected key is used for all DT+ work; the DRAWTHINGS_API_KEY variable is read at launch and used only when nothing is saved or when selected here.</string></property>
                    <property name="accessibleName">
                     <string>Active DT plus API key</string>
                    </property>
