@@ -1270,6 +1270,8 @@ class GenerationPage:
         self._generating = False
         self._activity.set(generating=False, run_state=RunState())
         self._sync_generate()
+        if self.lora.loras:
+            self.lora.refresh_holdings()  # a restore or a refusal changed what the key holds
         if failure is not None:
             diagnostic_event(
                 log,
@@ -1280,6 +1282,7 @@ class GenerationPage:
             presentation = present_generation_failure(failure)
             self._status(presentation)
             activity_strip(self.page).complete("generation-result", presentation.headline, presentation.detail, "error")
+            self.lora.offer_storage(failure)
             self._offer_retry(True)
             if dev_enabled():
                 self._show_failure_details(failure)

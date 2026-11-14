@@ -122,6 +122,7 @@ def edit_lora_selection(
     callback: Callable[[list[tuple[str, float]]], None],
     suggestions: dict[str, float | None] | None = None,
     families: dict[str, str] | None = None,
+    marks: dict[str, str] | None = None,
     title: str = "Edit LoRAs",
     hint: str | None = None,
     multi_weight: bool = False,
@@ -143,6 +144,7 @@ def edit_lora_selection(
     empty = editor.loraSelectionEmpty
     suggestions = suggestions or {}
     families = families or {}
+    marks = marks or {}  # DT+ storage hint per LoRA; display only, never filters or blocks
     names = list(dict.fromkeys([*candidates, *(item.identifier for item in selected)]))
     taken = [_display_label(name) for name in names]
 
@@ -199,13 +201,17 @@ def edit_lora_selection(
         row.setProperty("identifier", name)
         check, slider, label = row.loraSelectionCheck, row.loraSelectionSlider, row.loraSelectionWeight
         family = families.get(name, "Unknown")
-        check.setText(f"{shown(name)} · {family}")
+        mark = marks.get(name)
+        check.setText(f"{shown(name)} · {family}" + (f" · {mark}" if mark else ""))
         check.setChecked(checked)
         check.setAccessibleName(f"Use {_display_label(name)}, family {family}")
         suggestion = suggestions.get(name)
         lead = f"{name}\nFamily: {family}" + (
-            f"\nCatalogue suggests weight {suggestion:g}." if suggestion is not None else ""
+            f"\nDT+ key: {mark}. A LoRA that needs a re-attach is restored automatically at generation and may use key storage."
+            if mark
+            else ""
         )
+        lead += f"\nCatalogue suggests weight {suggestion:g}." if suggestion is not None else ""
         weights[name] = weight
         row.metadata_hint = LoRAHover(
             row,

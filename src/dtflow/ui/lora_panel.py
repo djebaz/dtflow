@@ -29,6 +29,7 @@ from dtflow.core.models import (
 from dtflow.diagnostics import asset_ref_data, event as diagnostic_event
 from dtflow.logging_setup import development_mode
 from dtflow.services.catalogue import Catalogue, FAMILY_LABELS, bundled_exact_version
+from dtflow.core.models import KeyHoldings
 from dtflow.services.dt_storage import reported_free_space, storage_refusal, storage_size
 from dtflow.services.storage_probe import probe_content
 from dtflow.services.connection import (
@@ -127,7 +128,9 @@ class LoraAssetPanel:
         self._runner, self._backend, self._saved = runner, backend_source, saved_source
         self._state, self._build, self._is_busy, self._set_busy = Path(state_dir), build_request, is_busy, set_busy
         self.choose_asset_file = _choose_asset_file
-        self.open_storage: Callable[[], None] = lambda: None  # the window mounts the shared overlay
+        self.open_storage: Callable[..., None] = lambda **_: None  # the window mounts the shared overlay
+        self.refresh_holdings: Callable[[], None] = lambda: None  # the window re-reads the key's stored list
+        self._holdings: KeyHoldings | None = None
         self._prepare_storage_revision = 0
         self._prepare_files: tuple[str, ...] = ()
         self._prepare_metadata: dict[str, LoraPrepareMetadata] = {}
@@ -301,6 +304,54 @@ class LoraAssetPanel:
         )
         self._show(self.page.compatibilityStatusLabel, Presentation("unknown", text, ""))
 
+    # -- DT+ key holdings (hints only) -------------------------------------------------------------------------------
+    def set_holdings(self, holdings: KeyHoldings | None) -> None:
+        """Latest comparison of this key's receipts with DT+'s stored list; None when unknown (not cloud, unread)."""
+        self._holdings = holdings
+        if holdings is not None and holdings.marked_stale and not self._runner.closed:
+            self.refresh_assets()  # receipts just marked stale must stop looking confirmed here
+
+    def storage_marks(self) -> dict[str, str]:
+        """Picker hint per custom LoRA: held by the key, or would need a re-attach. Nothing is hidden or blocked."""
+        holdings = self._holdings
+        if holdings is None or self._backend()[0] != "cloud":
+            return {}
+        marks = {}
+        for name in {record["identifier"] for record in self._records.values()}:
+            if name in holdings.held:
+                marks[name] = "on DT+ key" if holdings.checked else "receipt on key"
+            else:
+                marks[name] = "needs re-attach"
+        return marks
+
+    def missing_size(self) -> int:
+        """Total size of the selected custom LoRAs this key is not known to hold (what a re-attach could cost)."""
+        holdings = self._holdings
+        if holdings is None:
+            return 0
+        sizes = {record["identifier"]: record["size"] for record in self._records.values()}
+        return sum(sizes.get(item.identifier, 0) for item in self.loras if item.identifier not in holdings.held)
+
+    def offer_storage(self, failure) -> bool:
+        """After a storage refusal: show what was needed and offer the storage panel. Nothing is deleted here."""
+        if not storage_refusal(failure):
+            return False
+        needed = self.missing_size() or None
+        free = reported_free_space(failure)
+        text = (
+            f"Needs about {storage_size(needed)}; "
+            f"{storage_size(free) if free is not None else 'unknown free space'} on this DT+ key. "
+            "Open DT+ storage to choose what to delete. Nothing is deleted without your confirmation."
+            if needed
+            else "Open DT+ storage to choose what to delete. Nothing is deleted without your confirmation."
+        )
+        feedback = self.page.window()._inline_feedback
+        if feedback.active():
+            return False  # never replace an editor or pending consent
+        feedback.show("DT+ storage is full", text, "warning")
+        feedback.set_accept("Open DT+ storage", lambda: (feedback.dismiss(), self.open_storage(needed=needed)))
+        return True
+
     def family_labels(self) -> dict[str, str]:
         """Family evidence for display only; actual identifiers remain unchanged in requests.
 
@@ -410,6 +461,7 @@ class LoraAssetPanel:
             selected=self.loras,
             suggestions=dict(candidates),
             families=self.family_labels(),
+            marks=self.storage_marks(),
             callback=apply_selection,
         )
 

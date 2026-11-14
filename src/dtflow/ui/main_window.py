@@ -55,7 +55,7 @@ from dtflow.services.lora_auto_naming import normalize_previous_retained
 from dtflow.services.lora_metadata_edit import read_lora_rows
 from dtflow.services.lora_naming import label_overrides, set_label_overrides
 from dtflow.services.preflight import checkpoint_exact_version
-from dtflow.services.session import storage_listing
+from dtflow.services.session import key_holdings, storage_listing
 from dtflow.services.storage_probe import probe_content
 from dtflow.services.lora_store import LoraStore
 from dtflow.services.connection import Presentation, check_connection, present_failure, present_status
@@ -599,6 +599,7 @@ class MainWindow:
             on_closed=self._dt_storage_closed,
         )
         self.generation.lora.open_storage = self.open_dt_storage
+        self.generation.lora.refresh_holdings = self._read_dt_free_space
         self._storage_suspended_editor = None
         form.dtStorageButton.clicked.connect(self.open_dt_storage)
         self.dt_free_meter = SegmentMeter(form.dtFreeSpaceLabel.parentWidget())  # same bar as the storage panel
@@ -2119,6 +2120,7 @@ class MainWindow:
         if self.form.backendCombo.currentText() != "cloud" or self.runner.closed:
             label.setText("\u00a0")
             self.dt_free_meter.setVisible(False)
+            self.generation.lora.set_holdings(None)
             return
         token = self._free_space_token = object()
         label.setText("DT+ free space on this key: reading\u2026")
@@ -2127,11 +2129,21 @@ class MainWindow:
 
     async def _free_space(self):
         listing = await storage_listing(self.state_dir, probe_content(), saved=self._optional_saved)
-        return listing
+        # The same answer also tells which receipts DT+ no longer holds; a failed comparison never fails the read.
+        try:
+            holdings = await key_holdings(self.state_dir, listing, saved=self._optional_saved)
+        except Exception as exc:
+            diagnostic_event(
+                log, "app.dt_holdings_unavailable", level=logging.WARNING, data={"reason": type(exc).__name__}
+            )
+            holdings = None
+        return listing, holdings
 
-    def _free_space_read(self, listing, failure, token) -> None:
+    def _free_space_read(self, result, failure, token) -> None:
         if token is not getattr(self, "_free_space_token", None):
             return  # a newer read (another key or a later check) supersedes this one
+        listing, holdings = result if result is not None else (None, None)
+        self.generation.lora.set_holdings(holdings if failure is None else None)
         label = self.form.dtFreeSpaceLabel
         if failure is not None or listing is None:
             label.setText("DT+ free space on this key: could not be read.")
@@ -2152,8 +2164,10 @@ class MainWindow:
             data={"read": failure is None and listing is not None, "free_bytes": getattr(listing, "free_space", None)},
         )
 
-    def open_dt_storage(self) -> None:
-        """Open the DT+ storage panel; it reads the selected key's stored files with one dummy-file lookup."""
+    def open_dt_storage(self, *_, needed: int | None = None) -> None:
+        """Open the DT+ storage panel; it reads the selected key's stored files with one dummy-file lookup.
+
+        ``needed`` is the size a refused generation required; the panel then offers to tick what to free."""
         if self._removing_retained_lora or not self.dt_storage_overlay.overlay.isHidden():
             return
         editor = self.generation.lora._prepare_editor
@@ -2162,7 +2176,7 @@ class MainWindow:
                 return
             self._storage_suspended_editor = editor.form
         self.dt_storage_overlay.open(
-            above=self.inline.strip.form if self._storage_suspended_editor is not None else None
+            above=self.inline.strip.form if self._storage_suspended_editor is not None else None, needed=needed
         )
 
     def _dt_storage_closed(self) -> None:

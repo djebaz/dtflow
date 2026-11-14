@@ -579,6 +579,21 @@ class AssetRegistry:
             ).fetchall()
         return tuple((row["asset_id"], row["identifier"], row["remote_id"]) for row in rows)
 
+    async def confirmed_scope_rows(self, credential_id: str) -> tuple[tuple[str, str, str, str], ...]:
+        """``(asset_id, identifier, remote_id, last_confirmed_utc)`` of this key's confirmed receipts, read-only."""
+        return await self._run(self._confirmed_scope_rows, credential_id)
+
+    def _confirmed_scope_rows(self, credential_id: str) -> tuple[tuple[str, str, str, str], ...]:
+        if not self.path.exists():
+            return ()
+        with closing(self._connect()) as db:
+            rows = db.execute(
+                "SELECT asset_id, identifier, remote_id, MAX(confirmed_at_utc, updated_at_utc) AS seen "
+                "FROM asset_key_receipts WHERE credential_id=? AND state='confirmed'",
+                (credential_id,),
+            ).fetchall()
+        return tuple((row["asset_id"], row["identifier"], row["remote_id"], row["seen"] or "") for row in rows)
+
     async def invalidate_scope(self, asset_id: str, credential_id: str, identifier: str) -> None:
         """Invalidate only this key/name receipt; shared bytes and other key records remain valid."""
         return await self._run(self._write, self._invalidate_scope, asset_id, credential_id, identifier)

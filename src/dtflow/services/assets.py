@@ -27,6 +27,7 @@ from dtflow.core.models import (
     BackendError,
     BackendFailure,
     ErrorCategory,
+    KeyHoldings,
     PreparedAsset,
     RemoteOutcome,
     StorageListing,
@@ -1343,13 +1344,15 @@ class AssetService:
         listing = await lister(content)
         if not listing.files:
             return listing
-        return replace(listing, local_keys=await self._local_receipt_keys(listing.files))
+        keys, seen = await self._local_receipt_keys(listing.files)
+        return replace(listing, local_keys=keys, local_seen=seen)
 
-    async def _local_receipt_keys(self, files: tuple) -> frozenset[str] | None:
-        """Delete keys of listed files that one of this key's confirmed local receipts refers to; None if unreadable."""
+    async def _local_receipt_keys(self, files: tuple) -> tuple[frozenset[str] | None, dict[str, str]]:
+        """Delete keys of listed files that one of this key's confirmed local receipts refers to (None if unreadable),
+        with the newest time this computer confirmed each one."""
         try:
             credential = await self.backend.asset_credential_identity()
-            references = await self.registry.confirmed_scope_references(credential)
+            references = await self.registry.confirmed_scope_rows(credential)
         except (PersistenceError, AssetsBusyError, BackendError, ValidationError, OSError) as exc:
             diagnostic_event(
                 log,
@@ -1357,8 +1360,69 @@ class AssetService:
                 level=logging.WARNING,
                 data={"reason": type(exc).__name__, "files": len(files)},
             )
-            return None
-        return frozenset(item.key for item in files if any(_receipt_matches(ref[2], item.key) for ref in references))
+            return None, {}
+        seen: dict[str, str] = {}
+        for item in files:
+            times = [ref[3] for ref in references if _receipt_matches(ref[2], item.key)]
+            if times:
+                seen[item.key] = max(times)
+        return frozenset(seen), seen
+
+    async def key_holdings(self, listing: StorageListing, *, mark: bool = True) -> KeyHoldings:
+        """Compare this key's confirmed receipts with a complete stored list; receipts the list lacks become stale.
+
+        Only a list DT+ gave in full (over-limit answer, no skipped entry) is evidence. Without one nothing is marked
+        and the receipts alone say what the key probably holds. ``mark`` needs the exclusive asset writer; a registry
+        that cannot be written leaves the receipts as they were and reports ``updated=False``."""
+        try:
+            credential = await self.backend.asset_credential_identity()
+            rows = await self.registry.confirmed_scope_rows(credential)
+        except (PersistenceError, AssetsBusyError, BackendError, ValidationError, OSError) as exc:
+            diagnostic_event(log, "assets.holdings_unread", level=logging.WARNING, data={"reason": type(exc).__name__})
+            return KeyHoldings(False, frozenset(), 0, 0, False)
+        complete = listing.over_limit and not listing.skipped and bool(listing.files)
+        stale = (
+            tuple(
+                (asset_id, identifier)
+                for asset_id, identifier, remote_id, _ in rows
+                if not any(_receipt_matches(remote_id, item.key) for item in listing.files)
+            )
+            if complete
+            else ()
+        )
+        marked, updated = 0, True
+        if stale and mark:
+            try:
+                for asset_id, identifier in stale:
+                    await self.registry.invalidate_scope(asset_id, credential, identifier)
+                    marked += 1
+            except (PersistenceError, AssetsBusyError, BackendError, ValidationError, OSError) as exc:
+                updated = False
+                diagnostic_event(
+                    log,
+                    "assets.stale_receipts_not_updated",
+                    level=logging.WARNING,
+                    data={"reason": type(exc).__name__, "stale": len(stale)},
+                )
+        elif stale:
+            updated = False
+        diagnostic_event(
+            log,
+            "assets.holdings_compared",
+            level=logging.INFO,
+            data={
+                "listed": len(listing.files),
+                "receipts": len(rows),
+                "complete": complete,
+                "stale": len(stale),
+                "marked": marked,
+                **self._key_diagnostics(),
+            },
+        )
+        gone = {identifier for _, identifier in stale}
+        return KeyHoldings(
+            complete, frozenset(identifier for _, identifier, _, _ in rows) - gone, len(rows), marked, updated
+        )
 
     async def delete_storage(self, selected: tuple) -> dict:
         """Delete the owner-selected stored files under this key, once, then invalidate matching local receipts.

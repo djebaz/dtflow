@@ -144,6 +144,12 @@ def present_generation_failure(exc: Exception) -> Presentation:
         api = bool(dict(failure.diagnostics).get("transport"))
         # The original reason, as Queues, Scripts and Workflows show it; codes and attempt ids stay in details/logs.
         detail = failure_reason(failure)
+        if failure.code == "cloud_storage_limit_exceeded":
+            return Presentation(
+                "error",
+                "DT+ storage is full",
+                f"{_sentence(detail)} Nothing was deleted. Free space in Connection, DT+ storage, then generate again.",
+            )
         if failure.code.startswith("prepared_asset_"):
             asset = dict(failure.diagnostics).get("asset")
             if api and asset:

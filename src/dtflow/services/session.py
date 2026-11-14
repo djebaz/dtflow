@@ -32,6 +32,7 @@ from dtflow.core.models import (
     EventSink,
     RemoteOutcome,
     InventorySnapshot,
+    KeyHoldings,
     PreflightDiagnostic,
     PreparedAsset,
     ResolvedGenerationRequest,
@@ -48,7 +49,7 @@ from dtflow.core.retry_policy import (
 )
 from dtflow.core.tasks import settle
 from dtflow.diagnostics import event as diagnostic_event
-from dtflow.persistence.assets import AssetRegistry, newest_per_name
+from dtflow.persistence.assets import AssetRegistry, AssetsBusyError, newest_per_name
 from dtflow.persistence.gallery_snapshot import schedule_publish
 from dtflow.persistence.inventory_cache import load_inventory, save_inventory
 from dtflow.persistence.settings import load_cloud_concurrency
@@ -959,6 +960,17 @@ async def storage_listing(
     """Explicit read of the selected DT+ key's stored files (one metadata request; nothing is uploaded or changed)."""
     async with open_assets(state, saved=saved, read_only=True) as service:
         return await service.storage_listing(content)
+
+
+async def key_holdings(state: Path, listing: StorageListing, *, saved: CredentialProvider | None = None) -> KeyHoldings:
+    """Compare the selected key's receipts with a stored list and mark the missing ones stale (writer, best effort)."""
+    try:
+        async with open_assets(state, saved=saved) as service:
+            return await service.key_holdings(listing)
+    except AssetsBusyError:
+        # Another process is writing assets: report what the receipts say without touching them.
+        async with open_assets(state, saved=saved, read_only=True) as service:
+            return await service.key_holdings(listing, mark=False)
 
 
 async def delete_storage(state: Path, selected: tuple, *, saved: CredentialProvider | None = None) -> dict:

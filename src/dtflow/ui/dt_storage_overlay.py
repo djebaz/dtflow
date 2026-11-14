@@ -29,6 +29,7 @@ from PySide6.QtWidgets import (
 )
 
 from dtflow.core.models import AssetContent, StorageListing, StoredAsset
+from dtflow.services.dt_storage import select_to_free, shortfall, storage_size
 from dtflow.services.session import delete_storage, storage_listing
 from dtflow.services.storage_probe import probe_content
 from dtflow.ui.runner import AsyncRunner
@@ -218,6 +219,15 @@ class DtStorageOverlay(QObject):
         )
         self.select_unused.clicked.connect(self._select_unused)
         self.select_unused.setVisible(False)
+        self.select_free = QPushButton("Select to free space", self.form)
+        self.select_free.setToolTip(
+            "Tick files this computer has no record of first, then the oldest ones this computer confirmed, until "
+            "the space a generation needs is covered. DTFlow does not store when a LoRA was last used, so this is "
+            "an estimate of recent use. Files it uses may come back at the next generation. Nothing is deleted until "
+            "you confirm."
+        )
+        self.select_free.clicked.connect(self._select_to_free)
+        self.select_free.setVisible(False)
         self.meter = SegmentMeter(self.form)
         layout = self.form.layout()
         layout.insertWidget(layout.indexOf(self.form.dtStorageStatus) + 1, self.meter)
@@ -235,12 +245,13 @@ class DtStorageOverlay(QObject):
         tools.setContentsMargins(0, 0, 0, 0)
         tools.setSpacing(6)
         self.search.setMinimumWidth(60)  # the search box gives way first; the two buttons keep their full text
-        for fixed in (self.sort_combo, self.select_unused):
+        for fixed in (self.sort_combo, self.select_unused, self.select_free):
             fixed.setMinimumWidth(fixed.sizeHint().width())
             fixed.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
         tools.addWidget(self.search, 1)
         tools.addWidget(self.sort_combo)
         tools.addWidget(self.select_unused)
+        tools.addWidget(self.select_free)
         layout.insertWidget(layout.indexOf(self.form.dtStorageList), self._tools)
         layout.setStretchFactor(self.form.dtStorageList, 1)
         # While the list is hidden (reading, or nothing to list) a spacer takes the spare height, so the texts and
@@ -258,6 +269,9 @@ class DtStorageOverlay(QObject):
         escape.activated.connect(self.close)
         self._files: tuple[StoredAsset, ...] = ()
         self._local: frozenset[str] | None = None  # delete keys with a local receipt; None when not known
+        self._seen: dict[str, str] = {}  # delete key -> last local confirmation, to order what to free first
+        self._needed: int | None = None  # bytes a failed generation needed, set only by that offer
+        self._missing: int | None = None
         self._busy = False
         self._armed = False
         self._free: dict[
@@ -279,11 +293,14 @@ class DtStorageOverlay(QObject):
     def is_open(self) -> bool:
         return self.overlay.isVisible()
 
-    def open(self, *, above: QWidget | None = None) -> None:
+    def open(self, *, above: QWidget | None = None, needed: int | None = None) -> None:
         """Show the panel and read the listing once with a dummy-file lookup (see ``_probe_content``).
 
         Free space learned on an earlier open belongs to whichever key was selected then, so each open starts from the
-        large unknown-size lookup; only re-reads within this open reuse the key's own free space."""
+        large unknown-size lookup; only re-reads within this open reuse the key's own free space.
+
+        ``needed`` (bytes a refused generation required) adds a size line and a helper that ticks what to free."""
+        self._needed, self._missing = needed, None
         host = above if above is not None else self._host
         self._resize.host.removeEventFilter(self._resize)
         self.overlay.setParent(host)
@@ -300,6 +317,8 @@ class DtStorageOverlay(QObject):
         self._error("")
         self._files = ()
         self._local = None
+        self._seen = {}
+        self.select_free.setVisible(False)
         self._clear_list()
         self._show_list(False)
         self.meter.setVisible(False)
@@ -391,6 +410,19 @@ class DtStorageOverlay(QObject):
         listing.blockSignals(False)
         self._sync_checks()
 
+    def _select_to_free(self) -> None:
+        """Tick the files to free first (see ``select_to_free``), replacing the selection; delete still asks again."""
+        if self._busy or not self._missing:
+            return
+        chosen = {item.key for item in select_to_free(self._files, self._seen, self._missing)}
+        listing = self.form.dtStorageList
+        listing.blockSignals(True)
+        for row in range(listing.count()):
+            item = listing.item(row)
+            item.setSelected(self._files[item.data(Qt.ItemDataRole.UserRole)].key in chosen and not item.isHidden())
+        listing.blockSignals(False)
+        self._sync_checks()
+
     def _sort_changed(self, _index: int) -> None:
         if self._files and not self._busy:
             self._fill_rows(keep=self._chosen())
@@ -456,7 +488,9 @@ class DtStorageOverlay(QObject):
         self._error("")
         self._files = ()
         self._local = None
+        self._seen = {}
         self.select_unused.setVisible(False)
+        self.select_free.setVisible(False)
         self._clear_list()
         self._show_list(False)
         self.meter.setVisible(False)
@@ -493,6 +527,7 @@ class DtStorageOverlay(QObject):
             return
         self._files = listing.files
         self._local = listing.local_keys
+        self._seen = dict(listing.local_seen)
         self.select_unused.setVisible(self._local is not None and bool(listing.files))
         if key is not None and listing.free_space is not None:
             self._free[key] = listing.free_space
@@ -509,6 +544,16 @@ class DtStorageOverlay(QObject):
         if self._local is not None and listing.files:
             unknown = sum(item.key not in self._local for item in listing.files)
             line += f" {_bold(str(unknown))} not used here."
+        self._missing = shortfall(self._needed, listing.free_space) if self._needed is not None else None
+        if self._needed is not None:
+            if self._missing:
+                line += (
+                    f" The generation needs {_bold(storage_size(self._needed))}; "
+                    f"{_bold(storage_size(self._missing))} more must be freed."
+                )
+            elif self._missing == 0:
+                line += f" The generation needs {_bold(storage_size(self._needed))}, which now fits."
+        self.select_free.setVisible(bool(self._missing) and bool(listing.files))
         skipped = f" {listing.skipped} entries could not be read and are not shown." if listing.skipped else ""
         self.form.dtStorageStatus.setText(f"{lead}{line}{skipped}")
         self._fill_rows(keep=())

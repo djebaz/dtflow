@@ -185,6 +185,23 @@ class StorageListing:
     local_keys: frozenset[str] | None = field(
         default=None, repr=False
     )  # delete keys with a local receipt; None = unread
+    local_seen: dict[str, str] = field(
+        default_factory=dict, repr=False, compare=False
+    )  # delete key -> when this computer last confirmed it for this key (UTC text); recency proxy, not a use time
+
+
+@dataclass(frozen=True, slots=True)
+class KeyHoldings:
+    """What this computer's receipts say the selected DT+ key holds, checked against DT+'s stored list when it gave one.
+
+    ``checked`` is true only after a complete list was compared; ``held`` are LoRA identifiers with a confirmed receipt on
+    this key that the list still shows (or, unchecked, that are merely recorded). Not a quota or dispatch authority."""
+
+    checked: bool
+    held: frozenset[str]
+    receipts: int
+    marked_stale: int
+    updated: bool
 
 
 @dataclass(frozen=True, slots=True)
