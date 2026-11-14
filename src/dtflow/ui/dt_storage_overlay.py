@@ -21,7 +21,9 @@ from dtflow.ui.runner import AsyncRunner
 
 _DELETE_TEXT = "Delete selected from DT+…"
 _PROBE_NAME = "dtflow-storage-probe.ckpt"
-_PROBE_FALLBACK = 10 * 1024**3  # free space unknown: larger than a typical account's headroom (10 GiB worked)
+_PROBE_FALLBACK = (
+    20 * 1024**3
+)  # free space unknown: larger than any account headroom we expect (10 GiB worked, 20 GiB for margin)
 
 
 def megabytes(size: int) -> str:
