@@ -201,8 +201,7 @@ class DtStorageOverlay(QObject):
             return
         if listing is None or not listing.over_limit:
             self.form.dtStorageStatus.setText(
-                lead
-                + "DT+ did not report a storage limit problem, so it returned no file list. Nothing more to delete."
+                lead + "DT+ returned no file list. This key has plenty of free space, so there is nothing to free."
             )
             return
         self._files = listing.files
@@ -215,7 +214,7 @@ class DtStorageOverlay(QObject):
         total = sum(item.size for item in listing.files)
         skipped = f" {listing.skipped} entries could not be read and are not shown." if listing.skipped else ""
         self.form.dtStorageStatus.setText(
-            f"{lead}The storage limit is exceeded. {free} {_files(len(listing.files))} stored, {megabytes(total)}.{skipped}"
+            f"{lead}{free} {_files(len(listing.files))} stored, {megabytes(total)}.{skipped}"
         )
         self.form.dtStorageList.blockSignals(True)
         for index, item in enumerate(listing.files):
