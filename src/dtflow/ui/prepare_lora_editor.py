@@ -394,13 +394,18 @@ class PrepareBatchEditor:
             text += f" Last refused file needs {storage_size(self._storage_needed)}. Free space, then Re-Prepare."
         row = self.selected
         source = row is not None and row.source_kind == "safetensors"
+        insufficient = False
         if source:
             estimate = (row.total_bytes * 105 + 99) // 100
+            insufficient = self._storage_free is not None and estimate > self._storage_free
             text += f" Before conversion: estimated space needed {storage_size(estimate)} (source + 5%)."
             text += " Estimate only; held files may need no extra space. Prepare is not blocked."
         label = self.form.prepareStorageStatus
         label.setText(text)
-        label.setProperty("state", "warning" if source or self._storage_needed is not None else "")
+        refused = self._storage_needed is not None and (
+            self._storage_free is None or self._storage_needed > self._storage_free
+        )
+        label.setProperty("state", "warning" if insufficient or refused else "info")
         label.style().unpolish(label)
         label.style().polish(label)
 

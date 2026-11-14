@@ -359,6 +359,9 @@ QLabel#statusLabel[state="warning"],
 QLabel[state="warning"] {
   color: ${color.warning};
 }
+QLabel#prepareStorageStatus[state="info"] {
+  color: ${color.accent};
+}
 QLabel#statusLabel[state="error"],
 QLabel[state="error"] {
   color: ${color.error};

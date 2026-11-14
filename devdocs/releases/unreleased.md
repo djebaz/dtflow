@@ -32,6 +32,8 @@ Changes through 6.3.0 are consolidated in [DTFlow 6.3.0](v6.3.0.md). This file t
 
 ## Upgrade and compatibility
 
+- Prepare's DT+ storage action opens a smaller in-window popup above the still-visible inactive editor; the shared workspace scrim keeps both side panels behind Prepare. Closing storage restores the same draft and focus. Storage estimates are blue unless estimated space is insufficient or a refusal remains unresolved. Source-reviewed; native Windows appearance remains owner acceptance.
+
 ## Validations checklist
 
 ## Release audit

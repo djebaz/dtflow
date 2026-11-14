@@ -15,6 +15,7 @@ from PySide6.QtGui import QColor, QKeySequence, QPainter, QShortcut
 from PySide6.QtUiTools import QUiLoader
 from PySide6.QtWidgets import (
     QComboBox,
+    QApplication,
     QFrame,
     QHBoxLayout,
     QLineEdit,
@@ -167,6 +168,9 @@ class _Resize(QObject):
     def eventFilter(self, watched, event):
         if watched is self.host and event.type() in (QEvent.Type.Resize, QEvent.Type.Show):
             self.overlay.setGeometry(self.host.rect())
+            if self.overlay.property("nestedStorage"):
+                card = self.overlay.layout().itemAt(0).widget()
+                card.setMaximumSize(min(800, max(1, self.host.width() - 64)), min(560, max(1, self.host.height() - 64)))
         return False
 
 
@@ -196,7 +200,8 @@ class DtStorageOverlay(QObject):
         self.form = _load_form()
         layout.setContentsMargins(16, 16, 16, 16)
         layout.addWidget(self.form, 1)  # the card takes the room of the central panel
-        _Resize(host, self.overlay)
+        self._host = host
+        self._resize = _Resize(host, self.overlay)
         self.form.dtStorageClose.clicked.connect(self.close)
         self.form.dtStorageRefresh.clicked.connect(self.refresh)
         self.form.dtStorageDelete.clicked.connect(self._delete_clicked)
@@ -240,15 +245,38 @@ class DtStorageOverlay(QObject):
             str, int
         ] = {}  # free space DT+ last reported, by opaque key identity, to size the re-read lookup
         self._note = ""  # outcome of the last delete, kept above the re-read listing
+        QApplication.instance().focusChanged.connect(self._keep_focus)
+
+    def _keep_focus(self, previous, current) -> None:
+        if (
+            self.overlay.isVisible()
+            and self.overlay.property("nestedStorage")
+            and current is not None
+            and current.window() is self.overlay.window()
+            and not self.overlay.isAncestorOf(current)
+        ):
+            self.form.dtStorageClose.setFocus()
 
     def is_open(self) -> bool:
         return self.overlay.isVisible()
 
-    def open(self) -> None:
+    def open(self, *, above: QWidget | None = None) -> None:
         """Show the panel and read the listing once with a dummy-file lookup (see ``_probe_content``).
 
         Free space learned on an earlier open belongs to whichever key was selected then, so each open starts from the
         large unknown-size lookup; only re-reads within this open reuse the key's own free space."""
+        host = above if above is not None else self._host
+        self._resize.host.removeEventFilter(self._resize)
+        self.overlay.setParent(host)
+        self._resize.host = host
+        host.installEventFilter(self._resize)
+        nested = above is not None
+        self.overlay.setProperty("nestedStorage", nested)
+        self.form.setMaximumSize(
+            min(800, max(1, host.width() - 64)) if nested else 16777215,
+            min(560, max(1, host.height() - 64)) if nested else 16777215,
+        )
+        self.overlay.layout().setAlignment(Qt.AlignmentFlag.AlignCenter if nested else Qt.AlignmentFlag(0))
         self._free = {}
         self._error("")
         self._files = ()

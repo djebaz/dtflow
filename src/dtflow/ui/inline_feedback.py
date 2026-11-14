@@ -97,15 +97,14 @@ class InlineFeedback(QObject):
         return self._suspended_editor is None and bool(self._armed or self._editor or self.form.isVisible())
 
     def suspend_editor(self, editor) -> bool:
-        """Park this editor's presentation for an in-window child workflow, without destroying its draft."""
+        """Keep the editor visible but inactive behind an in-window child workflow, preserving its draft."""
         if self._editor is not editor or self._suspended_editor is not None or not isValid(editor):
             return False
         self._suspended_editor = editor
         self._suspended_shortcuts = (self.escape.isEnabled(), self.button_escape.isEnabled())
         self.escape.setEnabled(False)
         self.button_escape.setEnabled(False)
-        self.form.hide()
-        self.strip.set_editor_dimming(False)
+        self.form.setEnabled(False)
         self.strip._position()
         return True
 
@@ -116,6 +115,7 @@ class InlineFeedback(QObject):
         self._suspended_editor = None
         self.escape.setEnabled(self._suspended_shortcuts[0])
         self.button_escape.setEnabled(self._suspended_shortcuts[1])
+        self.form.setEnabled(True)
         self.form.show()
         self.strip.set_editor_dimming(True)
         target = self._editor_focus
@@ -129,6 +129,7 @@ class InlineFeedback(QObject):
         return self._armed is not None or self._editor is not None
 
     def reset(self):
+        self.form.setEnabled(True)
         self._suspended_editor = None
         self._suspended_shortcuts = (False, False)
         self._watch_outside(False)

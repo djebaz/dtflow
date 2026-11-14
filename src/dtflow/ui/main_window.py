@@ -2112,7 +2112,9 @@ class MainWindow:
             if not self.inline.suspend_editor(editor.form):
                 return
             self._storage_suspended_editor = editor.form
-        self.dt_storage_overlay.open()
+        self.dt_storage_overlay.open(
+            above=self.inline.strip.form if self._storage_suspended_editor is not None else None
+        )
 
     def _dt_storage_closed(self) -> None:
         parked, self._storage_suspended_editor = self._storage_suspended_editor, None

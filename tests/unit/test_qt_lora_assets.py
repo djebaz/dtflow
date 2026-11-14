@@ -290,14 +290,17 @@ def test_storage_refusal_free_space_and_explicit_reprepare_without_reselection(w
     assert "0.0 MB free" in editor.form.prepareStorageStatus.text()
     assert quota.put_attempts == 0 and quota.deletes == []
 
-    # The genuine storage overlay opens over the center only; selecting is not deletion consent.
+    # Storage is a smaller child popup above the still-visible, inactive Prepare editor.
     editor.form.prepareStorageButton.click()
     overlay = window.dt_storage_overlay
     qtbot.waitUntil(lambda: not overlay._busy and overlay.form.dtStorageList.count() == 1, timeout=10000)
     assert not overlay.overlay.isHidden()
-    assert overlay.overlay.parentWidget() is window.shell.centerStack
+    assert overlay.overlay.parentWidget() is window.inline.strip.form
     assert panel._prepare_editor is editor and editor.active()
-    assert window.inline.form.isHidden() and window.inline.strip.scrim.isHidden()
+    assert window.inline.form.isVisible() and not window.inline.form.isEnabled()
+    assert window.inline.strip.scrim.isVisible()
+    assert overlay.form.width() < window.inline.strip.form.width()
+    assert overlay.form.height() < window.inline.strip.form.height()
     overlay.search.setFocus()
     qtbot.waitUntil(lambda: QApplication.focusWidget() is overlay.search, timeout=5000)
     overlay.form.dtStorageList.item(0).setSelected(True)
@@ -374,10 +377,11 @@ def test_suspended_prepare_editor_is_not_resurrected_after_replacement(window, q
     first, replacement = QWidget(), QWidget()
     window.inline.editor("Original", first, "Apply", lambda: None)
     assert window.inline.suspend_editor(first)
-    assert window.inline.form.isHidden() and not window.inline.active()
+    assert not window.inline.form.isEnabled() and not window.inline.active()
     window.inline.editor("Replacement", replacement, "Apply", lambda: None)
     assert not window.inline.resume_editor(first)
     assert window.inline._editor is replacement and window.inline.active()
+    assert window.inline.form.isEnabled()
 
 
 def test_prepare_source_space_warning_is_amber_and_advisory(window, quota, qtbot, tmp_path):
@@ -394,6 +398,10 @@ def test_prepare_source_space_warning_is_amber_and_advisory(window, quota, qtbot
     assert label.property("state") == "warning"
     assert f"Before conversion: estimated space needed {storage_size(1_050_000)}" in label.text()
     assert "0.5 MB free" in label.text() and "source + 5%" in label.text()
+    assert window.inline.form.inlineEditorAcceptButton.isEnabled()
+    editor.set_storage(10_500_000)
+    editor.refresh()
+    assert label.property("state") == "info"
     assert window.inline.form.inlineEditorAcceptButton.isEnabled()
     editor.set_storage(None)
     editor.refresh()
