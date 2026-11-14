@@ -11,10 +11,13 @@ about: Define a change before implementation
 
 ## Acceptance
 <!-- Plain list, no checkboxes. Stable ids, level 🟦 Must or ⬛ Should.
-     🟦 Must: it works and acts as designed for the most common use cases, or a concrete
-     data/state/billing safety requirement. Blocks merge until verified or waived.
-     ⬛ Should (default): fine-tuning, rare and edge cases. May merge unverified if listed
-     under Deviations & Limitations; smoke is welcome but not required.
+     Default to ⬛ Should. Use 🟦 Must only for an explicit merge-blocking requirement:
+     essential behavior or a concrete data/state/billing safety requirement. Being included
+     in owner smoke does not automatically make a criterion Must. Must is about it working
+     or not, and behaving as designed for the most common use cases; Should is fine-tuning,
+     rare and edge cases. A Must blocks merge until it is verified or the owner waives it. A
+     ⬛ Should may merge unverified if listed under Deviations & Limitations; smoke is
+     welcome but not required.
      Copy this list into the PR body, where the checkboxes live. Keep this body in sync with the PR. -->
 - 🟦 AC-1 —
 - ⬛ AC-2 —
