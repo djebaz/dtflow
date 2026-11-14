@@ -58,6 +58,7 @@ class Reporter:
         self.manifest_at = 0.0
         self.records, self.notices = {}, Counter()
         self.unregistered = []
+        self.wait_events = []
         # Existing Actions runs categories concurrently in the same output root.
         self.log_path = self.out / f"preview-details-{report_key}.log"
         self.manifest_path = self.out / f"preview-manifest-{report_key}.json"
@@ -97,15 +98,25 @@ class Reporter:
     def begin(self):
         self.previous = time.monotonic()
 
+    def wait_timeout(self, timeout):
+        self.wait_events.append({"timeout_seconds": timeout, "capture": None})
+        # Persist even if no later capture is saved (or fixture preparation then fails).
+        self.manifest("running")
+
     def saved(self, target, *, blank):
         name = Path(target).stem
         state = self.selection.by_id.get(name)
         if name in self.records:
             raise RuntimeError(f"State {name} was rendered twice")
+        for event in self.wait_events:
+            if event["capture"] is None:
+                event["capture"] = name
         now = time.monotonic()
         elapsed, duration = now - self.started, now - self.previous
         self.previous = now
         self.records[name] = {"seconds": round(elapsed, 3), "duration_seconds": round(duration, 3), "blank": blank}
+        self.records[name]["wait_timeout_count"] = sum(event["capture"] == name for event in self.wait_events)
+        self.records[name]["wait_timed_out"] = bool(self.records[name]["wait_timeout_count"])
         if state is None:
             # Rendered although missing from preview_catalog.json: shown, but not counted in the selection.
             self.unregistered.append(name)
@@ -122,6 +133,7 @@ class Reporter:
 
     def manifest(self, status, error=None):
         self.manifest_at = time.monotonic()
+        affected = sorted({event["capture"] for event in self.wait_events if event["capture"] is not None})
         data = {
             "schema_version": 1,
             "status": status,
@@ -136,6 +148,13 @@ class Reporter:
                 for state in self.selection.states
             ],
             "unregistered_states": self.unregistered,
+            "wait_timeout_events": self.wait_events,
+            "wait_timeout_count": len(self.wait_events),
+            "wait_timeouts": affected,
+            "wait_timeout_capture_count": len(affected),
+            "unattributed_wait_timeout_count": sum(event["capture"] is None for event in self.wait_events),
+            "wait_timeout_attribution": "Next saved capture in this worker, not necessarily the originating fixture; "
+            "null capture means no subsequent saved capture.",
             "expected_notices": dict(self.notices),
             "error": error,
         }
@@ -153,6 +172,15 @@ class Reporter:
             states = [state for state in self.selection.states if state.category == category]
             print(f"{category}: {sum(s.id in self.records for s in states)}/{len(states)} saved")
         print(f"Rendered {len(self.records)} states in {time.monotonic() - self.started:.1f}s.")
+        if self.wait_events:
+            affected = {event["capture"] for event in self.wait_events if event["capture"] is not None}
+            unattributed = sum(event["capture"] is None for event in self.wait_events)
+            captures = "capture" if len(affected) == 1 else "captures"
+            waits = "wait" if len(self.wait_events) == 1 else "waits"
+            print(
+                f"WARNING: {len(affected)} {captures} affected by {len(self.wait_events)} timed-out {waits} "
+                f"({unattributed} waits without a subsequent capture); captures may be incomplete."
+            )
         if self.notices:
             print(f"Expected offline notices: {sum(self.notices.values())}; details in {self.log_path}")
         if self.unregistered:
