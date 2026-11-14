@@ -1,5 +1,7 @@
 # Unreleased
 
+- Keep Logs filters from overlapping at narrow window widths by allowing session/component/event controls to shrink; full-value tooltips remain. Correct the storage-recovery smoke test to select the same in-memory key as its backend, preserving deletion ownership guards. Owner-authorized local rerun of only the two reported failures: 2 passed; no full suite, renders or Actions run.
+
 - Retire the transient storage view when opening a new Prepare editor, auto-closing Prepare, changing workspace or starting Generate/Retry, so it cannot remain underneath the generation workspace. Already-admitted storage work settles before dismissal; no cancellation or replay is introduced. Source/static checks only; owner UI recheck pending (PR #450).
 
 - Generation now resolves known custom LoRA selections through saved content evidence even when the picker could not bind a currently confirmed receipt. Previously confirmed missing-key records are candidates for fresh verification/restoration, not proof of availability. If DT+ requires upload but the managed file is absent, generation stops before submission and explains that the original file must be obtained again or the LoRA removed. It must not silently generate without the selected custom override. Owner Windows smoke confirms all selected prepared overrides were sent in two successful generations and a missing-reference selection stopped before backend submission; other restoration paths remain separate (#443, PR #450).

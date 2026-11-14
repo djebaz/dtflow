@@ -536,10 +536,12 @@ class LogsWorkspace(QObject):
         # Session labels grow with their id and time; keep the filter row stable and show the full label on hover.
         session = self.form.logsSessionCombo
         session.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon)
-        session.setMinimumContentsLength(28)
+        session.setMinimumContentsLength(12)
         session.setMaximumWidth(320)
         session.currentIndexChanged.connect(lambda _index: self._session_tooltip())
         for combo in (self.form.logsComponentCombo, self.form.logsEventCombo):
+            combo.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon)
+            combo.setMinimumContentsLength(10)
             combo.currentIndexChanged.connect(
                 lambda _index, combo=combo: combo.setToolTip(combo.currentData() or combo.currentText())
             )
