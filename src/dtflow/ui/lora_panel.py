@@ -608,7 +608,7 @@ class LoraAssetPanel:
         if self.preparing:
             # A run is reading and uploading: do not compete with it for the disk. Resumed when it ends.
             self._hash_paused = (editor, paths, index)
-            self._inspect_progress(None, 0, 0, len(paths))
+            self._inspect_progress(editor, None, 0, 0, len(paths))
             return
         path = Path(paths[index])
 
