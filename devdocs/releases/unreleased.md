@@ -1,5 +1,7 @@
 # Unreleased
 
+- Generation storage recovery excludes its required LoRAs from automatic free-space selection and explains when remaining visible candidates cannot cover the shortfall. Shared ownership invalidation also clears open storage after saving/removing keys or switching backend; Local does not trigger cloud reads. Explicit deletion consent and owner validation remain unchanged. Source/static checks only; owner smoke pending (#443, PR #450).
+
 - Storage's **☑︎ Cloud only** action and summary count now use the same managed-file evidence as the amber Cloud only pill, replacing the unrelated not-used-here record check. The action selects visible matching rows only and never deletes without confirmation. Static checks only; owner visual recheck pending (PR #450).
 
 - Storage list pill rows measure their height after inheriting the application font/styles and use one vertical inset, preventing clipped filenames and pills. Source/static checks only; owner native recheck pending (PR #450).

@@ -184,6 +184,9 @@ class StorageListing:
     skipped: int = 0  # entries DTFlow could not use (never shown or deleted)
     complete: bool = False  # DT+ gave an explicit entry list (possibly empty) that was read in full, nothing skipped
     file_keys: frozenset[str] | None = field(default=None, repr=False)  # known managed copies present; None = unread
+    protected_keys: frozenset[str] | None = field(
+        default=None, repr=False
+    )  # automatic cleanup exclusions; None = unread
     local_keys: frozenset[str] | None = field(
         default=None, repr=False
     )  # delete keys with a local receipt; None = unread

@@ -226,7 +226,7 @@ class DtStorageOverlay(QObject):
             "Tick files this computer has no record of first, then the oldest ones this computer confirmed, until "
             "the space a generation needs is covered. DTFlow does not store when a LoRA was last used, so this is "
             "an estimate of recent use. Files it uses may come back at the next generation. Nothing is deleted until "
-            "you confirm."
+            "you confirm. LoRAs needed by this generation are excluded from the automatic choice."
         )
         self.select_free.clicked.connect(self._select_to_free)
         self.select_free.setVisible(False)
@@ -275,7 +275,10 @@ class DtStorageOverlay(QObject):
         self._seen: dict[str, str] = {}  # delete key -> last local confirmation, to order what to free first
         self._needed: int | None = None  # bytes a failed generation needed, set only by that offer
         self._missing: int | None = None
+        self._protect: tuple[str, ...] = ()
+        self._protected_keys: frozenset[str] | None = None
         self._busy = False
+        self._read_allowed = True
         self._revision = 0
         self._listed_key: str | None = None
         self._refresh_pending = False
@@ -299,7 +302,7 @@ class DtStorageOverlay(QObject):
     def is_open(self) -> bool:
         return self.overlay.isVisible()
 
-    def open(self, *, above: QWidget | None = None, needed: int | None = None) -> None:
+    def open(self, *, above: QWidget | None = None, needed: int | None = None, protect: tuple[str, ...] = ()) -> None:
         """Show the panel and read the listing once with a dummy-file lookup (see ``_probe_content``).
 
         Free space learned on an earlier open belongs to whichever key was selected then, so each open starts from the
@@ -307,6 +310,7 @@ class DtStorageOverlay(QObject):
 
         ``needed`` (bytes a refused generation required) adds a size line and a helper that ticks what to free."""
         self._needed, self._missing = needed, None
+        self._protect, self._protected_keys = protect, None
         host = above if above is not None else self._host
         self._resize.host.removeEventFilter(self._resize)
         self.overlay.setParent(host)
@@ -348,7 +352,7 @@ class DtStorageOverlay(QObject):
 
     def _set_busy(self, busy: bool) -> None:
         self._busy = busy
-        self.form.dtStorageRefresh.setEnabled(not busy)
+        self.form.dtStorageRefresh.setEnabled(not busy and self._read_allowed)
         self.form.dtStorageClose.setEnabled(not busy)
         self.form.dtStorageList.setEnabled(not busy)
         self._selection_changed()
@@ -442,7 +446,20 @@ class DtStorageOverlay(QObject):
         """Tick the files to free first (see ``select_to_free``), replacing the selection; delete still asks again."""
         if self._busy or not self._missing:
             return
-        chosen = {item.key for item in select_to_free(self._files, self._seen, self._missing)}
+        if self._protected_keys is None:
+            self._error(
+                "Could not check which files the generation needs. Read storage again before choosing automatically."
+            )
+            return
+        candidates = []
+        for index in range(self.form.dtStorageList.count()):
+            row = self.form.dtStorageList.item(index)
+            stored = self._files[row.data(Qt.ItemDataRole.UserRole)]
+            if not row.isHidden() and stored.key not in self._protected_keys:
+                candidates.append(stored)
+        suggested = select_to_free(candidates, self._seen, self._missing)
+        enough = sum(item.size for item in suggested) >= self._missing
+        chosen = {item.key for item in suggested} if enough else set()
         listing = self.form.dtStorageList
         listing.blockSignals(True)
         for row in range(listing.count()):
@@ -450,6 +467,11 @@ class DtStorageOverlay(QObject):
             item.setSelected(self._files[item.data(Qt.ItemDataRole.UserRole)].key in chosen and not item.isHidden())
         listing.blockSignals(False)
         self._sync_checks()
+        self._error(
+            ""
+            if enough
+            else "Not enough space can be freed from the visible files without removing LoRAs this generation needs. Nothing was selected."
+        )
 
     def _sort_changed(self, _index: int) -> None:
         if self._files and not self._busy:
@@ -512,13 +534,17 @@ class DtStorageOverlay(QObject):
         )
 
     # -- listing --------------------------------------------------------------------------------------------------
-    def key_changed(self) -> None:
+    def key_changed(self, *, read: bool = True) -> None:
         """Discard the old key's presentation/consent immediately and re-read an open panel."""
         self._revision += 1
+        self._read_allowed = read
+        self.form.dtStorageRefresh.setEnabled(read and not self._busy)
         self._listed_key = None
         self._free, self._seen = {}, {}
         self._files, self._local, self._file_keys = (), None, None
         self._needed = self._missing = None
+        self._protect, self._protected_keys = (), None
+        self._refresh_pending = False
         self._note = ""
         self._disarm()
         self._clear_list()
@@ -526,6 +552,11 @@ class DtStorageOverlay(QObject):
         self._show_list(False)
         self.meter.hide()
         self._error("")
+        if not read:
+            self.form.dtStorageStatus.setText("Select a DT+ key to read its storage.")
+            self.select_unused.hide()
+            self.select_free.hide()
+            return
         if self.overlay.isHidden() or self.runner.closed:
             return
         self.form.dtStorageStatus.setText("Reading DT+ storage…")
@@ -553,7 +584,7 @@ class DtStorageOverlay(QObject):
             self._listed(result, failure)
 
     def refresh(self) -> None:
-        if self._busy or self.runner.closed:
+        if self._busy or self.runner.closed or not self._read_allowed:
             return
         self._error("")
         self._files = ()
@@ -573,7 +604,9 @@ class DtStorageOverlay(QObject):
         """Lookup sized for the key that is selected right now; its identity comes back with the answer."""
         identity = await self._active_credential()
         key = identity[0] if identity else None
-        listing = await storage_listing(self.state_dir, self._probe_content(key), saved=self._saved())
+        listing = await storage_listing(
+            self.state_dir, self._probe_content(key), saved=self._saved(), protect=self._protect
+        )
         return key, listing
 
     def _probe_content(self, key: str | None) -> AssetContent:
@@ -600,6 +633,7 @@ class DtStorageOverlay(QObject):
         self._files = listing.files
         self._local = listing.local_keys
         self._file_keys = listing.file_keys
+        self._protected_keys = listing.protected_keys
         self._seen = dict(listing.local_seen)
         self.select_unused.setVisible(self._file_keys is not None and bool(listing.files))
         if key is not None and listing.free_space is not None:

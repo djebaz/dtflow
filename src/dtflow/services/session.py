@@ -955,11 +955,11 @@ async def reconcile_asset(
 
 
 async def storage_listing(
-    state: Path, content: AssetContent, *, saved: CredentialProvider | None = None
+    state: Path, content: AssetContent, *, saved: CredentialProvider | None = None, protect: tuple[str, ...] = ()
 ) -> StorageListing:
     """Explicit read of the selected DT+ key's stored files (one metadata request; nothing is uploaded or changed)."""
     async with open_assets(state, saved=saved, read_only=True) as service:
-        return await service.storage_listing(content)
+        return await service.storage_listing(content, protect=protect)
 
 
 async def observe_key(

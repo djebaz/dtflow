@@ -1619,7 +1619,6 @@ class MainWindow:
             self.refresh_credentials()
             return
         self._forget_holdings()  # hints and reads in flight belong to the previous key
-        self.dt_storage_overlay.key_changed()
         source = "environment" if choice == ENVIRONMENT else "saved"
         status = getattr(self, "_credential_status_for_switch", {})
         alias = None
@@ -2126,6 +2125,7 @@ class MainWindow:
         self.form.dtFreeSpaceLabel.setText("\u00a0")
         self.dt_free_meter.setVisible(False)
         self.generation.lora.set_holdings(None)
+        self.dt_storage_overlay.key_changed(read=self.form.backendCombo.currentText() == "cloud")
 
     def _read_dt_free_space(self) -> None:
         """Show the selected DT+ key's free space; one metadata lookup for a made-up file, nothing uploaded or changed.
@@ -2195,11 +2195,15 @@ class MainWindow:
             data={"read": failure is None and listing is not None, "free_bytes": getattr(listing, "free_space", None)},
         )
 
-    def open_dt_storage(self, *_, needed: int | None = None) -> None:
+    def open_dt_storage(self, *_, needed: int | None = None, protect: tuple[str, ...] = ()) -> None:
         """Open the DT+ storage panel; it reads the selected key's stored files with one dummy-file lookup.
 
         ``needed`` is the size a refused generation required; the panel then offers to tick what to free."""
-        if self._removing_retained_lora or not self.dt_storage_overlay.overlay.isHidden():
+        if (
+            self.form.backendCombo.currentText() != "cloud"
+            or self._removing_retained_lora
+            or not self.dt_storage_overlay.overlay.isHidden()
+        ):
             return
         editor = self.generation.lora._prepare_editor
         if editor is not None and editor.active():
@@ -2207,7 +2211,9 @@ class MainWindow:
                 return
             self._storage_suspended_editor = editor.form
         self.dt_storage_overlay.open(
-            above=self.inline.strip.form if self._storage_suspended_editor is not None else None, needed=needed
+            above=self.inline.strip.form if self._storage_suspended_editor is not None else None,
+            needed=needed,
+            protect=protect,
         )
 
     def _dt_storage_closed(self) -> None:

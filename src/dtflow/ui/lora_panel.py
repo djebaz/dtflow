@@ -343,6 +343,7 @@ class LoraAssetPanel:
         if not storage_refusal(failure):
             return False
         needed = self.missing_size() or None
+        protected = tuple(item.identifier for item in self.loras)
         free = reported_free_space(failure)
         text = (
             f"Needs about {storage_size(needed)}; "
@@ -355,7 +356,9 @@ class LoraAssetPanel:
         if feedback.active():
             return False  # never replace an editor or pending consent
         feedback.show("DT+ storage is full", text, "warning")
-        feedback.set_accept("Open DT+ storage", lambda: (feedback.dismiss(), self.open_storage(needed=needed)))
+        feedback.set_accept(
+            "Open DT+ storage", lambda: (feedback.dismiss(), self.open_storage(needed=needed, protect=protected))
+        )
         return True
 
     def family_labels(self) -> dict[str, str]:

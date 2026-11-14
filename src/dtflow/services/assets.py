@@ -1336,7 +1336,7 @@ class AssetService:
 
     # -- DT+ storage ------------------------------------------------------------------------------------------------
 
-    async def storage_listing(self, content: AssetContent) -> StorageListing:
+    async def storage_listing(self, content: AssetContent, *, protect: tuple[str, ...] = ()) -> StorageListing:
         """The selected key's stored files as DT+ reports them. Read-only; nothing is uploaded or changed."""
         lister = getattr(self.backend, "list_stored_assets", None)
         if lister is None:
@@ -1346,7 +1346,31 @@ class AssetService:
             return listing
         keys, seen = await self._local_receipt_keys(listing.files)
         file_keys = await self._local_file_keys(listing.files)
-        return replace(listing, local_keys=keys, local_seen=seen, file_keys=file_keys)
+        protected = await self._protected_storage_keys(listing.files, protect)
+        return replace(listing, local_keys=keys, local_seen=seen, file_keys=file_keys, protected_keys=protected)
+
+    async def _protected_storage_keys(self, files: tuple, identifiers: tuple[str, ...]) -> frozenset[str] | None:
+        """Keep the refused generation's required LoRAs out of automatic deletion suggestions."""
+        if not identifiers:
+            return frozenset()
+        try:
+            names = frozenset(identifiers)
+            credential = await self.backend.asset_credential_identity()
+            scoped = await self.registry.confirmed_scope_rows(credential)
+            records = await self.registry.list()
+            references = [remote for _, name, remote, _ in scoped if name in names]
+            references.extend(record["remote_id"] for record in records if record["identifier"] in names)
+            return frozenset(
+                item.key
+                for item in files
+                if item.name in names
+                or any(isinstance(remote, str) and _receipt_matches(remote, item.key) for remote in references)
+            )
+        except (PersistenceError, BackendError, ValidationError, OSError) as exc:
+            diagnostic_event(
+                log, "assets.storage_protection_unread", level=logging.WARNING, data={"reason": type(exc).__name__}
+            )
+            return None
 
     async def _local_file_keys(self, files: tuple) -> frozenset[str] | None:
         """Match remote references to indexed managed copies without reading or hashing file contents."""

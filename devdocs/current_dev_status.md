@@ -1,5 +1,7 @@
 # Current development status
 
+**#450 priority review fixes:** automatic free-space selection excludes the refused generation's needed LoRAs by receipt reference/name; insufficient safe visible candidates produce no selection and a clear message. Every key save/remove/select and backend change now shares open-storage invalidation; Local disables cloud rereads. Source/static checks only, revised-path execution pending. Broader review work is tracked in #451–#455.
+
 **Storage file pills (#443 / PR #450):** storage rows show no pill for a matching indexed managed copy present with its recorded size in `lora_files`; amber Cloud only means no known matching managed copy, not absence from arbitrary folders. Failed local evidence shows neither pill. Presence checks run off Qt with no content hashing; they do not authorize restoration or change deletion/receipt behavior. Source/static checks only; owner native smoke pending.
 
 **#443 review follow-up:** a failed pre-request receipt snapshot leaves holdings unknown and skips stale-receipt writes; it never falls back to observing receipts after the network response. Key/backend changes immediately clear the free-space text, meter, queued refresh and picker hints. Source/static inspection only; revised-path execution remains pending.
