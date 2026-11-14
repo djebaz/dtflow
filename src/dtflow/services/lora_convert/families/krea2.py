@@ -39,6 +39,13 @@ _KREA2_FIXED: dict[str, tuple[str, ...]] = {
     "time_mod_proj": tuple(f"t-time_mod_proj_{i}-0-0" for i in range(6)),
     "txt_in_linear_1": ("t-linear_1-0-0",),
     "txt_in_linear_2": ("t-linear_2-0-0",),
+    # Names of the same layers in the original model layout (Sequential indices), seen in LoRAs from other trainers.
+    "first": ("t-img_in-0-0",),
+    "tmlp_0": ("t-time_embed_linear_1-0-0",),
+    "tmlp_2": ("t-time_embed_linear_2-0-0",),
+    "tproj_1": tuple(f"t-time_mod_proj_{i}-0-0" for i in range(6)),
+    "txtmlp_1": ("t-linear_1-0-0",),
+    "txtmlp_3": ("t-linear_2-0-0",),
 }
 
 
