@@ -41,6 +41,12 @@ class UnsupportedLoraFormatError(ConversionError):
 
     code = "unsupported_format"
 
+    def __init__(
+        self, user_message: str, *, hint: str | None = None, alpha_value_count: int | None = None
+    ) -> None:
+        self.alpha_value_count = alpha_value_count
+        super().__init__(user_message, hint=hint)
+
 
 class UnmatchedModulesError(ConversionError):
     """Modules that have no place in the chosen family (wrong family or model size)."""

@@ -5,6 +5,7 @@
 - `lora_store.conversion_candidates` (INFO) records matched and eligible counts plus the installed numeric converter version; source identity uses `asset_ref_data` only.
 - `lora_store.conversion_selected` (INFO) records the verified result's numeric converter version and fixed `match` value (`current` or `newer`), with source/output references through `asset_ref_data`.
 - Existing `lora_convert.prepare_started`, `prepare_completed` and `prepare_reused` distinguish conversion from reuse; existing `lora_store.converted_entry_skipped`/`converted_entry_repaired` retain #416 semantics. Selection diagnostics are not provider submission or success evidence. No new sink, raw path/name/version-string capture or schema version is introduced. Source/static review does not establish runtime privacy or failure acceptance.
+- `ui.asset_prepare_incomplete` already uses `asset_ref_data` to include the source SHA prefix, first three filename characters, and an asset ID only when one exists. For a rejected alpha tensor it also records fixed `failure_detail=alpha_cardinality` and integer `alpha_value_count` (0 or more), alongside `code=unsupported_format` and `remote_outcome=not_started`. No tensor key, source path or exception text enters this event; failed pre-upload conversion has no asset or operation ID to invent.
 
 ## API response events (PR #156)
 

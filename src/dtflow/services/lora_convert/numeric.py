@@ -144,7 +144,10 @@ def scalar(array: np.ndarray) -> np.float32:
     """Read one LoRA alpha value, rejecting malformed alpha tensors."""
     values = np.asarray(array, dtype=np.float32).reshape(-1)
     if values.size != 1:
-        raise UnsupportedLoraFormatError(f"LoRA alpha must contain exactly one value; found {values.size}.")
+        raise UnsupportedLoraFormatError(
+            f"LoRA alpha must contain exactly one value; found {values.size}.",
+            alpha_value_count=int(values.size),
+        )
     return np.float32(values[0])
 
 
