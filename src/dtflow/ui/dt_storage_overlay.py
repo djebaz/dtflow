@@ -105,6 +105,7 @@ class DtStorageOverlay(QObject):
         self.form.dtStorageRefresh.clicked.connect(self.refresh)
         self.form.dtStorageDelete.clicked.connect(self._delete_clicked)
         self.form.dtStorageList.itemChanged.connect(self._selection_changed)
+        self.form.dtStorageList.itemClicked.connect(self._toggle_row)  # a click anywhere on the row ticks it
         for label in (self.form.dtStorageStatus, self.form.dtStorageSelection):
             label.setTextFormat(Qt.TextFormat.RichText)
         escape = QShortcut(QKeySequence(Qt.Key.Key_Escape), self.overlay)
@@ -167,6 +168,12 @@ class DtStorageOverlay(QObject):
             if item.checkState() == Qt.CheckState.Checked:
                 chosen.append(self._files[item.data(Qt.ItemDataRole.UserRole)])
         return tuple(chosen)
+
+    def _toggle_row(self, item: QListWidgetItem) -> None:
+        if self._busy:
+            return
+        ticked = item.checkState() == Qt.CheckState.Checked
+        item.setCheckState(Qt.CheckState.Unchecked if ticked else Qt.CheckState.Checked)
 
     def _selection_changed(self, *_args) -> None:
         self._disarm()
@@ -237,7 +244,6 @@ class DtStorageOverlay(QObject):
         self.form.dtStorageList.blockSignals(True)
         for index, item in enumerate(listing.files):
             row = QListWidgetItem(f"{item.name}    {megabytes(item.size)}")
-            row.setFlags(row.flags() | Qt.ItemFlag.ItemIsUserCheckable)
             row.setCheckState(Qt.CheckState.Unchecked)
             row.setData(Qt.ItemDataRole.UserRole, index)
             self.form.dtStorageList.addItem(row)
