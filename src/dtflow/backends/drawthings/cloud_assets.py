@@ -424,7 +424,7 @@ async def list_stored_assets(auth: CloudAuth, content: AssetContent) -> StorageL
             level=logging.INFO,
             data={
                 "over_limit": False,
-                "asset_sha_prefix": content.sha256[:12],
+                **asset_ref_data(sha256=content.sha256),
                 "size_mib": round(content.size / 2**20, 1),
             },
         )
@@ -436,7 +436,7 @@ async def list_stored_assets(auth: CloudAuth, content: AssetContent) -> StorageL
         level=logging.INFO,
         data={
             "over_limit": True,
-            "asset_sha_prefix": content.sha256[:12],
+            **asset_ref_data(sha256=content.sha256),
             "size_mib": round(content.size / 2**20, 1),
             "files": len(listing.files),
             "skipped": listing.skipped,
