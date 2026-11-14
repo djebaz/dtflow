@@ -127,6 +127,10 @@ def _response_branches(response) -> tuple[dict, dict]:
     fields = {"data_type": type(data).__name__}
     if isinstance(data, dict):
         fields["data_member_count"] = len(data)
+        fields.update(_member_shape(data, "data"))
+    if isinstance(response, dict):
+        fields["response_member_count"] = len(response)
+        fields.update(_member_shape(response, "response"))
     for name in ("alreadyExists", "signedUrls"):
         branch = data.get(name) if isinstance(data, dict) else None
         fields[name + "_present"] = isinstance(data, dict) and name in data
@@ -200,6 +204,21 @@ def _match_shape(response, already: dict, urls: dict, content: AssetContent) -> 
     if isinstance(raw_urls, list):
         shape["url_list_item_types"] = _type_counts(raw_urls)
     return shape
+
+
+_SCHEMA_NAME = re.compile(r"[A-Za-z][A-Za-z0-9_]{0,31}")
+
+
+def _member_shape(mapping: dict, prefix: str, limit: int = 8) -> dict:
+    """Schema-like member names with value type and size; hash-like or free-form keys are only counted."""
+    named, other = [], 0
+    for key, value in mapping.items():
+        if isinstance(key, str) and _SCHEMA_NAME.fullmatch(key) and not re.fullmatch(r"[0-9a-fA-F]{16,}", key):
+            size = f"[{len(value)}]" if isinstance(value, (dict, list, str)) else ""
+            named.append(f"{key}:{type(value).__name__}{size}")
+        else:
+            other += 1
+    return {f"{prefix}_member_schema": ",".join(sorted(named)[:limit]), f"{prefix}_member_other_count": other}
 
 
 def _valid_reference(reference) -> bool:
