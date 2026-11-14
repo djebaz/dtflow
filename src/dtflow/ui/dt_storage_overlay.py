@@ -256,7 +256,7 @@ class DtStorageOverlay(QObject):
         self._free = {}
         self._error("")
         self._files = ()
-        self.form.dtStorageList.clear()
+        self._clear_list()
         self._show_list(False)
         self.meter.setVisible(False)
         self._selection_changed()
@@ -292,8 +292,9 @@ class DtStorageOverlay(QObject):
         chosen = []
         for row in range(self.form.dtStorageList.count()):
             item = self.form.dtStorageList.item(row)
-            if item.checkState() == Qt.CheckState.Checked:
-                chosen.append(self._files[item.data(Qt.ItemDataRole.UserRole)])
+            index = item.data(Qt.ItemDataRole.UserRole)
+            if item.checkState() == Qt.CheckState.Checked and isinstance(index, int) and 0 <= index < len(self._files):
+                chosen.append(self._files[index])
         return tuple(chosen)
 
     def _sorted(self, files: tuple[StoredAsset, ...]) -> tuple[StoredAsset, ...]:
@@ -326,6 +327,13 @@ class DtStorageOverlay(QObject):
         self.meter.setVisible(bool(limit))
         if limit:
             self.meter.set_share(used / limit)
+
+    def _clear_list(self) -> None:
+        """Empty the list without its selection signal running against the file tuple being replaced."""
+        listing = self.form.dtStorageList
+        listing.blockSignals(True)
+        listing.clear()
+        listing.blockSignals(False)
 
     def _show_list(self, visible: bool) -> None:
         self.form.dtStorageList.setVisible(visible)
@@ -372,7 +380,7 @@ class DtStorageOverlay(QObject):
             return
         self._error("")
         self._files = ()
-        self.form.dtStorageList.clear()
+        self._clear_list()
         self._show_list(False)
         self.meter.setVisible(False)
         self.form.dtStorageStatus.setText("Reading DT+ storage…")
