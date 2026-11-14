@@ -69,7 +69,7 @@ class SegmentMeter(QWidget):
     """Used share of the key's storage as a row of small blocks: accent, warning from 80%, error from 90%."""
 
     HEIGHT, WIDTH, GAP = 10, 23, 3
-    TONE = 0.42  # share of the status colour over the track: muted like the Compute Units meter, not flashing
+    TONES = {"ok": 0.42, "warn": 0.62, "over": 0.42}  # share of the status colour over the track (muted, not flashing)
 
     def __init__(self, parent: QWidget | None = None):
         super().__init__(parent)
@@ -79,14 +79,13 @@ class SegmentMeter(QWidget):
         colors = load_tokens()
         self._track = QColor(colors["color.barTrack"])
         self._fills = {
-            state: self._muted(QColor(colors[token]))
+            state: self._muted(QColor(colors[token]), self.TONES[state])
             for state, token in (("ok", "color.accent"), ("warn", "color.warning"), ("over", "color.error"))
         }
         self.share = 0.0
         self.state = "ok"
 
-    def _muted(self, color: QColor) -> QColor:
-        t = self.TONE
+    def _muted(self, color: QColor, t: float) -> QColor:
         return QColor(
             round(self._track.red() + (color.red() - self._track.red()) * t),
             round(self._track.green() + (color.green() - self._track.green()) * t),
