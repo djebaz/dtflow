@@ -22,6 +22,7 @@ from PySide6.QtWidgets import (
     QListWidget,
     QListWidgetItem,
     QSizePolicy,
+    QSpacerItem,
     QVBoxLayout,
     QWidget,
 )
@@ -223,6 +224,11 @@ class DtStorageOverlay(QObject):
         self.search.textChanged.connect(self._filter_rows)
         layout.insertWidget(layout.indexOf(self.form.dtStorageList), self.search)
         layout.setStretchFactor(self.form.dtStorageList, 1)
+        # While the list is hidden (reading, or nothing to list) a spacer takes the spare height, so the texts and
+        # buttons keep their natural spacing instead of the layout spreading them out.
+        self._filler = QSpacerItem(0, 0, QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Expanding)
+        layout.insertItem(layout.indexOf(self.form.dtStorageSelection), self._filler)
+        layout.setStretch(layout.indexOf(self._filler), 1)
         # A click anywhere on a row ticks it: the list is multi-select and the check marks follow the selection.
         self.form.dtStorageList.itemSelectionChanged.connect(self._sync_checks)
         self._range = _RangeSelect(self.form.dtStorageList)
@@ -251,7 +257,7 @@ class DtStorageOverlay(QObject):
         self._error("")
         self._files = ()
         self.form.dtStorageList.clear()
-        self.form.dtStorageList.setVisible(False)
+        self._show_list(False)
         self.meter.setVisible(False)
         self._selection_changed()
         self.overlay.setGeometry(self.overlay.parentWidget().rect())
@@ -321,6 +327,16 @@ class DtStorageOverlay(QObject):
         if limit:
             self.meter.set_share(used / limit)
 
+    def _show_list(self, visible: bool) -> None:
+        self.form.dtStorageList.setVisible(visible)
+        self.search.setVisible(visible)
+        self._filler.changeSize(
+            0, 0, QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Minimum if visible else QSizePolicy.Policy.Expanding
+        )
+        layout = self.form.layout()
+        layout.setStretch(layout.indexOf(self._filler), 0 if visible else 1)
+        layout.invalidate()
+
     def _sync_checks(self) -> None:
         """Ticked rows are the selected rows; the check mark and the selection style follow each other."""
         listing = self.form.dtStorageList
@@ -357,7 +373,7 @@ class DtStorageOverlay(QObject):
         self._error("")
         self._files = ()
         self.form.dtStorageList.clear()
-        self.form.dtStorageList.setVisible(False)
+        self._show_list(False)
         self.meter.setVisible(False)
         self.form.dtStorageStatus.setText("Reading DT+ storage…")
         self._set_busy(True)
@@ -395,7 +411,7 @@ class DtStorageOverlay(QObject):
         self._files = listing.files
         if key is not None and listing.free_space is not None:
             self._free[key] = listing.free_space
-        self.form.dtStorageList.setVisible(bool(listing.files))
+        self._show_list(bool(listing.files))
         total = sum(item.size for item in listing.files)
         count = _bold(_files(len(listing.files)))
         if listing.free_space is not None:
