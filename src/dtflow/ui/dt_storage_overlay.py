@@ -278,6 +278,7 @@ class DtStorageOverlay(QObject):
         self._protect: tuple[str, ...] = ()
         self._protected_keys: frozenset[str] | None = None
         self._busy = False
+        self._dismiss_pending = False
         self._read_allowed = True
         self._revision = 0
         self._listed_key: str | None = None
@@ -342,8 +343,19 @@ class DtStorageOverlay(QObject):
     def close(self) -> None:
         if self._busy:
             return
+        self._dismiss_pending = False
         self.overlay.setVisible(False)
         self._on_closed()
+
+    def dismiss(self) -> None:
+        """Retire this transient view; admitted storage work settles normally before closing."""
+        if self.overlay.isHidden():
+            return
+        self._disarm()
+        if self._busy:
+            self._dismiss_pending = True
+        else:
+            self.close()
 
     # -- state helpers --------------------------------------------------------------------------------------------
     def _error(self, text: str) -> None:
@@ -577,11 +589,19 @@ class DtStorageOverlay(QObject):
                 self._error(
                     "Deletion on the previous key did not finish successfully. Check that key's storage before retrying."
                 )
+            self._finish_dismissal(keep_error=deleting and failure is not None)
             return
         if deleting:
             self._deleted(result, failure)
         else:
             self._listed(result, failure)
+        self._finish_dismissal(keep_error=deleting and failure is not None)
+
+    def _finish_dismissal(self, *, keep_error=False) -> None:
+        if self._dismiss_pending and not self._busy:
+            self._dismiss_pending = False
+            if not keep_error:  # never hide a failed/uncertain deletion outcome merely because navigation occurred
+                self.close()
 
     def refresh(self) -> None:
         if self._busy or self.runner.closed or not self._read_allowed:

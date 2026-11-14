@@ -601,6 +601,7 @@ class MainWindow:
             on_closed=self._dt_storage_closed,
         )
         self.generation.lora.open_storage = self.open_dt_storage
+        self.generation.lora.dismiss_storage = self.dt_storage_overlay.dismiss
         self.generation.lora.refresh_holdings = self._read_dt_free_space
         self._storage_suspended_editor = None
         form.dtStorageButton.clicked.connect(self.open_dt_storage)
@@ -997,6 +998,7 @@ class MainWindow:
 
     def _workspace_changed(self, index: int) -> None:
         """Switch mounted workspaces without resetting active operations."""
+        self.dt_storage_overlay.dismiss()
         self._prompt_hints.close()
         self.workflows.prompt_hints.close()
         logs_active = self.form.workspaceStack.currentWidget() is self.logs_marker

@@ -1104,6 +1104,7 @@ class GenerationPage:
 
     def _submit(self, request, name, endpoint, asset_ids, prefix, simulation, edit, note) -> None:
         """Send one validated request snapshot; Generate and Retry both end here."""
+        self.lora.dismiss_storage()
         self._submitted_backend, self._submitted_endpoint = name, endpoint
         self._request = request
         self._run_edit = edit is not None

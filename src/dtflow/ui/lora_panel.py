@@ -129,6 +129,7 @@ class LoraAssetPanel:
         self._state, self._build, self._is_busy, self._set_busy = Path(state_dir), build_request, is_busy, set_busy
         self.choose_asset_file = _choose_asset_file
         self.open_storage: Callable[..., None] = lambda **_: None  # the window mounts the shared overlay
+        self.dismiss_storage: Callable[[], None] = lambda: None
         self.refresh_holdings: Callable[[], None] = lambda: None  # the window re-reads the key's stored list
         self._holdings: KeyHoldings | None = None
         self._picker_marks: Callable[[dict[str, str]], None] | None = None  # updates the open picker's pills
@@ -620,6 +621,7 @@ class LoraAssetPanel:
         for path in chosen:
             unique.setdefault(os.path.normcase(os.path.realpath(path)), os.path.abspath(path))
         paths = tuple(unique.values())
+        self.dismiss_storage()
         if self._prepare_editor is not None:
             self._prepare_editor.cancel_hashing()  # a replaced editor must not keep reading files
         holder: list[PrepareBatchEditor] = []
@@ -1017,6 +1019,7 @@ class LoraAssetPanel:
         editor = self._prepare_editor
         if editor is None or not editor.all_checked():
             return
+        self.dismiss_storage()
         editor.close()
         self._prepare_editor = self._prepare_editor_context = None
 
