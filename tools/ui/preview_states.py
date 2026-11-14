@@ -4652,7 +4652,8 @@ def _render_selection(app, args):
                         approve.click()  # The ordinary explicit Prepare N ready LoRAs approval.
                         require_asset_ready(
                             lambda identifier=identifier: (
-                                settled()
+                                not controller._busy
+                                and not panel.preparing
                                 and panel._prepare_editor is None
                                 and any(
                                     record["identifier"] == identifier and record["state"] == "confirmed"
