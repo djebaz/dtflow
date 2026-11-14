@@ -64,11 +64,21 @@ env:
 jobs:
   checks:
     name: Lock, lint, test (single-runner)
+    # Manual requests; Ready PRs (Fast or Full); merged release PRs into main (Full).
     if: >-
-      github.event.action == 'closed' &&
-      github.event.pull_request.merged == true &&
-      github.event.pull_request.base.ref == 'main' &&
-      contains(github.event.pull_request.head.ref, 'release')
+      github.event_name == 'workflow_dispatch' ||
+      (
+        github.event_name == 'pull_request' &&
+        (
+          github.event.action == 'ready_for_review' ||
+          (
+            github.event.action == 'closed' &&
+            github.event.pull_request.merged == true &&
+            github.event.pull_request.base.ref == 'main' &&
+            contains(github.event.pull_request.head.ref, 'release')
+          )
+        )
+      )
     # No shared pre-gate concurrency: an irrelevant update must not cancel running/pending checks.
     runs-on: ubuntu-24.04
     timeout-minutes: 60
@@ -126,8 +136,14 @@ jobs:
 
       - name: Check this update before expensive setup
         id: changes
+        env:
+          PR_ACTION: ${{ github.event.action }}
         run: |
-          if [ -f tools/ci/action_changes.py ] && [ -f tools/ci/action_dependencies.json ]; then
+          if [ "$GITHUB_EVENT_NAME" = "pull_request" ] && [ "$PR_ACTION" = "closed" ]; then
+            # After a merge, base/head diff detection can be empty; validate main unconditionally.
+            echo "run=true" >> "$GITHUB_OUTPUT"
+            echo "Merged release PR: run Full CI on main." >> "$GITHUB_STEP_SUMMARY"
+          elif [ -f tools/ci/action_changes.py ] && [ -f tools/ci/action_dependencies.json ]; then
             python3 tools/ci/action_changes.py --kind ci
           else
             echo "run=true" >> "$GITHUB_OUTPUT"
@@ -139,10 +155,17 @@ jobs:
         if: steps.changes.outputs.run == 'true'
         env:
           MANUAL_SUITE: ${{ inputs.suite }}
+          PR_ACTION: ${{ github.event.action }}
+          PR_IS_RELEASE: ${{ contains(github.event.pull_request.head.ref, 'release') }}
         run: |
           case "$GITHUB_EVENT_NAME" in
-            pull_request) level=fast ;;
-            push) level=full ;;
+            pull_request)
+              if [ "$PR_ACTION" = "closed" ] || [ "$PR_IS_RELEASE" = "true" ]; then
+                level=full
+              else
+                level=fast
+              fi
+              ;;
             workflow_dispatch) level="${MANUAL_SUITE:-full}" ;;
             *) echo "Unsupported CI trigger: $GITHUB_EVENT_NAME" >&2; exit 1 ;;
           esac
