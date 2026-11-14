@@ -175,9 +175,11 @@ def _record(row: sqlite3.Row) -> dict[str, Any]:
 class AssetRegistry:
     """Open with ``writer=True`` to prepare/reconcile (exclusive), or read-only for inspection."""
 
-    def __init__(self, directory: Path, *, writer: bool = False):
+    def __init__(self, directory: Path, *, writer: bool = False, recover: bool = True):
         self.directory = Path(directory).resolve()
         self.writer = writer
+        # ``recover=False`` is a scoped writer: it takes the lock but leaves other operations' states alone.
+        self.recover = recover
         self._lock = None
         self._ready = False
 
@@ -215,7 +217,7 @@ class AssetRegistry:
                 db.execute("BEGIN IMMEDIATE")
                 try:
                     # Writers are exclusive, so an unresolved operation here belongs to a process that no longer runs.
-                    for table in ("asset_operations", "assets"):
+                    for table in ("asset_operations", "assets") if self.recover else ():
                         db.execute(
                             f"UPDATE {table} SET state='unknown', evidence='interrupted', updated_at_utc=? "
                             "WHERE state IN ('intent','transferring')",
@@ -579,9 +581,46 @@ class AssetRegistry:
             ).fetchall()
         return tuple((row["asset_id"], row["identifier"], row["remote_id"]) for row in rows)
 
+    async def confirmed_scope_rows(self, credential_id: str) -> tuple[tuple[str, str, str, str], ...]:
+        """``(asset_id, identifier, remote_id, last_confirmed_utc)`` of this key's confirmed receipts, read-only."""
+        return await self._run(self._confirmed_scope_rows, credential_id)
+
+    def _confirmed_scope_rows(self, credential_id: str) -> tuple[tuple[str, str, str, str], ...]:
+        if not self.path.exists():
+            return ()
+        with closing(self._connect()) as db:
+            rows = db.execute(
+                "SELECT asset_id, identifier, remote_id, MAX(confirmed_at_utc, updated_at_utc) AS seen "
+                "FROM asset_key_receipts WHERE credential_id=? AND state='confirmed'",
+                (credential_id,),
+            ).fetchall()
+        return tuple((row["asset_id"], row["identifier"], row["remote_id"], row["seen"] or "") for row in rows)
+
     async def invalidate_scope(self, asset_id: str, credential_id: str, identifier: str) -> None:
         """Invalidate only this key/name receipt; shared bytes and other key records remain valid."""
         return await self._run(self._write, self._invalidate_scope, asset_id, credential_id, identifier)
+
+    async def invalidate_observed(self, credential_id: str, observed: tuple[tuple[str, str, str, str], ...]) -> int:
+        """Mark only the observed receipts of this key missing, in one transaction; returns how many changed.
+
+        ``observed`` are ``(asset_id, identifier, remote_id, seen)`` as ``confirmed_scope_rows`` returned them before
+        the list was requested. A receipt confirmed again since (any newer confirmation time, even with the same remote
+        reference) or no longer confirmed is left alone, so a later Prepare is never undone by an older list."""
+        return await self._run(self._write, self._invalidate_observed, credential_id, observed)
+
+    @classmethod
+    def _invalidate_observed(cls, db, credential_id: str, observed) -> int:
+        changed = 0
+        for asset_id, identifier, remote_id, seen in observed:
+            current = db.execute(
+                "SELECT 1 FROM asset_key_receipts WHERE asset_id=? AND credential_id=? AND identifier=? "
+                "AND remote_id=? AND state='confirmed' AND MAX(confirmed_at_utc, updated_at_utc)=?",
+                (asset_id, credential_id, identifier, remote_id, seen),
+            ).fetchone()
+            if current:
+                cls._invalidate_scope(db, asset_id, credential_id, identifier)
+                changed += 1
+        return changed
 
     @staticmethod
     def _invalidate_scope(db, asset_id: str, credential_id: str, identifier: str) -> None:
@@ -618,14 +657,16 @@ class AssetRegistry:
             *_effective_version(row),
         )
 
-    async def choices(self) -> tuple[PreparedAsset, ...]:
+    async def choices(self, *, include_missing: bool = False) -> tuple[PreparedAsset, ...]:
         """Known logical names, including those sharing content but prepared under different keys.
 
         These are local *candidates*. Dispatch must still resolve each one in the selected key's bucket.
+        ``include_missing`` additionally exposes previously confirmed key receipts marked missing, solely as
+        candidates for a fresh dispatch-time check/restoration; it does not treat them as currently confirmed.
         """
-        return await self._run(self._choices)
+        return await self._run(self._choices, include_missing)
 
-    def _choices(self) -> tuple[PreparedAsset, ...]:
+    def _choices(self, include_missing: bool = False) -> tuple[PreparedAsset, ...]:
         if not self.path.exists():
             return ()
         with closing(self._connect()) as db:
@@ -639,7 +680,8 @@ class AssetRegistry:
                 f"SELECT a.*, {_LORA_COLUMNS}, k.identifier AS logical_name, "
                 "k.remote_id AS logical_remote, k.confirmed_at_utc AS logical_confirmed "
                 f"FROM assets a{_LORA_JOIN} JOIN asset_key_receipts k ON a.asset_id=k.asset_id "
-                "WHERE a.kind='lora' AND k.state='confirmed'"
+                "WHERE a.kind='lora' AND "
+                + ("k.state IN ('confirmed','missing')" if include_missing else "k.state='confirmed'")
             ):
                 from dataclasses import replace
 

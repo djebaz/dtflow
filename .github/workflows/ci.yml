@@ -43,14 +43,15 @@ on:
       # - 'LICENSE*'
       # - 'NOTICE*'
       # - '.github/ISSUE_TEMPLATE/**'
-  pull_request:
-    types: [ready_for_review, closed]
-    paths-ignore:
-     - '**/*.md'
-     - '**/*.rst'
-     - 'LICENSE*'
-     - 'NOTICE*'
-     - '.github/ISSUE_TEMPLATE/**'
+  # Automatic runs paused: GitHub Actions credits exhausted (owner decision).
+  # pull_request:
+  #   types: [ready_for_review, closed]
+  #   paths-ignore:
+  #    - '**/*.md'
+  #    - '**/*.rst'
+  #    - 'LICENSE*'
+  #    - 'NOTICE*'
+  #    - '.github/ISSUE_TEMPLATE/**'
      
 permissions:
   contents: read

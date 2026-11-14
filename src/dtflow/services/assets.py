@@ -27,8 +27,10 @@ from dtflow.core.models import (
     BackendError,
     BackendFailure,
     ErrorCategory,
+    KeyHoldings,
     PreparedAsset,
     RemoteOutcome,
+    ResolvedGenerationRequest,
     StorageListing,
     SubmissionStage,
     ValidationError,
@@ -1282,8 +1284,9 @@ class AssetService:
                 raise _failure(
                     ErrorCategory.VALIDATION,
                     "prepared_asset_no_local_copy",
-                    f"LoRA {asset} is missing on DT+ and no verified local copy is kept; run `assets prepare` again."
-                    " Nothing was submitted.",
+                    f"DT+ requires a local file for LoRA {asset}, but its managed copy is missing. "
+                    "Prepare it again if you can obtain the original file, or remove it from this generation. "
+                    "Nothing was submitted.",
                 )
             await asyncio.to_thread(store.verify, retained)
         except ValidationError as exc:
@@ -1335,7 +1338,43 @@ class AssetService:
 
     # -- DT+ storage ------------------------------------------------------------------------------------------------
 
-    async def storage_listing(self, content: AssetContent) -> StorageListing:
+    async def resolve_selected(self, request: ResolvedGenerationRequest) -> ResolvedGenerationRequest:
+        """Bind known custom selections for dispatch-time verification, never treating missing receipts as held."""
+        if self.state is None or not request.loras:
+            return request
+        registry = AssetRegistry(self.state)
+        await registry.open()
+        try:
+            choices = await registry.choices(include_missing=True)
+            records = await registry.list()
+            current = await asyncio.to_thread(self.store.current_by_name) if self.store is not None else {}
+            newest = {item.identifier: item for item in newest_per_name(choices, current)}
+            known = {record["identifier"] for record in records}
+            known.update(record.get("managed_identifier") for record in records)
+            bound = {item.identifier: item for item in request.prepared_assets}
+            added = 0
+            for selection in request.loras:
+                name = selection.identifier
+                if name in bound:
+                    continue
+                if name in newest:
+                    bound[name] = newest[name]
+                    added += 1
+                elif name in known:
+                    raise _failure(
+                        ErrorCategory.VALIDATION,
+                        "prepared_asset_reference_missing",
+                        f"LoRA {PureWindowsPath(name).name} has no usable saved cloud reference. "
+                        "Prepare it again from the original file, or remove it from this generation. Nothing was submitted.",
+                    )
+            prepared = await registry.resolve_prepared(tuple(bound.values()))
+        finally:
+            await registry.aclose()
+        if added:
+            diagnostic_event(log, "assets.selected_bound", data={"count": added})
+        return replace(request, prepared_assets=prepared)
+
+    async def storage_listing(self, content: AssetContent, *, protect: tuple[str, ...] = ()) -> StorageListing:
         """The selected key's stored files as DT+ reports them. Read-only; nothing is uploaded or changed."""
         lister = getattr(self.backend, "list_stored_assets", None)
         if lister is None:
@@ -1343,13 +1382,68 @@ class AssetService:
         listing = await lister(content)
         if not listing.files:
             return listing
-        return replace(listing, local_keys=await self._local_receipt_keys(listing.files))
+        keys, seen = await self._local_receipt_keys(listing.files)
+        file_keys = await self._local_file_keys(listing.files)
+        protected = await self._protected_storage_keys(listing.files, protect)
+        return replace(listing, local_keys=keys, local_seen=seen, file_keys=file_keys, protected_keys=protected)
 
-    async def _local_receipt_keys(self, files: tuple) -> frozenset[str] | None:
-        """Delete keys of listed files that one of this key's confirmed local receipts refers to; None if unreadable."""
+    async def _protected_storage_keys(self, files: tuple, identifiers: tuple[str, ...]) -> frozenset[str] | None:
+        """Keep the refused generation's required LoRAs out of automatic deletion suggestions."""
+        if not identifiers:
+            return frozenset()
+        try:
+            names = frozenset(identifiers)
+            credential = await self.backend.asset_credential_identity()
+            scoped = await self.registry.confirmed_scope_rows(credential)
+            records = await self.registry.list()
+            references = [remote for _, name, remote, _ in scoped if name in names]
+            references.extend(record["remote_id"] for record in records if record["identifier"] in names)
+            return frozenset(
+                item.key
+                for item in files
+                if item.name in names
+                or any(isinstance(remote, str) and _receipt_matches(remote, item.key) for remote in references)
+            )
+        except (PersistenceError, BackendError, ValidationError, OSError) as exc:
+            diagnostic_event(
+                log, "assets.storage_protection_unread", level=logging.WARNING, data={"reason": type(exc).__name__}
+            )
+            return None
+
+    async def _local_file_keys(self, files: tuple) -> frozenset[str] | None:
+        """Match remote references to indexed managed copies without reading or hashing file contents."""
+        if self.store is None:
+            return None
+        try:
+            records = await self.registry.list()
+            credential = await self.backend.asset_credential_identity()
+            scoped = await self.registry.confirmed_scope_rows(credential)
+            present = await asyncio.to_thread(self.store.present_identities)
+            by_id = {record["asset_id"]: record for record in records}
+            references = [(record["remote_id"], record) for record in records]
+            references.extend((remote, by_id[asset]) for asset, _, remote, _ in scoped if asset in by_id)
+            return frozenset(
+                item.key
+                for item in files
+                if any(
+                    isinstance(remote, str)
+                    and _receipt_matches(remote, item.key)
+                    and (record["sha256"], record["size"]) in present
+                    for remote, record in references
+                )
+            )
+        except (PersistenceError, BackendError, ValidationError, OSError, KeyError, TypeError) as exc:
+            diagnostic_event(
+                log, "assets.storage_files_unread", level=logging.WARNING, data={"reason": type(exc).__name__}
+            )
+            return None
+
+    async def _local_receipt_keys(self, files: tuple) -> tuple[frozenset[str] | None, dict[str, str]]:
+        """Delete keys of listed files that one of this key's confirmed local receipts refers to (None if unreadable),
+        with the newest time this computer confirmed each one."""
         try:
             credential = await self.backend.asset_credential_identity()
-            references = await self.registry.confirmed_scope_references(credential)
+            references = await self.registry.confirmed_scope_rows(credential)
         except (PersistenceError, AssetsBusyError, BackendError, ValidationError, OSError) as exc:
             diagnostic_event(
                 log,
@@ -1357,8 +1451,66 @@ class AssetService:
                 level=logging.WARNING,
                 data={"reason": type(exc).__name__, "files": len(files)},
             )
-            return None
-        return frozenset(item.key for item in files if any(_receipt_matches(ref[2], item.key) for ref in references))
+            return None, {}
+        seen: dict[str, str] = {}
+        for item in files:
+            times = [ref[3] for ref in references if _receipt_matches(ref[2], item.key)]
+            if times:
+                seen[item.key] = max(times)
+        return frozenset(seen), seen
+
+    async def receipt_snapshot(self) -> tuple[str, tuple[tuple[str, str, str, str], ...]]:
+        """This key's opaque identity and its confirmed receipts, read before a stored-list request is made."""
+        credential = await self.backend.asset_credential_identity()
+        return credential, await self.registry.confirmed_scope_rows(credential)
+
+    async def key_holdings(
+        self, listing: StorageListing, snapshot: tuple[str, tuple[tuple[str, str, str, str], ...]] | None = None
+    ) -> KeyHoldings:
+        """Compare this key's confirmed receipts with a complete stored list (read-only; nothing is changed here).
+
+        Only an explicit list DT+ gave in full (over-limit answer, nothing skipped; an empty list counts) is evidence.
+        Without one nothing is judged missing and the receipts alone say what the key probably holds. ``snapshot`` is
+        the receipts read *before* the list was requested, so a receipt confirmed while the request ran is never judged
+        against the older list. Receipts the list lacks come back in ``stale`` with this key's opaque identity for the
+        caller to apply through ``AssetRegistry.invalidate_observed``; this method never opens the exclusive writer."""
+        try:
+            credential, rows = snapshot if snapshot is not None else await self.receipt_snapshot()
+        except (PersistenceError, AssetsBusyError, BackendError, ValidationError, OSError) as exc:
+            diagnostic_event(log, "assets.holdings_unread", level=logging.WARNING, data={"reason": type(exc).__name__})
+            return KeyHoldings(False, frozenset(), 0, 0, False)
+        complete = listing.over_limit and listing.complete
+        stale = (
+            tuple(
+                (asset_id, identifier, remote_id, seen)
+                for asset_id, identifier, remote_id, seen in rows
+                if not any(_receipt_matches(remote_id, item.key) for item in listing.files)
+            )
+            if complete
+            else ()
+        )
+        diagnostic_event(
+            log,
+            "assets.holdings_compared",
+            level=logging.INFO,
+            data={
+                "listed": len(listing.files),
+                "receipts": len(rows),
+                "complete": complete,
+                "stale": len(stale),
+                **self._key_diagnostics(),
+            },
+        )
+        gone = {identifier for _, identifier, _, _ in stale}
+        return KeyHoldings(
+            complete,
+            frozenset(identifier for _, identifier, _, _ in rows) - gone,
+            len(rows),
+            0,
+            True,
+            credential,
+            stale,
+        )
 
     async def delete_storage(self, selected: tuple) -> dict:
         """Delete the owner-selected stored files under this key, once, then invalidate matching local receipts.
