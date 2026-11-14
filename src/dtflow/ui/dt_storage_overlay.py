@@ -69,7 +69,7 @@ class SegmentMeter(QWidget):
     """Used share of the key's storage as a row of small blocks: accent, warning from 80%, error from 90%."""
 
     HEIGHT, WIDTH, GAP = 10, 23, 3
-    TONES = {"ok": 0.42, "warn": 0.62, "over": 0.42}  # share of the status colour over the track (muted, not flashing)
+    TONES = {"ok": 0.42, "warn": 0.62, "over": 0.72}  # share of the status colour over the track (muted, not flashing)
 
     def __init__(self, parent: QWidget | None = None):
         super().__init__(parent)
