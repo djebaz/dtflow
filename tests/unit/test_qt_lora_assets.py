@@ -6,22 +6,26 @@ what the page renders and which service each action calls.
 
 import asyncio
 import dataclasses
+import json
 import os
 
+import httpx
 import pytest
 
 pytest.importorskip("pytestqt")
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-from PySide6.QtWidgets import QCheckBox, QLineEdit, QPushButton, QSlider, QWidget  # noqa: E402
+from PySide6.QtWidgets import QApplication, QCheckBox, QLineEdit, QPushButton, QSlider, QWidget  # noqa: E402
 from support.cloud_assets import DtPlus, lora_file  # noqa: E402
 from support.fake_vault import Vault  # noqa: E402
 
 from dtflow.backends.fake import FakeBackend  # noqa: E402
 from dtflow.core.models import InventoryEntry, InventorySnapshot  # noqa: E402
+from dtflow.core.models import AssetContent  # noqa: E402
 from dtflow.persistence.assets import AssetRegistry  # noqa: E402
 from dtflow.services import session  # noqa: E402
 from dtflow.services.credentials import SavedCredentials  # noqa: E402
+from dtflow.services.dt_storage import storage_size  # noqa: E402
 from dtflow.ui.lora_panel import UPLOAD_NOTICE  # noqa: E402
 from dtflow.ui.main_window import MainWindow  # noqa: E402
 
@@ -204,7 +208,10 @@ def test_asset_writer_contention_is_a_clear_busy_message(window, cloud, qtbot, t
         prepare(window, qtbot, lora_file(tmp_path))
         page = window.generation_page
         qtbot.waitUntil(lambda: page.assetStatusLabel.text().startswith("Assets busy"), timeout=30000)
-        assert cloud.puts == [] and cloud.api_calls == []
+        assert cloud.puts == []
+        # Inspection may read advisory key headroom without the writer lock. The actual selected file must
+        # still never negotiate or upload while another writer owns the registry.
+        assert all(call["entry"]["file"] == "dtflow-storage-probe.ckpt" for call in cloud.api_calls)
     finally:
         loop.run_until_complete(other.aclose())
         loop.close()
@@ -221,3 +228,193 @@ def test_prepare_adds_and_binds_the_lora_and_removing_it_drops_the_binding(windo
     assert window.generation.lora.receipt_ids() == ()  # removing the LoRA drops its binding
     window.form.backendCombo.setCurrentText("fake")  # receipts are cloud-only; actions are disabled elsewhere
     assert not page.prepareAssetButton.isEnabled() and page.assetStatusLabel.text().startswith("Cloud only")
+
+
+class StorageQuotaFixture(DtPlus):
+    """Synthetic per-key quota on the existing HTTP mock; never opens a socket."""
+
+    def __init__(self):
+        super().__init__()
+        self.full = True
+        self.deletes = []
+
+    async def api(self, request):
+        if request.url.path == "/delete_uploaded_files":
+            keys = json.loads(request.content)["keys"]
+            assert keys == ["fixture-old-storage-key"]
+            self.deletes.append(keys)
+            self.full = False
+            return httpx.Response(200, json={"code": 200})
+        if request.url.path == "/get_byom_urls":
+            entry = json.loads(request.content)["files"][0]
+            if entry["file"] == "dtflow-storage-probe.ckpt" or self.full:
+                self.api_calls.append({"path": request.url.path, "entry": entry})
+                return httpx.Response(
+                    200,
+                    json={
+                        "data": {
+                            "storageLimitExceeded": {
+                                "freeSpace": 0 if self.full else 1_000_000,
+                                "files": (
+                                    [{"file": "old.ckpt", "key": "fixture-old-storage-key", "size": 1_000_000}]
+                                    if self.full
+                                    else []
+                                ),
+                            }
+                        }
+                    },
+                )
+        return await super().api(request)
+
+
+@pytest.fixture
+def quota(window, monkeypatch):
+    fixture = StorageQuotaFixture()
+    monkeypatch.setattr(session, "create_backend", lambda *args, **kwargs: fixture.backend())
+    window.form.backendCombo.setCurrentText("cloud")
+    return fixture
+
+
+def test_storage_refusal_free_space_and_explicit_reprepare_without_reselection(window, quota, qtbot, tmp_path):
+    window.form.show()
+    file = lora_file(tmp_path, data=bytes(range(256)) * 512)
+    assert prepare(window, qtbot, file) == [file.name]
+    panel = window.generation.lora
+    editor = panel._prepare_editor
+    assert editor is not None and editor.active()
+    row = editor.rows[0]
+    assert row.outcome == "Failed" and row.storage_failed and row.can_reprepare
+    assert not row.reprepare  # storage recovery did not grant accepted-name replacement
+    assert not row.widget.prepareReprepare.isHidden()
+    assert f"Last refused file needs {storage_size(file.stat().st_size)}" in editor.form.prepareStorageStatus.text()
+    assert "0.0 MB free" in editor.form.prepareStorageStatus.text()
+    assert quota.put_attempts == 0 and quota.deletes == []
+
+    # Storage is a smaller child popup above the still-visible, inactive Prepare editor.
+    editor.form.prepareStorageButton.click()
+    overlay = window.dt_storage_overlay
+    qtbot.waitUntil(lambda: not overlay._busy and overlay.form.dtStorageList.count() == 1, timeout=10000)
+    assert not overlay.overlay.isHidden()
+    assert overlay.overlay.parentWidget() is window.inline.strip.form
+    assert panel._prepare_editor is editor and editor.active()
+    assert window.inline.form.isVisible() and not window.inline.form.isEnabled()
+    assert window.inline.strip.scrim.isVisible()
+    assert overlay.form.width() < window.inline.strip.form.width()
+    assert overlay.form.height() < window.inline.strip.form.height()
+    overlay.search.setFocus()
+    qtbot.waitUntil(lambda: QApplication.focusWidget() is overlay.search, timeout=5000)
+    overlay.form.dtStorageList.item(0).setSelected(True)
+    overlay.form.dtStorageDelete.click()
+    assert quota.deletes == [] and overlay._armed
+    overlay.form.dtStorageDelete.click()
+    qtbot.waitUntil(lambda: len(quota.deletes) == 1 and not overlay._busy, timeout=10000)
+    assert quota.put_attempts == 0
+    overlay.form.dtStorageClose.click()
+    qtbot.waitUntil(lambda: "1.0 MB free" in editor.form.prepareStorageStatus.text(), timeout=10000)
+    assert not window.inline.form.isHidden()
+    assert panel._prepare_editor is editor and editor.active()
+    assert row.outcome == "Failed" and quota.put_attempts == 0  # freeing never retries Prepare
+
+    row.widget.prepareReprepare.click()
+    assert not row.admitted and not row.reprepare and row.outcome is None
+    assert quota.put_attempts == 0  # row unlock is not upload consent either
+    accept = window.inline.form.inlineEditorAcceptButton
+    qtbot.waitUntil(lambda: accept.isEnabled() and accept.text().startswith("Prepare 1 ready"), timeout=10000)
+    # A picker invocation would fail: the same selected row must be reused.
+    panel.choose_asset_file = lambda *_: pytest.fail("Recovery must not reopen the file picker")
+    accept.click()
+    qtbot.waitUntil(lambda: not panel.preparing, timeout=30000)
+    assert len(quota.deletes) == 1 and quota.put_attempts == 1
+    assert panel._prepare_last[1] is None and panel._prepare_last[0]["state"] == "confirmed"
+
+
+def test_storage_recovery_cannot_open_or_retry_under_changed_owner(window, quota, qtbot, tmp_path):
+    prepare(window, qtbot, lora_file(tmp_path))
+    panel = window.generation.lora
+    editor = panel._prepare_editor
+    row = editor.rows[0]
+    panel.invalidate_prepare_ownership()
+
+    def ordinary_calls():
+        return [c for c in quota.api_calls if c["entry"]["file"] != "dtflow-storage-probe.ckpt"]
+
+    before = len(ordinary_calls())
+    editor.form.prepareStorageButton.click()
+    assert not window.dt_storage_overlay.is_open()
+    row.widget.prepareReprepare.click()
+    window.inline.form.inlineEditorAcceptButton.click()
+    assert not panel.preparing and quota.put_attempts == 0 and quota.deletes == []
+    assert len(ordinary_calls()) == before
+
+
+def test_storage_snapshot_does_not_recover_interrupted_registry_operations(tmp_path, monkeypatch):
+    fixture = StorageQuotaFixture()
+    monkeypatch.setattr(session, "create_backend", lambda *args, **kwargs: fixture.backend())
+
+    async def check():
+        state = tmp_path / "read-only-state"
+        registry = AssetRegistry(state, writer=True)
+        await registry.open()
+        content = AssetContent("lora", "pending.ckpt", "a" * 64, 100)
+        try:
+            asset_id, _ = await registry.begin(content, "cloud", fixture.origin, "prepare")
+        finally:
+            await registry.aclose()
+        listing = await session.storage_listing(state, content)
+        assert listing.free_space == 0 and fixture.put_attempts == 0
+        reader = AssetRegistry(state)
+        await reader.open()
+        try:
+            after = await reader.get(asset_id)
+            assert after["state"] == "intent"  # a writer would have changed it to unknown/interrupted
+        finally:
+            await reader.aclose()
+
+    asyncio.run(check())
+
+
+def test_suspended_prepare_editor_is_not_resurrected_after_replacement(window, qtbot):
+    first, replacement = QWidget(), QWidget()
+    window.inline.editor("Original", first, "Apply", lambda: None)
+    assert window.inline.suspend_editor(first)
+    assert not window.inline.form.isEnabled() and not window.inline.active()
+    window.inline.editor("Replacement", replacement, "Apply", lambda: None)
+    assert not window.inline.resume_editor(first)
+    assert window.inline._editor is replacement and window.inline.active()
+    assert window.inline.form.isEnabled()
+
+
+def test_prepare_source_space_warning_is_amber_and_advisory(window, quota, qtbot, tmp_path):
+    prepare(window, qtbot, lora_file(tmp_path))
+    editor = window.generation.lora._prepare_editor
+    row = editor.rows[0]
+    row.widget.prepareReprepare.click()
+    # Presentation-only source scenario: no conversion is submitted by this check.
+    row.source_kind = "safetensors"
+    row.total_bytes = 1_000_000
+    editor.set_storage(500_000)
+    editor.refresh()
+    label = editor.form.prepareStorageStatus
+    assert label.property("state") == "warning"
+    assert "This Prepare will use about 1.0 MB / 0.5 MB free" in label.text()
+    assert "200.0%" in label.text() and "+ 5%" not in label.text()
+    assert window.inline.form.inlineEditorAcceptButton.isEnabled()
+    editor.set_storage(10_500_000)
+    editor.refresh()
+    assert label.property("state") == "info"
+    assert window.inline.form.inlineEditorAcceptButton.isEnabled()
+    editor.set_storage(1_250_000)
+    editor.refresh()
+    assert label.property("state") == "info"
+    assert "only 80.0%" in label.text()
+    editor.set_storage(1_111_111)
+    editor.refresh()
+    assert label.property("state") == "warning"
+    assert "90.0%" in label.text() and "only" not in label.text()
+    assert label.text().endswith("Warning: this leaves little free space.")
+    assert window.inline.form.inlineEditorAcceptButton.isEnabled()
+    editor.set_storage(None)
+    editor.refresh()
+    assert "free space unknown" in label.text()
+    assert window.inline.form.inlineEditorAcceptButton.isEnabled()
+    assert quota.put_attempts == 0

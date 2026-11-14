@@ -359,6 +359,13 @@ QLabel#statusLabel[state="warning"],
 QLabel[state="warning"] {
   color: ${color.warning};
 }
+QLabel#prepareStorageStatus[state="info"] {
+  color: ${color.selectionText};
+}
+QLabel#prepareBatchIntro, QLabel#prepareStorageStatus {
+  padding-left: 12px;
+  padding-right: 12px;
+}
 QLabel#statusLabel[state="error"],
 QLabel[state="error"] {
   color: ${color.error};

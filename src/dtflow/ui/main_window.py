@@ -590,14 +590,16 @@ class MainWindow:
             on_closed=lambda: form.retainedLorasTable.setFocus(),
         )
         self.dt_storage_overlay = DtStorageOverlay(
-            form.connectionWorkspaceScroll,
+            self.shell.centerStack,
             self.runner,
             self.state_dir,
             lambda: self._optional_saved,
             active_credential=self._active_credential_id,
             on_changed=self._read_dt_free_space,
-            on_closed=lambda: form.retainedLorasTable.setFocus(),
+            on_closed=self._dt_storage_closed,
         )
+        self.generation.lora.open_storage = self.open_dt_storage
+        self._storage_suspended_editor = None
         form.dtStorageButton.clicked.connect(self.open_dt_storage)
         self.dt_free_meter = SegmentMeter(form.dtFreeSpaceLabel.parentWidget())  # same bar as the storage panel
         # The line and the bar keep their place while empty or hidden, so the blocks below never shift on repaint.
@@ -2152,8 +2154,31 @@ class MainWindow:
 
     def open_dt_storage(self) -> None:
         """Open the DT+ storage panel; it reads the selected key's stored files with one dummy-file lookup."""
-        if not self._removing_retained_lora:
-            self.dt_storage_overlay.open()
+        if self._removing_retained_lora or not self.dt_storage_overlay.overlay.isHidden():
+            return
+        editor = self.generation.lora._prepare_editor
+        if editor is not None and editor.active():
+            if not self.inline.suspend_editor(editor.form):
+                return
+            self._storage_suspended_editor = editor.form
+        self.dt_storage_overlay.open(
+            above=self.inline.strip.form if self._storage_suspended_editor is not None else None
+        )
+
+    def _dt_storage_closed(self) -> None:
+        parked, self._storage_suspended_editor = self._storage_suspended_editor, None
+        if self.runner.closed:
+            return
+        if parked is not None:
+            panel = self.generation.lora
+            if panel._owns_prepare_context(panel._prepare_editor_context):
+                self.inline.resume_editor(parked)
+            elif self.inline._editor is parked:
+                self.inline.dismiss()  # ownership changed: discard only this stale editor, never a replacement
+        if self.generation.lora._prepare_editor is not None:
+            self.generation.lora.refresh_prepare_storage()
+        else:
+            self.form.retainedLorasTable.setFocus()
 
     def remove_retained_lora(self) -> None:
         """Click Remove or press Delete on a selected retained copy: no confirmation or other deletion."""
