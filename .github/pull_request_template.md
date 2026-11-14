@@ -1,5 +1,5 @@
 ## Summary
-<!-- What does this PR deliver? Link the issue. -->
+<!-- What does this PR deliver? Link the issue and initial AC comment. -->
 
 Refs #
 

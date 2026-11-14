@@ -9,8 +9,11 @@ about: Define a change before implementation
 ## Scope & constraints
 <!-- Included, excluded, and important behavior to preserve. -->
 
-## Acceptance
-<!-- Plain list, no checkboxes. Stable ids, level 🟦 Must or ⬛ Should.
+<!-- Acceptance criteria go in the first comment on this issue, not in this body.
+     Write them as a plain list with stable ids and level markers, no checkboxes:
+     - 🟦 AC-1 — ...
+     - ⬛ AC-2 — ...
+     The PR body copies the list with checkboxes and the same ids and levels.
      Default to ⬛ Should. Use 🟦 Must only for an explicit merge-blocking requirement:
      essential behavior or a concrete data/state/billing safety requirement. Being included
      in owner smoke does not automatically make a criterion Must. Must is about it working
@@ -18,6 +21,4 @@ about: Define a change before implementation
      rare and edge cases. A Must blocks merge until it is verified or the owner waives it. A
      ⬛ Should may merge unverified if listed under Deviations & Limitations; smoke is
      welcome but not required.
-     Copy this list into the PR body, where the checkboxes live. Keep this body in sync with the PR. -->
-- 🟦 AC-1 —
-- ⬛ AC-2 —
+     Levels are set here and the PR keeps them; change one only if listed under Deviations & Limitations. -->
