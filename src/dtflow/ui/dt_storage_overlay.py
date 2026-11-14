@@ -206,16 +206,13 @@ class DtStorageOverlay(QObject):
         self.sort_combo.addItems(["Largest first", "Name A\u2013Z"])
         self.sort_combo.setToolTip("Order of the stored files.")
         self.sort_combo.currentIndexChanged.connect(self._sort_changed)
-        buttons = self.form.findChild(QHBoxLayout, "dtStorageButtons")
-        buttons.insertWidget(1, self.sort_combo)
-        self.select_unused = QPushButton("Select all not used here", self.form)
+        self.select_unused = QPushButton("Select not used here", self.form)
         self.select_unused.setToolTip(
             "Tick every stored file without a local upload record on this computer, for example files added from "
             "another app. Nothing is deleted until you confirm."
         )
         self.select_unused.clicked.connect(self._select_unused)
         self.select_unused.setVisible(False)
-        buttons.insertWidget(2, self.select_unused)
         self.meter = SegmentMeter(self.form)
         layout = self.form.layout()
         layout.insertWidget(layout.indexOf(self.form.dtStorageStatus) + 1, self.meter)
@@ -227,7 +224,15 @@ class DtStorageOverlay(QObject):
         self.search.setAccessibleName("Stored files search")
         self.search.setClearButtonEnabled(True)
         self.search.textChanged.connect(self._filter_rows)
-        layout.insertWidget(layout.indexOf(self.form.dtStorageList), self.search)
+        # Search, order and the bulk-select action share one row above the list, so the bottom buttons keep their room.
+        self._tools = QWidget(self.form)
+        tools = QHBoxLayout(self._tools)
+        tools.setContentsMargins(0, 0, 0, 0)
+        tools.setSpacing(6)
+        tools.addWidget(self.search, 1)
+        tools.addWidget(self.sort_combo)
+        tools.addWidget(self.select_unused)
+        layout.insertWidget(layout.indexOf(self.form.dtStorageList), self._tools)
         layout.setStretchFactor(self.form.dtStorageList, 1)
         # While the list is hidden (reading, or nothing to list) a spacer takes the spare height, so the texts and
         # buttons keep their natural spacing instead of the layout spreading them out.
@@ -372,7 +377,7 @@ class DtStorageOverlay(QObject):
 
     def _show_list(self, visible: bool) -> None:
         self.form.dtStorageList.setVisible(visible)
-        self.search.setVisible(visible)
+        self._tools.setVisible(visible)
         self._filler.changeSize(
             0, 0, QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Minimum if visible else QSizePolicy.Policy.Expanding
         )
