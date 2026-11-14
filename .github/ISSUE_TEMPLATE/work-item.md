@@ -10,7 +10,7 @@ about: Define a change before implementation
 <!-- Included, excluded, and important behavior to preserve. -->
 
 <!-- Acceptance criteria go in the first comment on this issue, not in this body.
-     The owner may pin that comment (agents cannot); pinning is optional.
+     Pinning that comment is optional.
      Write them as a plain list with stable ids and level markers, no checkboxes:
      - 🟦 AC-1 — ...
      - ⬛ AC-2 — ...
