@@ -440,6 +440,19 @@ class LoraAssetPanel:
     def add(self) -> None:
         """Edit the whole selection: check, uncheck and weigh every offered LoRA, then apply once."""
         candidates = self.choices()
+        marks = self.storage_marks()
+        diagnostic_event(
+            log,
+            "ui.lora_picker_marks",
+            data={
+                "offered": len(candidates),
+                "marked": len(marks),
+                "records": len(self._records),
+                "holdings": self._holdings is not None,
+            },
+        )
+        if self._holdings is None:
+            self.refresh_holdings()  # no read yet for this key: ask for one; the next opening shows its result
 
         def apply_selection(chosen):
             if self._is_busy():
@@ -461,7 +474,7 @@ class LoraAssetPanel:
             selected=self.loras,
             suggestions=dict(candidates),
             families=self.family_labels(),
-            marks=self.storage_marks(),
+            marks=marks,
             callback=apply_selection,
         )
 
