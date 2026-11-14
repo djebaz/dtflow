@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import secrets
 from pathlib import Path
-from typing import Callable
+from typing import Awaitable, Callable
 
 from PySide6.QtCore import QEvent, QFile, QIODevice, QObject, Qt
 from PySide6.QtGui import QKeySequence, QShortcut
@@ -71,12 +71,14 @@ class DtStorageOverlay(QObject):
         state_dir: Path,
         saved: Callable[[], object],
         *,
+        active_credential: Callable[[], Awaitable[tuple[str, str | None] | None]],
         on_changed: Callable[[], None],
         on_closed: Callable[[], None],
     ):
         super().__init__(host)
         self.runner, self.state_dir, self._saved = runner, Path(state_dir), saved
         self._on_changed, self._on_closed = on_changed, on_closed
+        self._active_credential = active_credential
         self.overlay = QFrame(host)
         self.overlay.setObjectName("dtStorageOverlay")
         self.overlay.setStyleSheet("#dtStorageOverlay { background-color: rgba(0, 0, 0, 150); }")
@@ -94,11 +96,12 @@ class DtStorageOverlay(QObject):
         escape = QShortcut(QKeySequence(Qt.Key.Key_Escape), self.overlay)
         escape.setContext(Qt.ShortcutContext.WidgetWithChildrenShortcut)
         escape.activated.connect(self.close)
-        self._content: AssetContent | None = None  # the lookup in flight
         self._files: tuple[StoredAsset, ...] = ()
         self._busy = False
         self._armed = False
-        self._free: int | None = None  # last free space DT+ reported, to size the dummy lookup
+        self._free: dict[
+            str, int
+        ] = {}  # free space DT+ last reported, by opaque key identity, to size the re-read lookup
         self._note = ""  # outcome of the last delete, kept above the re-read listing
 
     def is_open(self) -> bool:
@@ -109,7 +112,7 @@ class DtStorageOverlay(QObject):
 
         Free space learned on an earlier open belongs to whichever key was selected then, so each open starts from the
         large unknown-size lookup; only re-reads within this open reuse the key's own free space."""
-        self._free = None
+        self._free = {}
         self._error("")
         self._files = ()
         self.form.dtStorageList.clear()
@@ -164,24 +167,32 @@ class DtStorageOverlay(QObject):
     def refresh(self) -> None:
         if self._busy or self.runner.closed:
             return
-        self._content = self._probe_content()
         self._error("")
         self._files = ()
         self.form.dtStorageList.clear()
         self.form.dtStorageList.setVisible(False)
         self.form.dtStorageStatus.setText("Reading DT+ storage…")
         self._set_busy(True)
-        self.runner.submit(storage_listing(self.state_dir, self._content, saved=self._saved()), self._listed)
+        self.runner.submit(self._read(), self._listed)
 
-    def _probe_content(self) -> AssetContent:
+    async def _read(self) -> tuple[str | None, StorageListing]:
+        """Lookup sized for the key that is selected right now; its identity comes back with the answer."""
+        identity = await self._active_credential()
+        key = identity[0] if identity else None
+        listing = await storage_listing(self.state_dir, self._probe_content(key), saved=self._saved())
+        return key, listing
+
+    def _probe_content(self, key: str | None) -> AssetContent:
         """A made-up file bigger than the free space, so DT+ answers with its over-limit list when the key is full.
 
         The hash is random per lookup and never stored; nothing is uploaded and any upload URL DT+ returns is ignored."""
-        size = (self._free + 1024**2) if self._free is not None else _PROBE_FALLBACK
+        free = self._free.get(key) if key is not None else None
+        size = (free + 1024**2) if free is not None else _PROBE_FALLBACK
         return AssetContent("lora", _PROBE_NAME, secrets.token_hex(32), size, provenance="storage probe")
 
-    def _listed(self, listing: StorageListing | None, failure) -> None:
+    def _listed(self, result: tuple[str | None, StorageListing] | None, failure) -> None:
         self._set_busy(False)
+        key, listing = result if result is not None else (None, None)
         note, self._note = self._note, ""
         lead = f"{note} " if note else ""
         if failure is not None:
@@ -195,7 +206,8 @@ class DtStorageOverlay(QObject):
             )
             return
         self._files = listing.files
-        self._free = listing.free_space if listing.free_space is not None else self._free
+        if key is not None and listing.free_space is not None:
+            self._free[key] = listing.free_space
         self.form.dtStorageList.setVisible(bool(listing.files))
         free = (
             f"About {megabytes(listing.free_space)} free." if listing.free_space is not None else "Free space unknown."
@@ -250,6 +262,7 @@ class DtStorageOverlay(QObject):
             if updated
             else " Local upload records could not be updated; they will be re-checked on the next run."
         )
+        self._free = {}  # deleting changed the free space of the key just used
         self._on_changed()
         self._note = f"Deleted {_files(deleted)} from DT+.{note}"
         self.refresh()

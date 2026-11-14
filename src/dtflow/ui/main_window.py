@@ -592,6 +592,7 @@ class MainWindow:
             self.runner,
             self.state_dir,
             lambda: self._optional_saved,
+            active_credential=self._active_credential_id,
             on_changed=lambda: None,
             on_closed=lambda: form.retainedLorasTable.setFocus(),
         )
