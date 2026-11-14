@@ -1,7 +1,7 @@
 """Read-only DT+ storage probe identity and advisory Prepare storage presentation data."""
 
-import math
 import secrets
+from decimal import Decimal, InvalidOperation
 
 from dtflow.core.models import AssetContent, BackendError, RemoteOutcome
 
@@ -25,7 +25,14 @@ def reported_free_space(failure) -> int | None:
     if not storage_refusal(failure):
         return None
     free = dict(failure.failure.diagnostics).get("storage_limit_free_space")
-    return int(free) if type(free) in (int, float) and math.isfinite(free) and free >= 0 else None
+    # Public backend diagnostics are string pairs, even when the original response field was numeric.
+    if type(free) not in (str, int, float) or len(str(free)) > 64:
+        return None
+    try:
+        value = Decimal(str(free))
+    except InvalidOperation:
+        return None
+    return int(value) if value.is_finite() and 0 <= value <= 2**63 - 1 else None
 
 
 def storage_size(size: int) -> str:
