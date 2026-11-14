@@ -66,24 +66,32 @@ def _load_form() -> QWidget:
 
 
 class SegmentMeter(QWidget):
-    """Used share of the key's storage as a row of small squares: accent, warning from 80%, error from 90%."""
+    """Used share of the key's storage as a row of small blocks: accent, warning from 80%, error from 90%."""
 
-    SIZE, GAP = 10, 3
+    HEIGHT, WIDTH, GAP = 10, 23, 3
+    TONE = 0.42  # share of the status colour over the track: muted like the Compute Units meter, not flashing
 
     def __init__(self, parent: QWidget | None = None):
         super().__init__(parent)
         self.setObjectName("dtStorageMeter")
-        self.setFixedHeight(self.SIZE)
+        self.setFixedHeight(self.HEIGHT)
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
         colors = load_tokens()
         self._track = QColor(colors["color.barTrack"])
         self._fills = {
-            "ok": QColor(colors["color.accent"]),
-            "warn": QColor(colors["color.warning"]),
-            "over": QColor(colors["color.error"]),
+            state: self._muted(QColor(colors[token]))
+            for state, token in (("ok", "color.accent"), ("warn", "color.warning"), ("over", "color.error"))
         }
         self.share = 0.0
         self.state = "ok"
+
+    def _muted(self, color: QColor) -> QColor:
+        t = self.TONE
+        return QColor(
+            round(self._track.red() + (color.red() - self._track.red()) * t),
+            round(self._track.green() + (color.green() - self._track.green()) * t),
+            round(self._track.blue() + (color.blue() - self._track.blue()) * t),
+        )
 
     def set_share(self, share: float) -> None:
         self.share = min(max(share, 0.0), 1.0)
@@ -93,23 +101,23 @@ class SegmentMeter(QWidget):
         self.update()
 
     def count(self) -> int:
-        return max(1, (self.width() + self.GAP) // (self.SIZE + self.GAP))
+        return max(1, (self.width() + self.GAP) // (self.WIDTH + self.GAP))
 
     def filled(self) -> int:
         return round(self.share * self.count())
 
     def sizeHint(self) -> QSize:
-        return QSize(200, self.SIZE)
+        return QSize(200, self.HEIGHT)
 
     def paintEvent(self, event) -> None:
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         painter.setPen(Qt.PenStyle.NoPen)
         count, filled = self.count(), self.filled()
-        step = (self.width() - self.SIZE) / max(1, count - 1) if count > 1 else 0
+        step = (self.width() - self.WIDTH) / max(1, count - 1) if count > 1 else 0
         for index in range(count):
             painter.setBrush(self._fills[self.state] if index < filled else self._track)
-            painter.drawRoundedRect(QRectF(index * step, 0, self.SIZE, self.SIZE), 2, 2)
+            painter.drawRoundedRect(QRectF(index * step, 0, self.WIDTH, self.HEIGHT), 2, 2)
         painter.end()
 
 
