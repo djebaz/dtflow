@@ -49,3 +49,5 @@ Owner threshold refinement: above 80% of known free space, show amber, omit 'onl
 ## Owner acceptance and integration
 
 On 2026-11-14 the owner reported the revised UX passed: immediate total-input-size wording, blue information through 80% and amber above 80% with a warning rather than 'only', compact storage popup over visible Prepare, preserved draft and side-panel dimming. This is owner-reported native UX evidence, not a live full-key recovery claim. Integrated current main's #448 converter repair and #449 Connection free-space display/unused-file marking; preserve Connection refresh after deletion and use its shared probe helper. Final integrated-head CI remains required before merge. No local tests/renders ran.
+
+Integrated Full CI at `9735f5bc` found one presentation failure (699 passed, 3 skipped): after observed free space covered the prior refused file, its stale 'Free space' sentence still followed the new low-space warning. The revised presentation suppresses that resolved refusal sentence, without changing row retry/approval state. Re-run required; no assertion weakened.

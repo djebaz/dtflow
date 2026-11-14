@@ -412,13 +412,13 @@ class PrepareBatchEditor:
                 text += " There may not be enough space."
             elif tight:
                 text += " Warning: this leaves little free space."
-        if self._storage_needed is not None:
-            text += f" Last refused file needs {storage_size(self._storage_needed)}. Free space, then Re-Prepare."
-        label = self.form.prepareStorageStatus
-        label.setText(text)
         refused = self._storage_needed is not None and (
             self._storage_free is None or self._storage_needed > self._storage_free
         )
+        if refused:
+            text += f" Last refused file needs {storage_size(self._storage_needed)}. Free space, then Re-Prepare."
+        label = self.form.prepareStorageStatus
+        label.setText(text)
         label.setProperty("state", "warning" if tight or refused else "info")
         label.style().unpolish(label)
         label.style().polish(label)
