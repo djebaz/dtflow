@@ -1,8 +1,7 @@
-"""Create a convertible malformed-alpha fixture from a real LoRA safetensors file.
+"""Create full-size alpha fixtures from an existing LoRA safetensors file.
 
-Copy every tensor unchanged except one existing alpha tensor. The output keeps
-the original model-family tensor names and weights, so it can exercise the full
-converter. Never modify the input or overwrite an existing output.
+All tensors except one selected alpha tensor retain their original bytes.
+The input is never changed and existing output files are never overwritten.
 """
 
 from __future__ import annotations
@@ -10,17 +9,20 @@ from __future__ import annotations
 import argparse
 import json
 import math
-import shutil
 import struct
 from pathlib import Path
 
 CHUNK_SIZE = 1024 * 1024
-DTYPE_BYTES = {"F16": 2, "BF16": 2, "F32": 4, "F64": 8, "I8": 1, "U8": 1,
-               "I16": 2, "U16": 2, "I32": 4, "U32": 4, "I64": 8, "U64": 8, "BOOL": 1}
+MODES = ("empty", "multiple", "scalar", "singleton")
+DTYPE_BYTES = {
+    "F16": 2, "BF16": 2, "F32": 4, "F64": 8,
+    "I8": 1, "U8": 1, "I16": 2, "U16": 2,
+    "I32": 4, "U32": 4, "I64": 8, "U64": 8, "BOOL": 1,
+}
 
 
 def modify_alpha(source: Path, output: Path, mode: str, alpha_key: str | None) -> str:
-    """Rewrite one alpha tensor while copying all other tensor bytes exactly."""
+    """Rewrite one alpha tensor and preserve every other tensor's data."""
     if source.resolve() == output.resolve():
         raise ValueError("Output must differ from input")
     with source.open("rb") as reader:
@@ -53,7 +55,6 @@ def modify_alpha(source: Path, output: Path, mode: str, alpha_key: str | None) -
         else:
             replacement_shape, replacement = [1], struct.pack("<f", 2.0)
 
-        # Rebuild offsets in original data order, preserving every non-target tensor.
         entries = sorted(
             ((key, value) for key, value in header.items() if key != "__metadata__"),
             key=lambda pair: pair[1]["data_offsets"][0],
@@ -108,19 +109,25 @@ def modify_alpha(source: Path, output: Path, mode: str, alpha_key: str | None) -
 
 
 def main() -> None:
-    """Write a modified full-size LoRA for converter acceptance or refusal checks."""
+    """Generate four variants by default, or one selected variant."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("input", type=Path, help="Original .safetensors LoRA")
-    parser.add_argument("--mode", choices=("empty", "multiple", "scalar", "singleton"), default="empty")
+    parser.add_argument("--mode", choices=(*MODES, "all"), default="all")
     parser.add_argument("--alpha-key", help="Exact alpha tensor name; defaults to first found")
-    parser.add_argument("--output", type=Path, help="Destination; defaults beside input with mode suffix")
+    parser.add_argument("--output-dir", type=Path, help="Destination directory; defaults to input directory")
     args = parser.parse_args()
-    output = args.output or args.input.with_name(f"{args.input.stem}_alpha_{args.mode}.safetensors")
+    output_dir = args.output_dir or args.input.parent
+    modes = MODES if args.mode == "all" else (args.mode,)
+    outputs = [output_dir / f"{args.input.stem}_alpha_{mode}.safetensors" for mode in modes]
+    for output in outputs:
+        if output.resolve() == args.input.resolve() or output.exists():
+            parser.error(f"Refusing to overwrite: {output}")
     try:
-        key = modify_alpha(args.input, output, args.mode, args.alpha_key)
-    except (OSError, ValueError, KeyError, TypeError, json.JSONDecodeError) as error:
+        for mode, output in zip(modes, outputs, strict=True):
+            key = modify_alpha(args.input, output, mode, args.alpha_key)
+            print(f"Created {output} (modified tensor: {key}, mode: {mode})")
+    except (OSError, ValueError, KeyError, TypeError) as error:
         parser.exit(1, f"Error: {error}\n")
-    print(f"Created {output} (modified tensor: {key}, mode: {args.mode})")
 
 
 if __name__ == "__main__":
