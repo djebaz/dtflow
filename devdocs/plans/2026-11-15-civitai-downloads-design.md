@@ -103,6 +103,26 @@ Mockups cover every item below (AC-6).
 - **Row states:** Queued, Downloading (progress, Cancel), Converting, Converted (Prepare…, with the cloud-only disabled state), Downloaded not convertible (file kept, Remove), Failed (Retry, always manual), Cancelled. Failure text keeps Civitai's wording and never contains a token, for example "Download failed: Civitai says this model needs a login. Add your token in Download credentials."
 - **Connection card (AC-5):** in `src/dtflow/ui/forms/main_window.ui` (read 2026-11-15) the Connection page's group boxes are, in order, `connectionBox`, `credentialBox` (DT+ credentials), `rememberedFoldersBox`. The **Download credentials** card goes between DT+ credentials and Remembered folders; Remembered folders then stays last without being moved. It holds the masked Civitai token field, Save, Remove, a status, the line "Tokens stay in Windows Credential Manager." and an "Open Downloads" link. The Hugging Face field is added with #468. The Custom LoRAs panel stays small, shows source and state per downloaded entry and gets a "Downloads…" link. Generate's LoRA editor gets no download controls.
 
+### Gallery card (owner feedback, 2026-11-15)
+
+Cards are **square covers** (CSS `object-fit: cover`, 1:1) with overlays, in the spirit of the owner's gallery generator (`build_civitai_gallery.py`, which shows name, creator, base model, downloads, thumbs up, NSFW level, tags and trigger words). Every overlay field below was read from a live `GET /api/v1/models?types=LORA&...&nsfw=true` response on 2026-11-15 (observed); fields the API did not return are not used.
+
+| Overlay | Shown | API field |
+|---|---|---|
+| Cover image | always | `modelVersions[0].images[]` first entry with `type: "image"` (`url`, `width`, `height`, `nsfwLevel`); some covers are `type: "video"` (seen on a Krea 2 result), so a video cover falls back to the first still image, else a placeholder |
+| Name | bottom | `name` |
+| Creator | bottom | `creator.username` |
+| Downloads | bottom | `modelVersions[0].stats.downloadCount` (model-level `stats.downloadCount` also exists) |
+| Thumbs up | bottom | `modelVersions[0].stats.thumbsUpCount` |
+| File size | bottom | primary file's `sizeKB` (`files[].primary`) |
+| Family chip, top right | always | DTFlow family from the alias table, computed from `modelVersions[0].baseModel` |
+| Base model chip, top right | when the label differs from the family name (Pony, Flux.1 D) | `modelVersions[0].baseModel` |
+| NSFW badge, top left | when the cover is above the lowest level | cover image `nsfwLevel` (the level scale is checked in #466) |
+| Early-access flag, top left | when set | `modelVersions[0].availability` (observed value `Public`; other values untested) |
+| Hover panel | on hover | version `name`, `trainedWords` (empty for many LoRAs, so shown only when present), model `tags`, `stats.thumbsUpCount` and `thumbsDownCount`, `publishedAt` |
+
+Thumbnails use the image `url`; `.../width=320/<id>.jpeg` returned a 301 to a 200 `image/jpeg` of about 27 kB, whereas the `original=true` path also redirects (observed, public images, no token). The client downscales and caches; #466 decides the exact size parameter.
+
 ## 8. Open points
 
 None block #460. The alias table awaits the owner's approval; the gated-file checks above are #462 step 0.

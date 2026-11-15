@@ -54,11 +54,22 @@ td{padding:5px 8px;border-top:1px solid var(--color-section-border);vertical-ali
 .bar{display:inline-block;width:120px;height:6px;background:#2a2a2a;border-radius:3px;vertical-align:middle;margin-right:6px}
 .bar i{display:block;height:100%;background:var(--color-accent);border-radius:3px}
 .grid{display:grid;grid-template-columns:repeat(4,1fr);gap:10px}
-.card{background:var(--color-item-surface);border:1px solid var(--color-section-border);border-radius:3px;overflow:hidden;position:relative}
-.card.sel{border-color:var(--color-selection-border);background:var(--color-selection)}
-.card .img{height:90px;background:linear-gradient(135deg,#2f3f4f,#3d2f4f)}
-.card .t{padding:6px 8px}.card .t small{display:block;color:var(--color-secondary)}
-.card .chk{position:absolute;top:6px;left:6px;width:14px;height:14px;border:1px solid #909090;background:#1e1e1e;border-radius:2px;font-size:11px;line-height:12px;text-align:center}
+.card{background:var(--color-item-surface);border:1px solid var(--color-section-border);border-radius:3px;overflow:hidden;position:relative;aspect-ratio:1/1}
+.card.sel{border-color:var(--color-selection-border);box-shadow:0 0 0 2px var(--color-selection)}
+.card .img{position:absolute;inset:0;background:linear-gradient(135deg,#2f3f4f,#3d2f4f)}
+.card .img.b{background:linear-gradient(200deg,#4f3f2f,#2f4f3d)}.card .img.c{background:linear-gradient(60deg,#2f2f4f,#4f2f3d)}.card .img.d{background:linear-gradient(300deg,#3f4f2f,#2f3f4f)}
+.card .chk{position:absolute;top:6px;left:6px;width:16px;height:16px;border:1px solid #909090;background:rgba(30,30,30,.85);border-radius:2px;font-size:11px;line-height:14px;text-align:center}
+.card .tr{position:absolute;top:6px;right:6px;display:flex;flex-direction:column;gap:3px;align-items:flex-end}
+.card .tl2{position:absolute;top:28px;left:6px;display:flex;flex-direction:column;gap:3px}
+.ob{display:inline-block;padding:0 6px;border-radius:3px;font-size:10px;line-height:16px;font-weight:600;background:rgba(21,21,21,.78);border:1px solid rgba(255,255,255,.18);color:var(--color-text)}
+.ob.fam2{background:rgba(23,56,82,.9);border-color:var(--color-selection-border);color:var(--color-selection-text)}
+.ob.warn2{color:var(--color-warning);border-color:var(--color-status-warning-border)}
+.card .bot{position:absolute;left:0;right:0;bottom:0;padding:20px 8px 6px;background:linear-gradient(to top,rgba(0,0,0,.88),rgba(0,0,0,0))}
+.card .bot b{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:12px}
+.card .bot small{display:flex;gap:8px;color:var(--color-secondary);font-size:11px;white-space:nowrap}
+.card .hov{position:absolute;inset:0;background:rgba(15,15,15,.82);padding:34px 8px 44px;font-size:11px;color:var(--color-text);display:none;overflow:hidden}
+.card.hovered .hov{display:block}
+.card .hov i{font-style:normal;color:var(--color-secondary)}
 .fam{display:inline-block;padding:0 6px;border:1px solid var(--color-border-strong);border-radius:3px;font-size:11px;color:#b9dcf7}
 .msg{border:1px solid var(--color-danger-border);background:var(--color-danger-surface);color:var(--color-danger-text);padding:6px 10px;border-radius:3px;margin:6px 0}
 .msg.info{border-color:var(--color-status-warning-border);background:#3a2f17;color:var(--color-warning)}
@@ -116,11 +127,17 @@ https://civitai.com/models/1004?modelVersionId=2005</textarea>
   <div class="row"><span class="input">Search…</span><span class="input" style="min-width:150px">Most downloaded ▾</span><span class="input" style="min-width:150px">All families ▾</span></div>
   <div class="msg info">Civitai may withhold mature content in your region; results can be incomplete.</div>
   <div class="grid">
-   <div class="card sel"><span class="chk">✓</span><div class="img"></div><div class="t">Anatomy Fix<small>Krea 2 · 163 MB</small></div></div>
-   <div class="card"><span class="chk"></span><div class="img"></div><div class="t">Soft Light<small>Z Image · 120 MB</small></div></div>
-   <div class="card sel"><span class="chk">✓</span><div class="img"></div><div class="t">Ink Style<small>SDXL (Pony) · 218 MB</small></div></div>
-   <div class="card"><span class="chk"></span><div class="img"></div><div class="t">Portrait Pro<small>Flux 1 (Flux.1 D) · 180 MB</small></div></div>
+   <div class="card sel"><div class="img"></div><span class="chk">✓</span><div class="tr"><span class="ob fam2">Krea 2</span></div>
+    <div class="bot"><b>Anatomy Fix</b><small><span>@w4r10ck</span><span>↓ 12.4k</span><span>👍 1.2k</span><span>163 MB</span></small></div></div>
+   <div class="card hovered"><div class="img b"></div><span class="chk"></span><div class="tr"><span class="ob fam2">Z Image</span></div>
+    <div class="hov"><i>Base model</i> ZImageTurbo<br><i>Version</i> v1.0 (Turbo)<br><i>Trigger words</i> softlight, rim glow<br><i>Tags</i> style, lighting, concept<br><i>Rating</i> thumbs up 540 / down 3<br><i>Published</i> 2026-10-02</div>
+    <div class="bot"><b>Soft Light</b><small><span>@lumen</span><span>↓ 3.1k</span><span>👍 540</span><span>120 MB</span></small></div></div>
+   <div class="card sel"><div class="img c"></div><span class="chk">✓</span><div class="tl2"><span class="ob warn2">NSFW</span></div><div class="tr"><span class="ob fam2">SDXL</span><span class="ob">Pony</span></div>
+    <div class="bot"><b>Ink Style</b><small><span>@inkwell</span><span>↓ 88k</span><span>👍 9.7k</span><span>218 MB</span></small></div></div>
+   <div class="card"><div class="img d"></div><span class="chk"></span><div class="tl2"><span class="ob warn2">Early access</span></div><div class="tr"><span class="ob fam2">Flux 1</span><span class="ob">Flux.1 D</span></div>
+    <div class="bot"><b>Portrait Pro</b><small><span>@studio9</span><span>↓ 40k</span><span>👍 5.1k</span><span>180 MB</span></small></div></div>
   </div>
+  <p class="dim" style="margin:4px 0">Square cover thumbnails. The second card shows the hover overlay; a video cover falls back to the first still image. The early-access flag is shown; whether such a file can be downloaded is untested.</p>
   <div class="row"><span class="btn primary">Download selected (2)</span><span class="sp" style="flex:1"></span><span class="btn off">‹ Prev</span><span class="dim">page 1</span><span class="btn">Next ›</span></div>
  </div>
  <div class="status"><span class="sp"></span><span class="pill usage">3/12</span><span class="pill">Downloads</span><span class="dock">Connection</span></div>
