@@ -1,6 +1,6 @@
 # Unreleased
 
-- Record owner-reported optional NVIDIA L4 GPU q8p conversion of a Krea 2 F16 LoRA: 194.36 → 100.57 MB (48.257% smaller) in 11.632 s, with 472 q8p/two ezm7 tensors. Unlike the CLI's optimal CPU clustering, the optional notebook GPU path uses approximate Lloyd clustering; iOS-equivalent weights, DT+ acceptance and image quality are not established. A Python 3.12 notebook-kernel compatibility issue remains documented, not fixed (#353, PR #470).
+- Record owner-reported optional NVIDIA L4 GPU q8p conversion of a Krea 2 F16 LoRA: 194.36 → 100.57 MB (48.257% smaller) in 11.632 s, with 472 q8p/two ezm7 tensors. Unlike the CLI's optimal CPU clustering, the optional notebook GPU path uses approximate Lloyd clustering; iOS-equivalent weights, DT+ acceptance and image quality are not established. The shared service now has a Python 3.12 CPU-count fallback; Colab runtime validation remains open (#353, PR #470).
 
 - Correct experimental q8p worker scheduling across tensor boundaries after owner-reported single-CPU utilization on Colab. The standalone notebook now downloads only required source files and uses a minimal NumPy/kmeans1d script lock; GitHub username/Colab secret-ID inputs keep tokens out of URLs/config/output. Owner Colab reports show 455.531 → 103.483 seconds (4.40×) for one Z Image file with identical reported CKPT hashes; latest locked-setup/startup-label corrections still need Colab recheck (#353).
 
