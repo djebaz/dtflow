@@ -333,7 +333,7 @@ def add_asset_commands(commands) -> None:
     prepare.add_argument("-n", "--name", help="Identifier to use instead of the file name.")
     download = action(
         "download",
-        "Download one LoRA .safetensors from Civitai into application data. Never uploads to DT+. "
+        "Download one LoRA from Civitai and convert it for Draw Things (families listed in the converter data only). Never uploads to DT+. "
         "Uses the token saved in the app, else the CIVITAI_TOKEN environment variable.",
     )
     download.add_argument("source", help="Civitai version id, or a civitai.com model or download link.")
@@ -541,7 +541,7 @@ COMMAND_HELP = {
     "models": "List backend inventory with provenance (models, LoRAs, controls, unknown entries).",
     "attempts": "Inspect durable attempts; unknown outcomes are never replayed.",
     "settings": "Show or persist shared settings such as the cloud concurrency maximum.",
-    "assets": "Cloud LoRA assets: prepare (may upload, keeps a local copy), download (Civitai file to local storage, never uploads), files, list, show, reconcile. Local receipts are not remote inventory.",
+    "assets": "Cloud LoRA assets: prepare (may upload, keeps a local copy), download (Civitai LoRA, converted locally, never uploads), files, list, show, reconcile. Local receipts are not remote inventory.",
     "queue": "Durable queues with rolling dispatch: add, list, show, start, pause, resume, cancel, cap, relaunch.",
     "script": "Analyze a Draw Things JavaScript script offline (never runs it), self-check the engine, or --run it.",
     "workflow": "Check a DTFlow workflow file offline, or save it as a paused workflow queue (never generates).",
@@ -696,12 +696,13 @@ async def run_queue(args: argparse.Namespace) -> int:
 
 
 async def run_asset_download(args: argparse.Namespace) -> int:
-    """Resolve and download a Civitai LoRA file with the shared service; never contacts DT+."""
+    """Resolve, download and convert a Civitai LoRA with the shared service; never contacts DT+."""
     import os
 
     from dtflow.services import civitai
     from dtflow.services.credentials import SecureStorageUnavailable
     from dtflow.services.download_tokens import DownloadTokens
+    from dtflow.services.lora_download import download_and_convert
 
     token, source = None, "none"
     try:  # the token saved by the app's Download credentials card wins over the environment
@@ -714,20 +715,24 @@ async def run_asset_download(args: argparse.Namespace) -> int:
         source = "CIVITAI_TOKEN" if token else "none"
     ref = civitai.parse_reference(args.source)
 
-    def work():
+    def resolve():
         civitai.cleanup_staging(args.state)
-        version = civitai.resolve(ref, token, file_id=args.file_id)
-        return version, civitai.download(version, args.state, token)
+        return civitai.resolve(ref, token, file_id=args.file_id)
 
     try:
-        version, result = await asyncio.to_thread(work)
+        version = await asyncio.to_thread(resolve)
+        result = await download_and_convert(args.state, version, token)
     except civitai.CivitaiChoice as exc:
         print(json.dumps({"choose": list(exc.options)}, indent=2), file=sys.stderr)
         raise
+    retained = result.prepared.retained if result.prepared is not None else None
     print(
         json.dumps(
             {
-                "note": "Downloaded to local storage only; nothing was uploaded to DT+.",
+                "note": "Converted locally; nothing was uploaded to DT+. Prepare is a separate explicit step."
+                if result.state == "converted"
+                else "Downloaded but not convertible; the .safetensors file was kept.",
+                "state": result.state,
                 "token_source": source,
                 "provider": version.provider,
                 "model_id": version.model_id,
@@ -735,18 +740,29 @@ async def run_asset_download(args: argparse.Namespace) -> int:
                 "model": version.model_name,
                 "version": version.version_name,
                 "base_model": version.base_model,
+                "family": result.family.key,
+                "family_label": result.family.label,
+                "family_status": result.family.status,
                 "trained_words_state": version.trained_words_state,
-                "file": result.display_name,
-                "sha256": result.sha256,
-                "size": result.size,
-                "path": str(result.path),
-                "reused": result.reused,
-                "hash_verified": result.hash_verified,
+                "trigger_words": result.trigger_words,
+                "file": result.downloaded.display_name,
+                "sha256": result.downloaded.sha256,
+                "size": result.downloaded.size,
+                "reused": result.downloaded.reused,
+                "hash_verified": result.downloaded.hash_verified,
+                "source_deleted": result.source_deleted,
+                "source_path": None if result.source_deleted else str(result.downloaded.path),
+                "converted": None
+                if retained is None
+                else {"name": retained.name, "sha256": retained.sha256, "size": retained.size},
+                "reason": result.reason,
+                "detector_note": result.detector_note,
+                "warnings": list(result.warnings),
             },
             indent=2,
         )
     )
-    return EXIT_OK
+    return EXIT_OK if result.state == "converted" else EXIT_FAILED
 
 
 async def run_assets(args: argparse.Namespace) -> int:

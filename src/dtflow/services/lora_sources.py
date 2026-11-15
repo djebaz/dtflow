@@ -21,7 +21,7 @@ from pathlib import Path
 from dtflow.core.models import ValidationError
 from dtflow.diagnostics import event as diagnostic_event
 from dtflow.persistence.assets import AssetRegistry, AssetsBusyError
-from dtflow.persistence.lora_sources import FILE_DELETED, SourceRecord
+from dtflow.persistence.lora_sources import FILE_DELETED, FILE_PRESENT, SourceRecord
 from dtflow.services.civitai import CivitaiVersion, DownloadedFile, sources_dir
 
 log = logging.getLogger(__name__)
@@ -92,6 +92,14 @@ async def register_source(state: Path, record: SourceRecord) -> None:
     """Persist provenance for a verified download (refreshes an existing row without losing a user correction)."""
     await _scoped(Path(state), lambda registry: registry.record_source(record))
     diagnostic_event(log, "lora_source.registered", data={"provider": record.provider})
+
+
+async def mark_downloaded(state: Path, sha256: str) -> None:
+    """The file is on disk again (a re-download after its source was deleted): back to "downloaded", file present."""
+    await _scoped(
+        Path(state),
+        lambda registry: registry.update_source(sha256, state="downloaded", detail="", file_state=FILE_PRESENT),
+    )
 
 
 async def list_sources(state: Path) -> tuple[dict, ...]:

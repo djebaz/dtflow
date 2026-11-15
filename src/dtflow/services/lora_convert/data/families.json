@@ -1,0 +1,55 @@
+{
+  "schema": 1,
+  "families": [
+    {
+      "key": "krea2",
+      "label": "Krea 2",
+      "exact_architecture": "krea_2",
+      "status": "verified",
+      "experimental": false,
+      "aliases": {
+        "civitai": ["Krea 2", "Krea 2 Turbo"]
+      }
+    },
+    {
+      "key": "zimage",
+      "label": "Z Image",
+      "exact_architecture": "z_image",
+      "status": "verified",
+      "experimental": false,
+      "aliases": {
+        "civitai": ["ZImageTurbo", "ZImageBase"]
+      }
+    },
+    {
+      "key": "flux1",
+      "label": "Flux 1",
+      "exact_architecture": "flux1",
+      "status": "verified",
+      "experimental": false,
+      "aliases": {
+        "civitai": ["Flux.1 D", "Flux.1 S", "Flux.1 Kontext", "Flux.1 Krea"]
+      }
+    },
+    {
+      "key": "sd1",
+      "label": "SD 1.x",
+      "exact_architecture": "v1",
+      "status": "verified",
+      "experimental": false,
+      "aliases": {
+        "civitai": ["SD 1.4", "SD 1.5"]
+      }
+    },
+    {
+      "key": "sdxl",
+      "label": "SDXL",
+      "exact_architecture": "sdxl_base_v0.9",
+      "status": "experimental",
+      "experimental": true,
+      "aliases": {
+        "civitai": ["SDXL 1.0", "Pony", "Illustrious", "NoobAI", "SDXL Lightning"]
+      }
+    }
+  ]
+}
