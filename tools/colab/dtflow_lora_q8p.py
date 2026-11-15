@@ -1,6 +1,6 @@
 # Auto-generated from notebook; keep markers for round-trip
 # Markers + docstring headers are required for ipynb reconstruction
-# NOTEBOOK_META_B64=eyJjb2xhYiI6eyJwcm92ZW5hbmNlIjpbXSwiY29sbGFwc2VkX3NlY3Rpb25zIjpbInE4cC1pbnRybyJdfSwia2VybmVsc3BlYyI6eyJuYW1lIjoicHl0aG9uMyIsImRpc3BsYXlfbmFtZSI6IlB5dGhvbiAzIiwibGFuZ3VhZ2UiOiJweXRob24ifSwibGFuZ3VhZ2VfaW5mbyI6eyJuYW1lIjoicHl0aG9uIn0sIm5iZm9ybWF0Ijo0LCJuYmZvcm1hdF9taW5vciI6NX0=
+# NOTEBOOK_META_B64=eyJjb2xhYiI6eyJwcm92ZW5hbmNlIjpbXSwiY29sbGFwc2VkX3NlY3Rpb25zIjpbInE4cC1pbnRybyJdfSwia2VybmVsc3BlYyI6eyJsYW5ndWFnZSI6InB5dGhvbiIsIm5hbWUiOiJweXRob24zIiwiZGlzcGxheV9uYW1lIjoiUHl0aG9uIDMifSwibGFuZ3VhZ2VfaW5mbyI6eyJuYW1lIjoicHl0aG9uIn0sIm5iZm9ybWF0Ijo0LCJuYmZvcm1hdF9taW5vciI6NX0=
 
 # %% [markdown] cell=0 id=q8p-intro
 """MARKDOWN
@@ -149,7 +149,20 @@ ENV = {
 SCRIPT = CHECKOUT / "tools/colab/q8p_cli.py"
 CLI = [UV, "run", "--locked", "--script", str(SCRIPT), "lora"]
 # Install only the two script-locked dependencies and validate the lightweight entry point.
-subprocess.run(CLI + ["--help"], cwd=CHECKOUT, env=ENV, check=True)
+with subprocess.Popen(
+    CLI + ["--help"],
+    cwd=CHECKOUT,
+    env=ENV,
+    stdout=subprocess.PIPE,
+    stderr=subprocess.STDOUT,
+    text=True,
+    bufsize=1,
+) as setup_process:
+    for line in setup_process.stdout:
+        print(line.rstrip(), flush=True)
+    setup_code = setup_process.wait()
+if setup_code != 0:
+    raise RuntimeError(f"uv/launcher setup failed (exit {setup_code}); see its output above.")
 print("DTFlow source revision:", REVISION)
 print(f"Downloaded {len(paths)} source/launcher files, {total_bytes / 1024:.1f} KiB; no repository checkout.")
 print("Ready. Auto-detection uses the CPUs available to the CLI's managed Python.")

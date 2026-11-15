@@ -1,6 +1,8 @@
 # /// script
 # requires-python = ">=3.13,<3.14"
 # dependencies = ["numpy==2.3.5", "kmeans1d==0.5.1"]
+# [tool.uv]
+# prerelease = "allow"
 # ///
 """Minimal source-only launcher for the ordinary experimental LoRA command."""
 
