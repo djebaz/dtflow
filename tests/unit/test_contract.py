@@ -104,7 +104,7 @@ def test_core_and_services_have_no_provider_or_presentation_imports():
                 "civitai_gallery.py",
             )  # the Civitai client and gallery (#462, #466)
             assert not forbidden_imports(
-                path.read_text(),
+                path.read_text(encoding="utf-8"),
                 f"dtflow.{directory}",
                 allow_pillow=allow_pillow,
                 allow_numpy=allow_numpy,
@@ -137,7 +137,7 @@ def test_only_the_draw_things_integration_imports_provider_libraries():
             ("services", "civitai_gallery.py"),
         )  # Civitai (#462, #466)
         assert not forbidden_imports(
-            path.read_text(),
+            path.read_text(encoding="utf-8"),
             package,
             backends=False,
             allow_pillow=allow_pillow,
