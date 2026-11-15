@@ -241,6 +241,7 @@ class MainWindow:
         self._optional_saved = OptionalSavedCredentials(self._saved)
         self._download_tokens = DownloadTokens()
         self._token_busy = False
+        self._connection_check = None
         self._token_state = "error"
         self._free_space_revision = 0  # bumps on every key/backend change and request; only the newest answer shows
         self._free_space_busy = self._free_space_again = False
@@ -726,6 +727,7 @@ class MainWindow:
         startup.mark("backend and restored catalogue applied")
         self.refresh_credentials(background=True)
         self.refresh_download_tokens()
+        self.check_civitai_connection()
         self.cloud_usage = CloudUsagePanel(
             form,
             self.runner,
@@ -1678,6 +1680,40 @@ class MainWindow:
         self._summary_reads.pop("download_tokens", None)
         self.runner.submit(asyncio.to_thread(work), done)
 
+    def check_civitai_connection(self) -> None:
+        """One automatic check (startup, after Save or Remove): Civitai reachable and the saved token accepted.
+
+        Off the GUI thread, never polled; the token is read inside the worker and never reaches the UI or logs."""
+        marker = self._connection_check = object()
+        self._set_connection_indicator("unknown", "Checking connection…")
+
+        def work():
+            from dtflow.services import civitai
+
+            try:
+                token = self._download_tokens.get(CIVITAI)
+            except SecureStorageUnavailable:
+                return "unknown", "No token saved"
+            return civitai.check_connection(token)
+
+        def done(result, error) -> None:
+            if marker is not self._connection_check:
+                return  # a newer check supersedes this one
+            state, text = result if error is None and result else ("warning", "Connection could not be checked")
+            diagnostic_event(
+                log, "app.download_connection_checked", level=logging.INFO, data={"provider": CIVITAI, "state": state}
+            )
+            self._set_connection_indicator(state, text)
+
+        self.runner.submit(asyncio.to_thread(work), done)
+
+    def _set_connection_indicator(self, state: str, text: str) -> None:
+        label = self.form.civitaiConnectionDot
+        label.setToolTip(f"{text} (checked at startup and after saving or removing the token)")
+        label.setProperty("state", state)
+        label.style().unpolish(label)
+        label.style().polish(label)
+
     def save_civitai_token(self) -> None:
         if self._token_busy:
             return
@@ -1693,6 +1729,7 @@ class MainWindow:
             if error is None:
                 diagnostic_event(log, "app.download_token_saved", level=logging.INFO, data={"provider": CIVITAI})
                 self._apply_token_state(state or "present")
+                self.check_civitai_connection()
                 return
             code = (
                 error.failure.code
@@ -1725,6 +1762,7 @@ class MainWindow:
                 if error is None:
                     diagnostic_event(log, "app.download_token_removed", level=logging.INFO, data={"provider": CIVITAI})
                     self._apply_token_state(state or "absent")
+                    self.check_civitai_connection()
                     return
                 diagnostic_event(
                     log,

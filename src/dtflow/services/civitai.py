@@ -452,6 +452,43 @@ def resolve(
             client.close()
 
 
+def check_connection(token: str | None, *, client: httpx.Client | None = None) -> tuple[str, str]:
+    """One cheap authenticated request: is Civitai reachable and does it accept the token?
+
+    Returns (state, plain text) with state ``ok``, ``error`` (token rejected), ``warning`` (network or other failure) or
+    ``unknown`` (no token). Uses ``GET /api/v1/models?favorites=true&limit=1``: the developer pages document that
+    ``favorites`` needs a token, and without a valid token Civitai answers 401 (observed 2026-11-15); the answer to a
+    valid token is untested. The token is never part of the returned text."""
+    if not token:
+        return "unknown", "No token saved"
+    try:
+        token = _valid_token(token)
+    except CivitaiError:
+        return "error", "Token rejected: it does not look like a Civitai token"
+    owned = client is None
+    client = client or new_client()
+    try:
+        for attempt in (0, 1):
+            try:
+                url = f"{API_ROOT}/models?favorites=true&limit=1"
+                with ExitStack() as stack:
+                    code = _open(stack, client, url, token, same_host_only=True).status_code
+                break
+            except TRANSIENT:
+                if attempt:
+                    return "warning", "Cannot reach Civitai (network error)"
+            except (httpx.HTTPError, CivitaiError):
+                return "warning", "Cannot reach Civitai (network error)"
+    finally:
+        if owned:
+            client.close()
+    if code == 200:
+        return "ok", "Connected, token accepted"
+    if code in (401, 403):
+        return "error", f"Token rejected by Civitai ({code})"
+    return "warning", f"Civitai answered HTTP {code}"
+
+
 # ---------------------------------------------------------------------------------------------------------- storage
 
 
