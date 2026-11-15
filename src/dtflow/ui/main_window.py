@@ -356,6 +356,9 @@ class MainWindow:
             cloud_ready=lambda: self.form.backendCombo.currentText() == "cloud",
             open_credentials=self._open_download_credentials,
             open_prepare=self._prepare_downloaded,
+            auto_prepare=lambda path, metadata, on_result: self.generation.lora.auto_prepare_retained(
+                path, metadata, on_result
+            ),
         )
         self._downloads_line = False
         self._downloads_chrome_active = False
