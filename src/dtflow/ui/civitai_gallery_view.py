@@ -515,7 +515,19 @@ class GalleryTab(QObject):
             self._paused_empty = True
             self.form.galleryContinueButton.setText("Retry")
             self.form.galleryContinueButton.show()
-            diagnostic_event(log, "gallery.list_failed", level=logging.WARNING)
+            # Only code-defined categories and numeric evidence enter logs: never provider text,
+            # search terms, LoRA names, filenames, URLs or raw API responses.
+            details = {"error_type": type(failure).__name__ if failure is not None else "NoResult"}
+            if isinstance(failure, civitai.CivitaiError):
+                details["reason"] = failure.reason or "civitai_failure"
+                if failure.http_status is not None:
+                    details["http_status"] = failure.http_status
+                if failure.bytes_read is not None:
+                    details["bytes_read"] = failure.bytes_read
+                    details["response_limit_bytes"] = civitai.MAX_METADATA_BYTES
+            else:
+                details["reason"] = "unexpected_exception" if failure is not None else "empty_result"
+            diagnostic_event(log, "gallery.list_failed", level=logging.WARNING, data=details)
             return
         if cursor is not None:
             self._seen_cursors.add(cursor)
