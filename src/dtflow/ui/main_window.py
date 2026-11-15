@@ -2509,8 +2509,18 @@ class MainWindow:
         )
         prepare.clicked.connect(lambda _checked=False: self._prepare_managed_lora(identity))
         self.form.retainedLorasTable.setCellWidget(row, 5, host)
+        host.ensurePolished()
+        quantize.ensurePolished()
+        prepare.ensurePolished()
+        host.layout().activate()
         self.form.retainedLorasTable.setRowHeight(
-            row, max(self.form.retainedLorasTable.verticalHeader().defaultSectionSize(), host.sizeHint().height())
+            row,
+            max(
+                self.form.retainedLorasTable.verticalHeader().defaultSectionSize(),
+                host.sizeHint().height() + 2,
+                quantize.sizeHint().height() + 2,
+                prepare.sizeHint().height() + 2,
+            ),
         )
 
     def _prepare_managed_lora(self, identity) -> None:

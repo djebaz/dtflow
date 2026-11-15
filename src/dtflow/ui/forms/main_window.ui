@@ -881,7 +881,7 @@
                   <widget class="QTableWidget" name="retainedLorasTable">
                    <property name="toolTip"><string>Local retained copies. Select one row to edit its metadata or press Delete to remove the retained copy only.</string></property>
                    <property name="accessibleName"><string>Custom LoRA library</string></property>
-                   <property name="minimumHeight"><number>240</number></property>
+                   <property name="minimumHeight"><number>420</number></property>
                    <property name="maximumHeight"><number>420</number></property>
                    <property name="selectionMode"><enum>QAbstractItemView::SingleSelection</enum></property>
                    <property name="selectionBehavior"><enum>QAbstractItemView::SelectRows</enum></property>

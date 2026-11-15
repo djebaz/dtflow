@@ -222,6 +222,12 @@ QPushButton {
   min-height: ${size.controlContent};
   padding: ${size.radius} 10px;
 }
+/* Managed library actions stay compact inside ordinary table rows. */
+QWidget#managedLoraActions QPushButton {
+  font-size: ${type.small};
+  min-height: 18px;
+  padding: 1px 6px;
+}
 QPushButton:hover {
   background-color: ${color.buttonHover};
   border-color: ${color.buttonBorderHover};
