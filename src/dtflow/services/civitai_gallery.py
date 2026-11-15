@@ -34,7 +34,7 @@ SORTS = (
 )  # Seven supported sort choices; Oldest is deliberately excluded (#479).
 PERIODS = ("AllTime", "Year", "Month", "Week", "Day")  # the values the API documents for ``period``
 MAX_QUERY = 100
-MAX_TAG_LENGTH = 80
+MAX_TAG_LENGTH = 200
 MAX_TAGS = 8  # Bound the number of independent Civitai tag listing cursors (#479).
 THUMB_WIDTH = 320
 MAX_THUMB_BYTES = 1024 * 1024
