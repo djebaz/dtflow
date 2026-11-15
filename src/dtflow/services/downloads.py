@@ -155,7 +155,8 @@ class DownloadItem:
     converted_sha: str | None = None
     converted_size: int | None = None
     prepare_metadata: LoraPrepareMetadata | None = None  # exact metadata chosen during successful conversion
-    auto_prepare_status: str = ""  # presentation-only status for opt-in cloud Prepare
+    auto_prepare_status: str = ""  # presentation-only detail for opted-in DT+ Prepare
+    auto_prepare_phase: str = ""  # "", "preparing", or "prepared"; conversion itself remains durable
     version_id: int | None = None
     model_id: int | None = None
     speed: float = 0.0  # bytes per second while downloading (smoothed)
