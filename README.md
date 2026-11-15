@@ -36,7 +36,7 @@ workspace in detail.
 
 ## Getting started
 
-For the local-only F16 CKPT → q8p experiment, see the [experimental CLI guide](devdocs/guides/cli.md#experimental-lora-q8p-cli) or the standalone [Colab notebook](tools/colab/dtflow_lora_q8p.ipynb). CPU workers are auto-detected, with a serial override and elapsed/ETA progress. It is separate from Prepare and requires an optional dependency group; owner Colab evidence covers one Z Image conversion, not production/provider compatibility.
+Generate also has an experimental local **Quantize q8p…** action beside cloud Prepare. It uses the Colab/CLI multicore CPU converter to save a separate CKPT without uploading or replacing the source (source installs require `uv run --group quantization dtflow gui`; Windows builds bundle the optional dependency). Windows executable smoke and provider quality are pending. For the local-only F16 CKPT → q8p experiment, see the [experimental CLI guide](devdocs/guides/cli.md#experimental-lora-q8p-cli) or the standalone [Colab notebook](tools/colab/dtflow_lora_q8p.ipynb). CPU workers are auto-detected, with a serial override and elapsed/ETA progress. It is separate from Prepare and requires an optional dependency group; owner Colab evidence covers one Z Image conversion, not production/provider compatibility.
 
 ### Windows executable
 
