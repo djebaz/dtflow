@@ -8,8 +8,12 @@ not a claim of bit-identical ccv cluster/tie decisions.
 from __future__ import annotations
 
 import struct
+import signal
 import zlib
+from collections import deque
 from collections.abc import Callable
+from concurrent.futures import ProcessPoolExecutor
+from itertools import islice
 
 import numpy as np
 
@@ -26,6 +30,59 @@ class QuantizationError(ValidationError):
     def __init__(self, code: str, message: str):
         self.code = code
         super().__init__(message)
+
+    def __reduce__(self):
+        return type(self), (self.code, str(self))
+
+
+def start_encoder_worker():
+    # The parent owns interruption and drains at most one admitted block per worker.
+    signal.signal(signal.SIGINT, signal.SIG_IGN)
+
+
+def encode_q8p_block(block: np.ndarray) -> bytes:
+    """Encode one independent palette block; workers never open files or state."""
+    try:
+        import kmeans1d
+    except (ImportError, OSError) as exc:
+        raise QuantizationError(
+            "clustering_unavailable", "Install the optional quantization group: uv sync --group quantization."
+        ) from exc
+    try:
+        clustered = kmeans1d.cluster(block.astype(np.float64).tolist(), min(256, len(block)))
+    except (AssertionError, RuntimeError) as exc:
+        raise QuantizationError("clustering_failed", "Native clustering could not process this block.") from exc
+    labels = np.asarray(clustered.clusters, dtype=np.int64)
+    centers = np.asarray(clustered.centroids, dtype=np.float32)
+    if (
+        len(labels) != len(block)
+        or not 1 <= len(centers) <= 256
+        or ((labels < 0).any() or (labels >= len(centers)).any() or not np.isfinite(centers).all())
+    ):
+        raise QuantizationError("clustering_failed", "Clustering returned an invalid palette.")
+    palette = np.zeros(256, dtype="<u2")
+    palette[: len(centers)] = f32_to_f16_bits(centers)
+    return palette.tobytes() + labels.astype("u1").tobytes()
+
+
+def _encoded_blocks(values, pool, workers):
+    blocks = (values[start : start + BLOCK] for start in range(0, len(values), BLOCK))
+    if pool is None:
+        yield from map(encode_q8p_block, blocks)
+        return
+    pending = deque()
+    try:
+        for block in islice(blocks, workers):
+            pending.append(pool.submit(encode_q8p_block, block))
+        while pending:
+            # Preserve file order regardless of completion order; no unbounded map queue.
+            yield pending.popleft().result()
+            block = next(blocks, None)
+            if block is not None:
+                pending.append(pool.submit(encode_q8p_block, block))
+    finally:
+        for future in pending:
+            future.cancel()
 
 
 def decode(payload: bytes, count: int, codec: int) -> np.ndarray:
@@ -71,37 +128,17 @@ def decode(payload: bytes, count: int, codec: int) -> np.ndarray:
     return result
 
 
-def encode(values: np.ndarray, tick: Callable[[], None]) -> tuple[int, bytes]:
+def encode(
+    values: np.ndarray, tick: Callable[[], None], pool: ProcessPoolExecutor | None = None, workers: int = 1
+) -> tuple[int, bytes]:
     """Use q8p if it fits upstream's raw-size+4 buffer, then ezm7, then raw F16."""
     count = len(values)
     blocks = (count + BLOCK - 1) // BLOCK
     capacity = count * 2 + 4  # ccv_nnc_tensor_io.c's CPU encoder capacity.
     if 4 + count + blocks * 512 <= capacity:
-        try:
-            import kmeans1d
-        except (ImportError, OSError) as exc:
-            raise QuantizationError(
-                "clustering_unavailable", "Install the optional quantization group: uv sync --group quantization."
-            ) from exc
         output = bytearray(struct.pack("<I", BLOCK))
-        for start in range(0, count, BLOCK):
-            block = values[start : start + BLOCK]
-            try:
-                clustered = kmeans1d.cluster(block.astype(np.float64).tolist(), min(256, len(block)))
-            except (AssertionError, RuntimeError) as exc:
-                raise QuantizationError("clustering_failed", "Native clustering could not process this block.") from exc
-            labels = np.asarray(clustered.clusters, dtype=np.int64)
-            centers = np.asarray(clustered.centroids, dtype=np.float32)
-            if (
-                len(labels) != len(block)
-                or not 1 <= len(centers) <= 256
-                or ((labels < 0).any() or (labels >= len(centers)).any() or not np.isfinite(centers).all())
-            ):
-                raise QuantizationError("clustering_failed", "Clustering returned an invalid palette.")
-            palette = np.zeros(256, dtype="<u2")
-            palette[: len(centers)] = f32_to_f16_bits(centers)
-            output.extend(palette.tobytes())
-            output.extend(labels.astype("u1").tobytes())
+        for payload in _encoded_blocks(values, pool, workers):
+            output.extend(payload)
             tick()
         return Q8P, bytes(output)
 

@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import logging
 import math
+import multiprocessing
 import os
 import sqlite3
 import stat
@@ -12,7 +13,9 @@ import struct
 import tempfile
 import time
 from collections import Counter
-from contextlib import AbstractContextManager, closing
+from concurrent.futures import ProcessPoolExecutor
+from concurrent.futures.process import BrokenProcessPool
+from contextlib import AbstractContextManager, ExitStack, closing
 from dataclasses import dataclass
 from importlib import import_module
 from importlib.metadata import version
@@ -23,7 +26,7 @@ import numpy as np
 from dtflow.build import identity
 from dtflow.diagnostics import event
 from dtflow.services.lora_family import detect_lora_family
-from dtflow.services.lora_q8p_codec import BLOCK, CODECS, QuantizationError, decode, encode
+from dtflow.services.lora_q8p_codec import BLOCK, CODECS, QuantizationError, decode, encode, start_encoder_worker
 
 MAX_TENSORS = 20_000
 MAX_TENSOR_BYTES = 64 * 1024**2
@@ -245,15 +248,22 @@ def _destination(path: Path, source: Path) -> Path:
     return path
 
 
-def quantize_file(path: Path, output: Path, progress=None) -> dict:
+def quantize_file(path: Path, output: Path, progress=None, jobs: int = 0) -> dict:
     started = time.monotonic()
+    if type(jobs) is not int or jobs < 0:
+        raise QuantizationError("workers", "Worker count must be non-negative; zero selects available CPUs.")
+    workers = jobs or os.process_cpu_count() or 1
+    if os.name == "nt":
+        if jobs > 61:
+            raise QuantizationError("workers", "Windows supports at most 61 encoder workers.")
+        workers = min(workers, 61)
     try:
         import_module("kmeans1d")
     except (ImportError, OSError) as exc:
         raise QuantizationError(
             "clustering_unavailable", "Install the optional quantization group: uv sync --group quantization."
         ) from exc
-    with Input(path) as source:
+    with ExitStack() as stack, Input(path) as source:
         destination = _destination(output, source.path)
         if source.family not in WRITER_FAMILIES or any(t.codec != 0 for t in source.tensors):
             raise QuantizationError("unsupported_input", "Writer accepts raw F16 Krea 2, Z Image or SDXL Base only.")
@@ -264,6 +274,7 @@ def quantize_file(path: Path, output: Path, progress=None) -> dict:
         differences = Differences()
         done = 0
         total = sum((t.count + BLOCK - 1) // BLOCK for t in source.tensors)
+        workers = min(workers, total)
 
         def tick():
             nonlocal done
@@ -272,12 +283,22 @@ def quantize_file(path: Path, output: Path, progress=None) -> dict:
                 progress(done, total)
 
         try:
+            if progress is not None:
+                progress(0, total)
+            pool = None
+            if workers > 1:
+                pool = ProcessPoolExecutor(
+                    max_workers=workers,
+                    mp_context=multiprocessing.get_context("spawn"),
+                    initializer=start_encoder_worker,
+                )
+                stack.callback(pool.shutdown, wait=True, cancel_futures=True)
             with closing(sqlite3.connect(staged)) as db:
                 db.execute(TABLE)
                 db.execute("BEGIN")
                 for tensor in source.tensors:
                     values = decode(source.payload(tensor), tensor.count, 0)
-                    codec, payload = encode(values, tick)
+                    codec, payload = encode(values, tick, pool, workers)
                     differences.add(values, decode(payload, tensor.count, codec))
                     db.execute(
                         "INSERT INTO tensors VALUES (?,?,?,?,?,?)",
@@ -317,12 +338,15 @@ def quantize_file(path: Path, output: Path, progress=None) -> dict:
                     "library": "kmeans1d",
                     "version": version("kmeans1d"),
                     "ccv_bit_equivalence": "unverified",
+                    "workers": workers,
                 },
                 "numerical_difference_from_input": differences.summary(),
                 "seconds": round(time.monotonic() - started, 3),
                 "size_reduction_percent": round((1 - verified["file_bytes"] / source.size) * 100, 3),
                 "quality_or_provider_acceptance": "not_established",
             }
+        except BrokenProcessPool as exc:
+            raise QuantizationError("worker_failed", "An encoder worker stopped; no output was published.") from exc
         finally:
             # Only our exclusive same-directory staging file/SQLite journal; never remove a published output.
             for leftover in (staged, Path(str(staged) + "-journal")):

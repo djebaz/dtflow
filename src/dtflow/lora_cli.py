@@ -20,6 +20,22 @@ def _revision(value):
     return value.lower()
 
 
+def _jobs(value):
+    try:
+        count = int(value)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError("Workers must be an integer; zero selects available CPUs.") from exc
+    if count < 0:
+        raise argparse.ArgumentTypeError("Workers must be non-negative; zero selects available CPUs.")
+    return count
+
+
+def _duration(seconds):
+    hours, remainder = divmod(max(0, int(seconds)), 3600)
+    minutes, seconds = divmod(remainder, 60)
+    return f"{hours}:{minutes:02d}:{seconds:02d}"
+
+
 def add_commands(commands):
     group = commands.add_parser("lora", help="Local-only experimental LoRA CKPT inspection and q8p encoding.")
     actions = group.add_subparsers(dest="lora_command", required=True)
@@ -37,6 +53,13 @@ def add_commands(commands):
         if action == "compare":
             child.add_argument("reference", type=Path, help="Matching tensor inventory, e.g. an iOS q8p reference.")
         if action == "quantize":
+            child.add_argument(
+                "-j",
+                "--jobs",
+                type=_jobs,
+                default=0,
+                help="Encoder workers: 0 auto-detects available CPUs (default); 1 runs in-process.",
+            )
             child.add_argument("-o", "--out", type=Path, required=True, help="New .ckpt path in an existing directory.")
             child.add_argument(
                 "-e",
@@ -55,12 +78,19 @@ def run_command(args):
     action = args.lora_command
     event(log, "lora_quantize.started", data={"action": action})
     previous = 0.0
+    started = time.monotonic()
 
     def progress(done, total):
         nonlocal previous
         now = time.monotonic()
-        if now - previous >= 1 or done == total:
-            print(f"Quantizing: {done}/{total} blocks", file=sys.stderr, flush=True)
+        if now - previous >= 1 or done == total or done == 0:
+            elapsed = now - started
+            eta = _duration(elapsed / done * (total - done)) if done else "--"
+            print(
+                f"Quantizing: {done}/{total} blocks | elapsed {_duration(elapsed)} | ETA ~{eta}",
+                file=sys.stderr,
+                flush=True,
+            )
             previous = now
 
     try:
@@ -69,7 +99,7 @@ def run_command(args):
         elif action == "compare":
             result = compare_files(args.input, args.reference)
         else:
-            result = quantize_file(args.input, args.out, progress)
+            result = quantize_file(args.input, args.out, progress, jobs=args.jobs)
         result["recorded_revision"] = args.revision or "unknown"
         source = result["input"]
         event(
@@ -81,7 +111,11 @@ def run_command(args):
                 "tensors": source["tensors"],
                 "input_bytes": source["file_bytes"],
                 **(
-                    {"output_bytes": result["output"]["file_bytes"], "seconds": result["seconds"]}
+                    {
+                        "output_bytes": result["output"]["file_bytes"],
+                        "seconds": result["seconds"],
+                        "workers": result["clustering"]["workers"],
+                    }
                     if action == "quantize"
                     else {}
                 ),
