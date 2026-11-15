@@ -128,6 +128,10 @@ class LoraAssetPanel:
         self._runner, self._backend, self._saved = runner, backend_source, saved_source
         self._state, self._build, self._is_busy, self._set_busy = Path(state_dir), build_request, is_busy, set_busy
         self.choose_asset_file = _choose_asset_file
+        self._q8p_running = False
+        self._q8p_cancel = threading.Event()
+        self._q8p_relay: LatestRelay | None = None
+        runner.shutdown_started.connect(self._q8p_cancel.set)
         self.open_storage: Callable[..., None] = lambda **_: None  # the window mounts the shared overlay
         self.dismiss_storage: Callable[[], None] = lambda: None
         self.refresh_holdings: Callable[[], None] = lambda: None  # the window re-reads the key's stored list
@@ -177,6 +181,7 @@ class LoraAssetPanel:
         page.checkLorasButton.clicked.connect(self.check)
         page.prepareAssetButton.clicked.connect(self.prepare)
         page.prepareAssetButton.setToolTip(UPLOAD_NOTICE)
+        page.quantizeLoraButton.clicked.connect(self.quantize_local)
         self.sync_backend()
         self.refresh_assets()
 
@@ -205,8 +210,10 @@ class LoraAssetPanel:
         cloud = self._backend()[0] == "cloud"
         for name in ("addLoraButton", "removeLoraButton", "checkLorasButton"):
             getattr(self.page, name).setEnabled(enabled)
-        for name in ("prepareAssetButton",):
-            getattr(self.page, name).setEnabled(enabled and cloud)
+        self.page.prepareAssetButton.setEnabled(enabled and cloud and not self._q8p_running)
+        self.page.quantizeLoraButton.setEnabled(
+            enabled and not self._q8p_running and not self.preparing and not self._runner.closed
+        )
 
     def sync_backend(self) -> None:
         backend = self._backend()
@@ -601,9 +608,99 @@ class LoraAssetPanel:
         item = self.page.assetList.currentItem()
         return item.data(Qt.ItemDataRole.UserRole) if item is not None else None
 
+    def quantize_local(self) -> None:
+        """Convert an existing F16 CKPT locally; this never enters cloud Prepare or the retained store."""
+        if self._q8p_running or self.preparing or self._is_busy() or self._runner.closed:
+            return
+        source, _ = QFileDialog.getOpenFileName(
+            self.page, "Select F16 Draw Things LoRA", str(Path.home()), "Draw Things LoRA (*.ckpt)"
+        )
+        if not source:
+            return
+        suggested = Path.home() / f"{Path(source).stem}_q8p.ckpt"
+        target, _ = QFileDialog.getSaveFileName(
+            self.page, "Save experimental q8p LoRA", str(suggested), "Draw Things LoRA (*.ckpt)"
+        )
+        if not target:
+            return
+        if self._q8p_running or self.preparing or self._is_busy() or self._runner.closed:
+            return
+
+        self._q8p_cancel.clear()
+        self._q8p_running = True
+        self.set_enabled(not self._is_busy())
+        relay = LatestRelay(lambda values: self._quantize_progress(*values), self.page)
+        self._q8p_relay = relay
+        self._show(self.page.quantizeStatusLabel, Presentation("warning", "Quantizing", "Local CPU conversion in progress."))
+        activity_strip(self.page).start(
+            "q8p", "Quantizing LoRA", stop=self._q8p_cancel.set, stop_text="Cancel conversion"
+        )
+
+        async def run():
+            from dtflow.services.lora_quantization import quantize_file
+
+            workers = [1]
+
+            def started(_detected_cpus, effective_workers):
+                workers[0] = effective_workers
+
+            def progress(done, total):
+                relay((done, total, workers[0]))
+
+            return await asyncio.to_thread(
+                quantize_file, Path(source), Path(target), progress, jobs=0, on_start=started, cancel=self._q8p_cancel
+            )
+
+        self._runner.submit(run(), lambda result, failure: self._quantize_finished(result, failure, Path(target)))
+
+    def _quantize_progress(self, done: int, total: int, workers: int) -> None:
+        """Present latest CPU progress on the GUI thread without blocking conversion."""
+        if not self._q8p_running:
+            return
+        percent = round(done * 100 / total) if total else 0
+        detail = f"{percent}% · {workers} CPU worker(s)"
+        self._show(self.page.quantizeStatusLabel, Presentation("warning", "Quantizing", detail))
+        activity_strip(self.page).update("q8p", done, total, detail=detail, stage="CPU q8p")
+
+    def _quantize_finished(self, result, failure, target: Path) -> None:
+        """Settle the local conversion without touching cloud receipts or Prepare state."""
+        if self._q8p_relay is not None:
+            self._q8p_relay.close()
+            self._q8p_relay.deleteLater()
+            self._q8p_relay = None
+        self._q8p_running = False
+        self.set_enabled(not self._is_busy())
+        strip = activity_strip(self.page)
+        if failure is None:
+            reduction = result["size_reduction_percent"]
+            workers = result["clustering"]["workers"]
+            detail = f"{target.name} · {reduction}% smaller · {workers} CPU worker(s). Original preserved."
+            self._show(self.page.quantizeStatusLabel, Presentation("ok", "Saved q8p LoRA", detail))
+            strip.complete("q8p", "q8p file saved", detail)
+            diagnostic_event(
+                log,
+                "lora_quantize.completed",
+                data={"action": "quantize", "output_bytes": result["output"]["file_bytes"],
+                      "seconds": result["seconds"], "workers": workers},
+            )
+            return
+        code = getattr(failure, "code", "local_error")
+        cancelled = code == "cancelled"
+        detail = (
+            "Cancelled. No output was published."
+            if cancelled
+            else str(failure) if code != "local_error"
+            else "Local conversion failed. Check the input and available disk space."
+        )
+        self._show(self.page.quantizeStatusLabel, Presentation("warning", "q8p conversion", detail))
+        strip.complete("q8p", "Conversion cancelled" if cancelled else "q8p conversion failed",
+                       detail, state="stopped" if cancelled else "warning")
+        diagnostic_event(log, "lora_quantize.interrupted" if cancelled else "lora_quantize.failed",
+                         level=logging.WARNING, data={"action": "quantize", "code": code})
+
     def prepare(self) -> None:
         """File selection opens the actual in-window metadata editor; no upload occurs yet."""
-        if self.preparing or self._is_busy() or self._runner.closed:
+        if self.preparing or self._q8p_running or self._is_busy() or self._runner.closed:
             return
         backend = self._backend()
         if backend[0] != "cloud":
