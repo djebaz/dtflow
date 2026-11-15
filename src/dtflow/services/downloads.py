@@ -10,6 +10,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import threading
+import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -38,6 +39,8 @@ CONVERTED, NOT_CONVERTIBLE, FAILED, CANCELLED, INTERRUPTED = (
 ACTIVE = (QUEUED, DOWNLOADING, CONVERTING)
 
 PREPARE_NEEDS_CLOUD = "Prepare needs DT+ Cloud"
+QUEUED_DETAIL = "At most 3 transfers run at once"
+SPEED_WINDOW = 0.5  # seconds between two speed samples
 
 
 # -------------------------------------------------------------------------------------------------- resolving links
@@ -152,6 +155,7 @@ class DownloadItem:
     converted_size: int | None = None
     version_id: int | None = None
     model_id: int | None = None
+    speed: float = 0.0  # bytes per second while downloading (smoothed)
     cancel: threading.Event = field(default_factory=threading.Event)
     handle: civitai.DownloadHandle | None = None
 
@@ -171,7 +175,7 @@ def item_for(entry: ResolvedEntry) -> DownloadItem:
     return DownloadItem(
         entry.label,
         (version.version_id, version.file.id),
-        family.label + (" (experimental)" if family.experimental else ""),
+        family.label + (", experimental" if family.experimental else ""),
         version,
         version_id=version.version_id,
         model_id=version.model_id,
@@ -261,9 +265,18 @@ async def run_item(
     assert version is not None
     item.cancel = threading.Event()
     item.handle = None
-    item.state, item.done, item.total, item.detail = QUEUED, 0, None, "Waiting for a free slot"
+    item.state, item.done, item.total, item.detail = QUEUED, 0, None, QUEUED_DETAIL
+
+    mark = [time.monotonic(), 0]  # (time, bytes) of the last speed sample
 
     def on_download(progress: civitai.DownloadProgress) -> None:
+        now = time.monotonic()
+        if progress.done < mark[1]:  # the one automatic retry starts again from zero
+            mark[0], mark[1], item.speed = now, progress.done, 0.0
+        elif now - mark[0] >= SPEED_WINDOW:
+            rate = (progress.done - mark[1]) / (now - mark[0])
+            item.speed = rate if item.speed <= 0 else 0.6 * item.speed + 0.4 * rate
+            mark[0], mark[1] = now, progress.done
         item.state, item.done, item.total = DOWNLOADING, progress.done, progress.total
         item.detail = ""
 
@@ -282,11 +295,12 @@ async def run_item(
         downloaded = await asyncio.wrap_future(handle.future)
         if item.cancel.is_set():
             raise civitai.CivitaiCancelled("Cancelled.")
-        item.state, item.done, item.total, item.detail = CONVERTING, 0, None, "Checking and converting"
+        item.speed = 0.0
+        item.state, item.done, item.total, item.detail = CONVERTING, 0, None, item.family
         item.source_sha = downloaded.sha256
         result = await convert_downloaded(state, version, downloaded, progress=on_convert, cancel=item.cancel)
     except (civitai.CivitaiCancelled, ConversionCancelled, asyncio.CancelledError):
-        item.state, item.detail = CANCELLED, "Stopped. Any partial download was discarded."
+        item.state, item.detail = CANCELLED, "Partial file discarded"
         if item.source_sha:
             item.detail = "Stopped. The downloaded file is kept; Retry converts it."
         return
