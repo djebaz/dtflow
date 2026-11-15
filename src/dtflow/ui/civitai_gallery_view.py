@@ -454,6 +454,7 @@ class GalleryTab(QObject):
         self._has_more = True
         self._empty_batches = 0
         self._paused_empty = False
+        self.form.galleryContinueButton.setText("Search further")
         self.form.galleryContinueButton.hide()
         self._loaded = True
         self.cards.clear()
@@ -511,6 +512,9 @@ class GalleryTab(QObject):
         if failure is not None or result is None:
             message = str(failure) if isinstance(failure, civitai.CivitaiError) else "Civitai could not be reached."
             self.form.galleryStatus.setText(f"Could not load more LoRAs. {message}")
+            self._paused_empty = True
+            self.form.galleryContinueButton.setText("Retry")
+            self.form.galleryContinueButton.show()
             diagnostic_event(log, "gallery.list_failed", level=logging.WARNING)
             return
         if cursor is not None:
@@ -543,6 +547,7 @@ class GalleryTab(QObject):
         # Never spin forever over empty or filtered-out API pages without user input.
         if self._empty_batches >= 3 and self._has_more:
             self._paused_empty = True
+            self.form.galleryContinueButton.setText("Search further")
             self.form.galleryContinueButton.show()
             self.form.galleryStatus.setText(
                 f"{count} LoRAs loaded. No new supported models in recent Civitai batches."
