@@ -110,7 +110,7 @@
        </widget></item>
        <item><widget class="QComboBox" name="galleryFamilyCombo">
         <property name="accessibleName"><string>Filter Civitai LoRAs by family</string></property>
-        <property name="toolTip"><string>Show one supported family, or all of them.</string></property>
+        <property name="toolTip"><string>Choose several supported families. All families clears the selection.</string></property>
        </widget></item>
        <item><widget class="QComboBox" name="galleryPeriodCombo">
         <property name="accessibleName"><string>Filter Civitai LoRAs by period</string></property>
