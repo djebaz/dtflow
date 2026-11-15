@@ -631,10 +631,12 @@ class LoraAssetPanel:
         self.set_enabled(not self._is_busy())
         relay = LatestRelay(lambda values: self._quantize_progress(*values), self.page)
         self._q8p_relay = relay
-        self._show(self.page.quantizeStatusLabel, Presentation("warning", "Quantizing", "Local CPU conversion in progress."))
-        activity_strip(self.page).start(
-            "q8p", "Quantizing LoRA", stop=self._q8p_cancel.set, stop_text="Cancel conversion"
+        self._show(
+            self.page.quantizeStatusLabel,
+            Presentation("warning", "Quantizing", "Local CPU conversion in progress."),
         )
+        diagnostic_event(log, "lora_quantize.started", data={"action": "quantize"})
+        activity_strip(self.page).start("q8p", "Quantizing LoRA", stop=self._q8p_cancel.set, stop_text="Cancel conversion")
 
         async def run():
             from dtflow.services.lora_quantization import quantize_file
@@ -648,7 +650,13 @@ class LoraAssetPanel:
                 relay((done, total, workers[0]))
 
             return await asyncio.to_thread(
-                quantize_file, Path(source), Path(target), progress, jobs=0, on_start=started, cancel=self._q8p_cancel
+                quantize_file,
+                Path(source),
+                Path(target),
+                progress,
+                jobs=0,
+                on_start=started,
+                cancel=self._q8p_cancel,
             )
 
         self._runner.submit(run(), lambda result, failure: self._quantize_finished(result, failure, Path(target)))
@@ -674,29 +682,41 @@ class LoraAssetPanel:
         if failure is None:
             reduction = result["size_reduction_percent"]
             workers = result["clustering"]["workers"]
-            detail = f"{target.name} · {reduction}% smaller · {workers} CPU worker(s). Original preserved."
+            detail = f"{target.name} · {reduction}% smaller · {workers} CPU workers. Original preserved."
             self._show(self.page.quantizeStatusLabel, Presentation("ok", "Saved q8p LoRA", detail))
             strip.complete("q8p", "q8p file saved", detail)
             diagnostic_event(
                 log,
                 "lora_quantize.completed",
-                data={"action": "quantize", "output_bytes": result["output"]["file_bytes"],
-                      "seconds": result["seconds"], "workers": workers},
+                data={
+                    "action": "quantize",
+                    "output_bytes": result["output"]["file_bytes"],
+                    "seconds": result["seconds"],
+                    "workers": workers,
+                },
             )
             return
         code = getattr(failure, "code", "local_error")
         cancelled = code == "cancelled"
-        detail = (
-            "Cancelled. No output was published."
-            if cancelled
-            else str(failure) if code != "local_error"
-            else "Local conversion failed. Check the input and available disk space."
-        )
+        if cancelled:
+            detail = "Cancelled. No output was published."
+        elif code != "local_error":
+            detail = str(failure)
+        else:
+            detail = "Local conversion failed. Check the input and available disk space."
         self._show(self.page.quantizeStatusLabel, Presentation("warning", "q8p conversion", detail))
-        strip.complete("q8p", "Conversion cancelled" if cancelled else "q8p conversion failed",
-                       detail, state="stopped" if cancelled else "warning")
-        diagnostic_event(log, "lora_quantize.interrupted" if cancelled else "lora_quantize.failed",
-                         level=logging.WARNING, data={"action": "quantize", "code": code})
+        strip.complete(
+            "q8p",
+            "Conversion cancelled" if cancelled else "q8p conversion failed",
+            detail,
+            state="stopped" if cancelled else "warning",
+        )
+        diagnostic_event(
+            log,
+            "lora_quantize.interrupted" if cancelled else "lora_quantize.failed",
+            level=logging.WARNING,
+            data={"action": "quantize", "code": code},
+        )
 
     def prepare(self) -> None:
         """File selection opens the actual in-window metadata editor; no upload occurs yet."""
