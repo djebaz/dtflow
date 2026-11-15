@@ -2608,7 +2608,6 @@ class MainWindow:
     def _bind_connection_disclosures(self) -> None:
         """One full-header interaction for the center column; collapse is presentation only."""
         sections = (
-            ("connectionStatusHeader", "connectionStatusHeading", "statusCard", "connectionStatusDisclosure"),
             ("customLorasBoxHeader", "customLorasHeading", "customLorasBoxContents", "customLorasDisclosure"),
             ("usageBoxHeader", "usageHeading", "usageBoxContents", "usageDisclosure"),
             ("presetLibraryBoxHeader", "presetLibraryHeading", "presetLibraryBoxContents", "presetLibraryDisclosure"),

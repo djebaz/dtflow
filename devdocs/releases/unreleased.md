@@ -1,6 +1,6 @@
 # Unreleased
 
-- Make every Connection center-column section collapsible and closed at startup, with a full-header click target and shared chevron. Section visibility does not stop work; Images keeps the shared Export panel expanded. Side panels are unchanged. Static checks only; native owner acceptance pending (PR #470).
+- Keep Connection status always visible; make the other five Connection center-column sections collapsible and closed at startup, with a full-header click target and shared chevron. Section visibility does not stop work; Images keeps the shared Export panel expanded. Side panels are unchanged. Static checks only; native owner acceptance pending (PR #470).
 
 - Move experimental desktop CPU **Quantize q8p** to per-row actions in Connection → Custom LoRAs. Click the full header to expand a taller table, quantize a managed F16 into a separate retained q8p, and optionally open its Prepare approval editor. Verified managed counterparts disable repeat conversion; selected-key local confirmations govern row Prepare. Originals and existing receipts remain unchanged; no automatic upload. Revised library workflow is static-reviewed only, not owner-accepted yet (#353, PR #470).
 
