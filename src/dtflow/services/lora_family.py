@@ -21,7 +21,6 @@ from dataclasses import dataclass
 from collections.abc import Iterable
 
 from dtflow.core.models import ValidationError
-from dtflow.services.lora_store import LoraStore
 from pathlib import Path
 
 MAX_TENSORS = 20_000
@@ -277,6 +276,8 @@ def retained_families(
     Missing or unreadable files stay Unknown without hiding other receipts.
     ``verify=False`` skips the full-file SHA-256 (it reads every byte of every LoRA); display-only callers use it.
     """
+    from dtflow.services.lora_store import LoraStore
+
     store = LoraStore(state)
     result: dict[tuple[str, int], LoraFamily] = {}
     for sha256, size in dict.fromkeys(identities):

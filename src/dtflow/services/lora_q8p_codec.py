@@ -10,10 +10,7 @@ from __future__ import annotations
 import struct
 import signal
 import zlib
-from collections import deque
 from collections.abc import Callable
-from concurrent.futures import ProcessPoolExecutor
-from itertools import islice
 
 import numpy as np
 
@@ -65,24 +62,16 @@ def encode_q8p_block(block: np.ndarray) -> bytes:
     return palette.tobytes() + labels.astype("u1").tobytes()
 
 
-def _encoded_blocks(values, pool, workers):
-    blocks = (values[start : start + BLOCK] for start in range(0, len(values), BLOCK))
-    if pool is None:
-        yield from map(encode_q8p_block, blocks)
-        return
-    pending = deque()
-    try:
-        for block in islice(blocks, workers):
-            pending.append(pool.submit(encode_q8p_block, block))
-        while pending:
-            # Preserve file order regardless of completion order; no unbounded map queue.
-            yield pending.popleft().result()
-            block = next(blocks, None)
-            if block is not None:
-                pending.append(pool.submit(encode_q8p_block, block))
-    finally:
-        for future in pending:
-            future.cancel()
+def q8p_fits(count: int) -> bool:
+    blocks = (count + BLOCK - 1) // BLOCK
+    return 4 + count + blocks * 512 <= count * 2 + 4
+
+
+def encode_chunk(values: np.ndarray, whole_tensor: bool) -> tuple[int, bytes]:
+    """One pool task, including small-tensor fallback; never schedules other work."""
+    if whole_tensor:
+        return encode(values, lambda: None)
+    return Q8P, encode_q8p_block(values)
 
 
 def decode(payload: bytes, count: int, codec: int) -> np.ndarray:
@@ -128,17 +117,14 @@ def decode(payload: bytes, count: int, codec: int) -> np.ndarray:
     return result
 
 
-def encode(
-    values: np.ndarray, tick: Callable[[], None], pool: ProcessPoolExecutor | None = None, workers: int = 1
-) -> tuple[int, bytes]:
+def encode(values: np.ndarray, tick: Callable[[], None]) -> tuple[int, bytes]:
     """Use q8p if it fits upstream's raw-size+4 buffer, then ezm7, then raw F16."""
     count = len(values)
-    blocks = (count + BLOCK - 1) // BLOCK
     capacity = count * 2 + 4  # ccv_nnc_tensor_io.c's CPU encoder capacity.
-    if 4 + count + blocks * 512 <= capacity:
+    if q8p_fits(count):
         output = bytearray(struct.pack("<I", BLOCK))
-        for payload in _encoded_blocks(values, pool, workers):
-            output.extend(payload)
+        for start in range(0, count, BLOCK):
+            output.extend(encode_q8p_block(values[start : start + BLOCK]))
             tick()
         return Q8P, bytes(output)
 

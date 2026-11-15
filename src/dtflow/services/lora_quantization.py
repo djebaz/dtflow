@@ -12,13 +12,14 @@ import stat
 import struct
 import tempfile
 import time
-from collections import Counter
+from collections import Counter, deque
 from concurrent.futures import ProcessPoolExecutor
 from concurrent.futures.process import BrokenProcessPool
 from contextlib import AbstractContextManager, ExitStack, closing
 from dataclasses import dataclass
 from importlib import import_module
 from importlib.metadata import version
+from itertools import islice
 from pathlib import Path
 
 import numpy as np
@@ -26,7 +27,16 @@ import numpy as np
 from dtflow.build import identity
 from dtflow.diagnostics import event
 from dtflow.services.lora_family import detect_lora_family
-from dtflow.services.lora_q8p_codec import BLOCK, CODECS, QuantizationError, decode, encode, start_encoder_worker
+from dtflow.services.lora_q8p_codec import (
+    BLOCK,
+    CODECS,
+    QuantizationError,
+    decode,
+    encode,
+    encode_chunk,
+    q8p_fits,
+    start_encoder_worker,
+)
 
 MAX_TENSORS = 20_000
 MAX_TENSOR_BYTES = 64 * 1024**2
@@ -248,6 +258,59 @@ def _destination(path: Path, source: Path) -> Path:
     return path
 
 
+@dataclass
+class _Encoding:
+    tensor: Tensor
+    values: np.ndarray
+    remaining: int
+    payload: bytearray
+
+
+def _encoding_tasks(source):
+    for tensor in source.tensors:
+        values = decode(source.payload(tensor), tensor.count, 0)
+        if q8p_fits(tensor.count):
+            work = _Encoding(tensor, values, (tensor.count + BLOCK - 1) // BLOCK, bytearray(struct.pack("<I", BLOCK)))
+            for start in range(0, tensor.count, BLOCK):
+                yield work, values[start : start + BLOCK], False
+        else:
+            yield _Encoding(tensor, values, 1, bytearray()), values, True
+
+
+def _encoded_tensors(source, pool, workers, tick):
+    if pool is None:
+        for tensor in source.tensors:
+            values = decode(source.payload(tensor), tensor.count, 0)
+            codec, payload = encode(values, tick)
+            yield tensor, values, codec, payload
+        return
+    tasks = _encoding_tasks(source)
+    pending = deque()
+
+    def submit(task):
+        work, values, whole = task
+        pending.append((work, pool.submit(encode_chunk, values, whole)))
+
+    try:
+        for task in islice(tasks, workers):
+            submit(task)
+        while pending:
+            # This queue spans tensor boundaries, even when each tensor has just one block.
+            work, future = pending.popleft()
+            codec, payload = future.result()
+            work.payload.extend(payload)
+            work.remaining -= 1
+            tick()
+            if work.remaining == 0:
+                yield work.tensor, work.values, codec, bytes(work.payload)
+            task = next(tasks, None)
+            if task is not None:
+                submit(task)
+    finally:
+        for _, future in pending:
+            future.cancel()
+
+
 def quantize_file(path: Path, output: Path, progress=None, jobs: int = 0) -> dict:
     started = time.monotonic()
     if type(jobs) is not int or jobs < 0:
@@ -296,9 +359,7 @@ def quantize_file(path: Path, output: Path, progress=None, jobs: int = 0) -> dic
             with closing(sqlite3.connect(staged)) as db:
                 db.execute(TABLE)
                 db.execute("BEGIN")
-                for tensor in source.tensors:
-                    values = decode(source.payload(tensor), tensor.count, 0)
-                    codec, payload = encode(values, tick, pool, workers)
+                for tensor, values, codec, payload in _encoded_tensors(source, pool, workers, tick):
                     differences.add(values, decode(payload, tensor.count, codec))
                     db.execute(
                         "INSERT INTO tensors VALUES (?,?,?,?,?,?)",
