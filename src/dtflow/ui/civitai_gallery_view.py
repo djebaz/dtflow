@@ -2,16 +2,17 @@
 
 Presentation and wiring only. Listing and thumbnails live in ``dtflow.services.civitai_gallery`` and run off the GUI
 thread; Download hands cards to the Downloads page, which uses the same download-and-convert path as Links / IDs.
-Covers are decoded to small pixmaps held in memory for the current search only; nothing is written to disk.
+Covers and listing metadata stay in memory while the gallery is open; decoded pixmaps use a bounded LRU.
 """
 
 from __future__ import annotations
 
 import asyncio
 import logging
+from collections import OrderedDict
 from collections.abc import Callable
 
-from PySide6.QtCore import QEvent, QObject, QRect, QSize, Qt, Signal
+from PySide6.QtCore import QEvent, QObject, QPoint, QRect, QSize, Qt, Signal, QTimer
 from PySide6.QtGui import (
     QColor,
     QCursor,
@@ -25,13 +26,21 @@ from PySide6.QtGui import (
 )
 from PySide6.QtWidgets import (
     QAbstractItemView,
+    QCheckBox,
+    QHBoxLayout,
+    QLabel,
     QListView,
     QListWidget,
     QListWidgetItem,
     QMenu,
+    QPushButton,
+    QScrollArea,
     QStyle,
     QStyledItemDelegate,
+    QTableWidgetItem,
+    QVBoxLayout,
     QWidget,
+    QWidgetAction,
 )
 
 from dtflow.diagnostics import event as diagnostic_event
@@ -47,6 +56,7 @@ MIN_COLUMNS = 2
 GAP = 10
 SOURCE = 360  # side of the decoded square cover; painted scaled to the card
 CARD_ROLE = Qt.ItemDataRole.UserRole
+MAX_PIXMAPS = 180  # decoded square covers (encoded thumbnails have their own bounded LRU)
 
 # The design's colours (devdocs/mockups/civitai_downloads_view.html, values of the design tokens).
 TEXT, SECONDARY = QColor("#e6e6e6"), QColor("#b2b2b2")
@@ -73,8 +83,7 @@ def size_text(size: int | None) -> str:
 
 
 class CardDelegate(QStyledItemDelegate):
-    """Paints the design's card: a square cover, a checkbox and badges top left, family and base-model chips top
-    right, name and numbers on a gradient at the bottom, and the details panel with Download while hovered."""
+    """Paint one model card, its supported-family chips and a separate per-card Download action."""
 
     download_requested = Signal(object)
 
@@ -92,7 +101,7 @@ class CardDelegate(QStyledItemDelegate):
 
     @staticmethod
     def button_rect(rect: QRect) -> QRect:
-        return QRect(rect.right() - 108, rect.bottom() - 34, 100, 24)
+        return QRect(rect.right() - 108, rect.bottom() - 69, 100, 24)
 
     def editorEvent(self, event, model, option, index) -> bool:  # noqa: N802
         card = index.data(CARD_ROLE)
@@ -101,7 +110,7 @@ class CardDelegate(QStyledItemDelegate):
             and event.button() == Qt.MouseButton.LeftButton
             and isinstance(card, gallery.GalleryCard)
             and card.downloadable
-            and not self._state_of(card)
+            and bool(option.state & QStyle.StateFlag.State_MouseOver)
             and self.button_rect(option.rect.adjusted(1, 1, -1, -1)).contains(event.position().toPoint())
         ):
             self.download_requested.emit(card)
@@ -153,7 +162,7 @@ class CardDelegate(QStyledItemDelegate):
             f"@{card.creator}" if card.creator else "",
             f"↓ {compact(card.downloads)}",
             f"👍 {compact(card.thumbs_up)}",
-            size_text(card.size_bytes),
+            f"{len({option.version.version_id for option in card.options})} versions" if card.options else "",
         ]
         painter.drawText(
             QRect(inner.left(), inner.top() + 18, inner.width(), 16),
@@ -162,14 +171,11 @@ class CardDelegate(QStyledItemDelegate):
                 "   ".join(part for part in parts if part), Qt.TextElideMode.ElideRight, inner.width()
             ),
         )
-        # Top right: the family chip, then the base model when its label differs.
+        # A model can have versions for different Civitai base models and converter families.
         painter.setFont(tiny)
         y = rect.top() + 6
-        y = self._chip(painter, card.family, rect, y, SELECTION, SELECTION_BORDER, SELECTION_TEXT, right=True)
-        if card.base_model and card.base_model.casefold() != card.family.split(",")[0].casefold():
-            self._chip(
-                painter, card.base_model, rect, y, QColor(21, 21, 21, 199), QColor(255, 255, 255, 46), TEXT, right=True
-            )
+        for family in card.families:
+            y = self._chip(painter, family, rect, y, SELECTION, SELECTION_BORDER, SELECTION_TEXT, right=True)
         # Top left: the checkbox, then the badges.
         box = self.check_rect(rect)
         painter.setPen(QPen(QColor("#909090"), 1))
@@ -185,27 +191,25 @@ class CardDelegate(QStyledItemDelegate):
         if card.availability and card.availability.casefold() != "public":
             label = "Early access" if "early" in card.availability.casefold() else card.availability
             self._chip(painter, label, rect, y, dark, WARNING_BORDER, WARNING, right=False)
-        # A card already in the downloads list says so; the hovered card offers Download.
+        # Download remains available for other versions even if one version is already in the LoRA store.
         state = self._state_of(card)
-        action = self.button_rect(rect)
         painter.setFont(small)
-        if state or (hovered and card.problem):
-            text = state or "Unavailable"
-            width = QFontMetrics(small).horizontalAdvance(text) + 14
-            pill = QRect(rect.right() - width - 8, rect.bottom() - 70, width, 22)
+        if state or (hovered and card.problem and not card.downloadable):
+            label = state or "Unavailable"
+            width = min(QFontMetrics(small).horizontalAdvance(label) + 14, rect.width() - 16)
+            pill = QRect(rect.right() - width - 8, rect.bottom() - 98, width, 22)
             painter.setPen(QPen(QColor(255, 255, 255, 46), 1))
-            painter.setBrush(dark)
+            painter.setBrush(QColor(21, 21, 21, 199))
             painter.drawRoundedRect(pill, 3, 3)
             painter.setPen(TEXT)
-            painter.drawText(pill, Qt.AlignmentFlag.AlignCenter, text)
-        elif hovered and card.downloadable:
-            action.moveBottom(rect.bottom() - 46)
+            painter.drawText(pill, Qt.AlignmentFlag.AlignCenter, QFontMetrics(small).elidedText(label, Qt.TextElideMode.ElideRight, width - 8))
+        if hovered and card.downloadable:
+            action = self.button_rect(rect)
             painter.setPen(QPen(ACCENT_HOVER, 1))
             painter.setBrush(ACCENT)
             painter.drawRoundedRect(action, 3, 3)
             painter.setPen(QColor("#ffffff"))
-            several = len(card.options) > 1
-            painter.drawText(action, Qt.AlignmentFlag.AlignCenter, "Download ▾" if several else "Download")
+            painter.drawText(action, Qt.AlignmentFlag.AlignCenter, "Download ▾")
         painter.setClipping(False)
         painter.setBrush(Qt.BrushStyle.NoBrush)
         if selected:
