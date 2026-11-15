@@ -41,6 +41,7 @@ from PySide6.QtWidgets import (
     QScrollArea,
     QStyle,
     QStyledItemDelegate,
+    QToolTip,
     QTableWidgetItem,
     QVBoxLayout,
     QWidget,
@@ -373,9 +374,11 @@ class _CardActionFilter(QObject):
         self._on_download, self._on_tag = on_download, on_tag
 
     def eventFilter(self, _watched, event) -> bool:  # noqa: N802
-        if event.type() != QEvent.Type.MouseButtonPress or event.button() != Qt.MouseButton.LeftButton:
+        tooltip = event.type() == QEvent.Type.ToolTip
+        click = event.type() == QEvent.Type.MouseButtonPress and event.button() == Qt.MouseButton.LeftButton
+        if not (tooltip or click):
             return False
-        position = event.position().toPoint()
+        position = event.pos() if tooltip else event.position().toPoint()
         item = self._view.itemAt(position)
         if item is None:
             return False
@@ -385,10 +388,17 @@ class _CardActionFilter(QObject):
         rect = self._view.visualItemRect(item).adjusted(1, 1, -1, -1)
         tag = CardDelegate.tag_at(card, rect, self._view.font(), position)
         if tag is not None:
-            self._on_tag(tag)
+            if tooltip:
+                QToolTip.showText(event.globalPos(), f"Add tag: {tag}", self._view.viewport())
+            else:
+                self._on_tag(tag)
             return True
         if card.downloadable and CardDelegate.button_rect(rect).contains(position):
-            self._on_download(card)
+            if tooltip:
+                action = "Download this version" if len(card.options) == 1 else "Choose versions to download"
+                QToolTip.showText(event.globalPos(), action, self._view.viewport())
+            else:
+                self._on_download(card)
             return True
         return False
 
@@ -473,7 +483,7 @@ class GalleryTab(QObject):
         self.cards: list[gallery.GalleryCard] = []
         self._cursor: str | None = None
         self._seen_cursors: set[str] = set()
-        self._has_more = False  # no listing until an explicit keyword search
+        self._has_more = False  # no listing until keywords or tags are explicitly submitted
         self._empty_batches = 0
         self._paused_empty = False
         self._generation = 0
@@ -597,7 +607,7 @@ class GalleryTab(QObject):
             log.warning("Browse Civitai inputs could not be saved; settings file left unchanged")
             self.form.gallerySearchEdit.setToolTip("Search settings could not be saved; see Logs.")
         else:
-            self.form.gallerySearchEdit.setToolTip("Type keywords and press Enter.")
+            self.form.gallerySearchEdit.setToolTip("Type keywords and press Enter, or filter by tags.")
 
     def _filters_changed(self, *_args) -> None:
         self._mark_preferences_changed()
@@ -634,7 +644,12 @@ class GalleryTab(QObject):
             return
         if values == self._selected_tags:
             return
+        adding = len(values) > len(self._selected_tags)
         self._selected_tags = values
+        if adding:
+            editor = self._tags.findChild(QComboBox)
+            if editor is not None and editor.lineEdit() is not None:
+                editor.lineEdit().clear()
         self._mark_preferences_changed()
         if self._loaded:
             self.search()
@@ -803,7 +818,7 @@ class GalleryTab(QObject):
             self.search()
         else:
             self._has_more = False
-            self.form.galleryStatus.setText("Press Enter to search Civitai.")
+            self.form.galleryStatus.setText("Press Enter or Search to browse Civitai.")
             # A running request cannot be cancelled, but its result must not replace new-query results.
             self._generation += 1
             self._busy(False)
@@ -882,6 +897,9 @@ class GalleryTab(QObject):
             self.cards.append(card)
             item = QListWidgetItem()
             item.setData(CARD_ROLE, card)
+            choice = "Download directly" if len(card.options) == 1 else "Choose download versions"
+            item.setData(Qt.ItemDataRole.AccessibleTextRole, f"{card.name}. {choice}. Tags: {', '.join(card.tags)}")
+            item.setToolTip(card.tooltip())
             item.setSizeHint(QSize(self._delegate.side, self._delegate.side))
             self._view.addItem(item)
         self._fit()
@@ -897,7 +915,9 @@ class GalleryTab(QObject):
         diagnostic_event(log, "gallery.listed", data={"count": len(result.cards), "total": count})
         self._empty_batches = 0 if result.cards else self._empty_batches + 1
         # Never spin forever over empty or filtered-out API pages without user input.
-        if self._empty_batches >= 3 and self._has_more:
+        # Give each active OR stream an opportunity before pausing sparse searches.
+        limit = max(3, self._search_session.source_count if self._search_session is not None else 3)
+        if self._empty_batches >= limit and self._has_more:
             self._paused_empty = True
             self.form.galleryContinueButton.setText("Search further")
             self.form.galleryContinueButton.show()
