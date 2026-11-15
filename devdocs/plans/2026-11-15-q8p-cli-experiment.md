@@ -1,5 +1,7 @@
 # Local q8p CLI experiment (#353)
 
+**Merge acceptance:** On 2026-11-16 the owner reported AC-4 passed and authorized squash merge of PR #470, following successful managed UI quantization and visibly improved CPU utilization. This is owner-reported acceptance for the tested workflow, not independent log verification, a measured scheduler speedup, all-family/GPU equivalence or exhaustive cancellation/packaged-Windows coverage. Earlier pending-AC-4 notes below describe prior evidence states and are superseded by this acceptance.
+
 ## Scope and decisions (initial CLI experiment)
 
 - Add `dtflow lora inspect`, `compare` and `quantize`; the writer requires explicit `-e/--experimental` and a separate new `.ckpt` output.

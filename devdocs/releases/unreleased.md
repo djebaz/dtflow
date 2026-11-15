@@ -1,5 +1,7 @@
 # Unreleased
 
+- Owner reported q8p AC-4 provider/effect/quality smoke passed on 2026-11-16 and approved PR #470 for merge. Managed UI quantization and improved CPU utilization were also owner-confirmed; scheduler speedup is not measured, and GPU/all-family equivalence and exhaustive cancellation/packaged coverage are not claimed. This supersedes older pending acceptance notes below.
+
 - Reduce potential CPU q8p scheduling gaps with bounded completion-driven prefetch and small-task batching, without doubling the selected processes. Serial CPU and notebook GPU paths are unchanged. Static checks only; no measured speedup or revised-run equivalence claim (#353, PR #470).
 
 - Keep Connection status always visible; make the other five Connection center-column sections collapsible and closed at startup, with a full-header click target and shared chevron. Section visibility does not stop work; Images keeps the shared Export panel expanded. Side panels are unchanged. Static checks only; native owner acceptance pending (PR #470).
