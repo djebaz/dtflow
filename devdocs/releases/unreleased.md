@@ -1,5 +1,7 @@
 # Unreleased
 
+- Downloads restores **Prepared** after restart from existing locally confirmed DT+ LoRA receipts matched to exact converted content on the selected credential. The corresponding row no longer offers Prepare, Retry or Remove once prepared. Switching cloud keys or backend refreshes the visible state without uploading or contacting DT+. This is a local receipt indication, not live cloud inventory verification; owner Windows restart/key-switch smoke remains outstanding (PR #477).
+
 - Browse Civitai now remembers keyword, sort, period and multi-selected LoRA families across restarts. The search input is focused when opening the Browse tab; restored search text does not trigger a network request until the user searches. Families use a checkbox dropdown and one OR-combined Civitai base-model request; 100-model cursor batches and continuous scrolling remain unchanged. Owner Windows smoke is outstanding (PR #477).
 
 - Downloads opens on the Browse Civitai tab and stays idle until a keyword search. Single-version models download directly; the selected-models table auto-checks sole choices and uses clickable rows with the standard checkbox design. SDXL is shown as supported without the old Experimental label.
