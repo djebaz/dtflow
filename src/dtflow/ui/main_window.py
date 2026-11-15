@@ -358,6 +358,7 @@ class MainWindow:
             open_prepare=self._prepare_downloaded,
         )
         self._downloads_line = False
+        self._downloads_chrome_active = False
         startup.mark("workspace: downloads mounted")
         form.workspaceStack.hide()
         startup.mark("workspace: legacy stack hidden")
@@ -1324,22 +1325,23 @@ class MainWindow:
             self.gallery_detail.galleryNavigationSlot.setVisible(images)
             if not images and self._gallery_previous_sizes:
                 shell.workspaceSplitter.setSizes(self._gallery_previous_sizes)
+        downloads = hasattr(self, "downloads") and self.form.workspaceStack.currentWidget() is self.downloads_marker
+        if hasattr(self, "downloads"):
+            self._place_downloads_chrome(downloads)
         # Workflows keeps its inspector (node settings, Retry, Continue/Stop) at every width; its Library toggle folds
         # the left panels instead, and the brand and navigation then sit in the Workflows header row.
         workflows = hasattr(self, "workflows") and self.form.workspaceStack.currentWidget() is self.workflows_marker
         folded = workflows and not self.workflows.library_open(narrow)
         if hasattr(self, "workflows"):
-            self._place_workflows_chrome(folded, moved_elsewhere=images or logs)
+            self._place_workflows_chrome(folded, moved_elsewhere=images or logs or downloads)
         # Logs and Images use the full-width center workspace, regardless of
         # whether the Images page changed during this navigation.
-        shell.leftRail.setVisible(not images and not logs and not folded)
+        shell.leftRail.setVisible(not images and not logs and not folded and not downloads)
         hint_open = self._prompt_hints.open if hasattr(self, "_prompt_hints") else False
         # The hint toggle can reveal the right rail at narrow widths, with Images still above it.
-        downloads = hasattr(self, "downloads") and self.form.workspaceStack.currentWidget() is self.downloads_marker
         shell.rightRail.setVisible(not images and not logs and not downloads and (workflows or not narrow or hint_open))
-        # Downloads has no inspector: the Images action moves to the compact slot, as at narrow widths.
         self._place_images_header(
-            images=images, logs=logs, narrow=downloads or (narrow and not workflows and not hint_open)
+            images=images, logs=logs, narrow=narrow and not workflows and not hint_open, downloads=downloads
         )
         if self._logs_form is not None:
             self._logs_form.logsBrandSlot.setVisible(logs)
@@ -1377,14 +1379,48 @@ class MainWindow:
             shell.brandFrame.show()
             shell.navigationFrame.show()
 
-    def _place_images_header(self, *, images, logs, narrow) -> None:
-        """One Images action above ordinary inspectors, never in Images or Logs."""
+    def _place_downloads_chrome(self, active: bool) -> None:
+        """Downloads is a full-width page: the brand and navigation sit in its header row, as in Logs and Images."""
+        shell, page = self.shell, self._downloads_form
+        slots = ((page.downloadsBrandSlot, shell.brandFrame), (page.downloadsNavigationSlot, shell.navigationFrame))
+        if active:
+            for slot, frame in slots:
+                if frame.parentWidget() is not slot:
+                    width = shell.leftRail.maximumWidth()
+                    if frame is shell.navigationFrame:
+                        width = max(width, frame.sizeHint().width())
+                    slot.setFixedSize(width, max(frame.height(), frame.sizeHint().height()))
+                    layout = slot.layout()
+                    if layout is None:
+                        layout = QHBoxLayout(slot)
+                        layout.setContentsMargins(0, 0, 0, 0)
+                    layout.addWidget(frame)
+                frame.show()
+        elif shell.brandFrame.parentWidget() is page.downloadsBrandSlot:
+            shell.leftRailLayout.insertWidget(0, shell.brandFrame)
+            shell.leftRailLayout.insertWidget(1, shell.navigationFrame)
+            shell.brandFrame.show()
+            shell.navigationFrame.show()
+        self._downloads_chrome_active = active
+
+    def _place_images_header(self, *, images, logs, narrow, downloads=False) -> None:
+        """One Images action above ordinary inspectors, never in Images or Logs; in the Downloads header row."""
         shell = self.shell
         visible = not images and not logs
-        shell.imagesHeaderHome.setVisible(visible and not narrow)
-        shell.compactImagesSlot.setVisible(visible and narrow)
+        shell.imagesHeaderHome.setVisible(visible and not narrow and not downloads)
+        shell.compactImagesSlot.setVisible(visible and narrow and not downloads)
         if not visible:
             self._images_header.hide()
+            return
+        if downloads:
+            slot = self._downloads_form.downloadsImagesSlot
+            if slot.layout() is None:
+                QHBoxLayout(slot).setContentsMargins(0, 0, 0, 0)
+            if self._images_header.parentWidget() is not slot:
+                slot.layout().addWidget(self._images_header)
+            self._images_header.setMinimumWidth(0)
+            self._images_header.setMaximumWidth(300)
+            self._images_header.show()
             return
         target = shell.compactImagesSlot if narrow else shell.imagesHeaderHome
         if self._images_header.parentWidget() is not target:

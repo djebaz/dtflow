@@ -20,11 +20,13 @@ from urllib.parse import quote, urljoin, urlsplit
 import httpx
 
 from dtflow.services import civitai
-from dtflow.services.lora_convert.registry import family_for_label, provider_labels
+from dtflow.services.lora_convert.registry import family_for_label, provider_labels, supported_families
 
 PAGE_SIZE = 24
 SORTS = ("Most Downloaded", "Highest Rated", "Newest")  # the values the API documents for ``sort``
+PERIODS = ("AllTime", "Year", "Month", "Week", "Day")  # the values the API documents for ``period``
 MAX_QUERY = 100
+MAX_VERSIONS = 12  # versions of one model offered on its card
 THUMB_WIDTH = 320
 MAX_THUMB_BYTES = 1024 * 1024
 MAX_THUMB_ENTRIES = 300
@@ -40,8 +42,22 @@ _THUMBS = threading.Semaphore(4)
 
 
 @dataclass(frozen=True, slots=True)
+class VersionOption:
+    """One downloadable version of a card's model."""
+
+    version: civitai.CivitaiVersion
+    family: str  # the converter family label
+
+    @property
+    def label(self) -> str:
+        size = self.version.file.size_bytes
+        text = f"{size / 1024**2:.0f} MB" if size else ""
+        return "  ·  ".join(part for part in (self.version.version_name or "Version", self.family, text) if part)
+
+
+@dataclass(frozen=True, slots=True)
 class GalleryCard:
-    """One model, shown by its newest version."""
+    """One model, shown by its newest supported version; ``options`` lists every supported version, newest first."""
 
     model_id: int
     version_id: int
@@ -62,6 +78,7 @@ class GalleryCard:
     cover_url: str | None
     version: civitai.CivitaiVersion | None  # None: not downloadable here, see ``problem``
     problem: str | None = None
+    options: tuple[VersionOption, ...] = ()
 
     @property
     def key(self) -> tuple[int, int | None]:
@@ -92,6 +109,8 @@ class GalleryCard:
             lines.append(f"👍 {self.thumbs_up or 0}   👎 {self.thumbs_down or 0}")
         if self.published:
             lines.append(f"Published {self.published}")
+        if len(self.options) > 1:
+            lines.append(f"{len(self.options)} supported versions: Download lets you choose.")
         if self.problem:
             lines.append(self.problem)
         return "\n".join(lines)
@@ -105,12 +124,32 @@ class GalleryPage:
     withheld_note: bool  # mature content looks withheld for this region
 
 
-def listing_query(query: str, sort: str, cursor: str | None, limit: int = PAGE_SIZE) -> str:
-    """The exact request: LoRA type only, supported base-model labels only, cursor paging."""
+def family_choices() -> tuple[tuple[str, str], ...]:
+    """(key, label) of every family that has Civitai labels, in file order, for the gallery's family filter."""
+    return tuple((spec.key, spec.label) for spec in supported_families() if spec.aliases.get("civitai"))
+
+
+def listing_query(
+    query: str,
+    sort: str,
+    cursor: str | None,
+    limit: int = PAGE_SIZE,
+    *,
+    family: str | None = None,
+    period: str | None = None,
+) -> str:
+    """The exact request: LoRA type only, supported base-model labels only (those of ``family`` when given), cursor
+    paging."""
     labels = provider_labels("civitai")
+    if family:
+        chosen = [spec for spec in supported_families() if spec.key == family]
+        if chosen and chosen[0].aliases.get("civitai"):
+            labels = tuple(chosen[0].aliases["civitai"])
     sort = sort if sort in SORTS else SORTS[0]
     parts = [("types", "LORA"), ("nsfw", "true"), ("primaryFileOnly", "true"), ("limit", str(max(1, min(limit, 100))))]
     parts.append(("sort", sort))
+    if period in PERIODS and period != PERIODS[0]:
+        parts.append(("period", period))
     parts.extend(("baseModels", label) for label in labels)
     text = " ".join((query or "").split())[:MAX_QUERY]
     if text:
@@ -149,32 +188,51 @@ def _stat(stats, key: str) -> int | None:
     return value if isinstance(value, int) and not isinstance(value, bool) and value >= 0 else None
 
 
-def _card(model: dict) -> GalleryCard | None:
-    """A card from one listing item, or None when it is not a supported LoRA with a usable newest version."""
+def _resolve(model: dict, version: dict, model_id: int, version_id: int) -> civitai.CivitaiVersion:
+    primary = [
+        f.get("id")
+        for f in version.get("files") or []
+        if isinstance(f, dict) and f.get("primary") is True and str(f.get("name", "")).lower().endswith(".safetensors")
+    ]
+    return civitai.normalise(model, version, model_id, version_id, primary[0] if len(primary) == 1 else None)
+
+
+def _card(model: dict, family: str | None = None) -> GalleryCard | None:
+    """A card from one listing item, or None when the model has no version of a supported family (of ``family`` when
+    given). The card shows the newest such version and offers every such version for download."""
     versions = [v for v in model.get("modelVersions") or [] if isinstance(v, dict)]
     model_id = model.get("id")
     if not versions or not isinstance(model_id, int) or model.get("type") != civitai.LORA_TYPE:
         return None
-    version = versions[0]
-    version_id = version.get("id")
-    spec = family_for_label("civitai", version.get("baseModel"))
-    if spec is None or not isinstance(version_id, int):
-        return None
+    shown: tuple[dict, int, object] | None = None
     problem = None
-    resolved: civitai.CivitaiVersion | None = None
-    try:
-        primary = [
-            f.get("id")
-            for f in version.get("files") or []
-            if isinstance(f, dict)
-            and f.get("primary") is True
-            and str(f.get("name", "")).lower().endswith(".safetensors")
-        ]
-        resolved = civitai.normalise(model, version, model_id, version_id, primary[0] if len(primary) == 1 else None)
-    except civitai.CivitaiChoice:
-        problem = "Several .safetensors files: open it on the Links / IDs tab to choose one."
-    except civitai.CivitaiError as exc:
-        problem = str(exc)
+    options: list[VersionOption] = []
+    for candidate in versions[:MAX_VERSIONS]:
+        candidate_id = candidate.get("id")
+        candidate_spec = family_for_label("civitai", candidate.get("baseModel"))
+        if candidate_spec is None or not isinstance(candidate_id, int):
+            continue
+        if family and candidate_spec.key != family:
+            continue
+        if shown is None:
+            shown = (candidate, candidate_id, candidate_spec)
+        label = candidate_spec.label + (" (experimental)" if candidate_spec.experimental else "")
+        try:
+            options.append(VersionOption(_resolve(model, candidate, model_id, candidate_id), label))
+        except civitai.CivitaiChoice:
+            problem = problem or "Several .safetensors files: open it on the Links / IDs tab to choose one."
+        except civitai.CivitaiError as exc:
+            problem = problem or str(exc)
+    if shown is None:
+        return None
+    version, version_id, spec = shown
+    if options:
+        problem = None
+        if options[0].version.version_id != version_id:  # the newest supported version has no usable file
+            version = next(v for v in versions if v.get("id") == options[0].version.version_id)
+            version_id = options[0].version.version_id
+            spec = family_for_label("civitai", version.get("baseModel"))
+    resolved = options[0].version if options else None
     cover, level = _cover(version)
     stats = version.get("stats")
     creator = model.get("creator")
@@ -204,16 +262,24 @@ def _card(model: dict) -> GalleryCard | None:
         cover_url=cover,
         version=resolved,
         problem=problem,
+        options=tuple(options),
     )
 
 
 def list_page(
-    client: httpx.Client, query: str = "", sort: str = SORTS[0], cursor: str | None = None, limit: int = PAGE_SIZE
+    client: httpx.Client,
+    query: str = "",
+    sort: str = SORTS[0],
+    cursor: str | None = None,
+    limit: int = PAGE_SIZE,
+    *,
+    family: str | None = None,
+    period: str | None = None,
 ) -> GalleryPage:
     """One page of the gallery (blocking). Raises ``CivitaiError`` with Civitai's own wording on failure."""
-    body = civitai.get_listing(client, listing_query(query, sort, cursor, limit))
+    body = civitai.get_listing(client, listing_query(query, sort, cursor, limit, family=family, period=period))
     items = [item for item in body.get("items") or [] if isinstance(item, dict)]
-    cards = tuple(card for card in (_card(item) for item in items) if card is not None)
+    cards = tuple(card for card in (_card(item, family) for item in items) if card is not None)
     meta = body.get("metadata")
     nxt = meta.get("nextCursor") if isinstance(meta, dict) else None
     # Mature content is requested on every call; Civitai ignores that in some regions. There is no flag for it, so a

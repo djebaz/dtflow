@@ -13,6 +13,7 @@ from collections.abc import Callable
 from pathlib import Path
 
 from PySide6.QtCore import QObject, Qt, QTimer, Signal
+from PySide6.QtGui import QIcon
 from PySide6.QtWidgets import (
     QHBoxLayout,
     QHeaderView,
@@ -93,8 +94,14 @@ class DownloadsPage(QObject):
         form.resolveButton.clicked.connect(self.resolve)
         form.downloadSelectedButton.clicked.connect(self.download_selected)
         form.downloadsCredentialsButton.clicked.connect(lambda: open_credentials())
+        form.downloadsTable.setVisible(False)  # the list is a toggle panel, closed until asked for
+        form.downloadsListToggle.toggled.connect(self._toggle_list)
+        self._toggle_list(False)
+        # The token chip sits at the right of the tab bar, as in the design.
+        form.downloadsTabs.setCornerWidget(form.downloadsTokenBar, Qt.Corner.TopRightCorner)
+        form.downloadsTokenBar.show()
         form.resolvedTable.itemChanged.connect(self._selection_changed)
-        self.gallery = GalleryTab(form, runner=runner, download=self._download_cards, state_of=self._card_state)
+        self.gallery = GalleryTab(form, runner=runner, download=self._download_versions, state_of=self._card_state)
         form.downloadsTabs.currentChanged.connect(self._tab_changed)
         self._configure(form.resolvedTable, {0: 30, 1: 200, 2: 180, 3: 70, 4: 140, 5: 150}, 6)
         self._configure(form.downloadsTable, {0: 220, 1: 150, 2: 130, 4: 270}, 3)
@@ -114,6 +121,31 @@ class DownloadsPage(QObject):
         table.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         for column, width in widths.items():
             table.setColumnWidth(column, width)
+
+    def _toggle_list(self, shown: bool) -> None:
+        images = Path(__file__).parents[1] / "resources" / "images"
+        name = "controls/chevron-down.svg" if shown else "gallery/chevron-right.svg"
+        toggle = self.form.downloadsListToggle
+        toggle.setIcon(QIcon(str(images / name)))
+        toggle.setAccessibleName("Hide downloads list" if shown else "Show downloads list")
+        self.form.downloadsTable.setVisible(shown)
+
+    def _summarise(self) -> None:
+        counts: dict[str, int] = {}
+        for item in self.items:
+            counts[item.state] = counts.get(item.state, 0) + 1
+        running = counts.get(engine.DOWNLOADING, 0) + counts.get(engine.CONVERTING, 0)
+        parts = [
+            (running, "running"),
+            (counts.get(engine.QUEUED, 0), "queued"),
+            (counts.get(engine.CONVERTED, 0), "converted"),
+            (counts.get(engine.NOT_CONVERTIBLE, 0) + counts.get(engine.INTERRUPTED, 0), "not converted"),
+            (counts.get(engine.FAILED, 0), "failed"),
+            (counts.get(engine.CANCELLED, 0), "cancelled"),
+        ]
+        text = ", ".join(f"{count} {label}" for count, label in parts if count) or "No downloads yet."
+        if self.form.downloadsListSummary.text() != text:
+            self.form.downloadsListSummary.setText(text)
 
     # ----------------------------------------------------------------------------------------------- page lifecycle
     def activate(self) -> None:
@@ -143,12 +175,18 @@ class DownloadsPage(QObject):
 
     def token_changed(self) -> None:
         state = self._token_state()
-        text = {
-            "present": "Civitai token: saved ✓",
-            "absent": "Civitai token: missing. Downloads need it.",
-            "unavailable": "Civitai token: secure storage unavailable",
-        }.get(state, "Civitai token: not checked")
-        self.form.downloadsTokenLabel.setText(text)
+        text, look = {
+            "present": ("Civitai token: saved \u2713", "ok"),
+            "absent": ("Civitai token: missing", "warning"),
+            "unavailable": ("Civitai token: secure storage unavailable", "warning"),
+        }.get(state, ("Civitai token: not checked", "neutral"))
+        label = self.form.downloadsTokenLabel
+        label.setText(text)
+        label.setToolTip("Downloads need a saved token." if look == "warning" else "")
+        if label.property("state") != look:
+            label.setProperty("state", look)
+            label.style().unpolish(label)
+            label.style().polish(label)
 
     def shutdown(self) -> None:
         for item in self.items:
@@ -281,9 +319,9 @@ class DownloadsPage(QObject):
     def download_selected(self) -> None:
         self._enqueue(self._selected_entries())
 
-    def _download_cards(self, cards: list[gallery_engine.GalleryCard]) -> int:
-        """Download from the gallery: the same path as Links / IDs, entered by a card's resolved version."""
-        return self._enqueue([engine.entry_for(card.version) for card in cards if card.version is not None])
+    def _download_versions(self, versions: list[civitai.CivitaiVersion]) -> int:
+        """Download from the gallery: the same path as Links / IDs, entered by a resolved version."""
+        return self._enqueue([engine.entry_for(version) for version in versions])
 
     def _card_state(self, card: gallery_engine.GalleryCard) -> str:
         """What the downloads list says about a card's file: empty when it can be downloaded."""
@@ -447,6 +485,7 @@ class DownloadsPage(QObject):
     def _render(self, *, force: bool = False) -> None:
         table = self.form.downloadsTable
         self.gallery.refresh_states()
+        self._summarise()
         signature = tuple((id(item), item.state, item.detail if force else "") for item in self.items)
         cloud = self._cloud_ready()
         signature += (cloud,)

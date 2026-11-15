@@ -12,12 +12,13 @@ import logging
 from collections.abc import Callable
 
 from PySide6.QtCore import QEvent, QObject, QRect, QSize, Qt, Signal
-from PySide6.QtGui import QColor, QFont, QFontMetrics, QImage, QPainter, QPen, QPixmap
+from PySide6.QtGui import QColor, QCursor, QFont, QFontMetrics, QImage, QPainter, QPen, QPixmap
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QListView,
     QListWidget,
     QListWidgetItem,
+    QMenu,
     QStyle,
     QStyledItemDelegate,
     QWidget,
@@ -67,8 +68,12 @@ class CardDelegate(QStyledItemDelegate):
         return QSize(CARD, CARD)
 
     @staticmethod
+    def check_rect(rect: QRect) -> QRect:
+        return QRect(rect.left() + 6, rect.top() + 6, 16, 16)
+
+    @staticmethod
     def button_rect(rect: QRect) -> QRect:
-        return QRect(rect.right() - 84, rect.bottom() - BAND - 30, 78, 24)
+        return QRect(rect.right() - 96, rect.bottom() - BAND - 30, 90, 24)
 
     def editorEvent(self, event, model, option, index) -> bool:  # noqa: N802
         card = index.data(CARD_ROLE)
@@ -117,7 +122,8 @@ class CardDelegate(QStyledItemDelegate):
         painter.setFont(small)
         painter.setPen(QColor("#b4bcc8"))
         by = f"by {card.creator}" if card.creator else ""
-        line = "  ·  ".join(part for part in (by, size_text(card.size_bytes)) if part)
+        several = f"{len(card.options)} versions" if len(card.options) > 1 else ""
+        line = "  ·  ".join(part for part in (by, size_text(card.size_bytes), several) if part)
         painter.drawText(
             QRect(inner.left(), inner.top() + 18, inner.width(), 16),
             Qt.AlignmentFlag.AlignVCenter,
@@ -136,7 +142,14 @@ class CardDelegate(QStyledItemDelegate):
             chips.append(card.base_model)
         for text in chips:
             y = self._chip(painter, text, rect.right() - 6, y, QColor(36, 99, 160, 230), right=True)
-        y = rect.top() + 6
+        box = self.check_rect(rect)
+        painter.setPen(QPen(QColor("#909090"), 1))
+        painter.setBrush(QColor(36, 99, 160) if selected else QColor(30, 30, 30, 217))
+        painter.drawRoundedRect(box, 2, 2)
+        if selected:
+            painter.setPen(QColor("#ffffff"))
+            painter.drawText(box, Qt.AlignmentFlag.AlignCenter, "\u2713")
+        y = box.bottom() + 6
         badge = card.nsfw_label
         if badge:
             y = self._chip(painter, badge, rect.left() + 6, y, QColor(150, 40, 40, 230), right=False)
@@ -150,7 +163,8 @@ class CardDelegate(QStyledItemDelegate):
             painter.setBrush(QColor(36, 99, 160, 235))
             painter.drawRoundedRect(action, 4, 4)
             painter.setPen(QColor("#ffffff"))
-            painter.drawText(action, Qt.AlignmentFlag.AlignCenter, "↓ Download")
+            several = len(card.options) > 1
+            painter.drawText(action, Qt.AlignmentFlag.AlignCenter, "↓ Download ▾" if several else "↓ Download")
         elif state or card.problem:
             text = state or "Unavailable"
             painter.setPen(Qt.PenStyle.NoPen)
@@ -166,11 +180,6 @@ class CardDelegate(QStyledItemDelegate):
             painter.setPen(QPen(option.palette.highlight().color().lighter(135), 3))
             painter.setBrush(Qt.BrushStyle.NoBrush)
             painter.drawRect(rect.adjusted(1, 1, -2, -2))
-            painter.setPen(QColor("#ffffff"))
-            painter.setBrush(QColor(36, 99, 160))
-            tick = QRect(rect.left() + 8, rect.bottom() - BAND - 30, 22, 22)
-            painter.drawEllipse(tick)
-            painter.drawText(tick, Qt.AlignmentFlag.AlignCenter, "✓")
         painter.restore()
 
     @staticmethod
@@ -196,7 +205,7 @@ class GalleryTab(QObject):
         form: QWidget,
         *,
         runner: AsyncRunner,
-        download: Callable[[list[gallery.GalleryCard]], int],
+        download: Callable[[list[civitai.CivitaiVersion]], int],
         state_of: Callable[[gallery.GalleryCard], str],
     ):
         super().__init__(form)
@@ -223,10 +232,19 @@ class GalleryTab(QObject):
         view.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         view.setMouseTracking(True)
         self._delegate = CardDelegate(view, self._pixmaps, state_of)
-        self._delegate.download_requested.connect(lambda card: self._download_cards([card]))
+        self._delegate.download_requested.connect(self._download_card)
         view.setItemDelegate(self._delegate)
         for sort in gallery.SORTS:
             form.gallerySortCombo.addItem(sort)
+        form.galleryFamilyCombo.addItem("All families", None)
+        for key, label in gallery.family_choices():
+            form.galleryFamilyCombo.addItem(label, key)
+        for period, label in zip(
+            gallery.PERIODS, ("All time", "This year", "This month", "This week", "Today"), strict=True
+        ):
+            form.galleryPeriodCombo.addItem(label, period)
+        form.galleryFamilyCombo.currentIndexChanged.connect(lambda _index: self.search())
+        form.galleryPeriodCombo.currentIndexChanged.connect(lambda _index: self.search())
         form.gallerySearchButton.clicked.connect(self.search)
         form.gallerySearchEdit.returnPressed.connect(self.search)
         form.gallerySortCombo.currentIndexChanged.connect(lambda _index: self.search())
@@ -286,6 +304,8 @@ class GalleryTab(QObject):
         generation = self._generation
         query = self.form.gallerySearchEdit.text()
         sort = self.form.gallerySortCombo.currentText()
+        family = self.form.galleryFamilyCombo.currentData()
+        period = self.form.galleryPeriodCombo.currentData()
         cursor = self._cursor
         self.form.galleryStatus.setText("Loading…")
         self.form.galleryMoreButton.setEnabled(False)
@@ -294,7 +314,7 @@ class GalleryTab(QObject):
             def blocking():
                 client = civitai.new_client()
                 try:
-                    return gallery.list_page(client, query, sort, cursor)
+                    return gallery.list_page(client, query, sort, cursor, family=family, period=period)
                 finally:
                     client.close()
 
@@ -313,11 +333,11 @@ class GalleryTab(QObject):
             self.form.galleryMoreButton.setEnabled(self._cursor is not None)
             return
         self._cursor = result.next_cursor
-        known = {card.version_id for card in self.cards}
+        known = {card.model_id for card in self.cards}
         for card in result.cards:
-            if card.version_id in known:
+            if card.model_id in known:
                 continue
-            known.add(card.version_id)
+            known.add(card.model_id)
             self.cards.append(card)
             item = QListWidgetItem()
             item.setData(CARD_ROLE, card)
@@ -389,15 +409,35 @@ class GalleryTab(QObject):
         button = self.form.galleryDownloadButton
         button.setText(f"Download selected ({len(ready)})" if ready else "Download selected")
         button.setEnabled(bool(ready) and not self._runner.closed)
-        button.setToolTip("Download, then convert automatically." if ready else "Click cards to select them.")
+        button.setToolTip(
+            "Download each selected card's shown version, then convert automatically."
+            if ready
+            else "Click cards to select them."
+        )
 
     def download_selected(self) -> None:
+        """Each selected card's shown version (its newest supported one)."""
         ready = [card for card in self._selected_cards() if card.downloadable and not self._state_of(card)]
         if ready:
-            self._download_cards(ready)
+            self._start([card.version for card in ready if card.version is not None])
             self._view.clearSelection()
 
-    def _download_cards(self, cards: list[gallery.GalleryCard]) -> None:
-        started = self._download(cards)
+    def _download_card(self, card: gallery.GalleryCard) -> None:
+        """A card's Download: directly with one supported version, otherwise after choosing one from a short list."""
+        if len(card.options) <= 1:
+            if card.version is not None:
+                self._start([card.version])
+            return
+        menu = QMenu(self._view)
+        for option in card.options:
+            action = menu.addAction(option.label)
+            action.setData(option)
+        chosen = menu.exec(QCursor.pos())
+        option = chosen.data() if chosen is not None else None
+        if isinstance(option, gallery.VersionOption):
+            self._start([option.version])
+
+    def _start(self, versions: list[civitai.CivitaiVersion]) -> None:
+        started = self._download(versions)
         diagnostic_event(log, "gallery.download", data={"count": started})
         self.refresh_states()
