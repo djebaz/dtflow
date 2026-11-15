@@ -589,6 +589,7 @@ class GalleryTab(QObject):
         tag_layout = QHBoxLayout(host)
         tag_layout.setContentsMargins(0, 0, 0, 0)
         self._tags = ValueChips(host)
+        self._tags.setObjectName("galleryTagValueChips")
         self._tags.configure(
             "text",
             "Tags",
