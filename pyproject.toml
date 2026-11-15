@@ -47,6 +47,9 @@ mask-poc = [
     "onnxruntime>=1.31.1,<2",
     "pillow>=13.0.0,<14",
 ]
+quantization = [
+    "kmeans1d==0.5.1",
+]
 
 [tool.uv]
 prerelease = "allow"
@@ -64,6 +67,9 @@ override-dependencies = ["numpy==2.3.5", "pillow>=13.0.0,<14"]
 [tool.ruff]
 line-length = 120
 target-version = "py313"
+# Markerized notebook source is a round-trip text format, not an executable module.
+# Lint/format the generated notebook's code cells instead.
+extend-exclude = ["tools/colab/dtflow_lora_q8p.py"]
 
 [tool.ruff.lint]
 select = ["E", "F", "B", "TID251"]

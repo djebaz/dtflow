@@ -25,8 +25,8 @@ Run in the repository root on the target Windows architecture:
 
 ```powershell
 git status --short
-uv sync --locked
-uv run --with pyinstaller==6.22.3 python tools/packaging/build_exe.py
+uv sync --locked --group quantization
+uv run --group quantization --with pyinstaller==6.22.3 python tools/packaging/build_exe.py
 ```
 
 ### Optional one-folder build (startup comparison)
@@ -34,7 +34,7 @@ uv run --with pyinstaller==6.22.3 python tools/packaging/build_exe.py
 The canonical builder also accepts `--onedir` for a folder-based distribution. The default remains `--onefile`; do not pass PyInstaller's mode flags directly to the builder.
 
 ```powershell
-uv run --with pyinstaller==6.22.3 python tools/packaging/build_exe.py --onedir
+uv run --group quantization --with pyinstaller==6.22.3 python tools/packaging/build_exe.py --onedir
 ```
 
 This produces a stamped folder under `dist/` containing `dtflow.exe` and its dependencies. Keep the **entire folder** when moving or testing it; do not distribute `dtflow.exe` alone. One-folder mode avoids the per-launch extraction of the one-file bootloader, but is not necessarily smaller on disk. The owner reports that the Windows one-folder build launched correctly and felt faster than the standalone one-file build; **no controlled timings or release acceptance have been recorded**. Compare the exact build identity and startup timings on the same machine before claiming a benchmark.
@@ -66,7 +66,7 @@ Launch options are `-nc/--no-cache`, `-x/--dev`, `-q/--logs DIR`, `-h/--help` an
 
 ## Packaging inputs and diagnostics
 
-The canonical input is `tools/packaging/launch_gui.py`, delegating to the desktop bootstrap and existing Qt application. Windows uses the windowed bootloader and the DTFlow icon. PyInstaller's PySide6 hooks collect native Qt libraries/plugins. Explicit package data includes canonical Designer forms, QSS/tokens, images and `drawthings-py` trust resources; keyring metadata and the Windows backend are included for secure storage. `--clean` avoids reusing stale analysis/identity inputs.
+The canonical input is `tools/packaging/launch_gui.py`, delegating to the desktop bootstrap and existing Qt application. Windows uses the windowed bootloader and the DTFlow icon. PyInstaller's PySide6 hooks collect native Qt libraries/plugins. Explicit package data includes canonical Designer forms, QSS/tokens, images and `drawthings-py` trust resources; the q8p action bundles `kmeans1d` (native module and distribution metadata) from the existing locked `quantization` group. The builder rejects an environment without this group rather than silently producing an unusable q8p action; keyring metadata and the Windows backend are included for secure storage. `--clean` avoids reusing stale analysis/identity inputs.
 
 Application state and outputs default to `%LOCALAPPDATA%\DTFlow\`; logs default to `%LOCALAPPDATA%\DTFlow\logs\`. Those paths are independent of the executable directory and current working directory. `-q/--logs` overrides diagnostics only; `-nc` does not remove durable state or outputs. See [runtime layout](../architecture/runtime-layout.md).
 
@@ -81,6 +81,7 @@ A successful build is not proof that the executable runs. Record the **exact art
 - About/status identity against the filename; per-user state, outputs and logs.
 - Credential Manager access and normal application startup/close, with no secret output.
 - Offline fake generation and queue interaction for packaged UI/resources; never silently submit a real workload for a packaging check.
+- Local q8p conversion from an F16 CKPT using multiple CPU workers in the **exact** packaged EXE. Check source preservation, separate output, size, progress, Cancel behavior and no cloud upload. This CPU-path smoke does not establish DT+ acceptance or rendered LoRA quality.
 
 This is a focused packaged-composition check, not a duplicate protocol/scheduler suite. Existing owner-reported source/live checks remain separate evidence. Any additional real generation/upload must be explicitly selected and authorized.
 

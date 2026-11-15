@@ -199,6 +199,9 @@ def parser() -> argparse.ArgumentParser:
     add_workflow_commands(commands)
     add_asset_commands(commands)
     add_gallery_commands(commands)
+    from dtflow.lora_cli import add_commands as add_lora_commands
+
+    add_lora_commands(commands)
     return command
 
 
@@ -922,6 +925,10 @@ def run_script_command(args: argparse.Namespace) -> int:
 
 
 async def run(args: argparse.Namespace) -> int:
+    if args.command == "lora":
+        from dtflow.lora_cli import run_command
+
+        return run_command(args)
     if args.command == "script":
         if args.run:
             from dtflow.scripting.run_cli import run_script_file
