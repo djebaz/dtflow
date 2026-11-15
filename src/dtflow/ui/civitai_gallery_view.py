@@ -29,6 +29,7 @@ from PySide6.QtGui import (
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QCheckBox,
+    QComboBox,
     QHBoxLayout,
     QHeaderView,
     QLabel,
@@ -467,6 +468,8 @@ class GalleryTab(QObject):
         saved_families = set(preferences.get("families", ()))
         self._selected_families = tuple(key for key, _label in self._family_choices if key in saved_families)
         self._family_popup: QMenu | None = None
+        self._selected_tags: tuple[str, ...] = tuple(preferences.get("tags", ()))
+        self._search_session: gallery.GallerySearch | None = None
         self.cards: list[gallery.GalleryCard] = []
         self._cursor: str | None = None
         self._seen_cursors: set[str] = set()
@@ -502,8 +505,9 @@ class GalleryTab(QObject):
         view.viewport().setAttribute(Qt.WidgetAttribute.WA_Hover, True)
         self._delegate = CardDelegate(view, self._pixmaps, state_of)
         self._delegate.download_requested.connect(self._download_card)
+        self._delegate.tag_requested.connect(self._add_tag)
         view.setItemDelegate(self._delegate)
-        self._card_action_filter = _CardActionFilter(view, self._download_card)
+        self._card_action_filter = _CardActionFilter(view, self._download_card, self._add_tag)
         view.viewport().installEventFilter(self._card_action_filter)
         self._spinner = _SpinningRing(view.viewport())
         self._spinner.hide()
@@ -527,6 +531,22 @@ class GalleryTab(QObject):
         form.galleryPeriodCombo.setCurrentIndex(max(0, period_index))
         form.gallerySearchEdit.setMaxLength(gallery.MAX_QUERY)
         form.gallerySearchEdit.setText(preferences.get("query", ""))
+        host = form.galleryTagChipsSlot
+        tag_layout = QHBoxLayout(host)
+        tag_layout.setContentsMargins(0, 0, 0, 0)
+        self._tags = ValueChips(host)
+        self._tags.configure(
+            "choice", "Tags", options=lambda: [],
+            label=lambda value: value if len(value) <= 24 else value[:23] + "…",
+        )
+        tag_editor = self._tags.findChild(QComboBox)
+        if tag_editor is not None and tag_editor.lineEdit() is not None:
+            tag_editor.lineEdit().setPlaceholderText("Add tag…")
+            tag_editor.lineEdit().setMaxLength(gallery.MAX_TAG_LENGTH)
+        self._tags.setText("; ".join(self._selected_tags))
+        tag_layout.addWidget(self._tags)
+        self._tags.textChanged.connect(self._tags_changed)
+        form.gallerySearchButton.clicked.connect(self.search)
         form.galleryPeriodCombo.currentIndexChanged.connect(self._filters_changed)
         form.gallerySearchEdit.returnPressed.connect(self.search)
         form.gallerySearchEdit.textChanged.connect(self._keyword_changed)
@@ -570,6 +590,7 @@ class GalleryTab(QObject):
                     "sort": self.form.gallerySortCombo.currentText(),
                     "period": self.form.galleryPeriodCombo.currentData(),
                     "families": list(self._selected_families),
+                    "tags": list(self._selected_tags),
                 },
             )
         except (SettingsError, OSError):
@@ -580,7 +601,42 @@ class GalleryTab(QObject):
 
     def _filters_changed(self, *_args) -> None:
         self._mark_preferences_changed()
-        if self._loaded and self.form.gallerySearchEdit.text().strip():
+        if self._loaded and (self.form.gallerySearchEdit.text().strip() or self._selected_tags):
+            self.search()
+
+    def _add_tag(self, value: str) -> None:
+        """Add a card's exact tag to the filter without selecting or downloading its model."""
+        tag = value.strip()
+        if not tag:
+            return
+        if any(existing.casefold() == tag.casefold() for existing in self._selected_tags):
+            self.form.galleryStatus.setText("That tag is already selected.")
+            return
+        if len(self._selected_tags) >= gallery.MAX_TAGS:
+            self.form.galleryStatus.setText(f"Select up to {gallery.MAX_TAGS} tags.")
+            return
+        self._tags.add_values(tag)
+
+    def _tags_changed(self) -> None:
+        """Normalize typed chips and refresh a running search only after a tag is applied."""
+        unique: dict[str, str] = {}
+        for value in self._tags.values():
+            tag = value.strip()[:gallery.MAX_TAG_LENGTH]
+            if tag:
+                unique.setdefault(tag.casefold(), tag)
+        values = tuple(unique.values())
+        if len(values) > gallery.MAX_TAGS:
+            self._tags.setText("; ".join(self._selected_tags))
+            self.form.galleryStatus.setText(f"Select up to {gallery.MAX_TAGS} tags.")
+            return
+        if values != self._tags.values():
+            self._tags.setText("; ".join(values))
+            return
+        if values == self._selected_tags:
+            return
+        self._selected_tags = values
+        self._mark_preferences_changed()
+        if self._loaded:
             self.search()
 
     def _update_family_summary(self) -> None:
@@ -679,9 +735,9 @@ class GalleryTab(QObject):
         if not self._loaded:
             self._loaded = True
             self.form.galleryStatus.setText(
-                "Press Enter to search Civitai."
-                if self.form.gallerySearchEdit.text().strip()
-                else "Enter keywords and press Enter to search Civitai."
+                "Press Enter or Search to browse Civitai."
+                if self.form.gallerySearchEdit.text().strip() or self._selected_tags
+                else "Enter keywords or add a tag to search Civitai."
             )
 
     def shutdown(self) -> None:
@@ -704,7 +760,7 @@ class GalleryTab(QObject):
 
     # ---------------------------------------------------------------------------------------- continuous listing
     def search(self) -> None:
-        """Start only an explicitly requested keyword search; preserve existing downloads."""
+        """Start an explicit keyword and/or tag search; preserve existing downloads."""
         if self._runner.closed:
             return
         if self._preferences_timer.isActive():
@@ -713,7 +769,12 @@ class GalleryTab(QObject):
         self._generation += 1
         self._cursor = None
         self._seen_cursors.clear()
-        self._has_more = True
+        self._search_session = gallery.GallerySearch(
+            self.form.gallerySearchEdit.text(), self._selected_tags,
+            self.form.gallerySortCombo.currentText(), self._selected_families,
+            self.form.galleryPeriodCombo.currentData(),
+        )
+        self._has_more = self._search_session.active
         self._empty_batches = 0
         self._paused_empty = False
         self.form.galleryContinueButton.setText("Search further")
@@ -728,10 +789,8 @@ class GalleryTab(QObject):
         self.form.galleryNote.hide()
         # Keep bounded cover caches across searches; no Civitai image is written to disk.
         self._busy(False)
-        if not self.form.gallerySearchEdit.text().strip():
-            self.form.galleryStatus.setText("Enter keywords and press Enter to search Civitai.")
-            self._loaded = True
-            self._has_more = False
+        if not self._has_more:
+            self.form.galleryStatus.setText("Enter keywords or add a tag to search Civitai.")
             return
         self._fetch()
 
@@ -764,14 +823,11 @@ class GalleryTab(QObject):
         """Fetch the next cursor batch. Only scrolling or an unfilled viewport advances."""
         if self._runner.closed or self._loading or not self._has_more:
             return
-        if not self.form.gallerySearchEdit.text().strip():
+        session = self._search_session
+        if session is None or not session.active:
             return
         self._busy(True)
         generation = self._generation
-        query = self.form.gallerySearchEdit.text()
-        sort = self.form.gallerySortCombo.currentText()
-        family = self._selected_families
-        period = self.form.galleryPeriodCombo.currentData()
         cursor = self._cursor
         self.form.galleryStatus.setText(
             f"{len(self.cards)} LoRAs loaded · Loading more…" if self.cards else "Loading Civitai LoRAs…"
@@ -781,7 +837,7 @@ class GalleryTab(QObject):
             def blocking():
                 client = civitai.new_client()
                 try:
-                    return gallery.list_page(client, query, sort, cursor, family=family, period=period)
+                    return session.next_page(client)
                 finally:
                     client.close()
 
