@@ -122,7 +122,9 @@ class CardDelegate(QStyledItemDelegate):
         x, limit = rect.left() + 8, rect.right() - 8
         pills: list[tuple[QRect, str]] = []
         for tag in card.tags:
-            if not tag or len(pills) == 3:
+            if not tag:
+                continue
+            if len(pills) == 3:
                 break
             width = min(90, metrics.horizontalAdvance(tag) + 14)
             if x + width > limit:
