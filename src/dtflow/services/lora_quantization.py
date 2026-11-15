@@ -13,6 +13,7 @@ import struct
 import tempfile
 import time
 from collections import Counter, deque
+from collections.abc import Callable
 from concurrent.futures import ProcessPoolExecutor
 from concurrent.futures.process import BrokenProcessPool
 from contextlib import AbstractContextManager, ExitStack, closing
@@ -30,6 +31,7 @@ from dtflow.services.lora_family import detect_lora_family
 from dtflow.services.lora_q8p_codec import (
     BLOCK,
     CODECS,
+    Q8P,
     QuantizationError,
     decode,
     encode,
@@ -266,6 +268,15 @@ class _Encoding:
     payload: bytearray
 
 
+@dataclass(frozen=True)
+class BlockBatchEncoder:
+    """Explicit in-process experiment seam; the shared writer retains file authority."""
+
+    batch_size: int
+    encode: Callable[[list[tuple[np.ndarray, bool]]], list[tuple[int, bytes]]]
+    metadata: dict
+
+
 def _encoding_tasks(source):
     for tensor in source.tensors:
         values = decode(source.payload(tensor), tensor.count, 0)
@@ -311,22 +322,60 @@ def _encoded_tensors(source, pool, workers, tick):
             future.cancel()
 
 
-def quantize_file(path: Path, output: Path, progress=None, jobs: int = 0, on_start=None) -> dict:
+def _batch_encoded_tensors(source, encoder, tick):
+    tasks = _encoding_tasks(source)
+    while batch := list(islice(tasks, encoder.batch_size)):
+        results = encoder.encode([(values, whole) for _, values, whole in batch])
+        if len(results) != len(batch):
+            raise QuantizationError("encoder_result", "Batch encoder returned an unexpected number of blocks.")
+        for (work, values, whole), (codec, payload) in zip(batch, results, strict=True):
+            if (
+                codec not in CODECS
+                or not isinstance(payload, bytes)
+                or (not whole and (codec != Q8P or len(payload) != 512 + len(values)))
+                or (whole and not 1 <= len(payload) <= len(values) * 2 + 4)
+            ):
+                raise QuantizationError("encoder_result", "Batch encoder returned an invalid block.")
+            work.payload.extend(payload)
+            work.remaining -= 1
+            tick()
+            if work.remaining == 0:
+                yield work.tensor, work.values, codec, bytes(work.payload)
+
+
+def quantize_file(
+    path: Path,
+    output: Path,
+    progress=None,
+    jobs: int = 0,
+    on_start=None,
+    batch_encoder: BlockBatchEncoder | None = None,
+) -> dict:
     started = time.monotonic()
     if type(jobs) is not int or jobs < 0:
         raise QuantizationError("workers", "Worker count must be non-negative; zero selects available CPUs.")
     detected_cpus = os.process_cpu_count() or 1
     workers = jobs or detected_cpus
+    if batch_encoder is not None:
+        if (
+            not isinstance(batch_encoder, BlockBatchEncoder)
+            or type(batch_encoder.batch_size) is not int
+            or not 1 <= batch_encoder.batch_size <= 16
+            or jobs not in (0, 1)
+        ):
+            raise QuantizationError("encoder", "Use 1..16 blocks per custom batch and no CPU worker pool.")
+        workers = 1
     if os.name == "nt":
         if jobs > 61:
             raise QuantizationError("workers", "Windows supports at most 61 encoder workers.")
         workers = min(workers, 61)
-    try:
-        import_module("kmeans1d")
-    except (ImportError, OSError) as exc:
-        raise QuantizationError(
-            "clustering_unavailable", "Install the optional quantization group: uv sync --group quantization."
-        ) from exc
+    if batch_encoder is None:
+        try:
+            import_module("kmeans1d")
+        except (ImportError, OSError) as exc:
+            raise QuantizationError(
+                "clustering_unavailable", "Install the optional quantization group: uv sync --group quantization."
+            ) from exc
     with ExitStack() as stack, Input(path) as source:
         destination = _destination(output, source.path)
         if source.family not in WRITER_FAMILIES or any(t.codec != 0 for t in source.tensors):
@@ -362,7 +411,12 @@ def quantize_file(path: Path, output: Path, progress=None, jobs: int = 0, on_sta
             with closing(sqlite3.connect(staged)) as db:
                 db.execute(TABLE)
                 db.execute("BEGIN")
-                for tensor, values, codec, payload in _encoded_tensors(source, pool, workers, tick):
+                encoded_tensors = (
+                    _batch_encoded_tensors(source, batch_encoder, tick)
+                    if batch_encoder is not None
+                    else _encoded_tensors(source, pool, workers, tick)
+                )
+                for tensor, values, codec, payload in encoded_tensors:
                     differences.add(values, decode(payload, tensor.count, codec))
                     db.execute(
                         "INSERT INTO tensors VALUES (?,?,?,?,?,?)",
@@ -399,9 +453,15 @@ def quantize_file(path: Path, output: Path, progress=None, jobs: int = 0, on_sta
                 "output": verified,
                 "codecs_written": dict(counts),
                 "clustering": {
-                    "library": "kmeans1d",
-                    "version": version("kmeans1d"),
-                    "ccv_bit_equivalence": "unverified",
+                    **(
+                        {**batch_encoder.metadata, "mode": "custom_batch", "ccv_bit_equivalence": "not_claimed"}
+                        if batch_encoder is not None
+                        else {
+                            "library": "kmeans1d",
+                            "version": version("kmeans1d"),
+                            "ccv_bit_equivalence": "unverified",
+                        }
+                    ),
                     "workers": workers,
                     "detected_cpus": detected_cpus,
                 },

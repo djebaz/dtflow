@@ -1,6 +1,6 @@
 # Auto-generated from notebook; keep markers for round-trip
 # Markers + docstring headers are required for ipynb reconstruction
-# NOTEBOOK_META_B64=eyJjb2xhYiI6eyJwcm92ZW5hbmNlIjpbXSwiY29sbGFwc2VkX3NlY3Rpb25zIjpbInE4cC1pbnRybyJdfSwia2VybmVsc3BlYyI6eyJuYW1lIjoicHl0aG9uMyIsImRpc3BsYXlfbmFtZSI6IlB5dGhvbiAzIiwibGFuZ3VhZ2UiOiJweXRob24ifSwibGFuZ3VhZ2VfaW5mbyI6eyJuYW1lIjoicHl0aG9uIn0sIm5iZm9ybWF0Ijo0LCJuYmZvcm1hdF9taW5vciI6NX0=
+# NOTEBOOK_META_B64=eyJjb2xhYiI6eyJwcm92ZW5hbmNlIjpbXSwiY29sbGFwc2VkX3NlY3Rpb25zIjpbInE4cC1pbnRybyJdfSwia2VybmVsc3BlYyI6eyJsYW5ndWFnZSI6InB5dGhvbiIsImRpc3BsYXlfbmFtZSI6IlB5dGhvbiAzIiwibmFtZSI6InB5dGhvbjMifSwibGFuZ3VhZ2VfaW5mbyI6eyJuYW1lIjoicHl0aG9uIn0sIm5iZm9ybWF0Ijo0LCJuYmZvcm1hdF9taW5vciI6NX0=
 
 # %% [markdown] cell=0 id=q8p-intro
 """MARKDOWN
@@ -263,14 +263,22 @@ import numpy as np
 import torch
 
 if not torch.cuda.is_available():
-    raise RuntimeError("CUDA PyTorch is unavailable. Select a GPU runtime with CUDA-enabled PyTorch; this cell will not install or replace it.")
-for value, maximum, label in ((gpu_sample_blocks, 256, "Sample blocks"), (gpu_batch_blocks, 16, "Batch blocks"), (gpu_max_iterations, 200, "Iterations")):
+    raise RuntimeError(
+        "CUDA PyTorch is unavailable. Select a GPU runtime with CUDA-enabled PyTorch; this cell will not install or replace it."
+    )
+for value, maximum, label in (
+    (gpu_sample_blocks, 256, "Sample blocks"),
+    (gpu_batch_blocks, 16, "Batch blocks"),
+    (gpu_max_iterations, 200, "Iterations"),
+):
     if type(value) is not int or not 1 <= value <= maximum:
         raise ValueError(f"{label} must be 1..{maximum}.")
 if not np.isfinite(gpu_tolerance) or not 0 < gpu_tolerance <= 0.01:
     raise ValueError("Tolerance must be finite and in (0, 0.01].")
 if "dtflow" in sys.modules and not Path(sys.modules["dtflow"].__file__).resolve().is_relative_to(CHECKOUT):
-    raise RuntimeError("A different DTFlow source bundle is already imported. Restart the runtime before comparing another revision.")
+    raise RuntimeError(
+        "A different DTFlow source bundle is already imported. Restart the runtime before comparing another revision."
+    )
 sys.path.insert(0, str(CHECKOUT / "src"))
 from dtflow.services.lora_convert.numeric import f32_to_f16_bits
 from dtflow.services.lora_q8p_codec import BLOCK, Q8P, decode
@@ -278,11 +286,15 @@ from dtflow.services.lora_quantization import Differences, Input, WRITER_FAMILIE
 
 
 @torch.inference_mode()
-def gpu_lloyd(values, iterations):
+def gpu_lloyd(values, iterations, tolerance=None):
     # In 1D, sorted-center midpoints allow nearest-center assignment without a B×N×256 distance matrix.
     ordered = values.sort(dim=1).values
-    positions = torch.linspace(0, values.shape[1] - 1, 256, device=values.device).long()
+    cluster_count = min(256, values.shape[1])
+    positions = torch.linspace(0, values.shape[1] - 1, cluster_count, device=values.device).long()
     centers = ordered[:, positions].contiguous()
+    if cluster_count == 1:
+        return centers, torch.zeros_like(values, dtype=torch.long), 1, True
+    threshold = gpu_tolerance if tolerance is None else tolerance
     converged = False
     for step in range(iterations):
         boundaries = ((centers[:, :-1] + centers[:, 1:]) * 0.5).contiguous()
@@ -292,7 +304,7 @@ def gpu_lloyd(values, iterations):
         updated = torch.where(counts > 0, sums / counts.clamp_min(1), centers).sort(dim=1).values
         shift = (updated - centers).abs().max().item()
         centers = updated
-        if shift <= gpu_tolerance:
+        if shift <= threshold:
             converged = True
             break
     labels = torch.searchsorted(((centers[:, :-1] + centers[:, 1:]) * 0.5).contiguous(), values)
@@ -300,8 +312,19 @@ def gpu_lloyd(values, iterations):
 
 
 gpu_device = torch.device("cuda:0")
-print("GPU:", torch.cuda.get_device_name(gpu_device), "| PyTorch:", torch.__version__, "| NumPy:", np.__version__, flush=True)
-print("Approximate FP32 Lloyd clustering; fixed quantile initialization, but CUDA reductions can vary. No full-file conversion or CPU speedup claim.", flush=True)
+print(
+    "GPU:",
+    torch.cuda.get_device_name(gpu_device),
+    "| PyTorch:",
+    torch.__version__,
+    "| NumPy:",
+    np.__version__,
+    flush=True,
+)
+print(
+    "Approximate FP32 Lloyd clustering; fixed quantile initialization, but CUDA reductions can vary. No full-file conversion or CPU speedup claim.",
+    flush=True,
+)
 gpu_wall_started = time.perf_counter()
 with ExitStack() as gpu_stack:
     gpu_source = gpu_stack.enter_context(Input(SOURCE))
@@ -316,14 +339,25 @@ with ExitStack() as gpu_stack:
             reference_origin = "cell-3 report matches input SHA; output SHA verified"
     gpu_reference = gpu_stack.enter_context(Input(Path(reference_path))) if reference_path else None
     if gpu_reference is not None:
-        if [(t.name, t.dim, t.format) for t in gpu_reference.tensors] != [(t.name, t.dim, t.format) for t in gpu_source.tensors]:
+        if [(t.name, t.dim, t.format) for t in gpu_reference.tensors] != [
+            (t.name, t.dim, t.format) for t in gpu_source.tensors
+        ]:
             raise ValueError("Reference tensor inventory does not match the F16 input.")
         if reference_origin.startswith("cell-3") and gpu_reference.sha256 != cpu_report.get("output", {}).get("sha256"):
             raise ValueError("Cell-3 output does not match its recorded SHA.")
-    candidates = [(i, offset) for i, tensor in enumerate(gpu_source.tensors) for offset in range(0, tensor.count - BLOCK + 1, BLOCK)]
+    candidates = [
+        (i, offset)
+        for i, tensor in enumerate(gpu_source.tensors)
+        for offset in range(0, tensor.count - BLOCK + 1, BLOCK)
+    ]
     if not candidates:
-        raise ValueError("No full 16,384-value block is available; partial blocks and ezm7 are outside this GPU sample experiment.")
-    selected = [candidates[int(i)] for i in np.linspace(0, len(candidates) - 1, min(gpu_sample_blocks, len(candidates)), dtype=int)]
+        raise ValueError(
+            "No full 16,384-value block is available; partial blocks and ezm7 are outside this GPU sample experiment."
+        )
+    selected = [
+        candidates[int(i)]
+        for i in np.linspace(0, len(candidates) - 1, min(gpu_sample_blocks, len(candidates)), dtype=int)
+    ]
     samples, reference_samples = [], []
     for index in sorted({i for i, _ in selected}):
         tensor = gpu_source.tensors[index]
@@ -369,32 +403,189 @@ with ExitStack() as gpu_stack:
                 gpu_reference_difference.add(reference, reconstructed)
                 cpu_reference_difference.add(original[offset], reference)
         del batch_values, centers, labels
-        print(f"GPU samples: {start + len(original)}/{len(gpu_samples)} blocks | measured pipeline {gpu_seconds:.3f} s", flush=True)
+        print(
+            f"GPU samples: {start + len(original)}/{len(gpu_samples)} blocks | measured pipeline {gpu_seconds:.3f} s",
+            flush=True,
+        )
     gpu_source.verify()
     if gpu_reference is not None:
         gpu_reference.verify()
     gpu_report = {
-        "schema": 1, "experiment": "q8p-gpu-samples-v1", "recorded_source_revision": REVISION,
-        "input": gpu_source.summary(), "sample_positions": selected,
+        "schema": 1,
+        "experiment": "q8p-gpu-samples-v1",
+        "recorded_source_revision": REVISION,
+        "input": gpu_source.summary(),
+        "sample_positions": selected,
         "algorithm": "approximate 1D Lloyd; FP32; quantile initialization; no normalization; CUDA atomic reductions",
-        "torch": str(torch.__version__), "numpy": np.__version__, "cuda": torch.version.cuda,
-        "device": torch.cuda.get_device_name(gpu_device), "sample_blocks": len(gpu_samples),
-        "batch_blocks": gpu_batch_blocks, "max_iterations": gpu_max_iterations, "tolerance": gpu_tolerance,
-        "source_loading_seconds": gpu_loading_seconds, "measured_pipeline_seconds": gpu_seconds,
-        "pipeline_seconds_per_block": gpu_seconds / len(gpu_samples), "batches": gpu_batches,
+        "torch": str(torch.__version__),
+        "numpy": np.__version__,
+        "cuda": torch.version.cuda,
+        "device": torch.cuda.get_device_name(gpu_device),
+        "sample_blocks": len(gpu_samples),
+        "batch_blocks": gpu_batch_blocks,
+        "max_iterations": gpu_max_iterations,
+        "tolerance": gpu_tolerance,
+        "source_loading_seconds": gpu_loading_seconds,
+        "measured_pipeline_seconds": gpu_seconds,
+        "pipeline_seconds_per_block": gpu_seconds / len(gpu_samples),
+        "batches": gpu_batches,
         "timing_scope": "warmed; includes host/device copies, clustering, palette truncation, packing and decode; excludes source I/O, warmup, comparisons, final verification, SQLite writing",
         "gpu_vs_f16": gpu_difference.summary(),
         "reference": gpu_reference.summary() if gpu_reference is not None else None,
         "reference_origin": reference_origin if gpu_reference is not None else "none",
         "gpu_vs_reference": gpu_reference_difference.summary() if gpu_reference is not None else None,
         "reference_vs_f16": cpu_reference_difference.summary() if gpu_reference is not None else None,
-        "whole_file_output_written": False, "quality_or_provider_acceptance": "not_established",
+        "whole_file_output_written": False,
+        "quality_or_provider_acceptance": "not_established",
     }
 gpu_report_dir = Path(tempfile.mkdtemp(prefix="q8p-gpu-samples-", dir="/content"))
 gpu_report_path = gpu_report_dir / "gpu-sample-report.json"
 gpu_report_path.write_text(json.dumps(gpu_report, indent=2, allow_nan=False) + "\n", encoding="utf-8")
 print(json.dumps(gpu_report, indent=2, allow_nan=False))
-print("Report:", gpu_report_path, "| No CKPT was written; do not compare sampled pipeline time directly to a full CPU conversion.")
+print(
+    "Report:",
+    gpu_report_path,
+    "| No CKPT was written; do not compare sampled pipeline time directly to a full CPU conversion.",
+)
 if gpu_download_report:
     from google.colab import files
+
     files.download(str(gpu_report_path))
+
+# %% [code] cell=5 id=q8p-gpu-full
+"""CELL: 5. Optional full GPU conversion (approximate; new CKPT + report)"""
+# @title 5. Optional full GPU conversion (approximate; new CKPT + report)
+# @markdown Run cells 1, 2 and 4 first. Uses installed PyTorch/NumPy only. This changes the clustering algorithm, not the q8p layout. Does not overwrite the CPU/iOS file.
+gpu_full_batch_blocks = 8  # @param {type:"integer"}
+gpu_full_max_iterations = 100  # @param {type:"integer"}
+gpu_full_tolerance = 0.000001  # @param {type:"number"}
+gpu_full_download = True  # @param {type:"boolean"}
+
+if "gpu_lloyd" not in globals():
+    raise RuntimeError("Run the GPU sample cell 4 first to define the GPU encoder.")
+if not torch.cuda.is_available():
+    raise RuntimeError("A CUDA-enabled PyTorch runtime is required; nothing will be installed.")
+if type(gpu_full_batch_blocks) is not int or not 1 <= gpu_full_batch_blocks <= 16:
+    raise ValueError("GPU full batch blocks must be 1..16.")
+if type(gpu_full_max_iterations) is not int or not 1 <= gpu_full_max_iterations <= 200:
+    raise ValueError("GPU full iterations must be 1..200.")
+if not np.isfinite(gpu_full_tolerance) or not 0 < gpu_full_tolerance <= 0.01:
+    raise ValueError("GPU full tolerance must be finite and in (0, 0.01].")
+
+from dtflow.services.lora_q8p_codec import encode
+from dtflow.services.lora_quantization import BlockBatchEncoder, compare_files, quantize_file
+
+gpu_full_metadata = {
+    "library": "installed-pytorch",
+    "version": str(torch.__version__),
+    "numpy": np.__version__,
+    "algorithm": "approximate 1D Lloyd; FP32; quantile initialization; CUDA atomic reductions",
+    "device": torch.cuda.get_device_name(gpu_device),
+    "cuda": torch.version.cuda,
+    "batch_blocks": gpu_full_batch_blocks,
+    "max_iterations": gpu_full_max_iterations,
+    "tolerance": gpu_full_tolerance,
+    "gpu_batches": 0,
+    "nonconverged_batches": 0,
+    "encode_pipeline_seconds": 0.0,
+    "worker_role": "CPU orchestrator; batched CUDA clustering",
+}
+
+
+def full_gpu_encode(chunks):
+    encoded = [None] * len(chunks)
+    groups = {}
+    for index, (values, whole_tensor) in enumerate(chunks):
+        if whole_tensor:
+            # The shared small-tensor ezm7/raw fallback needs no kmeans1d import.
+            encoded[index] = encode(values, lambda: None)
+        else:
+            groups.setdefault(len(values), []).append(index)
+    for length, indices in groups.items():
+        torch.cuda.synchronize(gpu_device)
+        started = time.perf_counter()
+        try:
+            values = np.stack([chunks[index][0] for index in indices]).astype(np.float32)
+            batch_values = torch.from_numpy(values).to(gpu_device)
+            centers, labels, _, converged = gpu_lloyd(batch_values, gpu_full_max_iterations, gpu_full_tolerance)
+            center_values = centers.cpu().numpy()
+            label_values = labels.cpu().numpy().astype("u1")
+            for row, index in enumerate(indices):
+                palette = np.zeros(256, dtype="<u2")
+                palette[: len(center_values[row])] = f32_to_f16_bits(center_values[row])
+                encoded[index] = (Q8P, palette.tobytes() + label_values[row].tobytes())
+            torch.cuda.synchronize(gpu_device)
+        except torch.cuda.OutOfMemoryError:
+            raise RuntimeError(
+                "GPU memory exhausted. Reduce gpu_full_batch_blocks and retry with a new output."
+            ) from None
+        gpu_full_metadata["gpu_batches"] += 1
+        gpu_full_metadata["nonconverged_batches"] += int(not converged)
+        gpu_full_metadata["encode_pipeline_seconds"] += time.perf_counter() - started
+    return encoded
+
+
+def gpu_full_duration(seconds):
+    minutes, seconds = divmod(max(0, int(seconds)), 60)
+    hours, minutes = divmod(minutes, 60)
+    return f"{hours}:{minutes:02d}:{seconds:02d}"
+
+
+gpu_full_started = time.monotonic()
+gpu_full_previous = 0.0
+
+
+def gpu_full_progress(done, total):
+    global gpu_full_previous
+    now = time.monotonic()
+    if done == 0 or done == total or now - gpu_full_previous >= 1:
+        elapsed = now - gpu_full_started
+        eta = gpu_full_duration(elapsed / done * (total - done)) if done else "--"
+        print(f"GPU conversion: {done}/{total} blocks | elapsed {gpu_full_duration(elapsed)} | ETA ~{eta}", flush=True)
+        gpu_full_previous = now
+
+
+gpu_full_dir = Path(tempfile.mkdtemp(prefix="q8p-gpu-output-", dir="/content"))
+GPU_OUTPUT = gpu_full_dir / (SOURCE.stem.removesuffix("_f16") + "_q8p_gpu.ckpt")
+GPU_REPORT = GPU_OUTPUT.with_suffix(".report.json")
+print("Approximate GPU conversion. Final decoded error is measured against F16; DT+ quality is unverified.", flush=True)
+gpu_full_result = quantize_file(
+    SOURCE,
+    GPU_OUTPUT,
+    gpu_full_progress,
+    jobs=1,
+    on_start=lambda cpus, workers: print(
+        f"CPUs detected: {cpus} | CPU writer: {workers} | GPU: {gpu_full_metadata['device']} | batch: {gpu_full_batch_blocks}",
+        flush=True,
+    ),
+    batch_encoder=BlockBatchEncoder(gpu_full_batch_blocks, full_gpu_encode, gpu_full_metadata),
+)
+gpu_full_result["recorded_revision"] = REVISION
+gpu_full_result["whole_file_output_written"] = True
+GPU_REPORT.write_text(json.dumps(gpu_full_result, indent=2, allow_nan=False) + "\n", encoding="utf-8")
+print("Output:", GPU_OUTPUT)
+print(
+    f"Size: {gpu_full_result['input']['file_bytes'] / 1_000_000:.2f} → {gpu_full_result['output']['file_bytes'] / 1_000_000:.2f} MB | elapsed: {gpu_full_result['seconds']} s"
+)
+print(
+    "Codecs:", gpu_full_result["codecs_written"], "| batches not converged:", gpu_full_metadata["nonconverged_batches"]
+)
+print(
+    "Report:",
+    GPU_REPORT,
+    "| Reopened/decoded and published without overwriting; this is not optimal/iOS-equivalent clustering.",
+)
+if gpu_full_download:
+    from google.colab import files
+
+    files.download(str(GPU_OUTPUT))
+    files.download(str(GPU_REPORT))
+# Optional full-reference comparison happens AFTER retaining the validated GPU output/report.
+if gpu_reference_path.strip():
+    GPU_COMPARISON = GPU_OUTPUT.with_suffix(".reference-comparison.json")
+    comparison = compare_files(GPU_OUTPUT, Path(gpu_reference_path.strip()))
+    comparison["recorded_revision"] = REVISION
+    GPU_COMPARISON.write_text(json.dumps(comparison, indent=2, allow_nan=False) + "\n", encoding="utf-8")
+    print("GPU versus owner-selected CPU/iOS reference:", comparison["numerical_difference"])
+    if gpu_full_download:
+        files.download(str(GPU_COMPARISON))
