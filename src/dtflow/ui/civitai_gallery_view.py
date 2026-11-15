@@ -27,7 +27,6 @@ from PySide6.QtGui import (
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QCheckBox,
-    QHBoxLayout,
     QHeaderView,
     QLabel,
     QListView,
@@ -291,6 +290,29 @@ class _Resized(QObject):
         return False
 
 
+class _CardActionFilter(QObject):
+    """Consume a direct Download click before QListWidget can change card selection."""
+
+    def __init__(self, view: QListWidget, on_download: Callable[[gallery.GalleryCard], None]):
+        super().__init__(view.viewport())
+        self._view = view
+        self._on_download = on_download
+
+    def eventFilter(self, _watched, event) -> bool:  # noqa: N802
+        if event.type() != QEvent.Type.MouseButtonPress or event.button() != Qt.MouseButton.LeftButton:
+            return False
+        position = event.position().toPoint()
+        item = self._view.itemAt(position)
+        if item is None:
+            return False
+        card = item.data(CARD_ROLE)
+        rect = self._view.visualItemRect(item).adjusted(1, 1, -1, -1)
+        if isinstance(card, gallery.GalleryCard) and card.downloadable and CardDelegate.button_rect(rect).contains(position):
+            self._on_download(card)
+            return True
+        return False
+
+
 class GalleryTab(QObject):
     """Continuous-scroll Civitai model gallery and explicit version/file selection."""
 
@@ -339,6 +361,8 @@ class GalleryTab(QObject):
         self._delegate = CardDelegate(view, self._pixmaps, state_of)
         self._delegate.download_requested.connect(self._download_card)
         view.setItemDelegate(self._delegate)
+        self._card_action_filter = _CardActionFilter(view, self._download_card)
+        view.viewport().installEventFilter(self._card_action_filter)
         self._spinner = _SpinningRing(view.viewport())
         self._spinner.hide()
         self._resized = _Resized(self._fit, view)
@@ -540,8 +564,7 @@ class GalleryTab(QObject):
         view = self._view
         cell = max(1, self._delegate.side + GAP)
         columns = max(1, view.viewport().width() // cell)
-        item = view.itemAt(QPoint(12, 12))
-        start = view.row(item) if item is not None else 0
+        start = min(count - 1, max(0, (view.verticalScrollBar().value() // cell) * columns))
         first = max(0, start - columns)
         rows_visible = max(1, view.viewport().height() // cell + 3)
         last = min(count, start + rows_visible * columns)
@@ -704,6 +727,7 @@ class GalleryTab(QObject):
         scroll.setWidgetResizable(True)
         scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         scroll.setMaximumHeight(300)
+        scroll.setMinimumHeight(min(280, max(70, len(card.options) * 55)))
         rows_panel = QWidget(scroll)
         rows = QVBoxLayout(rows_panel)
         rows.setContentsMargins(2, 2, 2, 2)
@@ -722,7 +746,7 @@ class GalleryTab(QObject):
                 f"{option.family} · ID {v.version_id} · {v.file.name}" + (f" · {state}" if state else ""), rows_panel
             )
             detail.setWordWrap(True)
-            detail.setStyleSheet("color: #b2b2b2")
+            detail.setProperty("role", "secondary")
             rows.addWidget(detail)
             boxes.append((box, option))
         rows.addStretch()
