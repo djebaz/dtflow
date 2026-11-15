@@ -27,7 +27,7 @@
     </layout>
    </widget></item>
    <item><widget class="QTabWidget" name="downloadsTabs">
-    <property name="currentIndex"><number>0</number></property>
+    <property name="currentIndex"><number>1</number></property>
     <widget class="QWidget" name="linksTab">
      <attribute name="title"><string>Links / IDs</string></attribute>
      <layout class="QVBoxLayout" name="linksLayout">
@@ -85,6 +85,10 @@
        </widget></item>
        <item><spacer name="downloadSpacer"><property name="orientation"><enum>Qt::Horizontal</enum></property>
         <property name="sizeHint" stdset="0"><size><width>20</width><height>20</height></size></property></spacer></item>
+       <item><widget class="QCheckBox" name="linksAutoPrepareCheck">
+        <property name="text"><string>Auto-prepare after conversion</string></property>
+        <property name="toolTip"><string>Automatically prepare successfully converted downloads on the selected DT+ Cloud account. No generation credits are used. Other backends are never switched automatically.</string></property>
+       </widget></item>
       </layout></item>
      </layout>
     </widget>
@@ -177,6 +181,10 @@
        </widget></item>
        <item><spacer name="galleryActionSpacer"><property name="orientation"><enum>Qt::Horizontal</enum></property>
         <property name="sizeHint" stdset="0"><size><width>20</width><height>20</height></size></property></spacer></item>
+       <item><widget class="QCheckBox" name="galleryAutoPrepareCheck">
+        <property name="text"><string>Auto-prepare after conversion</string></property>
+        <property name="toolTip"><string>Automatically prepare successfully converted downloads on the selected DT+ Cloud account. No generation credits are used. Other backends are never switched automatically.</string></property>
+       </widget></item>
 
       </layout></item>
      </layout>
