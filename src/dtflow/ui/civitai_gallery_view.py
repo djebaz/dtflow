@@ -909,10 +909,12 @@ class GalleryTab(QObject):
         self._has_more = bool(new_cursor and new_cursor not in self._seen_cursors and new_cursor != cursor)
         self._cursor = new_cursor if self._has_more else None
         existing = {card.model_id for card in self.cards}
+        added = 0
         for card in result.cards:
             if card.model_id in existing:
                 continue
             existing.add(card.model_id)
+            added += 1
             self.cards.append(card)
             item = QListWidgetItem()
             item.setData(CARD_ROLE, card)
@@ -932,7 +934,7 @@ class GalleryTab(QObject):
         suffix = " · Scroll for more" if self._has_more else " · End of results"
         self.form.galleryStatus.setText(f"{count} LoRAs loaded{suffix}" if count else "No supported LoRAs matched.")
         diagnostic_event(log, "gallery.listed", data={"count": len(result.cards), "total": count})
-        self._empty_batches = 0 if result.cards else self._empty_batches + 1
+        self._empty_batches = 0 if added else self._empty_batches + 1
         # Never spin forever over empty or filtered-out API pages without user input.
         # Give each active OR stream an opportunity before pausing sparse searches.
         limit = max(3, self._search_session.source_count if self._search_session is not None else 3)
