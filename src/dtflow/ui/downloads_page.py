@@ -17,7 +17,6 @@ from PySide6.QtGui import QColor, QIcon
 from PySide6.QtWidgets import (
     QHBoxLayout,
     QHeaderView,
-    QCheckBox,
     QLabel,
     QProgressBar,
     QPushButton,
@@ -28,7 +27,9 @@ from PySide6.QtWidgets import (
 
 from dtflow.diagnostics import event as diagnostic_event
 from dtflow.persistence.settings import (
-    SettingsError, load_downloads_auto_prepare, save_downloads_auto_prepare,
+    SettingsError,
+    load_downloads_auto_prepare,
+    save_downloads_auto_prepare,
 )
 from dtflow.services.lora_naming import LoraPrepareMetadata
 from dtflow.services import civitai
@@ -123,8 +124,11 @@ class DownloadsPage(QObject):
         form.downloadsTokenBar.show()
         form.resolvedTable.itemChanged.connect(self._selection_changed)
         self.gallery = GalleryTab(
-            form, runner=runner, download=self._download_versions,
-            state_of=self._card_state, version_state=self._version_state,
+            form,
+            runner=runner,
+            download=self._download_versions,
+            state_of=self._card_state,
+            version_state=self._version_state,
             state_dir=self._state,
         )
         form.downloadsTabs.currentChanged.connect(self._tab_changed)
@@ -379,8 +383,10 @@ class DownloadsPage(QObject):
             if item.version_id != version.version_id or item.key[1] not in (None, version.file.id):
                 continue
             if item.active:
-                return "Queued" if item.state == engine.QUEUED else (
-                    "Converting" if item.state == engine.CONVERTING else "Downloading"
+                return (
+                    "Queued"
+                    if item.state == engine.QUEUED
+                    else ("Converting" if item.state == engine.CONVERTING else "Downloading")
                 )
             return {
                 engine.CONVERTED: "In your LoRAs",
@@ -672,8 +678,10 @@ class DownloadsPage(QObject):
                 name.setToolTip(item.name)
                 table.setItem(row, 0, name)
                 label = (
-                    "Preparing" if item.auto_prepare_phase == "preparing"
-                    else "Prepared" if item.auto_prepare_phase == "prepared"
+                    "Preparing"
+                    if item.auto_prepare_phase == "preparing"
+                    else "Prepared"
+                    if item.auto_prepare_phase == "prepared"
                     else STATE_TEXT[item.state]
                 )
                 state = QTableWidgetItem(label)
@@ -722,7 +730,8 @@ class DownloadsPage(QObject):
                     "Automatic preparation is running for this file."
                     if item.auto_prepare_phase == "preparing"
                     else "Open the Prepare editor with this file."
-                    if cloud else engine.PREPARE_NEEDS_CLOUD
+                    if cloud
+                    else engine.PREPARE_NEEDS_CLOUD
                 ),
                 role="primary" if cloud else None,
             )

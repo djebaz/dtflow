@@ -205,7 +205,11 @@ class CardDelegate(QStyledItemDelegate):
             painter.setBrush(QColor(21, 21, 21, 199))
             painter.drawRoundedRect(pill, 3, 3)
             painter.setPen(TEXT)
-            painter.drawText(pill, Qt.AlignmentFlag.AlignCenter, QFontMetrics(small).elidedText(label, Qt.TextElideMode.ElideRight, width - 8))
+            painter.drawText(
+                pill,
+                Qt.AlignmentFlag.AlignCenter,
+                QFontMetrics(small).elidedText(label, Qt.TextElideMode.ElideRight, width - 8),
+            )
         if hovered and card.downloadable:
             action = self.button_rect(rect)
             painter.setPen(QPen(ACCENT_HOVER, 1))
@@ -213,7 +217,8 @@ class CardDelegate(QStyledItemDelegate):
             painter.drawRoundedRect(action, 3, 3)
             painter.setPen(QColor("#ffffff"))
             painter.drawText(
-                action, Qt.AlignmentFlag.AlignCenter,
+                action,
+                Qt.AlignmentFlag.AlignCenter,
                 "Download" if len(card.options) == 1 else "Download ▾",
             )
         painter.setClipping(False)
@@ -313,7 +318,11 @@ class _CardActionFilter(QObject):
             return False
         card = item.data(CARD_ROLE)
         rect = self._view.visualItemRect(item).adjusted(1, 1, -1, -1)
-        if isinstance(card, gallery.GalleryCard) and card.downloadable and CardDelegate.button_rect(rect).contains(position):
+        if (
+            isinstance(card, gallery.GalleryCard)
+            and card.downloadable
+            and CardDelegate.button_rect(rect).contains(position)
+        ):
             self._on_download(card)
             return True
         return False
@@ -352,7 +361,10 @@ class _FamilyComboFilter(QObject):
             self._show()
             return True
         if event.type() == QEvent.Type.KeyPress and event.key() in (
-            Qt.Key.Key_Space, Qt.Key.Key_Return, Qt.Key.Key_Enter, Qt.Key.Key_Down
+            Qt.Key.Key_Space,
+            Qt.Key.Key_Return,
+            Qt.Key.Key_Enter,
+            Qt.Key.Key_Down,
         ):
             self._show()
             return True
@@ -538,6 +550,7 @@ class GalleryTab(QObject):
 
         def reset() -> None:
             self._set_families(())
+
         menu.addAction("All families", reset)
         menu.addSeparator()
         panel = QWidget(menu)
@@ -552,9 +565,9 @@ class GalleryTab(QObject):
             checkbox.toggled.connect(
                 lambda checked, family_key=key: self._set_families(
                     tuple(
-                        k for k, _name in self._family_choices
-                        if (k == family_key and checked)
-                        or (k != family_key and k in self._selected_families)
+                        k
+                        for k, _name in self._family_choices
+                        if (k == family_key and checked) or (k != family_key and k in self._selected_families)
                     )
                 )
             )
@@ -569,6 +582,7 @@ class GalleryTab(QObject):
                 # One Civitai request after the user finishes multiple checkbox changes.
                 self._filters_changed()
             menu.deleteLater()
+
         menu.aboutToHide.connect(closed)
         menu.popup(combo.mapToGlobal(QPoint(0, combo.height())))
         QTimer.singleShot(0, lambda: panel.findChild(QCheckBox).setFocus() if self._family_popup is menu else None)
@@ -601,7 +615,8 @@ class GalleryTab(QObject):
         if not self._loaded:
             self._loaded = True
             self.form.galleryStatus.setText(
-                "Press Enter to search Civitai." if self.form.gallerySearchEdit.text().strip()
+                "Press Enter to search Civitai."
+                if self.form.gallerySearchEdit.text().strip()
                 else "Enter keywords and press Enter to search Civitai."
             )
 
@@ -766,9 +781,7 @@ class GalleryTab(QObject):
             self._paused_empty = True
             self.form.galleryContinueButton.setText("Search further")
             self.form.galleryContinueButton.show()
-            self.form.galleryStatus.setText(
-                f"{count} LoRAs loaded. No new supported models in recent Civitai batches."
-            )
+            self.form.galleryStatus.setText(f"{count} LoRAs loaded. No new supported models in recent Civitai batches.")
         self._selection_changed()
         QTimer.singleShot(0, self._maybe_more)
 
@@ -832,7 +845,9 @@ class GalleryTab(QObject):
             if image.isNull():
                 return
             scaled = image.scaled(
-                SOURCE, SOURCE, Qt.AspectRatioMode.KeepAspectRatioByExpanding,
+                SOURCE,
+                SOURCE,
+                Qt.AspectRatioMode.KeepAspectRatioByExpanding,
                 Qt.TransformationMode.SmoothTransformation,
             )
             crop = scaled.copy((scaled.width() - SOURCE) // 2, (scaled.height() - SOURCE) // 2, SOURCE, SOURCE)
@@ -847,7 +862,8 @@ class GalleryTab(QObject):
     # ------------------------------------------------------------------------------------------- bulk selection
     def _selected_cards(self) -> list[gallery.GalleryCard]:
         return [
-            card for item in self._view.selectedItems()
+            card
+            for item in self._view.selectedItems()
             if isinstance((card := item.data(CARD_ROLE)), gallery.GalleryCard)
         ]
 
@@ -860,7 +876,7 @@ class GalleryTab(QObject):
         for card in cards:
             if len(card.options) == 1 and card.model_id not in self._previous_selected_models:
                 option = card.options[0]
-                if not self._version_state(option.version) in ("Queued", "Downloading", "Converting", "In your LoRAs"):
+                if self._version_state(option.version) not in ("Queued", "Downloading", "Converting", "In your LoRAs"):
                     self._bulk_selected.add(option.key)
             for option in card.options:
                 if option.key not in seen:
@@ -883,9 +899,7 @@ class GalleryTab(QObject):
                 checkbox.setToolTip(f"Civitai version {version.version_id} · {option.family} · file {version.file.id}")
                 checkbox.setEnabled(available)
                 checkbox.setChecked(available and option.key in self._bulk_selected)
-                checkbox.toggled.connect(
-                    lambda checked, key=option.key: self._set_bulk_checked(key, checked)
-                )
+                checkbox.toggled.connect(lambda checked, key=option.key: self._set_bulk_checked(key, checked))
                 table.setCellWidget(row, 0, _BulkCheckboxCell(checkbox, table))
                 cells = (
                     f"{card.name} · {version.version_name or 'Version'}",
@@ -923,7 +937,8 @@ class GalleryTab(QObject):
 
     def _select_all_versions(self) -> None:
         self._bulk_selected = {
-            option.key for _card, option in self._bulk_rows
+            option.key
+            for _card, option in self._bulk_rows
             if self._version_state(option.version) not in ("Queued", "Downloading", "Converting", "In your LoRAs")
         }
         self._selection_changed()
@@ -934,7 +949,8 @@ class GalleryTab(QObject):
 
     def _bulk_buttons(self) -> None:
         ready = [
-            option for _card, option in self._bulk_rows
+            option
+            for _card, option in self._bulk_rows
             if option.key in self._bulk_selected
             and self._version_state(option.version) not in ("Queued", "Downloading", "Converting", "In your LoRAs")
         ]
@@ -948,7 +964,8 @@ class GalleryTab(QObject):
     def download_selected(self) -> None:
         """Immediately download all explicitly checked concrete version/file choices."""
         ready = [
-            option.version for _card, option in self._bulk_rows
+            option.version
+            for _card, option in self._bulk_rows
             if option.key in self._bulk_selected
             and self._version_state(option.version) not in ("Queued", "Downloading", "Converting", "In your LoRAs")
         ]
@@ -1013,6 +1030,7 @@ class GalleryTab(QObject):
             number = sum(1 for box, _option in boxes if box.isChecked() and box.isEnabled())
             submit.setText(f"Download selected ({number})" if number else "Download selected")
             submit.setEnabled(bool(number))
+
         for box, _option in boxes:
             box.toggled.connect(update_button)
         chosen: list[civitai.CivitaiVersion] = []
@@ -1020,6 +1038,7 @@ class GalleryTab(QObject):
         def accept() -> None:
             chosen.extend(option.version for box, option in boxes if box.isChecked() and box.isEnabled())
             menu.close()
+
         submit.clicked.connect(accept)
         action = QWidgetAction(menu)
         action.setDefaultWidget(panel)

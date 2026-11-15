@@ -57,14 +57,16 @@ class VersionOption:
         size = self.version.file.size_bytes
         text = f"{size / 1024**2:.0f} MB" if size else ""
         return " · ".join(
-            part for part in (
+            part
+            for part in (
                 self.version.version_name or "Version",
                 self.version.base_model or "Unknown base",
                 self.family,
                 f"ID {self.version.version_id}",
                 self.version.file.name,
                 text,
-            ) if part
+            )
+            if part
         )
 
 
@@ -237,8 +239,10 @@ def _card(model: dict, family: str | tuple[str, ...] | None = None) -> GalleryCa
         if shown is None:
             shown = (candidate, candidate_id, candidate_spec)
         safetensors = [
-            f for f in (candidate.get("files") or [])
-            if isinstance(f, dict) and isinstance(f.get("id"), int)
+            f
+            for f in (candidate.get("files") or [])
+            if isinstance(f, dict)
+            and isinstance(f.get("id"), int)
             and str(f.get("name", "")).lower().endswith(".safetensors")
         ]
         if not safetensors:
@@ -283,7 +287,9 @@ def _card(model: dict, family: str | tuple[str, ...] | None = None) -> GalleryCa
         families=tuple(families),
         nsfw_level=level,
         availability=civitai._text(version.get("availability"), 40),
-        trained_words=tuple(w[:60] for w in (words if isinstance(words, list) else []) if isinstance(w, str) and w)[:16],
+        trained_words=tuple(w[:60] for w in (words if isinstance(words, list) else []) if isinstance(w, str) and w)[
+            :16
+        ],
         tags=tuple(t[:40] for t in (tags if isinstance(tags, list) else []) if isinstance(t, str))[:24],
         published=published[:10] if isinstance(published, str) else None,
         cover_url=cover,
@@ -291,6 +297,7 @@ def _card(model: dict, family: str | tuple[str, ...] | None = None) -> GalleryCa
         problem=problem,
         options=tuple(options),
     )
+
 
 def list_page(
     client: httpx.Client,
