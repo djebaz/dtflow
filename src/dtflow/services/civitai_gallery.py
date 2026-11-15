@@ -151,15 +151,17 @@ def listing_query(
     cursor: str | None,
     limit: int = PAGE_SIZE,
     *,
-    family: str | None = None,
+    family: str | tuple[str, ...] | None = None,
     period: str | None = None,
 ) -> str:
     """Request supported LoRA models with full file choices and cursor paging."""
     labels = provider_labels("civitai")
-    if family:
-        chosen = [spec for spec in supported_families() if spec.key == family]
-        if chosen and chosen[0].aliases.get("civitai"):
-            labels = tuple(chosen[0].aliases["civitai"])
+    selected = {family} if isinstance(family, str) else set(family or ())
+    if selected:
+        chosen = [spec for spec in supported_families() if spec.key in selected]
+        if not chosen:
+            raise ValueError("Unknown Civitai family filter.")
+        labels = tuple(label for spec in chosen for label in spec.aliases.get("civitai", ()))
     sort = sort if sort in SORTS else SORTS[0]
     parts = [("types", "LORA"), ("nsfw", "true"), ("limit", str(max(1, min(limit, 100))))]
     parts.append(("sort", sort))
@@ -212,7 +214,7 @@ def _resolve(model: dict, version: dict, model_id: int, version_id: int) -> civi
     return civitai.normalise(model, version, model_id, version_id, primary[0] if len(primary) == 1 else None)
 
 
-def _card(model: dict, family: str | None = None) -> GalleryCard | None:
+def _card(model: dict, family: str | tuple[str, ...] | None = None) -> GalleryCard | None:
     """One Civitai model, with explicit options for every listed supported version and safetensors file."""
     versions = [v for v in model.get("modelVersions") or [] if isinstance(v, dict)]
     model_id = model.get("id")
@@ -247,7 +249,8 @@ def _card(model: dict, family: str | None = None) -> GalleryCard | None:
                 options.append(VersionOption(resolved, label))
             except civitai.CivitaiError as exc:
                 problem = problem or str(exc)
-    if shown is None or (family and family not in family_keys):
+    selected = {family} if isinstance(family, str) else set(family or ())
+    if shown is None or (selected and selected.isdisjoint(family_keys)):
         return None
     version, version_id, spec = shown
     if options:
@@ -296,7 +299,7 @@ def list_page(
     cursor: str | None = None,
     limit: int = PAGE_SIZE,
     *,
-    family: str | None = None,
+    family: str | tuple[str, ...] | None = None,
     period: str | None = None,
 ) -> GalleryPage:
     """One page of the gallery (blocking). Raises ``CivitaiError`` with Civitai's own wording on failure."""
