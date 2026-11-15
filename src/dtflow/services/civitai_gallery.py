@@ -222,14 +222,14 @@ def _card(model: dict, family: str | None = None) -> GalleryCard | None:
     shown: tuple[dict, int, object] | None = None
     options: list[VersionOption] = []
     families: list[str] = []
+    family_keys: set[str] = set()
     problem: str | None = None
     for candidate in versions:
         candidate_id = candidate.get("id")
         candidate_spec = family_for_label("civitai", candidate.get("baseModel"))
         if candidate_spec is None or not isinstance(candidate_id, int):
             continue
-        if family and candidate_spec.key != family:
-            continue
+        family_keys.add(candidate_spec.key)
         label = candidate_spec.label + (" (experimental)" if candidate_spec.experimental else "")
         if label not in families:
             families.append(label)
@@ -248,7 +248,7 @@ def _card(model: dict, family: str | None = None) -> GalleryCard | None:
                 options.append(VersionOption(resolved, label))
             except civitai.CivitaiError as exc:
                 problem = problem or str(exc)
-    if shown is None:
+    if shown is None or (family and family not in family_keys):
         return None
     version, version_id, spec = shown
     if options:
