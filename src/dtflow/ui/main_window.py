@@ -216,7 +216,12 @@ class _DisclosureHeader(QObject):
         self.button = button
 
     def eventFilter(self, watched, event):
-        if event.type() == QEvent.Type.MouseButtonRelease and event.button() == Qt.MouseButton.LeftButton:
+        if (
+            event.type() == QEvent.Type.MouseButtonRelease
+            and event.button() == Qt.MouseButton.LeftButton
+            and not self.button.isHidden()
+            and self.button.isEnabled()
+        ):
             self.button.click()
             return True
         return False
@@ -635,13 +640,7 @@ class MainWindow:
         form.civitaiTokenEdit.returnPressed.connect(self.save_civitai_token)
         form.openDownloadsButton.clicked.connect(self._show_downloads)
         form.keySelectCombo.currentIndexChanged.connect(self.key_selected)
-        form.customLorasBoxContents.setVisible(False)
-        form.customLorasDisclosure.toggled.connect(self._toggle_custom_loras)
-        self._lora_header_guard = _DisclosureHeader(form.customLorasDisclosure, form.customLorasBoxHeader)
-        for widget in (form.customLorasBoxHeader, form.customLorasHeading):
-            widget.installEventFilter(self._lora_header_guard)
-            widget.setCursor(Qt.CursorShape.PointingHandCursor)
-        self._set_lora_disclosure_icon(False)
+        self._bind_connection_disclosures()
         form.importCustomLorasButton.clicked.connect(self.import_custom_loras)
         form.clearCustomLorasButton.clicked.connect(self.clear_custom_loras)
         form.removeRetainedLoraButton.clicked.connect(self.remove_retained_lora)
@@ -2606,17 +2605,56 @@ class MainWindow:
         self.form.statusBar().showMessage("LoRA metadata saved locally. Files and receipts unchanged.", 5000)
         self.refresh_custom_loras(background=True)
 
-    def _set_lora_disclosure_icon(self, expanded: bool) -> None:
+    def _bind_connection_disclosures(self) -> None:
+        """One full-header interaction for the center column; collapse is presentation only."""
+        sections = (
+            ("connectionStatusHeader", "connectionStatusHeading", "statusCard", "connectionStatusDisclosure"),
+            ("customLorasBoxHeader", "customLorasHeading", "customLorasBoxContents", "customLorasDisclosure"),
+            ("usageBoxHeader", "usageHeading", "usageBoxContents", "usageDisclosure"),
+            ("presetLibraryBoxHeader", "presetLibraryHeading", "presetLibraryBoxContents", "presetLibraryDisclosure"),
+            (
+                "cacheManagementBoxHeader",
+                "cacheManagementHeading",
+                "cacheManagementBoxContents",
+                "cacheManagementDisclosure",
+            ),
+            ("imageExportHeader", "imageExportHeading", "imageExportContents", "imageExportDisclosure"),
+        )
+        self._connection_header_guards = []
+        for header_name, heading_name, contents_name, button_name in sections:
+            header, heading, contents, button = (
+                getattr(self.form, name) for name in (header_name, heading_name, contents_name, button_name)
+            )
+            title = heading.text()
+            button.toggled.connect(
+                lambda expanded, c=contents, b=button, t=title: self._toggle_connection_section(c, b, t, expanded)
+            )
+            guard = _DisclosureHeader(button, header)
+            self._connection_header_guards.append(guard)
+            for widget in (header, heading):
+                widget.installEventFilter(guard)
+                widget.setCursor(Qt.CursorShape.PointingHandCursor)
+            self._toggle_connection_section(contents, button, title, False)
+
+    @staticmethod
+    def _toggle_connection_section(contents, button, title: str, expanded: bool) -> None:
+        contents.setVisible(expanded)
+        MainWindow._set_section_disclosure_icon(button, expanded)
+        button.setAccessibleName(f"{'Hide' if expanded else 'Show'} {title}")
+        button.setToolTip(f"{'Collapse' if expanded else 'Expand'} {title}")
+
+    @staticmethod
+    def _set_section_disclosure_icon(button, expanded: bool) -> None:
         """Shared chevrons (right = collapsed, down = expanded) instead of the platform arrow."""
         images = Path(__file__).parents[1] / "resources" / "images"
         name = "controls/chevron-down.svg" if expanded else "gallery/chevron-right.svg"
-        self.form.customLorasDisclosure.setIcon(QIcon(str(images / name)))
+        button.setIcon(QIcon(str(images / name)))
 
     def _toggle_custom_loras(self, expanded: bool) -> None:
         """Expand the existing Connections LoRA library only when needed."""
-        self.form.customLorasBoxContents.setVisible(expanded)
-        self._set_lora_disclosure_icon(expanded)
-        self.form.customLorasDisclosure.setAccessibleName("Hide custom LoRAs" if expanded else "Show custom LoRAs")
+        self._toggle_connection_section(
+            self.form.customLorasBoxContents, self.form.customLorasDisclosure, "Custom LoRAs", expanded
+        )
 
     def _retained_lora_selection_changed(self) -> None:
         selected = self._selected_lora_identity() is not None
@@ -3139,6 +3177,11 @@ class MainWindow:
             card.show()  # Reparenting hides QWidget; the same controls and progress survive.
         self.form.imageExportScopeLabel.setVisible(not inline)
         self.form.imageExportScopeCombo.setVisible(not inline)
+        # The shared Images export card remains open; returning restores Connection's disclosure state.
+        self.form.imageExportDisclosure.setVisible(not inline)
+        self.form.imageExportContents.setVisible(inline or self.form.imageExportDisclosure.isChecked())
+        for header in (self.form.imageExportHeader, self.form.imageExportHeading):
+            header.setCursor(Qt.CursorShape.ArrowCursor if inline else Qt.CursorShape.PointingHandCursor)
         self.gallery_detail.galleryExportScroll.setVisible(inline)
         button = self.gallery.export_button
         button.setChecked(inline)

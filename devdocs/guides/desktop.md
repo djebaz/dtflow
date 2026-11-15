@@ -104,6 +104,8 @@ The selected search/severity/Component/Event/time/characteristic filters, sort, 
 
 ## Connect
 
+Connection’s center-column sections—Connection status, Custom LoRAs, Local completed images, Draw Things presets, Disposable cache and Export saved images—start collapsed. Click anywhere on a section header or use its keyboard-accessible chevron to expand it; each section is independent, and collapsing it does not cancel work. Expansion lasts for the current app session. Side panels are unchanged. When the shared Export panel is opened from Images, its contents remain expanded; returning to Connection restores its disclosure state. This consistency revision is source/static reviewed; native owner smoke remains pending.
+
 Select the fake, local Draw Things or DT+ cloud provider on Connection. The local provider needs its server endpoint. Connection checks run in the background and never generate. The Generate page uses the selected provider and endpoint; switching provider resets connection results.
 
 On Windows, save, switch and remove DT+ API keys on Connection (stored in Credential Manager); the selected saved key is used before `DRAWTHINGS_API_KEY`, unless the environment key is selected explicitly. An empty or invalid selected credential fails without switching sources. See [credentials](credentials.md). Other platforms do not offer the Windows secure-storage path; use the environment. Keep credentials out of configurations, logs and diagnostic reports.
