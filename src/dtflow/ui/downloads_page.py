@@ -109,7 +109,10 @@ class DownloadsPage(QObject):
         form.downloadsTabs.setCornerWidget(form.downloadsTokenBar, Qt.Corner.TopRightCorner)
         form.downloadsTokenBar.show()
         form.resolvedTable.itemChanged.connect(self._selection_changed)
-        self.gallery = GalleryTab(form, runner=runner, download=self._download_versions, state_of=self._card_state)
+        self.gallery = GalleryTab(
+            form, runner=runner, download=self._download_versions,
+            state_of=self._card_state, version_state=self._version_state,
+        )
         form.downloadsTabs.currentChanged.connect(self._tab_changed)
         self._configure(form.resolvedTable, {0: 30, 1: 200, 2: 180, 3: 70, 4: 140, 5: 150}, 6)
         self._configure(form.downloadsTable, {0: 260, 1: 200, 3: 270}, 2)
@@ -335,18 +338,33 @@ class DownloadsPage(QObject):
         """Download from the gallery: the same path as Links / IDs, entered by a resolved version."""
         return self._enqueue([engine.entry_for(version) for version in versions])
 
-    def _card_state(self, card: gallery_engine.GalleryCard) -> str:
-        """What the downloads list says about a card's file: empty when it can be downloaded."""
+    def _version_state(self, version: civitai.CivitaiVersion) -> str:
+        """State belongs to an exact file/revision, not to the surrounding Civitai model."""
         for item in self.items:
-            if item.key == card.key or (item.version_id == card.version_id and item.key[1] is None):
-                if item.active:
-                    return "Downloading" if item.state != engine.QUEUED else "Queued"
-                return {
-                    engine.CONVERTED: "In your LoRAs",
-                    engine.NOT_CONVERTIBLE: "Not convertible",
-                    engine.FAILED: "Failed · retry in list",
-                    engine.INTERRUPTED: "Not converted",
-                }.get(item.state, "")
+            if item.version_id != version.version_id or item.key[1] not in (None, version.file.id):
+                continue
+            if item.active:
+                return "Queued" if item.state == engine.QUEUED else (
+                    "Converting" if item.state == engine.CONVERTING else "Downloading"
+                )
+            return {
+                engine.CONVERTED: "In your LoRAs",
+                engine.NOT_CONVERTIBLE: "Not convertible",
+                engine.FAILED: "Failed",
+                engine.INTERRUPTED: "Not converted",
+                engine.CANCELLED: "Cancelled",
+            }.get(item.state, "")
+        return ""
+
+    def _card_state(self, card: gallery_engine.GalleryCard) -> str:
+        """A card may have several individually downloaded versions, across different families."""
+        states = [self._version_state(option.version) for option in card.options]
+        done = sum(state == "In your LoRAs" for state in states)
+        if done:
+            return f"{done} of {len(states)} in your LoRAs"
+        active = sum(state in ("Queued", "Downloading", "Converting") for state in states)
+        if active:
+            return f"{active} downloading"
         return ""
 
     def _enqueue(self, entries: list[engine.ResolvedEntry]) -> int:
