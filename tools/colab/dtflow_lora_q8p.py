@@ -1,6 +1,6 @@
 # Auto-generated from notebook; keep markers for round-trip
 # Markers + docstring headers are required for ipynb reconstruction
-# NOTEBOOK_META_B64=eyJjb2xhYiI6eyJwcm92ZW5hbmNlIjpbXX0sImtlcm5lbHNwZWMiOnsiZGlzcGxheV9uYW1lIjoiUHl0aG9uIDMiLCJuYW1lIjoicHl0aG9uMyJ9LCJsYW5ndWFnZV9pbmZvIjp7Im5hbWUiOiJweXRob24ifSwibmJmb3JtYXQiOjQsIm5iZm9ybWF0X21pbm9yIjo1fQ==
+# NOTEBOOK_META_B64=eyJjb2xhYiI6eyJwcm92ZW5hbmNlIjpbXSwiY29sbGFwc2VkX3NlY3Rpb25zIjpbInE4cC1pbnRybyJdfSwia2VybmVsc3BlYyI6eyJuYW1lIjoicHl0aG9uMyIsImxhbmd1YWdlIjoicHl0aG9uIiwiZGlzcGxheV9uYW1lIjoiUHl0aG9uIDMifSwibGFuZ3VhZ2VfaW5mbyI6eyJuYW1lIjoicHl0aG9uIn0sIm5iZm9ybWF0Ijo0LCJuYmZvcm1hdF9taW5vciI6NX0=
 
 # %% [markdown] cell=0 id=q8p-intro
 """MARKDOWN
@@ -46,15 +46,24 @@ if UV is None:
     raise RuntimeError("uv was installed but its executable is not on PATH.")
 
 CHECKOUT = Path(tempfile.mkdtemp(prefix="dtflow-q8p-src-", dir="/content"))
+
+
 def git(*args):
     return subprocess.check_output(["git", "-C", str(CHECKOUT), *args], text=True).strip()
+
 
 git("init", "-q")
 git("remote", "add", "origin", "https://github.com/djebaz/dtflow.git")
 git("fetch", "--depth", "1", "origin", dtflow_revision.strip())
 git("checkout", "-q", "--detach", "FETCH_HEAD")
 REVISION = git("rev-parse", "HEAD")
-ENV = {**os.environ, "UV_LINK_MODE": "copy", "UV_SYSTEM_CERTS": "true", "UV_PYTHON_PREFERENCE": "only-managed", "QT_QPA_PLATFORM": "offscreen"}
+ENV = {
+    **os.environ,
+    "UV_LINK_MODE": "copy",
+    "UV_SYSTEM_CERTS": "true",
+    "UV_PYTHON_PREFERENCE": "only-managed",
+    "QT_QPA_PLATFORM": "offscreen",
+}
 subprocess.run([UV, "sync", "--frozen", "--no-dev", "--group", "quantization"], cwd=CHECKOUT, env=ENV, check=True)
 CLI = [UV, "run", "--frozen", "--no-dev", "--group", "quantization", "dtflow", "lora"]
 print("DTFlow revision:", REVISION)
@@ -69,11 +78,13 @@ mount_google_drive = False  # @param {type:"boolean"}
 
 if mount_google_drive:
     from google.colab import drive
+
     drive.mount("/content/drive")
 if source_path.strip():
     SOURCE = Path(source_path.strip()).expanduser().resolve(strict=True)
 else:
     from google.colab import files
+
     # A fresh upload directory prevents overwriting a previous upload.
     upload_dir = Path(tempfile.mkdtemp(prefix="q8p-input-", dir="/content"))
     previous_directory = Path.cwd()
@@ -105,7 +116,9 @@ OUTPUT = OUTPUT_DIR / (SOURCE.stem.removesuffix("_f16") + "_q8p.ckpt")
 REPORT = OUTPUT.with_suffix(".report.json")
 command = CLI + ["quantize", str(SOURCE), "-o", str(OUTPUT), "-e", "-j", str(workers), "-r", REVISION]
 with REPORT.open("x", encoding="utf-8", newline="\n") as report_file:
-    process = subprocess.Popen(command, cwd=CHECKOUT, env=ENV, stdout=report_file, stderr=subprocess.PIPE, text=True, bufsize=1)
+    process = subprocess.Popen(
+        command, cwd=CHECKOUT, env=ENV, stdout=report_file, stderr=subprocess.PIPE, text=True, bufsize=1
+    )
     try:
         for line in process.stderr:
             print(line.rstrip(), flush=True)
@@ -121,10 +134,13 @@ if code != 0:
 result = json.loads(REPORT.read_text(encoding="utf-8"))
 print("Output:", OUTPUT)
 print(f"Size: {result['input']['file_bytes'] / 1_000_000:.2f} → {result['output']['file_bytes'] / 1_000_000:.2f} MB")
-print(f"Reduction: {result['size_reduction_percent']}%; elapsed: {result['seconds']} s; workers: {result['clustering']['workers']}")
+print(
+    f"Reduction: {result['size_reduction_percent']}%; elapsed: {result['seconds']} s; workers: {result['clustering']['workers']}"
+)
 print("Report:", REPORT)
 print("Output was reopened and decoded by the CLI before publication. DT+ compatibility/quality remain unverified.")
 if download_result:
     from google.colab import files
+
     files.download(str(OUTPUT))
     files.download(str(REPORT))

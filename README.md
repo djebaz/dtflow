@@ -36,7 +36,7 @@ workspace in detail.
 
 ## Getting started
 
-For the local-only F16 CKPT → q8p experiment, see the [experimental CLI guide](devdocs/guides/cli.md#experimental-lora-q8p-cli). It is separate from Prepare and requires an optional dependency group; production/provider compatibility is not established.
+For the local-only F16 CKPT → q8p experiment, see the [experimental CLI guide](devdocs/guides/cli.md#experimental-lora-q8p-cli) or the standalone [Colab notebook](tools/colab/dtflow_lora_q8p.ipynb). CPU workers are auto-detected, with a serial override and elapsed/ETA progress. It is separate from Prepare and requires an optional dependency group; multicore/Colab execution and production/provider compatibility are not established.
 
 ### Windows executable
 

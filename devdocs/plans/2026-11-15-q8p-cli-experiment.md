@@ -17,6 +17,8 @@
 - [x] Bind local CLI commands, progress, safe reports and fixed diagnostic reasons.
 - [x] Synchronize dependency metadata, architecture, CLI guide, status and release notes.
 - [x] Review source and run permitted static checks; prepare draft PR with unchanged ACs.
+- [x] Add owner-requested CPU auto-detection, bounded spawned block workers, serial/explicit override and elapsed/ETA progress.
+- [x] Add a separate F16 → q8p Colab notebook and canonical markerized source, leaving the Swift converter notebook unchanged.
 
 ## Evidence boundary
 
@@ -36,8 +38,16 @@ Code revision: `71661d93f32dd76ea65ce70c517aa0afaaeff7fe`, Windows, Python 3.13.
 
 - Full input/reference decoding and matching inventory checks passed for every pair. All 139,680 sampled encoded/decoded values equaled the corresponding iOS decoded F16 values; this does not establish whole-file equivalence.
 - Original and iOS reference SHA-256 values were unchanged after each check. Existing destinations were rejected with `destination_exists`; all three sentinel contents stayed unchanged. No provider work was requested; source inspection confirms these commands do not open provider/state services.
-- Full 16,384-value q8p samples took 2.719–3.525 seconds; the 8,192-value sample took 1.373 seconds and ezm7 samples took at most 0.001 seconds. Whole-file extrapolation is hours, not measured completion. This throughput is not practical enough to call the writer ready.
+- Full 16,384-value q8p samples took 2.719–3.525 seconds; the 8,192-value sample took 1.373 seconds and ezm7 samples took at most 0.001 seconds. Whole-file extrapolation is hours, not measured completion. The owner accepted long offline runs and subsequently reported roughly 1–1.5 seconds per block; speed alone is not a blocker.
 - The initial whole-file Krea 2 attempt was force-stopped before publication. Redirected progress was not visible live; isolated block probes completed. Removed only that invocation's tiny staging file/journal, not originals or published outputs. No complete experimental CKPT exists from this run; successful publication and end-to-end conversion time/size remain unchecked.
 - AC-1 now has source and local preservation evidence. AC-2 remains incomplete for successful whole-file writer publication; AC-3 lacks a completed conversion time/output size. No DT+ acceptance/quality evidence (AC-4). Provisional outcome: continue only as a codec/performance experiment, not production integration.
 
 Upstream pins and reference measurements are consolidated in [issue #353](https://github.com/djebaz/dtflow/issues/353). The public iOS UI handler is not available in the inspected tree; q8p plus ezm7 policy is grounded in the supplied samples and shared codec, not a claim to reproduce every app decision.
+
+## Multicore and Colab follow-up
+
+Auto-selection uses `os.process_cpu_count()` (minimum one; Windows maximum 61); explicit `-j/--jobs` overrides and 1 avoids the process pool. One reusable spawn pool encodes blocks within each tensor, with no more pending blocks than workers. Assembly and SQLite/file authority remain in the parent. More CPUs do not help a tensor with fewer blocks, and each worker adds memory/startup overhead. Parent-owned Ctrl+C stops new admission and drains admitted blocks; domain errors are pickle-safe and broken workers have a fixed diagnostic reason. Progress shows elapsed time and an approximate remaining encoding time from completed blocks, not final validation time.
+
+The new standalone Colab notebook uses the same subprocess CLI, a fresh checkout and an isolated locked uv environment, with explicit upload/Drive input and optional output/report downloads. Existing Swift/safetensors notebooks are unchanged. The owner-supplied Colab inventory has NumPy 2.4.6/Pillow 11.3.0; those kernel packages are not changed or used by the separate DTFlow environment. The notebook source revision is user-selectable and its resolved SHA is recorded.
+
+No further conversion, CPU benchmark, provider call or Actions run was launched for this follow-up while the owner was testing. Earlier serial evidence does not establish multicore equivalence, cancellation, speedup, ETA accuracy or Colab acceptance. These remain owner smoke checks; do not tick whole-file writer acceptance from static checks.

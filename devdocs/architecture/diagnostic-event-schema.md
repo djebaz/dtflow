@@ -2,7 +2,7 @@
 
 ## Experimental q8p CLI (#353)
 
-- `lora_quantize.started|completed|failed|interrupted` identify fixed `action=inspect|compare|quantize` through the shared logger. Completion carries tensor/input-byte counts, safe source/output SHA prefixes from `asset_ref_data` and, for quantization, output bytes/seconds. Failure carries a fixed domain `code` or `local_or_container_error|resource_limit`, never arbitrary exception text, paths or tensor names. Failures/interruption use WARNING.
+- `lora_quantize.started|completed|failed|interrupted` identify fixed `action=inspect|compare|quantize` through the shared logger. Completion carries tensor/input-byte counts, safe source/output SHA prefixes from `asset_ref_data` and, for quantization, output bytes/seconds/worker count. Failure carries a fixed domain `code` (including `worker_failed` for a broken process pool) or `local_or_container_error|resource_limit`, never arbitrary exception text, paths or tensor names. Failures/interruption use WARNING.
 - `lora_quantize.cleanup_pending` (WARNING) carries only `reason=local_io` if the invocation's temporary file/journal could not be removed. It does not delete a published output or retry. Full file digests/numerical metrics belong to the explicitly requested stdout report, not another persistent sink. No provider work is initiated by these events/commands.
 
 ## Conversion staging (#451)
