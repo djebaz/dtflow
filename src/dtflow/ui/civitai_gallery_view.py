@@ -28,6 +28,7 @@ from PySide6.QtWidgets import (
     QAbstractItemView,
     QCheckBox,
     QHBoxLayout,
+    QHeaderView,
     QLabel,
     QListView,
     QListWidget,
@@ -291,7 +292,7 @@ class _Resized(QObject):
 
 
 class GalleryTab(QObject):
-    """Controller of the Browse Civitai tab inside ``downloads_page.ui``."""
+    """Continuous-scroll Civitai model gallery and explicit version/file selection."""
 
     def __init__(
         self,
@@ -300,20 +301,27 @@ class GalleryTab(QObject):
         runner: AsyncRunner,
         download: Callable[[list[civitai.CivitaiVersion]], int],
         state_of: Callable[[gallery.GalleryCard], str],
+        version_state: Callable[[civitai.CivitaiVersion], str],
     ):
         super().__init__(form)
-        self.form, self._runner, self._download, self._state_of = form, runner, download, state_of
+        self.form, self._runner, self._download = form, runner, download
+        self._state_of, self._version_state = state_of, version_state
         self.cards: list[gallery.GalleryCard] = []
-        self._cursors: list[str | None] = [None]  # the cursor of each page reached so far; Prev reuses them
-        self._page = 0
-        self._next: str | None = None
+        self._cursor: str | None = None
+        self._seen_cursors: set[str] = set()
+        self._has_more = True
+        self._empty_batches = 0
         self._generation = 0
         self._loading = False
         self._loaded = False
         self._pending: set[str] = set()
-        self._pixmaps: dict[str, QPixmap] = {}
+        self._pixmaps: OrderedDict[str, QPixmap] = OrderedDict()
         self._cache = gallery.ThumbnailCache()
         self._thumb_client = None
+        self._bulk_rows: list[tuple[gallery.GalleryCard, gallery.VersionOption]] = []
+        self._bulk_selected: set[tuple[int, int | None]] = set()
+        self._building_table = False
+
         view: QListWidget = form.galleryList
         self._view = view
         view.setViewMode(QListView.ViewMode.IconMode)
@@ -324,17 +332,19 @@ class GalleryTab(QObject):
         view.setSpacing(0)
         view.setSelectionMode(QAbstractItemView.SelectionMode.MultiSelection)
         view.setVerticalScrollMode(QAbstractItemView.ScrollMode.ScrollPerPixel)
-        view.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOn)  # a steady width for the column fit
+        view.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOn)
         view.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         view.setMouseTracking(True)
         view.viewport().setAttribute(Qt.WidgetAttribute.WA_Hover, True)
         self._delegate = CardDelegate(view, self._pixmaps, state_of)
         self._delegate.download_requested.connect(self._download_card)
         view.setItemDelegate(self._delegate)
-        self._spinner = _SpinningRing(view.viewport())  # the Images gallery's ring, shown while Civitai answers
+        self._spinner = _SpinningRing(view.viewport())
         self._spinner.hide()
         self._resized = _Resized(self._fit, view)
         view.viewport().installEventFilter(self._resized)
+        view.verticalScrollBar().valueChanged.connect(self._on_scroll)
+
         for sort in gallery.SORTS:
             form.gallerySortCombo.addItem(sort)
         form.galleryFamilyCombo.addItem("All families", None)
@@ -348,16 +358,29 @@ class GalleryTab(QObject):
         form.galleryPeriodCombo.currentIndexChanged.connect(lambda _index: self.search())
         form.gallerySearchEdit.returnPressed.connect(self.search)
         form.gallerySortCombo.currentIndexChanged.connect(lambda _index: self.search())
-        form.galleryPrevButton.clicked.connect(lambda: self._go(self._page - 1))
-        form.galleryNextButton.clicked.connect(lambda: self._go(self._page + 1))
         form.galleryDownloadButton.clicked.connect(self.download_selected)
         view.itemSelectionChanged.connect(self._selection_changed)
+
+        table = form.galleryVersionsTable
+        table.verticalHeader().hide()
+        table.verticalHeader().setDefaultSectionSize(28)
+        table.setColumnWidth(0, 32)
+        table.setColumnWidth(2, 135)
+        table.setColumnWidth(3, 115)
+        table.setColumnWidth(4, 82)
+        table.setColumnWidth(5, 175)
+        table.horizontalHeader().setStretchLastSection(False)
+        table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
+        table.itemChanged.connect(self._bulk_changed)
+        form.gallerySelectAllVersions.clicked.connect(self._select_all_versions)
+        form.galleryClearVersions.clicked.connect(self._clear_versions)
+        form.galleryVersionsBox.hide()
         form.galleryNote.hide()
         self._selection_changed()
         runner.shutdown_started.connect(self.shutdown)
 
     def _fit(self) -> None:
-        """Whole columns across the width: four at the design's width, more on a wide window, never under two."""
+        """Fit square cells across the viewport, retaining the original compact gallery density."""
         viewport = self._view.viewport()
         self._spinner.move(
             (viewport.width() - self._spinner.width()) // 2, (viewport.height() - self._spinner.height()) // 2
@@ -372,8 +395,8 @@ class GalleryTab(QObject):
         for row in range(self._view.count()):
             self._view.item(row).setSizeHint(QSize(cell - GAP, cell - GAP))
         self._view.doItemsLayout()
+        self._load_visible_covers()
 
-    # ------------------------------------------------------------------------------------------------ lifecycle
     def ensure_loaded(self) -> None:
         if not self._loaded and not self._loading:
             self.search()
@@ -384,42 +407,40 @@ class GalleryTab(QObject):
         if self._thumb_client is not None:
             try:
                 self._thumb_client.close()
-            except Exception:  # closing is best effort at shutdown
+            except Exception:
                 log.debug("thumbnail client close failed", exc_info=True)
             self._thumb_client = None
 
     def refresh_states(self) -> None:
-        """A download changed state: repaint the cards' buttons and pills."""
+        """Repaint exact version states after any download state change."""
         self._view.viewport().update()
         self._selection_changed()
 
-    # ------------------------------------------------------------------------------------------------- listing
+    # ---------------------------------------------------------------------------------------- continuous listing
     def search(self) -> None:
-        """A new search (Enter in the box, or a changed sort or filter): back to page 1."""
+        """Start a new continuous result stream. Existing downloaded files are unaffected."""
         if self._runner.closed:
             return
-        self._cursors = [None]
-        self._pixmaps.clear()
-        self._cache.clear()
-        self.form.galleryNote.hide()
-        self._go(0)
-
-    def _go(self, page: int) -> None:
-        if self._runner.closed or page < 0 or page >= len(self._cursors):
-            return
         self._generation += 1
+        self._cursor = None
+        self._seen_cursors.clear()
+        self._has_more = True
+        self._empty_batches = 0
         self._loaded = True
-        self._page = page
-        self._next = None
         self.cards.clear()
         self._pending.clear()
         self._view.clear()
+        self._bulk_selected.clear()
+        self._selection_changed()
+        self.form.galleryNote.hide()
+        # Keep bounded cover caches across searches; no Civitai image is written to disk.
+        self._busy(False)
         self._fetch()
 
     def _busy(self, busy: bool) -> None:
         self._loading = busy
-        if busy:
-            self._fit()  # centres the ring
+        if busy and not self.cards:
+            self._fit()
             self._spinner.show()
             self._spinner.raise_()
             self._spinner.timer.start()
@@ -428,17 +449,19 @@ class GalleryTab(QObject):
             self._spinner.hide()
 
     def _fetch(self) -> None:
+        """Fetch the next cursor (100 source models). Only scrolling or an unfilled viewport advances."""
+        if self._runner.closed or self._loading or not self._has_more:
+            return
         self._busy(True)
         generation = self._generation
         query = self.form.gallerySearchEdit.text()
         sort = self.form.gallerySortCombo.currentText()
         family = self.form.galleryFamilyCombo.currentData()
         period = self.form.galleryPeriodCombo.currentData()
-        cursor = self._cursors[self._page]
-        self.form.galleryStatus.setText("Loading…")
-        self.form.galleryPrevButton.setEnabled(False)
-        self.form.galleryNextButton.setEnabled(False)
-        self.form.galleryPageLabel.setText(f"page {self._page + 1}")
+        cursor = self._cursor
+        self.form.galleryStatus.setText(
+            f"{len(self.cards)} LoRAs loaded · Loading more…" if self.cards else "Loading Civitai LoRAs…"
+        )
 
         async def work():
             def blocking():
@@ -450,47 +473,89 @@ class GalleryTab(QObject):
 
             return await asyncio.to_thread(blocking)
 
-        self._runner.submit(work(), lambda result, failure: self._listed(generation, result, failure))
+        self._runner.submit(work(), lambda result, failure: self._listed(generation, cursor, result, failure))
 
-    def _listed(self, generation: int, result, failure) -> None:
+    def _listed(self, generation: int, cursor: str | None, result, failure) -> None:
         if generation != self._generation:
-            return  # a newer search or page replaced this one
+            return
         self._busy(False)
-        self.form.galleryPrevButton.setEnabled(self._page > 0)
         if failure is not None or result is None:
             message = str(failure) if isinstance(failure, civitai.CivitaiError) else "Civitai could not be reached."
-            self.form.galleryStatus.setText(f"Could not load the gallery. {message}")
+            self.form.galleryStatus.setText(f"Could not load more LoRAs. {message}")
             diagnostic_event(log, "gallery.list_failed", level=logging.WARNING)
             return
-        self._next = result.next_cursor
-        if self._next and len(self._cursors) == self._page + 1:
-            self._cursors.append(self._next)
-        self.form.galleryNextButton.setEnabled(self._page + 1 < len(self._cursors))
-        side = self._delegate.side
+        if cursor is not None:
+            self._seen_cursors.add(cursor)
+        new_cursor = result.next_cursor
+        self._has_more = bool(new_cursor and new_cursor not in self._seen_cursors and new_cursor != cursor)
+        self._cursor = new_cursor if self._has_more else None
+        existing = {card.model_id for card in self.cards}
         for card in result.cards:
+            if card.model_id in existing:
+                continue
+            existing.add(card.model_id)
             self.cards.append(card)
             item = QListWidgetItem()
             item.setData(CARD_ROLE, card)
-            item.setSizeHint(QSize(side, side))
+            item.setSizeHint(QSize(self._delegate.side, self._delegate.side))
             self._view.addItem(item)
-            self._load_cover(card)
         self._fit()
+        self._load_visible_covers()
         if result.withheld_note:
             self.form.galleryNote.setText(
                 "Civitai may withhold mature content in your region; results can be incomplete."
             )
             self.form.galleryNote.show()
-        else:
-            self.form.galleryNote.hide()
         count = len(self.cards)
-        self.form.galleryStatus.setText(f"{count} LoRAs on this page." if count else "No supported LoRAs matched.")
-        diagnostic_event(log, "gallery.listed", data={"count": len(result.cards)})
+        suffix = " · Scroll for more" if self._has_more else " · End of results"
+        self.form.galleryStatus.setText(f"{count} LoRAs loaded{suffix}" if count else "No supported LoRAs matched.")
+        diagnostic_event(log, "gallery.listed", data={"count": len(result.cards), "total": count})
+        self._empty_batches = 0 if result.cards else self._empty_batches + 1
+        # Never spin forever over empty or filtered-out API pages without user input.
+        if self._empty_batches >= 3:
+            self.form.galleryStatus.setText(
+                f"{count} LoRAs loaded. Try another search or filter to find more supported models."
+            )
+            self._has_more = False
         self._selection_changed()
+        QTimer.singleShot(0, self._maybe_more)
 
-    # ------------------------------------------------------------------------------------------------ covers
+    def _on_scroll(self, *_args) -> None:
+        self._load_visible_covers()
+        self._maybe_more()
+
+    def _maybe_more(self) -> None:
+        if self._loading or not self._has_more or self._runner.closed:
+            return
+        bar = self._view.verticalScrollBar()
+        if bar.maximum() <= 0 or bar.value() >= bar.maximum() - max(bar.pageStep(), 250):
+            self._fetch()
+
+    # ------------------------------------------------------------------------------------- lazy bounded covers
+    def _load_visible_covers(self) -> None:
+        """Fetch covers near the viewport, rather than scheduling hundreds at once."""
+        count = self._view.count()
+        if not count or self._runner.closed:
+            return
+        view = self._view
+        cell = max(1, self._delegate.side + GAP)
+        columns = max(1, view.viewport().width() // cell)
+        item = view.itemAt(QPoint(12, 12))
+        start = view.row(item) if item is not None else 0
+        first = max(0, start - columns)
+        rows_visible = max(1, view.viewport().height() // cell + 3)
+        last = min(count, start + rows_visible * columns)
+        for row in range(first, last):
+            card = view.item(row).data(CARD_ROLE)
+            if isinstance(card, gallery.GalleryCard):
+                self._load_cover(card)
+
     def _load_cover(self, card: gallery.GalleryCard) -> None:
         url = card.cover_url
-        if not url or url in self._pixmaps or url in self._pending or self._runner.closed:
+        if not url or url in self._pending or self._runner.closed:
+            return
+        if url in self._pixmaps:
+            self._pixmaps.move_to_end(url)
             return
         self._pending.add(url)
         generation = self._generation
@@ -509,61 +574,185 @@ class GalleryTab(QObject):
             if image.isNull():
                 return
             scaled = image.scaled(
-                SOURCE,
-                SOURCE,
-                Qt.AspectRatioMode.KeepAspectRatioByExpanding,
+                SOURCE, SOURCE, Qt.AspectRatioMode.KeepAspectRatioByExpanding,
                 Qt.TransformationMode.SmoothTransformation,
             )
             crop = scaled.copy((scaled.width() - SOURCE) // 2, (scaled.height() - SOURCE) // 2, SOURCE, SOURCE)
-            pixmap = QPixmap.fromImage(crop)
-            self._pixmaps[url] = pixmap
+            self._pixmaps[url] = QPixmap.fromImage(crop)
+            self._pixmaps.move_to_end(url)
+            while len(self._pixmaps) > MAX_PIXMAPS:
+                self._pixmaps.popitem(last=False)
             self._view.viewport().update()
 
         self._runner.submit(work(), done)
 
-    # --------------------------------------------------------------------------------------------- downloading
+    # ------------------------------------------------------------------------------------------- bulk selection
     def _selected_cards(self) -> list[gallery.GalleryCard]:
-        cards = []
-        for item in self._view.selectedItems():
-            card = item.data(CARD_ROLE)
-            if isinstance(card, gallery.GalleryCard):
-                cards.append(card)
-        return cards
+        return [
+            card for item in self._view.selectedItems()
+            if isinstance((card := item.data(CARD_ROLE)), gallery.GalleryCard)
+        ]
 
     def _selection_changed(self) -> None:
-        ready = [card for card in self._selected_cards() if card.downloadable and not self._state_of(card)]
+        """Offer all exact versions of selected models; do not assume the newest version was chosen."""
+        chosen: list[tuple[gallery.GalleryCard, gallery.VersionOption]] = []
+        seen: set[tuple[int, int | None]] = set()
+        for card in self._selected_cards():
+            for option in card.options:
+                if option.key not in seen:
+                    chosen.append((card, option))
+                    seen.add(option.key)
+        self._bulk_rows = chosen
+        self._bulk_selected.intersection_update(seen)
+        table = self.form.galleryVersionsTable
+        self._building_table = True
+        table.blockSignals(True)
+        try:
+            table.setRowCount(len(chosen))
+            for row, (card, option) in enumerate(chosen):
+                version = option.version
+                state = self._version_state(version)
+                available = state not in ("Queued", "Downloading", "Converting", "In your LoRAs")
+                tick = QTableWidgetItem()
+                flags = Qt.ItemFlag.ItemIsUserCheckable | Qt.ItemFlag.ItemIsEnabled if available else Qt.ItemFlag.NoItemFlags
+                tick.setFlags(flags)
+                tick.setCheckState(
+                    Qt.CheckState.Checked if available and option.key in self._bulk_selected else Qt.CheckState.Unchecked
+                )
+                table.setItem(row, 0, tick)
+                cells = (
+                    f"{card.name} · {version.version_name or 'Version'}",
+                    version.base_model or "Unknown",
+                    option.family,
+                    str(version.version_id),
+                    version.file.name,
+                )
+                for col, content in enumerate(cells, 1):
+                    cell = QTableWidgetItem(content)
+                    cell.setToolTip(
+                        f"Civitai version {version.version_id} · file {version.file.id} · {state or 'Ready'}"
+                    )
+                    table.setItem(row, col, cell)
+            self.form.galleryVersionsHeading.setText(
+                f"Versions from selected models ({len(chosen)})"
+            )
+        finally:
+            table.blockSignals(False)
+            self._building_table = False
+        self.form.galleryVersionsBox.setVisible(bool(chosen))
+        self._bulk_buttons()
+
+    def _bulk_changed(self, item: QTableWidgetItem) -> None:
+        if self._building_table or item.column() != 0 or item.row() >= len(self._bulk_rows):
+            return
+        key = self._bulk_rows[item.row()][1].key
+        if item.checkState() == Qt.CheckState.Checked:
+            self._bulk_selected.add(key)
+        else:
+            self._bulk_selected.discard(key)
+        self._bulk_buttons()
+
+    def _select_all_versions(self) -> None:
+        self._bulk_selected = {
+            option.key for _card, option in self._bulk_rows
+            if self._version_state(option.version) not in ("Queued", "Downloading", "Converting", "In your LoRAs")
+        }
+        self._selection_changed()
+
+    def _clear_versions(self) -> None:
+        self._bulk_selected.clear()
+        self._selection_changed()
+
+    def _bulk_buttons(self) -> None:
+        ready = [
+            option for _card, option in self._bulk_rows
+            if option.key in self._bulk_selected
+            and self._version_state(option.version) not in ("Queued", "Downloading", "Converting", "In your LoRAs")
+        ]
         button = self.form.galleryDownloadButton
         button.setText(f"Download selected ({len(ready)})" if ready else "Download selected")
         button.setEnabled(bool(ready) and not self._runner.closed)
-        button.setToolTip(
-            "Download each selected card's shown version, then convert automatically."
-            if ready
-            else "Click cards to select them."
+        self.form.galleryStatus.setToolTip(
+            "Choose exact Civitai versions in the table, then Download selected starts immediately."
         )
 
     def download_selected(self) -> None:
-        """Each selected card's shown version (its newest supported one)."""
-        ready = [card for card in self._selected_cards() if card.downloadable and not self._state_of(card)]
+        """Immediately download all explicitly checked concrete version/file choices."""
+        ready = [
+            option.version for _card, option in self._bulk_rows
+            if option.key in self._bulk_selected
+            and self._version_state(option.version) not in ("Queued", "Downloading", "Converting", "In your LoRAs")
+        ]
         if ready:
-            self._start([card.version for card in ready if card.version is not None])
+            self._start(ready)
+            self._bulk_selected.clear()
             self._view.clearSelection()
 
+    # ------------------------------------------------------------------------------------------ per-card dropdown
     def _download_card(self, card: gallery.GalleryCard) -> None:
-        """A card's Download: directly with one supported version, otherwise after choosing one from a short list."""
-        if len(card.options) <= 1:
-            if card.version is not None:
-                self._start([card.version])
-            return
+        """Checkbox dropdown: several versions/files can be downloaded with one explicit action."""
         menu = QMenu(self._view)
+        panel = QWidget(menu)
+        panel.setMinimumWidth(400)
+        layout = QVBoxLayout(panel)
+        layout.setContentsMargins(10, 8, 10, 8)
+        layout.setSpacing(6)
+        title = QLabel(f"Choose versions · {card.name}", panel)
+        title.setWordWrap(True)
+        layout.addWidget(title)
+        scroll = QScrollArea(panel)
+        scroll.setWidgetResizable(True)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        scroll.setMaximumHeight(300)
+        rows_panel = QWidget(scroll)
+        rows = QVBoxLayout(rows_panel)
+        rows.setContentsMargins(2, 2, 2, 2)
+        rows.setSpacing(8)
+        boxes: list[tuple[QCheckBox, gallery.VersionOption]] = []
         for option in card.options:
-            action = menu.addAction(option.label)
-            action.setData(option)
-        chosen = menu.exec(QCursor.pos())
-        option = chosen.data() if chosen is not None else None
-        if isinstance(option, gallery.VersionOption):
-            self._start([option.version])
+            v = option.version
+            state = self._version_state(v)
+            box = QCheckBox(f"{v.version_name or 'Version'} · {v.base_model or 'Unknown base'}", rows_panel)
+            box.setToolTip(
+                f"Family: {option.family}\nCivitai version ID: {v.version_id}\nFile: {v.file.name} (ID {v.file.id})"
+            )
+            box.setEnabled(state not in ("Queued", "Downloading", "Converting", "In your LoRAs"))
+            rows.addWidget(box)
+            detail = QLabel(
+                f"{option.family} · ID {v.version_id} · {v.file.name}" + (f" · {state}" if state else ""), rows_panel
+            )
+            detail.setWordWrap(True)
+            detail.setStyleSheet("color: #b2b2b2")
+            rows.addWidget(detail)
+            boxes.append((box, option))
+        rows.addStretch()
+        scroll.setWidget(rows_panel)
+        layout.addWidget(scroll)
+        submit = QPushButton("Download selected", panel)
+        submit.setEnabled(False)
+        layout.addWidget(submit)
+
+        def update_button() -> None:
+            number = sum(1 for box, _option in boxes if box.isChecked() and box.isEnabled())
+            submit.setText(f"Download selected ({number})" if number else "Download selected")
+            submit.setEnabled(bool(number))
+        for box, _option in boxes:
+            box.toggled.connect(update_button)
+        chosen: list[civitai.CivitaiVersion] = []
+
+        def accept() -> None:
+            chosen.extend(option.version for box, option in boxes if box.isChecked() and box.isEnabled())
+            menu.close()
+        submit.clicked.connect(accept)
+        action = QWidgetAction(menu)
+        action.setDefaultWidget(panel)
+        menu.addAction(action)
+        menu.exec(QCursor.pos())
+        if chosen:
+            self._start(chosen)
 
     def _start(self, versions: list[civitai.CivitaiVersion]) -> None:
+        """Both download entry points share DownloadsPage's existing queue and converter."""
         started = self._download(versions)
         diagnostic_event(log, "gallery.download", data={"count": started})
         self.refresh_states()
