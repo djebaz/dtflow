@@ -11,8 +11,9 @@ import asyncio
 import logging
 from collections import OrderedDict
 from collections.abc import Callable
+from pathlib import Path
 
-from PySide6.QtCore import QEvent, QObject, QRect, QSize, Qt, Signal, QTimer
+from PySide6.QtCore import QEvent, QObject, QPoint, QRect, QSize, Qt, Signal, QTimer
 from PySide6.QtGui import (
     QColor,
     QCursor,
@@ -45,6 +46,7 @@ from PySide6.QtWidgets import (
 )
 
 from dtflow.diagnostics import event as diagnostic_event
+from dtflow.persistence.settings import SettingsError, load_civitai_browse_preferences, save_civitai_browse_preferences
 from dtflow.services import civitai
 from dtflow.services import civitai_gallery as gallery
 from dtflow.ui.gallery_loading import _SpinningRing
@@ -336,6 +338,27 @@ class _BulkCheckboxCell(QWidget):
         super().mousePressEvent(event)
 
 
+class _FamilyComboFilter(QObject):
+    """Open a multi-checkbox menu from the existing theme-styled QComboBox."""
+
+    def __init__(self, combo: QWidget, show: Callable[[], None]):
+        super().__init__(combo)
+        self._combo, self._show = combo, show
+
+    def eventFilter(self, watched, event) -> bool:  # noqa: N802
+        if watched is not self._combo:
+            return False
+        if event.type() == QEvent.Type.MouseButtonPress and event.button() == Qt.MouseButton.LeftButton:
+            self._show()
+            return True
+        if event.type() == QEvent.Type.KeyPress and event.key() in (
+            Qt.Key.Key_Space, Qt.Key.Key_Return, Qt.Key.Key_Enter, Qt.Key.Key_Down
+        ):
+            self._show()
+            return True
+        return False
+
+
 class GalleryTab(QObject):
     """Continuous-scroll Civitai model gallery and explicit version/file selection."""
 
@@ -347,10 +370,27 @@ class GalleryTab(QObject):
         download: Callable[[list[civitai.CivitaiVersion]], int],
         state_of: Callable[[gallery.GalleryCard], str],
         version_state: Callable[[civitai.CivitaiVersion], str],
+        state_dir: Path | None = None,
     ):
         super().__init__(form)
         self.form, self._runner, self._download = form, runner, download
         self._state_of, self._version_state = state_of, version_state
+        self._preferences_state = Path(state_dir) if state_dir is not None else None
+        try:
+            preferences = (
+                load_civitai_browse_preferences(self._preferences_state) if self._preferences_state is not None else {}
+            )
+        except SettingsError:
+            log.warning("Browse Civitai preferences unavailable; existing settings were not changed")
+            preferences = {}
+        self._preferences_timer = QTimer(self)
+        self._preferences_timer.setSingleShot(True)
+        self._preferences_timer.setInterval(450)
+        self._preferences_timer.timeout.connect(self._save_preferences)
+        self._family_choices = gallery.family_choices()
+        saved_families = set(preferences.get("families", ()))
+        self._selected_families = tuple(key for key, _label in self._family_choices if key in saved_families)
+        self._family_popup: QMenu | None = None
         self.cards: list[gallery.GalleryCard] = []
         self._cursor: str | None = None
         self._seen_cursors: set[str] = set()
@@ -397,18 +437,24 @@ class GalleryTab(QObject):
 
         for sort in gallery.SORTS:
             form.gallerySortCombo.addItem(sort)
-        form.galleryFamilyCombo.addItem("All families", None)
-        for key, label in gallery.family_choices():
-            form.galleryFamilyCombo.addItem(label, key)
+        form.galleryFamilyCombo.addItem("All families")
+        self._family_filter = _FamilyComboFilter(form.galleryFamilyCombo, self._show_family_menu)
+        form.galleryFamilyCombo.installEventFilter(self._family_filter)
+        self._update_family_summary()
         for period, label in zip(
             gallery.PERIODS, ("All time", "This year", "This month", "This week", "Today"), strict=True
         ):
             form.galleryPeriodCombo.addItem(label, period)
-        form.galleryFamilyCombo.currentIndexChanged.connect(lambda _index: self.search())
-        form.galleryPeriodCombo.currentIndexChanged.connect(lambda _index: self.search())
+        sort_index = form.gallerySortCombo.findText(preferences.get("sort", gallery.SORTS[0]))
+        form.gallerySortCombo.setCurrentIndex(max(0, sort_index))
+        period_index = form.galleryPeriodCombo.findData(preferences.get("period", gallery.PERIODS[0]))
+        form.galleryPeriodCombo.setCurrentIndex(max(0, period_index))
+        form.gallerySearchEdit.setMaxLength(gallery.MAX_QUERY)
+        form.gallerySearchEdit.setText(preferences.get("query", ""))
+        form.galleryPeriodCombo.currentIndexChanged.connect(self._filters_changed)
         form.gallerySearchEdit.returnPressed.connect(self.search)
         form.gallerySearchEdit.textChanged.connect(self._keyword_changed)
-        form.gallerySortCombo.currentIndexChanged.connect(lambda _index: self.search())
+        form.gallerySortCombo.currentIndexChanged.connect(self._filters_changed)
         form.galleryDownloadButton.clicked.connect(self.download_selected)
         form.galleryContinueButton.clicked.connect(self._continue_after_empty)
         form.galleryContinueButton.hide()
@@ -432,6 +478,100 @@ class GalleryTab(QObject):
         self._selection_changed()
         runner.shutdown_started.connect(self.shutdown)
 
+    def _mark_preferences_changed(self) -> None:
+        if self._preferences_state is not None:
+            self._preferences_timer.start()
+
+    def _save_preferences(self) -> None:
+        """Persist inputs without persisting cards, cursors, thumbnails or network credentials."""
+        if self._preferences_state is None:
+            return
+        try:
+            save_civitai_browse_preferences(
+                self._preferences_state,
+                {
+                    "query": self.form.gallerySearchEdit.text(),
+                    "sort": self.form.gallerySortCombo.currentText(),
+                    "period": self.form.galleryPeriodCombo.currentData(),
+                    "families": list(self._selected_families),
+                },
+            )
+        except (SettingsError, OSError):
+            log.warning("Browse Civitai inputs could not be saved; settings file left unchanged")
+            self.form.gallerySearchEdit.setToolTip("Search settings could not be saved; see Logs.")
+        else:
+            self.form.gallerySearchEdit.setToolTip("Type keywords and press Enter.")
+
+    def _filters_changed(self, *_args) -> None:
+        self._mark_preferences_changed()
+        if self._loaded and self.form.gallerySearchEdit.text().strip():
+            self.search()
+
+    def _update_family_summary(self) -> None:
+        combo = self.form.galleryFamilyCombo
+        labels = [label for key, label in self._family_choices if key in self._selected_families]
+        title = ", ".join(labels) if len(labels) <= 2 else f"{len(labels)} families"
+        combo.setItemText(0, title or "All families")
+        combo.setAccessibleName("Filter Civitai LoRAs by families")
+        combo.setToolTip("Select any combination of supported families. " + (", ".join(labels) or "All families"))
+
+    def _set_families(self, selected: tuple[str, ...]) -> None:
+        available = {key for key, _label in self._family_choices}
+        choices = set(selected) & available
+        updated = tuple(key for key, _label in self._family_choices if key in choices)
+        if updated == self._selected_families:
+            return
+        self._selected_families = updated
+        self._update_family_summary()
+        self._filters_changed()
+
+    def _show_family_menu(self) -> None:
+        """Keep a multi-checkbox popover open while users select several families."""
+        combo = self.form.galleryFamilyCombo
+        if self._family_popup is not None:
+            return
+        menu = QMenu(combo)
+        self._family_popup = menu
+
+        def reset() -> None:
+            self._set_families(())
+        menu.addAction("All families", reset)
+        menu.addSeparator()
+        panel = QWidget(menu)
+        panel.setMinimumWidth(max(160, combo.width()))
+        layout = QVBoxLayout(panel)
+        layout.setContentsMargins(10, 7, 10, 7)
+        layout.setSpacing(6)
+        for key, label in self._family_choices:
+            checkbox = QCheckBox(label, panel)
+            checkbox.setChecked(key in self._selected_families)
+            checkbox.setAccessibleName(f"Include {label} models")
+            checkbox.toggled.connect(
+                lambda checked, family_key=key: self._set_families(
+                    tuple(
+                        k for k, _name in self._family_choices
+                        if (k == family_key and checked)
+                        or (k != family_key and k in self._selected_families)
+                    )
+                )
+            )
+            layout.addWidget(checkbox)
+        action = QWidgetAction(menu)
+        action.setDefaultWidget(panel)
+        menu.addAction(action)
+
+        def closed() -> None:
+            self._family_popup = None
+            menu.deleteLater()
+        menu.aboutToHide.connect(closed)
+        menu.popup(combo.mapToGlobal(QPoint(0, combo.height())))
+        QTimer.singleShot(0, lambda: panel.findChild(QCheckBox).setFocus() if self._family_popup is menu else None)
+
+    def focus_search(self) -> None:
+        """Place typing focus on the keyword field whenever Downloads opens on Browse."""
+        self.form.gallerySearchEdit.setFocus(Qt.FocusReason.OtherFocusReason)
+        self.form.gallerySearchEdit.selectAll()
+
     def _fit(self) -> None:
         """Fit square cells across the viewport, retaining the original compact gallery density."""
         viewport = self._view.viewport()
@@ -451,10 +591,18 @@ class GalleryTab(QObject):
         self._load_visible_covers()
 
     def ensure_loaded(self) -> None:
-        if not self._loaded and not self._loading:
-            self.search()
+        """Restore input state without implicitly replaying a network search on startup."""
+        if not self._loaded:
+            self._loaded = True
+            self.form.galleryStatus.setText(
+                "Press Enter to search Civitai." if self.form.gallerySearchEdit.text().strip()
+                else "Enter keywords and press Enter to search Civitai."
+            )
 
     def shutdown(self) -> None:
+        if self._preferences_timer.isActive():
+            self._preferences_timer.stop()
+            self._save_preferences()
         self._generation += 1
         self._spinner.timer.stop()
         if self._thumb_client is not None:
@@ -471,9 +619,12 @@ class GalleryTab(QObject):
 
     # ---------------------------------------------------------------------------------------- continuous listing
     def search(self) -> None:
-        """Start a new continuous result stream. Existing downloaded files are unaffected."""
+        """Start only an explicitly requested keyword search; preserve existing downloads."""
         if self._runner.closed:
             return
+        if self._preferences_timer.isActive():
+            self._preferences_timer.stop()
+        self._save_preferences()
         self._generation += 1
         self._cursor = None
         self._seen_cursors.clear()
@@ -500,7 +651,8 @@ class GalleryTab(QObject):
         self._fetch()
 
     def _keyword_changed(self, value: str) -> None:
-        """Clearing the query clears stale results without contacting Civitai."""
+        """Save typing after a short idle period; clearing keywords never contacts Civitai."""
+        self._mark_preferences_changed()
         if not value.strip() and self._loaded:
             self.search()
 
@@ -525,7 +677,7 @@ class GalleryTab(QObject):
         generation = self._generation
         query = self.form.gallerySearchEdit.text()
         sort = self.form.gallerySortCombo.currentText()
-        family = self.form.galleryFamilyCombo.currentData()
+        family = self._selected_families
         period = self.form.galleryPeriodCombo.currentData()
         cursor = self._cursor
         self.form.galleryStatus.setText(
