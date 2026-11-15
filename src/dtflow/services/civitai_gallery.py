@@ -130,7 +130,7 @@ class GalleryCard:
         if self.trained_words:
             lines.append("Trigger words: " + ", ".join(self.trained_words[:8]))
         if self.tags:
-            lines.append("Tags: " + ", ".join(self.tags[:10]))
+            lines.append("Tags: " + ", ".join(self.tags))
         if self.thumbs_up is not None or self.thumbs_down is not None:
             lines.append(f"👍 {self.thumbs_up or 0}   👎 {self.thumbs_down or 0}")
         if self.published:
@@ -329,6 +329,7 @@ def list_page(
         client, listing_query(query, sort, cursor, limit, family=family, period=period, tag=tag)
     )
     items = [item for item in body.get("items") or [] if isinstance(item, dict)]
+    total = len(items)
     if selected_tags:
         selected = {value.casefold() for value in selected_tags}
         items = [
@@ -346,8 +347,7 @@ def list_page(
     # Mature content is requested on every call; Civitai ignores that in some regions. There is no flag for it, so a
     # full page whose covers are all the lowest level is reported as a likely withholding, never as a certainty.
     withheld = len(cards) >= WITHHELD_MIN_CARDS and all(card.nsfw_level <= 1 for card in cards)
-    return GalleryPage(cards, nxt if isinstance(nxt, str) and nxt else None, len(items) - len(cards), withheld)
-
+    return GalleryPage(cards, nxt if isinstance(nxt, str) and nxt else None, total - len(cards), withheld)
 
 
 @dataclass(slots=True)
@@ -434,6 +434,7 @@ class GallerySearch:
         self._page += 1
         # The UI's existing numeric seen-cursor guard works with these monotonic page tokens.
         return GalleryPage(page.cards, str(self._page) if self.active else None, page.skipped, page.withheld_note)
+
 
 # ------------------------------------------------------------------------------------------------------ thumbnails
 
