@@ -252,15 +252,24 @@ class CardDelegate(QStyledItemDelegate):
         tag_font = QFont(small)
         tag_font.setBold(True)
         painter.setFont(tag_font)
-        for bounds, tag in self.tag_rects(card, rect, option.font):
+        visible_tags = self.tag_rects(card, rect, option.font)
+        for bounds, tag in visible_tags:
             painter.setPen(QPen(SELECTION_BORDER, 1))
             painter.setBrush(SELECTION)
             painter.drawRoundedRect(bounds, 4, 4)
             painter.setPen(SELECTION_TEXT)
             painter.drawText(
-                bounds, Qt.AlignmentFlag.AlignCenter,
+                bounds,
+                Qt.AlignmentFlag.AlignCenter,
                 QFontMetrics(tag_font).elidedText(tag, Qt.TextElideMode.ElideRight, bounds.width() - 8),
             )
+        hidden_tags = len(card.tags) - len(visible_tags)
+        if hidden_tags and visible_tags:
+            right = visible_tags[-1][0].right() + 5
+            remaining = QRect(right, rect.bottom() - 73, rect.right() - right - 8, 19)
+            if remaining.width() >= 23:
+                painter.setPen(SECONDARY)
+                painter.drawText(remaining, Qt.AlignmentFlag.AlignVCenter, f"+{hidden_tags}")
         if hovered and card.downloadable:
             action = self.button_rect(rect)
             painter.setPen(QPen(ACCENT_HOVER, 1))
@@ -273,11 +282,19 @@ class CardDelegate(QStyledItemDelegate):
             # Small filled arrow (14px); a short baseline distinguishes the multi-version chooser.
             tip = cy + (4 if multiple else 6)
             wing = cy - (2 if multiple else 1)
-            painter.drawPolygon(QPolygon([
-                QPoint(cx - 2, cy - 7), QPoint(cx + 2, cy - 7),
-                QPoint(cx + 2, wing), QPoint(cx + 7, wing),
-                QPoint(cx, tip), QPoint(cx - 7, wing), QPoint(cx - 2, wing),
-            ]))
+            painter.drawPolygon(
+                QPolygon(
+                    [
+                        QPoint(cx - 2, cy - 7),
+                        QPoint(cx + 2, cy - 7),
+                        QPoint(cx + 2, wing),
+                        QPoint(cx + 7, wing),
+                        QPoint(cx, tip),
+                        QPoint(cx - 7, wing),
+                        QPoint(cx - 2, wing),
+                    ]
+                )
+            )
             if multiple:
                 painter.drawRect(QRect(cx - 6, cy + 7, 12, 2))
         painter.setClipping(False)
