@@ -1,6 +1,6 @@
 # Unreleased
 
-- Add experimental local CPU **Quantize q8p…** on Generate, separate from Prepare: select a raw F16 LoRA CKPT and save a separate q8p/ezm7 CKPT. Reuses the multicore Colab/CLI quantizer, auto-detects available CPU workers, shows block progress and offers cooperative Cancel; no input overwrite, retention or upload. Windows packaging now includes the optional native `kmeans1d` dependency. Windows executable behavior and provider quality remain unverified (#353, PR #470).
+- Move experimental desktop CPU **Quantize q8p** to per-row actions in Connection → Custom LoRAs. Click the full header to expand a taller table, quantize a managed F16 into a separate retained q8p, and optionally open its Prepare approval editor. Verified managed counterparts disable repeat conversion; selected-key local confirmations govern row Prepare. Originals and existing receipts remain unchanged; no automatic upload. Revised library workflow is static-reviewed only, not owner-accepted yet (#353, PR #470).
 
 - Record owner-reported optional NVIDIA L4 GPU q8p conversion of a Krea 2 F16 LoRA: 194.36 → 100.57 MB (48.257% smaller) in 11.632 s, with 472 q8p/two ezm7 tensors. Unlike the CLI's optimal CPU clustering, the optional notebook GPU path uses approximate Lloyd clustering; iOS-equivalent weights, DT+ acceptance and image quality are not established. The shared service now has a Python 3.12 CPU-count fallback; Colab runtime validation remains open (#353, PR #470).
 

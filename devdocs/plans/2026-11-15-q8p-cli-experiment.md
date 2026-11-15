@@ -1,6 +1,6 @@
 # Local q8p CLI experiment (#353)
 
-## Scope and decisions
+## Scope and decisions (initial CLI experiment)
 
 - Add `dtflow lora inspect`, `compare` and `quantize`; the writer requires explicit `-e/--experimental` and a separate new `.ckpt` output.
 - No changes to safetensors conversion, Prepare, retained-store authority, upload, generation or UI. No provider or credential access from these commands.
@@ -75,3 +75,7 @@ A separate 256-block sample report, using the same reported F16 input SHA, measu
 - Complete separately authorized DT+ smoke with the same model, prompt, seed and LoRA weight; assess provider acceptance and real LoRA effect/quality. AC-4 remains unchecked. Maintain distinct CPU and GPU timing scopes, and keep GPU nonconvergence reports distinct from image quality.
 
 **Go/no-go:** go for the opt-in experiment only; no default GPU encoding, Prepare integration, or production compatibility claim. No agent tests, renders, conversion, provider operations or Actions were run in this review.
+
+## Managed-library desktop revision
+
+The owner superseded the standalone Generate picker/Save As UX with per-row actions in Connection → Custom LoRAs. The full header toggles the section; table height is 240–420 px. The local adapter stages outside state, preserves the F16, retains a verified separate q8p and records additive source/output content relationships without transferring receipts. Existing verified output disables repeat conversion; missing/damaged output does not. Prepare uses the selected key’s local confirmations and opens the existing approval editor, including from the post-conversion success action; it never uploads automatically. CLI/notebook behavior is unchanged. Existing AC IDs and levels remain unchanged; this desktop/retention scope extension is disclosed in the PR. Static checks only; owner smoke must cover conversion, restart, removal, cancellation, key changes and explicit Prepare. No tests, fixtures, renders or provider calls are authorized by this revision.

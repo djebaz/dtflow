@@ -881,18 +881,19 @@
                   <widget class="QTableWidget" name="retainedLorasTable">
                    <property name="toolTip"><string>Local retained copies. Select one row to edit its metadata or press Delete to remove the retained copy only.</string></property>
                    <property name="accessibleName"><string>Custom LoRA library</string></property>
-                   <property name="minimumHeight"><number>96</number></property>
-                   <property name="maximumHeight"><number>168</number></property>
+                   <property name="minimumHeight"><number>240</number></property>
+                   <property name="maximumHeight"><number>420</number></property>
                    <property name="selectionMode"><enum>QAbstractItemView::SingleSelection</enum></property>
                    <property name="selectionBehavior"><enum>QAbstractItemView::SelectRows</enum></property>
                    <property name="editTriggers"><set>QAbstractItemView::NoEditTriggers</set></property>
                    <property name="showGrid"><bool>false</bool></property>
-                   <property name="columnCount"><number>5</number></property>
+                   <property name="columnCount"><number>6</number></property>
                    <column><property name="text"><string>Short name</string></property></column>
                    <column><property name="text"><string>Architecture</string></property></column>
                    <column><property name="text"><string>Format</string></property></column>
                    <column><property name="text"><string>Trigger words</string></property></column>
                    <column><property name="text"><string>Status</string></property></column>
+                   <column><property name="text"><string>Actions</string></property></column>
                   </widget>
                  </item>
                  <item>

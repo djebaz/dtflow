@@ -1550,16 +1550,6 @@
                 </property>
                </widget>
               </item>
-              <item>
-               <widget class="QPushButton" name="quantizeLoraButton">
-                <property name="text">
-                 <string>Quantize q8p…</string>
-                </property>
-                <property name="toolTip">
-                 <string>Experimental local F16 to q8p conversion using CPU cores. Saves a separate file; never uploads or replaces the original.</string>
-                </property>
-               </widget>
-              </item>
              </layout>
             </item>
             <item>
@@ -1575,19 +1565,6 @@
               </property>
               <property name="textRole" stdset="0">
                <string>value</string>
-              </property>
-             </widget>
-            </item>
-            <item>
-             <widget class="QLabel" name="quantizeStatusLabel">
-              <property name="text">
-               <string>Experimental local CPU quantization. Choose an F16 CKPT and a new output file; no upload.</string>
-              </property>
-              <property name="wordWrap">
-               <bool>true</bool>
-              </property>
-              <property name="role" stdset="0">
-               <string>secondary</string>
               </property>
              </widget>
             </item>
