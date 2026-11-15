@@ -31,6 +31,7 @@ from dtflow.core.models import (
     PreparedAsset,
     ValidationError,
 )
+from dtflow.persistence import lora_sources as _sources
 from dtflow.persistence import store
 from dtflow.persistence.store import PersistenceError
 
@@ -247,7 +248,7 @@ class AssetRegistry:
             db.execute("PRAGMA journal_mode=WAL")
             db.execute("BEGIN IMMEDIATE")
             try:
-                for statement in SCHEMA:
+                for statement in (*SCHEMA, *_sources.SCHEMA_STATEMENTS):  # additive tables: no version bump
                     db.execute(statement)
                 db.execute(f"PRAGMA user_version={SCHEMA_VERSION}")
                 db.execute("COMMIT")
@@ -737,6 +738,54 @@ class AssetRegistry:
         with closing(self._connect()) as db:
             rows = db.execute("SELECT * FROM lora_records ORDER BY sha256, size").fetchall()
         return tuple(_record(row) for row in rows)
+
+    # -- downloaded LoRA sources (additive table; readers treat a missing table as "no sources") ----------------------
+
+    async def sources(self) -> tuple[dict[str, Any], ...]:
+        """All recorded download sources, oldest first; empty before any writer created the table."""
+        return await self._run(self._read_sources)
+
+    def _read_sources(self) -> tuple[dict[str, Any], ...]:
+        if not self.path.exists():
+            return ()
+        with closing(self._connect()) as db:
+            return _sources.select_all(db)
+
+    async def source(self, sha256: str) -> dict[str, Any] | None:
+        return await self._run(self._read_source, sha256)
+
+    def _read_source(self, sha256: str) -> dict[str, Any] | None:
+        if not self.path.exists():
+            return None
+        with closing(self._connect()) as db:
+            return _sources.select_one(db, sha256)
+
+    async def record_source(self, record: _sources.SourceRecord) -> None:
+        """Insert or refresh provenance for verified downloaded bytes (keeps a user correction and the state)."""
+        await self._run(self._write, lambda db: _sources.upsert(db, record, _now()))
+
+    async def update_source(
+        self,
+        sha256: str,
+        *,
+        state: str | None = None,
+        detail: str | None = None,
+        file_state: str | None = None,
+        converted: tuple[str, int] | None = None,
+    ) -> bool:
+        return await self._run(
+            self._write,
+            lambda db: _sources.set_state(
+                db, sha256, _now(), state=state, detail=detail, file_state=file_state, converted=converted
+            ),
+        )
+
+    async def declare_source_family(self, sha256: str, family: str | None) -> bool:
+        """Record a user correction (``None`` clears it); the original label and classification stay."""
+        return await self._run(self._write, lambda db: _sources.set_declared_family(db, sha256, family, _now()))
+
+    async def delete_source(self, sha256: str) -> bool:
+        return await self._run(self._write, lambda db: _sources.delete(db, sha256))
 
     async def accept_local_managed_name(self, sha256: str, size: int, metadata: LoraPrepareMetadata) -> bool:
         """Accept a first managed name for previously prepared content, with no Prepare or provider call."""
