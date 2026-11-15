@@ -648,8 +648,9 @@ class MainWindow:
         table = form.retainedLorasTable
         table.verticalHeader().setVisible(False)
         header = table.horizontalHeader()
-        for column in (0, 1, 2, 4, 5):
+        for column in (0, 1, 2, 4):
             header.setSectionResizeMode(column, QHeaderView.ResizeMode.ResizeToContents)
+        header.setSectionResizeMode(5, QHeaderView.ResizeMode.Fixed)
         header.setSectionResizeMode(3, QHeaderView.ResizeMode.Stretch)
         table.itemSelectionChanged.connect(self._retained_lora_selection_changed)
         table.itemDoubleClicked.connect(lambda _item: self.edit_lora_metadata())
@@ -2512,7 +2513,14 @@ class MainWindow:
         host.ensurePolished()
         quantize.ensurePolished()
         prepare.ensurePolished()
+        for button in (quantize, prepare):
+            button.setMinimumWidth(
+                max(button.sizeHint().width(), button.fontMetrics().horizontalAdvance(button.text()) + 20)
+            )
         host.layout().activate()
+        # Header auto-sizing can underestimate embedded controls. Reserve their full styled widths explicitly.
+        required_width = quantize.minimumWidth() + prepare.minimumWidth() + host.layout().spacing() + 8
+        self.form.retainedLorasTable.setColumnWidth(5, max(self.form.retainedLorasTable.columnWidth(5), required_width))
         self.form.retainedLorasTable.setRowHeight(
             row,
             max(
