@@ -9,7 +9,7 @@ the user has enabled the persistent Auto-prepare preference.
 from __future__ import annotations
 
 import logging
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from pathlib import Path
 
 from PySide6.QtCore import QObject, Qt, QTimer, Signal
@@ -83,6 +83,7 @@ class DownloadsPage(QObject):
         read_token: Callable[[], str | None],
         token_state: Callable[[], str],
         cloud_ready: Callable[[], bool],
+        active_credential: Callable[[], Awaitable[tuple[str, str | None] | None]],
         open_credentials: Callable[[], None],
         open_prepare: Callable[[list[str]], None],
         auto_prepare: Callable[[str, LoraPrepareMetadata, Callable[[str], None]], str | None] | None = None,
@@ -92,7 +93,10 @@ class DownloadsPage(QObject):
         self._runner, self._state = runner, Path(state_dir)
         self._read_token, self._token_state = read_token, token_state
         self._cloud_ready, self._open_credentials, self._open_prepare = cloud_ready, open_credentials, open_prepare
+        self._active_credential = active_credential
         self._auto_prepare = auto_prepare
+        self._receipt_revision = 0
+        self._confirmed_contents: frozenset[tuple[str, int]] = frozenset()
         try:
             self._auto_prepare_enabled = load_downloads_auto_prepare(self._state)
             self._auto_prepare_settings_problem = ""
@@ -185,11 +189,13 @@ class DownloadsPage(QObject):
     def _summarise(self) -> None:
         counts: dict[str, int] = {}
         for item in self.items:
-            counts[item.state] = counts.get(item.state, 0) + 1
+            state = "prepared" if item.state == engine.CONVERTED and item.auto_prepare_phase == "prepared" else item.state
+            counts[state] = counts.get(state, 0) + 1
         running = counts.get(engine.DOWNLOADING, 0) + counts.get(engine.CONVERTING, 0)
         parts = [
             (running, "running"),
             (counts.get(engine.QUEUED, 0), "queued"),
+            (counts.get("prepared", 0), "prepared"),
             (counts.get(engine.CONVERTED, 0), "converted"),
             (counts.get(engine.NOT_CONVERTIBLE, 0) + counts.get(engine.INTERRUPTED, 0), "not converted"),
             (counts.get(engine.FAILED, 0), "failed"),
@@ -207,6 +213,7 @@ class DownloadsPage(QObject):
         if not self._loaded:
             self._loaded = True
             self._runner.submit(engine.load_items(self._state), self._restored)
+        self._refresh_prepared_receipts()
         self._render()
         self._tab_changed()
         self.changed.emit()
@@ -224,7 +231,49 @@ class DownloadsPage(QObject):
             if row.key not in known:
                 self.items.append(row)
                 known.add(row.key)
+        self._apply_confirmed_contents()
         self._render(force=True)
+
+    def _apply_confirmed_contents(self) -> None:
+        """Display receipts only for exact converted content on the selected cloud key."""
+        for item in self.items:
+            if item.state != engine.CONVERTED or item.auto_prepare_phase == "preparing":
+                continue
+            content = (item.converted_sha, item.converted_size)
+            if content in self._confirmed_contents:
+                item.auto_prepare_phase = "prepared"
+                item.auto_prepare_status = "Confirmed local DT+ receipt for the selected key"
+            elif item.auto_prepare_phase == "prepared":
+                item.auto_prepare_phase = ""
+                item.auto_prepare_status = ""
+
+    def _refresh_prepared_receipts(self) -> None:
+        """Read the existing key-scoped receipts, not remote inventory, without a provider call."""
+        self._receipt_revision += 1
+        revision = self._receipt_revision
+        self._confirmed_contents = frozenset()
+        self._apply_confirmed_contents()
+        self._render(force=True)
+        if not self._cloud_ready() or self._runner.closed:
+            return
+
+        async def work():
+            identity = await self._active_credential()
+            if identity is None:
+                return frozenset()
+            return await engine.prepared_contents_for_key(self._state, identity[0])
+
+        def done(contents, failure) -> None:
+            if revision != self._receipt_revision or not self._cloud_ready():
+                return
+            if failure is not None:
+                log.warning("Saved DT+ receipt lookup unavailable: %s", type(failure).__name__)
+                return
+            self._confirmed_contents = contents or frozenset()
+            self._apply_confirmed_contents()
+            self._render(force=True)
+
+        self._runner.submit(work(), done)
 
     def token_changed(self) -> None:
         state = self._token_state()
@@ -469,6 +518,7 @@ class DownloadsPage(QObject):
         # can open while this same file's automatic preparation is pending or running.
         item.auto_prepare_phase = "preparing"
         item.auto_prepare_status = "Preparing on DT+…"
+        receipt_revision = self._receipt_revision
         self._render(force=True)
 
         async def work():
@@ -487,9 +537,14 @@ class DownloadsPage(QObject):
                 return
 
             def settled(message: str) -> None:
-                item.auto_prepare_phase = "prepared" if message == "Prepared" else ""
-                item.auto_prepare_status = "Prepared on DT+" if message == "Prepared" else message
-                self._render(force=True)
+                if receipt_revision != self._receipt_revision:
+                    # A key/backend switch happened while Prepare ran. Do not show an old key's receipt.
+                    item.auto_prepare_phase = ""
+                    item.auto_prepare_status = ""
+                else:
+                    item.auto_prepare_phase = "prepared" if message == "Prepared" else ""
+                    item.auto_prepare_status = "Prepared on DT+" if message == "Prepared" else message
+                self._refresh_prepared_receipts()
 
             problem = self._auto_prepare(str(path), item.prepare_metadata, settled)
             if problem is not None:
@@ -598,8 +653,8 @@ class DownloadsPage(QObject):
         }
 
     def refresh_actions(self) -> None:
-        """The backend changed: Prepare… follows the cloud-only rule."""
-        self._render(force=True)
+        """A backend or DT+ key changed: re-read confirmed receipts for its exact identity."""
+        self._refresh_prepared_receipts()
 
     def _tick(self) -> None:
         self._render()
@@ -721,20 +776,21 @@ class DownloadsPage(QObject):
         text = item.detail.casefold()
         if item.active:
             button("Cancel", self.cancel)
-        elif state == engine.CONVERTED and item.auto_prepare_phase != "prepared":
-            button(
-                "Prepare…",
-                self.prepare,
-                enabled=cloud and item.auto_prepare_phase != "preparing",
-                tip=(
-                    "Automatic preparation is running for this file."
-                    if item.auto_prepare_phase == "preparing"
-                    else "Open the Prepare editor with this file."
-                    if cloud
-                    else engine.PREPARE_NEEDS_CLOUD
-                ),
-                role="primary" if cloud else None,
-            )
+        elif state == engine.CONVERTED:
+            if item.auto_prepare_phase != "prepared":
+                button(
+                    "Prepare…",
+                    self.prepare,
+                    enabled=cloud and item.auto_prepare_phase != "preparing",
+                    tip=(
+                        "Automatic preparation is running for this file."
+                        if item.auto_prepare_phase == "preparing"
+                        else "Open the Prepare editor with this file."
+                        if cloud
+                        else engine.PREPARE_NEEDS_CLOUD
+                    ),
+                    role="primary" if cloud else None,
+                )
         elif state == engine.NOT_CONVERTIBLE:
             button("Remove", self.remove, tip="Permanently delete the kept file.")
         elif state == engine.FAILED and ("removed" in text or "not found" in text or "no longer" in text):
