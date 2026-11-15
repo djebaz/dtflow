@@ -23,6 +23,7 @@ from PySide6.QtWidgets import (
     QLineEdit,
     QMainWindow,
     QPlainTextEdit,
+    QPushButton,
     QSizePolicy,
     QToolButton,
     QWidget,
@@ -116,6 +117,7 @@ UI_FILE = FORMS_DIR / "main_window.ui"
 GENERATION_UI_FILE = FORMS_DIR / "generation_page.ui"
 SCRIPTS_UI_FILE = FORMS_DIR / "scripts_workspace.ui"
 QUEUE_UI_FILE = FORMS_DIR / "queue_page.ui"
+DOWNLOADS_UI_FILE = FORMS_DIR / "downloads_page.ui"
 PREVIEW_CONTROL_TYPES = (
     QAbstractButton,
     QAbstractSpinBox,
@@ -332,6 +334,31 @@ class MainWindow:
         )
         self.workflows.mount(self.shell)
         startup.mark("workspace: workflows mounted")
+        # Downloads is a full workspace page reached from the status-bar pill and F9; it has no navigation button.
+        from dtflow.ui.downloads_page import DownloadsPage
+
+        self.downloads_marker = QWidget()
+        form.workspaceStack.addWidget(self.downloads_marker)
+        self._downloads_form = load_ui(DOWNLOADS_UI_FILE)
+        self._downloads_left, self._downloads_right = QWidget(), QWidget()
+        for stack, panel in zip(
+            (self.shell.leftStack, self.shell.centerStack, self.shell.rightStack),
+            (self._downloads_left, self._downloads_form, self._downloads_right),
+            strict=True,
+        ):
+            stack.addWidget(panel)
+        self.downloads = DownloadsPage(
+            self._downloads_form,
+            runner=self.runner,
+            state_dir=self.state_dir,
+            read_token=lambda: self._download_tokens.get(CIVITAI),
+            token_state=lambda: self._token_state,
+            cloud_ready=lambda: self.form.backendCombo.currentText() == "cloud",
+            open_credentials=self._open_download_credentials,
+            open_prepare=self._prepare_downloaded,
+        )
+        self._downloads_line = False
+        startup.mark("workspace: downloads mounted")
         form.workspaceStack.hide()
         startup.mark("workspace: legacy stack hidden")
         form.rootLayout.addWidget(self.shell)
@@ -554,6 +581,17 @@ class MainWindow:
         # Connection keeps its existing colored status glyph and is the last
         # permanent control, independent of the active workspace or inspector.
         form.statusBar().addPermanentWidget(pill)
+        downloads_pill = QPushButton("Downloads", form.statusBar())
+        downloads_pill.setObjectName("downloadsPill")
+        downloads_pill.setProperty("state", "idle")
+        downloads_pill.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        downloads_pill.setCursor(Qt.CursorShape.PointingHandCursor)
+        downloads_pill.setToolTip("Open Downloads (F9)")
+        downloads_pill.setAccessibleName("Open Downloads")
+        downloads_pill.clicked.connect(self._show_downloads)
+        self.downloads_pill = downloads_pill
+        self.downloads.changed.connect(self._sync_downloads)
+        form.statusBar().addPermanentWidget(downloads_pill)
         form.statusBar().addPermanentWidget(self.shell.connectionStatusDock)
         self.grid_index_group = grid_status_group
         # The slot stays on every tab (only its text hides) so the activity bar has the same room everywhere.
@@ -698,6 +736,7 @@ class MainWindow:
             ("F2", self._show_workflows),
             ("F3", self._show_queue),
             ("F4", lambda: self.form.workspaceStack.setCurrentWidget(self.images_page)),
+            ("F9", self._show_downloads),
             ("F10", self._toggle_logs),
             ("F12", lambda: self.form.workspaceStack.setCurrentWidget(self.form.connectionPage)),
         ):
@@ -833,6 +872,70 @@ class MainWindow:
 
     def _show_workflows(self) -> None:
         self.form.workspaceStack.setCurrentWidget(self.workflows_marker)
+
+    # -- Downloads (status-bar pill, F9) ----------------------------------------------------------------------------
+    def _show_downloads(self) -> None:
+        if self.runner.closed:
+            return
+        self.form.workspaceStack.setCurrentWidget(self.downloads_marker)
+
+    def _open_download_credentials(self) -> None:
+        """Connection page with the Download credentials card expanded and the token field focused."""
+        self.form.workspaceStack.setCurrentWidget(self.form.connectionPage)
+        self.form.downloadCredentialsDisclosure.setChecked(True)
+        self.form.civitaiTokenEdit.setFocus()
+
+    def _prepare_downloaded(self, paths: list[str]) -> None:
+        """Downloads row → Prepare…: Generate's Prepare editor opens on the converted file; nothing uploads yet."""
+        if self._scripts_active:
+            self._leave_scripts(inpaint=False)
+        self._show_generation()
+        problem = self.generation.lora.prepare_files(paths)
+        if problem:
+            InlineNotice.warning(self.form, "Prepare not opened", problem)
+
+    def _sync_downloads(self) -> None:
+        """The pill and the one aggregate activity line follow the downloads list."""
+        if self.runner.closed or self.progress_strip.retired:
+            return
+        page, pill = self.downloads, self.downloads_pill
+        stats = page.stats()
+        viewing = self.form.workspaceStack.currentWidget() is self.downloads_marker
+        if stats["active"]:
+            text, state = f"\u2b07 {stats['active']}", "idle"
+        elif page.failed_unseen and not viewing:
+            text, state = f"! {page.failed_unseen} failed", "error"
+        elif page.finished_unseen and not viewing:
+            text, state = f"\u2713 {page.finished_unseen} done", "ok"
+        else:
+            text, state = "Downloads", "idle"
+        if pill.text() != text:
+            pill.setText(text)
+        if pill.property("state") != state:
+            pill.setProperty("state", state)
+            pill.style().unpolish(pill)
+            pill.style().polish(pill)
+        strip = self.progress_strip
+        if stats["active"]:
+            total, done = max(page.batch_total, 1), page.batch_done
+            if not self._downloads_line:
+                self._downloads_line = True
+                strip.start(
+                    "download",
+                    "Downloading LoRAs",
+                    stop=page.cancel_all,
+                    stop_text="Cancel downloads",
+                    total=total,
+                    detail="Starting…",
+                    action_text="Cancel",
+                )
+            waiting = stats["active"] - stats["transferring"]
+            verb = "Downloading" if stats["downloading"] or not stats["transferring"] else "Converting"
+            detail = f"{verb} {stats['transferring']} of {stats['active']}"
+            strip.update("download", done, total, detail=detail, queued=waiting)
+        elif self._downloads_line:
+            self._downloads_line = False
+            strip.finish("download")
 
     def _open_workflow_run(self, queue_id: str) -> None:
         """Show a workflow queue's run in Workflows: its steps, Retry and waiting branches."""
@@ -1038,6 +1141,16 @@ class MainWindow:
             self.workflows.activate()
         else:
             self.workflows.set_active(False)
+        downloads_active = self.form.workspaceStack.currentWidget() is self.downloads_marker
+        if downloads_active:
+            for stack, panel in zip(
+                (self.shell.leftStack, self.shell.centerStack, self.shell.rightStack),
+                (self._downloads_left, self._downloads_form, self._downloads_right),
+                strict=True,
+            ):
+                stack.setCurrentWidget(panel)
+            self.downloads.activate()
+        self._sync_downloads()
         # Queues owns scrolling in queueList: the shared outer scroll must not
         # create a second wheel/scrollbar over the fixed filter and Clear action.
         queues_active = index == 2
@@ -1222,8 +1335,12 @@ class MainWindow:
         shell.leftRail.setVisible(not images and not logs and not folded)
         hint_open = self._prompt_hints.open if hasattr(self, "_prompt_hints") else False
         # The hint toggle can reveal the right rail at narrow widths, with Images still above it.
-        shell.rightRail.setVisible(not images and not logs and (workflows or not narrow or hint_open))
-        self._place_images_header(images=images, logs=logs, narrow=narrow and not workflows and not hint_open)
+        downloads = hasattr(self, "downloads") and self.form.workspaceStack.currentWidget() is self.downloads_marker
+        shell.rightRail.setVisible(not images and not logs and not downloads and (workflows or not narrow or hint_open))
+        # Downloads has no inspector: the Images action moves to the compact slot, as at narrow widths.
+        self._place_images_header(
+            images=images, logs=logs, narrow=downloads or (narrow and not workflows and not hint_open)
+        )
         if self._logs_form is not None:
             self._logs_form.logsBrandSlot.setVisible(logs)
             self._logs_form.logsNavigationSlot.setVisible(logs)
@@ -1420,6 +1537,8 @@ class MainWindow:
         self.form.credentialBox.setEnabled(name == "cloud")
         self._forget_holdings()
         self._selection_changed()
+        if hasattr(self, "downloads"):
+            self.downloads.refresh_actions()
 
     def _selection_changed(self, *_) -> None:
         """A result belongs to the selection that was checked; a new provider or endpoint starts unchecked."""
@@ -1532,6 +1651,7 @@ class MainWindow:
             self.images_page: "Images",
             self.logs_marker: "Logs",
             self.workflows_marker: "Workflows",
+            self.downloads_marker: "Downloads",
             self.queue_page: "Queues",
             self.generation_page: "Scripts" if self._scripts_active else "Generate",
         }.get(current, "Connection")
@@ -1671,6 +1791,8 @@ class MainWindow:
         else:
             text = "The saved token state could not be read; check again."
         form.civitaiTokenStatusLabel.setText(text)
+        if hasattr(self, "downloads"):
+            self.downloads.token_changed()
 
     def _token_work(self, work, done) -> None:
         """Run one blocking vault operation on a worker; ``done(result, error)`` runs on the GUI thread."""
