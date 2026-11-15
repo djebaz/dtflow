@@ -68,7 +68,20 @@ _ACTIVE_LOCK = threading.Lock()
 
 
 class CivitaiError(ValidationError):
-    """A plain, token-free failure message (Civitai's own wording is kept where it gave one)."""
+    """Civitai failure with safe diagnostic fields separate from potentially private provider wording."""
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        reason: str | None = None,
+        http_status: int | None = None,
+        bytes_read: int | None = None,
+    ) -> None:
+        super().__init__(message)
+        self.reason = reason
+        self.http_status = http_status
+        self.bytes_read = bytes_read
 
 
 class CivitaiMissing(CivitaiError):
@@ -256,21 +269,38 @@ def _failure(response: httpx.Response, token: str | None) -> CivitaiError:
     code = response.status_code
     suffix = f' Civitai says: "{wording}".' if wording else ""
     if code in (404, 410):
-        return CivitaiMissing(f"Civitai answered {code}: the item was not found or is no longer available.{suffix}")
+        return CivitaiMissing(
+            f"Civitai answered {code}: the item was not found or is no longer available.{suffix}",
+            reason="http_error",
+            http_status=code,
+        )
     if code == 401:
-        return CivitaiError(f"Civitai answered 401: a missing or invalid token. Check the Civitai token.{suffix}")
+        return CivitaiError(
+            f"Civitai answered 401: a missing or invalid token. Check the Civitai token.{suffix}",
+            reason="http_error",
+            http_status=code,
+        )
     if code == 403:
         return CivitaiError(
             f"Civitai answered 403: this item needs access the token does not have (gated, early access or terms "
-            f"to accept on Civitai).{suffix}"
+            f"to accept on Civitai).{suffix}",
+            reason="http_error",
+            http_status=code,
         )
     if code == 429:
-        return CivitaiError(f"Civitai answered 429: rate limited. Wait a while and retry.{suffix}")
-    return CivitaiError(f"Civitai answered HTTP {code}.{suffix}")
+        return CivitaiError(
+            f"Civitai answered 429: rate limited. Wait a while and retry.{suffix}",
+            reason="http_error",
+            http_status=code,
+        )
+    return CivitaiError(f"Civitai answered HTTP {code}.{suffix}", reason="http_error", http_status=code)
 
 
 def _transient(exc: BaseException) -> CivitaiError:
-    return CivitaiError(f"Could not reach Civitai ({type(exc).__name__}); check the network or proxy and retry.")
+    return CivitaiError(
+        f"Could not reach Civitai ({type(exc).__name__}); check the network or proxy and retry.",
+        reason="network_failure",
+    )
 
 
 def _fetch_json(client: httpx.Client, url: str, token: str | None) -> dict:
@@ -285,7 +315,11 @@ def _fetch_json(client: httpx.Client, url: str, token: str | None) -> dict:
                 for chunk in response.iter_bytes():
                     raw += chunk
                     if len(raw) > MAX_METADATA_BYTES:
-                        raise CivitaiError("Civitai's answer was larger than expected; it was not used.")
+                        raise CivitaiError(
+                            "Civitai's answer was larger than expected; it was not used.",
+                            reason="response_too_large",
+                            bytes_read=len(raw),
+                        )
             break
         except TRANSIENT as exc:
             if attempt:
@@ -297,9 +331,9 @@ def _fetch_json(client: httpx.Client, url: str, token: str | None) -> dict:
     try:
         body = json.loads(raw)
     except ValueError as exc:
-        raise CivitaiError("Civitai's answer was not valid JSON; it was not used.") from exc
+        raise CivitaiError("Civitai's answer was not valid JSON; it was not used.", reason="invalid_json") from exc
     if not isinstance(body, dict):
-        raise CivitaiError("Civitai's answer had an unexpected shape; it was not used.")
+        raise CivitaiError("Civitai's answer had an unexpected shape; it was not used.", reason="unexpected_json_shape")
     return body
 
 
