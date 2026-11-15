@@ -68,6 +68,7 @@ MAX_PIXMAPS = 180  # decoded square covers (encoded thumbnails have their own bo
 # The design's colours (devdocs/mockups/civitai_downloads_view.html, values of the design tokens).
 TEXT, SECONDARY = QColor("#e6e6e6"), QColor("#b2b2b2")
 SELECTION, SELECTION_BORDER, SELECTION_TEXT = QColor("#173852"), QColor("#285d84"), QColor("#d5ecff")
+SELECTION_HOVER, FOCUS_BORDER = QColor("#204c6e"), QColor("#60b6f6")
 WARNING, WARNING_BORDER = QColor("#ffbf59"), QColor("#9a6700")
 ITEM_SURFACE, SECTION_BORDER = QColor("#222222"), QColor("#343434")
 ACCENT, ACCENT_HOVER = QColor("#0068b8"), QColor("#0078d4")
@@ -98,6 +99,7 @@ class CardDelegate(QStyledItemDelegate):
     def __init__(self, parent: QObject, pixmaps: dict[str, QPixmap], state_of: Callable[[gallery.GalleryCard], str]):
         super().__init__(parent)
         self._pixmaps, self._state_of = pixmaps, state_of
+        self.hovered_tag: tuple[int, str] | None = None
         self.side = CARD
 
     def sizeHint(self, option, index) -> QSize:  # noqa: N802
@@ -256,8 +258,9 @@ class CardDelegate(QStyledItemDelegate):
         painter.setFont(tag_font)
         visible_tags = self.tag_rects(card, rect, option.font)
         for bounds, tag in visible_tags:
-            painter.setPen(QPen(SELECTION_BORDER, 1))
-            painter.setBrush(SELECTION)
+            active = self.hovered_tag == (card.model_id, tag)
+            painter.setPen(QPen(FOCUS_BORDER if active else SELECTION_BORDER, 1))
+            painter.setBrush(SELECTION_HOVER if active else SELECTION)
             painter.drawRoundedRect(bounds, 4, 4)
             painter.setPen(SELECTION_TEXT)
             painter.drawText(
@@ -281,24 +284,24 @@ class CardDelegate(QStyledItemDelegate):
             painter.setBrush(QColor("#ffffff"))
             cx, cy = action.center().x(), action.center().y()
             multiple = len(card.options) > 1
-            # Small filled arrow (14px); a short baseline distinguishes the multi-version chooser.
-            tip = cy + (4 if multiple else 6)
+            # Smaller filled arrow (~11px); a short baseline distinguishes multi-version choices.
+            tip = cy + (2 if multiple else 5)
             wing = cy - (2 if multiple else 1)
             painter.drawPolygon(
                 QPolygon(
                     [
-                        QPoint(cx - 2, cy - 7),
-                        QPoint(cx + 2, cy - 7),
+                        QPoint(cx - 2, cy - 5),
+                        QPoint(cx + 2, cy - 5),
                         QPoint(cx + 2, wing),
-                        QPoint(cx + 7, wing),
+                        QPoint(cx + 5, wing),
                         QPoint(cx, tip),
-                        QPoint(cx - 7, wing),
+                        QPoint(cx - 5, wing),
                         QPoint(cx - 2, wing),
                     ]
                 )
             )
             if multiple:
-                painter.drawRect(QRect(cx - 6, cy + 7, 12, 2))
+                painter.drawRect(QRect(cx - 5, cy + 5, 10, 2))
         painter.setClipping(False)
         painter.setBrush(Qt.BrushStyle.NoBrush)
         if selected:
@@ -385,34 +388,56 @@ class _CardActionFilter(QObject):
     def __init__(
         self,
         view: QListWidget,
+        delegate: CardDelegate,
         on_download: Callable[[gallery.GalleryCard], None],
         on_tag: Callable[[str], None],
     ):
         super().__init__(view.viewport())
-        self._view = view
+        self._view, self._delegate = view, delegate
         self._on_download, self._on_tag = on_download, on_tag
+        self._pointing = False
+
+    def _set_hover(self, target: tuple[int, str] | None, pointing: bool) -> None:
+        """Repaint only when the hovered tag changes; keep the normal card cursor elsewhere."""
+        if self._delegate.hovered_tag != target:
+            self._delegate.hovered_tag = target
+            self._view.viewport().update()
+        if self._pointing != pointing:
+            self._pointing = pointing
+            if pointing:
+                self._view.viewport().setCursor(Qt.CursorShape.PointingHandCursor)
+            else:
+                self._view.viewport().unsetCursor()
 
     def eventFilter(self, _watched, event) -> bool:  # noqa: N802
+        if event.type() == QEvent.Type.Leave:
+            self._set_hover(None, False)
+            return False
+        moving = event.type() == QEvent.Type.MouseMove
         tooltip = event.type() == QEvent.Type.ToolTip
         click = event.type() == QEvent.Type.MouseButtonPress and event.button() == Qt.MouseButton.LeftButton
-        if not (tooltip or click):
+        if not (moving or tooltip or click):
             return False
         position = event.pos() if tooltip else event.position().toPoint()
         item = self._view.itemAt(position)
-        if item is None:
-            return False
-        card = item.data(CARD_ROLE)
+        card = item.data(CARD_ROLE) if item is not None else None
         if not isinstance(card, gallery.GalleryCard):
+            if moving:
+                self._set_hover(None, False)
             return False
         rect = self._view.visualItemRect(item).adjusted(1, 1, -1, -1)
         tag = CardDelegate.tag_at(card, rect, self._view.font(), position)
+        download = card.downloadable and CardDelegate.button_rect(rect).contains(position)
+        if moving:
+            self._set_hover((card.model_id, tag) if tag is not None else None, tag is not None or download)
+            return False
         if tag is not None:
             if tooltip:
                 QToolTip.showText(event.globalPos(), f"Add tag: {tag}", self._view.viewport())
             else:
                 self._on_tag(tag)
             return True
-        if card.downloadable and CardDelegate.button_rect(rect).contains(position):
+        if download:
             if tooltip:
                 action = "Download this version" if len(card.options) == 1 else "Choose versions to download"
                 QToolTip.showText(event.globalPos(), action, self._view.viewport())
@@ -536,7 +561,7 @@ class GalleryTab(QObject):
         self._delegate.download_requested.connect(self._download_card)
         self._delegate.tag_requested.connect(self._add_tag)
         view.setItemDelegate(self._delegate)
-        self._card_action_filter = _CardActionFilter(view, self._download_card, self._add_tag)
+        self._card_action_filter = _CardActionFilter(view, self._delegate, self._download_card, self._add_tag)
         view.viewport().installEventFilter(self._card_action_filter)
         self._spinner = _SpinningRing(view.viewport())
         self._spinner.hide()
