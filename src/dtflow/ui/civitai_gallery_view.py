@@ -523,7 +523,9 @@ class GalleryTab(QObject):
             return
         self._selected_families = updated
         self._update_family_summary()
-        self._filters_changed()
+        self._mark_preferences_changed()
+        if self._family_popup is None:
+            self._filters_changed()
 
     def _show_family_menu(self) -> None:
         """Keep a multi-checkbox popover open while users select several families."""
@@ -532,6 +534,7 @@ class GalleryTab(QObject):
             return
         menu = QMenu(combo)
         self._family_popup = menu
+        initial_families = self._selected_families
 
         def reset() -> None:
             self._set_families(())
@@ -562,6 +565,9 @@ class GalleryTab(QObject):
 
         def closed() -> None:
             self._family_popup = None
+            if self._selected_families != initial_families:
+                # One Civitai request after the user finishes multiple checkbox changes.
+                self._filters_changed()
             menu.deleteLater()
         menu.aboutToHide.connect(closed)
         menu.popup(combo.mapToGlobal(QPoint(0, combo.height())))
