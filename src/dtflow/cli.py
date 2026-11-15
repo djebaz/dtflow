@@ -334,7 +334,7 @@ def add_asset_commands(commands) -> None:
     download = action(
         "download",
         "Download one LoRA .safetensors from Civitai into application data. Never uploads to DT+. "
-        "Reads the token from the CIVITAI_TOKEN environment variable.",
+        "Reads the token from the CIVITAI_TOKEN environment variable, else the one saved in the app.",
     )
     download.add_argument("source", help="Civitai version id, or a civitai.com model or download link.")
     download.add_argument("--file-id", type=int, help="Choose one file when a version has several .safetensors files.")
@@ -702,6 +702,14 @@ async def run_asset_download(args: argparse.Namespace) -> int:
     from dtflow.services import civitai
 
     token = os.environ.get("CIVITAI_TOKEN") or None
+    if token is None:  # the app's saved token (Windows Credential Manager) when the variable is not set
+        from dtflow.services.credentials import SecureStorageUnavailable
+        from dtflow.services.download_tokens import DownloadTokens
+
+        try:
+            token = await asyncio.to_thread(DownloadTokens().get)
+        except SecureStorageUnavailable:
+            token = None
     ref = civitai.parse_reference(args.source)
 
     def work():
