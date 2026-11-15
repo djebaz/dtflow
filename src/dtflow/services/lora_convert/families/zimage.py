@@ -5,7 +5,7 @@ from __future__ import annotations
 import re
 
 from dtflow.services.lora_convert.families.resolver import Target, run_resolver
-from dtflow.services.lora_convert.registry import FamilySpec, register
+from dtflow.services.lora_convert.registry import FamilyCode, register
 
 
 _ZIMAGE_BLOCK = re.compile(r"^(layers|noise_refiner|context_refiner)_(\d+)_(\w+)$")
@@ -58,12 +58,8 @@ def resolve_zimage(module: str) -> Target | None:
 
 
 register(
-    FamilySpec(
+    FamilyCode(
         key="zimage",
-        label="Z Image",
-        exact_architecture="z_image",
-        status="verified",
-        experimental=False,
         kind="resolver",
         run=lambda st, request, ctx: run_resolver(st, "zimage", resolve_zimage, request.scale, ctx),
         notes="Swift-compared and smoked on DT+",

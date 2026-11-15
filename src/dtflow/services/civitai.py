@@ -79,6 +79,10 @@ class CivitaiCancelled(CivitaiError):
     """Stopped by the user or by shutdown; the staging file was removed."""
 
 
+class CivitaiUnsupportedFamily(CivitaiError):
+    """The version's base-model label maps to no family in ``lora_convert/data/families.json``."""
+
+
 class CivitaiChoice(CivitaiError):
     """Several versions or files match; nothing is chosen silently. ``options`` lists them for the caller."""
 
@@ -619,6 +623,23 @@ def _check_header(head: bytes) -> None:
         raise CivitaiError("The downloaded data is not a .safetensors file (it may be an error page); it was rejected.")
 
 
+def supported_family(version: CivitaiVersion):
+    """The converter family of the version's base-model label, or ``CivitaiUnsupportedFamily``.
+
+    The one gate for every caller (CLI, Downloads view, queue): it needs no network and runs before any bytes are
+    fetched. The label comes from Civitai's own ``baseModel``; nothing is guessed from filenames or tags."""
+    from dtflow.services.lora_convert.registry import family_for_label
+
+    spec = family_for_label(version.provider, version.base_model)
+    if spec is None:
+        label = f'"{version.base_model}"' if version.base_model else "no base model"
+        raise CivitaiUnsupportedFamily(
+            f"Family not supported yet: Civitai lists this LoRA with {label}, which DTFlow cannot convert. "
+            "Nothing was downloaded."
+        )
+    return spec
+
+
 def download(
     version: CivitaiVersion,
     state: Path,
@@ -632,6 +653,7 @@ def download(
     """Download the resolved file. Publishes only after complete streaming, size and header checks and a measured
     SHA-256 that matches the published one; on any failure the staging file is removed. One automatic retry, for
     connectivity/timeout failures only. A file already stored under the published hash is reused untouched."""
+    supported_family(version)  # before any file or network access
     token = _valid_token(token)
     file = version.file
     directory = sources_dir(state)
@@ -718,6 +740,7 @@ class DownloadManager:
         token: str | None,
         on_progress: Callable[[DownloadProgress], None] | None = None,
     ) -> DownloadHandle:
+        supported_family(version)
         key = (version.version_id, version.file.id)
         with self._lock:
             current = self._handles.get(key)
