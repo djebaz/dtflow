@@ -54,6 +54,7 @@ _OPERATION_ICONS = {
     "generation": "✦",
     "queue": "▦",
     "selection": "☑",
+    "q8p": "▤",
 }
 
 
@@ -428,6 +429,8 @@ class ActivityStrip(QObject):
                     if stop_text == "Cancel before start"
                     else "Cancelling download; the partial file is removed, completed models stay installed."
                     if stop_text == "Cancel download"
+                    else "Stopping local conversion; no partial output will be published."
+                    if stop_text == "Cancel conversion"
                     else "Cancelling downloads; partial files are removed, converted LoRAs stay."
                     if stop_text == "Cancel downloads"
                     else "Stopping after the current file; completed files remain and no upload is cut off."

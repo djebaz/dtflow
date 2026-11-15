@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>ManagedLoraActions</class>
+ <widget class="QWidget" name="managedLoraActions">
+  <layout class="QHBoxLayout" name="actionsLayout">
+   <property name="leftMargin"><number>2</number></property>
+   <property name="topMargin"><number>0</number></property>
+   <property name="rightMargin"><number>2</number></property>
+   <property name="bottomMargin"><number>0</number></property>
+   <property name="spacing"><number>4</number></property>
+   <item><widget class="QPushButton" name="quantizeButton"><property name="text"><string>Quantize q8p</string></property></widget></item>
+   <item><widget class="QPushButton" name="prepareButton"><property name="text"><string>Prepare</string></property></widget></item>
+  </layout>
+ </widget>
+ <resources/>
+ <connections/>
+</ui>

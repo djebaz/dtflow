@@ -1,0 +1,20 @@
+[
+  "src/dtflow/__init__.py",
+  "src/dtflow/build.py",
+  "src/dtflow/core/__init__.py",
+  "src/dtflow/core/models.py",
+  "src/dtflow/diagnostics.py",
+  "src/dtflow/lora_cli.py",
+  "src/dtflow/services/__init__.py",
+  "src/dtflow/services/lora_family.py",
+  "src/dtflow/services/lora_q8p_codec.py",
+  "src/dtflow/services/lora_quantization.py",
+  "src/dtflow/services/lora_convert/__init__.py",
+  "src/dtflow/services/lora_convert/context.py",
+  "src/dtflow/services/lora_convert/errors.py",
+  "src/dtflow/services/lora_convert/models.py",
+  "src/dtflow/services/lora_convert/numeric.py",
+  "src/dtflow/services/lora_convert/provenance.py",
+  "tools/colab/q8p_cli.py",
+  "tools/colab/q8p_cli.py.lock"
+]

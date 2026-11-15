@@ -4,6 +4,8 @@
 
 ## Components and contracts
 
+The separate [q8p CLI experiment](lora-quantization.md) works on already converted F16 CKPT files only. It does not change this converter, Prepare, retained-store behavior or upload approval.
+
 - `convert_lora(ConversionRequest, *, progress=None, cancel=None) -> ConversionResult` is the importable, synchronous API. Callers choose their worker thread; the converter has no Qt dependency. The request includes source/destination, required family, scale and experimental/unmatched options. The result retains output SHA-256, bytes, tensor count, exact architecture and provenance. Progress events describe reading/converting/writing/finishing, and cancellation is cooperative.
 - The API refuses to replace existing outputs. `ckpt_writer.py` writes a temporary `.part` then renames it, so failed conversions do not publish a partial checkpoint.
 - `registry.py` binds explicit family keys (`krea2`, `zimage`, `flux1`, `sd1`, `sdxl`) to exact architecture and status. `families/` holds their resolver/table rules; `safetensors_io.py`, `keys.py`, `numeric.py`, `ckpt_writer.py` and package-owned `data/lora_mappings.json` implement the file conversion. Historical `tools/drawthings/` remains untouched.
