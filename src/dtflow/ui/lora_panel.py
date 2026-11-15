@@ -146,6 +146,7 @@ class LoraAssetPanel:
         self._prepare_final: dict[str, str] = {}  # last outcome per distinct file in this run
         self._prepare_issues: list[tuple[str, str, str]] = []
         self._auto_prepare_callbacks: dict[str, Callable[[str], None]] = {}
+        self._auto_prepare_run = False  # auto Prepare uploads to the library, never selects Generate's LoRAs
         self._ownership_revision = 0
         self._last_backend = self._backend()
         self._prepare_backend = None
@@ -630,6 +631,8 @@ class LoraAssetPanel:
             return "DT+ account changed; prepare this download manually."
         self._auto_prepare_callbacks[source] = on_result
         self._authorize_prepare([(Path(source), metadata)])
+        if source in self._prepare_files:
+            self._auto_prepare_run = True
         if source not in self._prepare_files:
             self._auto_prepare_callbacks.pop(source, None)
             return "Automatic preparation could not start; use Prepare manually."
@@ -1346,6 +1349,7 @@ class LoraAssetPanel:
                 # Single-file completion adds/binds in the existing final registry callback.
                 if (
                     state == "confirmed"
+                    and not self._auto_prepare_run
                     and len(self._prepare_files) > 1
                     and self._backend() == self._prepare_backend
                     and self._ownership_revision == self._prepare_revision
@@ -1411,6 +1415,7 @@ class LoraAssetPanel:
 
     def _finish_prepare(self) -> None:
         total, done = len(self._prepare_files), self._prepare_index
+        auto_run, self._auto_prepare_run = self._auto_prepare_run, False
         stopped, unstarted = self._prepare_stop, self._prepare_files[self._prepare_index :]
         for source in unstarted:
             callback = self._auto_prepare_callbacks.pop(source, None)
@@ -1430,7 +1435,7 @@ class LoraAssetPanel:
             self._prepare_editor.form.prepareStorageButton.setEnabled(True)
         if total == 1 and done == 1:
             same_owner = self._backend() == self._prepare_backend and self._ownership_revision == self._prepare_revision
-            self._present_prepared(*self._prepare_last, bind=same_owner)
+            self._present_prepared(*self._prepare_last, bind=same_owner and not auto_run)
             return
         self._release_prepare_editor_if_all_checked()
         self._drop_dead_editor()
