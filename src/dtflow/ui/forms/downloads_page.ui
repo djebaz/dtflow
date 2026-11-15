@@ -171,6 +171,10 @@
         <property name="text"><string>Opens when you visit this tab.</string></property>
         <property name="role" stdset="0"><string>secondary</string></property>
        </widget></item>
+       <item><widget class="QPushButton" name="galleryContinueButton">
+        <property name="text"><string>Search further</string></property>
+        <property name="toolTip"><string>Continue searching after multiple Civitai batches without supported LoRAs.</string></property>
+       </widget></item>
        <item><spacer name="galleryActionSpacer"><property name="orientation"><enum>Qt::Horizontal</enum></property>
         <property name="sizeHint" stdset="0"><size><width>20</width><height>20</height></size></property></spacer></item>
 
