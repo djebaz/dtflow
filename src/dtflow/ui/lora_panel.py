@@ -145,6 +145,7 @@ class LoraAssetPanel:
         self._inspecting = False
         self._prepare_final: dict[str, str] = {}  # last outcome per distinct file in this run
         self._prepare_issues: list[tuple[str, str, str]] = []
+        self._auto_prepare_callbacks: dict[str, Callable[[str], None]] = {}
         self._ownership_revision = 0
         self._last_backend = self._backend()
         self._prepare_backend = None
@@ -600,6 +601,39 @@ class LoraAssetPanel:
     def _selected_id(self) -> tuple[str, str] | None:
         item = self.page.assetList.currentItem()
         return item.data(Qt.ItemDataRole.UserRole) if item is not None else None
+
+    def auto_prepare_retained(
+        self, path: str, metadata: LoraPrepareMetadata, on_result: Callable[[str], None]
+    ) -> str | None:
+        """Enqueue an opted-in, already-converted LoRA through the existing cloud Prepare workflow.
+
+        Its conversion supplied exact architecture, approved managed name and format; no editor defaults are
+        invented here. Never switches backend/key, bypasses ownership checks, or re-attempts failed uploads.
+        Returns a reason if admission was refused, otherwise notifies on_result when the file settles.
+        """
+        self._drop_dead_editor()
+        if self._backend()[0] != "cloud":
+            return "Prepare needs DT+ Cloud."
+        if self._runner.closed:
+            return "DTFlow is closing."
+        if self._prepare_editor is not None and self._prepare_editor.active():
+            return "Manual Prepare is open; prepare this download manually."
+        source = str(Path(path))
+        if source in self._auto_prepare_callbacks:
+            return "This file is already preparing."
+        if self._is_busy() and not self.preparing:
+            return "Prepare is busy with other work; use Prepare manually."
+        if not self.preparing:
+            self._prepare_editor_context = (self._backend(), self._ownership_revision, self._saved())
+        context = self._prepare_editor_context
+        if not self._owns_prepare_context(context):
+            return "DT+ account changed; prepare this download manually."
+        self._auto_prepare_callbacks[source] = on_result
+        self._authorize_prepare([(Path(source), metadata)])
+        if source not in self._prepare_files:
+            self._auto_prepare_callbacks.pop(source, None)
+            return "Automatic preparation could not start; use Prepare manually."
+        return None
 
     def prepare_files(self, paths: list[str]) -> str | None:
         """Open the Prepare editor on the given files (the Downloads view's converted rows); no upload occurs yet.
@@ -1321,6 +1355,18 @@ class LoraAssetPanel:
                         self.loras = (*self.loras, LoRASelection(identifier, DEFAULT_LORA_WEIGHT))
                     self._receipts[identifier] = record["asset_id"]
                     self._render_loras()
+            # Downloads auto-preparation uses the same retained, owner-scoped pipeline.
+            source = self._prepare_files[self._prepare_index]
+            callback = self._auto_prepare_callbacks.pop(source, None)
+            if callback is not None:
+                if outcome == "confirmed":
+                    callback("Prepared")
+                elif failure is not None:
+                    callback("Auto-prepare failed: " + present_asset_failure(failure).detail)
+                elif outcome == "failed":
+                    callback("Auto-prepare failed: DT+ rejected the file.")
+                else:
+                    callback("Auto-prepare outcome unknown; check DT+ before retrying.")
             self._prepare_index += 1
             self._prepare_next()
             return
@@ -1366,6 +1412,10 @@ class LoraAssetPanel:
     def _finish_prepare(self) -> None:
         total, done = len(self._prepare_files), self._prepare_index
         stopped, unstarted = self._prepare_stop, self._prepare_files[self._prepare_index :]
+        for source in unstarted:
+            callback = self._auto_prepare_callbacks.pop(source, None)
+            if callback is not None:
+                callback("Auto-prepare stopped before upload; use Prepare manually.")
         self._prepare_stop = False
         self._end_prepare_progress()
         if stopped and self._prepare_editor is not None:
