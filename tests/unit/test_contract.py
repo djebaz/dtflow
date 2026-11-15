@@ -52,7 +52,13 @@ def test_timeout_policy_refuses_unbounded_values(value):
 
 
 def forbidden_imports(
-    source: str, package: str, *, backends: bool = True, allow_pillow: bool = False, allow_numpy: bool = False
+    source: str,
+    package: str,
+    *,
+    backends: bool = True,
+    allow_pillow: bool = False,
+    allow_numpy: bool = False,
+    allow_httpx: bool = False,
 ) -> tuple[str, ...]:
     """Resolve absolute, relative and function-local imports through AST traversal."""
     bad = []
@@ -61,6 +67,8 @@ def forbidden_imports(
         banned = tuple(module for module in banned if module != "PIL")
     if allow_numpy:
         banned = tuple(module for module in banned if module != "numpy")
+    if allow_httpx:
+        banned = tuple(module for module in banned if module != "httpx")
     for node in ast.walk(ast.parse(source)):
         if isinstance(node, ast.Import):
             modules = [x.name for x in node.names]
@@ -91,8 +99,13 @@ def test_core_and_services_have_no_provider_or_presentation_imports():
                 "face_geometry.py",
             )
             allow_numpy = directory == "services" and path.name in ("person_selection.py", "face_geometry.py")
+            allow_httpx = directory == "services" and path.name == "civitai.py"  # the Civitai download client (#462)
             assert not forbidden_imports(
-                path.read_text(), f"dtflow.{directory}", allow_pillow=allow_pillow, allow_numpy=allow_numpy
+                path.read_text(),
+                f"dtflow.{directory}",
+                allow_pillow=allow_pillow,
+                allow_numpy=allow_numpy,
+                allow_httpx=allow_httpx,
             ), path
     importlib.import_module("dtflow.core.models")
     importlib.import_module("dtflow.services.generation")
@@ -116,8 +129,14 @@ def test_only_the_draw_things_integration_imports_provider_libraries():
             ("services", "person_selection.py"),
             ("services", "face_geometry.py"),
         ) or relative.parts[:2] == ("services", "lora_convert")  # the pure-Python LoRA converter needs numpy
+        allow_httpx = relative.parts == ("services", "civitai.py")  # the Civitai download client (#462)
         assert not forbidden_imports(
-            path.read_text(), package, backends=False, allow_pillow=allow_pillow, allow_numpy=allow_numpy
+            path.read_text(),
+            package,
+            backends=False,
+            allow_pillow=allow_pillow,
+            allow_numpy=allow_numpy,
+            allow_httpx=allow_httpx,
         ), path
 
 
