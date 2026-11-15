@@ -6,7 +6,7 @@ import re
 from dataclasses import replace
 
 from dtflow.services.lora_convert.families.resolver import Target, run_resolver
-from dtflow.services.lora_convert.registry import FamilySpec, register
+from dtflow.services.lora_convert.registry import FamilyCode, register
 
 
 # Flux 1 (dev/schnell): 19 double blocks then 38 single blocks, hidden size 3072. Draw Things numbers the
@@ -115,12 +115,8 @@ def _resolve_flux1(module: str) -> Target | None:
 
 
 register(
-    FamilySpec(
+    FamilyCode(
         key="flux1",
-        label="Flux 1",
-        exact_architecture="flux1",
-        status="verified",
-        experimental=False,
         kind="resolver",
         run=lambda st, request, ctx: run_resolver(st, "flux1", resolve_flux1, request.scale, ctx),
         notes="Swift-compared on three files; generation effect confirmed on DT+ by the owner (2026-11-13)",

@@ -1,0 +1,196 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>DTFlow Downloads view mockups (#459)</title>
+<style>
+:root{
+  --color-background:#1f1f1f;--color-surface:#252525;--color-input:#1e1e1e;--color-canvas:#151515;
+  --color-text:#e6e6e6;--color-secondary:#b2b2b2;--color-disabled:#777;
+  --color-border:#3a3a3a;--color-border-strong:#4a4a4a;
+  --color-accent:#0068b8;--color-accent-hover:#0078d4;--color-focus:#60b6f6;
+  --color-selection:#173852;--color-selection-text:#d5ecff;--color-selection-border:#285d84;--color-selection-hover:#204c6e;
+  --color-success:#78c97c;--color-warning:#ffbf59;--color-error:#ff8179;
+  --color-button:#2d2d2d;--color-button-border:#424242;--color-section-header:#2b2b2b;--color-section-border:#343434;--color-item-surface:#222;
+  --color-danger-text:#ff9d97;--color-danger-surface:#432323;--color-danger-border:#c62828;
+  --color-status-ok-border:#2e7d32;--color-status-warning-border:#9a6700;--color-status-error-border:#a33a35;
+  --color-toolbar:#242424;--color-statusbar-edge:#000;--color-eyebrow:#8fbde3;--color-on-accent:#fff;
+}
+*{box-sizing:border-box}
+body{margin:0;background:#111;color:var(--color-text);font:13px/1.4 "Segoe UI",system-ui,sans-serif;padding:16px}
+h1{font-size:18px;margin:0 0 4px}h2{font-size:14px;margin:28px 0 8px;color:var(--color-eyebrow)}
+p.note{color:var(--color-secondary);margin:4px 0 10px;max-width:900px}
+.frame{border:1px solid var(--color-border);background:var(--color-background);max-width:1100px}
+.nav{display:flex;gap:6px;padding:6px 8px;background:var(--color-toolbar);border-bottom:1px solid var(--color-border)}
+.nav span{padding:3px 12px;border:1px solid var(--color-button-border);background:var(--color-button);color:var(--color-secondary);border-radius:3px}
+.nav span.on{background:var(--color-selection);border-color:var(--color-selection-border);color:var(--color-selection-text)}
+.body{padding:12px;min-height:120px}
+.status{display:flex;align-items:center;gap:8px;padding:2px 8px;height:26px;background:var(--color-toolbar);border-top:1px solid var(--color-statusbar-edge);color:var(--color-secondary);font-size:11px}
+.status .sp{flex:1}
+.pill{display:inline-flex;align-items:center;height:18px;padding:0 7px;border:1px solid var(--color-selection-border);border-radius:3px;font-size:11px;font-weight:600;background:var(--color-selection);color:var(--color-selection-text)}
+.pill.hover{background:var(--color-selection-hover)}
+.pill.usage{background:transparent;border-color:var(--color-border-strong);color:var(--color-secondary)}
+.pill.ok{border-color:var(--color-status-ok-border);color:var(--color-success)}
+.pill.attn{border-color:var(--color-status-error-border);color:var(--color-error)}
+.dock{padding:0 8px;border:1px solid var(--color-border);height:18px;display:inline-flex;align-items:center;border-radius:3px}
+.tabs{display:flex;gap:4px;border-bottom:1px solid var(--color-border);margin-bottom:10px;align-items:center}
+.tab{padding:5px 14px;border:1px solid transparent;color:var(--color-secondary)}
+.tab.on{background:var(--color-surface);border-color:var(--color-border);border-bottom-color:var(--color-surface);color:var(--color-text)}
+.tabs .sp{flex:1}
+.tok{font-size:12px;padding:2px 8px;border:1px solid var(--color-status-ok-border);color:var(--color-success);border-radius:3px}
+.tok.missing{border-color:var(--color-status-warning-border);color:var(--color-warning)}
+textarea,.input{width:100%;background:var(--color-input);color:var(--color-text);border:1px solid var(--color-border);padding:6px;font:inherit;border-radius:3px}
+.input{display:inline-block;width:auto;min-width:200px}
+textarea{height:56px;resize:none}
+.row{display:flex;gap:8px;align-items:center;margin:6px 0}
+.btn{display:inline-block;padding:3px 12px;background:var(--color-button);border:1px solid var(--color-button-border);border-radius:3px;color:var(--color-text)}
+.btn.primary{background:var(--color-accent);border-color:var(--color-accent-hover);color:var(--color-on-accent)}
+.btn.off{color:var(--color-disabled);border-color:var(--color-border)}
+table{width:100%;border-collapse:collapse;background:var(--color-item-surface);border:1px solid var(--color-section-border)}
+th{background:var(--color-section-header);text-align:left;font-weight:600;padding:5px 8px;color:var(--color-secondary)}
+td{padding:5px 8px;border-top:1px solid var(--color-section-border);vertical-align:middle}
+.dim{color:var(--color-disabled)}.warn{color:var(--color-warning)}.err{color:var(--color-error)}.ok{color:var(--color-success)}
+.bar{display:inline-block;width:120px;height:6px;background:#2a2a2a;border-radius:3px;vertical-align:middle;margin-right:6px}
+.bar i{display:block;height:100%;background:var(--color-accent);border-radius:3px}
+.grid{display:grid;grid-template-columns:repeat(4,1fr);gap:10px}
+.card{background:var(--color-item-surface);border:1px solid var(--color-section-border);border-radius:3px;overflow:hidden;position:relative;aspect-ratio:1/1}
+.card.sel{border-color:var(--color-selection-border);box-shadow:0 0 0 2px var(--color-selection)}
+.card .img{position:absolute;inset:0;background:linear-gradient(135deg,#2f3f4f,#3d2f4f)}
+.card .img.b{background:linear-gradient(200deg,#4f3f2f,#2f4f3d)}.card .img.c{background:linear-gradient(60deg,#2f2f4f,#4f2f3d)}.card .img.d{background:linear-gradient(300deg,#3f4f2f,#2f3f4f)}
+.card .chk{position:absolute;top:6px;left:6px;width:16px;height:16px;border:1px solid #909090;background:rgba(30,30,30,.85);border-radius:2px;font-size:11px;line-height:14px;text-align:center}
+.card .tr{position:absolute;top:6px;right:6px;display:flex;flex-direction:column;gap:3px;align-items:flex-end}
+.card .tl2{position:absolute;top:28px;left:6px;display:flex;flex-direction:column;gap:3px}
+.ob{display:inline-block;padding:0 6px;border-radius:3px;font-size:10px;line-height:16px;font-weight:600;background:rgba(21,21,21,.78);border:1px solid rgba(255,255,255,.18);color:var(--color-text)}
+.ob.fam2{background:rgba(23,56,82,.9);border-color:var(--color-selection-border);color:var(--color-selection-text)}
+.ob.warn2{color:var(--color-warning);border-color:var(--color-status-warning-border)}
+.card .bot{position:absolute;left:0;right:0;bottom:0;padding:20px 8px 6px;background:linear-gradient(to top,rgba(0,0,0,.88),rgba(0,0,0,0))}
+.card .bot b{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:12px}
+.card .bot small{display:flex;gap:8px;color:var(--color-secondary);font-size:11px;white-space:nowrap}
+.card .hov{position:absolute;inset:0;background:rgba(15,15,15,.82);padding:34px 8px 44px;font-size:11px;color:var(--color-text);display:none;overflow:hidden}
+.card.hovered .hov{display:block}
+.card .hov i{font-style:normal;color:var(--color-secondary)}
+.fam{display:inline-block;padding:0 6px;border:1px solid var(--color-border-strong);border-radius:3px;font-size:11px;color:#b9dcf7}
+.msg{border:1px solid var(--color-danger-border);background:var(--color-danger-surface);color:var(--color-danger-text);padding:6px 10px;border-radius:3px;margin:6px 0}
+.msg.info{border-color:var(--color-status-warning-border);background:#3a2f17;color:var(--color-warning)}
+.sect{border:1px solid var(--color-section-border);max-width:520px}
+.sect .h{background:var(--color-section-header);padding:5px 8px;font-weight:600}
+.sect .c{padding:8px;background:var(--color-surface)}
+.sect.dis{opacity:.6}
+.legend{display:flex;gap:10px;flex-wrap:wrap;margin:6px 0}
+.caret{color:var(--color-secondary)}
+</style>
+</head>
+<body>
+<h1>Downloads view mockups</h1>
+<p class="note">Design for #459 (epic #327). Design only; values follow <code>devdocs/design-system/tokens/colors.css</code>. The view shell, pill and F9 are built in #465, the credentials card in #460, the gallery in #466. All filenames, models and numbers below are invented examples.</p>
+
+<h2>1. Status-bar pill (right side, after the usage pill, before the Connection dock)</h2>
+<p class="note">Pill uses the usage-pill shape (small radius, 1 px border, 8 pt strong text, 0 × 7 px padding) with the dimmed navigation blue; hover is <code>color.selectionHover</code>. Status colours come from the existing status tokens. Tooltip: "Open Downloads (F9)".</p>
+<div class="frame">
+ <div class="status"><span>About</span><span>Logs (F10)</span><span class="sp"></span><span class="pill usage">3/12</span><span class="pill">Downloads</span><span class="dock">Connection</span></div>
+ <div class="status"><span class="dim">Idle, hover</span><span class="sp"></span><span class="pill usage">3/12</span><span class="pill hover">Downloads</span><span class="dock">Connection</span></div>
+ <div class="status"><span class="dim">Running: 2 downloads, 1 queued</span><span class="sp"></span><span class="pill usage">3/12</span><span class="pill">⬇ 2</span><span class="dock">Connection</span></div>
+ <div class="status"><span class="dim">Finished</span><span class="sp"></span><span class="pill usage">3/12</span><span class="pill ok">✓ 3 done</span><span class="dock">Connection</span></div>
+ <div class="status"><span class="dim">Needs attention</span><span class="sp"></span><span class="pill usage">3/12</span><span class="pill attn">! 1 failed</span><span class="dock">Connection</span></div>
+</div>
+<div class="legend dim"><span>Rows: idle · hover · running (count) · finished · attention. The shared activity bar shows one aggregate line, "Downloading 2 of 3", while the user works elsewhere.</span></div>
+
+<h2>2. Links / IDs tab (full workspace page)</h2>
+<div class="frame">
+ <div class="nav"><span>Generate</span><span>Workflows</span><span>Queues</span><span>Images</span><span class="on">Downloads</span></div>
+ <div class="body">
+  <div class="tabs"><span class="tab on">Links / IDs</span><span class="tab">Browse Civitai</span><span class="sp"></span><span class="tok">Civitai token: saved ✓</span></div>
+  <p class="dim" style="margin:0 0 4px">Paste links or version ids, one per line</p>
+  <textarea>https://civitai.com/models/1001?modelVersionId=2002
+2003
+https://civitai.com/models/1004?modelVersionId=2005</textarea>
+  <div class="row"><span class="btn primary">Resolve</span><span class="dim">Resolving does not download anything.</span></div>
+  <table>
+   <tr><th></th><th>Name · version</th><th>File</th><th>Size</th><th>Civitai base model</th><th>Family</th><th>Status</th></tr>
+   <tr><td>☑</td><td>Anatomy Fix · v2</td><td>anatomy_fix.safetensors</td><td>163 MB</td><td>Krea 2</td><td><span class="fam">Krea 2</span></td><td class="ok">Ready</td></tr>
+   <tr><td>☑</td><td>Ink Style · v1.1</td><td>ink_style.safetensors</td><td>218 MB</td><td>Pony</td><td><span class="fam">SDXL</span> <span class="dim">experimental</span></td><td class="ok">Ready</td></tr>
+   <tr><td>☐</td><td>Cool Video · v3</td><td>cool_video.safetensors</td><td>410 MB</td><td>Wan Video 14B t2v</td><td class="dim">None</td><td class="warn">Family not supported yet</td></tr>
+   <tr><td>☐</td><td class="dim">version 2003</td><td class="dim">—</td><td class="dim">—</td><td class="dim">—</td><td class="dim">—</td><td class="err">Civitai says this version needs a login. Add your token in Download credentials.</td></tr>
+  </table>
+  <div class="row"><span class="btn primary">Download selected (2)</span><span class="dim">One action: download, then convert automatically.</span></div>
+ </div>
+ <div class="status"><span class="sp"></span><span class="pill usage">3/12</span><span class="pill">Downloads</span><span class="dock">Connection</span></div>
+</div>
+<div class="legend dim"><span>Unmapped base model: row unselectable, Download disabled with the reason. Ambiguous links (several files or versions) list each concrete file; nothing resolves to "latest".</span></div>
+
+<h2>3. Browse Civitai tab (continuous scroll, explicit version/file choices)</h2>
+<div class="frame">
+ <div class="nav"><span>Generate</span><span>Workflows</span><span>Queues</span><span>Images</span><span class="on">Downloads</span></div>
+ <div class="body">
+  <div class="tabs"><span class="tab">Links / IDs</span><span class="tab on">Browse Civitai</span><span class="sp"></span><span class="tok">Civitai token: saved ✓</span></div>
+  <div class="row"><span class="input">Search…</span><span class="input" style="min-width:150px">Most downloaded ▾</span><span class="input" style="min-width:150px">All families ▾</span></div>
+  <div class="msg info">Civitai may withhold mature content in your region; results can be incomplete.</div>
+  <div class="grid">
+   <div class="card sel"><div class="img"></div><span class="chk">✓</span><div class="tr"><span class="ob fam2">Krea 2</span><span class="ob fam2">SDXL</span></div>
+    <div class="bot"><b>Anatomy Fix</b><small><span>@w4r10ck</span><span>↓ 12.4k</span><span>👍 1.2k</span><span>163 MB</span></small></div></div>
+   <div class="card hovered"><div class="img b"></div><span class="chk"></span><div class="tr"><span class="ob fam2">Z Image</span></div>
+    <div class="hov"><i>Base model</i> ZImageTurbo<br><i>Version</i> v1.0 (Turbo)<br><i>Trigger words</i> softlight, rim glow<br><i>Tags</i> style, lighting, concept<br><i>Rating</i> thumbs up 540 / down 3<br><i>Published</i> 2026-10-02</div>
+    <div class="bot"><b>Soft Light</b><small><span>@lumen</span><span>↓ 3.1k</span><span>👍 540</span><span>120 MB</span></small></div></div>
+   <div class="card sel"><div class="img c"></div><span class="chk">✓</span><div class="tl2"><span class="ob warn2">NSFW</span></div><div class="tr"><span class="ob fam2">SDXL</span><span class="ob">Pony</span></div>
+    <div class="bot"><b>Ink Style</b><small><span>@inkwell</span><span>↓ 88k</span><span>👍 9.7k</span><span>218 MB</span></small></div></div>
+   <div class="card"><div class="img d"></div><span class="chk"></span><div class="tl2"><span class="ob warn2">Early access</span></div><div class="tr"><span class="ob fam2">Flux 1</span><span class="ob fam2">SDXL</span><span class="ob fam2">Krea 2</span></div>
+    <div class="bot"><b>Portrait Pro</b><small><span>@studio9</span><span>↓ 40k</span><span>👍 5.1k</span><span>180 MB</span></small></div></div>
+  </div>
+  <p class="dim" style="margin:4px 0">Square cover thumbnails. The second card shows the hover overlay; a video cover falls back to the first still image. The early-access flag is shown; whether such a file can be downloaded is untested.</p>
+  <p class="dim" style="margin:8px 0 4px">Versions from selected models (4) — check the exact files to download</p>
+  <table>
+   <tr><th></th><th>Model · version</th><th>Civitai base model</th><th>Family</th><th>Version ID</th><th>File</th></tr>
+   <tr><td>☑</td><td>Anatomy Fix · v3</td><td>Krea 2</td><td>Krea 2</td><td>2109</td><td>anatomy_v3.safetensors</td></tr>
+   <tr><td>☐</td><td>Anatomy Fix · v2</td><td>Pony</td><td>SDXL</td><td>2108</td><td>anatomy_v2.safetensors</td></tr>
+   <tr><td>☑</td><td>Ink Style · v1.1</td><td>Pony</td><td>SDXL</td><td>2211</td><td>ink_style.safetensors</td></tr>
+   <tr><td>☐</td><td>Ink Style · v1.0</td><td>SDXL 1.0</td><td>SDXL</td><td>2210</td><td>ink_style_old.safetensors</td></tr>
+  </table>
+  <div class="row"><span class="btn primary">Download selected (2)</span><span class="dim">Downloads start immediately. No review step.</span><span class="sp" style="flex:1"></span><span class="dim">20 models requested per cursor batch; scroll to load more.</span></div>
+ </div>
+ <div class="status"><span class="sp"></span><span class="pill usage">3/12</span><span class="pill">Downloads</span><span class="dock">Connection</span></div>
+</div>
+<div class="legend dim"><span>No page buttons: scrolling loads further cursor batches and retains fetched card metadata in memory. Each card's Download dropdown offers checkboxes for its supported version/file choices (version name, base model, family, version ID); Download selected starts checked versions directly. Each square card shows every distinct supported family.</span></div>
+
+<h2>4. Downloads list (bottom of both tabs): every state</h2>
+<div class="frame"><div class="body">
+ <table>
+  <tr><th>Name</th><th>State</th><th>Detail</th><th style="text-align:right">Actions</th></tr>
+  <tr><td>Anatomy Fix · v2</td><td>Downloading</td><td><span class="bar"><i style="width:42%"></i></span>42% · 68 of 163 MB</td><td style="text-align:right"><span class="btn">Cancel</span></td></tr>
+  <tr><td>Soft Light · v1</td><td>Queued</td><td class="dim">At most 3 transfers run at once</td><td style="text-align:right"><span class="btn">Cancel</span></td></tr>
+  <tr><td>Ink Style · v1.1</td><td>Converting</td><td class="dim">SDXL, experimental</td><td style="text-align:right"><span class="btn">Cancel</span></td></tr>
+  <tr><td>Portrait Pro · v4</td><td class="ok">Converted</td><td class="dim">Source file deleted</td><td style="text-align:right"><span class="btn primary">Prepare…</span></td></tr>
+  <tr><td>Portrait Pro · v3</td><td class="ok">Converted</td><td class="dim">Prepare needs DT+ Cloud</td><td style="text-align:right"><span class="btn off">Prepare…</span></td></tr>
+  <tr><td>Odd LoKr · v1</td><td class="warn">Downloaded, not convertible</td><td class="dim">LoKr files are not supported. File kept.</td><td style="text-align:right"><span class="btn">Remove</span></td></tr>
+  <tr><td>Locked Model · v2</td><td class="err">Failed</td><td class="err">Civitai says this model needs a login. Add your token in Download credentials.</td><td style="text-align:right"><span class="btn">Retry</span> <span class="btn">Open credentials</span></td></tr>
+  <tr><td>Big File · v1</td><td class="err">Failed</td><td class="err">Download was incomplete: 90 of 163 MB. Try again.</td><td style="text-align:right"><span class="btn">Retry</span></td></tr>
+  <tr><td>Rate Test · v1</td><td class="err">Failed</td><td class="err">Civitai is limiting requests. Wait a few minutes and retry.</td><td style="text-align:right"><span class="btn">Retry</span></td></tr>
+  <tr><td>Gone · v1</td><td class="err">Failed</td><td class="err">Civitai says this file was removed.</td><td style="text-align:right"><span class="btn">Remove</span></td></tr>
+  <tr><td>Stopped · v1</td><td class="dim">Cancelled</td><td class="dim">Partial file discarded</td><td style="text-align:right"><span class="btn">Retry</span> <span class="btn">Remove</span></td></tr>
+ </table>
+ <p class="dim">Retry is always manual. Failure wording keeps Civitai's own statement ("Civitai says…"). A token is never part of any message.</p>
+</div></div>
+
+<h2>5. Connection page: Download credentials card</h2>
+<p class="note">Group box order in <code>main_window.ui</code>: connectionBox → credentialBox (DT+ credentials) → <b>Download credentials</b> → rememberedFoldersBox. The Hugging Face field is added with #468, not before.</p>
+<div class="frame"><div class="body">
+ <div class="sect dis" style="margin-bottom:8px"><div class="h"><span class="caret">▸</span> DT+ credentials</div></div>
+ <div class="sect" style="margin-bottom:8px"><div class="h"><span class="caret">▾</span> Download credentials</div><div class="c">
+  <div class="row"><span style="width:110px">Civitai token</span><span class="input" style="min-width:230px">••••••••••••••</span><span class="btn">Save</span><span class="btn">Remove</span><span class="ok">saved</span></div>
+  <div class="dim">Tokens stay in Windows Credential Manager.</div>
+  <div class="row"><span class="btn">Open Downloads</span></div>
+ </div></div>
+ <div class="sect dis"><div class="h"><span class="caret">▸</span> Remembered folders</div></div>
+ <p class="dim">Empty state: field blank, status "not set", Remove disabled. Rejected token: status "Civitai rejected this token" in the error colour.</p>
+</div></div>
+
+<h2>6. Entry points</h2>
+<div class="frame"><div class="body">
+ <p>Custom LoRAs panel (Connection) keeps its small list and adds a "Downloads…" link; each downloaded entry shows source and state:</p>
+ <table><tr><th>LoRA</th><th>Source</th><th>State</th></tr>
+ <tr><td>portrait_pro_v4</td><td>Civitai · Portrait Pro v4</td><td class="ok">Converted</td></tr>
+ <tr><td>odd_lokr_v1</td><td>Civitai · Odd LoKr v1</td><td class="warn">Downloaded, not convertible</td></tr></table>
+ <p class="dim">Generate's LoRA editor has no download controls; converted files appear in the normal LoRA list and use the existing Prepare step.</p>
+</div></div>
+</body>
+</html>

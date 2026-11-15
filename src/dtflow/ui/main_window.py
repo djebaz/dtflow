@@ -23,6 +23,7 @@ from PySide6.QtWidgets import (
     QLineEdit,
     QMainWindow,
     QPlainTextEdit,
+    QPushButton,
     QSizePolicy,
     QToolButton,
     QWidget,
@@ -70,6 +71,7 @@ from dtflow.services.credentials import (
     credential_status,
     resolve_credentials,
 )
+from dtflow.services.download_tokens import CIVITAI, DownloadTokens, token_status
 from dtflow.services import lora_relink
 from dtflow.services.presets import export_presets, import_presets, load_presets
 from dtflow.ui.activity import Activity
@@ -115,6 +117,7 @@ UI_FILE = FORMS_DIR / "main_window.ui"
 GENERATION_UI_FILE = FORMS_DIR / "generation_page.ui"
 SCRIPTS_UI_FILE = FORMS_DIR / "scripts_workspace.ui"
 QUEUE_UI_FILE = FORMS_DIR / "queue_page.ui"
+DOWNLOADS_UI_FILE = FORMS_DIR / "downloads_page.ui"
 PREVIEW_CONTROL_TYPES = (
     QAbstractButton,
     QAbstractSpinBox,
@@ -238,6 +241,10 @@ class MainWindow:
 
         self._saved = saved or SavedCredentials()
         self._optional_saved = OptionalSavedCredentials(self._saved)
+        self._download_tokens = DownloadTokens()
+        self._token_busy = False
+        self._connection_check = None
+        self._token_state = "error"
         self._free_space_revision = 0  # bumps on every key/backend change and request; only the newest answer shows
         self._free_space_busy = self._free_space_again = False
         self._summary_reads = {}
@@ -327,6 +334,36 @@ class MainWindow:
         )
         self.workflows.mount(self.shell)
         startup.mark("workspace: workflows mounted")
+        # Downloads is a full workspace page reached from the status-bar pill and F9; it has no navigation button.
+        from dtflow.ui.downloads_page import DownloadsPage
+
+        self.downloads_marker = QWidget()
+        form.workspaceStack.addWidget(self.downloads_marker)
+        self._downloads_form = load_ui(DOWNLOADS_UI_FILE)
+        self._downloads_left, self._downloads_right = QWidget(), QWidget()
+        for stack, panel in zip(
+            (self.shell.leftStack, self.shell.centerStack, self.shell.rightStack),
+            (self._downloads_left, self._downloads_form, self._downloads_right),
+            strict=True,
+        ):
+            stack.addWidget(panel)
+        self.downloads = DownloadsPage(
+            self._downloads_form,
+            runner=self.runner,
+            state_dir=self.state_dir,
+            read_token=lambda: self._download_tokens.get(CIVITAI),
+            token_state=lambda: self._token_state,
+            cloud_ready=lambda: self.form.backendCombo.currentText() == "cloud",
+            active_credential=self._active_credential_id,
+            open_credentials=self._open_download_credentials,
+            open_prepare=self._prepare_downloaded,
+            auto_prepare=lambda path, metadata, on_result: self.generation.lora.auto_prepare_retained(
+                path, metadata, on_result
+            ),
+        )
+        self._downloads_line = False
+        self._downloads_chrome_active = False
+        startup.mark("workspace: downloads mounted")
         form.workspaceStack.hide()
         startup.mark("workspace: legacy stack hidden")
         form.rootLayout.addWidget(self.shell)
@@ -549,6 +586,17 @@ class MainWindow:
         # Connection keeps its existing colored status glyph and is the last
         # permanent control, independent of the active workspace or inspector.
         form.statusBar().addPermanentWidget(pill)
+        downloads_pill = QPushButton("Downloads", form.statusBar())
+        downloads_pill.setObjectName("downloadsPill")
+        downloads_pill.setProperty("state", "idle")
+        downloads_pill.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        downloads_pill.setCursor(Qt.CursorShape.PointingHandCursor)
+        downloads_pill.setToolTip("Open Downloads (F9)")
+        downloads_pill.setAccessibleName("Open Downloads")
+        downloads_pill.clicked.connect(self._show_downloads)
+        self.downloads_pill = downloads_pill
+        self.downloads.changed.connect(self._sync_downloads)
+        form.statusBar().addPermanentWidget(downloads_pill)
         form.statusBar().addPermanentWidget(self.shell.connectionStatusDock)
         self.grid_index_group = grid_status_group
         # The slot stays on every tab (only its text hides) so the activity bar has the same room everywhere.
@@ -564,6 +612,13 @@ class MainWindow:
         form.checkButton.clicked.connect(self.check)
         form.saveKeyButton.clicked.connect(self.save_key)
         form.removeKeyButton.clicked.connect(self.remove_key)
+        form.downloadCredentialsBoxContents.setVisible(False)
+        form.downloadCredentialsDisclosure.toggled.connect(self._toggle_download_credentials)
+        self._set_download_disclosure_icon(False)
+        form.saveCivitaiTokenButton.clicked.connect(self.save_civitai_token)
+        form.removeCivitaiTokenButton.clicked.connect(self.remove_civitai_token)
+        form.civitaiTokenEdit.returnPressed.connect(self.save_civitai_token)
+        form.openDownloadsButton.clicked.connect(self._show_downloads)
         form.keySelectCombo.currentIndexChanged.connect(self.key_selected)
         form.customLorasBoxContents.setVisible(False)
         form.customLorasDisclosure.toggled.connect(self._toggle_custom_loras)
@@ -687,6 +742,7 @@ class MainWindow:
             ("F2", self._show_workflows),
             ("F3", self._show_queue),
             ("F4", lambda: self.form.workspaceStack.setCurrentWidget(self.images_page)),
+            ("F9", self._show_downloads),
             ("F10", self._toggle_logs),
             ("F12", lambda: self.form.workspaceStack.setCurrentWidget(self.form.connectionPage)),
         ):
@@ -715,6 +771,8 @@ class MainWindow:
         self.generation.sync_backend()
         startup.mark("backend and restored catalogue applied")
         self.refresh_credentials(background=True)
+        self.refresh_download_tokens()
+        self.check_civitai_connection()
         self.cloud_usage = CloudUsagePanel(
             form,
             self.runner,
@@ -820,6 +878,77 @@ class MainWindow:
 
     def _show_workflows(self) -> None:
         self.form.workspaceStack.setCurrentWidget(self.workflows_marker)
+
+    # -- Downloads (status-bar pill, F9) ----------------------------------------------------------------------------
+    def _show_downloads(self) -> None:
+        if self.runner.closed:
+            return
+        self.form.workspaceStack.setCurrentWidget(self.downloads_marker)
+
+    def _open_download_credentials(self) -> None:
+        """Connection page with the Download credentials card expanded and the token field focused."""
+        self.form.workspaceStack.setCurrentWidget(self.form.connectionPage)
+        self.form.downloadCredentialsDisclosure.setChecked(True)
+        self.form.civitaiTokenEdit.setFocus()
+
+    def _prepare_downloaded(self, paths: list[str]) -> None:
+        """Downloads row → Prepare…: Generate's Prepare editor opens on the converted file; nothing uploads yet."""
+        if self._scripts_active:
+            self._leave_scripts(inpaint=False)
+        self._show_generation()
+        problem = self.generation.lora.prepare_files(paths)
+        if problem:
+            InlineNotice.warning(self.form, "Prepare not opened", problem)
+
+    def _sync_downloads(self) -> None:
+        """The pill and the one aggregate activity line follow the downloads list."""
+        if self.runner.closed or self.progress_strip.retired:
+            return
+        page, pill = self.downloads, self.downloads_pill
+        stats = page.stats()
+        viewing = self.form.workspaceStack.currentWidget() is self.downloads_marker
+        if stats["active"]:
+            text, state = f"\u2b07 {stats['active']}", "idle"
+        elif page.failed_unseen and not viewing:
+            text, state = f"! {page.failed_unseen} failed", "error"
+        elif page.finished_unseen and not viewing:
+            text, state = f"\u2713 {page.finished_unseen} done", "ok"
+        else:
+            text, state = "Downloads", "idle"
+        if pill.text() != text:
+            pill.setText(text)
+        if pill.property("state") != state:
+            pill.setProperty("state", state)
+            pill.style().unpolish(pill)
+            pill.style().polish(pill)
+        strip = self.progress_strip
+        if stats["active"]:
+            if not self._downloads_line:
+                self._downloads_line = True
+                strip.start(
+                    "download",
+                    "Downloading LoRAs",
+                    stop=page.cancel_all,
+                    stop_text="Cancel downloads",
+                    total=100,
+                    detail="Starting…",
+                    action_text="Cancel",
+                )
+            waiting = stats["active"] - stats["transferring"]
+            verb = "Downloading" if stats["downloading"] or not stats["transferring"] else "Converting"
+            detail = f"{verb} {stats['transferring']} of {stats['active']}"
+            # The count shows whole files of the batch; the bar moves with each file's own download progress.
+            strip.update(
+                "download",
+                stats["percent"],
+                100,
+                detail=detail,
+                queued=waiting,
+                count=f"{stats['finished']} / {stats['files']}",
+            )
+        elif self._downloads_line:
+            self._downloads_line = False
+            strip.finish("download")
 
     def _open_workflow_run(self, queue_id: str) -> None:
         """Show a workflow queue's run in Workflows: its steps, Retry and waiting branches."""
@@ -1025,6 +1154,16 @@ class MainWindow:
             self.workflows.activate()
         else:
             self.workflows.set_active(False)
+        downloads_active = self.form.workspaceStack.currentWidget() is self.downloads_marker
+        if downloads_active:
+            for stack, panel in zip(
+                (self.shell.leftStack, self.shell.centerStack, self.shell.rightStack),
+                (self._downloads_left, self._downloads_form, self._downloads_right),
+                strict=True,
+            ):
+                stack.setCurrentWidget(panel)
+            self.downloads.activate()
+        self._sync_downloads()
         # Queues owns scrolling in queueList: the shared outer scroll must not
         # create a second wheel/scrollbar over the fixed filter and Clear action.
         queues_active = index == 2
@@ -1198,19 +1337,24 @@ class MainWindow:
             self.gallery_detail.galleryNavigationSlot.setVisible(images)
             if not images and self._gallery_previous_sizes:
                 shell.workspaceSplitter.setSizes(self._gallery_previous_sizes)
+        downloads = hasattr(self, "downloads") and self.form.workspaceStack.currentWidget() is self.downloads_marker
+        if hasattr(self, "downloads"):
+            self._place_downloads_chrome(downloads)
         # Workflows keeps its inspector (node settings, Retry, Continue/Stop) at every width; its Library toggle folds
         # the left panels instead, and the brand and navigation then sit in the Workflows header row.
         workflows = hasattr(self, "workflows") and self.form.workspaceStack.currentWidget() is self.workflows_marker
         folded = workflows and not self.workflows.library_open(narrow)
         if hasattr(self, "workflows"):
-            self._place_workflows_chrome(folded, moved_elsewhere=images or logs)
+            self._place_workflows_chrome(folded, moved_elsewhere=images or logs or downloads)
         # Logs and Images use the full-width center workspace, regardless of
         # whether the Images page changed during this navigation.
-        shell.leftRail.setVisible(not images and not logs and not folded)
+        shell.leftRail.setVisible(not images and not logs and not folded and not downloads)
         hint_open = self._prompt_hints.open if hasattr(self, "_prompt_hints") else False
         # The hint toggle can reveal the right rail at narrow widths, with Images still above it.
-        shell.rightRail.setVisible(not images and not logs and (workflows or not narrow or hint_open))
-        self._place_images_header(images=images, logs=logs, narrow=narrow and not workflows and not hint_open)
+        shell.rightRail.setVisible(not images and not logs and not downloads and (workflows or not narrow or hint_open))
+        self._place_images_header(
+            images=images, logs=logs, narrow=narrow and not workflows and not hint_open, downloads=downloads
+        )
         if self._logs_form is not None:
             self._logs_form.logsBrandSlot.setVisible(logs)
             self._logs_form.logsNavigationSlot.setVisible(logs)
@@ -1247,14 +1391,48 @@ class MainWindow:
             shell.brandFrame.show()
             shell.navigationFrame.show()
 
-    def _place_images_header(self, *, images, logs, narrow) -> None:
-        """One Images action above ordinary inspectors, never in Images or Logs."""
+    def _place_downloads_chrome(self, active: bool) -> None:
+        """Downloads is a full-width page: the brand and navigation sit in its header row, as in Logs and Images."""
+        shell, page = self.shell, self._downloads_form
+        slots = ((page.downloadsBrandSlot, shell.brandFrame), (page.downloadsNavigationSlot, shell.navigationFrame))
+        if active:
+            for slot, frame in slots:
+                if frame.parentWidget() is not slot:
+                    width = shell.leftRail.maximumWidth()
+                    if frame is shell.navigationFrame:
+                        width = max(width, frame.sizeHint().width())
+                    slot.setFixedSize(width, max(frame.height(), frame.sizeHint().height()))
+                    layout = slot.layout()
+                    if layout is None:
+                        layout = QHBoxLayout(slot)
+                        layout.setContentsMargins(0, 0, 0, 0)
+                    layout.addWidget(frame)
+                frame.show()
+        elif shell.brandFrame.parentWidget() is page.downloadsBrandSlot:
+            shell.leftRailLayout.insertWidget(0, shell.brandFrame)
+            shell.leftRailLayout.insertWidget(1, shell.navigationFrame)
+            shell.brandFrame.show()
+            shell.navigationFrame.show()
+        self._downloads_chrome_active = active
+
+    def _place_images_header(self, *, images, logs, narrow, downloads=False) -> None:
+        """One Images action above ordinary inspectors, never in Images or Logs; in the Downloads header row."""
         shell = self.shell
         visible = not images and not logs
-        shell.imagesHeaderHome.setVisible(visible and not narrow)
-        shell.compactImagesSlot.setVisible(visible and narrow)
+        shell.imagesHeaderHome.setVisible(visible and not narrow and not downloads)
+        shell.compactImagesSlot.setVisible(visible and narrow and not downloads)
         if not visible:
             self._images_header.hide()
+            return
+        if downloads:
+            slot = self._downloads_form.downloadsImagesSlot
+            if slot.layout() is None:
+                QHBoxLayout(slot).setContentsMargins(0, 0, 0, 0)
+            if self._images_header.parentWidget() is not slot:
+                slot.layout().addWidget(self._images_header)
+            self._images_header.setMinimumWidth(0)
+            self._images_header.setMaximumWidth(300)
+            self._images_header.show()
             return
         target = shell.compactImagesSlot if narrow else shell.imagesHeaderHome
         if self._images_header.parentWidget() is not target:
@@ -1407,6 +1585,8 @@ class MainWindow:
         self.form.credentialBox.setEnabled(name == "cloud")
         self._forget_holdings()
         self._selection_changed()
+        if hasattr(self, "downloads"):
+            self.downloads.refresh_actions()
 
     def _selection_changed(self, *_) -> None:
         """A result belongs to the selection that was checked; a new provider or endpoint starts unchecked."""
@@ -1519,6 +1699,7 @@ class MainWindow:
             self.images_page: "Images",
             self.logs_marker: "Logs",
             self.workflows_marker: "Workflows",
+            self.downloads_marker: "Downloads",
             self.queue_page: "Queues",
             self.generation_page: "Scripts" if self._scripts_active else "Generate",
         }.get(current, "Connection")
@@ -1609,6 +1790,168 @@ class MainWindow:
             else "No saved key to remove."
         )
 
+    # -- download credentials (Civitai token) -----------------------------------------------------------------------
+    def _set_download_disclosure_icon(self, expanded: bool) -> None:
+        images = Path(__file__).parents[1] / "resources" / "images"
+        name = "controls/chevron-down.svg" if expanded else "gallery/chevron-right.svg"
+        self.form.downloadCredentialsDisclosure.setIcon(QIcon(str(images / name)))
+
+    def _toggle_download_credentials(self, expanded: bool) -> None:
+        self.form.downloadCredentialsBoxContents.setVisible(expanded)
+        self._set_download_disclosure_icon(expanded)
+        self.form.downloadCredentialsDisclosure.setAccessibleName(
+            "Hide download credentials" if expanded else "Show download credentials"
+        )
+
+    def refresh_download_tokens(self) -> None:
+        """Read the saved/unavailable state off the GUI thread; the token itself is never read into the UI."""
+        form = self.form
+        form.civitaiTokenStatusLabel.setText("Checking saved token…")
+        form.saveCivitaiTokenButton.setEnabled(False)
+        form.removeCivitaiTokenButton.setEnabled(False)
+        self._read_summary(
+            "download_tokens",
+            lambda: token_status(self._download_tokens, CIVITAI),
+            self._download_tokens_read,
+        )
+
+    def _download_tokens_read(self, state, error) -> None:
+        self._token_busy = False
+        if error is not None or state is None:
+            state = "error"
+        self._apply_token_state(state)
+
+    def _apply_token_state(self, state: str, message: str | None = None) -> None:
+        form = self.form
+        self._token_state = state
+        usable = state != "unavailable"
+        form.civitaiTokenEdit.setEnabled(usable)
+        form.saveCivitaiTokenButton.setEnabled(usable and not self._token_busy)
+        form.removeCivitaiTokenButton.setEnabled(state == "present" and not self._token_busy)
+        if message:
+            text = message
+        elif state == "present":
+            text = "Civitai token saved in Windows Credential Manager."
+        elif state == "absent":
+            text = "No Civitai token saved."
+        elif state == "unavailable":
+            text = "Secure storage (Windows Credential Manager) is unavailable here, so no token can be saved."
+        else:
+            text = "The saved token state could not be read; check again."
+        form.civitaiTokenStatusLabel.setText(text)
+        if hasattr(self, "downloads"):
+            self.downloads.token_changed()
+
+    def _token_work(self, work, done) -> None:
+        """Run one blocking vault operation on a worker; ``done(result, error)`` runs on the GUI thread."""
+        self._token_busy = True
+        self.form.saveCivitaiTokenButton.setEnabled(False)
+        self.form.removeCivitaiTokenButton.setEnabled(False)
+        self._summary_reads.pop("download_tokens", None)
+        self.runner.submit(asyncio.to_thread(work), done)
+
+    def check_civitai_connection(self) -> None:
+        """One automatic check (startup, after Save or Remove): Civitai reachable and the saved token accepted.
+
+        Off the GUI thread, never polled; the token is read inside the worker and never reaches the UI or logs."""
+        marker = self._connection_check = object()
+        self._set_connection_indicator("unknown", "Checking connection…")
+
+        def work():
+            from dtflow.services import civitai
+
+            try:
+                token = self._download_tokens.get(CIVITAI)
+            except SecureStorageUnavailable:
+                return "unknown", "No token saved"
+            return civitai.check_connection(token)
+
+        def done(result, error) -> None:
+            if marker is not self._connection_check:
+                return  # a newer check supersedes this one
+            state, text = result if error is None and result else ("warning", "Connection could not be checked")
+            diagnostic_event(
+                log, "app.download_connection_checked", level=logging.INFO, data={"provider": CIVITAI, "state": state}
+            )
+            self._set_connection_indicator(state, text)
+
+        self.runner.submit(asyncio.to_thread(work), done)
+
+    def _set_connection_indicator(self, state: str, text: str) -> None:
+        label = self.form.civitaiConnectionDot
+        label.setToolTip(f"{text} (checked at startup and after saving or removing the token)")
+        label.setProperty("state", state)
+        label.style().unpolish(label)
+        label.style().polish(label)
+
+    def save_civitai_token(self) -> None:
+        if self._token_busy:
+            return
+        secret = self.form.civitaiTokenEdit.text()
+        self.form.civitaiTokenEdit.clear()
+
+        def work():
+            self._download_tokens.save(CIVITAI, secret)
+            return token_status(self._download_tokens, CIVITAI)
+
+        def done(state, error) -> None:
+            self._token_busy = False
+            if error is None:
+                diagnostic_event(log, "app.download_token_saved", level=logging.INFO, data={"provider": CIVITAI})
+                self._apply_token_state(state or "present")
+                self.check_civitai_connection()
+                return
+            code = (
+                error.failure.code
+                if isinstance(error, BackendError)
+                else str(error)
+                if isinstance(error, ValidationError)
+                else "vault_error"
+            )
+            diagnostic_event(
+                log,
+                "app.download_token_not_saved",
+                level=logging.WARNING,
+                data={"provider": CIVITAI, "reason": type(error).__name__},
+            )
+            self._apply_token_state(self._token_state, f"Token not saved: {code}")
+
+        self._token_work(work, done)
+
+    def remove_civitai_token(self) -> None:
+        if self._token_busy or self.inline.commit(self.form.removeCivitaiTokenButton):
+            return
+
+        def proceed() -> None:
+            def work():
+                self._download_tokens.remove(CIVITAI)
+                return token_status(self._download_tokens, CIVITAI)
+
+            def done(state, error) -> None:
+                self._token_busy = False
+                if error is None:
+                    diagnostic_event(log, "app.download_token_removed", level=logging.INFO, data={"provider": CIVITAI})
+                    self._apply_token_state(state or "absent")
+                    self.check_civitai_connection()
+                    return
+                diagnostic_event(
+                    log,
+                    "app.download_token_not_removed",
+                    level=logging.WARNING,
+                    data={"provider": CIVITAI, "reason": type(error).__name__},
+                )
+                self._apply_token_state(self._token_state, "Token not removed: Windows Credential Manager refused.")
+
+            self._token_work(work, done)
+
+        confirm_action(
+            self.form,
+            self.form.removeCivitaiTokenButton,
+            "Remove Civitai token",
+            "Remove the Civitai token from Windows Credential Manager? DT+ keys are not touched.",
+            proceed,
+        )
+
     def key_selected(self, _index: int = -1) -> None:
         choice = self.form.keySelectCombo.currentData()
         if choice is None:
@@ -1642,6 +1985,8 @@ class MainWindow:
         self.refresh_credentials()
         self._selection_changed()
         self.generation.credentials_changed(switched=True)
+        if hasattr(self, "downloads"):
+            self.downloads.refresh_actions()
         if self.form.backendCombo.currentText() == "cloud":
             self.check()  # A key switch is an explicit request to check the newly selected connection.
 
@@ -2452,6 +2797,8 @@ class MainWindow:
         self.refresh_credentials()
         self._selection_changed()
         self.generation.credentials_changed()
+        if hasattr(self, "downloads"):
+            self.downloads.refresh_actions()
 
     def remove_key(self) -> None:
         if self.inline.commit(self.form.removeKeyButton):
@@ -2484,6 +2831,8 @@ class MainWindow:
             self.refresh_credentials()
             self._selection_changed()
             self.generation.credentials_changed()
+            if hasattr(self, "downloads"):
+                self.downloads.refresh_actions()
 
         confirm_action(
             self.form,

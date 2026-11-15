@@ -31,6 +31,7 @@ from dtflow.core.models import (
     PreparedAsset,
     ValidationError,
 )
+from dtflow.persistence import lora_sources as _sources
 from dtflow.persistence import store
 from dtflow.persistence.store import PersistenceError
 
@@ -247,7 +248,7 @@ class AssetRegistry:
             db.execute("PRAGMA journal_mode=WAL")
             db.execute("BEGIN IMMEDIATE")
             try:
-                for statement in SCHEMA:
+                for statement in (*SCHEMA, *_sources.SCHEMA_STATEMENTS):  # additive tables: no version bump
                     db.execute(statement)
                 db.execute(f"PRAGMA user_version={SCHEMA_VERSION}")
                 db.execute("COMMIT")
@@ -566,6 +567,26 @@ class AssetRegistry:
                 confirmed_at_utc=row["scoped_confirmed"],
             )
 
+    async def confirmed_lora_contents(self, credential_id: str) -> frozenset[tuple[str, int]]:
+        """Locally confirmed LoRA bytes for one DT+ key, without contacting the provider.
+
+        This is a display hint, not proof of current remote storage or generation eligibility.
+        Missing/stale key receipts are excluded; unrelated accounts cannot mark a file prepared.
+        """
+        return await self._run(self._confirmed_lora_contents, credential_id)
+
+    def _confirmed_lora_contents(self, credential_id: str) -> frozenset[tuple[str, int]]:
+        if not self.path.exists():
+            return frozenset()
+        with closing(self._connect()) as db:
+            rows = db.execute(
+                "SELECT a.sha256, a.size FROM assets a "
+                "JOIN asset_key_receipts k ON k.asset_id=a.asset_id "
+                "WHERE a.kind='lora' AND k.credential_id=? AND k.state='confirmed'",
+                (credential_id,),
+            ).fetchall()
+        return frozenset((row["sha256"], row["size"]) for row in rows)
+
     async def confirmed_scope_references(self, credential_id: str) -> tuple[tuple[str, str, str], ...]:
         """``(asset_id, identifier, remote_id)`` of this key's confirmed receipts, read-only."""
         return await self._run(self._confirmed_scope_references, credential_id)
@@ -738,6 +759,54 @@ class AssetRegistry:
             rows = db.execute("SELECT * FROM lora_records ORDER BY sha256, size").fetchall()
         return tuple(_record(row) for row in rows)
 
+    # -- downloaded LoRA sources (additive table; readers treat a missing table as "no sources") ----------------------
+
+    async def sources(self) -> tuple[dict[str, Any], ...]:
+        """All recorded download sources, oldest first; empty before any writer created the table."""
+        return await self._run(self._read_sources)
+
+    def _read_sources(self) -> tuple[dict[str, Any], ...]:
+        if not self.path.exists():
+            return ()
+        with closing(self._connect()) as db:
+            return _sources.select_all(db)
+
+    async def source(self, sha256: str) -> dict[str, Any] | None:
+        return await self._run(self._read_source, sha256)
+
+    def _read_source(self, sha256: str) -> dict[str, Any] | None:
+        if not self.path.exists():
+            return None
+        with closing(self._connect()) as db:
+            return _sources.select_one(db, sha256)
+
+    async def record_source(self, record: _sources.SourceRecord) -> None:
+        """Insert or refresh provenance for verified downloaded bytes (keeps a user correction and the state)."""
+        await self._run(self._write, lambda db: _sources.upsert(db, record, _now()))
+
+    async def update_source(
+        self,
+        sha256: str,
+        *,
+        state: str | None = None,
+        detail: str | None = None,
+        file_state: str | None = None,
+        converted: tuple[str, int] | None = None,
+    ) -> bool:
+        return await self._run(
+            self._write,
+            lambda db: _sources.set_state(
+                db, sha256, _now(), state=state, detail=detail, file_state=file_state, converted=converted
+            ),
+        )
+
+    async def declare_source_family(self, sha256: str, family: str | None) -> bool:
+        """Record a user correction (``None`` clears it); the original label and classification stay."""
+        return await self._run(self._write, lambda db: _sources.set_declared_family(db, sha256, family, _now()))
+
+    async def delete_source(self, sha256: str) -> bool:
+        return await self._run(self._write, lambda db: _sources.delete(db, sha256))
+
     async def accept_local_managed_name(self, sha256: str, size: int, metadata: LoraPrepareMetadata) -> bool:
         """Accept a first managed name for previously prepared content, with no Prepare or provider call."""
         return await self._run(self._write, self._accept_local_managed_name, sha256, size, metadata)
@@ -780,6 +849,33 @@ class AssetRegistry:
             (metadata.short_name, identifier, metadata.format_code, metadata.format_source, _now(), sha256, size),
         )
         return True
+
+    async def seed_lora_triggers(
+        self, sha256: str, size: int, detected_version: str | None, trigger_words: str
+    ) -> bool:
+        """Record a downloaded LoRA's published trigger words for its converted content, so Prepare offers them.
+
+        Creates the content record when absent and fills the trigger words only while they are empty: a value the
+        user saved is never replaced, and no name, receipt or upload is touched. Returns whether words were set."""
+        words = trigger_words.strip()
+        if not words or not re.fullmatch(r"[0-9a-f]{64}", sha256) or size < 1:
+            return False
+        return await self._run(self._write, self._seed_lora_triggers, sha256, size, detected_version, words)
+
+    @staticmethod
+    def _seed_lora_triggers(db, sha256: str, size: int, detected_version: str | None, words: str) -> bool:
+        now = _now()
+        db.execute(
+            "INSERT OR IGNORE INTO lora_records (sha256, size, detected_version, detected_source, updated_at_utc) "
+            "VALUES (?,?,?,?,?)",
+            (sha256, size, detected_version, "file" if detected_version else "unknown", now),
+        )
+        changed = db.execute(
+            "UPDATE lora_records SET trigger_words=?, updated_at_utc=? "
+            "WHERE sha256=? AND size=? AND TRIM(trigger_words)=''",
+            (words, now, sha256, size),
+        ).rowcount
+        return changed > 0
 
     async def update_lora_metadata(self, sha256: str, size: int, **changes) -> dict[str, Any]:
         """Atomically change local LoRA metadata without renaming, uploading, or altering receipts.

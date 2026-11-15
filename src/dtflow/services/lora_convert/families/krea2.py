@@ -5,7 +5,7 @@ from __future__ import annotations
 import re
 
 from dtflow.services.lora_convert.families.resolver import Target, run_resolver
-from dtflow.services.lora_convert.registry import FamilySpec, register
+from dtflow.services.lora_convert.registry import FamilyCode, register
 
 
 _KREA2_ATTN = {
@@ -87,12 +87,8 @@ def resolve_krea2(module: str) -> Target | None:
 
 
 register(
-    FamilySpec(
+    FamilyCode(
         key="krea2",
-        label="Krea 2",
-        exact_architecture="krea_2",
-        status="verified",
-        experimental=False,
         kind="resolver",
         run=lambda st, request, ctx: run_resolver(st, "krea2", resolve_krea2, request.scale, ctx),
         notes="Swift-compared and smoked on DT+",
