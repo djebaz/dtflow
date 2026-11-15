@@ -2661,7 +2661,8 @@ QListWidget#dtStorageList::item:selected {
 }
 
 /* Collapsible LoRA management in the existing Connections center column. */
-QToolButton#customLorasDisclosure {
+QToolButton#customLorasDisclosure,
+QToolButton#downloadCredentialsDisclosure {
   background: transparent;
   border: 0;
   border-radius: ${size.radius};
@@ -2669,5 +2670,7 @@ QToolButton#customLorasDisclosure {
   min-width: 20px;
   min-height: 20px;
 }
-QToolButton#customLorasDisclosure:hover { background: ${color.buttonHover}; }
-QToolButton#customLorasDisclosure:focus { border: 1px solid ${color.focus}; }
+QToolButton#customLorasDisclosure:hover,
+QToolButton#downloadCredentialsDisclosure:hover { background: ${color.buttonHover}; }
+QToolButton#customLorasDisclosure:focus,
+QToolButton#downloadCredentialsDisclosure:focus { border: 1px solid ${color.focus}; }
