@@ -354,7 +354,7 @@ def quantize_file(
     started = time.monotonic()
     if type(jobs) is not int or jobs < 0:
         raise QuantizationError("workers", "Worker count must be non-negative; zero selects available CPUs.")
-    detected_cpus = os.process_cpu_count() or 1
+    detected_cpus = getattr(os, "process_cpu_count", os.cpu_count)() or 1
     workers = jobs or detected_cpus
     if batch_encoder is not None:
         if (
