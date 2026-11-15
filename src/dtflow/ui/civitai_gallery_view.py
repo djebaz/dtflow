@@ -12,7 +12,7 @@ import logging
 from collections import OrderedDict
 from collections.abc import Callable
 
-from PySide6.QtCore import QEvent, QObject, QPoint, QRect, QSize, Qt, Signal, QTimer
+from PySide6.QtCore import QEvent, QObject, QRect, QSize, Qt, Signal, QTimer
 from PySide6.QtGui import (
     QColor,
     QCursor,
@@ -333,6 +333,7 @@ class GalleryTab(QObject):
         self._seen_cursors: set[str] = set()
         self._has_more = True
         self._empty_batches = 0
+        self._paused_empty = False
         self._generation = 0
         self._loading = False
         self._loaded = False
@@ -383,6 +384,8 @@ class GalleryTab(QObject):
         form.gallerySearchEdit.returnPressed.connect(self.search)
         form.gallerySortCombo.currentIndexChanged.connect(lambda _index: self.search())
         form.galleryDownloadButton.clicked.connect(self.download_selected)
+        form.galleryContinueButton.clicked.connect(self._continue_after_empty)
+        form.galleryContinueButton.hide()
         view.itemSelectionChanged.connect(self._selection_changed)
 
         table = form.galleryVersionsTable
@@ -450,6 +453,8 @@ class GalleryTab(QObject):
         self._seen_cursors.clear()
         self._has_more = True
         self._empty_batches = 0
+        self._paused_empty = False
+        self.form.galleryContinueButton.hide()
         self._loaded = True
         self.cards.clear()
         self._pending.clear()
@@ -536,23 +541,31 @@ class GalleryTab(QObject):
         diagnostic_event(log, "gallery.listed", data={"count": len(result.cards), "total": count})
         self._empty_batches = 0 if result.cards else self._empty_batches + 1
         # Never spin forever over empty or filtered-out API pages without user input.
-        if self._empty_batches >= 3:
+        if self._empty_batches >= 3 and self._has_more:
+            self._paused_empty = True
+            self.form.galleryContinueButton.show()
             self.form.galleryStatus.setText(
-                f"{count} LoRAs loaded. Try another search or filter to find more supported models."
+                f"{count} LoRAs loaded. No new supported models in recent Civitai batches."
             )
-            self._has_more = False
         self._selection_changed()
         QTimer.singleShot(0, self._maybe_more)
+
+    def _continue_after_empty(self) -> None:
+        """Explicitly resume a rare run of empty filtered batches without creating infinite requests."""
+        self._empty_batches = 0
+        self._paused_empty = False
+        self.form.galleryContinueButton.hide()
+        self._fetch()
 
     def _on_scroll(self, *_args) -> None:
         self._load_visible_covers()
         self._maybe_more()
 
     def _maybe_more(self) -> None:
-        if self._loading or not self._has_more or self._runner.closed:
+        if self._loading or self._paused_empty or not self._has_more or self._runner.closed:
             return
         bar = self._view.verticalScrollBar()
-        if bar.maximum() <= 0 or bar.value() >= bar.maximum() - max(bar.pageStep(), 250):
+        if bar.maximum() <= 0 or bar.value() >= bar.maximum() - max(bar.pageStep() * 2, 600):
             self._fetch()
 
     # ------------------------------------------------------------------------------------- lazy bounded covers
