@@ -90,12 +90,12 @@ td{padding:5px 8px;border-top:1px solid var(--color-section-border);vertical-ali
 .browse-controls .browse-action{height:31px}
 .tags-filter{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin:7px 0 8px;padding:5px 7px;min-height:38px;background:var(--color-surface);border:1px solid var(--color-section-border);border-radius:3px}
 .tags-filter .tags-label{font-weight:600;font-size:12px;margin-right:3px}
-.tags-filter .selected-tags{display:flex;align-items:center;flex-wrap:wrap;gap:5px;min-width:0}
-.tags-filter .selected-tag{display:inline-flex;align-items:center;gap:8px;min-height:23px;border:1px solid var(--color-selection-border);border-radius:4px;padding:2px 6px 2px 9px;background:var(--color-selection);color:var(--color-selection-text);font:inherit;cursor:pointer;max-width:175px}
+.tags-filter .selected-tags{display:contents}
+.tags-filter .selected-tag{display:inline-flex;align-items:center;gap:8px;height:23px;min-height:23px;border:1px solid var(--color-selection-border);border-radius:4px;padding:0 6px 0 9px;background:var(--color-selection);color:var(--color-selection-text);font:inherit;cursor:pointer;max-width:175px}
 .tags-filter .selected-tag .label{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .tags-filter .selected-tag .remove{color:var(--color-selection-text);font-weight:700;font-size:15px;line-height:15px}
-.tags-filter .tag-entry{flex:1 1 125px;min-width:110px;max-width:220px;height:25px}
-.tags-filter .tag-add{min-height:25px;white-space:nowrap}
+.tags-filter .tag-entry{flex:0 0 140px;width:140px;min-width:110px;max-width:140px;height:23px;padding:0 7px}
+.tags-filter .tag-add{flex:0 0 auto;height:23px;min-height:23px;padding:0 9px;white-space:nowrap}
 .tags-filter button:hover,.card .card-tag:hover{background:var(--color-selection-hover);border-color:var(--color-focus)}
 .tags-filter button:focus-visible,.card .card-tag:focus-visible,.card .card-download:focus-visible,.browse-controls :focus-visible{outline:2px solid var(--color-focus);outline-offset:2px}
 .browse-hint{color:var(--color-secondary);font-size:11px;margin:3px 0 9px}
@@ -113,7 +113,7 @@ td{padding:5px 8px;border-top:1px solid var(--color-section-border);vertical-ali
 .card .card-download .download-arrow{display:block;flex:none}
 .card .card-download:hover{background:var(--color-accent-hover)}
 @media(max-width:850px){.grid{grid-template-columns:repeat(2,minmax(0,1fr))}.browse-controls label{flex:1 1 140px}.browse-controls .browse-keyword{flex:2 1 200px}}
-@media(max-width:480px){.grid{grid-template-columns:repeat(1,minmax(0,1fr))}.tags-filter .tag-entry{max-width:none}.frame{min-width:0}}
+@media(max-width:480px){.grid{grid-template-columns:repeat(1,minmax(0,1fr))}.frame{min-width:0}}
 
 </style>
 </head>
@@ -174,12 +174,12 @@ https://civitai.com/models/1004?modelVersionId=2005</textarea>
   </div>
   <div class="tags-filter" aria-label="Selected Civitai tag filters">
    <span class="tags-label">Tags</span>
+   <input id="tagEntry479" class="tag-entry" type="text" placeholder="Add tag…" maxlength="200" aria-label="Tag to add (press Enter)">
+   <button type="button" class="btn tag-add" id="addTag479">Add</button>
    <div class="selected-tags" id="selectedTags479">
     <button type="button" class="selected-tag" data-remove-tag="style" aria-label="Remove tag style"><span class="label">style</span><span class="remove" aria-hidden="true">×</span></button>
     <button type="button" class="selected-tag" data-remove-tag="lighting" aria-label="Remove tag lighting"><span class="label">lighting</span><span class="remove" aria-hidden="true">×</span></button>
    </div>
-   <input id="tagEntry479" class="tag-entry" type="text" placeholder="Add tag…" maxlength="80" aria-label="Tag to add (press Enter)">
-   <button type="button" class="btn tag-add" id="addTag479">+ Add</button>
   </div>
   <p class="browse-hint">Keyword matches text or tags. Selected tags match any chosen tag (OR) and narrow keyword results when both are present. No automatic search on startup. Tags are restored as removable pills.</p>
   <div class="browse-feedback" id="browseFeedback479" role="status" aria-live="polite">Sample tags shown for review; click a card tag to add it to the Tags filter.</div>
@@ -211,7 +211,7 @@ https://civitai.com/models/1004?modelVersionId=2005</textarea>
     <button type="button" class="card-download" data-download-mode="versions" data-model="Portrait Pro" title="Choose versions to download" aria-label="Choose downloadable versions of Portrait Pro"><svg class="download-arrow" viewBox="0 0 24 24" width="11" height="11" aria-hidden="true" focusable="false"><path fill="currentColor" d="M9 2h6v8h5l-8 7-8-7h5zM4 20h16v2H4z"/></svg></button>
    </div>
   </div>
-  <p class="dim" style="margin:6px 0">The second card demonstrates the hover overlay. Tag pills remain on top and clickable, as do family/NSFW badges. The lower-right square Download action appears on hover: a filled arrow for one file, or the arrow with a short horizontal bar for multiple version/file choices. Long or excess tags are elided or summarized without overlapping the title or Download icon.</p>
+  <p class="dim" style="margin:6px 0">The Tags row keeps the label, slim input and Add button together on the left, then wraps selected pills. The second card demonstrates the hover overlay. Tag pills remain on top and clickable, as do family/NSFW badges. The lower-right square Download action appears on hover: a filled arrow for one file, or the arrow with a short horizontal bar for multiple version/file choices. Long or excess tags are elided or summarized without overlapping the title or Download icon.</p>
   <p class="dim" style="margin:8px 0 4px">Versions from selected models (4) — check the exact files to download</p>
   <table>
    <tr><th></th><th>Model · version</th><th>Civitai base model</th><th>Family</th><th>Version ID</th><th>File</th></tr>
@@ -258,7 +258,7 @@ https://civitai.com/models/1004?modelVersionId=2005</textarea>
     });
   }
   function add(value) {
-    const tag = value.trim().slice(0, 80);
+    const tag = value.trim().slice(0, 200);
     if (!tag) return;
     if (!selected.some(function (existing) { return existing.toLowerCase() === tag.toLowerCase(); })) {
       selected.push(tag);
