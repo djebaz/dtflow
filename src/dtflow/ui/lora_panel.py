@@ -619,6 +619,8 @@ class LoraAssetPanel:
             return "DTFlow is closing."
         if self._prepare_editor is not None and self._prepare_editor.active():
             return "Manual Prepare is open; prepare this download manually."
+        if self.preparing and not self._auto_prepare_run:
+            return "Manual Prepare is busy; prepare this download manually."
         source = str(Path(path))
         if source in self._auto_prepare_callbacks:
             return "This file is already preparing."
