@@ -350,6 +350,7 @@ def quantize_file(
     jobs: int = 0,
     on_start=None,
     batch_encoder: BlockBatchEncoder | None = None,
+    cancel=None,
 ) -> dict:
     started = time.monotonic()
     if type(jobs) is not int or jobs < 0:
@@ -376,8 +377,14 @@ def quantize_file(
             raise QuantizationError(
                 "clustering_unavailable", "Install the optional quantization group: uv sync --group quantization."
             ) from exc
+    def check_cancelled():
+        if cancel is not None and cancel.is_set():
+            raise QuantizationError("cancelled", "Local quantization cancelled; no output was published.")
+
+    check_cancelled()
     with ExitStack() as stack, Input(path) as source:
         destination = _destination(output, source.path)
+        check_cancelled()
         if source.family not in WRITER_FAMILIES or any(t.codec != 0 for t in source.tensors):
             raise QuantizationError("unsupported_input", "Writer accepts raw F16 Krea 2, Z Image or SDXL Base only.")
         handle, name = tempfile.mkstemp(prefix=".dtflow-q8p-", suffix=".part", dir=destination.parent)
@@ -394,6 +401,7 @@ def quantize_file(
             done += 1
             if progress is not None:
                 progress(done, total)
+            check_cancelled()
 
         try:
             if on_start is not None:
@@ -431,11 +439,14 @@ def quantize_file(
                     )
                     counts[CODECS[codec]] += 1
                 db.commit()
+            check_cancelled()
             verified = inspect_file(staged)["input"]
             source.verify()
+            check_cancelled()
             _destination(destination, source.path)  # Recheck immediately before exclusive publication.
             with staged.open("r+b") as file:
                 os.fsync(file.fileno())
+            check_cancelled()
             try:
                 os.link(staged, destination)  # Atomic no-clobber; no overwrite fallback.
             except FileExistsError as exc:
