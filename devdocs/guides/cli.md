@@ -2,6 +2,28 @@
 
 The CLI is DTFlow's automation and development interface. For the desktop application, see the [desktop guide](desktop.md).
 
+## Experimental LoRA q8p CLI
+
+`lora inspect`, `lora compare` and `lora quantize` are local-only source experiments (#353). They do not download, access credentials, upload, generate or register managed files. This is F16 `.ckpt` → q8p/ezm7 `.ckpt`, not direct safetensors conversion or a new Prepare mode. Valid storage and small numerical errors are not proof of DT+ compatibility or unchanged image quality.
+
+Inspect/compare use normal dependencies. Quantization needs the optional native clustering group; it is not installed for the ordinary GUI by default:
+
+```powershell
+uv sync --frozen --group quantization
+$revision = git rev-parse HEAD
+uv run --frozen dtflow lora inspect "D:/references/example_f16.ckpt" -r $revision
+uv run --frozen dtflow lora inspect "D:/references/example_ios_q8p.ckpt" -r $revision
+uv run --frozen dtflow lora compare "D:/references/example_f16.ckpt" "D:/references/example_ios_q8p.ckpt" -r $revision
+uv run --frozen --group quantization dtflow lora quantize "D:/references/example_f16.ckpt" -o "D:/experiments/example_q8p.ckpt" -e -r $revision
+uv run --frozen dtflow lora compare "D:/experiments/example_q8p.ckpt" "D:/references/example_ios_q8p.ckpt" -r $revision
+```
+
+Use your own input/output paths; the output directory must already exist. `-o/--out` and explicit `-e/--experimental` are required for the writer. It accepts structurally recognized raw F16 Krea 2, Z Image and SDXL Base only; unknown, partial or already encoded inputs fail clearly. Neither source files nor existing outputs are overwritten. `.dtflow`/`lora_files` output paths and redirected directories are refused. Exclusive publication needs hard-link support (e.g. local NTFS); there is no overwriting fallback.
+
+`-r/--revision` is an optional owner-recorded Git hash, important because ordinary source builds may report `source_commit=unknown`. It does not prove a clean checkout. All three commands write path/name-free schema-1 JSON to stdout; explicitly redirect it if you want to retain a report. Quantization progress goes to stderr. Exit codes: 0 success, 2 unsupported/invalid input or destination, 5 local/container/resource failure, 130 interrupted. After interruption inspect the requested destination before retrying; no provider work started.
+
+Inputs must be closed standalone CKPT files without SQLite sidecars. Current limits are 8 GiB/file, 20,000 tensors and 64 MiB decoded bytes/tensor. Codec and fallback behavior, numerical differences and optional native dependency limitations are documented in [experimental architecture](../architecture/lora-quantization.md). The writer has not been smoke-tested during implementation; no performance or compatibility improvement is claimed.
+
 ## Backend selection and safety
 
 `uv run dtflow` selects a backend explicitly (`-b/--backend fake|local|cloud`); there is never a fallback from one backend to another. Results are JSON on stdout; progress and diagnostics go to stderr.

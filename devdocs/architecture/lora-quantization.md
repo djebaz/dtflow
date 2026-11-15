@@ -1,0 +1,33 @@
+# Experimental LoRA q8p storage (#353)
+
+This is a source CLI experiment, not supported Prepare behavior or a production quantization decision. It transforms an already converted F16 Draw Things CKPT into a separate file. Safetensors conversion, retained-store authority, receipt identity, cloud restoration, upload consent and generation remain unchanged.
+
+## Boundaries
+
+- `lora_cli.py` owns arguments/presentation; `services/lora_quantization.py` owns closed SQLite input, identity, inspection, comparison and no-clobber publication; `services/lora_q8p_codec.py` owns tensor codecs. None opens application state, a credential provider or a generation backend.
+- Inspect/compare accept paired LoRA up/down tensors with supported CPU F16 storage: raw, q8p or ezm7. They validate finite decoded values, not generation quality. Names, dimensions and format must match for comparison; encoded file bytes need not match.
+- The initial writer requires `-e/--experimental`, raw F16 and the existing structural detector's Krea 2, Z Image or SDXL Base signature. Unknown/partial adapters and other families fail closed; a shared codec is not all-family acceptance.
+- Inputs must be closed standalone SQLite files with one indexed `tensors` table and no WAL/SHM/journal. Caps are 8 GiB/file, 20,000 tensors and 64 MiB decoded bytes/tensor. Metadata projection and per-tensor payload reads are bounded; numerical statistics use small chunks. Clustering runs sequentially in at most 16,384-value blocks; this is not a measured memory/performance guarantee.
+- Hold a read transaction, fingerprint the file and rehash it before accepting results/publication. Never substitute stat-only identity. The output is a unique same-directory temporary SQLite file, committed, reopened/decoded, hashed and fsynced before an exclusive hard-link publication. Existing targets are never overwritten; filesystems without hard-link support fail explicitly. Output directories must exist and cannot redirect; `.dtflow` and `lora_files` paths are refused. No automatic report directory, conversion reuse or state migration is added.
+- On cancellation/failure, close SQLite and remove only this invocation's temporary file/journal. A published output is never deleted by cleanup. Best-effort cleanup failures emit a fixed diagnostic; after interruption the owner checks the requested destination before retrying. This is not the managed Prepare staging protocol.
+
+## Codec and numerical provenance
+
+Research pins: Draw Things `4e986724c6c65cdc8b9eeb8a2d2f4775c698e007`, s4nnc `50d060dba795a6d9ca8497ed0222dde7492a8d12`, ccv `5c6c18fd0a10e17071e63dc4156a5efb5d41bb01`. See [issue evidence and source links](https://github.com/djebaz/dtflow/issues/353).
+
+- q8p is palette encoding, not affine INT8: a little-endian UInt32 block-size header (16,384), then 256 F16 palette entries and one UInt8 index per element in each block. The final block has only its actual number of indices. The stored codec identifier is `0x8a1e8b`.
+- For N F16 elements, q8p needs `4 + N + ceil(N/16384) * 512` bytes. Match ccv's CPU encoder capacity of raw F16 bytes plus four. If it cannot fit, try ezm7 (`0x511`), then retain raw F16 if that also cannot fit. Packed `type` is `(codec << 32) | 1`; datatype stays `0x20000`, dimensions/format/names are preserved.
+- ezm7 stores the compressed exponent-stream size, raw-DEFLATE exponents and sign/seven-bit mantissa bytes. Round discarded mantissa bits to even, backing down if rounding would overflow the seven bits. It is lossy, not untouched F16. Decoder expansion is capped at the declared element count.
+- Native MIT-licensed `kmeans1d==0.5.1` supplies optimal 1D DP/SMAWK clustering in the optional `quantization` uv group; its public API and cost/backtracking implementation were inspected. Compatible Windows ABI3 wheels exist and the native import succeeded locally. This does not validate conversion arithmetic or legacy-CPU/package compatibility. It is not a runtime dependency of the ordinary application and is imported only for the experimental writer.
+- The objective matches ccv's 1D clustering, but tie/summation/cluster-label decisions are not claimed bit-identical. Pad unused final-block palette entries with zero. Palette centroids go through Float32 and DTFlow's existing ccv-style F16 truncation helper. Compare decoded results against the owner's iOS references before asserting numerical equivalence.
+- The public iOS “Create an 8-bit model” handler was not located. The q8p/ezm7 policy is supported by the shared codec and supplied Krea 2/SDXL/Z Image samples, not proof of every app/family decision.
+
+## Reports and diagnostics
+
+Schema-1 JSON on stdout records build identity, optional owner-supplied checkout revision, upstream pins, full file digests, family, sizes, tensor/codec counts and validity. Comparison adds aggregate MAE, RMSE, maximum absolute error, different F16 bit-pattern count and equal encoded-payload tensor count. Quantization adds its clustering implementation/version, whole-operation seconds, size reduction and error relative to the input. Reports never claim that numerical closeness proves visual quality or DT+ acceptance. Private paths/names/tensor data are absent; full digests belong to the explicitly requested derived report, not persistent diagnostics.
+
+Use the existing logging setup only. `lora_quantize.started|completed|failed|interrupted|cleanup_pending` carry fixed actions/reasons, bounded counts, sizes, seconds and shared `asset_ref_data` prefixes. No exception text, tensor names, paths or new sink is introduced. Blocks print throttled progress to stderr, separate from stdout JSON.
+
+## Evidence boundary
+
+Implementation checks are static, CLI help and native dependency import only. No conversion, new fixture, automated test, render or provider operation was executed during implementation. Existing iOS references establish approximately 48% smaller files on four samples, not the new writer's output, runtime or quality. Owner runs should record an exact revision and compare input → iOS reference, input → experimental output and experimental output → iOS reference separately. A separately authorized DT+ Prepare/generation smoke is still required for provider/quality claims. Windows standalone packaging and non-Windows acceptance are unverified. See the [CLI guide](../guides/cli.md#experimental-lora-q8p-cli) and [implementation plan](../plans/2026-11-15-q8p-cli-experiment.md).

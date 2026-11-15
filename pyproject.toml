@@ -45,6 +45,9 @@ mask-poc = [
     "onnxruntime>=1.31.1,<2",
     "pillow>=13.0.0,<14",
 ]
+quantization = [
+    "kmeans1d==0.5.1",
+]
 
 [tool.uv]
 prerelease = "allow"

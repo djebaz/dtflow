@@ -36,6 +36,8 @@ workspace in detail.
 
 ## Getting started
 
+For the local-only F16 CKPT → q8p experiment, see the [experimental CLI guide](devdocs/guides/cli.md#experimental-lora-q8p-cli). It is separate from Prepare and requires an optional dependency group; production/provider compatibility is not established.
+
 ### Windows executable
 
 Published releases attach a single-file Windows GUI executable to

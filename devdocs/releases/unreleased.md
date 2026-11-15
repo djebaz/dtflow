@@ -1,5 +1,7 @@
 # Unreleased
 
+- Add a source-only, local experimental LoRA CLI for F16/q8p/ezm7 inspection, decoded reference comparison and explicit separate-output q8p encoding. The optional `quantization` dependency group supplies native 1D clustering; ordinary Prepare and UI behavior are unchanged. Reports separate structural/numerical evidence from unverified DT+ compatibility and image quality. Static/help/dependency-import checks only; owner experiment pending (#353).
+
 - Reclaim abandoned owned Prepare conversion staging during later explicit Prepare work, including reuse. Per-job OS locks protect active conversions; bounded flat cleanup rejects redirected/unexpected entries and leaves legacy unowned jobs untouched. Retained LoRAs, receipts, originals and outputs are unchanged. Cleanup diagnostics report counts/bytes without filenames; tiny stable ownership markers remain. Owner-authorized local Windows checks: 13 disposable staging checks and 11 existing LoRA UI tests passed, including cross-process active protection and killed-job reclamation. Full-app interruption/restart remains separate (#451).
 
 - Reject malformed LoRA alpha tensors containing zero or multiple values before Prepare can upload a converted checkpoint. Repeated conversions with equivalent provenance no longer add timestamp-only history entries; source/converter distinctions and retained assets are preserved (#452; owner Windows logs verify alpha refusals and valid conversions, while timestamp-only provenance deduplication is source-reviewed, not runtime-tested).
