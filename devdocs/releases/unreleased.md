@@ -1,5 +1,7 @@
 # Unreleased
 
+- Browse Civitai adds seven sorting choices (without Oldest), inclusive keyword/tag discovery, a removable Tags pill row, clickable tag pills above card names, and a smaller filled-arrow Download icon (bar indicates multiple version choices). Tag-only browsing is supported, with independent bounded cursors per source and deduplication by model ID. Cross-source results interleave rather than promise one global sort order. Windows and live Civitai verification are outstanding (PR #480).
+
 - Downloads restores **Prepared** after restart from existing locally confirmed DT+ LoRA receipts matched to exact converted content on the selected credential. The corresponding row no longer offers Prepare, Retry or Remove once prepared. Switching cloud keys or backend refreshes the visible state without uploading or contacting DT+. This is a local receipt indication, not live cloud inventory verification; owner Windows restart/key-switch smoke remains outstanding (PR #477).
 
 - Browse Civitai now remembers keyword, sort, period and multi-selected LoRA families across restarts. The search input is focused when opening the Browse tab; restored search text does not trigger a network request until the user searches. Families use a checkbox dropdown and one OR-combined Civitai base-model request; 100-model cursor batches and continuous scrolling remain unchanged. Owner Windows smoke is outstanding (PR #477).
