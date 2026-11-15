@@ -331,6 +331,13 @@ def add_asset_commands(commands) -> None:
     )
     prepare.add_argument("-f", "--file", type=Path, required=True, help="Already-converted Draw Things LoRA file.")
     prepare.add_argument("-n", "--name", help="Identifier to use instead of the file name.")
+    download = action(
+        "download",
+        "Download one LoRA .safetensors from Civitai into application data. Never uploads to DT+. "
+        "Uses the token saved in the app, else the CIVITAI_TOKEN environment variable.",
+    )
+    download.add_argument("source", help="Civitai version id, or a civitai.com model or download link.")
+    download.add_argument("--file-id", type=int, help="Choose one file when a version has several .safetensors files.")
     action("list", "List locally known receipts and unresolved operations (local registry; no network).")
     files = action("files", "List retained LoRA copies kept in application data and their disk usage (no network).")
     files.add_argument(
@@ -534,7 +541,7 @@ COMMAND_HELP = {
     "models": "List backend inventory with provenance (models, LoRAs, controls, unknown entries).",
     "attempts": "Inspect durable attempts; unknown outcomes are never replayed.",
     "settings": "Show or persist shared settings such as the cloud concurrency maximum.",
-    "assets": "Cloud LoRA assets: prepare (may upload, keeps a local copy), files, list, show, reconcile. Local receipts are not remote inventory.",
+    "assets": "Cloud LoRA assets: prepare (may upload, keeps a local copy), download (Civitai file to local storage, never uploads), files, list, show, reconcile. Local receipts are not remote inventory.",
     "queue": "Durable queues with rolling dispatch: add, list, show, start, pause, resume, cancel, cap, relaunch.",
     "script": "Analyze a Draw Things JavaScript script offline (never runs it), self-check the engine, or --run it.",
     "workflow": "Check a DTFlow workflow file offline, or save it as a paused workflow queue (never generates).",
@@ -688,6 +695,60 @@ async def run_queue(args: argparse.Namespace) -> int:
     return queue_exit_code(final)
 
 
+async def run_asset_download(args: argparse.Namespace) -> int:
+    """Resolve and download a Civitai LoRA file with the shared service; never contacts DT+."""
+    import os
+
+    from dtflow.services import civitai
+    from dtflow.services.credentials import SecureStorageUnavailable
+    from dtflow.services.download_tokens import DownloadTokens
+
+    token, source = None, "none"
+    try:  # the token saved by the app's Download credentials card wins over the environment
+        token = await asyncio.to_thread(DownloadTokens().get)
+        source = "saved token"
+    except SecureStorageUnavailable:
+        pass
+    if token is None:
+        token = os.environ.get("CIVITAI_TOKEN") or None
+        source = "CIVITAI_TOKEN" if token else "none"
+    ref = civitai.parse_reference(args.source)
+
+    def work():
+        civitai.cleanup_staging(args.state)
+        version = civitai.resolve(ref, token, file_id=args.file_id)
+        return version, civitai.download(version, args.state, token)
+
+    try:
+        version, result = await asyncio.to_thread(work)
+    except civitai.CivitaiChoice as exc:
+        print(json.dumps({"choose": list(exc.options)}, indent=2), file=sys.stderr)
+        raise
+    print(
+        json.dumps(
+            {
+                "note": "Downloaded to local storage only; nothing was uploaded to DT+.",
+                "token_source": source,
+                "provider": version.provider,
+                "model_id": version.model_id,
+                "version_id": version.version_id,
+                "model": version.model_name,
+                "version": version.version_name,
+                "base_model": version.base_model,
+                "trained_words_state": version.trained_words_state,
+                "file": result.display_name,
+                "sha256": result.sha256,
+                "size": result.size,
+                "path": str(result.path),
+                "reused": result.reused,
+                "hash_verified": result.hash_verified,
+            },
+            indent=2,
+        )
+    )
+    return EXIT_OK
+
+
 async def run_assets(args: argparse.Namespace) -> int:
     command = args.asset_command
     if command in ("list", "show"):
@@ -717,6 +778,8 @@ async def run_assets(args: argparse.Namespace) -> int:
         count, total = await asyncio.to_thread(store.usage)
         print(json.dumps({"files": await asyncio.to_thread(store.entries), "count": count, "bytes": total}, indent=2))
         return EXIT_OK
+    if command == "download":
+        return await run_asset_download(args)
     if command == "prepare":
         record = await prepare_asset(args.state, args.file, args.name, provenance="cli")
         print(json.dumps({"note": ASSET_NOTE, **asset_view(record)}, indent=2))
