@@ -464,6 +464,96 @@
             </widget>
            </item>
            <item>
+            <widget class="QGroupBox" name="downloadCredentialsBox">
+             <property name="sizePolicy"><sizepolicy hsizetype="Preferred" vsizetype="Maximum"/></property>
+             <property name="title"><string /></property>
+             <property name="role" stdset="0"><string>sectionCard</string></property>
+             <property name="accessibleName"><string>Download credentials</string></property>
+             <layout class="QVBoxLayout" name="downloadCredentialsBoxCardLayout">
+              <property name="leftMargin"><number>0</number></property>
+              <property name="topMargin"><number>0</number></property>
+              <property name="rightMargin"><number>0</number></property>
+              <property name="bottomMargin"><number>0</number></property>
+              <property name="spacing"><number>0</number></property>
+              <item>
+               <widget class="QFrame" name="downloadCredentialsBoxHeader">
+                <property name="role" stdset="0"><string>sectionHeader</string></property>
+                <layout class="QHBoxLayout" name="downloadCredentialsBoxHeaderLayout">
+                 <property name="leftMargin"><number>10</number></property>
+                 <property name="topMargin"><number>7</number></property>
+                 <property name="rightMargin"><number>10</number></property>
+                 <property name="bottomMargin"><number>7</number></property>
+                 <property name="spacing"><number>8</number></property>
+                 <item>
+                  <widget class="QLabel" name="downloadCredentialsBoxIcon">
+                   <property name="role" stdset="0"><string>sectionIcon</string></property>
+                   <property name="iconKey" stdset="0"><string>key-round</string></property>
+                   <property name="text"><string /></property>
+                   <property name="minimumSize"><size><width>16</width><height>16</height></size></property>
+                   <property name="maximumSize"><size><width>16</width><height>16</height></size></property>
+                  </widget>
+                 </item>
+                 <item>
+                  <widget class="QLabel" name="downloadCredentialsBoxHeading">
+                   <property name="text"><string>Download credentials</string></property>
+                   <property name="textRole" stdset="0"><string>panelHeading</string></property>
+                  </widget>
+                 </item>
+                 <item>
+                  <spacer name="downloadCredentialsHeaderSpacer"><property name="orientation"><enum>Qt::Horizontal</enum></property><property name="sizeHint" stdset="0"><size><width>20</width><height>20</height></size></property></spacer>
+                 </item>
+                 <item>
+                  <widget class="QToolButton" name="downloadCredentialsDisclosure"><property name="toolButtonStyle"><enum>Qt::ToolButtonIconOnly</enum></property><property name="iconSize"><size><width>16</width><height>16</height></size></property><property name="checkable"><bool>true</bool></property><property name="checked"><bool>false</bool></property><property name="autoRaise"><bool>true</bool></property><property name="accessibleName"><string>Show download credentials</string></property><property name="toolTip"><string>Expand to save or remove the Civitai token used for downloads.</string></property></widget>
+                 </item>
+                </layout>
+               </widget>
+              </item>
+              <item>
+               <widget class="QWidget" name="downloadCredentialsBoxContents"><property name="visible"><bool>false</bool></property>
+                <property name="role" stdset="0"><string>sectionContents</string></property>
+                <layout class="QVBoxLayout" name="downloadCredentialsLayout">
+                 <property name="leftMargin"><number>10</number></property>
+                 <property name="topMargin"><number>8</number></property>
+                 <property name="rightMargin"><number>10</number></property>
+                 <property name="bottomMargin"><number>10</number></property>
+                 <property name="spacing"><number>8</number></property>
+                 <item>
+                  <widget class="QLabel" name="civitaiTokenLabel">
+                   <property name="text"><string>Civitai token</string></property>
+                   <property name="textRole" stdset="0"><string>caption</string></property>
+                   <property name="buddy"><cstring>civitaiTokenEdit</cstring></property>
+                  </widget>
+                 </item>
+                 <item>
+                  <widget class="QLineEdit" name="civitaiTokenEdit">
+                   <property name="placeholderText"><string>Civitai API token</string></property>
+                   <property name="echoMode"><enum>QLineEdit::Password</enum></property>
+                   <property name="clearButtonEnabled"><bool>true</bool></property>
+                   <property name="accessibleName"><string>Civitai API token</string></property>
+                   <property name="toolTip"><string>Saved securely in Windows Credential Manager, separate from DT+ keys. Used only for Civitai downloads.</string></property>
+                  </widget>
+                 </item>
+                 <item>
+                  <layout class="QHBoxLayout" name="civitaiTokenButtons">
+                   <property name="spacing"><number>6</number></property>
+                   <item><widget class="QPushButton" name="saveCivitaiTokenButton"><property name="text"><string>Save token</string></property></widget></item>
+                   <item><widget class="QPushButton" name="removeCivitaiTokenButton"><property name="text"><string>Remove</string></property></widget></item>
+                  </layout>
+                 </item>
+                 <item>
+                  <widget class="QLabel" name="civitaiTokenStatusLabel">
+                   <property name="text"><string>Checking saved token…</string></property>
+                   <property name="wordWrap"><bool>true</bool></property>
+                   <property name="textRole" stdset="0"><string>value</string></property>
+                  </widget>
+                 </item>
+                </layout>
+               </widget>
+              </item>
+             </layout>
+            </widget>
+           </item>
+           <item>
             <widget class="QGroupBox" name="rememberedFoldersBox">
              <property name="sizePolicy"><sizepolicy hsizetype="Preferred" vsizetype="Maximum"/></property>
              <property name="title"><string /></property>
