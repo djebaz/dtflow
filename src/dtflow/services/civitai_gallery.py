@@ -22,11 +22,10 @@ import httpx
 from dtflow.services import civitai
 from dtflow.services.lora_convert.registry import family_for_label, provider_labels, supported_families
 
-PAGE_SIZE = 24
+PAGE_SIZE = 100
 SORTS = ("Most Downloaded", "Highest Rated", "Newest")  # the values the API documents for ``sort``
 PERIODS = ("AllTime", "Year", "Month", "Week", "Day")  # the values the API documents for ``period``
 MAX_QUERY = 100
-MAX_VERSIONS = 12  # versions of one model offered on its card
 THUMB_WIDTH = 320
 MAX_THUMB_BYTES = 1024 * 1024
 MAX_THUMB_ENTRIES = 300
@@ -49,15 +48,29 @@ class VersionOption:
     family: str  # the converter family label
 
     @property
+    def key(self) -> tuple[int, int | None]:
+        """Exact Civitai version/file identity."""
+        return (self.version.version_id, self.version.file.id)
+
+    @property
     def label(self) -> str:
         size = self.version.file.size_bytes
         text = f"{size / 1024**2:.0f} MB" if size else ""
-        return "  ·  ".join(part for part in (self.version.version_name or "Version", self.family, text) if part)
+        return " · ".join(
+            part for part in (
+                self.version.version_name or "Version",
+                self.version.base_model or "Unknown base",
+                self.family,
+                f"ID {self.version.version_id}",
+                self.version.file.name,
+                text,
+            ) if part
+        )
 
 
 @dataclass(frozen=True, slots=True)
 class GalleryCard:
-    """One model, shown by its newest supported version; ``options`` lists every supported version, newest first."""
+    """One model with all known supported families and explicitly downloadable version/file choices."""
 
     model_id: int
     version_id: int
@@ -69,7 +82,8 @@ class GalleryCard:
     thumbs_down: int | None
     size_bytes: int | None
     base_model: str | None
-    family: str  # the converter family label
+    family: str  # family of the representative version
+    families: tuple[str, ...]  # all supported families across listed versions, in first-seen order
     nsfw_level: int  # the cover image's level (1 = general audience)
     availability: str | None
     trained_words: tuple[str, ...]
@@ -87,7 +101,7 @@ class GalleryCard:
 
     @property
     def downloadable(self) -> bool:
-        return self.version is not None and self.problem is None
+        return bool(self.options)
 
     @property
     def nsfw_label(self) -> str | None:
@@ -109,8 +123,10 @@ class GalleryCard:
             lines.append(f"👍 {self.thumbs_up or 0}   👎 {self.thumbs_down or 0}")
         if self.published:
             lines.append(f"Published {self.published}")
-        if len(self.options) > 1:
-            lines.append(f"{len(self.options)} supported versions: Download lets you choose.")
+        if self.options:
+            lines.append(f"{len(self.options)} supported version/file choices: Download lets you choose.")
+        if self.families:
+            lines.append("Supported families: " + ", ".join(self.families))
         if self.problem:
             lines.append(self.problem)
         return "\n".join(lines)
@@ -198,40 +214,50 @@ def _resolve(model: dict, version: dict, model_id: int, version_id: int) -> civi
 
 
 def _card(model: dict, family: str | None = None) -> GalleryCard | None:
-    """A card from one listing item, or None when the model has no version of a supported family (of ``family`` when
-    given). The card shows the newest such version and offers every such version for download."""
+    """One Civitai model, with explicit options for every listed supported version and safetensors file."""
     versions = [v for v in model.get("modelVersions") or [] if isinstance(v, dict)]
     model_id = model.get("id")
     if not versions or not isinstance(model_id, int) or model.get("type") != civitai.LORA_TYPE:
         return None
     shown: tuple[dict, int, object] | None = None
-    problem = None
     options: list[VersionOption] = []
-    for candidate in versions[:MAX_VERSIONS]:
+    families: list[str] = []
+    problem: str | None = None
+    for candidate in versions:
         candidate_id = candidate.get("id")
         candidate_spec = family_for_label("civitai", candidate.get("baseModel"))
         if candidate_spec is None or not isinstance(candidate_id, int):
             continue
         if family and candidate_spec.key != family:
             continue
+        label = candidate_spec.label + (" (experimental)" if candidate_spec.experimental else "")
+        if label not in families:
+            families.append(label)
         if shown is None:
             shown = (candidate, candidate_id, candidate_spec)
-        label = candidate_spec.label + (" (experimental)" if candidate_spec.experimental else "")
-        try:
-            options.append(VersionOption(_resolve(model, candidate, model_id, candidate_id), label))
-        except civitai.CivitaiChoice:
-            problem = problem or "Several .safetensors files: open it on the Links / IDs tab to choose one."
-        except civitai.CivitaiError as exc:
-            problem = problem or str(exc)
+        safetensors = [
+            f for f in (candidate.get("files") or [])
+            if isinstance(f, dict) and isinstance(f.get("id"), int)
+            and str(f.get("name", "")).lower().endswith(".safetensors")
+        ]
+        if not safetensors:
+            problem = problem or "A supported version has no .safetensors file."
+        for file in safetensors:
+            try:
+                resolved = civitai.normalise(model, candidate, model_id, candidate_id, file["id"])
+                options.append(VersionOption(resolved, label))
+            except civitai.CivitaiError as exc:
+                problem = problem or str(exc)
     if shown is None:
         return None
     version, version_id, spec = shown
     if options:
+        version_id = options[0].version.version_id
+        version = next(v for v in versions if v.get("id") == version_id)
+        matched_spec = family_for_label("civitai", version.get("baseModel"))
+        if matched_spec is not None:
+            spec = matched_spec
         problem = None
-        if options[0].version.version_id != version_id:  # the newest supported version has no usable file
-            version = next(v for v in versions if v.get("id") == options[0].version.version_id)
-            version_id = options[0].version.version_id
-            spec = family_for_label("civitai", version.get("baseModel"))
     resolved = options[0].version if options else None
     cover, level = _cover(version)
     stats = version.get("stats")
@@ -252,11 +278,10 @@ def _card(model: dict, family: str | None = None) -> GalleryCard | None:
         size_bytes=size,
         base_model=civitai._text(version.get("baseModel"), 80),
         family=spec.label + (" (experimental)" if spec.experimental else ""),
+        families=tuple(families),
         nsfw_level=level,
         availability=civitai._text(version.get("availability"), 40),
-        trained_words=tuple(w[:60] for w in (words if isinstance(words, list) else []) if isinstance(w, str) and w)[
-            :16
-        ],
+        trained_words=tuple(w[:60] for w in (words if isinstance(words, list) else []) if isinstance(w, str) and w)[:16],
         tags=tuple(t[:40] for t in (tags if isinstance(tags, list) else []) if isinstance(t, str))[:24],
         published=published[:10] if isinstance(published, str) else None,
         cover_url=cover,
@@ -264,7 +289,6 @@ def _card(model: dict, family: str | None = None) -> GalleryCard | None:
         problem=problem,
         options=tuple(options),
     )
-
 
 def list_page(
     client: httpx.Client,
