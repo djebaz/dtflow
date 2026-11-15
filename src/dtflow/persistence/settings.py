@@ -104,6 +104,51 @@ def save_downloads_auto_prepare(state: Path, enabled: bool) -> None:
         _write(state, document)
 
 
+# Civitai Browse inputs are lightweight user preferences, not a search result cache.
+# Preserve them across restarts, but let the user explicitly submit a search.
+_GALLERY_PREFERENCES_LOCK = threading.Lock()
+
+
+def _browse_preferences(raw: object) -> dict:
+    """Read known, bounded Browse Civitai fields without trusting stale/invalid saved values."""
+    if not isinstance(raw, dict):
+        return {}
+    values = {}
+    query = raw.get("query")
+    if isinstance(query, str) and len(query) <= 100 and "\x00" not in query:
+        values["query"] = query
+    sort = raw.get("sort")
+    if sort in ("Most Downloaded", "Highest Rated", "Newest"):
+        values["sort"] = sort
+    period = raw.get("period")
+    if period in ("AllTime", "Year", "Month", "Week", "Day"):
+        values["period"] = period
+    families = raw.get("families")
+    if (
+        isinstance(families, list)
+        and len(families) <= 32
+        and all(isinstance(key, str) and 0 < len(key) <= 32 for key in families)
+    ):
+        values["families"] = list(dict.fromkeys(families))
+    return values
+
+
+def load_civitai_browse_preferences(state: Path) -> dict:
+    """Return saved keywords, ordering, period and selected DTFlow family keys, if present."""
+    return _browse_preferences(_read(state).get("civitai_browse"))
+
+
+def save_civitai_browse_preferences(state: Path, values: dict) -> None:
+    """Persist Browse inputs atomically while preserving unrelated application settings."""
+    cleaned = _browse_preferences(values)
+    with _GALLERY_PREFERENCES_LOCK:
+        document = _read(state)
+        if document.get("civitai_browse") == cleaned:
+            return
+        document["civitai_browse"] = cleaned
+        _write(state, document)
+
+
 # Workflow concurrency defaults (#286), used when a workflow file or node does not set its own.
 WORKFLOW_DEFAULT_KEYS = {"cloud": "workflow_cloud", "local": "workflow_local", "segmentation": "workflow_segmentation"}
 WORKFLOW_DEFAULTS = {"cloud": 10, "local": 2, "segmentation": 2}
