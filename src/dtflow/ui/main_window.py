@@ -614,6 +614,7 @@ class MainWindow:
         form.saveCivitaiTokenButton.clicked.connect(self.save_civitai_token)
         form.removeCivitaiTokenButton.clicked.connect(self.remove_civitai_token)
         form.civitaiTokenEdit.returnPressed.connect(self.save_civitai_token)
+        form.openDownloadsButton.clicked.connect(self._show_downloads)
         form.keySelectCombo.currentIndexChanged.connect(self.key_selected)
         form.customLorasBoxContents.setVisible(False)
         form.customLorasDisclosure.toggled.connect(self._toggle_custom_loras)
