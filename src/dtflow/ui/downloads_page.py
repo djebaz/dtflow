@@ -125,6 +125,7 @@ class DownloadsPage(QObject):
         self.gallery = GalleryTab(
             form, runner=runner, download=self._download_versions,
             state_of=self._card_state, version_state=self._version_state,
+            state_dir=self._state,
         )
         form.downloadsTabs.currentChanged.connect(self._tab_changed)
         for checkbox in (form.linksAutoPrepareCheck, form.galleryAutoPrepareCheck):
@@ -209,6 +210,7 @@ class DownloadsPage(QObject):
     def _tab_changed(self, *_args) -> None:
         if self.form.downloadsTabs.currentWidget() is self.form.browseTab:
             self.gallery.ensure_loaded()
+            QTimer.singleShot(0, self.gallery.focus_search)
 
     def _restored(self, rows, failure) -> None:
         if failure is not None or not rows:
