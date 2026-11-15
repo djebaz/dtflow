@@ -457,25 +457,38 @@ class DownloadsPage(QObject):
             self._render(force=True)
             return
 
+        # Mark the row before looking up the retained file. No duplicate manual Prepare
+        # can open while this same file's automatic preparation is pending or running.
+        item.auto_prepare_phase = "preparing"
+        item.auto_prepare_status = "Preparing on DT+…"
+        self._render(force=True)
+
         async def work():
             return await engine.retained_path(self._state, item)
 
         def resolved(path, failure) -> None:
             if not self._auto_prepare_enabled or self._runner.closed:
-                return  # switching off the preference before admission must not upload
+                item.auto_prepare_phase = ""
+                item.auto_prepare_status = "Auto-prepare stopped before upload; use Prepare manually."
+                self._render(force=True)
+                return  # disabling the preference before admission must not upload
             if failure is not None or path is None:
+                item.auto_prepare_phase = ""
                 item.auto_prepare_status = "Auto-prepare could not locate the converted file; use Prepare manually."
                 self._render(force=True)
                 return
 
             def settled(message: str) -> None:
-                item.auto_prepare_status = message
+                item.auto_prepare_phase = "prepared" if message == "Prepared" else ""
+                item.auto_prepare_status = "Prepared on DT+" if message == "Prepared" else message
                 self._render(force=True)
 
             problem = self._auto_prepare(str(path), item.prepare_metadata, settled)
-            item.auto_prepare_status = (
-                f"Auto-prepare not started: {problem}" if problem else "Auto-preparing on DT+…"
-            )
+            if problem is not None:
+                item.auto_prepare_phase = ""
+                item.auto_prepare_status = f"Auto-prepare not started: {problem}"
+            else:
+                item.auto_prepare_status = "Preparing on DT+…"
             self._render(force=True)
 
         self._runner.submit(work(), resolved)
@@ -537,7 +550,7 @@ class DownloadsPage(QObject):
         self._runner.submit(work(), done)
 
     def prepare(self, item: engine.DownloadItem) -> None:
-        if not self._cloud_ready():
+        if not self._cloud_ready() or item.auto_prepare_phase == "preparing":
             return
 
         async def work():
@@ -643,7 +656,10 @@ class DownloadsPage(QObject):
         table = self.form.downloadsTable
         self.gallery.refresh_states()
         self._summarise()
-        signature = tuple((id(item), item.state, item.detail if force else "") for item in self.items)
+        signature = tuple(
+            (id(item), item.state, item.auto_prepare_phase, item.auto_prepare_status, item.detail if force else "")
+            for item in self.items
+        )
         cloud = self._cloud_ready()
         signature += (cloud,)
         if force or signature != self._signature:
@@ -653,7 +669,12 @@ class DownloadsPage(QObject):
                 name = QTableWidgetItem(item.name)
                 name.setToolTip(item.name)
                 table.setItem(row, 0, name)
-                state = QTableWidgetItem(STATE_TEXT[item.state])
+                label = (
+                    "Preparing" if item.auto_prepare_phase == "preparing"
+                    else "Prepared" if item.auto_prepare_phase == "prepared"
+                    else STATE_TEXT[item.state]
+                )
+                state = QTableWidgetItem(label)
                 colour = STATE_COLOURS.get(item.state)
                 if colour:
                     state.setForeground(QColor(colour))
@@ -694,8 +715,13 @@ class DownloadsPage(QObject):
             button(
                 "Prepare…",
                 self.prepare,
-                enabled=cloud,
-                tip="Open the Prepare editor with this file." if cloud else engine.PREPARE_NEEDS_CLOUD,
+                enabled=cloud and item.auto_prepare_phase != "preparing",
+                tip=(
+                    "Automatic preparation is running for this file."
+                    if item.auto_prepare_phase == "preparing"
+                    else "Open the Prepare editor with this file."
+                    if cloud else engine.PREPARE_NEEDS_CLOUD
+                ),
                 role="primary" if cloud else None,
             )
         elif state == engine.NOT_CONVERTIBLE:
