@@ -394,7 +394,7 @@ class GalleryTab(QObject):
         self.cards: list[gallery.GalleryCard] = []
         self._cursor: str | None = None
         self._seen_cursors: set[str] = set()
-        self._has_more = True
+        self._has_more = False  # no listing until an explicit keyword search
         self._empty_batches = 0
         self._paused_empty = False
         self._generation = 0
@@ -510,8 +510,8 @@ class GalleryTab(QObject):
     def _update_family_summary(self) -> None:
         combo = self.form.galleryFamilyCombo
         labels = [label for key, label in self._family_choices if key in self._selected_families]
-        title = ", ".join(labels) if len(labels) <= 2 else f"{len(labels)} families"
-        combo.setItemText(0, title or "All families")
+        title = labels[0] if len(labels) == 1 else f"{len(labels)} families" if labels else "All families"
+        combo.setItemText(0, title)
         combo.setAccessibleName("Filter Civitai LoRAs by families")
         combo.setToolTip("Select any combination of supported families. " + (", ".join(labels) or "All families"))
 
@@ -651,10 +651,18 @@ class GalleryTab(QObject):
         self._fetch()
 
     def _keyword_changed(self, value: str) -> None:
-        """Save typing after a short idle period; clearing keywords never contacts Civitai."""
+        """Do not continue a previous query while the user is editing different keywords."""
         self._mark_preferences_changed()
-        if not value.strip() and self._loaded:
+        if not self._loaded:
+            return
+        if not value.strip():
             self.search()
+        else:
+            self._has_more = False
+            self.form.galleryStatus.setText("Press Enter to search Civitai.")
+            # A running request cannot be cancelled, but its result must not replace new-query results.
+            self._generation += 1
+            self._busy(False)
 
     def _busy(self, busy: bool) -> None:
         self._loading = busy
