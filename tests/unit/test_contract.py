@@ -99,7 +99,10 @@ def test_core_and_services_have_no_provider_or_presentation_imports():
                 "face_geometry.py",
             )
             allow_numpy = directory == "services" and path.name in ("person_selection.py", "face_geometry.py")
-            allow_httpx = directory == "services" and path.name == "civitai.py"  # the Civitai download client (#462)
+            allow_httpx = directory == "services" and path.name in (
+                "civitai.py",
+                "civitai_gallery.py",
+            )  # the Civitai client and gallery (#462, #466)
             assert not forbidden_imports(
                 path.read_text(),
                 f"dtflow.{directory}",
@@ -129,7 +132,10 @@ def test_only_the_draw_things_integration_imports_provider_libraries():
             ("services", "person_selection.py"),
             ("services", "face_geometry.py"),
         ) or relative.parts[:2] == ("services", "lora_convert")  # the pure-Python LoRA converter needs numpy
-        allow_httpx = relative.parts == ("services", "civitai.py")  # the Civitai download client (#462)
+        allow_httpx = relative.parts in (
+            ("services", "civitai.py"),
+            ("services", "civitai_gallery.py"),
+        )  # Civitai (#462, #466)
         assert not forbidden_imports(
             path.read_text(),
             package,

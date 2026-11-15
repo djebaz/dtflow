@@ -66,7 +66,7 @@ def canonical_line(ref: civitai.CivitaiRef) -> str | None:
     return str(ref.version_id) if ref.version_id is not None else None
 
 
-def _entry(version: civitai.CivitaiVersion) -> ResolvedEntry:
+def entry_for(version: civitai.CivitaiVersion) -> ResolvedEntry:
     label = f"{version.model_name} · {version.version_name}".strip(" ·") or f"Version {version.version_id}"
     try:
         family = civitai.supported_family(version)
@@ -85,7 +85,7 @@ def _resolve_ref(
 ) -> list[ResolvedEntry]:
     fallback = f"Version {ref.version_id}" if ref.version_id else f"Model {ref.model_id}"
     try:
-        return [_entry(civitai.resolve(ref, token, file_id=file_id, client=client))]
+        return [entry_for(civitai.resolve(ref, token, file_id=file_id, client=client))]
     except civitai.CivitaiChoice as choice:
         if depth >= 2 or not choice.options:
             return [ResolvedEntry(fallback, problem=str(choice))]

@@ -273,9 +273,8 @@ def _transient(exc: BaseException) -> CivitaiError:
     return CivitaiError(f"Could not reach Civitai ({type(exc).__name__}); check the network or proxy and retry.")
 
 
-def _get_json(client: httpx.Client, path: str, token: str | None, expected_id: int) -> dict:
-    """Bounded metadata GET with one retry for definite connectivity/timeout failures; the id must match."""
-    url = f"{API_ROOT}{path}"
+def _fetch_json(client: httpx.Client, url: str, token: str | None) -> dict:
+    """Bounded metadata GET with one retry for definite connectivity/timeout failures; returns the JSON object."""
     for attempt in (0, 1):
         try:
             with ExitStack() as stack:
@@ -299,9 +298,21 @@ def _get_json(client: httpx.Client, path: str, token: str | None, expected_id: i
         body = json.loads(raw)
     except ValueError as exc:
         raise CivitaiError("Civitai's answer was not valid JSON; it was not used.") from exc
-    if not isinstance(body, dict) or body.get("id") != expected_id:
+    if not isinstance(body, dict):
+        raise CivitaiError("Civitai's answer had an unexpected shape; it was not used.")
+    return body
+
+
+def _get_json(client: httpx.Client, path: str, token: str | None, expected_id: int) -> dict:
+    body = _fetch_json(client, f"{API_ROOT}{path}", token)
+    if body.get("id") != expected_id:
         raise CivitaiError("Civitai's answer did not match the requested id; it was not used.")
     return body
+
+
+def get_listing(client: httpx.Client, query: str, token: str | None = None) -> dict:
+    """``GET /api/v1/models?<query>`` (the model listing used by the gallery): the bounded JSON object."""
+    return _fetch_json(client, f"{API_ROOT}/models?{query}", _valid_token(token))
 
 
 # -------------------------------------------------------------------------------------------------------- normalising
@@ -362,7 +373,7 @@ def _permissions(model: dict) -> dict:
     return out
 
 
-def _normalise(model: dict, version: dict, model_id: int, version_id: int, file_id: int | None) -> CivitaiVersion:
+def normalise(model: dict, version: dict, model_id: int, version_id: int, file_id: int | None) -> CivitaiVersion:
     model_type = _text(model.get("type"), 40)
     if model_type != LORA_TYPE:
         raise CivitaiError(f"This Civitai item is a {model_type or 'unknown type'}, not a LoRA; it was not used.")
@@ -432,7 +443,7 @@ def resolve(
             listed = [v.get("id") for v in model.get("modelVersions") or [] if isinstance(v, dict)]
             if ref.version_id not in listed:
                 raise CivitaiError("Civitai's model does not list the requested version; it was not used.")
-            return _normalise(model, version, model_id, ref.version_id, file_id)
+            return normalise(model, version, model_id, ref.version_id, file_id)
         model = _get_json(client, f"/models/{ref.model_id}", token, ref.model_id)
         versions = [
             v for v in model.get("modelVersions") or [] if isinstance(v, dict) and _int(v.get("id")) is not None
@@ -450,7 +461,7 @@ def resolve(
                 + ". Open the version you want (a link with ?modelVersionId= or a version id).",
                 options,
             )
-        return _normalise(model, versions[0], ref.model_id, versions[0]["id"], file_id)
+        return normalise(model, versions[0], ref.model_id, versions[0]["id"], file_id)
     finally:
         if owned:
             client.close()

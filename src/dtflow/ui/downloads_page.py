@@ -25,6 +25,8 @@ from PySide6.QtWidgets import (
 from dtflow.diagnostics import event as diagnostic_event
 from dtflow.services import civitai
 from dtflow.services import downloads as engine
+from dtflow.services import civitai_gallery as gallery_engine
+from dtflow.ui.civitai_gallery_view import GalleryTab
 from dtflow.ui.runner import AsyncRunner
 
 log = logging.getLogger(__name__)
@@ -92,6 +94,8 @@ class DownloadsPage(QObject):
         form.downloadSelectedButton.clicked.connect(self.download_selected)
         form.downloadsCredentialsButton.clicked.connect(lambda: open_credentials())
         form.resolvedTable.itemChanged.connect(self._selection_changed)
+        self.gallery = GalleryTab(form, runner=runner, download=self._download_cards, state_of=self._card_state)
+        form.downloadsTabs.currentChanged.connect(self._tab_changed)
         self._configure(form.resolvedTable, {0: 30, 1: 200, 2: 180, 3: 70, 4: 140, 5: 150}, 6)
         self._configure(form.downloadsTable, {0: 220, 1: 150, 2: 130, 4: 270}, 3)
         self.token_changed()
@@ -120,7 +124,12 @@ class DownloadsPage(QObject):
             self._loaded = True
             self._runner.submit(engine.load_items(self._state), self._restored)
         self._render()
+        self._tab_changed()
         self.changed.emit()
+
+    def _tab_changed(self, *_args) -> None:
+        if self.form.downloadsTabs.currentWidget() is self.form.browseTab:
+            self.gallery.ensure_loaded()
 
     def _restored(self, rows, failure) -> None:
         if failure is not None or not rows:
@@ -270,10 +279,31 @@ class DownloadsPage(QObject):
 
     # ------------------------------------------------------------------------------------------------ downloading
     def download_selected(self) -> None:
+        self._enqueue(self._selected_entries())
+
+    def _download_cards(self, cards: list[gallery_engine.GalleryCard]) -> int:
+        """Download from the gallery: the same path as Links / IDs, entered by a card's resolved version."""
+        return self._enqueue([engine.entry_for(card.version) for card in cards if card.version is not None])
+
+    def _card_state(self, card: gallery_engine.GalleryCard) -> str:
+        """What the downloads list says about a card's file: empty when it can be downloaded."""
+        for item in self.items:
+            if item.key == card.key or (item.version_id == card.version_id and item.key[1] is None):
+                if item.active:
+                    return "Downloading" if item.state != engine.QUEUED else "Queued"
+                return {
+                    engine.CONVERTED: "In your LoRAs",
+                    engine.NOT_CONVERTIBLE: "Not convertible",
+                    engine.FAILED: "Failed · retry in list",
+                    engine.INTERRUPTED: "Not converted",
+                }.get(item.state, "")
+        return ""
+
+    def _enqueue(self, entries: list[engine.ResolvedEntry]) -> int:
         if self._runner.closed:
-            return
+            return 0
         started = 0
-        for entry in self._selected_entries():
+        for entry in entries:
             item = engine.item_for(entry)
             if any(other.key == item.key and other.active for other in self.items):
                 continue
@@ -285,6 +315,7 @@ class DownloadsPage(QObject):
             diagnostic_event(log, "downloads.started", data={"count": started})
             self._fill_resolved()
             self._render(force=True)
+        return started
 
     def _start(self, item: engine.DownloadItem) -> None:
         if self._manager is None:
@@ -415,6 +446,7 @@ class DownloadsPage(QObject):
 
     def _render(self, *, force: bool = False) -> None:
         table = self.form.downloadsTable
+        self.gallery.refresh_states()
         signature = tuple((id(item), item.state, item.detail if force else "") for item in self.items)
         cloud = self._cloud_ready()
         signature += (cloud,)

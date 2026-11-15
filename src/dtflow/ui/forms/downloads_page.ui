@@ -2,7 +2,7 @@
 <ui version="4.0">
  <class>DownloadsPage</class>
  <widget class="QWidget" name="downloadsWorkspace">
-  <layout class="QVBoxLayout" name="downloadsLayout" stretch="0,0,0,1">
+  <layout class="QVBoxLayout" name="downloadsLayout" stretch="0,3,0,2">
    <property name="spacing"><number>10</number></property>
    <property name="leftMargin"><number>16</number></property><property name="topMargin"><number>12</number></property>
    <property name="rightMargin"><number>16</number></property><property name="bottomMargin"><number>12</number></property>
@@ -82,6 +82,54 @@
        </widget></item>
        <item><spacer name="downloadSpacer"><property name="orientation"><enum>Qt::Horizontal</enum></property>
         <property name="sizeHint" stdset="0"><size><width>20</width><height>20</height></size></property></spacer></item>
+      </layout></item>
+     </layout>
+    </widget>
+    <widget class="QWidget" name="browseTab">
+     <attribute name="title"><string>Browse Civitai</string></attribute>
+     <layout class="QVBoxLayout" name="browseLayout">
+      <property name="spacing"><number>8</number></property>
+      <property name="leftMargin"><number>10</number></property><property name="topMargin"><number>10</number></property>
+      <property name="rightMargin"><number>10</number></property><property name="bottomMargin"><number>10</number></property>
+      <item><layout class="QHBoxLayout" name="gallerySearchRow"><property name="spacing"><number>8</number></property>
+       <item><widget class="QLineEdit" name="gallerySearchEdit">
+        <property name="placeholderText"><string>Search LoRAs your converter supports</string></property>
+        <property name="clearButtonEnabled"><bool>true</bool></property>
+        <property name="accessibleName"><string>Search Civitai LoRAs</string></property>
+       </widget></item>
+       <item><widget class="QComboBox" name="gallerySortCombo">
+        <property name="accessibleName"><string>Sort Civitai LoRAs</string></property>
+       </widget></item>
+       <item><widget class="QPushButton" name="gallerySearchButton">
+        <property name="text"><string>Search</string></property>
+       </widget></item>
+      </layout></item>
+      <item><widget class="QLabel" name="galleryNote">
+       <property name="wordWrap"><bool>true</bool></property>
+       <property name="role" stdset="0"><string>secondary</string></property>
+      </widget></item>
+      <item><widget class="QListWidget" name="galleryList">
+       <property name="accessibleName"><string>Civitai LoRAs</string></property>
+       <property name="minimumHeight"><number>220</number></property>
+       <property name="editTriggers"><set>QAbstractItemView::NoEditTriggers</set></property>
+       <property name="horizontalScrollBarPolicy"><enum>Qt::ScrollBarAlwaysOff</enum></property>
+      </widget></item>
+      <item><layout class="QHBoxLayout" name="galleryActionRow"><property name="spacing"><number>8</number></property>
+       <item><widget class="QPushButton" name="galleryDownloadButton">
+        <property name="text"><string>Download selected</string></property>
+        <property name="role" stdset="0"><string>primary</string></property>
+        <property name="enabled"><bool>false</bool></property>
+       </widget></item>
+       <item><widget class="QLabel" name="galleryStatus">
+        <property name="text"><string>Opens when you visit this tab.</string></property>
+        <property name="role" stdset="0"><string>secondary</string></property>
+       </widget></item>
+       <item><spacer name="galleryActionSpacer"><property name="orientation"><enum>Qt::Horizontal</enum></property>
+        <property name="sizeHint" stdset="0"><size><width>20</width><height>20</height></size></property></spacer></item>
+       <item><widget class="QPushButton" name="galleryMoreButton">
+        <property name="text"><string>Load more</string></property>
+        <property name="enabled"><bool>false</bool></property>
+       </widget></item>
       </layout></item>
      </layout>
     </widget>
