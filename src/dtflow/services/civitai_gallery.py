@@ -303,7 +303,7 @@ def _card(model: dict, family: str | tuple[str, ...] | None = None) -> GalleryCa
         trained_words=tuple(w[:60] for w in (words if isinstance(words, list) else []) if isinstance(w, str) and w)[
             :16
         ],
-        tags=tuple(t[:40] for t in (tags if isinstance(tags, list) else []) if isinstance(t, str))[:24],
+        tags=tuple(t[:MAX_TAG_LENGTH] for t in (tags if isinstance(tags, list) else []) if isinstance(t, str))[:24],
         published=published[:10] if isinstance(published, str) else None,
         cover_url=cover,
         version=resolved,
@@ -325,13 +325,20 @@ def list_page(
     selected_tags: tuple[str, ...] = (),
 ) -> GalleryPage:
     """One page of the gallery (blocking), optionally filtered by explicit selected tags."""
-    body = civitai.get_listing(client, listing_query(query, sort, cursor, limit, family=family, period=period, tag=tag))
+    body = civitai.get_listing(
+        client, listing_query(query, sort, cursor, limit, family=family, period=period, tag=tag)
+    )
     items = [item for item in body.get("items") or [] if isinstance(item, dict)]
     if selected_tags:
         selected = {value.casefold() for value in selected_tags}
         items = [
-            item for item in items
-            if any(isinstance(name, str) and name.casefold() in selected for name in (item.get("tags") or []))
+            item
+            for item in items
+            if isinstance(item.get("tags"), list)
+            and any(
+                isinstance(name, str) and name.casefold() in selected
+                for name in item["tags"]
+            )
         ]
     cards = tuple(card for card in (_card(item, family) for item in items) if card is not None)
     meta = body.get("metadata")
@@ -392,6 +399,10 @@ class GallerySearch:
         self._page = 0
 
     @property
+    def source_count(self) -> int:
+        return len(self._streams)
+
+    @property
     def active(self) -> bool:
         return any(not stream.finished for stream in self._streams)
 
@@ -405,8 +416,14 @@ class GallerySearch:
             if not source.finished:
                 break
         page = list_page(
-            client, source.query, self.sort, source.cursor,
-            family=self.family, period=self.period, tag=source.tag, selected_tags=self.tags,
+            client,
+            source.query,
+            self.sort,
+            source.cursor,
+            family=self.family,
+            period=self.period,
+            tag=source.tag,
+            selected_tags=self.tags,
         )
         self._index = (index + 1) % len(self._streams)
         if source.cursor is not None:
