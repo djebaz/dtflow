@@ -118,7 +118,7 @@ def _browse_preferences(raw: object) -> dict:
     if isinstance(query, str) and len(query) <= 100 and "\x00" not in query:
         values["query"] = query
     sort = raw.get("sort")
-    if sort in ("Most Downloaded", "Highest Rated", "Newest"):
+    if sort in ("Most Downloaded", "Highest Rated", "Newest", "Most Liked", "Most Discussed", "Most Collected", "Most Images"):
         values["sort"] = sort
     period = raw.get("period")
     if period in ("AllTime", "Year", "Month", "Week", "Day"):
@@ -130,6 +130,17 @@ def _browse_preferences(raw: object) -> dict:
         and all(isinstance(key, str) and 0 < len(key) <= 32 for key in families)
     ):
         values["families"] = list(dict.fromkeys(families))
+    tags = raw.get("tags")
+    if (
+        isinstance(tags, list)
+        and len(tags) <= 8
+        and all(isinstance(tag, str) and 0 < len(tag.strip()) <= 80 and "\\x00" not in tag for tag in tags)
+    ):
+        unique: dict[str, str] = {}
+        for tag in tags:
+            clean = tag.strip()
+            unique.setdefault(clean.casefold(), clean)
+        values["tags"] = list(unique.values())
     return values
 
 
