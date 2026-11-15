@@ -558,7 +558,7 @@ class DownloadsPage(QObject):
         self._runner.submit(work(), done)
 
     def prepare(self, item: engine.DownloadItem) -> None:
-        if not self._cloud_ready() or item.auto_prepare_phase == "preparing":
+        if not self._cloud_ready() or item.auto_prepare_phase in ("preparing", "prepared"):
             return
 
         async def work():
@@ -721,6 +721,8 @@ class DownloadsPage(QObject):
         text = item.detail.casefold()
         if item.active:
             button("Cancel", self.cancel)
+        elif state == engine.CONVERTED and item.auto_prepare_phase == "prepared":
+            pass  # confirmed on DT+: no Prepare action remains for this row
         elif state == engine.CONVERTED:
             button(
                 "Prepare…",
