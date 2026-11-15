@@ -22,6 +22,7 @@ from dtflow.services.lora_convert.registry import FamilySpec
 from dtflow.services.lora_download import convert_downloaded
 from dtflow.services.lora_sources import list_sources, remove_source
 from dtflow.services.lora_store import LoraStore
+from dtflow.services.lora_naming import LoraPrepareMetadata
 
 log = logging.getLogger(__name__)
 
@@ -153,6 +154,7 @@ class DownloadItem:
     source_sha: str | None = None
     converted_sha: str | None = None
     converted_size: int | None = None
+    prepare_metadata: LoraPrepareMetadata | None = None  # exact metadata chosen during successful conversion
     version_id: int | None = None
     model_id: int | None = None
     speed: float = 0.0  # bytes per second while downloading (smoothed)
@@ -316,6 +318,7 @@ async def run_item(
     if result.state == "converted" and result.prepared is not None:
         retained = result.prepared.retained
         item.state, item.converted_sha, item.converted_size = CONVERTED, retained.sha256, retained.size
+        item.prepare_metadata = result.prepared.metadata
         item.detail = "Source file deleted" if result.source_deleted else "Converted"
         if result.warnings:
             item.detail += ". " + " ".join(result.warnings)
