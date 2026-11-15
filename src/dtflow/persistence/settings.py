@@ -134,7 +134,7 @@ def _browse_preferences(raw: object) -> dict:
     if (
         isinstance(tags, list)
         and len(tags) <= 8
-        and all(isinstance(tag, str) and 0 < len(tag.strip()) <= 80 and "\\x00" not in tag for tag in tags)
+        and all(isinstance(tag, str) and 0 < len(tag.strip()) <= 80 and "\x00" not in tag for tag in tags)
     ):
         unique: dict[str, str] = {}
         for tag in tags:
