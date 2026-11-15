@@ -13,10 +13,12 @@ from collections.abc import Callable
 from pathlib import Path
 
 from PySide6.QtCore import QObject, Qt, QTimer, Signal
-from PySide6.QtGui import QIcon
+from PySide6.QtGui import QColor, QIcon
 from PySide6.QtWidgets import (
     QHBoxLayout,
     QHeaderView,
+    QLabel,
+    QProgressBar,
     QPushButton,
     QTableWidget,
     QTableWidgetItem,
@@ -35,10 +37,17 @@ STATE_TEXT = {
     engine.DOWNLOADING: "Downloading",
     engine.CONVERTING: "Converting",
     engine.CONVERTED: "Converted",
-    engine.NOT_CONVERTIBLE: "Not convertible",
+    engine.NOT_CONVERTIBLE: "Downloaded, not convertible",
     engine.FAILED: "Failed",
     engine.CANCELLED: "Cancelled",
     engine.INTERRUPTED: "Not converted",
+}
+STATE_COLOURS = {  # the design's status colours (color.success, color.warning, color.error, color.disabled)
+    engine.CONVERTED: "#78c97c",
+    engine.NOT_CONVERTIBLE: "#ffbf59",
+    engine.INTERRUPTED: "#ffbf59",
+    engine.FAILED: "#ff8179",
+    engine.CANCELLED: "#777777",
 }
 REFRESH_MS = 300
 CHECKED_COLUMN, NAME_COLUMN = 0, 1
@@ -90,7 +99,7 @@ class DownloadsPage(QObject):
 
         form.resolveButton.clicked.connect(self.resolve)
         form.downloadSelectedButton.clicked.connect(self.download_selected)
-        form.downloadsCredentialsButton.clicked.connect(lambda: open_credentials())
+        form.downloadsTokenLabel.clicked.connect(lambda: open_credentials())
         form.downloadsTable.setVisible(False)  # the list is a toggle panel, closed until asked for
         form.downloadsListToggle.toggled.connect(self._toggle_list)
         self._toggle_list(False)
@@ -99,7 +108,10 @@ class DownloadsPage(QObject):
         form.downloadsTokenBar.show()
         form.resolvedTable.itemChanged.connect(self._selection_changed)
         self._configure(form.resolvedTable, {0: 30, 1: 200, 2: 180, 3: 70, 4: 140, 5: 150}, 6)
-        self._configure(form.downloadsTable, {0: 220, 1: 150, 2: 130, 4: 270}, 3)
+        self._configure(form.downloadsTable, {0: 260, 1: 200, 3: 270}, 2)
+        actions = form.downloadsTable.horizontalHeaderItem(3)
+        if actions is not None:
+            actions.setTextAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
         self.token_changed()
 
     # ------------------------------------------------------------------------------------------------- table setup
@@ -172,7 +184,6 @@ class DownloadsPage(QObject):
         }.get(state, ("Civitai token: not checked", "neutral"))
         label = self.form.downloadsTokenLabel
         label.setText(text)
-        label.setToolTip("Downloads need a saved token." if look == "warning" else "")
         if label.property("state") != look:
             label.setProperty("state", look)
             label.style().unpolish(label)
@@ -253,7 +264,7 @@ class DownloadsPage(QObject):
                     version.file.name,
                     format_size(version.file.size_bytes),
                     version.base_model or "–",
-                    (entry.family.label + (" (experimental)" if entry.family.experimental else ""))
+                    (entry.family.label + (", experimental" if entry.family.experimental else ""))
                     if entry.family
                     else "None",
                 ]
@@ -269,16 +280,18 @@ class DownloadsPage(QObject):
             for offset, text in enumerate(cells, 1):
                 cell = QTableWidgetItem(text)
                 cell.setToolTip(text)
-                if offset == 6 and entry.problem:
-                    cell.setForeground(self._warning_color(entry))
+                if offset == 6:
+                    cell.setForeground(self._warning_color(entry) if entry.problem else QColor("#78c97c"))
+                elif offset == 5 and entry.family:
+                    cell.setForeground(QColor("#b9dcf7"))
+                elif version is None or (offset == 5 and not entry.family):
+                    cell.setForeground(QColor("#777777"))
                 table.setItem(row, offset, cell)
         table.blockSignals(False)
         self._selection_changed()
 
     @staticmethod
     def _warning_color(entry: engine.ResolvedEntry):
-        from PySide6.QtGui import QColor
-
         return QColor("#ffbf59" if entry.version is not None else "#ff8179")  # warning / error status colours
 
     def _selected_entries(self) -> list[engine.ResolvedEntry]:
@@ -329,7 +342,7 @@ class DownloadsPage(QObject):
         manager = self._manager
         if item not in self._batch:
             self._batch.append(item)
-        item.state, item.detail, item.done, item.total = engine.QUEUED, "Waiting for a free slot", 0, None
+        item.state, item.detail, item.done, item.total = engine.QUEUED, engine.QUEUED_DETAIL, 0, None
         self._timer.start()
         coroutine = engine.run_item(self._state, item, manager, self._read_token)
         try:
@@ -457,13 +470,56 @@ class DownloadsPage(QObject):
 
     @staticmethod
     def _detail(item: engine.DownloadItem) -> str:
-        if item.state == engine.DOWNLOADING and item.total:
-            return f"{item.done * 100 // item.total}% · {format_size(item.done)} of {format_size(item.total)}"
         if item.state == engine.DOWNLOADING:
-            return f"{format_size(item.done)} downloaded"
+            speed = f" · {item.speed / 1024**2:.1f} MB/s" if item.speed > 0 else ""
+            if item.total:
+                done, total = item.done / 1024**2, item.total / 1024**2
+                return f"{item.done * 100 // item.total}% · {done:.0f} of {total:.0f} MB{speed}"
+            return f"{format_size(item.done)} downloaded{speed}"
         if item.state == engine.CONVERTING and item.total:
-            return f"{item.detail}: {item.done} of {item.total} modules"
+            return f"{item.detail} · {item.done} of {item.total} modules"
         return item.detail
+
+    def _detail_cell(self, item: engine.DownloadItem, cloud: bool) -> QWidget:
+        """Detail as in the design: a thin bar plus text while downloading, plain text otherwise."""
+        holder = QWidget()
+        layout = QHBoxLayout(holder)
+        layout.setContentsMargins(8, 0, 8, 0)
+        layout.setSpacing(6)
+        bar = QProgressBar(holder)
+        bar.setObjectName("downloadsRowBar")
+        bar.setTextVisible(False)
+        bar.setFixedWidth(120)
+        bar.setRange(0, 100)
+        label = QLabel(holder)
+        label.setObjectName("downloadsRowDetail")
+        layout.addWidget(bar)
+        layout.addWidget(label, 1)
+        holder.setProperty("bar", bar)
+        self._fill_detail(holder, item, cloud)
+        return holder
+
+    def _fill_detail(self, holder: QWidget, item: engine.DownloadItem, cloud: bool) -> None:
+        bar: QProgressBar = holder.findChild(QProgressBar, "downloadsRowBar")
+        label: QLabel = holder.findChild(QLabel, "downloadsRowDetail")
+        text = self._detail(item)
+        look = "dim"
+        if item.state == engine.FAILED:
+            look = "error"
+        elif item.state == engine.DOWNLOADING:
+            look = ""
+        if item.state == engine.CONVERTED and not cloud:
+            text = engine.PREPARE_NEEDS_CLOUD
+        bar.setVisible(item.state == engine.DOWNLOADING)
+        if item.state == engine.DOWNLOADING:
+            bar.setValue(item.done * 100 // item.total if item.total else 0)
+        if label.text() != text:
+            label.setText(text)
+            label.setToolTip(text)
+        if label.property("state") != look:
+            label.setProperty("state", look)
+            label.style().unpolish(label)
+            label.style().polish(label)
 
     def _render(self, *, force: bool = False) -> None:
         table = self.form.downloadsTable
@@ -475,28 +531,29 @@ class DownloadsPage(QObject):
             self._signature = signature
             table.setRowCount(len(self.items))
             for row, item in enumerate(self.items):
-                detail = self._detail(item)
-                if item.state == engine.CONVERTED and not cloud:
-                    detail = (detail + ". " if detail else "") + engine.PREPARE_NEEDS_CLOUD
-                for column, text in enumerate((item.name, item.family, STATE_TEXT[item.state], detail)):
-                    cell = QTableWidgetItem(text)
-                    cell.setToolTip(text)
-                    table.setItem(row, column, cell)
-                table.setCellWidget(row, 4, self._actions(item, cloud))
+                name = QTableWidgetItem(item.name)
+                name.setToolTip(item.name)
+                table.setItem(row, 0, name)
+                state = QTableWidgetItem(STATE_TEXT[item.state])
+                colour = STATE_COLOURS.get(item.state)
+                if colour:
+                    state.setForeground(QColor(colour))
+                table.setItem(row, 1, state)
+                table.setCellWidget(row, 2, self._detail_cell(item, cloud))
+                table.setCellWidget(row, 3, self._actions(item, cloud))
             return
         for row, item in enumerate(self.items):
             if item.active:  # progress only: the cells exist, the buttons stay
-                text = self._detail(item)
-                cell = table.item(row, 3)
-                if cell is not None and cell.text() != text:
-                    cell.setText(text)
-                    cell.setToolTip(text)
+                holder = table.cellWidget(row, 2)
+                if holder is not None:
+                    self._fill_detail(holder, item, cloud)
 
     def _actions(self, item: engine.DownloadItem, cloud: bool) -> QWidget:
         holder = QWidget()
         layout = QHBoxLayout(holder)
         layout.setContentsMargins(4, 0, 4, 0)
         layout.setSpacing(6)
+        layout.addStretch(1)  # actions sit at the right edge, as in the design
 
         def button(text: str, action, *, enabled: bool = True, tip: str = "", role: str | None = None) -> None:
             widget = QPushButton(text, holder)
@@ -511,6 +568,7 @@ class DownloadsPage(QObject):
             layout.addWidget(widget)
 
         state = item.state
+        text = item.detail.casefold()
         if item.active:
             button("Cancel", self.cancel)
         elif state == engine.CONVERTED:
@@ -519,17 +577,19 @@ class DownloadsPage(QObject):
                 self.prepare,
                 enabled=cloud,
                 tip="Open the Prepare editor with this file." if cloud else engine.PREPARE_NEEDS_CLOUD,
-                role="primary",
+                role="primary" if cloud else None,
             )
         elif state == engine.NOT_CONVERTIBLE:
             button("Remove", self.remove, tip="Permanently delete the kept file.")
-        else:  # failed, cancelled, interrupted
+        elif state == engine.FAILED and ("removed" in text or "not found" in text or "no longer" in text):
+            button("Remove", self.remove)  # gone at Civitai: a retry cannot help
+        elif state == engine.FAILED:
             button("Retry", self.retry)
-            text = item.detail.casefold()
-            if state == engine.FAILED and ("token" in text or "login" in text):
+            if "token" in text or "login" in text:
                 layout.addWidget(self._credentials_button(holder))
+        else:  # cancelled, interrupted
+            button("Retry", self.retry)
             button("Remove", self.remove)
-        layout.addStretch(1)
         return holder
 
     def _credentials_button(self, parent: QWidget) -> QPushButton:

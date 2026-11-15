@@ -541,21 +541,40 @@ QPushButton#downloadsPill[state="error"] {
   border-color: ${color.statusErrorBorder};
   color: ${color.error};
 }
-/* Token chip at the right of the Downloads tab bar. */
-QLabel#downloadsTokenLabel {
+/* Token chip at the right of the Downloads tab bar; a click opens the credentials card. */
+QPushButton#downloadsTokenLabel {
+  background: transparent;
   border: 1px solid ${color.borderStrong};
   border-radius: ${size.radiusXs};
   color: ${color.secondary};
   font-size: ${type.small};
+  font-weight: 400;
+  min-height: 0;
   padding: 2px 8px;
 }
-QLabel#downloadsTokenLabel[state="ok"] {
+QPushButton#downloadsTokenLabel[state="ok"] {
   border-color: ${color.statusOkBorder};
   color: ${color.success};
 }
-QLabel#downloadsTokenLabel[state="warning"] {
+QPushButton#downloadsTokenLabel[state="warning"] {
   border-color: ${color.statusWarningBorder};
   color: ${color.warning};
+}
+QPushButton#downloadsTokenLabel:hover {
+  background: ${color.selectionHover};
+}
+/* Thin transfer bar inside a Downloads list row. */
+QProgressBar#downloadsRowBar {
+  border: 0;
+  border-radius: ${size.radiusXs};
+  min-height: 6px;
+  max-height: 6px;
+}
+QLabel#downloadsRowDetail[state="dim"] {
+  color: ${color.disabled};
+}
+QLabel#downloadsRowDetail[state="error"] {
+  color: ${color.error};
 }
 /* Row actions in the Downloads list: compact so a 40 px row holds them. */
 QPushButton#downloadsRowButton {
