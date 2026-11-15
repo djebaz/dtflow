@@ -22,7 +22,7 @@ import httpx
 from dtflow.services import civitai
 from dtflow.services.lora_convert.registry import family_for_label, provider_labels, supported_families
 
-PAGE_SIZE = 20  # small cursor batches keep rich multi-version responses responsive
+PAGE_SIZE = 100  # cursor batches requested by the gallery
 SORTS = ("Most Downloaded", "Highest Rated", "Newest")  # the values the API documents for ``sort``
 PERIODS = ("AllTime", "Year", "Month", "Week", "Day")  # the values the API documents for ``period``
 MAX_QUERY = 100
