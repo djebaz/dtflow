@@ -97,8 +97,11 @@ class SecureStorageUnavailable(BackendError):
         )
 
 
-def _windows_vault():
-    """Return the keyring module only when its active backend is Windows Credential Manager."""
+def secure_vault():
+    """Return the keyring module only when its active backend is Windows Credential Manager.
+
+    Shared by every secret store (DT+ keys, download tokens); a plaintext or non-Windows backend is never used.
+    """
     try:
         import keyring
         from keyring.backends.Windows import WinVaultKeyring
@@ -171,7 +174,7 @@ class SavedCredentials:
             self._index = Path(index)
 
     def _store(self):
-        return self._vault if self._vault is not None else _windows_vault()
+        return self._vault if self._vault is not None else secure_vault()
 
     def available(self) -> bool:
         try:

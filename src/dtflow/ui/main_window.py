@@ -70,6 +70,7 @@ from dtflow.services.credentials import (
     credential_status,
     resolve_credentials,
 )
+from dtflow.services.download_tokens import CIVITAI, DownloadTokens, token_status
 from dtflow.services import lora_relink
 from dtflow.services.presets import export_presets, import_presets, load_presets
 from dtflow.ui.activity import Activity
@@ -238,6 +239,9 @@ class MainWindow:
 
         self._saved = saved or SavedCredentials()
         self._optional_saved = OptionalSavedCredentials(self._saved)
+        self._download_tokens = DownloadTokens()
+        self._token_busy = False
+        self._token_state = "error"
         self._free_space_revision = 0  # bumps on every key/backend change and request; only the newest answer shows
         self._free_space_busy = self._free_space_again = False
         self._summary_reads = {}
@@ -564,6 +568,12 @@ class MainWindow:
         form.checkButton.clicked.connect(self.check)
         form.saveKeyButton.clicked.connect(self.save_key)
         form.removeKeyButton.clicked.connect(self.remove_key)
+        form.downloadCredentialsBoxContents.setVisible(False)
+        form.downloadCredentialsDisclosure.toggled.connect(self._toggle_download_credentials)
+        self._set_download_disclosure_icon(False)
+        form.saveCivitaiTokenButton.clicked.connect(self.save_civitai_token)
+        form.removeCivitaiTokenButton.clicked.connect(self.remove_civitai_token)
+        form.civitaiTokenEdit.returnPressed.connect(self.save_civitai_token)
         form.keySelectCombo.currentIndexChanged.connect(self.key_selected)
         form.customLorasBoxContents.setVisible(False)
         form.customLorasDisclosure.toggled.connect(self._toggle_custom_loras)
@@ -715,6 +725,7 @@ class MainWindow:
         self.generation.sync_backend()
         startup.mark("backend and restored catalogue applied")
         self.refresh_credentials(background=True)
+        self.refresh_download_tokens()
         self.cloud_usage = CloudUsagePanel(
             form,
             self.runner,
@@ -1607,6 +1618,130 @@ class MainWindow:
             else "An environment key cannot be removed here: unset DRAWTHINGS_API_KEY and restart."
             if selected == "environment"
             else "No saved key to remove."
+        )
+
+    # -- download credentials (Civitai token) -----------------------------------------------------------------------
+    def _set_download_disclosure_icon(self, expanded: bool) -> None:
+        images = Path(__file__).parents[1] / "resources" / "images"
+        name = "controls/chevron-down.svg" if expanded else "gallery/chevron-right.svg"
+        self.form.downloadCredentialsDisclosure.setIcon(QIcon(str(images / name)))
+
+    def _toggle_download_credentials(self, expanded: bool) -> None:
+        self.form.downloadCredentialsBoxContents.setVisible(expanded)
+        self._set_download_disclosure_icon(expanded)
+        self.form.downloadCredentialsDisclosure.setAccessibleName(
+            "Hide download credentials" if expanded else "Show download credentials"
+        )
+
+    def refresh_download_tokens(self) -> None:
+        """Read the saved/unavailable state off the GUI thread; the token itself is never read into the UI."""
+        form = self.form
+        form.civitaiTokenStatusLabel.setText("Checking saved token…")
+        form.saveCivitaiTokenButton.setEnabled(False)
+        form.removeCivitaiTokenButton.setEnabled(False)
+        self._read_summary(
+            "download_tokens",
+            lambda: token_status(self._download_tokens, CIVITAI),
+            self._download_tokens_read,
+        )
+
+    def _download_tokens_read(self, state, error) -> None:
+        self._token_busy = False
+        if error is not None or state is None:
+            state = "error"
+        self._apply_token_state(state)
+
+    def _apply_token_state(self, state: str, message: str | None = None) -> None:
+        form = self.form
+        self._token_state = state
+        usable = state != "unavailable"
+        form.civitaiTokenEdit.setEnabled(usable)
+        form.saveCivitaiTokenButton.setEnabled(usable and not self._token_busy)
+        form.removeCivitaiTokenButton.setEnabled(state == "present" and not self._token_busy)
+        if message:
+            text = message
+        elif state == "present":
+            text = "Civitai token saved in Windows Credential Manager."
+        elif state == "absent":
+            text = "No Civitai token saved."
+        elif state == "unavailable":
+            text = "Secure storage (Windows Credential Manager) is unavailable here, so no token can be saved."
+        else:
+            text = "The saved token state could not be read; check again."
+        form.civitaiTokenStatusLabel.setText(text)
+
+    def _token_work(self, work, done) -> None:
+        """Run one blocking vault operation on a worker; ``done(result, error)`` runs on the GUI thread."""
+        self._token_busy = True
+        self.form.saveCivitaiTokenButton.setEnabled(False)
+        self.form.removeCivitaiTokenButton.setEnabled(False)
+        self._summary_reads.pop("download_tokens", None)
+        self.runner.submit(asyncio.to_thread(work), done)
+
+    def save_civitai_token(self) -> None:
+        if self._token_busy:
+            return
+        secret = self.form.civitaiTokenEdit.text()
+        self.form.civitaiTokenEdit.clear()
+
+        def work():
+            self._download_tokens.save(CIVITAI, secret)
+            return token_status(self._download_tokens, CIVITAI)
+
+        def done(state, error) -> None:
+            self._token_busy = False
+            if error is None:
+                diagnostic_event(log, "app.download_token_saved", level=logging.INFO, data={"provider": CIVITAI})
+                self._apply_token_state(state or "present")
+                return
+            code = (
+                error.failure.code
+                if isinstance(error, BackendError)
+                else str(error)
+                if isinstance(error, ValidationError)
+                else "vault_error"
+            )
+            diagnostic_event(
+                log,
+                "app.download_token_not_saved",
+                level=logging.WARNING,
+                data={"provider": CIVITAI, "reason": type(error).__name__},
+            )
+            self._apply_token_state(self._token_state, f"Token not saved: {code}")
+
+        self._token_work(work, done)
+
+    def remove_civitai_token(self) -> None:
+        if self._token_busy or self.inline.commit(self.form.removeCivitaiTokenButton):
+            return
+
+        def proceed() -> None:
+            def work():
+                self._download_tokens.remove(CIVITAI)
+                return token_status(self._download_tokens, CIVITAI)
+
+            def done(state, error) -> None:
+                self._token_busy = False
+                if error is None:
+                    diagnostic_event(log, "app.download_token_removed", level=logging.INFO, data={"provider": CIVITAI})
+                    self._apply_token_state(state or "absent")
+                    return
+                diagnostic_event(
+                    log,
+                    "app.download_token_not_removed",
+                    level=logging.WARNING,
+                    data={"provider": CIVITAI, "reason": type(error).__name__},
+                )
+                self._apply_token_state(self._token_state, "Token not removed: Windows Credential Manager refused.")
+
+            self._token_work(work, done)
+
+        confirm_action(
+            self.form,
+            self.form.removeCivitaiTokenButton,
+            "Remove Civitai token",
+            "Remove the Civitai token from Windows Credential Manager? DT+ keys are not touched.",
+            proceed,
         )
 
     def key_selected(self, _index: int = -1) -> None:
