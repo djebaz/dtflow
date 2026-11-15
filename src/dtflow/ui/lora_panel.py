@@ -636,7 +636,9 @@ class LoraAssetPanel:
             Presentation("warning", "Quantizing", "Local CPU conversion in progress."),
         )
         diagnostic_event(log, "lora_quantize.started", data={"action": "quantize"})
-        activity_strip(self.page).start("q8p", "Quantizing LoRA", stop=self._q8p_cancel.set, stop_text="Cancel conversion")
+        activity_strip(self.page).start(
+            "q8p", "Quantizing LoRA", stop=self._q8p_cancel.set, stop_text="Cancel conversion"
+        )
 
         async def run():
             from dtflow.services.lora_quantization import quantize_file
