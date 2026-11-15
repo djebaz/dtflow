@@ -4,9 +4,9 @@ The CLI is DTFlow's automation and development interface. For the desktop applic
 
 ## Experimental LoRA q8p CLI
 
-`lora inspect`, `lora compare` and `lora quantize` are local-only source experiments (#353). They do not download, access credentials, upload, generate or register managed files. This is F16 `.ckpt` → q8p/ezm7 `.ckpt`, not direct safetensors conversion or a new Prepare mode. Valid storage and small numerical errors are not proof of DT+ compatibility or unchanged image quality.
+`lora inspect`, `lora compare` and `lora quantize` are local-only source experiments (#353). The later owner-approved desktop **Quantize q8p…** button calls the same CPU service, not a separate implementation; the regular cloud Prepare action remains independent. They do not download, access credentials, upload, generate or register managed files. This is F16 `.ckpt` → q8p/ezm7 `.ckpt`, not direct safetensors conversion or a new Prepare mode. Valid storage and small numerical errors are not proof of DT+ compatibility or unchanged image quality.
 
-Inspect/compare use normal dependencies. Quantization needs the optional native clustering group; it is not installed for the ordinary GUI by default:
+Inspect/compare use normal dependencies. Quantization needs the optional native clustering group. Ordinary source GUI installs do not enable it by default; for the desktop q8p action start source DTFlow with `uv run --group quantization dtflow gui`. The canonical Windows executable builder includes that group:
 
 ```powershell
 uv sync --frozen --group quantization
