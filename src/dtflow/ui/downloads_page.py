@@ -82,8 +82,7 @@ class DownloadsPage(QObject):
         self._signature: tuple = ()
         self.finished_unseen = 0
         self.failed_unseen = 0
-        self.batch_total = 0
-        self.batch_done = 0
+        self._batch: list[engine.DownloadItem] = []  # the items of the running batch, for the aggregate percent
         self._timer = QTimer(self)
         self._timer.setInterval(REFRESH_MS)
         self._timer.timeout.connect(self._tick)
@@ -328,7 +327,8 @@ class DownloadsPage(QObject):
         if self._manager is None:
             self._manager = civitai.DownloadManager(self._state)
         manager = self._manager
-        self.batch_total += 1
+        if item not in self._batch:
+            self._batch.append(item)
         item.state, item.detail, item.done, item.total = engine.QUEUED, "Waiting for a free slot", 0, None
         self._timer.start()
         coroutine = engine.run_item(self._state, item, manager, self._read_token)
@@ -339,13 +339,12 @@ class DownloadsPage(QObject):
         self.changed.emit()
 
     def _finished(self, item: engine.DownloadItem) -> None:
-        self.batch_done += 1
         if item.state == engine.CONVERTED:
             self.finished_unseen += 1
         elif item.state in (engine.FAILED, engine.NOT_CONVERTIBLE):
             self.failed_unseen += 1
         if not any(other.active for other in self.items):
-            self.batch_total = self.batch_done = 0
+            self._batch.clear()
         diagnostic_event(log, "downloads.item_finished", data={"state": item.state})
         self._render(force=True)
         self.changed.emit()
@@ -423,12 +422,27 @@ class DownloadsPage(QObject):
         self._runner.submit(work(), done)
 
     # --------------------------------------------------------------------------------------------------- display
+    @staticmethod
+    def _fraction(item: engine.DownloadItem) -> float:
+        """How far one file's download is: 0 while queued, bytes received while downloading, 1 once it is on disk."""
+        if item.state == engine.QUEUED:
+            return 0.0
+        if item.state == engine.DOWNLOADING:
+            total = item.total or (item.version.file.size_bytes if item.version else None)
+            return min(item.done / total, 1.0) if total else 0.0
+        return 1.0
+
     def stats(self) -> dict[str, int]:
         active = [item for item in self.items if item.active]
+        batch = self._batch or active
+        percent = round(100 * sum(self._fraction(item) for item in batch) / len(batch)) if batch else 0
         return {
             "active": len(active),
             "transferring": sum(1 for item in active if item.state in (engine.DOWNLOADING, engine.CONVERTING)),
             "downloading": sum(1 for item in active if item.state == engine.DOWNLOADING),
+            "percent": percent,
+            "files": len(batch),
+            "finished": sum(1 for item in batch if not item.active),
         }
 
     def refresh_actions(self) -> None:

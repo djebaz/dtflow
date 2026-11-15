@@ -918,7 +918,6 @@ class MainWindow:
             pill.style().polish(pill)
         strip = self.progress_strip
         if stats["active"]:
-            total, done = max(page.batch_total, 1), page.batch_done
             if not self._downloads_line:
                 self._downloads_line = True
                 strip.start(
@@ -926,14 +925,22 @@ class MainWindow:
                     "Downloading LoRAs",
                     stop=page.cancel_all,
                     stop_text="Cancel downloads",
-                    total=total,
+                    total=100,
                     detail="Starting…",
                     action_text="Cancel",
                 )
             waiting = stats["active"] - stats["transferring"]
             verb = "Downloading" if stats["downloading"] or not stats["transferring"] else "Converting"
             detail = f"{verb} {stats['transferring']} of {stats['active']}"
-            strip.update("download", done, total, detail=detail, queued=waiting)
+            # The count shows whole files of the batch; the bar moves with each file's own download progress.
+            strip.update(
+                "download",
+                stats["percent"],
+                100,
+                detail=detail,
+                queued=waiting,
+                count=f"{stats['finished']} / {stats['files']}",
+            )
         elif self._downloads_line:
             self._downloads_line = False
             strip.finish("download")
