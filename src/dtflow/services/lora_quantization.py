@@ -311,11 +311,12 @@ def _encoded_tensors(source, pool, workers, tick):
             future.cancel()
 
 
-def quantize_file(path: Path, output: Path, progress=None, jobs: int = 0) -> dict:
+def quantize_file(path: Path, output: Path, progress=None, jobs: int = 0, on_start=None) -> dict:
     started = time.monotonic()
     if type(jobs) is not int or jobs < 0:
         raise QuantizationError("workers", "Worker count must be non-negative; zero selects available CPUs.")
-    workers = jobs or os.process_cpu_count() or 1
+    detected_cpus = os.process_cpu_count() or 1
+    workers = jobs or detected_cpus
     if os.name == "nt":
         if jobs > 61:
             raise QuantizationError("workers", "Windows supports at most 61 encoder workers.")
@@ -346,6 +347,8 @@ def quantize_file(path: Path, output: Path, progress=None, jobs: int = 0) -> dic
                 progress(done, total)
 
         try:
+            if on_start is not None:
+                on_start(detected_cpus, workers)
             if progress is not None:
                 progress(0, total)
             pool = None
@@ -400,6 +403,7 @@ def quantize_file(path: Path, output: Path, progress=None, jobs: int = 0) -> dic
                     "version": version("kmeans1d"),
                     "ccv_bit_equivalence": "unverified",
                     "workers": workers,
+                    "detected_cpus": detected_cpus,
                 },
                 "numerical_difference_from_input": differences.summary(),
                 "seconds": round(time.monotonic() - started, 3),

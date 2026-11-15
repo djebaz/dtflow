@@ -80,6 +80,14 @@ def run_command(args):
     previous = 0.0
     started = time.monotonic()
 
+    def encoding_started(detected_cpus, workers):
+        selection = "auto" if args.jobs == 0 else "explicit"
+        print(
+            f"CPUs detected: {detected_cpus} | Workers set: {workers} ({selection})",
+            file=sys.stderr,
+            flush=True,
+        )
+
     def progress(done, total):
         nonlocal previous
         now = time.monotonic()
@@ -99,7 +107,7 @@ def run_command(args):
         elif action == "compare":
             result = compare_files(args.input, args.reference)
         else:
-            result = quantize_file(args.input, args.out, progress, jobs=args.jobs)
+            result = quantize_file(args.input, args.out, progress, jobs=args.jobs, on_start=encoding_started)
         result["recorded_revision"] = args.revision or "unknown"
         source = result["input"]
         event(
