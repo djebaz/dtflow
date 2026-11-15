@@ -479,7 +479,7 @@ class GalleryTab(QObject):
             self._spinner.hide()
 
     def _fetch(self) -> None:
-        """Fetch the next cursor (100 source models). Only scrolling or an unfilled viewport advances."""
+        """Fetch the next small cursor batch. Only scrolling or an unfilled viewport advances."""
         if self._runner.closed or self._loading or not self._has_more:
             return
         self._busy(True)
