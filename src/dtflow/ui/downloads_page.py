@@ -189,7 +189,9 @@ class DownloadsPage(QObject):
     def _summarise(self) -> None:
         counts: dict[str, int] = {}
         for item in self.items:
-            state = "prepared" if item.state == engine.CONVERTED and item.auto_prepare_phase == "prepared" else item.state
+            state = (
+                "prepared" if item.state == engine.CONVERTED and item.auto_prepare_phase == "prepared" else item.state
+            )
             counts[state] = counts.get(state, 0) + 1
         running = counts.get(engine.DOWNLOADING, 0) + counts.get(engine.CONVERTING, 0)
         parts = [
