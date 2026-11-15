@@ -37,6 +37,7 @@ from PySide6.QtWidgets import (
 from dtflow.diagnostics import event as diagnostic_event
 from dtflow.services import civitai
 from dtflow.services import civitai_gallery as gallery
+from dtflow.ui.gallery_loading import _SpinningRing
 from dtflow.ui.runner import AsyncRunner
 
 log = logging.getLogger(__name__)
@@ -326,6 +327,8 @@ class GalleryTab(QObject):
         self._delegate = CardDelegate(view, self._pixmaps, state_of)
         self._delegate.download_requested.connect(self._download_card)
         view.setItemDelegate(self._delegate)
+        self._spinner = _SpinningRing(view.viewport())  # the Images gallery's ring, shown while Civitai answers
+        self._spinner.hide()
         self._resized = _Resized(self._fit, view)
         view.viewport().installEventFilter(self._resized)
         for sort in gallery.SORTS:
@@ -351,7 +354,11 @@ class GalleryTab(QObject):
 
     def _fit(self) -> None:
         """Whole columns across the width: four at the design's width, more on a wide window, never under two."""
-        width = self._view.viewport().width()
+        viewport = self._view.viewport()
+        self._spinner.move(
+            (viewport.width() - self._spinner.width()) // 2, (viewport.height() - self._spinner.height()) // 2
+        )
+        width = viewport.width()
         columns = max(MIN_COLUMNS, round(width / (CARD + GAP)))
         cell = max(120, width // columns)
         if cell == self._delegate.side + GAP:
@@ -369,6 +376,7 @@ class GalleryTab(QObject):
 
     def shutdown(self) -> None:
         self._generation += 1
+        self._spinner.timer.stop()
         if self._thumb_client is not None:
             try:
                 self._thumb_client.close()
@@ -404,8 +412,19 @@ class GalleryTab(QObject):
         self._view.clear()
         self._fetch()
 
+    def _busy(self, busy: bool) -> None:
+        self._loading = busy
+        if busy:
+            self._fit()  # centres the ring
+            self._spinner.show()
+            self._spinner.raise_()
+            self._spinner.timer.start()
+        else:
+            self._spinner.timer.stop()
+            self._spinner.hide()
+
     def _fetch(self) -> None:
-        self._loading = True
+        self._busy(True)
         generation = self._generation
         query = self.form.gallerySearchEdit.text()
         sort = self.form.gallerySortCombo.currentText()
@@ -432,7 +451,7 @@ class GalleryTab(QObject):
     def _listed(self, generation: int, result, failure) -> None:
         if generation != self._generation:
             return  # a newer search or page replaced this one
-        self._loading = False
+        self._busy(False)
         self.form.galleryPrevButton.setEnabled(self._page > 0)
         if failure is not None or result is None:
             message = str(failure) if isinstance(failure, civitai.CivitaiError) else "Civitai could not be reached."
