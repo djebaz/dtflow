@@ -2519,7 +2519,7 @@ class MainWindow:
             )
         host.layout().activate()
         # Header auto-sizing can underestimate embedded controls. Reserve their full styled widths explicitly.
-        required_width = quantize.minimumWidth() + prepare.minimumWidth() + host.layout().spacing() + 8
+        required_width = quantize.minimumWidth() + prepare.minimumWidth() + host.layout().spacing() + 22
         self.form.retainedLorasTable.setColumnWidth(5, max(self.form.retainedLorasTable.columnWidth(5), required_width))
         self.form.retainedLorasTable.setRowHeight(
             row,
