@@ -154,15 +154,14 @@ def listing_query(
     family: str | None = None,
     period: str | None = None,
 ) -> str:
-    """The exact request: LoRA type only, supported base-model labels only (those of ``family`` when given), cursor
-    paging."""
+    """Request supported LoRA models with full file choices and cursor paging."""
     labels = provider_labels("civitai")
     if family:
         chosen = [spec for spec in supported_families() if spec.key == family]
         if chosen and chosen[0].aliases.get("civitai"):
             labels = tuple(chosen[0].aliases["civitai"])
     sort = sort if sort in SORTS else SORTS[0]
-    parts = [("types", "LORA"), ("nsfw", "true"), ("primaryFileOnly", "true"), ("limit", str(max(1, min(limit, 100))))]
+    parts = [("types", "LORA"), ("nsfw", "true"), ("limit", str(max(1, min(limit, 100))))]
     parts.append(("sort", sort))
     if period in PERIODS and period != PERIODS[0]:
         parts.append(("period", period))
