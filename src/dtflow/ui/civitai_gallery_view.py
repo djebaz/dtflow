@@ -27,6 +27,7 @@ from PySide6.QtGui import (
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QCheckBox,
+    QHBoxLayout,
     QHeaderView,
     QLabel,
     QListView,
@@ -209,7 +210,10 @@ class CardDelegate(QStyledItemDelegate):
             painter.setBrush(ACCENT)
             painter.drawRoundedRect(action, 3, 3)
             painter.setPen(QColor("#ffffff"))
-            painter.drawText(action, Qt.AlignmentFlag.AlignCenter, "Download ▾")
+            painter.drawText(
+                action, Qt.AlignmentFlag.AlignCenter,
+                "Download" if len(card.options) == 1 else "Download ▾",
+            )
         painter.setClipping(False)
         painter.setBrush(Qt.BrushStyle.NoBrush)
         if selected:
@@ -313,6 +317,25 @@ class _CardActionFilter(QObject):
         return False
 
 
+class _BulkCheckboxCell(QWidget):
+    """Center DTFlow's standard QCheckBox and include the entire cell in its click target."""
+
+    def __init__(self, checkbox: QCheckBox, parent: QWidget | None = None):
+        super().__init__(parent)
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        layout.addWidget(checkbox)
+
+    def mousePressEvent(self, event) -> None:  # noqa: N802
+        checkbox = self.findChild(QCheckBox)
+        if event.button() == Qt.MouseButton.LeftButton and checkbox is not None and checkbox.isEnabled():
+            checkbox.toggle()
+            event.accept()
+            return
+        super().mousePressEvent(event)
+
+
 class GalleryTab(QObject):
     """Continuous-scroll Civitai model gallery and explicit version/file selection."""
 
@@ -343,6 +366,7 @@ class GalleryTab(QObject):
         self._thumb_client = None
         self._bulk_rows: list[tuple[gallery.GalleryCard, gallery.VersionOption]] = []
         self._bulk_selected: set[tuple[int, int | None]] = set()
+        self._previous_selected_models: set[int] = set()
         self._building_table = False
 
         view: QListWidget = form.galleryList
@@ -382,6 +406,7 @@ class GalleryTab(QObject):
         form.galleryFamilyCombo.currentIndexChanged.connect(lambda _index: self.search())
         form.galleryPeriodCombo.currentIndexChanged.connect(lambda _index: self.search())
         form.gallerySearchEdit.returnPressed.connect(self.search)
+        form.gallerySearchEdit.textChanged.connect(self._keyword_changed)
         form.gallerySortCombo.currentIndexChanged.connect(lambda _index: self.search())
         form.galleryDownloadButton.clicked.connect(self.download_selected)
         form.galleryContinueButton.clicked.connect(self._continue_after_empty)
@@ -398,7 +423,7 @@ class GalleryTab(QObject):
         table.setColumnWidth(5, 175)
         table.horizontalHeader().setStretchLastSection(False)
         table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
-        table.itemChanged.connect(self._bulk_changed)
+        table.cellClicked.connect(self._bulk_row_clicked)
         form.gallerySelectAllVersions.clicked.connect(self._select_all_versions)
         form.galleryClearVersions.clicked.connect(self._clear_versions)
         form.galleryVersionsBox.hide()
@@ -461,11 +486,22 @@ class GalleryTab(QObject):
         self._pending.clear()
         self._view.clear()
         self._bulk_selected.clear()
+        self._previous_selected_models.clear()
         self._selection_changed()
         self.form.galleryNote.hide()
         # Keep bounded cover caches across searches; no Civitai image is written to disk.
         self._busy(False)
+        if not self.form.gallerySearchEdit.text().strip():
+            self.form.galleryStatus.setText("Enter keywords and press Enter to search Civitai.")
+            self._loaded = True
+            self._has_more = False
+            return
         self._fetch()
+
+    def _keyword_changed(self, value: str) -> None:
+        """Clearing the query clears stale results without contacting Civitai."""
+        if not value.strip() and self._loaded:
+            self.search()
 
     def _busy(self, busy: bool) -> None:
         self._loading = busy
@@ -481,6 +517,8 @@ class GalleryTab(QObject):
     def _fetch(self) -> None:
         """Fetch the next small cursor batch. Only scrolling or an unfilled viewport advances."""
         if self._runner.closed or self._loading or not self._has_more:
+            return
+        if not self.form.gallerySearchEdit.text().strip():
             return
         self._busy(True)
         generation = self._generation
@@ -647,14 +685,21 @@ class GalleryTab(QObject):
         ]
 
     def _selection_changed(self) -> None:
-        """Offer all exact versions of selected models; do not assume the newest version was chosen."""
+        """Present explicit version choices, auto-checking a newly selected card's sole file only."""
+        cards = self._selected_cards()
+        selected_models = {card.model_id for card in cards}
         chosen: list[tuple[gallery.GalleryCard, gallery.VersionOption]] = []
         seen: set[tuple[int, int | None]] = set()
-        for card in self._selected_cards():
+        for card in cards:
+            if len(card.options) == 1 and card.model_id not in self._previous_selected_models:
+                option = card.options[0]
+                if not self._version_state(option.version) in ("Queued", "Downloading", "Converting", "In your LoRAs"):
+                    self._bulk_selected.add(option.key)
             for option in card.options:
                 if option.key not in seen:
                     chosen.append((card, option))
                     seen.add(option.key)
+        self._previous_selected_models = selected_models
         self._bulk_rows = chosen
         self._bulk_selected.intersection_update(seen)
         table = self.form.galleryVersionsTable
@@ -666,13 +711,15 @@ class GalleryTab(QObject):
                 version = option.version
                 state = self._version_state(version)
                 available = state not in ("Queued", "Downloading", "Converting", "In your LoRAs")
-                tick = QTableWidgetItem()
-                flags = Qt.ItemFlag.ItemIsUserCheckable | Qt.ItemFlag.ItemIsEnabled if available else Qt.ItemFlag.NoItemFlags
-                tick.setFlags(flags)
-                tick.setCheckState(
-                    Qt.CheckState.Checked if available and option.key in self._bulk_selected else Qt.CheckState.Unchecked
+                checkbox = QCheckBox(table)
+                checkbox.setAccessibleName(f"Select {card.name}, {version.version_name}, {version.file.name}")
+                checkbox.setToolTip(f"Civitai version {version.version_id} · {option.family} · file {version.file.id}")
+                checkbox.setEnabled(available)
+                checkbox.setChecked(available and option.key in self._bulk_selected)
+                checkbox.toggled.connect(
+                    lambda checked, key=option.key: self._set_bulk_checked(key, checked)
                 )
-                table.setItem(row, 0, tick)
+                table.setCellWidget(row, 0, _BulkCheckboxCell(checkbox, table))
                 cells = (
                     f"{card.name} · {version.version_name or 'Version'}",
                     version.base_model or "Unknown",
@@ -686,24 +733,26 @@ class GalleryTab(QObject):
                         f"Civitai version {version.version_id} · file {version.file.id} · {state or 'Ready'}"
                     )
                     table.setItem(row, col, cell)
-            self.form.galleryVersionsHeading.setText(
-                f"Versions from selected models ({len(chosen)})"
-            )
+            self.form.galleryVersionsHeading.setText(f"Versions from selected models ({len(chosen)})")
         finally:
             table.blockSignals(False)
             self._building_table = False
         self.form.galleryVersionsBox.setVisible(bool(chosen))
         self._bulk_buttons()
 
-    def _bulk_changed(self, item: QTableWidgetItem) -> None:
-        if self._building_table or item.column() != 0 or item.row() >= len(self._bulk_rows):
-            return
-        key = self._bulk_rows[item.row()][1].key
-        if item.checkState() == Qt.CheckState.Checked:
+    def _set_bulk_checked(self, key: tuple[int, int | None], checked: bool) -> None:
+        if checked:
             self._bulk_selected.add(key)
         else:
             self._bulk_selected.discard(key)
         self._bulk_buttons()
+
+    def _bulk_row_clicked(self, row: int, _column: int) -> None:
+        if 0 <= row < len(self._bulk_rows):
+            cell = self.form.galleryVersionsTable.cellWidget(row, 0)
+            checkbox = cell.findChild(QCheckBox) if cell is not None else None
+            if checkbox is not None and checkbox.isEnabled():
+                checkbox.toggle()
 
     def _select_all_versions(self) -> None:
         self._bulk_selected = {
@@ -743,7 +792,14 @@ class GalleryTab(QObject):
 
     # ------------------------------------------------------------------------------------------ per-card dropdown
     def _download_card(self, card: gallery.GalleryCard) -> None:
-        """Checkbox dropdown: several versions/files can be downloaded with one explicit action."""
+        """Download a sole file directly; show a checkbox dropdown only when choices exist."""
+        if len(card.options) == 1:
+            version = card.options[0].version
+            if self._version_state(version) not in ("Queued", "Downloading", "Converting", "In your LoRAs"):
+                self._start([version])
+            return
+        if not card.options:
+            return
         menu = QMenu(self._view)
         panel = QWidget(menu)
         panel.setMinimumWidth(400)
