@@ -601,15 +601,30 @@ class LoraAssetPanel:
         item = self.page.assetList.currentItem()
         return item.data(Qt.ItemDataRole.UserRole) if item is not None else None
 
-    def prepare(self) -> None:
-        """File selection opens the actual in-window metadata editor; no upload occurs yet."""
+    def prepare_files(self, paths: list[str]) -> str | None:
+        """Open the Prepare editor on the given files (the Downloads view's converted rows); no upload occurs yet.
+
+        Returns None when the editor opened, otherwise the plain reason it did not."""
+        if self._backend()[0] != "cloud":
+            return "Prepare needs DT+ Cloud"
+        if self.preparing or self._is_busy():
+            return "Prepare is busy with other work; try again when it ends."
+        if self._runner.closed or not paths:
+            return "Prepare could not open."
+        self.prepare(paths)
+        return None
+
+    def prepare(self, files: list[str] | None = None) -> None:
+        """File selection opens the actual in-window metadata editor; no upload occurs yet.
+
+        ``files``: open on these files instead of asking with the file dialog."""
         if self.preparing or self._is_busy() or self._runner.closed:
             return
         backend = self._backend()
         if backend[0] != "cloud":
             return
         revision = self._ownership_revision
-        chosen = self.choose_asset_file(self.page, self._state)
+        chosen = list(files) if files else self.choose_asset_file(self.page, self._state)
         if isinstance(chosen, str):
             chosen = [chosen] if chosen else []
         if not chosen:
