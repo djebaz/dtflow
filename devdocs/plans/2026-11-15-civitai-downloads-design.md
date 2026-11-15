@@ -109,17 +109,21 @@ Cards are **square covers** (CSS `object-fit: cover`, 1:1) with overlays, in the
 
 | Overlay | Shown | API field |
 |---|---|---|
-| Cover image | always | `modelVersions[0].images[]` first entry with `type: "image"` (`url`, `width`, `height`, `nsfwLevel`); some covers are `type: "video"` (seen on a Krea 2 result), so a video cover falls back to the first still image, else a placeholder |
+| Cover image | always | First still image of the representative supported version; video covers fall back to the first still image, else a placeholder |
 | Name | bottom | `name` |
 | Creator | bottom | `creator.username` |
-| Downloads | bottom | `modelVersions[0].stats.downloadCount` (model-level `stats.downloadCount` also exists) |
-| Thumbs up | bottom | `modelVersions[0].stats.thumbsUpCount` |
-| File size | bottom | primary file's `sizeKB` (`files[].primary`) |
-| Family chip, top right | always | DTFlow family from the alias table, computed from `modelVersions[0].baseModel` |
-| Base model chip, top right | when the label differs from the family name (Pony, Flux.1 D) | `modelVersions[0].baseModel` |
+| Downloads | bottom | Representative version's `stats.downloadCount` (model-level `stats.downloadCount` also exists) |
+| Thumbs up | bottom | Representative version's `stats.thumbsUpCount` |
+| Version count | bottom | Distinct downloadable Civitai version IDs from the listed model versions |
+| Family chips, top right | always | Every distinct supported DTFlow family across the model's listed versions, including when filtering by one family |
+| Civitai base model | in explicit version selectors | Each version's own `baseModel` (e.g. Pony, Flux.1 D), shown with its family and version ID |
 | NSFW badge, top left | when the cover is above the lowest level | cover image `nsfwLevel` (the level scale is checked in #466) |
 | Early-access flag, top left | when set | `modelVersions[0].availability` (observed value `Public`; other values untested) |
 | Hover panel | on hover | version `name`, `trainedWords` (empty for many LoRAs, so shown only when present), model `tags`, `stats.thumbsUpCount` and `thumbsDownCount`, `publishedAt` |
+
+**Browse Civitai interaction (owner revision, 2026-11-15):** One card represents a Civitai model, not one of its versions. The compact square card shows all distinct supported families. Its Download dropdown has checkboxes for each exact supported version/file, with name, Civitai base model, DTFlow family and version ID; its **Download selected (N)** immediately downloads those checked versions with no review or confirmation step. Clicking that Download button must not select the card. A selected set of cards reveals a compact version/file table just above the gallery Download selected button, with the same exact identities and checkboxes. Bulk selection defaults to no checked versions; **Select all** is explicit, and N counts files, not cards. Existing queued or converted files are not implicitly re-downloaded. All paths reuse DownloadsPage's existing enqueue and conversion pipeline.
+
+**Continuous scroll:** The gallery requests up to 100 Civitai models per cursor batch (the current documented API maximum), appends supported cards on scroll, and has no visible page numbers or Prev/Next controls. Fetched card metadata persists in memory during the browse session; encoded previews use the bounded memory cache and decoded pixmaps use a separate bounded LRU. Covers are loaded near the viewport instead of scheduling all at once. A rare succession of entirely filtered-out batches pauses automatic requests and offers a manual **Search further** recovery action, preventing an uncontrolled fetch loop. No previews are persisted to disk.
 
 Thumbnails use the image `url`; `.../width=320/<id>.jpeg` returned a 301 to a 200 `image/jpeg` of about 27 kB, whereas the `original=true` path also redirects (observed, public images, no token). The client downscales and caches; #466 decides the exact size parameter.
 
