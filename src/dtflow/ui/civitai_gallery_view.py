@@ -29,7 +29,7 @@ from PySide6.QtGui import (
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QCheckBox,
-    QComboBox,
+    QLineEdit,
     QHBoxLayout,
     QHeaderView,
     QLabel,
@@ -590,13 +590,17 @@ class GalleryTab(QObject):
         tag_layout.setContentsMargins(0, 0, 0, 0)
         self._tags = ValueChips(host)
         self._tags.configure(
-            "choice", "Tags", options=lambda: [],
+            "text",
+            "Tags",
+            add_first=True,
+            control_height=23,
             label=lambda value: value if len(value) <= 24 else value[:23] + "…",
         )
-        tag_editor = self._tags.findChild(QComboBox)
-        if tag_editor is not None and tag_editor.lineEdit() is not None:
-            tag_editor.lineEdit().setPlaceholderText("Add tag…")
-            tag_editor.lineEdit().setMaxLength(gallery.MAX_TAG_LENGTH)
+        tag_editor = self._tags.findChild(QLineEdit)
+        if tag_editor is not None:
+            tag_editor.setPlaceholderText("Add tag…")
+            tag_editor.setMaxLength(gallery.MAX_TAG_LENGTH)
+            tag_editor.setFixedWidth(140)
         self._tags.setText("; ".join(self._selected_tags))
         tag_layout.addWidget(self._tags)
         self._tags.textChanged.connect(self._tags_changed)
@@ -691,9 +695,9 @@ class GalleryTab(QObject):
         adding = len(values) > len(self._selected_tags)
         self._selected_tags = values
         if adding:
-            editor = self._tags.findChild(QComboBox)
-            if editor is not None and editor.lineEdit() is not None:
-                editor.lineEdit().clear()
+            editor = self._tags.findChild(QLineEdit)
+            if editor is not None:
+                editor.clear()
         self._mark_preferences_changed()
         if self._loaded:
             self.search()
