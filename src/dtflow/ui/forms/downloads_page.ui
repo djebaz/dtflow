@@ -2,27 +2,32 @@
 <ui version="4.0">
  <class>DownloadsPage</class>
  <widget class="QWidget" name="downloadsWorkspace">
-  <layout class="QVBoxLayout" name="downloadsLayout" stretch="0,0,0,1">
+  <layout class="QVBoxLayout" name="downloadsLayout" stretch="0,0,1,0,0">
    <property name="spacing"><number>10</number></property>
-   <property name="leftMargin"><number>16</number></property><property name="topMargin"><number>12</number></property>
-   <property name="rightMargin"><number>16</number></property><property name="bottomMargin"><number>12</number></property>
+   <property name="leftMargin"><number>8</number></property><property name="topMargin"><number>0</number></property>
+   <property name="rightMargin"><number>8</number></property><property name="bottomMargin"><number>8</number></property>
    <item><layout class="QHBoxLayout" name="downloadsHeaderRow"><property name="spacing"><number>10</number></property>
-    <item><widget class="QLabel" name="downloadsTitle">
-     <property name="text"><string>Downloads</string></property>
-     <property name="role" stdset="0"><string>heading</string></property>
-    </widget></item>
+    <item><widget class="QWidget" name="downloadsBrandSlot"/></item>
+    <item><widget class="QWidget" name="downloadsNavigationSlot"/></item>
     <item><spacer name="downloadsHeaderSpacer"><property name="orientation"><enum>Qt::Horizontal</enum></property>
      <property name="sizeHint" stdset="0"><size><width>20</width><height>20</height></size></property></spacer></item>
-    <item><widget class="QLabel" name="downloadsTokenLabel">
-     <property name="text"><string>Civitai token: checking…</string></property>
-     <property name="role" stdset="0"><string>secondary</string></property>
-     <property name="accessibleName"><string>Civitai token status</string></property>
-    </widget></item>
-    <item><widget class="QPushButton" name="downloadsCredentialsButton">
-     <property name="text"><string>Open credentials</string></property>
-     <property name="toolTip"><string>Open the Download credentials card on the Connection page.</string></property>
-    </widget></item>
+    <item><widget class="QWidget" name="downloadsImagesSlot"/></item>
    </layout></item>
+   <item><widget class="QWidget" name="downloadsTokenBar">
+    <layout class="QHBoxLayout" name="downloadsTokenBarLayout"><property name="spacing"><number>8</number></property>
+     <property name="leftMargin"><number>0</number></property><property name="topMargin"><number>0</number></property>
+     <property name="rightMargin"><number>0</number></property><property name="bottomMargin"><number>4</number></property>
+     <item><widget class="QLabel" name="downloadsTokenLabel">
+      <property name="text"><string>Civitai token: checking…</string></property>
+      <property name="state" stdset="0"><string>neutral</string></property>
+      <property name="accessibleName"><string>Civitai token status</string></property>
+     </widget></item>
+     <item><widget class="QPushButton" name="downloadsCredentialsButton">
+      <property name="text"><string>Credentials…</string></property>
+      <property name="toolTip"><string>Open the Download credentials card on the Connection page.</string></property>
+     </widget></item>
+    </layout>
+   </widget></item>
    <item><widget class="QTabWidget" name="downloadsTabs">
     <property name="currentIndex"><number>0</number></property>
     <widget class="QWidget" name="linksTab">
@@ -56,7 +61,6 @@
       <item><widget class="QTableWidget" name="resolvedTable">
        <property name="accessibleName"><string>Resolved Civitai versions</string></property>
        <property name="minimumHeight"><number>110</number></property>
-       <property name="maximumHeight"><number>210</number></property>
        <property name="selectionMode"><enum>QAbstractItemView::NoSelection</enum></property>
        <property name="editTriggers"><set>QAbstractItemView::NoEditTriggers</set></property>
        <property name="showGrid"><bool>false</bool></property>
@@ -86,13 +90,28 @@
      </layout>
     </widget>
    </widget></item>
-   <item><widget class="QLabel" name="downloadsListTitle">
-    <property name="text"><string>Downloads list</string></property>
-    <property name="role" stdset="0"><string>heading</string></property>
-   </widget></item>
+   <item><layout class="QHBoxLayout" name="downloadsListHeader"><property name="spacing"><number>8</number></property>
+    <item><widget class="QToolButton" name="downloadsListToggle">
+     <property name="text"><string>Downloads list</string></property>
+     <property name="checkable"><bool>true</bool></property>
+     <property name="checked"><bool>false</bool></property>
+     <property name="autoRaise"><bool>true</bool></property>
+     <property name="toolButtonStyle"><enum>Qt::ToolButtonTextBesideIcon</enum></property>
+     <property name="iconSize"><size><width>16</width><height>16</height></size></property>
+     <property name="accessibleName"><string>Show downloads list</string></property>
+     <property name="toolTip"><string>Show or hide the downloads list.</string></property>
+    </widget></item>
+    <item><widget class="QLabel" name="downloadsListSummary">
+     <property name="text"><string>No downloads yet.</string></property>
+     <property name="role" stdset="0"><string>secondary</string></property>
+    </widget></item>
+    <item><spacer name="downloadsListSpacer"><property name="orientation"><enum>Qt::Horizontal</enum></property>
+     <property name="sizeHint" stdset="0"><size><width>20</width><height>20</height></size></property></spacer></item>
+   </layout></item>
    <item><widget class="QTableWidget" name="downloadsTable">
     <property name="accessibleName"><string>Downloads list</string></property>
     <property name="minimumHeight"><number>150</number></property>
+    <property name="maximumHeight"><number>290</number></property>
     <property name="selectionMode"><enum>QAbstractItemView::NoSelection</enum></property>
     <property name="editTriggers"><set>QAbstractItemView::NoEditTriggers</set></property>
     <property name="showGrid"><bool>false</bool></property>

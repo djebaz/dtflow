@@ -541,6 +541,22 @@ QPushButton#downloadsPill[state="error"] {
   border-color: ${color.statusErrorBorder};
   color: ${color.error};
 }
+/* Token chip at the right of the Downloads tab bar. */
+QLabel#downloadsTokenLabel {
+  border: 1px solid ${color.borderStrong};
+  border-radius: ${size.radiusXs};
+  color: ${color.secondary};
+  font-size: ${type.small};
+  padding: 2px 8px;
+}
+QLabel#downloadsTokenLabel[state="ok"] {
+  border-color: ${color.statusOkBorder};
+  color: ${color.success};
+}
+QLabel#downloadsTokenLabel[state="warning"] {
+  border-color: ${color.statusWarningBorder};
+  color: ${color.warning};
+}
 /* Row actions in the Downloads list: compact so a 40 px row holds them. */
 QPushButton#downloadsRowButton {
   min-height: 0;
