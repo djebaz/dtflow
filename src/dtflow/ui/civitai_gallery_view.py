@@ -24,6 +24,7 @@ from PySide6.QtGui import (
     QPainter,
     QPen,
     QPixmap,
+    QPolygon,
 )
 from PySide6.QtWidgets import (
     QAbstractItemView,
@@ -50,6 +51,7 @@ from dtflow.persistence.settings import SettingsError, load_civitai_browse_prefe
 from dtflow.services import civitai
 from dtflow.services import civitai_gallery as gallery
 from dtflow.ui.gallery_loading import _SpinningRing
+from dtflow.ui.queue_composer import ValueChips
 from dtflow.ui.runner import AsyncRunner
 
 log = logging.getLogger(__name__)
@@ -89,6 +91,7 @@ class CardDelegate(QStyledItemDelegate):
     """Paint one model card, its supported-family chips and a separate per-card Download action."""
 
     download_requested = Signal(object)
+    tag_requested = Signal(str)
 
     def __init__(self, parent: QObject, pixmaps: dict[str, QPixmap], state_of: Callable[[gallery.GalleryCard], str]):
         super().__init__(parent)
@@ -104,20 +107,53 @@ class CardDelegate(QStyledItemDelegate):
 
     @staticmethod
     def button_rect(rect: QRect) -> QRect:
-        return QRect(rect.right() - 108, rect.bottom() - 69, 100, 24)
+        """Square lower-right download button, separated from the tag pills and text."""
+        return QRect(rect.right() - 38, rect.bottom() - 38, 31, 31)
+
+    @staticmethod
+    def tag_rects(card: gallery.GalleryCard, rect: QRect, font: QFont) -> list[tuple[QRect, str]]:
+        """Compute the same hit targets for painted tags and pointer events."""
+        tag_font = QFont(font)
+        tag_font.setPointSizeF(max(7.0, font.pointSizeF() - 1))
+        tag_font.setBold(True)
+        metrics = QFontMetrics(tag_font)
+        x, limit = rect.left() + 8, rect.right() - 8
+        pills: list[tuple[QRect, str]] = []
+        for tag in card.tags:
+            if not tag or len(pills) == 3:
+                break
+            width = min(90, metrics.horizontalAdvance(tag) + 14)
+            if x + width > limit:
+                break
+            pills.append((QRect(x, rect.bottom() - 73, width, 19), tag))
+            x += width + 4
+        return pills
+
+    @classmethod
+    def tag_at(cls, card: gallery.GalleryCard, rect: QRect, font: QFont, pos: QPoint) -> str | None:
+        return next((tag for bounds, tag in cls.tag_rects(card, rect, font) if bounds.contains(pos)), None)
 
     def editorEvent(self, event, model, option, index) -> bool:  # noqa: N802
         card = index.data(CARD_ROLE)
         if (
-            event.type() == QEvent.Type.MouseButtonPress
-            and event.button() == Qt.MouseButton.LeftButton
-            and isinstance(card, gallery.GalleryCard)
-            and card.downloadable
+            event.type() != QEvent.Type.MouseButtonPress
+            or event.button() != Qt.MouseButton.LeftButton
+            or not isinstance(card, gallery.GalleryCard)
+        ):
+            return False
+        rect = option.rect.adjusted(1, 1, -1, -1)
+        point = event.position().toPoint()
+        tag = self.tag_at(card, rect, option.font, point)
+        if tag is not None:
+            self.tag_requested.emit(tag)
+            return True
+        if (
+            card.downloadable
             and bool(option.state & QStyle.StateFlag.State_MouseOver)
-            and self.button_rect(option.rect.adjusted(1, 1, -1, -1)).contains(event.position().toPoint())
+            and self.button_rect(rect).contains(point)
         ):
             self.download_requested.emit(card)
-            return True  # consumed: the click starts a download and does not toggle the selection
+            return True
         return False
 
     def paint(self, painter: QPainter, option, index) -> None:
@@ -147,11 +183,11 @@ class CardDelegate(QStyledItemDelegate):
         if hovered:
             self._hover_panel(painter, rect, card, small)
         # Bottom: name and numbers on a gradient, as in the design.
-        fade = QLinearGradient(0, rect.bottom() - 62, 0, rect.bottom())
+        fade = QLinearGradient(0, rect.bottom() - 89, 0, rect.bottom())
         fade.setColorAt(0, QColor(0, 0, 0, 0))
         fade.setColorAt(1, QColor(0, 0, 0, 225))
-        painter.fillRect(QRect(rect.left(), rect.bottom() - 62, rect.width(), 63), fade)
-        inner = QRect(rect.left() + 8, rect.bottom() - 40, rect.width() - 16, 36)
+        painter.fillRect(QRect(rect.left(), rect.bottom() - 89, rect.width(), 90), fade)
+        inner = QRect(rect.left() + 8, rect.bottom() - 40, rect.width() - 52, 36)
         painter.setPen(TEXT)
         painter.setFont(bold)
         painter.drawText(
@@ -210,17 +246,38 @@ class CardDelegate(QStyledItemDelegate):
                 Qt.AlignmentFlag.AlignCenter,
                 QFontMetrics(small).elidedText(label, Qt.TextElideMode.ElideRight, width - 8),
             )
+        # Tag pills stay visible even while the hover detail overlay is painted.
+        tag_font = QFont(small)
+        tag_font.setBold(True)
+        painter.setFont(tag_font)
+        for bounds, tag in self.tag_rects(card, rect, option.font):
+            painter.setPen(QPen(SELECTION_BORDER, 1))
+            painter.setBrush(SELECTION)
+            painter.drawRoundedRect(bounds, 4, 4)
+            painter.setPen(SELECTION_TEXT)
+            painter.drawText(
+                bounds, Qt.AlignmentFlag.AlignCenter,
+                QFontMetrics(tag_font).elidedText(tag, Qt.TextElideMode.ElideRight, bounds.width() - 8),
+            )
         if hovered and card.downloadable:
             action = self.button_rect(rect)
             painter.setPen(QPen(ACCENT_HOVER, 1))
             painter.setBrush(ACCENT)
-            painter.drawRoundedRect(action, 3, 3)
-            painter.setPen(QColor("#ffffff"))
-            painter.drawText(
-                action,
-                Qt.AlignmentFlag.AlignCenter,
-                "Download" if len(card.options) == 1 else "Download ▾",
-            )
+            painter.drawRoundedRect(action, 4, 4)
+            painter.setPen(Qt.PenStyle.NoPen)
+            painter.setBrush(QColor("#ffffff"))
+            cx, cy = action.center().x(), action.center().y()
+            multiple = len(card.options) > 1
+            # Small filled arrow (14px); a short baseline distinguishes the multi-version chooser.
+            tip = cy + (4 if multiple else 6)
+            wing = cy - (2 if multiple else 1)
+            painter.drawPolygon(QPolygon([
+                QPoint(cx - 2, cy - 7), QPoint(cx + 2, cy - 7),
+                QPoint(cx + 2, wing), QPoint(cx + 7, wing),
+                QPoint(cx, tip), QPoint(cx - 7, wing), QPoint(cx - 2, wing),
+            ]))
+            if multiple:
+                painter.drawRect(QRect(cx - 6, cy + 7, 12, 2))
         painter.setClipping(False)
         painter.setBrush(Qt.BrushStyle.NoBrush)
         if selected:
@@ -302,12 +359,17 @@ class _Resized(QObject):
 
 
 class _CardActionFilter(QObject):
-    """Consume a direct Download click before QListWidget can change card selection."""
+    """Let tag and Download clicks win over the card's ordinary selection action."""
 
-    def __init__(self, view: QListWidget, on_download: Callable[[gallery.GalleryCard], None]):
+    def __init__(
+        self,
+        view: QListWidget,
+        on_download: Callable[[gallery.GalleryCard], None],
+        on_tag: Callable[[str], None],
+    ):
         super().__init__(view.viewport())
         self._view = view
-        self._on_download = on_download
+        self._on_download, self._on_tag = on_download, on_tag
 
     def eventFilter(self, _watched, event) -> bool:  # noqa: N802
         if event.type() != QEvent.Type.MouseButtonPress or event.button() != Qt.MouseButton.LeftButton:
@@ -317,12 +379,14 @@ class _CardActionFilter(QObject):
         if item is None:
             return False
         card = item.data(CARD_ROLE)
+        if not isinstance(card, gallery.GalleryCard):
+            return False
         rect = self._view.visualItemRect(item).adjusted(1, 1, -1, -1)
-        if (
-            isinstance(card, gallery.GalleryCard)
-            and card.downloadable
-            and CardDelegate.button_rect(rect).contains(position)
-        ):
+        tag = CardDelegate.tag_at(card, rect, self._view.font(), position)
+        if tag is not None:
+            self._on_tag(tag)
+            return True
+        if card.downloadable and CardDelegate.button_rect(rect).contains(position):
             self._on_download(card)
             return True
         return False
