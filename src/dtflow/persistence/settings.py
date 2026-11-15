@@ -82,6 +82,28 @@ def save_cloud_concurrency(state: Path, value: int) -> Path:
     return _write(state, document)
 
 
+# Downloads Auto-Prepare is a global opt-in for the selected DT+ Cloud account.
+# It authorizes uploads of newly converted downloads; it never changes backend or account.
+_AUTO_PREPARE_LOCK = threading.Lock()
+
+
+def load_downloads_auto_prepare(state: Path) -> bool:
+    """Return the persisted Auto-prepare preference; missing is disabled."""
+    return _read(state).get("downloads_auto_prepare") is True
+
+
+def save_downloads_auto_prepare(state: Path, enabled: bool) -> None:
+    """Save a boolean preference without clobbering other application settings."""
+    if type(enabled) is not bool:
+        raise SettingsError("Auto-prepare must be enabled or disabled.")
+    with _AUTO_PREPARE_LOCK:
+        document = _read(state)
+        if document.get("downloads_auto_prepare") is enabled:
+            return
+        document["downloads_auto_prepare"] = enabled
+        _write(state, document)
+
+
 # Workflow concurrency defaults (#286), used when a workflow file or node does not set its own.
 WORKFLOW_DEFAULT_KEYS = {"cloud": "workflow_cloud", "local": "workflow_local", "segmentation": "workflow_segmentation"}
 WORKFLOW_DEFAULTS = {"cloud": 10, "local": 2, "segmentation": 2}
