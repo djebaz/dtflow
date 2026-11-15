@@ -2,8 +2,8 @@
 
 Presentation and wiring only. Resolving, downloading and converting live in ``dtflow.services.downloads``; all of it
 runs off the GUI thread. Worker threads write progress onto ``DownloadItem`` objects and a timer, running only while
-something is active, redraws the rows. Nothing downloads until the user clicks Download, and nothing uploads to DT+
-until the user clicks Prepare.
+something is active, redraws the rows. Nothing downloads until the user clicks Download; cloud Prepare is manual unless
+the user has enabled the persistent Auto-prepare preference.
 """
 
 from __future__ import annotations
@@ -17,6 +17,7 @@ from PySide6.QtGui import QColor, QIcon
 from PySide6.QtWidgets import (
     QHBoxLayout,
     QHeaderView,
+    QCheckBox,
     QLabel,
     QProgressBar,
     QPushButton,
@@ -26,6 +27,10 @@ from PySide6.QtWidgets import (
 )
 
 from dtflow.diagnostics import event as diagnostic_event
+from dtflow.persistence.settings import (
+    SettingsError, load_downloads_auto_prepare, save_downloads_auto_prepare,
+)
+from dtflow.services.lora_naming import LoraPrepareMetadata
 from dtflow.services import civitai
 from dtflow.services import downloads as engine
 from dtflow.services import civitai_gallery as gallery_engine
@@ -79,12 +84,20 @@ class DownloadsPage(QObject):
         cloud_ready: Callable[[], bool],
         open_credentials: Callable[[], None],
         open_prepare: Callable[[list[str]], None],
+        auto_prepare: Callable[[str, LoraPrepareMetadata, Callable[[str], None]], str | None] | None = None,
     ):
         super().__init__(form)
         self.form = form
         self._runner, self._state = runner, Path(state_dir)
         self._read_token, self._token_state = read_token, token_state
         self._cloud_ready, self._open_credentials, self._open_prepare = cloud_ready, open_credentials, open_prepare
+        self._auto_prepare = auto_prepare
+        try:
+            self._auto_prepare_enabled = load_downloads_auto_prepare(self._state)
+            self._auto_prepare_settings_problem = ""
+        except SettingsError as exc:
+            self._auto_prepare_enabled = False
+            self._auto_prepare_settings_problem = str(exc)
         self.items: list[engine.DownloadItem] = []
         self._entries: list[engine.ResolvedEntry] = []
         self._manager: civitai.DownloadManager | None = None
@@ -114,12 +127,32 @@ class DownloadsPage(QObject):
             state_of=self._card_state, version_state=self._version_state,
         )
         form.downloadsTabs.currentChanged.connect(self._tab_changed)
+        for checkbox in (form.linksAutoPrepareCheck, form.galleryAutoPrepareCheck):
+            checkbox.setChecked(self._auto_prepare_enabled)
+            checkbox.toggled.connect(self._toggle_auto_prepare)
+        if self._auto_prepare_settings_problem:
+            form.downloadStatus.setText(self._auto_prepare_settings_problem)
         self._configure(form.resolvedTable, {0: 30, 1: 200, 2: 180, 3: 70, 4: 140, 5: 150}, 6)
         self._configure(form.downloadsTable, {0: 260, 1: 200, 3: 270}, 2)
         actions = form.downloadsTable.horizontalHeaderItem(3)
         if actions is not None:
             actions.setTextAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
         self.token_changed()
+
+    def _toggle_auto_prepare(self, enabled: bool) -> None:
+        """One durable preference, mirrored by the two standard Qt Designer checkboxes."""
+        previous = self._auto_prepare_enabled
+        try:
+            save_downloads_auto_prepare(self._state, enabled)
+        except (SettingsError, OSError) as exc:
+            self.form.downloadStatus.setText(f"Auto-prepare preference not saved: {exc}")
+            enabled = previous
+        else:
+            self._auto_prepare_enabled = enabled
+        for checkbox in (self.form.linksAutoPrepareCheck, self.form.galleryAutoPrepareCheck):
+            was_blocked = checkbox.blockSignals(True)
+            checkbox.setChecked(enabled)
+            checkbox.blockSignals(was_blocked)
 
     # ------------------------------------------------------------------------------------------------- table setup
     @staticmethod
@@ -409,7 +442,43 @@ class DownloadsPage(QObject):
             self._batch.clear()
         diagnostic_event(log, "downloads.item_finished", data={"state": item.state})
         self._render(force=True)
+        if item.state == engine.CONVERTED and self._auto_prepare_enabled:
+            self._auto_prepare_converted(item)
         self.changed.emit()
+
+    def _auto_prepare_converted(self, item: engine.DownloadItem) -> None:
+        """Only freshly converted files are eligible; no backend/account switch or automatic retries."""
+        if not self._cloud_ready():
+            item.auto_prepare_status = "Auto-prepare needs DT+ Cloud; converted file kept."
+            self._render(force=True)
+            return
+        if self._auto_prepare is None or item.prepare_metadata is None:
+            item.auto_prepare_status = "Auto-prepare unavailable; use Prepare manually."
+            self._render(force=True)
+            return
+
+        async def work():
+            return await engine.retained_path(self._state, item)
+
+        def resolved(path, failure) -> None:
+            if not self._auto_prepare_enabled or self._runner.closed:
+                return  # switching off the preference before admission must not upload
+            if failure is not None or path is None:
+                item.auto_prepare_status = "Auto-prepare could not locate the converted file; use Prepare manually."
+                self._render(force=True)
+                return
+
+            def settled(message: str) -> None:
+                item.auto_prepare_status = message
+                self._render(force=True)
+
+            problem = self._auto_prepare(str(path), item.prepare_metadata, settled)
+            item.auto_prepare_status = (
+                f"Auto-prepare not started: {problem}" if problem else "Auto-preparing on DT+…"
+            )
+            self._render(force=True)
+
+        self._runner.submit(work(), resolved)
 
     def cancel(self, item: engine.DownloadItem) -> None:
         item.request_cancel()
@@ -527,7 +596,7 @@ class DownloadsPage(QObject):
             return f"{format_size(item.done)} downloaded{speed}"
         if item.state == engine.CONVERTING and item.total:
             return f"{item.detail} · {item.done} of {item.total} modules"
-        return item.detail
+        return f"{item.detail} · {item.auto_prepare_status}" if item.auto_prepare_status else item.detail
 
     def _detail_cell(self, item: engine.DownloadItem, cloud: bool) -> QWidget:
         """Detail as in the design: a thin bar plus text while downloading, plain text otherwise."""
@@ -553,11 +622,11 @@ class DownloadsPage(QObject):
         label: QLabel = holder.findChild(QLabel, "downloadsRowDetail")
         text = self._detail(item)
         look = "dim"
-        if item.state == engine.FAILED:
+        if item.state == engine.FAILED or item.auto_prepare_status.startswith("Auto-prepare failed"):
             look = "error"
         elif item.state == engine.DOWNLOADING:
             look = ""
-        if item.state == engine.CONVERTED and not cloud:
+        if item.state == engine.CONVERTED and not cloud and not item.auto_prepare_status:
             text = engine.PREPARE_NEEDS_CLOUD
         bar.setVisible(item.state == engine.DOWNLOADING)
         if item.state == engine.DOWNLOADING:
