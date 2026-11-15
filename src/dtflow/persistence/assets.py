@@ -567,6 +567,26 @@ class AssetRegistry:
                 confirmed_at_utc=row["scoped_confirmed"],
             )
 
+    async def confirmed_lora_contents(self, credential_id: str) -> frozenset[tuple[str, int]]:
+        """Locally confirmed LoRA bytes for one DT+ key, without contacting the provider.
+
+        This is a display hint, not proof of current remote storage or generation eligibility.
+        Missing/stale key receipts are excluded; unrelated accounts cannot mark a file prepared.
+        """
+        return await self._run(self._confirmed_lora_contents, credential_id)
+
+    def _confirmed_lora_contents(self, credential_id: str) -> frozenset[tuple[str, int]]:
+        if not self.path.exists():
+            return frozenset()
+        with closing(self._connect()) as db:
+            rows = db.execute(
+                "SELECT a.sha256, a.size FROM assets a "
+                "JOIN asset_key_receipts k ON k.asset_id=a.asset_id "
+                "WHERE a.kind='lora' AND k.credential_id=? AND k.state='confirmed'",
+                (credential_id,),
+            ).fetchall()
+        return frozenset((row["sha256"], row["size"]) for row in rows)
+
     async def confirmed_scope_references(self, credential_id: str) -> tuple[tuple[str, str, str], ...]:
         """``(asset_id, identifier, remote_id)`` of this key's confirmed receipts, read-only."""
         return await self._run(self._confirmed_scope_references, credential_id)

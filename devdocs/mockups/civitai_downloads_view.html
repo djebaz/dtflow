@@ -119,7 +119,7 @@ https://civitai.com/models/1004?modelVersionId=2005</textarea>
 </div>
 <div class="legend dim"><span>Unmapped base model: row unselectable, Download disabled with the reason. Ambiguous links (several files or versions) list each concrete file; nothing resolves to "latest".</span></div>
 
-<h2>3. Browse Civitai tab (supported families only, LORA type only)</h2>
+<h2>3. Browse Civitai tab (continuous scroll, explicit version/file choices)</h2>
 <div class="frame">
  <div class="nav"><span>Generate</span><span>Workflows</span><span>Queues</span><span>Images</span><span class="on">Downloads</span></div>
  <div class="body">
@@ -127,22 +127,30 @@ https://civitai.com/models/1004?modelVersionId=2005</textarea>
   <div class="row"><span class="input">Search…</span><span class="input" style="min-width:150px">Most downloaded ▾</span><span class="input" style="min-width:150px">All families ▾</span></div>
   <div class="msg info">Civitai may withhold mature content in your region; results can be incomplete.</div>
   <div class="grid">
-   <div class="card sel"><div class="img"></div><span class="chk">✓</span><div class="tr"><span class="ob fam2">Krea 2</span></div>
+   <div class="card sel"><div class="img"></div><span class="chk">✓</span><div class="tr"><span class="ob fam2">Krea 2</span><span class="ob fam2">SDXL</span></div>
     <div class="bot"><b>Anatomy Fix</b><small><span>@w4r10ck</span><span>↓ 12.4k</span><span>👍 1.2k</span><span>163 MB</span></small></div></div>
    <div class="card hovered"><div class="img b"></div><span class="chk"></span><div class="tr"><span class="ob fam2">Z Image</span></div>
     <div class="hov"><i>Base model</i> ZImageTurbo<br><i>Version</i> v1.0 (Turbo)<br><i>Trigger words</i> softlight, rim glow<br><i>Tags</i> style, lighting, concept<br><i>Rating</i> thumbs up 540 / down 3<br><i>Published</i> 2026-10-02</div>
     <div class="bot"><b>Soft Light</b><small><span>@lumen</span><span>↓ 3.1k</span><span>👍 540</span><span>120 MB</span></small></div></div>
    <div class="card sel"><div class="img c"></div><span class="chk">✓</span><div class="tl2"><span class="ob warn2">NSFW</span></div><div class="tr"><span class="ob fam2">SDXL</span><span class="ob">Pony</span></div>
     <div class="bot"><b>Ink Style</b><small><span>@inkwell</span><span>↓ 88k</span><span>👍 9.7k</span><span>218 MB</span></small></div></div>
-   <div class="card"><div class="img d"></div><span class="chk"></span><div class="tl2"><span class="ob warn2">Early access</span></div><div class="tr"><span class="ob fam2">Flux 1</span><span class="ob">Flux.1 D</span></div>
+   <div class="card"><div class="img d"></div><span class="chk"></span><div class="tl2"><span class="ob warn2">Early access</span></div><div class="tr"><span class="ob fam2">Flux 1</span><span class="ob fam2">SDXL</span><span class="ob fam2">Krea 2</span></div>
     <div class="bot"><b>Portrait Pro</b><small><span>@studio9</span><span>↓ 40k</span><span>👍 5.1k</span><span>180 MB</span></small></div></div>
   </div>
   <p class="dim" style="margin:4px 0">Square cover thumbnails. The second card shows the hover overlay; a video cover falls back to the first still image. The early-access flag is shown; whether such a file can be downloaded is untested.</p>
-  <div class="row"><span class="btn primary">Download selected (2)</span><span class="sp" style="flex:1"></span><span class="btn off">‹ Prev</span><span class="dim">page 1</span><span class="btn">Next ›</span></div>
+  <p class="dim" style="margin:8px 0 4px">Versions from selected models (4) — check the exact files to download</p>
+  <table>
+   <tr><th></th><th>Model · version</th><th>Civitai base model</th><th>Family</th><th>Version ID</th><th>File</th></tr>
+   <tr><td>☑</td><td>Anatomy Fix · v3</td><td>Krea 2</td><td>Krea 2</td><td>2109</td><td>anatomy_v3.safetensors</td></tr>
+   <tr><td>☐</td><td>Anatomy Fix · v2</td><td>Pony</td><td>SDXL</td><td>2108</td><td>anatomy_v2.safetensors</td></tr>
+   <tr><td>☑</td><td>Ink Style · v1.1</td><td>Pony</td><td>SDXL</td><td>2211</td><td>ink_style.safetensors</td></tr>
+   <tr><td>☐</td><td>Ink Style · v1.0</td><td>SDXL 1.0</td><td>SDXL</td><td>2210</td><td>ink_style_old.safetensors</td></tr>
+  </table>
+  <div class="row"><span class="btn primary">Download selected (2)</span><span class="dim">Downloads start immediately. No review step.</span><span class="sp" style="flex:1"></span><span class="dim">20 models requested per cursor batch; scroll to load more.</span></div>
  </div>
  <div class="status"><span class="sp"></span><span class="pill usage">3/12</span><span class="pill">Downloads</span><span class="dock">Connection</span></div>
 </div>
-<div class="legend dim"><span>Paging uses Civitai's cursor (Prev keeps earlier cursors in memory). A card whose model has several versions or files opens a version picker before download.</span></div>
+<div class="legend dim"><span>No page buttons: scrolling loads further cursor batches and retains fetched card metadata in memory. Each card's Download dropdown offers checkboxes for its supported version/file choices (version name, base model, family, version ID); Download selected starts checked versions directly. Each square card shows every distinct supported family.</span></div>
 
 <h2>4. Downloads list (bottom of both tabs): every state</h2>
 <div class="frame"><div class="body">

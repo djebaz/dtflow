@@ -354,8 +354,12 @@ class MainWindow:
             read_token=lambda: self._download_tokens.get(CIVITAI),
             token_state=lambda: self._token_state,
             cloud_ready=lambda: self.form.backendCombo.currentText() == "cloud",
+            active_credential=self._active_credential_id,
             open_credentials=self._open_download_credentials,
             open_prepare=self._prepare_downloaded,
+            auto_prepare=lambda path, metadata, on_result: self.generation.lora.auto_prepare_retained(
+                path, metadata, on_result
+            ),
         )
         self._downloads_line = False
         self._downloads_chrome_active = False
@@ -1981,6 +1985,8 @@ class MainWindow:
         self.refresh_credentials()
         self._selection_changed()
         self.generation.credentials_changed(switched=True)
+        if hasattr(self, "downloads"):
+            self.downloads.refresh_actions()
         if self.form.backendCombo.currentText() == "cloud":
             self.check()  # A key switch is an explicit request to check the newly selected connection.
 
@@ -2791,6 +2797,8 @@ class MainWindow:
         self.refresh_credentials()
         self._selection_changed()
         self.generation.credentials_changed()
+        if hasattr(self, "downloads"):
+            self.downloads.refresh_actions()
 
     def remove_key(self) -> None:
         if self.inline.commit(self.form.removeKeyButton):
@@ -2823,6 +2831,8 @@ class MainWindow:
             self.refresh_credentials()
             self._selection_changed()
             self.generation.credentials_changed()
+            if hasattr(self, "downloads"):
+                self.downloads.refresh_actions()
 
         confirm_action(
             self.form,

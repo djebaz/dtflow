@@ -560,6 +560,14 @@ QPushButton#downloadsTokenLabel[state="warning"] {
   border-color: ${color.statusWarningBorder};
   color: ${color.warning};
 }
+/* Gallery note (content may be withheld): the amber notice of the design. */
+QLabel#galleryNote {
+  background: ${color.warningSurface};
+  border: 1px solid ${color.statusWarningBorder};
+  border-radius: ${size.radiusXs};
+  color: ${color.warning};
+  padding: 4px 10px;
+}
 QPushButton#downloadsTokenLabel:hover {
   background: ${color.selectionHover};
 }

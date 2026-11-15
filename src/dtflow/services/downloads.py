@@ -16,12 +16,14 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from dtflow.core.models import ValidationError
+from dtflow.persistence.assets import AssetRegistry
 from dtflow.services import civitai
 from dtflow.services.lora_convert.errors import ConversionCancelled
 from dtflow.services.lora_convert.registry import FamilySpec
 from dtflow.services.lora_download import convert_downloaded
 from dtflow.services.lora_sources import list_sources, remove_source
 from dtflow.services.lora_store import LoraStore
+from dtflow.services.lora_naming import LoraPrepareMetadata
 
 log = logging.getLogger(__name__)
 
@@ -69,7 +71,7 @@ def canonical_line(ref: civitai.CivitaiRef) -> str | None:
     return str(ref.version_id) if ref.version_id is not None else None
 
 
-def _entry(version: civitai.CivitaiVersion) -> ResolvedEntry:
+def entry_for(version: civitai.CivitaiVersion) -> ResolvedEntry:
     label = f"{version.model_name} · {version.version_name}".strip(" ·") or f"Version {version.version_id}"
     try:
         family = civitai.supported_family(version)
@@ -88,7 +90,7 @@ def _resolve_ref(
 ) -> list[ResolvedEntry]:
     fallback = f"Version {ref.version_id}" if ref.version_id else f"Model {ref.model_id}"
     try:
-        return [_entry(civitai.resolve(ref, token, file_id=file_id, client=client))]
+        return [entry_for(civitai.resolve(ref, token, file_id=file_id, client=client))]
     except civitai.CivitaiChoice as choice:
         if depth >= 2 or not choice.options:
             return [ResolvedEntry(fallback, problem=str(choice))]
@@ -153,6 +155,9 @@ class DownloadItem:
     source_sha: str | None = None
     converted_sha: str | None = None
     converted_size: int | None = None
+    prepare_metadata: LoraPrepareMetadata | None = None  # exact metadata chosen during successful conversion
+    auto_prepare_status: str = ""  # presentation-only detail for opted-in DT+ Prepare
+    auto_prepare_phase: str = ""  # "", "preparing", or "prepared"; conversion itself remains durable
     version_id: int | None = None
     model_id: int | None = None
     speed: float = 0.0  # bytes per second while downloading (smoothed)
@@ -211,6 +216,20 @@ def _from_source(row: dict) -> DownloadItem:
         version_id=row.get("version_id"),
         model_id=row.get("model_id"),
     )
+
+
+async def prepared_contents_for_key(state: Path, credential_id: str) -> frozenset[tuple[str, int]]:
+    """Read existing confirmed DT+ receipts for this key, not remote account inventory.
+
+    Matching exact converted content, never just a filename, avoids a stale or another
+    account's receipt falsely marking a download as Prepared.
+    """
+    registry = AssetRegistry(state)
+    await registry.open()
+    try:
+        return await registry.confirmed_lora_contents(credential_id)
+    finally:
+        await registry.aclose()
 
 
 async def load_items(state: Path) -> list[DownloadItem]:
@@ -316,6 +335,7 @@ async def run_item(
     if result.state == "converted" and result.prepared is not None:
         retained = result.prepared.retained
         item.state, item.converted_sha, item.converted_size = CONVERTED, retained.sha256, retained.size
+        item.prepare_metadata = result.prepared.metadata
         item.detail = "Source file deleted" if result.source_deleted else "Converted"
         if result.warnings:
             item.detail += ". " + " ".join(result.warnings)
