@@ -648,8 +648,10 @@ class MainWindow:
         table = form.retainedLorasTable
         table.verticalHeader().setVisible(False)
         header = table.horizontalHeader()
-        for column in (0, 1, 2, 3):
+        for column in (0, 1, 2):
             header.setSectionResizeMode(column, QHeaderView.ResizeMode.ResizeToContents)
+        header.setSectionResizeMode(3, QHeaderView.ResizeMode.Fixed)
+        table.setColumnWidth(3, 32)
         header.setSectionResizeMode(4, QHeaderView.ResizeMode.Fixed)
         header.setSectionResizeMode(5, QHeaderView.ResizeMode.Stretch)
         table.itemSelectionChanged.connect(self._retained_lora_selection_changed)
@@ -1314,6 +1316,8 @@ class MainWindow:
     def _responsive_workspace(self) -> None:
         shell = self.shell
         narrow = self.form.width() < 1100
+        connection = self.form.workspaceStack.currentWidget() is self.form.connectionPage
+        rail_narrow = narrow or (connection and self.form.width() < 1300)
         logs = self.form.workspaceStack.currentWidget() is self.logs_marker
         images = self.form.workspaceStack.currentWidget() is self.images_page
         if self._logs_active != logs:
@@ -1378,11 +1382,13 @@ class MainWindow:
         # Logs and Images use the full-width center workspace, regardless of
         # whether the Images page changed during this navigation.
         shell.leftRail.setVisible(not images and not logs and not folded and not downloads)
-        hint_open = self._prompt_hints.open if hasattr(self, "_prompt_hints") else False
+        hint_open = self._prompt_hints.open if hasattr(self, "_prompt_hints") and not connection else False
         # The hint toggle can reveal the right rail at narrow widths, with Images still above it.
-        shell.rightRail.setVisible(not images and not logs and not downloads and (workflows or not narrow or hint_open))
+        shell.rightRail.setVisible(
+            not images and not logs and not downloads and (workflows or not rail_narrow or hint_open)
+        )
         self._place_images_header(
-            images=images, logs=logs, narrow=narrow and not workflows and not hint_open, downloads=downloads
+            images=images, logs=logs, narrow=rail_narrow and not workflows and not hint_open, downloads=downloads
         )
         if self._logs_form is not None:
             self._logs_form.logsBrandSlot.setVisible(logs)
@@ -2451,11 +2457,16 @@ class MainWindow:
                 architecture += " (conflict)"
             short = record.get("short_name") or ""
             status = "Needs architecture" if not version else "Needs short name" if not short else "Ready"
+            status_level = "ok" if status == "Ready" else "warning"
+            if record.get("architecture_conflict"):
+                status, status_level = "Architecture conflict; review this LoRA's metadata.", "error"
+            elif "observed_format" in entry and entry["observed_format"] in (None, "Unknown"):
+                status, status_level = "Managed file missing, unreadable or unsupported.", "error"
             cells = (
                 short or "—",
                 architecture,
                 self._lora_formats.get((sha256, size)) or record.get("format_code") or "—",
-                status,
+                "",
                 record.get("trigger_words") or "—",
             )
             tooltip = (
@@ -2469,6 +2480,11 @@ class MainWindow:
                 item.setToolTip(tooltip)
                 if column == 0:
                     item.setData(Qt.ItemDataRole.UserRole, (sha256, size))
+                elif column == 3:
+                    item.setIcon(QIcon(status_dot(status_level, 10)))
+                    item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+                    item.setToolTip(status)
+                    item.setData(Qt.ItemDataRole.AccessibleTextRole, status)
                 table.setItem(row, column, item)
             self._lora_row_actions(row, (sha256, size), version, record)
             if (sha256, size) == identity:

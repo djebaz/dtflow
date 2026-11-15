@@ -891,7 +891,7 @@
                    <column><property name="text"><string>Short name</string></property></column>
                    <column><property name="text"><string>Architecture</string></property></column>
                    <column><property name="text"><string>Format</string></property></column>
-                   <column><property name="text"><string>Status</string></property></column>
+                   <column><property name="text"><string/></property><property name="toolTip"><string>Local LoRA readiness: hover the colored indicator for details.</string></property></column>
                    <column><property name="text"><string>Actions</string></property></column>
                    <column><property name="text"><string>Trigger words</string></property></column>
                   </widget>
