@@ -27,7 +27,7 @@
     </layout>
    </widget></item>
    <item><widget class="QTabWidget" name="downloadsTabs">
-    <property name="currentIndex"><number>0</number></property>
+    <property name="currentIndex"><number>1</number></property>
     <widget class="QWidget" name="linksTab">
      <attribute name="title"><string>Links / IDs</string></attribute>
      <layout class="QVBoxLayout" name="linksLayout">
@@ -85,6 +85,107 @@
        </widget></item>
        <item><spacer name="downloadSpacer"><property name="orientation"><enum>Qt::Horizontal</enum></property>
         <property name="sizeHint" stdset="0"><size><width>20</width><height>20</height></size></property></spacer></item>
+       <item><widget class="QCheckBox" name="linksAutoPrepareCheck">
+        <property name="text"><string>Auto-prepare after conversion</string></property>
+        <property name="toolTip"><string>Automatically prepare successfully converted downloads on the selected DT+ Cloud account. No generation credits are used. Other backends are never switched automatically.</string></property>
+       </widget></item>
+      </layout></item>
+     </layout>
+    </widget>
+    <widget class="QWidget" name="browseTab">
+     <attribute name="title"><string>Browse Civitai</string></attribute>
+     <layout class="QVBoxLayout" name="browseLayout">
+      <property name="spacing"><number>8</number></property>
+      <property name="leftMargin"><number>10</number></property><property name="topMargin"><number>10</number></property>
+      <property name="rightMargin"><number>10</number></property><property name="bottomMargin"><number>10</number></property>
+      <item><layout class="QHBoxLayout" name="gallerySearchRow"><property name="spacing"><number>8</number></property>
+       <item><widget class="QLineEdit" name="gallerySearchEdit">
+        <property name="toolTip"><string>Type keywords and press Enter.</string></property>
+        <property name="placeholderText"><string>Search…</string></property>
+        <property name="clearButtonEnabled"><bool>true</bool></property>
+        <property name="accessibleName"><string>Search Civitai LoRAs</string></property>
+       </widget></item>
+       <item><widget class="QComboBox" name="gallerySortCombo">
+        <property name="accessibleName"><string>Sort Civitai LoRAs</string></property>
+       </widget></item>
+       <item><widget class="QComboBox" name="galleryFamilyCombo">
+        <property name="accessibleName"><string>Filter Civitai LoRAs by family</string></property>
+        <property name="toolTip"><string>Choose several supported families. All families clears the selection.</string></property>
+       </widget></item>
+       <item><widget class="QComboBox" name="galleryPeriodCombo">
+        <property name="accessibleName"><string>Filter Civitai LoRAs by period</string></property>
+        <property name="toolTip"><string>The period the sort order counts.</string></property>
+       </widget></item>
+      </layout></item>
+      <item><widget class="QLabel" name="galleryNote">
+       <property name="wordWrap"><bool>true</bool></property>
+      </widget></item>
+      <item><widget class="QListWidget" name="galleryList">
+       <property name="accessibleName"><string>Civitai LoRAs</string></property>
+       <property name="minimumHeight"><number>220</number></property>
+       <property name="editTriggers"><set>QAbstractItemView::NoEditTriggers</set></property>
+       <property name="horizontalScrollBarPolicy"><enum>Qt::ScrollBarAlwaysOff</enum></property>
+      </widget></item>
+      <item><widget class="QWidget" name="galleryVersionsBox">
+       <layout class="QVBoxLayout" name="galleryVersionsLayout">
+        <property name="spacing"><number>4</number></property>
+        <property name="leftMargin"><number>0</number></property>
+        <property name="topMargin"><number>0</number></property>
+        <property name="rightMargin"><number>0</number></property>
+        <property name="bottomMargin"><number>0</number></property>
+        <item><layout class="QHBoxLayout" name="galleryVersionActions">
+         <item><widget class="QLabel" name="galleryVersionsHeading">
+          <property name="text"><string>Versions from selected models</string></property>
+         </widget></item>
+         <item><spacer name="galleryVersionsSpacer">
+          <property name="orientation"><enum>Qt::Horizontal</enum></property>
+          <property name="sizeHint" stdset="0"><size><width>20</width><height>20</height></size></property>
+         </spacer></item>
+         <item><widget class="QPushButton" name="gallerySelectAllVersions">
+          <property name="text"><string>Select all</string></property>
+         </widget></item>
+         <item><widget class="QPushButton" name="galleryClearVersions">
+          <property name="text"><string>Clear</string></property>
+         </widget></item>
+        </layout></item>
+        <item><widget class="QTableWidget" name="galleryVersionsTable">
+         <property name="accessibleName"><string>Choose exact Civitai versions and files to download</string></property>
+         <property name="minimumHeight"><number>100</number></property>
+         <property name="maximumHeight"><number>205</number></property>
+         <property name="selectionMode"><enum>QAbstractItemView::NoSelection</enum></property>
+         <property name="editTriggers"><set>QAbstractItemView::NoEditTriggers</set></property>
+         <property name="showGrid"><bool>false</bool></property>
+         <property name="columnCount"><number>6</number></property>
+         <column><property name="text"><string></string></property></column>
+         <column><property name="text"><string>Model · version</string></property></column>
+         <column><property name="text"><string>Civitai base model</string></property></column>
+         <column><property name="text"><string>Family</string></property></column>
+         <column><property name="text"><string>Version ID</string></property></column>
+         <column><property name="text"><string>File</string></property></column>
+        </widget></item>
+       </layout>
+      </widget></item>
+      <item><layout class="QHBoxLayout" name="galleryActionRow"><property name="spacing"><number>8</number></property>
+       <item><widget class="QPushButton" name="galleryDownloadButton">
+        <property name="text"><string>Download selected</string></property>
+        <property name="role" stdset="0"><string>primary</string></property>
+        <property name="enabled"><bool>false</bool></property>
+       </widget></item>
+       <item><widget class="QLabel" name="galleryStatus">
+        <property name="text"><string>Opens when you visit this tab.</string></property>
+        <property name="role" stdset="0"><string>secondary</string></property>
+       </widget></item>
+       <item><widget class="QPushButton" name="galleryContinueButton">
+        <property name="text"><string>Search further</string></property>
+        <property name="toolTip"><string>Continue searching after multiple Civitai batches without supported LoRAs.</string></property>
+       </widget></item>
+       <item><spacer name="galleryActionSpacer"><property name="orientation"><enum>Qt::Horizontal</enum></property>
+        <property name="sizeHint" stdset="0"><size><width>20</width><height>20</height></size></property></spacer></item>
+       <item><widget class="QCheckBox" name="galleryAutoPrepareCheck">
+        <property name="text"><string>Auto-prepare after conversion</string></property>
+        <property name="toolTip"><string>Automatically prepare successfully converted downloads on the selected DT+ Cloud account. No generation credits are used. Other backends are never switched automatically.</string></property>
+       </widget></item>
+
       </layout></item>
      </layout>
     </widget>

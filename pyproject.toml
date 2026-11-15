@@ -30,6 +30,8 @@ dependencies = [
 
 [project.scripts]
 dtflow = "dtflow.cli:main"
+check = "dtflow.dev_commands:check"
+test = "dtflow.dev_commands:test"
 
 [dependency-groups]
 dev = [

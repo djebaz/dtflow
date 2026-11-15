@@ -44,7 +44,7 @@ class FamilySpec:
     label: str  # "Krea 2"
     exact_architecture: str  # Draw Things version string, "krea_2"
     status: Status
-    experimental: bool  # True only for sdxl: needs allow_experimental
+    experimental: bool  # follows the status from families.json; conversion asks for consent only if experimental
     kind: Literal["resolver", "tables"]
     run: FamilyRunner
     notes: str = ""

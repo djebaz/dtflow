@@ -47,7 +47,7 @@ API_ROOT = f"https://{HOST}/api/v1"
 SOURCES_DIR = "lora_sources"
 STAGING_DIR = ".staging"
 CHUNK = 256 * 1024
-MAX_METADATA_BYTES = 2 * 1024 * 1024
+MAX_METADATA_BYTES = 32 * 1024 * 1024  # accommodates large multi-version listing responses
 MAX_ERROR_BYTES = 8 * 1024
 MAX_DOWNLOAD_BYTES = 4 * 1024**3  # a LoRA bound; the 256 MiB detection-model cap is far too small
 FREE_SPACE_MARGIN = 64 * 1024**2
@@ -68,7 +68,20 @@ _ACTIVE_LOCK = threading.Lock()
 
 
 class CivitaiError(ValidationError):
-    """A plain, token-free failure message (Civitai's own wording is kept where it gave one)."""
+    """Civitai failure with safe diagnostic fields separate from potentially private provider wording."""
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        reason: str | None = None,
+        http_status: int | None = None,
+        bytes_read: int | None = None,
+    ) -> None:
+        super().__init__(message)
+        self.reason = reason
+        self.http_status = http_status
+        self.bytes_read = bytes_read
 
 
 class CivitaiMissing(CivitaiError):
@@ -256,26 +269,42 @@ def _failure(response: httpx.Response, token: str | None) -> CivitaiError:
     code = response.status_code
     suffix = f' Civitai says: "{wording}".' if wording else ""
     if code in (404, 410):
-        return CivitaiMissing(f"Civitai answered {code}: the item was not found or is no longer available.{suffix}")
+        return CivitaiMissing(
+            f"Civitai answered {code}: the item was not found or is no longer available.{suffix}",
+            reason="http_error",
+            http_status=code,
+        )
     if code == 401:
-        return CivitaiError(f"Civitai answered 401: a missing or invalid token. Check the Civitai token.{suffix}")
+        return CivitaiError(
+            f"Civitai answered 401: a missing or invalid token. Check the Civitai token.{suffix}",
+            reason="http_error",
+            http_status=code,
+        )
     if code == 403:
         return CivitaiError(
             f"Civitai answered 403: this item needs access the token does not have (gated, early access or terms "
-            f"to accept on Civitai).{suffix}"
+            f"to accept on Civitai).{suffix}",
+            reason="http_error",
+            http_status=code,
         )
     if code == 429:
-        return CivitaiError(f"Civitai answered 429: rate limited. Wait a while and retry.{suffix}")
-    return CivitaiError(f"Civitai answered HTTP {code}.{suffix}")
+        return CivitaiError(
+            f"Civitai answered 429: rate limited. Wait a while and retry.{suffix}",
+            reason="http_error",
+            http_status=code,
+        )
+    return CivitaiError(f"Civitai answered HTTP {code}.{suffix}", reason="http_error", http_status=code)
 
 
 def _transient(exc: BaseException) -> CivitaiError:
-    return CivitaiError(f"Could not reach Civitai ({type(exc).__name__}); check the network or proxy and retry.")
+    return CivitaiError(
+        f"Could not reach Civitai ({type(exc).__name__}); check the network or proxy and retry.",
+        reason="network_failure",
+    )
 
 
-def _get_json(client: httpx.Client, path: str, token: str | None, expected_id: int) -> dict:
-    """Bounded metadata GET with one retry for definite connectivity/timeout failures; the id must match."""
-    url = f"{API_ROOT}{path}"
+def _fetch_json(client: httpx.Client, url: str, token: str | None) -> dict:
+    """Bounded metadata GET with one retry for definite connectivity/timeout failures; returns the JSON object."""
     for attempt in (0, 1):
         try:
             with ExitStack() as stack:
@@ -286,7 +315,11 @@ def _get_json(client: httpx.Client, path: str, token: str | None, expected_id: i
                 for chunk in response.iter_bytes():
                     raw += chunk
                     if len(raw) > MAX_METADATA_BYTES:
-                        raise CivitaiError("Civitai's answer was larger than expected; it was not used.")
+                        raise CivitaiError(
+                            "Civitai's answer was larger than expected; it was not used.",
+                            reason="response_too_large",
+                            bytes_read=len(raw),
+                        )
             break
         except TRANSIENT as exc:
             if attempt:
@@ -298,10 +331,22 @@ def _get_json(client: httpx.Client, path: str, token: str | None, expected_id: i
     try:
         body = json.loads(raw)
     except ValueError as exc:
-        raise CivitaiError("Civitai's answer was not valid JSON; it was not used.") from exc
-    if not isinstance(body, dict) or body.get("id") != expected_id:
+        raise CivitaiError("Civitai's answer was not valid JSON; it was not used.", reason="invalid_json") from exc
+    if not isinstance(body, dict):
+        raise CivitaiError("Civitai's answer had an unexpected shape; it was not used.", reason="unexpected_json_shape")
+    return body
+
+
+def _get_json(client: httpx.Client, path: str, token: str | None, expected_id: int) -> dict:
+    body = _fetch_json(client, f"{API_ROOT}{path}", token)
+    if body.get("id") != expected_id:
         raise CivitaiError("Civitai's answer did not match the requested id; it was not used.")
     return body
+
+
+def get_listing(client: httpx.Client, query: str, token: str | None = None) -> dict:
+    """``GET /api/v1/models?<query>`` (the model listing used by the gallery): the bounded JSON object."""
+    return _fetch_json(client, f"{API_ROOT}/models?{query}", _valid_token(token))
 
 
 # -------------------------------------------------------------------------------------------------------- normalising
@@ -362,7 +407,7 @@ def _permissions(model: dict) -> dict:
     return out
 
 
-def _normalise(model: dict, version: dict, model_id: int, version_id: int, file_id: int | None) -> CivitaiVersion:
+def normalise(model: dict, version: dict, model_id: int, version_id: int, file_id: int | None) -> CivitaiVersion:
     model_type = _text(model.get("type"), 40)
     if model_type != LORA_TYPE:
         raise CivitaiError(f"This Civitai item is a {model_type or 'unknown type'}, not a LoRA; it was not used.")
@@ -432,7 +477,7 @@ def resolve(
             listed = [v.get("id") for v in model.get("modelVersions") or [] if isinstance(v, dict)]
             if ref.version_id not in listed:
                 raise CivitaiError("Civitai's model does not list the requested version; it was not used.")
-            return _normalise(model, version, model_id, ref.version_id, file_id)
+            return normalise(model, version, model_id, ref.version_id, file_id)
         model = _get_json(client, f"/models/{ref.model_id}", token, ref.model_id)
         versions = [
             v for v in model.get("modelVersions") or [] if isinstance(v, dict) and _int(v.get("id")) is not None
@@ -450,7 +495,7 @@ def resolve(
                 + ". Open the version you want (a link with ?modelVersionId= or a version id).",
                 options,
             )
-        return _normalise(model, versions[0], ref.model_id, versions[0]["id"], file_id)
+        return normalise(model, versions[0], ref.model_id, versions[0]["id"], file_id)
     finally:
         if owned:
             client.close()

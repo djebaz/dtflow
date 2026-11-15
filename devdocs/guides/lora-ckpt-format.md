@@ -52,13 +52,13 @@ A converted f16 LoRA is stored as plain f16 with no codec. The other Draw Things
 | Z Image Turbo | verified (refiner and context refiner names unverified) | 660 tensors, 0 differ | effect confirmed (owner) |
 | SD 1.x | verified (text encoder and conv paths unverified) | 588 tensors, 0 differ | applied on DT+ (owner report 2026-11-13) |
 | Flux 1 | verified on two kohya LoRAs and a synthetic diffusers file | 1596 / 1596 / 1064 tensors, 0 differ | applied on DT+ (owner report 2026-11-13) |
-| SDXL | **experimental**, explicit confirmation required | no Swift reference; the converted DTFlow files were checked against iOS-converted files (owner report) | converted files passed the with/without-LoRA test (owner); **some SDXL LoRAs still fail to convert**, so coverage is incomplete |
+| SDXL | **verified** (owner promotion 2026-11-15; no experimental confirmation) | no Swift reference; the converted DTFlow files were checked against iOS-converted files (owner report) | converted files passed the with/without-LoRA test (owner); **some historical SDXL LoRAs still failed to convert**, so support is not universal |
 
 Statuses are owner smoke on specific files, not exhaustive family coverage. The registry (`FamilySpec.status`) is the single source for the Prepare badge, CLI text and this table.
 
 ### Swift reference limits
 
-- The reference is built on CPU-only Linux. On the SD3/PixArt/SDXL text-encoding path `LoRAImporter.swift:829` calls `toGPU(0)`, which asserts a CPU memory tensor (`ccv_nnc_tensor.c:82`), so every SDXL LoRA crashes. SDXL stays experimental until a build that skips `toGPU`, or a Mac, produces an oracle. A cheaper check: diff against an SDXL LoRA `.ckpt` made by Draw Things itself with `inspect_ckpt.py`; that would also settle the 4-D format flag.
+- The reference is built on CPU-only Linux. On the SD3/PixArt/SDXL text-encoding path `LoRAImporter.swift:829` calls `toGPU(0)`, which asserts a CPU memory tensor (`ccv_nnc_tensor.c:82`), so every SDXL LoRA crashes. That Swift oracle gap still limits independent tensor-parity evidence; the owner has nonetheless promoted SDXL to normally supported after smoke feedback on 2026-11-15. The missing oracle and historical conversion failures are not silently presented as fixed. A cheaper parity check is to diff against an SDXL LoRA `.ckpt` made by Draw Things with `inspect_ckpt.py`; that would also settle the 4-D format flag.
 - For a family, compare a Swift made ckpt and a Python made one with `python tools/drawthings/inspect_ckpt.py A.ckpt B.ckpt` and require 0 differing tensors and 0 differing data bytes.
 
 ## Integrated Windows converter (#409)

@@ -45,8 +45,8 @@
       "key": "sdxl",
       "label": "SDXL",
       "exact_architecture": "sdxl_base_v0.9",
-      "status": "experimental",
-      "experimental": true,
+      "status": "verified",
+      "experimental": false,
       "aliases": {
         "civitai": ["SDXL 1.0", "Pony", "Illustrious", "NoobAI", "SDXL Lightning"]
       }
