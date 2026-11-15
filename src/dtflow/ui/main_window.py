@@ -648,10 +648,10 @@ class MainWindow:
         table = form.retainedLorasTable
         table.verticalHeader().setVisible(False)
         header = table.horizontalHeader()
-        for column in (0, 1, 2, 4):
+        for column in (0, 1, 2, 3):
             header.setSectionResizeMode(column, QHeaderView.ResizeMode.ResizeToContents)
-        header.setSectionResizeMode(5, QHeaderView.ResizeMode.Fixed)
-        header.setSectionResizeMode(3, QHeaderView.ResizeMode.Stretch)
+        header.setSectionResizeMode(4, QHeaderView.ResizeMode.Fixed)
+        header.setSectionResizeMode(5, QHeaderView.ResizeMode.Stretch)
         table.itemSelectionChanged.connect(self._retained_lora_selection_changed)
         table.itemDoubleClicked.connect(lambda _item: self.edit_lora_metadata())
         form.editLoraMetadataButton.clicked.connect(self.edit_lora_metadata)
@@ -2455,8 +2455,8 @@ class MainWindow:
                 short or "—",
                 architecture,
                 self._lora_formats.get((sha256, size)) or record.get("format_code") or "—",
-                record.get("trigger_words") or "—",
                 status,
+                record.get("trigger_words") or "—",
             )
             tooltip = (
                 f"{name}\nFamily: {architecture} ({record.get('family_source') or (found.source if found else 'unknown')})\n"
@@ -2464,7 +2464,7 @@ class MainWindow:
                 "Remove deletes only this managed copy, not the original, remote asset, or history."
             )
             self._lora_names[(sha256, size)] = name
-            for column, text in enumerate(cells):
+            for column, text in zip((0, 1, 2, 3, 5), cells, strict=True):
                 item = QTableWidgetItem(text)
                 item.setToolTip(tooltip)
                 if column == 0:
@@ -2509,7 +2509,7 @@ class MainWindow:
             "Selected-key local confirmation, not a live cloud check. Prepare opens the approval editor."
         )
         prepare.clicked.connect(lambda _checked=False: self._prepare_managed_lora(identity))
-        self.form.retainedLorasTable.setCellWidget(row, 5, host)
+        self.form.retainedLorasTable.setCellWidget(row, 4, host)
         host.ensurePolished()
         quantize.ensurePolished()
         prepare.ensurePolished()
@@ -2520,7 +2520,7 @@ class MainWindow:
         host.layout().activate()
         # Header auto-sizing can underestimate embedded controls. Reserve their full styled widths explicitly.
         required_width = quantize.minimumWidth() + prepare.minimumWidth() + host.layout().spacing() + 22
-        self.form.retainedLorasTable.setColumnWidth(5, max(self.form.retainedLorasTable.columnWidth(5), required_width))
+        self.form.retainedLorasTable.setColumnWidth(4, max(self.form.retainedLorasTable.columnWidth(4), required_width))
         self.form.retainedLorasTable.setRowHeight(
             row,
             max(
