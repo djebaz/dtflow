@@ -30,6 +30,12 @@ class UnsupportedFamilyError(ConversionError):
     code = "unsupported_family"
 
 
+class FamilyDataError(ConversionError):
+    """``data/families.json`` is malformed or disagrees with the registered runners."""
+
+    code = "family_data"
+
+
 class ExperimentalFamilyError(ConversionError):
     """The family is experimental and ``allow_experimental`` was not set."""
 
@@ -41,9 +47,7 @@ class UnsupportedLoraFormatError(ConversionError):
 
     code = "unsupported_format"
 
-    def __init__(
-        self, user_message: str, *, hint: str | None = None, alpha_value_count: int | None = None
-    ) -> None:
+    def __init__(self, user_message: str, *, hint: str | None = None, alpha_value_count: int | None = None) -> None:
         self.alpha_value_count = alpha_value_count
         super().__init__(user_message, hint=hint)
 

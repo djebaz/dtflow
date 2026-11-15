@@ -781,6 +781,33 @@ class AssetRegistry:
         )
         return True
 
+    async def seed_lora_triggers(
+        self, sha256: str, size: int, detected_version: str | None, trigger_words: str
+    ) -> bool:
+        """Record a downloaded LoRA's published trigger words for its converted content, so Prepare offers them.
+
+        Creates the content record when absent and fills the trigger words only while they are empty: a value the
+        user saved is never replaced, and no name, receipt or upload is touched. Returns whether words were set."""
+        words = trigger_words.strip()
+        if not words or not re.fullmatch(r"[0-9a-f]{64}", sha256) or size < 1:
+            return False
+        return await self._run(self._write, self._seed_lora_triggers, sha256, size, detected_version, words)
+
+    @staticmethod
+    def _seed_lora_triggers(db, sha256: str, size: int, detected_version: str | None, words: str) -> bool:
+        now = _now()
+        db.execute(
+            "INSERT OR IGNORE INTO lora_records (sha256, size, detected_version, detected_source, updated_at_utc) "
+            "VALUES (?,?,?,?,?)",
+            (sha256, size, detected_version, "file" if detected_version else "unknown", now),
+        )
+        changed = db.execute(
+            "UPDATE lora_records SET trigger_words=?, updated_at_utc=? "
+            "WHERE sha256=? AND size=? AND TRIM(trigger_words)=''",
+            (words, now, sha256, size),
+        ).rowcount
+        return changed > 0
+
     async def update_lora_metadata(self, sha256: str, size: int, **changes) -> dict[str, Any]:
         """Atomically change local LoRA metadata without renaming, uploading, or altering receipts.
 

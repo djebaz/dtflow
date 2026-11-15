@@ -29,6 +29,7 @@ log = logging.getLogger(__name__)
 STORE_DIR = "lora_files"
 INDEX_FILE = "index.json"
 INDEX_VERSION = 1
+MAX_ACQUISITIONS = 8
 CHUNK = 1024 * 1024
 EDGE = 64 * 1024
 _UNSAFE = re.compile(r'[<>:"/\\|?*\x00-\x1f]')
@@ -504,6 +505,33 @@ class LoraStore:
             if entry is not None and entry.get("source_metadata") != metadata:
                 entry["source_metadata"] = metadata
                 self._write(files)
+        finally:
+            handle.close()
+
+    def record_acquisition(self, sha256: str, size: int, record: dict) -> bool:
+        """Keep where a converted copy came from (provider, ids, base-model label, trigger words, source hash).
+
+        Additive and bounded: one record per (provider, version, file), newest wins, at most ``MAX_ACQUISITIONS``.
+        Never holds a token or a signed URL. Returns False when the retained entry does not exist."""
+        identity = (record.get("provider"), record.get("version_id"), record.get("file_id"))
+        handle = self._locked()
+        try:
+            files = self._read_recovering()
+            entry = next((item for item in files if (item.get("sha256"), item.get("size")) == (sha256, size)), None)
+            if entry is None:
+                return False
+            kept = [
+                item
+                for item in entry.get("acquisitions") or []
+                if isinstance(item, dict)
+                and (item.get("provider"), item.get("version_id"), item.get("file_id")) != identity
+            ]
+            kept.append(record)
+            entry["acquisitions"] = kept[-MAX_ACQUISITIONS:]
+            self._write(files)
+            return True
+        except OSError as exc:
+            raise ValidationError("The download provenance could not be saved.") from exc
         finally:
             handle.close()
 

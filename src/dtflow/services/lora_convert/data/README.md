@@ -13,3 +13,11 @@ Regenerate only when the pinned Draw Things revision changes, and bump `CONVERTE
 `tools/drawthings/` is the frozen proof-of-concept input (history proof) and is intentionally left
 untouched, so `tools/drawthings/extract_swift_mappings.py` still describes the old location; when it
 is run, pass this folder's path as OUT.json and do not rely on the tools copy.
+
+## families.json
+
+The only list of converter-supported families and of the provider labels (aliases) that map to them.
+`registry.py` reads it; each family's runner, `kind` and `notes` stay in code (`families/<key>.py`). Every key needs
+a runner and every runner an entry, `exact_architecture` needs a managed-name tag in `lora_naming.ARCHITECTURE_TAGS`, and a
+provider label may belong to one family only; a file that breaks this is refused when the registry first loads. Adding a
+family is an entry here plus its runner; Hugging Face adds its own provider key under `aliases` later.
