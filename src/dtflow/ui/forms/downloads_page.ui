@@ -116,7 +116,26 @@
         <property name="accessibleName"><string>Filter Civitai LoRAs by period</string></property>
         <property name="toolTip"><string>The period the sort order counts.</string></property>
        </widget></item>
+       <item><widget class="QPushButton" name="gallerySearchButton">
+        <property name="text"><string>Search</string></property>
+        <property name="role" stdset="0"><string>primary</string></property>
+        <property name="toolTip"><string>Search Civitai by keywords, selected tags, or both.</string></property>
+       </widget></item>
       </layout></item>
+      <item><widget class="QWidget" name="galleryTagsRow">
+       <layout class="QHBoxLayout" name="galleryTagsLayout">
+        <property name="spacing"><number>8</number></property>
+        <property name="leftMargin"><number>0</number></property>
+        <property name="topMargin"><number>0</number></property>
+        <property name="rightMargin"><number>0</number></property>
+        <property name="bottomMargin"><number>0</number></property>
+        <item><widget class="QLabel" name="galleryTagsLabel">
+         <property name="text"><string>Tags</string></property>
+         <property name="toolTip"><string>Selected tags match any tag, and narrow keyword results when both are set.</string></property>
+        </widget></item>
+        <item><widget class="QWidget" name="galleryTagChipsSlot"/></item>
+       </layout>
+      </widget></item>
       <item><widget class="QLabel" name="galleryNote">
        <property name="wordWrap"><bool>true</bool></property>
       </widget></item>
