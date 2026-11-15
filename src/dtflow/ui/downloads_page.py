@@ -721,9 +721,7 @@ class DownloadsPage(QObject):
         text = item.detail.casefold()
         if item.active:
             button("Cancel", self.cancel)
-        elif state == engine.CONVERTED and item.auto_prepare_phase == "prepared":
-            pass  # confirmed on DT+: no Prepare action remains for this row
-        elif state == engine.CONVERTED:
+        elif state == engine.CONVERTED and item.auto_prepare_phase != "prepared":
             button(
                 "Prepare…",
                 self.prepare,
