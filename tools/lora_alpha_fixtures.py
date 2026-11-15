@@ -15,19 +15,9 @@ from pathlib import Path
 CHUNK_SIZE = 1024 * 1024
 MODES = ("empty", "multiple", "scalar", "singleton")
 DTYPE_BYTES = {
-    "F16": 2,
-    "BF16": 2,
-    "F32": 4,
-    "F64": 8,
-    "I8": 1,
-    "U8": 1,
-    "I16": 2,
-    "U16": 2,
-    "I32": 4,
-    "U32": 4,
-    "I64": 8,
-    "U64": 8,
-    "BOOL": 1,
+    "F16": 2, "BF16": 2, "F32": 4, "F64": 8,
+    "I8": 1, "U8": 1, "I16": 2, "U16": 2,
+    "I32": 4, "U32": 4, "I64": 8, "U64": 8, "BOOL": 1,
 }
 
 
