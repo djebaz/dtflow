@@ -14,7 +14,7 @@ from __future__ import annotations
 import re
 import threading
 from collections import OrderedDict
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from urllib.parse import quote, urljoin, urlsplit
 
 import httpx
@@ -23,9 +23,19 @@ from dtflow.services import civitai
 from dtflow.services.lora_convert.registry import family_for_label, provider_labels, supported_families
 
 PAGE_SIZE = 100  # owner-selected cursor batch size; the view appends results as you scroll
-SORTS = ("Most Downloaded", "Highest Rated", "Newest")  # the values the API documents for ``sort``
+SORTS = (
+    "Most Downloaded",
+    "Highest Rated",
+    "Newest",
+    "Most Liked",
+    "Most Discussed",
+    "Most Collected",
+    "Most Images",
+)  # Seven supported sort choices; Oldest is deliberately excluded (#479).
 PERIODS = ("AllTime", "Year", "Month", "Week", "Day")  # the values the API documents for ``period``
 MAX_QUERY = 100
+MAX_TAG_LENGTH = 80
+MAX_TAGS = 8  # Bound the number of independent Civitai tag listing cursors (#479).
 THUMB_WIDTH = 320
 MAX_THUMB_BYTES = 1024 * 1024
 MAX_THUMB_ENTRIES = 300
@@ -155,8 +165,9 @@ def listing_query(
     *,
     family: str | tuple[str, ...] | None = None,
     period: str | None = None,
+    tag: str | None = None,
 ) -> str:
-    """Request supported LoRA models with full file choices and cursor paging."""
+    """Request supported LoRA models with optional text and tag constraints and cursor paging."""
     labels = provider_labels("civitai")
     selected = {family} if isinstance(family, str) else set(family or ())
     if selected:
@@ -173,6 +184,8 @@ def listing_query(
     text = " ".join((query or "").split())[:MAX_QUERY]
     if text:
         parts.append(("query", text))
+    if tag:
+        parts.append(("tag", tag[:MAX_TAG_LENGTH]))
     if cursor:
         parts.append(("cursor", cursor))
     return "&".join(f"{key}={quote(value, safe='')}" for key, value in parts)
@@ -308,10 +321,18 @@ def list_page(
     *,
     family: str | tuple[str, ...] | None = None,
     period: str | None = None,
+    tag: str | None = None,
+    selected_tags: tuple[str, ...] = (),
 ) -> GalleryPage:
-    """One page of the gallery (blocking). Raises ``CivitaiError`` with Civitai's own wording on failure."""
-    body = civitai.get_listing(client, listing_query(query, sort, cursor, limit, family=family, period=period))
+    """One page of the gallery (blocking), optionally filtered by explicit selected tags."""
+    body = civitai.get_listing(client, listing_query(query, sort, cursor, limit, family=family, period=period, tag=tag))
     items = [item for item in body.get("items") or [] if isinstance(item, dict)]
+    if selected_tags:
+        selected = {value.casefold() for value in selected_tags}
+        items = [
+            item for item in items
+            if any(isinstance(name, str) and name.casefold() in selected for name in (item.get("tags") or []))
+        ]
     cards = tuple(card for card in (_card(item, family) for item in items) if card is not None)
     meta = body.get("metadata")
     nxt = meta.get("nextCursor") if isinstance(meta, dict) else None
@@ -320,6 +341,82 @@ def list_page(
     withheld = len(cards) >= WITHHELD_MIN_CARDS and all(card.nsfw_level <= 1 for card in cards)
     return GalleryPage(cards, nxt if isinstance(nxt, str) and nxt else None, len(items) - len(cards), withheld)
 
+
+
+@dataclass(slots=True)
+class _ListingStream:
+    """One Civitai search source with its own opaque cursor and loop protection."""
+
+    query: str
+    tag: str | None
+    cursor: str | None = None
+    seen: set[str] = field(default_factory=set)
+    finished: bool = False
+
+
+class GallerySearch:
+    """Bounded OR discovery: one 100-model API page from one source per scroll/fetch.
+
+    Civitai has distinct query and tag parameters, with no documented OR operator between them.
+    Text searches and tag-name searches therefore use independent cursors. An explicit tag filter
+    narrows the union. We interleave source pages, not claim a single global sort order.
+    """
+
+    def __init__(
+        self,
+        query: str,
+        tags: tuple[str, ...],
+        sort: str,
+        family: tuple[str, ...],
+        period: str | None,
+    ):
+        self.sort, self.family, self.period = sort, family, period
+        keyword = " ".join(query.split())[:MAX_QUERY]
+        unique: dict[str, str] = {}
+        for value in tags:
+            tag = value.strip()[:MAX_TAG_LENGTH]
+            if tag:
+                unique.setdefault(tag.casefold(), tag)
+        self.tags = tuple(unique.values())[:MAX_TAGS]
+        if keyword:
+            if self.tags:
+                # Each selected tag gets a query AND tag request. The keyword-as-tag stream
+                # covers tag-name matches too; its results are narrowed to selected tags.
+                self._streams = [_ListingStream(keyword, tag) for tag in self.tags]
+                self._streams.append(_ListingStream("", keyword))
+            else:
+                self._streams = [_ListingStream(keyword, None), _ListingStream("", keyword)]
+        else:
+            self._streams = [_ListingStream("", tag) for tag in self.tags]
+        self._index = 0
+        self._page = 0
+
+    @property
+    def active(self) -> bool:
+        return any(not stream.finished for stream in self._streams)
+
+    def next_page(self, client: httpx.Client) -> GalleryPage:
+        """Advance one stream by at most one API request; preserve its cursor on failure."""
+        if not self.active:
+            return GalleryPage((), None, 0, False)
+        for offset in range(len(self._streams)):
+            index = (self._index + offset) % len(self._streams)
+            source = self._streams[index]
+            if not source.finished:
+                break
+        page = list_page(
+            client, source.query, self.sort, source.cursor,
+            family=self.family, period=self.period, tag=source.tag, selected_tags=self.tags,
+        )
+        self._index = (index + 1) % len(self._streams)
+        if source.cursor is not None:
+            source.seen.add(source.cursor)
+        cursor = page.next_cursor
+        source.finished = not cursor or cursor == source.cursor or cursor in source.seen
+        source.cursor = None if source.finished else cursor
+        self._page += 1
+        # The UI's existing numeric seen-cursor guard works with these monotonic page tokens.
+        return GalleryPage(page.cards, str(self._page) if self.active else None, page.skipped, page.withheld_note)
 
 # ------------------------------------------------------------------------------------------------------ thumbnails
 
