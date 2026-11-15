@@ -12,7 +12,7 @@ import platform
 import shutil
 import subprocess
 import sys
-from importlib.metadata import version
+from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -43,6 +43,10 @@ def main(argv: list[str] | None = None) -> int:
         "--onedir", action="store_true", help="build a folder distribution instead of the default one-file executable"
     )
     args = parser.parse_args(argv)
+    try:
+        version("kmeans1d")
+    except PackageNotFoundError:
+        parser.error("Local q8p conversion requires: uv sync --group quantization.")
     # Derive all potential Component filters from source at packaging time, never at startup or Logs open.
     subprocess.run([sys.executable, str(ROOT / "tools" / "generate_diagnostic_components.py")], cwd=ROOT, check=True)
     commit, status = source_identity()
@@ -60,7 +64,7 @@ def main(argv: list[str] | None = None) -> int:
             sys.executable, "-m", "PyInstaller", "--noconfirm", "--clean", "--onedir" if args.onedir else "--onefile", "--name", "dtflow",
             "--paths", "src", "--copy-metadata", "dtflow", "--collect-data", "drawthings_py",
             "--collect-data", "dtflow", "--copy-metadata", "keyring", "--collect-binaries", "onnxruntime",
-            "--copy-metadata", "quickjs-ng", "--copy-metadata", "nodeeditor-qtpy", "--hidden-import", "quickjs", "--hidden-import", "_quickjs", "--hidden-import", "dtflow.scripting.worker",
+            "--copy-metadata", "quickjs-ng", "--copy-metadata", "nodeeditor-qtpy", "--copy-metadata", "kmeans1d", "--hidden-import", "kmeans1d", "--hidden-import", "quickjs", "--hidden-import", "_quickjs", "--hidden-import", "dtflow.scripting.worker",
             "--distpath", str(out),
         ]  # fmt: skip
         if platform.system() == "Windows":
