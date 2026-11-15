@@ -379,6 +379,7 @@ class GalleryTab(QObject):
         view.setSpacing(0)
         view.setSelectionMode(QAbstractItemView.SelectionMode.MultiSelection)
         view.setVerticalScrollMode(QAbstractItemView.ScrollMode.ScrollPerPixel)
+        view.verticalScrollBar().setSingleStep(24)  # smaller wheel increments than Qt's card-sized automatic step
         view.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOn)
         view.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         view.setMouseTracking(True)
@@ -515,7 +516,7 @@ class GalleryTab(QObject):
             self._spinner.hide()
 
     def _fetch(self) -> None:
-        """Fetch the next small cursor batch. Only scrolling or an unfilled viewport advances."""
+        """Fetch the next cursor batch. Only scrolling or an unfilled viewport advances."""
         if self._runner.closed or self._loading or not self._has_more:
             return
         if not self.form.gallerySearchEdit.text().strip():
