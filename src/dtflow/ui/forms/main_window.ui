@@ -555,6 +555,12 @@
                    <property name="textRole" stdset="0"><string>value</string></property>
                   </widget>
                  </item>
+                 <item>
+                  <layout class="QHBoxLayout" name="openDownloadsRow">
+                   <item><widget class="QPushButton" name="openDownloadsButton"><property name="text"><string>Open Downloads</string></property><property name="toolTip"><string>Open the Downloads view (F9).</string></property></widget></item>
+                   <item><spacer name="openDownloadsSpacer"><property name="orientation"><enum>Qt::Horizontal</enum></property><property name="sizeHint" stdset="0"><size><width>20</width><height>20</height></size></property></spacer></item>
+                  </layout>
+                 </item>
                 </layout>
                </widget>
               </item>
