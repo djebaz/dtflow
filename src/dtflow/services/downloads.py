@@ -16,6 +16,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from dtflow.core.models import ValidationError
+from dtflow.persistence.assets import AssetRegistry
 from dtflow.services import civitai
 from dtflow.services.lora_convert.errors import ConversionCancelled
 from dtflow.services.lora_convert.registry import FamilySpec
@@ -215,6 +216,20 @@ def _from_source(row: dict) -> DownloadItem:
         version_id=row.get("version_id"),
         model_id=row.get("model_id"),
     )
+
+
+async def prepared_contents_for_key(state: Path, credential_id: str) -> frozenset[tuple[str, int]]:
+    """Read existing confirmed DT+ receipts for this key, not remote account inventory.
+
+    Matching exact converted content, never just a filename, avoids a stale or another
+    account's receipt falsely marking a download as Prepared.
+    """
+    registry = AssetRegistry(state)
+    await registry.open()
+    try:
+        return await registry.confirmed_lora_contents(credential_id)
+    finally:
+        await registry.aclose()
 
 
 async def load_items(state: Path) -> list[DownloadItem]:
