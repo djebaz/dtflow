@@ -37,6 +37,13 @@ from dtflow.services.lora_naming import (
     occupied_from_snapshot,
     suggest_short_name,
 )
+from dtflow.services.lora_sources import (
+    civitai_record,
+    finish_conversion,
+    mark_downloaded,
+    mark_not_convertible,
+    register_source,
+)
 from dtflow.services.lora_store import LoraStore
 
 log = logging.getLogger(__name__)
@@ -108,46 +115,6 @@ async def _metadata(state: Path, version: civitai.CivitaiVersion, family: Family
     )
 
 
-def _acquisition(
-    version: civitai.CivitaiVersion, family: FamilySpec, downloaded: civitai.DownloadedFile, *, deleted: bool
-) -> dict:
-    return {
-        "provider": version.provider,
-        "model_id": version.model_id,
-        "version_id": version.version_id,
-        "file_id": version.file.id,
-        "model_name": version.model_name,
-        "version_name": version.version_name,
-        "creator": version.creator,
-        "base_model_label": version.base_model,
-        "family": family.key,
-        "permissions": version.permissions,
-        "tags": list(version.tags),
-        "trained_words": list(version.trained_words),
-        "trained_words_state": version.trained_words_state,
-        "availability": version.availability,
-        "original_filename": downloaded.display_name,
-        "source_sha256": downloaded.sha256,
-        "source_size": downloaded.size,
-        "hash_verified": downloaded.hash_verified,
-        "downloaded_at_utc": datetime.now(UTC).isoformat(),
-        "source_deleted": deleted,
-    }
-
-
-def _delete_source(state: Path, downloaded: civitai.DownloadedFile) -> bool:
-    """Permanently delete the downloaded source (no trash, no copy). Only a file this module's download made."""
-    directory = civitai.sources_dir(state).resolve()
-    path = downloaded.path
-    try:
-        if path.is_symlink() or path.resolve().parent != directory or path.name != f"{downloaded.sha256}.safetensors":
-            return False
-        path.unlink(missing_ok=True)
-        return True
-    except OSError:
-        return False
-
-
 async def _seed_triggers(state: Path, prepared: PreparedConversion, family: FamilySpec, words: str) -> bool:
     registry = AssetRegistry(state, writer=True, recover=False)
     await registry.open()
@@ -170,8 +137,22 @@ async def convert_downloaded(
     family = civitai.supported_family(version)
     note = await asyncio.to_thread(_detector_note, downloaded.path, family)
     words = default_trigger_words(version)
+    # The row exists before conversion, so a kept source always has a durable record.
+    await register_source(
+        state,
+        civitai_record(
+            version,
+            downloaded,
+            datetime.now(UTC).isoformat(),
+            family=family.key,
+            family_evidence=f"{version.provider} base model label {version.base_model!r} in families.json",
+        ),
+    )
 
-    def kept(reason: str) -> AcquiredLora:
+    await mark_downloaded(state, downloaded.sha256)
+
+    async def kept(reason: str, *, refused: bool) -> AcquiredLora:
+        await mark_not_convertible(state, downloaded.sha256, reason, refused=refused)
         diagnostic_event(
             log,
             "lora_download.not_convertible",
@@ -195,42 +176,19 @@ async def convert_downloaded(
     except ConversionCancelled:
         raise
     except ConversionError as exc:
-        return kept(exc.user_message)
+        return await kept(exc.user_message, refused=True)
     except (ValidationError, OSError) as exc:
-        return kept(str(exc) or "The converted LoRA could not be retained.")
+        return await kept(str(exc) or "The converted LoRA could not be retained.", refused=False)
 
     retained = prepared.retained
     warnings: list[str] = []
-    store = LoraStore(state)
     try:
-        await asyncio.to_thread(store.verify, retained)
-        saved = await asyncio.to_thread(
-            store.record_acquisition,
-            retained.sha256,
-            retained.size,
-            _acquisition(version, family, downloaded, deleted=False),
-        )
+        await asyncio.to_thread(LoraStore(state).verify, retained)
+        # Only now, with the .ckpt retained and verified, the source row is closed and the file permanently deleted.
+        deleted = await finish_conversion(state, downloaded.sha256, retained.sha256, retained.path)
     except (ValidationError, OSError) as exc:
-        saved = False
-        warnings.append(f"The download provenance could not be saved: {exc}")
-    deleted = False
-    if saved:
-        # Only now, with the .ckpt retained, verified and its provenance written, the source may go.
-        deleted = await asyncio.to_thread(_delete_source, state, downloaded)
-        if deleted:
-            try:
-                await asyncio.to_thread(
-                    store.record_acquisition,
-                    retained.sha256,
-                    retained.size,
-                    _acquisition(version, family, downloaded, deleted=True),
-                )
-            except (ValidationError, OSError):
-                warnings.append("The source file was deleted but its record still says it is kept.")
-        else:
-            warnings.append("The downloaded .safetensors could not be deleted; it stays in the download folder.")
-    else:
-        warnings.append("The downloaded .safetensors was kept because its provenance could not be saved.")
+        deleted = False
+        warnings.append(f"The downloaded .safetensors was kept: {exc}")
     if words:
         try:
             await _seed_triggers(state, prepared, family, words)
