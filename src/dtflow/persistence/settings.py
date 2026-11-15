@@ -118,7 +118,15 @@ def _browse_preferences(raw: object) -> dict:
     if isinstance(query, str) and len(query) <= 100 and "\x00" not in query:
         values["query"] = query
     sort = raw.get("sort")
-    if sort in ("Most Downloaded", "Highest Rated", "Newest", "Most Liked", "Most Discussed", "Most Collected", "Most Images"):
+    if sort in (
+        "Most Downloaded",
+        "Highest Rated",
+        "Newest",
+        "Most Liked",
+        "Most Discussed",
+        "Most Collected",
+        "Most Images",
+    ):
         values["sort"] = sort
     period = raw.get("period")
     if period in ("AllTime", "Year", "Month", "Week", "Day"):
@@ -145,7 +153,7 @@ def _browse_preferences(raw: object) -> dict:
 
 
 def load_civitai_browse_preferences(state: Path) -> dict:
-    """Return saved keywords, ordering, period and selected DTFlow family keys, if present."""
+    """Return saved keywords, ordering, period, families and tag pills, if present."""
     return _browse_preferences(_read(state).get("civitai_browse"))
 
 
