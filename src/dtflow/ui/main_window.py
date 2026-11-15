@@ -646,6 +646,7 @@ class MainWindow:
         form.removeRetainedLoraButton.clicked.connect(self.remove_retained_lora)
         table = form.retainedLorasTable
         table.verticalHeader().setVisible(False)
+        table.setIconSize(QSize(6, 6))  # Small status light; the full status cell keeps its tooltip hitbox.
         header = table.horizontalHeader()
         for column in (0, 1, 2):
             header.setSectionResizeMode(column, QHeaderView.ResizeMode.ResizeToContents)
@@ -2480,7 +2481,7 @@ class MainWindow:
                 if column == 0:
                     item.setData(Qt.ItemDataRole.UserRole, (sha256, size))
                 elif column == 3:
-                    item.setIcon(QIcon(status_dot(status_level, 10)))
+                    item.setIcon(QIcon(status_dot(status_level, 6)))
                     item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
                     item.setToolTip(status)
                     item.setData(Qt.ItemDataRole.AccessibleTextRole, status)
