@@ -517,6 +517,70 @@ QLabel#usagePill[state="error"] {
   border-color: ${color.statusErrorBorder};
   color: ${color.error};
 }
+/* Bottom-bar Downloads pill: the usage pill's shape as a clickable control in the dimmed navigation blue. */
+QPushButton#downloadsPill {
+  background: ${color.selection};
+  border: 1px solid ${color.selectionBorder};
+  border-radius: ${size.radiusXs};
+  color: ${color.selectionText};
+  font-size: 8pt;
+  font-weight: ${type.weightStrong};
+  padding: 0 7px;
+  min-height: 0;
+  min-width: 0;
+}
+QPushButton#downloadsPill:hover,
+QPushButton#downloadsPill:pressed {
+  background: ${color.selectionHover};
+}
+QPushButton#downloadsPill[state="ok"] {
+  border-color: ${color.statusOkBorder};
+  color: ${color.success};
+}
+QPushButton#downloadsPill[state="error"] {
+  border-color: ${color.statusErrorBorder};
+  color: ${color.error};
+}
+/* Token chip at the right of the Downloads tab bar; a click opens the credentials card. */
+QPushButton#downloadsTokenLabel {
+  background: transparent;
+  border: 1px solid ${color.borderStrong};
+  border-radius: ${size.radiusXs};
+  color: ${color.secondary};
+  font-size: ${type.small};
+  font-weight: 400;
+  min-height: 0;
+  padding: 2px 8px;
+}
+QPushButton#downloadsTokenLabel[state="ok"] {
+  border-color: ${color.statusOkBorder};
+  color: ${color.success};
+}
+QPushButton#downloadsTokenLabel[state="warning"] {
+  border-color: ${color.statusWarningBorder};
+  color: ${color.warning};
+}
+QPushButton#downloadsTokenLabel:hover {
+  background: ${color.selectionHover};
+}
+/* Thin transfer bar inside a Downloads list row. */
+QProgressBar#downloadsRowBar {
+  border: 0;
+  border-radius: ${size.radiusXs};
+  min-height: 6px;
+  max-height: 6px;
+}
+QLabel#downloadsRowDetail[state="dim"] {
+  color: ${color.disabled};
+}
+QLabel#downloadsRowDetail[state="error"] {
+  color: ${color.error};
+}
+/* Row actions in the Downloads list: compact so a 40 px row holds them. */
+QPushButton#downloadsRowButton {
+  min-height: 0;
+  padding: 3px 10px;
+}
 /* Picker pill for a LoRA the selected DT+ key does not hold; same amber as the warning usage pill. */
 QLabel#loraKeyPill, QLabel#storageCloudPill {
   background: ${color.warningSurface};
