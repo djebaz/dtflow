@@ -12,9 +12,9 @@ import stat
 import struct
 import tempfile
 import time
-from collections import Counter, deque
+from collections import Counter
 from collections.abc import Callable
-from concurrent.futures import ProcessPoolExecutor
+from concurrent.futures import FIRST_COMPLETED, ProcessPoolExecutor, wait
 from concurrent.futures.process import BrokenProcessPool
 from contextlib import AbstractContextManager, ExitStack, closing
 from dataclasses import dataclass
@@ -35,7 +35,7 @@ from dtflow.services.lora_q8p_codec import (
     QuantizationError,
     decode,
     encode,
-    encode_chunk,
+    encode_chunks,
     q8p_fits,
     start_encoder_worker,
 )
@@ -44,6 +44,8 @@ MAX_TENSORS = 20_000
 MAX_TENSOR_BYTES = 64 * 1024**2
 MAX_FILE_BYTES = 8 * 1024**3
 WRITER_FAMILIES = {"krea_2", "z_image", "sdxl_base_v0.9"}
+CPU_BATCH_ITEMS = 8
+CPU_SMALL_ELEMENTS = BLOCK // 4
 UPSTREAM = {
     "draw_things": "4e986724c6c65cdc8b9eeb8a2d2f4775c698e007",
     "s4nnc": "50d060dba795a6d9ca8497ed0222dde7492a8d12",
@@ -288,37 +290,74 @@ def _encoding_tasks(source):
             yield _Encoding(tensor, values, 1, bytearray()), values, True
 
 
-def _encoded_tensors(source, pool, workers, tick):
+def _cpu_batches(tasks):
+    """Large blocks stay independent; group at most eight small tasks and one block's worth of values."""
+    batch, elements = [], 0
+    for task in tasks:
+        count = len(task[1])
+        if batch and (count > CPU_SMALL_ELEMENTS or elements + count > BLOCK or len(batch) == CPU_BATCH_ITEMS):
+            yield batch
+            batch, elements = [], 0
+        if count > CPU_SMALL_ELEMENTS:
+            yield [task]
+        else:
+            batch.append(task)
+            elements += count
+    if batch:
+        yield batch
+
+
+def _encoded_tensors(source, pool, workers, tick, check_cancelled):
     if pool is None:
         for tensor in source.tensors:
             values = decode(source.payload(tensor), tensor.count, 0)
             codec, payload = encode(values, tick)
             yield tensor, values, codec, payload
         return
-    tasks = _encoding_tasks(source)
-    pending = deque()
+    batches = iter(_cpu_batches(_encoding_tasks(source)))
+    pending, ready = {}, {}
+    submitted = emitted = 0
+    exhausted = False
 
-    def submit(task):
-        work, values, whole = task
-        pending.append((work, pool.submit(encode_chunk, values, whole)))
+    def refill():
+        nonlocal submitted, exhausted
+        check_cancelled()
+        # Running/queued tasks <= 2x workers. Completed out-of-order results also occupy the bounded 4x window.
+        while not exhausted and len(pending) < 2 * workers and submitted - emitted < 4 * workers:
+            check_cancelled()
+            batch = next(batches, None)
+            if batch is None:
+                exhausted = True
+                break
+            future = pool.submit(encode_chunks, [(values, whole) for _, values, whole in batch])
+            pending[future] = (submitted, batch)
+            submitted += 1
 
     try:
-        for task in islice(tasks, workers):
-            submit(task)
-        while pending:
-            # This queue spans tensor boundaries, even when each tensor has just one block.
-            work, future = pending.popleft()
-            codec, payload = future.result()
-            work.payload.extend(payload)
-            work.remaining -= 1
-            tick()
-            if work.remaining == 0:
-                yield work.tensor, work.values, codec, bytes(work.payload)
-            task = next(tasks, None)
-            if task is not None:
-                submit(task)
+        refill()
+        while pending or ready:
+            if emitted not in ready:
+                check_cancelled()
+                completed, _ = wait(pending, return_when=FIRST_COMPLETED)
+                for future in completed:
+                    index, batch = pending.pop(future)
+                    ready[index] = (batch, future.result())
+                refill()
+            while emitted in ready:
+                batch, results = ready.pop(emitted)
+                emitted += 1
+                # Keep workers supplied before assembly, comparison or SQLite writes can suspend this generator.
+                refill()
+                if len(results) != len(batch):
+                    raise QuantizationError("encoder_result", "CPU batch returned an unexpected number of blocks.")
+                for (work, _, _), (codec, payload) in zip(batch, results, strict=True):
+                    work.payload.extend(payload)
+                    work.remaining -= 1
+                    tick()
+                    if work.remaining == 0:
+                        yield work.tensor, work.values, codec, bytes(work.payload)
     finally:
-        for _, future in pending:
+        for future in pending:
             future.cancel()
 
 
@@ -377,6 +416,7 @@ def quantize_file(
             raise QuantizationError(
                 "clustering_unavailable", "Install the optional quantization group: uv sync --group quantization."
             ) from exc
+
     def check_cancelled():
         if cancel is not None and cancel.is_set():
             raise QuantizationError("cancelled", "Local quantization cancelled; no output was published.")
@@ -422,7 +462,7 @@ def quantize_file(
                 encoded_tensors = (
                     _batch_encoded_tensors(source, batch_encoder, tick)
                     if batch_encoder is not None
-                    else _encoded_tensors(source, pool, workers, tick)
+                    else _encoded_tensors(source, pool, workers, tick, check_cancelled)
                 )
                 for tensor, values, codec, payload in encoded_tensors:
                     differences.add(values, decode(payload, tensor.count, codec))
@@ -475,6 +515,16 @@ def quantize_file(
                     ),
                     "workers": workers,
                     "detected_cpus": detected_cpus,
+                    **(
+                        {
+                            "pending_task_limit": 2 * workers,
+                            "reorder_task_limit": 4 * workers,
+                            "small_batch_max_items": CPU_BATCH_ITEMS,
+                            "small_task_max_elements": CPU_SMALL_ELEMENTS,
+                        }
+                        if pool is not None
+                        else {}
+                    ),
                 },
                 "numerical_difference_from_input": differences.summary(),
                 "seconds": round(time.monotonic() - started, 3),

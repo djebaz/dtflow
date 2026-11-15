@@ -33,7 +33,7 @@ class QuantizationError(ValidationError):
 
 
 def start_encoder_worker():
-    # The parent owns interruption and drains at most one admitted block per worker.
+    # The parent owns interruption, cancels queued work and drains running bounded batches.
     signal.signal(signal.SIGINT, signal.SIG_IGN)
 
 
@@ -72,6 +72,11 @@ def encode_chunk(values: np.ndarray, whole_tensor: bool) -> tuple[int, bytes]:
     if whole_tensor:
         return encode(values, lambda: None)
     return Q8P, encode_q8p_block(values)
+
+
+def encode_chunks(chunks: list[tuple[np.ndarray, bool]]) -> list[tuple[int, bytes]]:
+    """Amortize a process transfer over a bounded group of otherwise unchanged small encodings."""
+    return [encode_chunk(values, whole) for values, whole in chunks]
 
 
 def decode(payload: bytes, count: int, codec: int) -> np.ndarray:
