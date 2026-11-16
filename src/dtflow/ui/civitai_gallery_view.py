@@ -734,7 +734,7 @@ class GalleryTab(QObject):
         """Normalize typed chips and refresh a running search only after a tag is applied."""
         unique: dict[str, str] = {}
         for value in self._tags.values():
-            tag = value.strip()[:gallery.MAX_TAG_LENGTH]
+            tag = value.strip()[: gallery.MAX_TAG_LENGTH]
             if tag:
                 unique.setdefault(tag.casefold(), tag)
         values = tuple(unique.values())
@@ -764,8 +764,11 @@ class GalleryTab(QObject):
         sort, families, period = form.gallerySortCombo, form.galleryFamilyCombo, form.galleryPeriodCombo
         labels = (
             gallery.SORTS,
-            ("All families", *(name for _, name in self._family_choices),
-             *(f"{count} families" for count in range(2, len(self._family_choices) + 1))),
+            (
+                "All families",
+                *(name for _, name in self._family_choices),
+                *(f"{count} families" for count in range(2, len(self._family_choices) + 1)),
+            ),
             ("All time", "This year", "This month", "This week", "Today"),
         )
         # Shared QSS: 7px left padding, 34px arrow/padding, 1px border on each side.
@@ -964,8 +967,10 @@ class GalleryTab(QObject):
         self._cursor = None
         self._seen_cursors.clear()
         self._search_session = gallery.GallerySearch(
-            self.form.gallerySearchEdit.text(), self._selected_tags,
-            self.form.gallerySortCombo.currentText(), self._selected_families,
+            self.form.gallerySearchEdit.text(),
+            self._selected_tags,
+            self.form.gallerySortCombo.currentText(),
+            self._selected_families,
             self.form.galleryPeriodCombo.currentData(),
             keyword_tag_mode=self._keyword_tag_mode,
             tag_match_mode=self._tag_match_mode,
@@ -1124,9 +1129,7 @@ class GalleryTab(QObject):
             return
         self._initial_pages_done = True
         if not self._has_more:
-            self.form.galleryStatus.setText(
-                f"{count} LoRAs loaded · End of results" if count else "No results."
-            )
+            self.form.galleryStatus.setText(f"{count} LoRAs loaded · End of results" if count else "No results.")
             if not count:
                 self._show_empty_state("No results.")
         elif no_progress:
@@ -1137,7 +1140,8 @@ class GalleryTab(QObject):
             self.form.galleryContinueButton.show()
             self.form.galleryStatus.setText(
                 f"{count} LoRAs loaded · No new models or versions in this batch."
-                if count else "No matching results yet. Search further to continue."
+                if count
+                else "No matching results yet. Search further to continue."
             )
             if not count:
                 self._show_empty_state("No matches yet. Select Search further to continue.")

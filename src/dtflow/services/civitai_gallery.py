@@ -356,9 +356,7 @@ def list_page(
     tag_match_mode: str = "or",
 ) -> GalleryPage:
     """One page of the gallery, with optional local AND/OR checks for selected tags."""
-    body = civitai.get_listing(
-        client, listing_query(query, sort, cursor, limit, family=family, period=period, tag=tag)
-    )
+    body = civitai.get_listing(client, listing_query(query, sort, cursor, limit, family=family, period=period, tag=tag))
     items = [item for item in body.get("items") or [] if isinstance(item, dict)]
     total = len(items)
     if selected_tags:
