@@ -10,7 +10,7 @@ from pathlib import Path
 
 from dtflow._diagnostic_notifications import DiagnosticNotice
 from dtflow.build import display_identity, identity
-from dtflow.diagnostics import event as diagnostic_event
+from dtflow.diagnostics import event as diagnostic_event, set_perf
 from dtflow.logging_setup import LoggingSetupError, configure_logging
 
 log = logging.getLogger("dtflow.desktop")
@@ -31,6 +31,9 @@ def parser() -> argparse.ArgumentParser:
     command.add_argument("-h", "--help", action="store_true", help="Show desktop launch options.")
     command.add_argument("-v", "--version", action="store_true", help="Show application version and build identity.")
     command.add_argument("-x", "--dev", action="store_true", help="Add sanitized diagnostic detail to the log file.")
+    command.add_argument(
+        "-perf", "--perf", action="store_true", help="With -x, also write performance measurements to the log file."
+    )
     command.add_argument("-q", "--logs", type=Path, help="Override the diagnostic log directory.")
     command.add_argument("-nc", "--no-cache", action="store_true", help="Bypass disposable cache reads and writes.")
     return command
@@ -58,6 +61,7 @@ def _run(argv: list[str] | None, report: Callable[..., None]) -> int:
         report(display_identity())
         return 0
 
+    set_perf(args.perf)
     session = None
     notices = DiagnosticNotice()
     try:

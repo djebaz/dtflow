@@ -19,7 +19,7 @@ from PySide6.QtGui import QGuiApplication, QPixmap
 from PySide6.QtWidgets import QLabel, QTableView
 
 from dtflow.diagnostics import measurement
-from dtflow.logging_setup import dev_enabled
+from dtflow.logging_setup import perf_enabled
 from dtflow.persistence import gallery as gallery_storage
 from dtflow.services.gallery import item_from_record
 from dtflow.ui.gallery_page import THUMBNAIL_SIDE, _image
@@ -218,7 +218,7 @@ class QueueThumbnails(QObject):
             async def work(filename=path, ident=identity):
                 return await asyncio.to_thread(_decode, filename, ident, self._state)
 
-            started = monotonic() if dev_enabled() else None
+            started = monotonic() if perf_enabled() else None
             self._runner.submit(
                 work(), lambda result, error, e=epoch, k=key, s=started: self._done(e, k, result, error, s)
             )
@@ -234,7 +234,7 @@ class QueueThumbnails(QObject):
 
     def _done(self, epoch: int, key, result, error, started: float | None = None) -> None:
         self._active = max(0, self._active - 1)
-        if started is not None and dev_enabled():
+        if started is not None and perf_enabled():
             image, issue = result if error is None and result else (None, "")
             outcome = (
                 "obsolete"

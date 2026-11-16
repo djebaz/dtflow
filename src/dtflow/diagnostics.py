@@ -67,6 +67,19 @@ def set_timing(enabled: bool) -> None:
     _TIMING = bool(enabled)
 
 
+_PERF = False
+
+
+def set_perf(enabled: bool) -> None:
+    """Switch the opt-in ``-perf`` performance measurements; they are written only together with ``-x``."""
+    global _PERF
+    _PERF = bool(enabled)
+
+
+def perf_requested() -> bool:
+    return _PERF
+
+
 def timing_enabled() -> bool:
     return _TIMING
 
@@ -159,12 +172,16 @@ def event(
 
 
 def measurement(logger: logging.Logger, name: str, **data) -> None:
-    """A source measurement, with original types and unrounded units."""
+    """A source measurement, with original types and unrounded units; written only with ``-x -perf``."""
+    if not _PERF:
+        return
     event(logger, name, level=logging.DEBUG, data=data, kind="measurement")
 
 
 def source_summary(logger: logging.Logger, phase: str, stats: dict, *, namespace: str = "gallery") -> None:
-    """Already-aggregated observations; no invented CPU maximum or p95."""
+    """Already-aggregated observations; no invented CPU maximum or p95. Written only with ``-x -perf``."""
+    if not _PERF:
+        return
     count = stats["samples"]
     event(
         logger,

@@ -74,7 +74,7 @@ Gallery launch defaults are `-ml 20 -mc 100`: 20 records per batch/page chip and
 
 For developer thumbnail-cache comparisons, use `dtflow gui -format jpg` (default, JPEG quality 85) or `dtflow gui -format webp` (WebP quality 80); `--format` is equivalent. This GUI-only argument goes after `gui`, is not persisted, and does not change original images or JPEG export. Alpha-channel thumbnails retain WebP even in JPG mode. The selected format has a separate cache fingerprint; switching rebuilds entries as they are viewed, with old entries removed on successful replacement. Clear thumbnails removes both formats.
 
-Top level: `-v/--version`, `-x/--dev` (more log detail only), `-q/--logs DIR`.
+Top level: `-v/--version`, `-x/--dev` (more log detail only), `-perf/--perf` (with `-x`, also write performance measurements), `-q/--logs DIR`.
 
 Fake-only: `-f/--scenario`.
 
