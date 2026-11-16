@@ -36,9 +36,11 @@ workspace in detail.
 
 ## Getting started
 
-Connection → Custom LoRAs offers experimental per-row **Quantize q8p** for supported managed F16 LoRAs. It keeps the original and retains a separate q8p copy, then offers **Prepare** through the existing approval editor; quantization never uploads. The full section header expands/collapses the taller library table. Source installs require `uv run --group quantization dtflow gui`; Windows builds include the optional native dependency. CLI and [Colab](tools/colab/dtflow_lora_q8p.ipynb) remain standalone experiments. Revised library UX, Windows packaging and provider quality require separate owner smoke.
+Connection → Custom LoRAs offers experimental per-row **Quantize q8p** for supported managed F16 LoRAs. It keeps the original and retains a separate q8p copy, then offers **Prepare** through the existing approval editor; quantization never uploads. The full section header expands/collapses the taller library table. Source installs require `uv run --group quantization dtflow gui`; Windows builds include the optional native dependency. CLI and [Colab](tools/colab/dtflow_lora_q8p.ipynb) remain standalone experiments. Owner source smoke covers selected managed CPU conversion and provider workflows; exact packaged-executable acceptance and broad model/GPU equivalence remain separate.
 
 ### Windows executable
+
+See [6.4.0 changes](devdocs/releases/v6.4.0.md); the published release and attached artifact identity establish availability.
 
 Published releases attach a single-file Windows GUI executable to
 [GitHub Releases](https://github.com/djebaz/dtflow/releases). Download it, verify it against the
