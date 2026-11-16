@@ -43,6 +43,8 @@ Both modes can consume substantial disk space in `build/` and `dist/`. A Windows
 
 PyInstaller 6.22.3 is the previously recorded Windows build-tool version; the command requests it temporarily without changing the application lockfile. Record the actual Python, Windows, architecture and build-tool versions with acceptance evidence. Build public releases from a clean checkout. A development build with tracked modifications warns and stamps `dirty`; do not present it as a clean release.
 
+The q8p dependency needs package data as well as its Python/native modules and distribution metadata: `kmeans1d.core` reads `kmeans1d/version.txt` during import. The canonical builder collects this file, and release verification rejects an archive without it. Dependency groups are a source/build-environment concern; standalone users do not install a quantization group. Identity/data verification still does not replace owner q8p smoke in the exact EXE.
+
 The script prints the output path and source identity only after a successful build. The artifact is:
 
 ```text

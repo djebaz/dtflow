@@ -63,7 +63,7 @@ def main(argv: list[str] | None = None) -> int:
         command = [
             sys.executable, "-m", "PyInstaller", "--noconfirm", "--clean", "--onedir" if args.onedir else "--onefile", "--name", "dtflow",
             "--paths", "src", "--copy-metadata", "dtflow", "--collect-data", "drawthings_py",
-            "--collect-data", "dtflow", "--copy-metadata", "keyring", "--collect-binaries", "onnxruntime",
+            "--collect-data", "dtflow", "--collect-data", "kmeans1d", "--copy-metadata", "keyring", "--collect-binaries", "onnxruntime",
             "--copy-metadata", "quickjs-ng", "--copy-metadata", "nodeeditor-qtpy", "--copy-metadata", "kmeans1d", "--hidden-import", "kmeans1d", "--hidden-import", "quickjs", "--hidden-import", "_quickjs", "--hidden-import", "dtflow.scripting.worker",
             "--distpath", str(out),
         ]  # fmt: skip
