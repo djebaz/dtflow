@@ -14,7 +14,7 @@ from __future__ import annotations
 import re
 import threading
 from collections import OrderedDict
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from urllib.parse import quote, urljoin, urlsplit
 
 import httpx
@@ -142,6 +142,36 @@ class GalleryCard:
         if self.problem:
             lines.append(self.problem)
         return "\n".join(lines)
+
+
+def merge_cards(existing: GalleryCard, incoming: GalleryCard) -> GalleryCard:
+    """Keep one model card while retaining all version/file choices seen in later API pages."""
+    if existing.model_id != incoming.model_id:
+        raise ValueError("Cannot merge different Civitai models.")
+
+    options = {option.key: option for option in existing.options}
+    for option in incoming.options:
+        options.setdefault(option.key, option)
+
+    # Keep the displayed representative stable unless the first response had no usable file.
+    primary, secondary = (existing, incoming) if existing.options or not incoming.options else (incoming, existing)
+    cover = primary if primary.cover_url else secondary
+    return replace(
+        primary,
+        options=tuple(options.values()),
+        families=tuple(dict.fromkeys((*existing.families, *incoming.families))),
+        tags=tuple(dict.fromkeys((*existing.tags, *incoming.tags)))[:24],
+        trained_words=tuple(dict.fromkeys((*existing.trained_words, *incoming.trained_words)))[:16],
+        cover_url=cover.cover_url,
+        nsfw_level=cover.nsfw_level,
+        creator=primary.creator or secondary.creator,
+        published=primary.published or secondary.published,
+        availability=primary.availability or secondary.availability,
+        downloads=primary.downloads if primary.downloads is not None else secondary.downloads,
+        thumbs_up=primary.thumbs_up if primary.thumbs_up is not None else secondary.thumbs_up,
+        thumbs_down=primary.thumbs_down if primary.thumbs_down is not None else secondary.thumbs_down,
+        problem=None if options else primary.problem or secondary.problem,
+    )
 
 
 @dataclass(frozen=True, slots=True)
