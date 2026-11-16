@@ -4,6 +4,8 @@
 **Product:** DTFlow (DTF)  
 **Repository:** `djebaz/dtflow`
 
+**Current release checkpoint (2026-11-16):** 6.4.0 preparation includes merged main through PR #480; see [current status](../current_dev_status.md) and the [release audit](2026-11-16-release-6.4.0.md). The phase map below remains historical engineering scope, not a new acceptance claim.
+
 ## Current delivery map — 2026-10-21
 
 This remains the engineering master plan. The original sequence and scenario IDs below define scope and testing ownership; future-tense requirements are not a statement that implemented work is absent. This reconciliation uses merged main `16a4170` after PR #148 and the [5.1.0 preparation](2026-10-21-release-5.1.0.md). Published 5.0.0 and proposed 5.1.0 are application releases, not phase-completion numbers.
