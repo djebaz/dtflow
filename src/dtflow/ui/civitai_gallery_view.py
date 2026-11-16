@@ -610,6 +610,7 @@ class GalleryTab(QObject):
 
         # The chip editor expands on the left; slim mode toggles stay at the far right.
         self._modes_host = QWidget(form.galleryTagsRow)
+        self._modes_host.setFixedHeight(23)
         modes_layout = QHBoxLayout(self._modes_host)
         modes_layout.setContentsMargins(0, 0, 0, 0)
         modes_layout.setSpacing(10)
@@ -617,18 +618,22 @@ class GalleryTab(QObject):
         self._mode_buttons: dict[str, QPushButton] = {}
         for key, caption in (("keyword_tag_mode", "Search / Tags"), ("tag_match_mode", "Between tags")):
             group = QWidget(self._modes_host)
+            group.setFixedHeight(23)
             row = QHBoxLayout(group)
             row.setContentsMargins(0, 0, 0, 0)
             row.setSpacing(5)
-            row.addWidget(QLabel(caption, group))
+            caption_label = QLabel(caption, group)
+            caption_label.setObjectName("galleryModeCaption")
+            caption_label.setFixedHeight(23)
+            row.addWidget(caption_label, 0, Qt.AlignmentFlag.AlignVCenter)
             button = QPushButton(group)
             button.setObjectName("galleryModeToggle")
             button.setFixedHeight(23)
             button.setMinimumWidth(45)
             button.setCursor(Qt.CursorShape.PointingHandCursor)
             button.clicked.connect(lambda _checked=False, setting=key: self._toggle_filter_mode(setting))
-            row.addWidget(button)
-            modes_layout.addWidget(group)
+            row.addWidget(button, 0, Qt.AlignmentFlag.AlignVCenter)
+            modes_layout.addWidget(group, 0, Qt.AlignmentFlag.AlignVCenter)
             self._mode_groups[key] = group
             self._mode_buttons[key] = button
         form.galleryTagsLayout.addWidget(
