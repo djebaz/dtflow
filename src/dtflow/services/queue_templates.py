@@ -2,7 +2,7 @@
 
 from dataclasses import asdict, dataclass, fields, replace
 
-from dtflow.core.models import MAX_QUEUE_CONCURRENCY, ResolvedGenerationRequest, ValidationError, integer
+from dtflow.core.models import ResolvedGenerationRequest, ValidationError, integer
 from dtflow.core.queue_authoring import PlanForm, queue_edit_from_source
 from dtflow.core.request_records import request_from_record
 from dtflow.persistence import queue_templates as storage
@@ -14,7 +14,6 @@ class Recipe:
     form: PlanForm
     count: int
     backend: str
-    cap: int
     reconstructed: bool = False
 
 
@@ -37,7 +36,6 @@ def recipe_record(recipe: Recipe) -> dict:
     record = {
         "version": 1,
         "backend": recipe.backend,
-        "cap": recipe.cap,
         "reconstructed": recipe.reconstructed,
         "source": {"version": 1, "base": base, "form": asdict(recipe.form), "count": recipe.count},
     }
@@ -47,13 +45,14 @@ def recipe_record(recipe: Recipe) -> dict:
 
 def recipe_from_record(record: dict) -> Recipe:
     try:
-        if not isinstance(record, dict) or set(record) != {"version", "backend", "cap", "source", "reconstructed"}:
+        # A recipe saved by an older version also carries a "cap"; queues have no maximum of their own now (#492), so
+        # it is accepted and ignored.
+        if not isinstance(record, dict) or set(record) - {"cap"} != {"version", "backend", "source", "reconstructed"}:
             raise ValidationError("Unsupported template fields.")
         if type(record["version"]) is not int or record["version"] != 1:
             raise ValidationError("Unsupported template recipe version.")
         if record["backend"] not in ("fake", "local", "cloud"):
             raise ValidationError("Unsupported template backend requirement.")
-        integer(record["cap"], 1, MAX_QUEUE_CONCURRENCY, "Template concurrency")
         if type(record["reconstructed"]) is not bool:
             raise ValidationError("Invalid template reconstruction evidence.")
         source = record["source"]
@@ -90,7 +89,6 @@ def recipe_from_record(record: dict) -> Recipe:
             edited.form,
             edited.count,
             record["backend"],
-            record["cap"],
             record["reconstructed"],
         )
     except (KeyError, TypeError, ValueError, AttributeError) as exc:

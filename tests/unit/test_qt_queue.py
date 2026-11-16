@@ -20,7 +20,6 @@ from PySide6.QtGui import QImage  # noqa: E402
 from support.fake_vault import Vault  # noqa: E402
 
 from dtflow.core.models import ResolvedGenerationRequest  # noqa: E402
-from dtflow.persistence.settings import load_cloud_concurrency  # noqa: E402
 from dtflow.services import queue_session as queue_service  # noqa: E402
 from dtflow.services.credentials import SavedCredentials  # noqa: E402
 from dtflow.services.queue import QueueDispatcher  # noqa: E402
@@ -223,7 +222,6 @@ def test_unknown_outcome_does_not_block_and_is_never_replayed(window, qtbot, tmp
             state,
             {"name": "fake", "endpoint": None, "scenario": "lost"},
             expand_items(ResolvedGenerationRequest("b", "fixture", "fake-fixture", 0), 2),
-            1,
         ),
         lambda *_: None,
     )
@@ -245,7 +243,7 @@ def test_restart_restores_a_reserved_item_as_pending_in_a_paused_queue(window, q
     from dtflow.persistence.store import SQLiteAttempts
 
     async def crash_then_reopen(state):
-        queue_id, _ = await create_queue(
+        queue_id = await create_queue(
             state,
             {"name": "fake", "endpoint": None},
             expand_items(ResolvedGenerationRequest("b", "x", "fake-fixture", 0), 2),
@@ -270,21 +268,16 @@ def test_restart_restores_a_reserved_item_as_pending_in_a_paused_queue(window, q
     assert state_text(window).startswith("Paused") and page.queuePrimaryButton.isEnabled()
 
 
-def test_concurrency_threshold_color_and_shared_setting(window, qtbot):
+def test_queue_page_has_no_concurrency_input(window):
     page = window.queue_page
-    assert page.newQueueCapSpinBox.maximum() == page.concurrencySpinBox.maximum() == 10
-    page.newQueueCapSpinBox.setValue(3)
-    assert page.newQueueCapSpinBox.property("level") == "elevated"
-    page.newQueueCapSpinBox.setValue(2)
-    assert page.newQueueCapSpinBox.property("level") == "normal"
-    assert not (window.state_dir / "settings.json").exists()  # fake/local never write the shared cloud maximum
-    window.form.backendCombo.setCurrentText("cloud")
-    page.newQueueCapSpinBox.setValue(3)
-    qtbot.waitUntil(lambda: (window.state_dir / "settings.json").exists(), timeout=20000)
-    assert load_cloud_concurrency(window.state_dir) == 3
-    page.newQueueCapSpinBox.setValue(10)
-    qtbot.waitUntil(lambda: load_cloud_concurrency(window.state_dir) == 10, timeout=20000)
-    assert "memory budget" in page.concurrencySpinBox.toolTip()
+    for name in (
+        "concurrencySpinBox",
+        "concurrencyLabel",
+        "newQueueCapSpinBox",
+        "newQueueCapLabel",
+        "composerSummaryCapLabel",
+    ):
+        assert not hasattr(page, name)
 
 
 def test_new_queue_selection_resets_filters_and_reads_items_without_idle_polling(window, qtbot):
@@ -347,7 +340,7 @@ def test_queue_timing_reaches_bar_and_tooltip_without_changing_real_progress(win
     )
     queue._dispatching = current["queue_id"]
     window.activity.set(dispatching=True)
-    queue._read_done(([current], current, 4), None)
+    queue._read_done(([current], current), None)
     row = strip.rows["run"]
     assert row.property("inBar") and strip.bar.isVisible()
     assert strip.bar.strip.model.elapsed == queue._activity.run_state.elapsed.removeprefix("Elapsed ")
@@ -369,11 +362,11 @@ def test_queue_timing_reaches_bar_and_tooltip_without_changing_real_progress(win
     tick[0] += 1
     queue._timing_tick()
     assert strip.bar.strip.model.eta == "~0:59 left"
-    queue._read_done(([current], current, 4), None)
+    queue._read_done(([current], current), None)
     assert strip.bar.strip.model.eta == "~0:59 left"  # an unchanged database poll preserves the countdown
     assert (row.activityProgress.value(), row.activityProgress.maximum()) == (1, 3)
     paused = dict(current, status="paused")
-    queue._read_done(([paused], paused, 4), None)
+    queue._read_done(([paused], paused), None)
     assert not strip.bar.strip.model.eta and strip.bar.strip.model.elapsed
     # Auto-play switches the displayed identity: the next queue gets a fresh Stop, not A's disabled state.
     following = dict(current, queue_id="following-queue")
@@ -424,15 +417,10 @@ def test_composer_keeps_its_source_prompt_and_only_copies_to_generate_explicitly
     window.generation_page.promptEdit.setPlainText("Explicit replacement")
     page.editInGenerateButton.click()
     assert page.composerPromptEdit.toPlainText() == "Explicit replacement"
-    # A Generate backend change must not relabel or change the captured draft's cap policy.
+    # A Generate backend change must not relabel the captured draft.
     monkeypatch.setattr(queue, "_backend", lambda: ("cloud", None))
     assert "Provider: fake" in queue.quick_disclosure(plan=True)
     assert "Provider: cloud" in queue.quick_disclosure(plan=False)
-    shared_epoch = queue._shared_epoch
-    page.newQueueCapSpinBox.setValue(3)
-    queue._show_new_cap()
-    assert queue._shared_epoch == shared_epoch
-    assert page.newQueueCapSpinBox.value() == 3
     window.queue_popover.plan_option.setChecked(True)
     window.queue_popover.refresh()
     assert "new queue's draft" in window.queue_popover.note_label.text()
@@ -452,7 +440,6 @@ def test_queue_templates_save_load_cancel_dirty_and_create_without_touching_gene
     page.planModeCombo.setCurrentText("Cross")
     page.planVariationCombo.setCurrentText("Every combination")
     page.queueCountSpinBox.setValue(9)  # retained even while Cross uses its variation dimension
-    page.newQueueCapSpinBox.setValue(3)
     panel = feedback(page)
     page.saveQueueTemplateButton.click()
     panel._editor.setText("My queue recipe")
@@ -479,7 +466,7 @@ def test_queue_templates_save_load_cancel_dirty_and_create_without_touching_gene
     load()
     page.loadQueueTemplateButton.click()  # explicit Confirm, not a second library request
     assert page.composerPromptEdit.toPlainText() == "source {cat|dog}"
-    assert page.planRngSeedEdit.text() == "" and page.newQueueCapSpinBox.value() == 3
+    assert page.planRngSeedEdit.text() == ""
     assert page.queueCountSpinBox.value() == 9
     assert window.generation_page.promptEdit.toPlainText() == "Generate stays independent"
     assert not queue._views
@@ -515,9 +502,7 @@ def test_queue_templates_save_load_cancel_dirty_and_create_without_touching_gene
 
 
 @pytest.mark.parametrize("active", ("fake", "cloud"))
-def test_template_backend_binding_and_cap_do_not_switch_connection_or_shared_default(
-    window, qtbot, monkeypatch, active
-):
+def test_template_backend_binding_does_not_switch_connection(window, qtbot, monkeypatch, active):
     from dataclasses import replace
 
     from dtflow.services.queue_templates import save_template
@@ -527,20 +512,14 @@ def test_template_backend_binding_and_cap_do_not_switch_connection_or_shared_def
     window.form.queueNavigationButton.click()
     queue, page = window.queue, window.queue_page
     queue.open_composer()
-    recipe = replace(queue.templates.capture(), backend="cloud", cap=7)
+    recipe = replace(queue.templates.capture(), backend="cloud")
     template = save_template(window.state_dir, "Cloud recipe", recipe)
     monkeypatch.setattr(queue, "_backend", lambda: (active, None))
     panel = feedback(page)
-    epoch = queue._shared_epoch
     queue.templates.load(template)
     assert panel._armed and queue._backend()[0] == active
     page.loadQueueTemplateButton.click()
     assert queue._composer_backend()[0] == active  # explicit rebinding, not a changed connection
-    assert page.newQueueCapSpinBox.value() == 7 and queue._shared_epoch == epoch
-    queue._shared_cap = 4
-    queue._show_new_cap()
-    assert page.newQueueCapSpinBox.value() == 7
     monkeypatch.setattr(queue, "_backend", lambda: ("local", None))
     queue.create("save")
     assert not queue._views  # a later connection change needs explicit review/rebinding
-    assert queue._shared_epoch == epoch

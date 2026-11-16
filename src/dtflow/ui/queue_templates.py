@@ -44,7 +44,6 @@ class QueueTemplates(QObject):
             q._plan_form(),
             self.page.queueCountSpinBox.value(),
             backend,
-            self.page.newQueueCapSpinBox.value(),
             q._authoring_reconstructed,
         )
         return service.recipe_from_record(service.recipe_record(recipe))
@@ -301,7 +300,7 @@ class QueueTemplates(QObject):
         self.applying = True
         blockers = [
             QSignalBlocker(getattr(self.page, name))
-            for name in (*PLAN_INPUTS, "newQueueCapSpinBox", "composerPromptEdit")
+            for name in (*PLAN_INPUTS, "composerPromptEdit")
             if name != "planRerollButton"
         ]
         try:
@@ -311,7 +310,7 @@ class QueueTemplates(QObject):
                 recipe.count,
                 "Reconstructed authoring input; review before reuse." if recipe.reconstructed else "",
             )
-            self.queue._edit_loaded((edited, {"name": active[0], "endpoint": active[1]}, (), recipe.cap), None)
+            self.queue._edit_loaded((edited, {"name": active[0], "endpoint": active[1]}, ()), None)
             self.page.queueCountSpinBox.setValue(recipe.count)  # retain the dormant Repeat count in Pair/Cross recipes
         finally:
             del blockers

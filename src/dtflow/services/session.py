@@ -52,7 +52,7 @@ from dtflow.diagnostics import event as diagnostic_event
 from dtflow.persistence.assets import AssetRegistry, AssetsBusyError, newest_per_name
 from dtflow.persistence.gallery_snapshot import schedule_publish
 from dtflow.persistence.inventory_cache import load_inventory, save_inventory
-from dtflow.persistence.settings import load_cloud_concurrency
+from dtflow.persistence.settings import load_dtplus_concurrency
 from dtflow.persistence.store import PersistenceError, SQLiteAttempts
 from dtflow.services.assets import AssetService, possible_missing_asset
 from dtflow.services.credentials import EnvironmentCredentials, resolve_credentials
@@ -175,12 +175,12 @@ def selection_for(
     delay: float = 0.0,
     previews: bool = False,
 ) -> BackendSelection:
-    """The explicit backend selection, with the persisted cloud concurrency maximum applied for cloud.
+    """The explicit backend selection, with the Connection page DT+ concurrency default applied for cloud.
 
     ``scenario``, ``delay`` and ``previews`` configure the fake backend's simulation and mean nothing elsewhere.
     """
     return BackendSelection(
-        name, endpoint, load_cloud_concurrency(state) if name == "cloud" else 4, scenario, delay, previews
+        name, endpoint, load_dtplus_concurrency(state) if name == "cloud" else 4, scenario, delay, previews
     )
 
 

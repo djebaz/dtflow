@@ -165,15 +165,6 @@ STATUS_CHIP = {
     "finished": "Finished",
     "cancelled": "Cancelled",
 }
-CONCURRENCY_HINT = (
-    "Maximum number of images generated at the same time (1 to 10). Cloud text-to-image reserves 32 MiB per request "
-    "from a 320 MiB shared memory budget; image edits may reserve more. Local Draw Things always runs one at a time. "
-    "This is a DTFlow setting, not a verified cloud entitlement."
-)
-NEW_CAP_HINT = (
-    "Maximum number of images generated at the same time (1 to 10). With cloud chosen, this also saves the default "
-    "for new cloud queues. Local Draw Things always runs one at a time; provider and memory limits still apply."
-)
 GROUPS = (("running", "Running"), ("queued", "Up next"), ("paused", "Paused"), ("history", "History"))
 VARIED_LABELS = {
     "prompt": "prompts",
@@ -1035,10 +1026,6 @@ def outcome_note(row: ItemRow | None) -> tuple[str, str] | None:
     return None
 
 
-def concurrency_level(value: int) -> str:
-    return "elevated" if value > 2 else "normal"
-
-
 def event_lines(view: dict) -> str:
     """Compact human-readable queue activity; durable raw events remain unchanged in persistence."""
     positions = {item["item_id"]: item["position"] for item in view.get("items", ())}
@@ -1062,14 +1049,8 @@ def event_lines(view: dict) -> str:
         if kind == "created" and script_of(view) is not None:
             summary = "Queued"
         elif kind == "created":
-            count, cap = detail.get("items"), detail.get("cap")
-            summary = ""
-            if count is not None:
-                summary += f"{count}"
-            if cap > count:
-                cap = count
-            if cap is not None:
-                summary += f" // {cap}"
+            count = detail.get("items")
+            summary = "" if count is None else f"{count}"
         elif kind == "started":
             summary = "Started" if script_of(view) is not None else "Queue started"
         elif kind == "backend_submission_possible":

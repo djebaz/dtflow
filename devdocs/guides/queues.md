@@ -38,7 +38,7 @@ Queues and items stay in stable order. Start, Pause, Resume and Cancel use the s
 
 The right-side event evidence panel presents a compact activity stream keyed by queue position (for example, `#3 submitted` and `#3 completed - 12.34 s`). The durable queue evidence still records selected backend lifecycle events (preparing, submission boundary, received final artifacts and terminal response) plus item settlement; the UI hides redundant low-level lines and full request/item identifiers from the default view. Successful settlement includes the same client-observed backend duration saved with the image metadata. That duration runs from submission boundary to terminal response and may include provider-side queueing or serialization; DTFlow does not call it pure generation/inference time. Progress and preview events are intentionally not persisted into this diagnostic stream.
 
-**Concurrency** in the header posts a cap for the selected paused, waiting or running queue only. **Concurrency** in the composer sets the cap of queues you create; with cloud chosen it also shows and saves the shared cloud default for new cloud queues. Values above two are tinted, and the limits are explained in the tooltips. Provider and shared memory limits still apply. A saved change shows no overlay; a refused one does.
+A queue has no concurrency setting of its own. A DT+ queue runs as many images at the same time as **Default concurrency on DT+** on the Connection page (card **Workflow and queue concurrency defaults**; the default is ten), read each time the queue is started, so a change there applies from the next start and never to items already running. Local and fake queues run as wide as the adapter allows (local Draw Things runs one at a time). Provider and shared memory limits still apply. Queues saved by older versions keep their stored maximum and recipes keep their stored concurrency, but both are ignored.
 
 Start holds the state ownership lock for the entire dispatch run. Other processes can read, post controls and add paused queues, but cannot own another generation or dispatch in that state directory. See [runtime ownership](../architecture/runtime-layout.md).
 
@@ -48,7 +48,7 @@ In the composer, **Save template…** saves a new named text-to-image authoring 
 
 The loaded name shows **modified** after editing. Save creates a separately named recipe; it never silently overwrites the loaded one. In the library, **Update…** explicitly replaces the selected recipe with the current draft, **Rename…** changes its name, and **Delete…** removes only that recipe. Existing queues, attempts, outputs and the current draft survive template deletion. Closing/reopening the composer preserves its draft; templates also survive app restart, queue-history removal, cache cleanup and `--no-cache` launches.
 
-Recipes retain the original positive/negative prompt, base settings, ordered Pair/Cross values, LoRA sets/weight sweeps, Repeat count, random draws, inline wildcard lists, prompt edits, plan seed, image seed and per-queue concurrency. Loading a saved cap does not change the shared cloud default. Random recipes require a valid explicit plan seed before saving; loading does not reroll it. **Reroll** remains explicit. External wildcard names use current local files, not archived contents: missing files surface in normal plan validation, and changes can change results. The plan preview and explicit queue creation use the existing shared planner.
+Recipes retain the original positive/negative prompt, base settings, ordered Pair/Cross values, LoRA sets/weight sweeps, Repeat count, random draws, inline wildcard lists, prompt edits, plan seed, image seed. A recipe saved by an older version may carry a concurrency value; it is ignored. Random recipes require a valid explicit plan seed before saving; loading does not reroll it. **Reroll** remains explicit. External wildcard names use current local files, not archived contents: missing files surface in normal plan validation, and changes can change results. The plan preview and explicit queue creation use the existing shared planner.
 
 The stored image seed is the concrete seed captured by the independent queue draft. Generate's seed-0 random choice is already resolved when that draft is captured; loading does not silently request another random image seed. Use Generate settings explicitly to capture another base request, or edit the plan's listed/incrementing seed policy. The separate plan Reroll action does not change that base image seed.
 
@@ -79,17 +79,17 @@ Durations include provider-side queueing and are not pure inference time. The bl
 ## CLI examples
 
 ```bash
-uv run dtflow queue add -b fake -p "Offline fixture" -k 10 -j 4   # persist a paused queue of 10 items (seeds s, s+1, ...)
+uv run dtflow queue add -b fake -p "Offline fixture" -k 10   # persist a paused queue of 10 items (seeds s, s+1, ...)
 uv run dtflow queue add -b fake -p "Offline fixture" -r plan.json -u   # dry run: print the exact items of a plan, create nothing
 uv run dtflow queue add -b fake -p "Offline fixture" -r plan.json   # persist a paused queue of the planned items
 uv run dtflow queue start QUEUE                                   # become the dispatch owner and run it (Ctrl-C interrupts)
-uv run dtflow queue pause QUEUE                                   # from another terminal; also resume, cancel, cap -j N
+uv run dtflow queue pause QUEUE                                   # from another terminal; also resume, cancel
 uv run dtflow queue show QUEUE                                    # items in queue order with state, attempt and outputs
 uv run dtflow queue relaunch QUEUE -f -n                          # a new paused queue of the failed items, new seeds
 uv run dtflow queue relaunch QUEUE -i 3                           # item 3 again, as a new one-item paused queue
 ```
 
-`queue relaunch` persists a new paused queue from the named queue's recorded item requests (fresh request identities, the same backend and maximum unless `-j` is given). `-n/--new-seeds` draws new seeds, `-f/--failed` keeps only failed, cancelled and no-result items, and `-i/--item N` (repeatable) takes exactly those positions (`-f` and `-i` are exclusive). Each new item records `relaunch.source_queue`, `relaunch.source_position` and `relaunch.seed` evidence; the source queue position (and, with new seeds, the source seed policy) is dropped. It contacts no backend; `queue start` dispatches it. The original queue and its attempts are not changed.
+`queue relaunch` persists a new paused queue from the named queue's recorded item requests (fresh request identities, the same backend). `-n/--new-seeds` draws new seeds, `-f/--failed` keeps only failed, cancelled and no-result items, and `-i/--item N` (repeatable) takes exactly those positions (`-f` and `-i` are exclusive). Each new item records `relaunch.source_queue`, `relaunch.source_position` and `relaunch.seed` evidence; the source queue position (and, with new seeds, the source seed policy) is dropped. It contacts no backend; `queue start` dispatches it. The original queue and its attempts are not changed.
 
 ## Dispatch, restart and uncertainty
 
@@ -105,7 +105,7 @@ Local Draw Things runs one request at a time and stopping local waiting does not
 
 After a restart queues are restored paused, completed results are kept, and no item that reached the remote boundary becomes eligible again. `queue start` exits `0` when every item succeeded, otherwise `3`.
 
-Direct DT+ text-to-image reserves 32 MiB per in-flight request against a 320 MiB shared admission budget, permitting up to ten client-side submissions when Concurrency is ten. This is not measured process RAM or verified server-side entitlement. Image edits can reserve more; local Draw Things remains one lane. The cloud default stays four until changed.
+Direct DT+ text-to-image reserves 32 MiB per in-flight request against a 320 MiB shared admission budget, permitting up to ten client-side submissions when the DT+ default is ten. This is not measured process RAM or verified server-side entitlement. Image edits can reserve more; local Draw Things remains one lane. DT+ queues start at the Connection page default of ten until it is changed.
 
 ## Plan files and dry runs
 

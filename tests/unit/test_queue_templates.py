@@ -19,7 +19,6 @@ def recipe():
         PlanForm("Cross", models="first; second", variation="Random sample", rng_seed="42"),
         5,
         "fake",
-        3,
     )
 
 
@@ -48,7 +47,7 @@ def test_library_roundtrip_update_rename_delete_and_stale_edit(tmp_path):
     assert {path.name for path in tmp_path.iterdir()} == {"queue_templates.sqlite3"}
 
 
-@pytest.mark.parametrize("field,value", [("count", True), ("count", 1001), ("cap", 11), ("backend", "unknown")])
+@pytest.mark.parametrize("field,value", [("count", True), ("count", 1001), ("backend", "unknown")])
 def test_recipe_validation_rejects_unsupported_without_overwriting(tmp_path, field, value):
     saved = templates.save_template(tmp_path, "Good", recipe())
     with pytest.raises(ValidationError):
