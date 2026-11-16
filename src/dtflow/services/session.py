@@ -10,7 +10,9 @@ dispatched) instead of the desktop blocking it for the window's lifetime.
 import asyncio
 import hashlib
 import logging
+import re
 import secrets
+from time import monotonic
 from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, replace
@@ -276,6 +278,102 @@ async def script_asset_choices(state: Path, backend_name: str) -> tuple[Prepared
         await registry.aclose()
 
 
+# Fixed, privacy-safe stage names a generation timeline may record. Anything else (for example LoRA names carried by
+# asset events) is ignored, so the record never holds names, paths, prompts or credentials.
+TIMELINE_STAGES = frozenset(
+    {
+        "binding_assets",
+        "opening_session",
+        "backend_created",
+        "store_opened",
+        "backend_opened",
+        "session_ready",
+        "inventory_refreshed",
+        "preflight_done",
+        "validating_image_inputs",
+        "validating_request",
+        "validating_assets",
+        "restoring_assets",
+        "checking_loras",
+        "checking_output_storage",
+        "creating_attempt",
+        "waiting_buffer_budget",
+        "saving_image_snapshot",
+        "recording_submission_state",
+        "resolving_model",
+        "preparing_image_inputs",
+        "resolving_credentials",
+        "encoding_request",
+        "wire_validated",
+        "waiting_execution_lane",
+        "connecting_backend",
+        "preparing_grpc_metadata",
+        "waiting_backend_response",
+        "backend_response_received",
+        "retrying",
+    }
+)
+_PROGRESS_STAGE = re.compile(r"[a-z_]{1,40}")
+
+
+class GenerationTimeline:
+    """When each fixed stage of one generation was first seen, in milliseconds since Generate was requested.
+
+    It wraps the caller's event sink (``sink``), adds marks from the session functions, and writes one INFO
+    ``generation.timeline`` record when the generation settles. It only observes: events are forwarded unchanged.
+    """
+
+    def __init__(self, backend: str, inner: EventSink | None):
+        self.backend = backend
+        self.inner = inner
+        self.started = monotonic()
+        self.marks: dict[str, int] = {}
+
+    def mark(self, name: str) -> None:
+        if name in TIMELINE_STAGES or name in _FIXED_KINDS or name.startswith("progress_"):
+            self.marks.setdefault(name, round((monotonic() - self.started) * 1000))
+
+    def sink(self, event: BackendEvent) -> None:
+        if event.kind == "preparing":
+            if event.stage in TIMELINE_STAGES:
+                self.mark(event.stage)
+        elif event.kind in _FIXED_KINDS:
+            self.mark(event.kind)
+        elif event.kind == "progress" and event.stage and _PROGRESS_STAGE.fullmatch(event.stage):
+            self.mark("progress_" + event.stage)
+        if self.inner is not None:
+            self.inner(event)
+
+    def finish(self, failure: BaseException | None) -> None:
+        """One record per generation; ``outcome`` is saved, failed or cancelled, with the safe failure code if any."""
+        data: dict = {"backend": self.backend, "total_ms": round((monotonic() - self.started) * 1000)}
+        if failure is None:
+            data["outcome"] = "saved"
+        elif isinstance(failure, asyncio.CancelledError):
+            data["outcome"] = "cancelled"
+        else:
+            data["outcome"] = "failed"
+            if isinstance(failure, BackendError):
+                data["code"] = failure.failure.code
+        data.update({name + "_ms": value for name, value in self.marks.items()})
+        diagnostic_event(log, "generation.timeline", level=logging.INFO, data=data)
+
+
+_FIXED_KINDS = frozenset({"submission_possible", "preview", "artifact_received", "terminal"})
+
+
+async def _timed(selection: BackendSelection, on_event: EventSink | None, body):
+    """Run ``body(timeline)`` and record its timeline once, whatever the outcome."""
+    timeline = GenerationTimeline(selection.name, on_event)
+    try:
+        outcome = await body(timeline)
+    except BaseException as exc:
+        timeline.finish(exc)
+        raise
+    timeline.finish(None)
+    return outcome
+
+
 @asynccontextmanager
 async def open_session(
     selection: BackendSelection,
@@ -287,6 +385,7 @@ async def open_session(
     durable: bool = True,
     image_permits: tuple[ImageOperationPermit, ...] = (),
     allow_image_probe: bool = False,
+    timeline: GenerationTimeline | None = None,
 ) -> AsyncIterator[GenerationService]:
     """Create, open and (always) close the selected backend and, when ``durable``, the state store.
 
@@ -309,12 +408,18 @@ async def open_session(
             "allow_image_probe": allow_image_probe,
         }
     backend = create_backend(selection, timeouts=policy, saved=saved, **image_options)
+    if timeline is not None:
+        timeline.mark("backend_created")
     store = SQLiteAttempts(state) if durable else None
     try:
         if store is not None:
             await store.open()
+        if timeline is not None:
+            timeline.mark("store_opened")
         async with asyncio.timeout(policy.connect):
             await backend.open()
+        if timeline is not None:
+            timeline.mark("backend_opened")
         yield GenerationService(
             backend,
             store,
@@ -342,6 +447,7 @@ async def run_generation(
     prepared_inputs: PreparedImageInputs | None = None,
     attempt_id: str | None = None,
     layout: OutputLayout | None = None,
+    timeline: GenerationTimeline | None = None,
 ) -> GenerationOutcome:
     """Refresh inventory, optionally apply trigger prefixes, run LoRA preflight, generate and save.
 
@@ -367,9 +473,13 @@ async def run_generation(
         raise ValidationError("Text-to-image cannot include prepared image inputs.")
     # Real adapters accept only inventory-listed models, so the generation path refreshes inventory first.
     snapshot = await service.get_inventory(refresh=True)
+    if timeline is not None:
+        timeline.mark("inventory_refreshed")
     if prefix:
         request = apply_trigger_prefixes(request, snapshot)
     diagnostics = await service.preflight(request) if request.loras else ()
+    if timeline is not None:
+        timeline.mark("preflight_done")
     options = {"prepared_inputs": prepared_inputs} if prepared_inputs is not None else {}
     if attempt_id is not None:
         options["attempt_id"] = attempt_id
@@ -482,12 +592,19 @@ async def generate_once(
         raise ValidationError(
             "Use the explicit permit-scoped image-generation entry; generic dispatch is txt2img-only."
         )
-    _preparation_event(on_event, request, "binding_assets")
-    request = await bind_prepared(state, selection.name, request, asset_ids)
-    _preparation_event(on_event, request, "opening_session")
-    async with open_session(selection, state, output=output, timeouts=timeouts, saved=saved) as service:
-        _preparation_event(on_event, request, "session_ready")
-        return await run_generation(service, request, prefix=prefix, on_event=on_event)
+
+    async def run(timeline: GenerationTimeline) -> GenerationOutcome:
+        sink = timeline.sink
+        _preparation_event(sink, request, "binding_assets")
+        bound = await bind_prepared(state, selection.name, request, asset_ids)
+        _preparation_event(sink, bound, "opening_session")
+        async with open_session(
+            selection, state, output=output, timeouts=timeouts, saved=saved, timeline=timeline
+        ) as service:
+            _preparation_event(sink, bound, "session_ready")
+            return await run_generation(service, bound, prefix=prefix, on_event=sink, timeline=timeline)
+
+    return await _timed(selection, on_event, run)
 
 
 async def generate_image_once(
@@ -534,22 +651,30 @@ async def generate_image_once(
     request = image_operation_request(
         request, prepared_inputs, permit, strength=strength, preserve_outside=preserve_outside
     )
-    _preparation_event(on_event, request, "validating_image_inputs")
-    await settle(asyncio.to_thread(validate_prepared_inputs, prepared_inputs))
-    _preparation_event(on_event, request, "binding_assets")
-    request = await bind_prepared(state, selection.name, request, asset_ids)
-    _preparation_event(on_event, request, "opening_session")
-    async with open_session(
-        selection,
-        state,
-        output=output,
-        timeouts=timeouts,
-        saved=saved,
-        image_permits=(permit,),
-        allow_image_probe=allow_image_probe,
-    ) as service:
-        _preparation_event(on_event, request, "session_ready")
-        return await run_generation(service, request, prefix=prefix, on_event=on_event, prepared_inputs=prepared_inputs)
+
+    async def run(timeline: GenerationTimeline) -> GenerationOutcome:
+        sink = timeline.sink
+        _preparation_event(sink, request, "validating_image_inputs")
+        await settle(asyncio.to_thread(validate_prepared_inputs, prepared_inputs))
+        _preparation_event(sink, request, "binding_assets")
+        bound = await bind_prepared(state, selection.name, request, asset_ids)
+        _preparation_event(sink, bound, "opening_session")
+        async with open_session(
+            selection,
+            state,
+            output=output,
+            timeouts=timeouts,
+            saved=saved,
+            image_permits=(permit,),
+            allow_image_probe=allow_image_probe,
+            timeline=timeline,
+        ) as service:
+            _preparation_event(sink, bound, "session_ready")
+            return await run_generation(
+                service, bound, prefix=prefix, on_event=sink, prepared_inputs=prepared_inputs, timeline=timeline
+            )
+
+    return await _timed(selection, on_event, run)
 
 
 async def generate_image_files_once(

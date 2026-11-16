@@ -115,6 +115,7 @@ class DrawThingsBackend:
         self._inventory: InventorySnapshot | None = None
         self._stale_reason: str | None = None
         self._model_specs: dict[str, dict] = {}
+        self._echoed = False  # an Echo answered on this backend, whether or not it advertised descriptions
         self._image_inputs_loader = image_inputs_loader
         self._allow_image_probe = allow_image_probe
         if type(preview_images) is not bool:
@@ -804,6 +805,17 @@ class DrawThingsBackend:
         try:
             async with asyncio.timeout(self.timeouts.connect):
                 await channel.__connect__()
+            diagnostic_event(
+                log,
+                "backend.api_completed",
+                level=logging.DEBUG,
+                data={
+                    "transport": "grpc",
+                    "operation": "connect",
+                    "status": "OK",
+                    "elapsed_ms": (time.monotonic() - began) * 1000,
+                },
+            )
         except Exception as exc:
             raise BackendError(
                 from_exception(
@@ -849,6 +861,7 @@ class DrawThingsBackend:
 
     def _remember_specs(self, reply) -> None:
         """Keep the server's own model descriptions (Echo ``override.models``) keyed by file name."""
+        self._echoed = True
         override = reply.override
         try:
             items = json.loads(override.models) if override is not None and override.models else []
@@ -875,7 +888,8 @@ class DrawThingsBackend:
         """
         if self.backend_id != "drawthings-cloud":
             return None
-        if model_id not in self._model_specs:
+        if model_id not in self._model_specs and not self._echoed:
+            # Only before any Echo answered: a repeat Echo cannot add a description this client already read.
             try:
                 await self._echo()
             except BackendError:

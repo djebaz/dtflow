@@ -183,7 +183,14 @@ class CloudAuth:
     async def _load_token(self) -> str:
         # The credential is resolved only once, inside the shared refresh task.
         if self._key is None:
+            resolving = self._clock()
             credential = await self._credentials.get()
+            event(
+                log,
+                "backend.credentials_resolved",
+                level=logging.DEBUG,
+                data={"elapsed_ms": (self._clock() - resolving) * 1000},
+            )
             if credential is None or not credential.secret.strip():
                 raise error(ErrorCategory.AUTHENTICATION, "missing_cloud_credentials", "Cloud API key is missing.")
             self._key = credential.secret.strip()
