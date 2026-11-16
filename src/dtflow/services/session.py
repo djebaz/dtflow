@@ -18,7 +18,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from uuid import uuid4
 
-from dtflow.composition import BackendSelection, cloud_key_digest, create_backend, endpoint_label, image_endpoint_label
+from dtflow.composition import BackendSelection, create_backend, endpoint_label, image_endpoint_label
 from dtflow.core.image_inputs import ImageInputSnapshot, PreparedImageInputs
 from dtflow.core.image_operations import ImageOperationPermit, ImageOperationSupport, inspect_image_operation
 from dtflow.core.model_profiles import exact_model_description_digest
@@ -65,7 +65,6 @@ from dtflow.services.lora_naming import LoraPrepareMetadata, ManagedName, occupi
 from dtflow.services.image_preparation import prepare_image_files, validate_prepared_inputs
 from dtflow.services.preflight import apply_trigger_prefixes
 from dtflow.services.timeline import GenerationTimeline
-from dtflow.services.warm_session import INVENTORY_REUSE_SECONDS, WarmCloud
 
 log = logging.getLogger(__name__)
 
@@ -302,16 +301,12 @@ async def open_session(
     image_permits: tuple[ImageOperationPermit, ...] = (),
     allow_image_probe: bool = False,
     timeline: GenerationTimeline | None = None,
-    warm: WarmCloud | None = None,
 ) -> AsyncIterator[GenerationService]:
     """Create, open and (always) close the selected backend and, when ``durable``, the state store.
 
     The backend is built before any state is touched, so invalid selections never open or lock state. ``durable=False``
     skips the store (and its ownership lock) for read-only operations such as inventory refresh; such a service cannot
     generate.
-
-    ``warm`` (the Generate page's holder, DT+ text-to-image only) borrows a kept backend instead of building one, and
-    gives it back only after a clean success; see ``warm_session``. The attempts store is still opened and closed here.
     """
     policy = timeouts or TimeoutPolicy()
     if type(allow_image_probe) is not bool or not isinstance(image_permits, tuple):
@@ -327,24 +322,10 @@ async def open_session(
             "image_inputs_loader": lambda snapshot: restore_image_inputs(state, snapshot),
             "allow_image_probe": allow_image_probe,
         }
-    lease = None
-    digest = None
-    if warm is not None and selection.name == "cloud" and durable and not image_options:
-        digest = await cloud_key_digest(saved)
-    if digest is not None:
-        lease = await warm.take(
-            ("cloud", selection.cloud_concurrency, policy, digest),
-            lambda: create_backend(selection, timeouts=policy, saved=saved, **image_options),
-        )
-        backend = lease.backend
-    else:
-        backend = create_backend(selection, timeouts=policy, saved=saved, **image_options)
+    backend = create_backend(selection, timeouts=policy, saved=saved, **image_options)
     if timeline is not None:
         timeline.mark("backend_created")
-        if lease is not None:
-            timeline.extra["warm"] = "reused" if lease.reused else "new"
     store = SQLiteAttempts(state) if durable else None
-    clean = False
     try:
         if store is not None:
             await store.open()
@@ -362,14 +343,10 @@ async def open_session(
             assets=asset_validator(backend, state),
             input_state=state if image_permits else None,
         )
-        clean = True
     finally:
         try:
-            if lease is not None and lease.managed:
-                await warm.release(lease, keep=clean)
-            else:
-                async with asyncio.timeout(policy.cleanup):
-                    await backend.aclose()
+            async with asyncio.timeout(policy.cleanup):
+                await backend.aclose()
         finally:
             if store is not None:
                 await store.aclose()
@@ -386,7 +363,6 @@ async def run_generation(
     attempt_id: str | None = None,
     layout: OutputLayout | None = None,
     timeline: GenerationTimeline | None = None,
-    inventory_max_age: float | None = None,
 ) -> GenerationOutcome:
     """Refresh inventory, optionally apply trigger prefixes, run LoRA preflight, generate and save.
 
@@ -411,9 +387,7 @@ async def run_generation(
     elif prepared_inputs is not None:
         raise ValidationError("Text-to-image cannot include prepared image inputs.")
     # Real adapters accept only inventory-listed models, so the generation path refreshes inventory first.
-    # A kept DT+ backend (``warm_session``) may skip the Echo when its inventory is recent; otherwise always refresh.
-    age = service.inventory_age() if inventory_max_age is not None else None
-    snapshot = await service.get_inventory(refresh=age is None or age > inventory_max_age)
+    snapshot = await service.get_inventory(refresh=True)
     if timeline is not None:
         timeline.mark("inventory_refreshed")
     if prefix:
@@ -524,12 +498,10 @@ async def generate_once(
     saved: CredentialProvider | None = None,
     on_event: EventSink | None = None,
     asset_ids: tuple[str, ...] = (),
-    warm: WarmCloud | None = None,
 ) -> GenerationOutcome:
     """One self-contained generation: the desktop's entry point (the CLI composes the same two functions).
 
     ``asset_ids`` binds confirmed local receipts (cloud only, never uploads) before any backend or state is opened.
-    ``warm`` lets the Generate page keep its DT+ connection between generations (see ``warm_session``).
     """
     if request.operation != "txt2img":
         raise ValidationError(
@@ -542,18 +514,10 @@ async def generate_once(
         bound = await bind_prepared(state, selection.name, request, asset_ids)
         _preparation_event(sink, bound, "opening_session")
         async with open_session(
-            selection, state, output=output, timeouts=timeouts, saved=saved, timeline=timeline, warm=warm
+            selection, state, output=output, timeouts=timeouts, saved=saved, timeline=timeline
         ) as service:
             _preparation_event(sink, bound, "session_ready")
-            reused = timeline.extra.get("warm") == "reused"
-            return await run_generation(
-                service,
-                bound,
-                prefix=prefix,
-                on_event=sink,
-                timeline=timeline,
-                inventory_max_age=INVENTORY_REUSE_SECONDS if reused else None,
-            )
+            return await run_generation(service, bound, prefix=prefix, on_event=sink, timeline=timeline)
 
     return await _timed(selection, on_event, run)
 

@@ -50,7 +50,6 @@ from dtflow.services.connection import (
     present_outcome,
 )
 from dtflow.services.image_preparation import prepare_edit_inputs
-from dtflow.services.warm_session import WarmCloud
 from dtflow.services.image_quality import assess_file
 from dtflow.services.lora_naming import relabel_text
 from dtflow.services.preflight import checkpoint_exact_version
@@ -305,7 +304,6 @@ class GenerationPage:
         self._choose_save, self._choose_open = choose_save, choose_open
         self._configs = self._state / "configs"
         self._relay = EventRelay(self._event, page)
-        self._warm = WarmCloud()  # keeps the DT+ connection between quick generations; closes itself when idle
         self._future = None
         self._generating = False
         self._request = None
@@ -1191,14 +1189,7 @@ class GenerationPage:
     async def _generate(self, name, endpoint, request, saved, asset_ids, prefix, simulation):
         selection = await asyncio.to_thread(selection_for, name, endpoint, self._state, **simulation)
         return await generate_once(
-            selection,
-            self._state,
-            request,
-            prefix=prefix,
-            saved=saved,
-            on_event=self._relay,
-            asset_ids=asset_ids,
-            warm=self._warm,
+            selection, self._state, request, prefix=prefix, saved=saved, on_event=self._relay, asset_ids=asset_ids
         )
 
     async def _generate_edit(self, name, endpoint, request, saved, asset_ids, prefix, simulation, job):
