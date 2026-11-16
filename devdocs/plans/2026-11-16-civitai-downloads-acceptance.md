@@ -44,7 +44,7 @@ Not delivered, by owner decision: Hugging Face (#468, closed), portable source l
 
 ## Residual findings
 
-1. **Orphan sweeps never run in the app.** `civitai.cleanup_staging` (stale staging files) is called only by the CLI download, and `lora_sources.sweep_orphans` (unreferenced `lora_sources/` files) is called nowhere; #473 AC-8 and #474 AC-11 were left to "wire at startup" in #465, which did not. Interrupted app downloads can leave staging files and a verified file whose row could not be written stays until a CLI download runs. This is related to the staging cleanup of #451. A follow-up child is needed.
+1. **Orphan sweeps did not run in the app (fixed in #497).** `civitai.cleanup_staging` was called only by the CLI download and `lora_sources.sweep_orphans` nowhere; #473 AC-8 and #474 AC-11 had left the startup call to #465. The app now runs both once at startup, off the GUI thread (`services.downloads.startup_cleanup`).
 2. **Stale SDXL comments in code.** `services/lora_convert/families/sdxl.py` still says "Experimental" and "requires allow_experimental" while `families.json` and `lora-ckpt-format.md` say verified (owner promotion 2026-11-15) and the Downloads path no longer needs consent. Behaviour follows `families.json`; only the comments disagree.
 3. **Release note gaps.** [6.4.0](../releases/v6.4.0.md) does not say that a downloaded `.safetensors` is permanently deleted after a successful conversion (and kept when refused), nor that gated files need the token. Both are in the desktop guide now.
 4. Some SDXL LoRAs still fail to convert, so a "downloaded, not convertible" SDXL row is expected for them.

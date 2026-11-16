@@ -386,6 +386,7 @@ class MainWindow:
         self._downloads_line = False
         self._downloads_chrome_active = False
         startup.mark("workspace: downloads mounted")
+        QTimer.singleShot(0, self.downloads.start_cleanup)
         form.workspaceStack.hide()
         startup.mark("workspace: legacy stack hidden")
         form.rootLayout.addWidget(self.shell)
