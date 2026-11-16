@@ -30,7 +30,7 @@ from dtflow.core.models import (
 from dtflow.core.storage import AttemptStore
 from dtflow.core.tasks import settle
 from dtflow.diagnostics import ATTEMPT
-from dtflow.diagnostics import cloud_key_data, event as diagnostic_event
+from dtflow.diagnostics import cloud_key_data, event as diagnostic_event, request_fingerprint, timing_enabled
 from dtflow.persistence.original_io import (
     OriginalImagesBusyError,
     OriginalImagesUnavailableError,
@@ -46,6 +46,7 @@ from dtflow.services.events import EventBuffer
 from dtflow.services.image_artifacts import save_image_artifacts
 from dtflow.services.image_inputs import snapshot_image_inputs
 from dtflow.services.preflight import checkpoint_exact_version, preflight_loras, raise_if_blocked
+from dtflow.services.timeline import GenerationTimeline
 
 log = logging.getLogger(__name__)
 
@@ -167,8 +168,35 @@ class GenerationService:
     ) -> SavedGeneration:
         """``attempt_id`` lets a caller that records the attempt elsewhere first (script runs) name it up front.
 
-        ``layout`` names the run folder and file-name label the outputs are saved under (issue #296)."""
+        ``layout`` names the run folder and file-name label the outputs are saved under (issue #296).
 
+        With ``-time`` every generation, whichever caller starts it (Generate, queues, scripts, workflows), also writes
+        one INFO ``generation.attempt_timing`` record: first-seen offsets of the fixed stages since this call began,
+        plus short digests telling whether the prompt and the other settings repeated. It only observes."""
+        if not timing_enabled():
+            return await self._generate(request, on_event, prepared_inputs, attempt_id, layout)
+        timeline = GenerationTimeline(
+            self.backend.capabilities.backend_id,
+            on_event,
+            name="generation.attempt_timing",
+            extra=request_fingerprint(request),
+        )
+        try:
+            saved = await self._generate(request, timeline.sink, prepared_inputs, attempt_id, layout)
+        except BaseException as exc:
+            timeline.finish(exc)
+            raise
+        timeline.finish(None)
+        return saved
+
+    async def _generate(
+        self,
+        request: ResolvedGenerationRequest,
+        on_event: EventSink | None,
+        prepared_inputs: PreparedImageInputs | None,
+        attempt_id: str | None,
+        layout: OutputLayout | None,
+    ) -> SavedGeneration:
         def preparation(stage: str) -> None:
             if on_event is not None:
                 on_event(BackendEvent(request.request_id, 0, "preparing", datetime.now(UTC).isoformat(), stage=stage))

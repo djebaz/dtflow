@@ -24,7 +24,7 @@ from dtflow.core.models import (
     SubmissionStage,
     ValidationError,
 )
-from dtflow.diagnostics import api_error_data, cloud_key_data, event
+from dtflow.diagnostics import api_error_data, cloud_key_data, event, timing_level
 from dtflow.services.cloud_usage import key_identity
 
 log = logging.getLogger(__name__)
@@ -183,7 +183,14 @@ class CloudAuth:
     async def _load_token(self) -> str:
         # The credential is resolved only once, inside the shared refresh task.
         if self._key is None:
+            resolving = self._clock()
             credential = await self._credentials.get()
+            event(
+                log,
+                "backend.credentials_resolved",
+                level=timing_level(),
+                data={"elapsed_ms": (self._clock() - resolving) * 1000},
+            )
             if credential is None or not credential.secret.strip():
                 raise error(ErrorCategory.AUTHENTICATION, "missing_cloud_credentials", "Cloud API key is missing.")
             self._key = credential.secret.strip()
@@ -379,7 +386,7 @@ class CloudAuth:
                     event(
                         log,
                         "backend.api_completed",
-                        level=logging.DEBUG,
+                        level=timing_level(),
                         data={
                             "transport": "http",
                             "operation": path.strip("/").replace("/", "."),

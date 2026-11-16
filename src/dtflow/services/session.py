@@ -64,6 +64,7 @@ from dtflow.services.lora_auto_naming import normalize_previous_retained
 from dtflow.services.lora_naming import LoraPrepareMetadata, ManagedName, occupied_from_snapshot
 from dtflow.services.image_preparation import prepare_image_files, validate_prepared_inputs
 from dtflow.services.preflight import apply_trigger_prefixes
+from dtflow.services.timeline import GenerationTimeline
 
 log = logging.getLogger(__name__)
 
@@ -276,6 +277,18 @@ async def script_asset_choices(state: Path, backend_name: str) -> tuple[Prepared
         await registry.aclose()
 
 
+async def _timed(selection: BackendSelection, on_event: EventSink | None, body):
+    """Run ``body(timeline)`` and record its timeline once, whatever the outcome."""
+    timeline = GenerationTimeline(selection.name, on_event)
+    try:
+        outcome = await body(timeline)
+    except BaseException as exc:
+        timeline.finish(exc)
+        raise
+    timeline.finish(None)
+    return outcome
+
+
 @asynccontextmanager
 async def open_session(
     selection: BackendSelection,
@@ -287,6 +300,7 @@ async def open_session(
     durable: bool = True,
     image_permits: tuple[ImageOperationPermit, ...] = (),
     allow_image_probe: bool = False,
+    timeline: GenerationTimeline | None = None,
 ) -> AsyncIterator[GenerationService]:
     """Create, open and (always) close the selected backend and, when ``durable``, the state store.
 
@@ -309,12 +323,18 @@ async def open_session(
             "allow_image_probe": allow_image_probe,
         }
     backend = create_backend(selection, timeouts=policy, saved=saved, **image_options)
+    if timeline is not None:
+        timeline.mark("backend_created")
     store = SQLiteAttempts(state) if durable else None
     try:
         if store is not None:
             await store.open()
+        if timeline is not None:
+            timeline.mark("store_opened")
         async with asyncio.timeout(policy.connect):
             await backend.open()
+        if timeline is not None:
+            timeline.mark("backend_opened")
         yield GenerationService(
             backend,
             store,
@@ -342,6 +362,7 @@ async def run_generation(
     prepared_inputs: PreparedImageInputs | None = None,
     attempt_id: str | None = None,
     layout: OutputLayout | None = None,
+    timeline: GenerationTimeline | None = None,
 ) -> GenerationOutcome:
     """Refresh inventory, optionally apply trigger prefixes, run LoRA preflight, generate and save.
 
@@ -367,9 +388,13 @@ async def run_generation(
         raise ValidationError("Text-to-image cannot include prepared image inputs.")
     # Real adapters accept only inventory-listed models, so the generation path refreshes inventory first.
     snapshot = await service.get_inventory(refresh=True)
+    if timeline is not None:
+        timeline.mark("inventory_refreshed")
     if prefix:
         request = apply_trigger_prefixes(request, snapshot)
     diagnostics = await service.preflight(request) if request.loras else ()
+    if timeline is not None:
+        timeline.mark("preflight_done")
     options = {"prepared_inputs": prepared_inputs} if prepared_inputs is not None else {}
     if attempt_id is not None:
         options["attempt_id"] = attempt_id
@@ -482,12 +507,19 @@ async def generate_once(
         raise ValidationError(
             "Use the explicit permit-scoped image-generation entry; generic dispatch is txt2img-only."
         )
-    _preparation_event(on_event, request, "binding_assets")
-    request = await bind_prepared(state, selection.name, request, asset_ids)
-    _preparation_event(on_event, request, "opening_session")
-    async with open_session(selection, state, output=output, timeouts=timeouts, saved=saved) as service:
-        _preparation_event(on_event, request, "session_ready")
-        return await run_generation(service, request, prefix=prefix, on_event=on_event)
+
+    async def run(timeline: GenerationTimeline) -> GenerationOutcome:
+        sink = timeline.sink
+        _preparation_event(sink, request, "binding_assets")
+        bound = await bind_prepared(state, selection.name, request, asset_ids)
+        _preparation_event(sink, bound, "opening_session")
+        async with open_session(
+            selection, state, output=output, timeouts=timeouts, saved=saved, timeline=timeline
+        ) as service:
+            _preparation_event(sink, bound, "session_ready")
+            return await run_generation(service, bound, prefix=prefix, on_event=sink, timeline=timeline)
+
+    return await _timed(selection, on_event, run)
 
 
 async def generate_image_once(
@@ -534,22 +566,30 @@ async def generate_image_once(
     request = image_operation_request(
         request, prepared_inputs, permit, strength=strength, preserve_outside=preserve_outside
     )
-    _preparation_event(on_event, request, "validating_image_inputs")
-    await settle(asyncio.to_thread(validate_prepared_inputs, prepared_inputs))
-    _preparation_event(on_event, request, "binding_assets")
-    request = await bind_prepared(state, selection.name, request, asset_ids)
-    _preparation_event(on_event, request, "opening_session")
-    async with open_session(
-        selection,
-        state,
-        output=output,
-        timeouts=timeouts,
-        saved=saved,
-        image_permits=(permit,),
-        allow_image_probe=allow_image_probe,
-    ) as service:
-        _preparation_event(on_event, request, "session_ready")
-        return await run_generation(service, request, prefix=prefix, on_event=on_event, prepared_inputs=prepared_inputs)
+
+    async def run(timeline: GenerationTimeline) -> GenerationOutcome:
+        sink = timeline.sink
+        _preparation_event(sink, request, "validating_image_inputs")
+        await settle(asyncio.to_thread(validate_prepared_inputs, prepared_inputs))
+        _preparation_event(sink, request, "binding_assets")
+        bound = await bind_prepared(state, selection.name, request, asset_ids)
+        _preparation_event(sink, bound, "opening_session")
+        async with open_session(
+            selection,
+            state,
+            output=output,
+            timeouts=timeouts,
+            saved=saved,
+            image_permits=(permit,),
+            allow_image_probe=allow_image_probe,
+            timeline=timeline,
+        ) as service:
+            _preparation_event(sink, bound, "session_ready")
+            return await run_generation(
+                service, bound, prefix=prefix, on_event=sink, prepared_inputs=prepared_inputs, timeline=timeline
+            )
+
+    return await _timed(selection, on_event, run)
 
 
 async def generate_image_files_once(
