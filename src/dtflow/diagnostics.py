@@ -4,6 +4,7 @@ Callers select safe fields at the observation site. They do not serialize record
 assign sequence numbers, parse messages, or own sinks. Disabled levels stay cheap.
 """
 
+import hashlib
 import logging
 import re
 from contextvars import ContextVar
@@ -54,6 +55,54 @@ def asset_ref_data(
         **({"asset_id": asset_id} if asset_id else {}),
         **({"operation_id": operation_id} if operation_id else {}),
         **({"filename_prefix": PureWindowsPath(filename).name[:3]} if filename else {}),
+    }
+
+
+_TIMING = False
+
+
+def set_timing(enabled: bool) -> None:
+    """Switch the opt-in ``-time`` timing detail for this process; it never changes generation, retry or billing."""
+    global _TIMING
+    _TIMING = bool(enabled)
+
+
+def timing_enabled() -> bool:
+    return _TIMING
+
+
+def timing_level() -> int:
+    """INFO when ``-time`` is on (so the record needs no ``-x``), else DEBUG as before."""
+    return logging.INFO if _TIMING else logging.DEBUG
+
+
+def request_fingerprint(request) -> dict:
+    """Short one-way digests that tell whether two generations repeated the prompt or the other settings.
+
+    Eight hex characters of SHA-256 each; the text itself is never logged. Only used with ``-time``.
+    """
+
+    def digest(*parts) -> str:
+        return hashlib.sha256("\x1f".join(str(part) for part in parts).encode("utf-8")).hexdigest()[:8]
+
+    return {
+        "text_fp": digest(request.prompt),
+        "neg_fp": digest(request.negative_prompt),
+        "settings_fp": digest(
+            request.model_id,
+            request.seed,
+            request.width_px,
+            request.height_px,
+            request.steps,
+            request.guidance,
+            request.sampler_id,
+            request.operation,
+            *(f"{item.identifier}:{item.weight}" for item in request.loras),
+        ),
+        "steps": request.steps,
+        "width": request.width_px,
+        "height": request.height_px,
+        "loras": len(request.loras),
     }
 
 
