@@ -24,10 +24,12 @@ from PySide6.QtGui import (
     QPainter,
     QPen,
     QPixmap,
+    QPolygon,
 )
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QCheckBox,
+    QLineEdit,
     QHBoxLayout,
     QHeaderView,
     QLabel,
@@ -39,6 +41,8 @@ from PySide6.QtWidgets import (
     QScrollArea,
     QStyle,
     QStyledItemDelegate,
+    QStyleOptionComboBox,
+    QToolTip,
     QTableWidgetItem,
     QVBoxLayout,
     QWidget,
@@ -50,6 +54,7 @@ from dtflow.persistence.settings import SettingsError, load_civitai_browse_prefe
 from dtflow.services import civitai
 from dtflow.services import civitai_gallery as gallery
 from dtflow.ui.gallery_loading import _SpinningRing
+from dtflow.ui.queue_composer import ValueChips
 from dtflow.ui.runner import AsyncRunner
 
 log = logging.getLogger(__name__)
@@ -64,6 +69,7 @@ MAX_PIXMAPS = 180  # decoded square covers (encoded thumbnails have their own bo
 # The design's colours (devdocs/mockups/civitai_downloads_view.html, values of the design tokens).
 TEXT, SECONDARY = QColor("#e6e6e6"), QColor("#b2b2b2")
 SELECTION, SELECTION_BORDER, SELECTION_TEXT = QColor("#173852"), QColor("#285d84"), QColor("#d5ecff")
+SELECTION_HOVER, FOCUS_BORDER = QColor("#204c6e"), QColor("#60b6f6")
 WARNING, WARNING_BORDER = QColor("#ffbf59"), QColor("#9a6700")
 ITEM_SURFACE, SECTION_BORDER = QColor("#222222"), QColor("#343434")
 ACCENT, ACCENT_HOVER = QColor("#0068b8"), QColor("#0078d4")
@@ -89,10 +95,12 @@ class CardDelegate(QStyledItemDelegate):
     """Paint one model card, its supported-family chips and a separate per-card Download action."""
 
     download_requested = Signal(object)
+    tag_requested = Signal(str)
 
     def __init__(self, parent: QObject, pixmaps: dict[str, QPixmap], state_of: Callable[[gallery.GalleryCard], str]):
         super().__init__(parent)
         self._pixmaps, self._state_of = pixmaps, state_of
+        self.hovered_tag: tuple[int, str] | None = None
         self.side = CARD
 
     def sizeHint(self, option, index) -> QSize:  # noqa: N802
@@ -104,20 +112,55 @@ class CardDelegate(QStyledItemDelegate):
 
     @staticmethod
     def button_rect(rect: QRect) -> QRect:
-        return QRect(rect.right() - 108, rect.bottom() - 69, 100, 24)
+        """Square lower-right download button, separated from the tag pills and text."""
+        return QRect(rect.right() - 38, rect.bottom() - 38, 31, 31)
+
+    @staticmethod
+    def tag_rects(card: gallery.GalleryCard, rect: QRect, font: QFont) -> list[tuple[QRect, str]]:
+        """Compute the same hit targets for painted tags and pointer events."""
+        tag_font = QFont(font)
+        tag_font.setPointSizeF(max(7.0, font.pointSizeF() - 1))
+        tag_font.setBold(True)
+        metrics = QFontMetrics(tag_font)
+        x, limit = rect.left() + 8, rect.right() - 8
+        pills: list[tuple[QRect, str]] = []
+        for tag in card.tags:
+            if not tag:
+                continue
+            if len(pills) == 3:
+                break
+            width = min(90, metrics.horizontalAdvance(tag) + 14)
+            if x + width > limit:
+                break
+            pills.append((QRect(x, rect.bottom() - 73, width, 19), tag))
+            x += width + 4
+        return pills
+
+    @classmethod
+    def tag_at(cls, card: gallery.GalleryCard, rect: QRect, font: QFont, pos: QPoint) -> str | None:
+        return next((tag for bounds, tag in cls.tag_rects(card, rect, font) if bounds.contains(pos)), None)
 
     def editorEvent(self, event, model, option, index) -> bool:  # noqa: N802
         card = index.data(CARD_ROLE)
         if (
-            event.type() == QEvent.Type.MouseButtonPress
-            and event.button() == Qt.MouseButton.LeftButton
-            and isinstance(card, gallery.GalleryCard)
-            and card.downloadable
+            event.type() != QEvent.Type.MouseButtonPress
+            or event.button() != Qt.MouseButton.LeftButton
+            or not isinstance(card, gallery.GalleryCard)
+        ):
+            return False
+        rect = option.rect.adjusted(1, 1, -1, -1)
+        point = event.position().toPoint()
+        tag = self.tag_at(card, rect, option.font, point)
+        if tag is not None:
+            self.tag_requested.emit(tag)
+            return True
+        if (
+            card.downloadable
             and bool(option.state & QStyle.StateFlag.State_MouseOver)
-            and self.button_rect(option.rect.adjusted(1, 1, -1, -1)).contains(event.position().toPoint())
+            and self.button_rect(rect).contains(point)
         ):
             self.download_requested.emit(card)
-            return True  # consumed: the click starts a download and does not toggle the selection
+            return True
         return False
 
     def paint(self, painter: QPainter, option, index) -> None:
@@ -147,11 +190,11 @@ class CardDelegate(QStyledItemDelegate):
         if hovered:
             self._hover_panel(painter, rect, card, small)
         # Bottom: name and numbers on a gradient, as in the design.
-        fade = QLinearGradient(0, rect.bottom() - 62, 0, rect.bottom())
+        fade = QLinearGradient(0, rect.bottom() - 89, 0, rect.bottom())
         fade.setColorAt(0, QColor(0, 0, 0, 0))
         fade.setColorAt(1, QColor(0, 0, 0, 225))
-        painter.fillRect(QRect(rect.left(), rect.bottom() - 62, rect.width(), 63), fade)
-        inner = QRect(rect.left() + 8, rect.bottom() - 40, rect.width() - 16, 36)
+        painter.fillRect(QRect(rect.left(), rect.bottom() - 89, rect.width(), 90), fade)
+        inner = QRect(rect.left() + 8, rect.bottom() - 40, rect.width() - 52, 36)
         painter.setPen(TEXT)
         painter.setFont(bold)
         painter.drawText(
@@ -210,17 +253,56 @@ class CardDelegate(QStyledItemDelegate):
                 Qt.AlignmentFlag.AlignCenter,
                 QFontMetrics(small).elidedText(label, Qt.TextElideMode.ElideRight, width - 8),
             )
+        # Tag pills stay visible even while the hover detail overlay is painted.
+        tag_font = QFont(small)
+        tag_font.setBold(True)
+        painter.setFont(tag_font)
+        visible_tags = self.tag_rects(card, rect, option.font)
+        for bounds, tag in visible_tags:
+            active = self.hovered_tag == (card.model_id, tag)
+            painter.setPen(QPen(FOCUS_BORDER if active else SELECTION_BORDER, 1))
+            painter.setBrush(SELECTION_HOVER if active else SELECTION)
+            painter.drawRoundedRect(bounds, 4, 4)
+            painter.setPen(SELECTION_TEXT)
+            painter.drawText(
+                bounds,
+                Qt.AlignmentFlag.AlignCenter,
+                QFontMetrics(tag_font).elidedText(tag, Qt.TextElideMode.ElideRight, bounds.width() - 8),
+            )
+        hidden_tags = len(card.tags) - len(visible_tags)
+        if hidden_tags and visible_tags:
+            right = visible_tags[-1][0].right() + 5
+            remaining = QRect(right, rect.bottom() - 73, rect.right() - right - 8, 19)
+            if remaining.width() >= 23:
+                painter.setPen(SECONDARY)
+                painter.drawText(remaining, Qt.AlignmentFlag.AlignVCenter, f"+{hidden_tags}")
         if hovered and card.downloadable:
             action = self.button_rect(rect)
             painter.setPen(QPen(ACCENT_HOVER, 1))
             painter.setBrush(ACCENT)
-            painter.drawRoundedRect(action, 3, 3)
-            painter.setPen(QColor("#ffffff"))
-            painter.drawText(
-                action,
-                Qt.AlignmentFlag.AlignCenter,
-                "Download" if len(card.options) == 1 else "Download ▾",
+            painter.drawRoundedRect(action, 4, 4)
+            painter.setPen(Qt.PenStyle.NoPen)
+            painter.setBrush(QColor("#ffffff"))
+            cx, cy = action.center().x(), action.center().y()
+            multiple = len(card.options) > 1
+            # Smaller filled arrow (~11px); a short baseline distinguishes multi-version choices.
+            tip = cy + (2 if multiple else 5)
+            wing = cy - (2 if multiple else 1)
+            painter.drawPolygon(
+                QPolygon(
+                    [
+                        QPoint(cx - 2, cy - 5),
+                        QPoint(cx + 2, cy - 5),
+                        QPoint(cx + 2, wing),
+                        QPoint(cx + 5, wing),
+                        QPoint(cx, tip),
+                        QPoint(cx - 5, wing),
+                        QPoint(cx - 2, wing),
+                    ]
+                )
             )
+            if multiple:
+                painter.drawRect(QRect(cx - 5, cy + 5, 10, 2))
         painter.setClipping(False)
         painter.setBrush(Qt.BrushStyle.NoBrush)
         if selected:
@@ -289,7 +371,7 @@ class CardDelegate(QStyledItemDelegate):
 
 
 class _Resized(QObject):
-    """Refits the card size when the grid's viewport changes width."""
+    """Invoke a layout callback when its watched widget is resized."""
 
     def __init__(self, callback, parent: QObject):
         super().__init__(parent)
@@ -302,28 +384,66 @@ class _Resized(QObject):
 
 
 class _CardActionFilter(QObject):
-    """Consume a direct Download click before QListWidget can change card selection."""
+    """Let tag and Download clicks win over the card's ordinary selection action."""
 
-    def __init__(self, view: QListWidget, on_download: Callable[[gallery.GalleryCard], None]):
+    def __init__(
+        self,
+        view: QListWidget,
+        delegate: CardDelegate,
+        on_download: Callable[[gallery.GalleryCard], None],
+        on_tag: Callable[[str], None],
+    ):
         super().__init__(view.viewport())
-        self._view = view
-        self._on_download = on_download
+        self._view, self._delegate = view, delegate
+        self._on_download, self._on_tag = on_download, on_tag
+        self._pointing = False
+
+    def _set_hover(self, target: tuple[int, str] | None, pointing: bool) -> None:
+        """Repaint only when the hovered tag changes; keep the normal card cursor elsewhere."""
+        if self._delegate.hovered_tag != target:
+            self._delegate.hovered_tag = target
+            self._view.viewport().update()
+        if self._pointing != pointing:
+            self._pointing = pointing
+            if pointing:
+                self._view.viewport().setCursor(Qt.CursorShape.PointingHandCursor)
+            else:
+                self._view.viewport().unsetCursor()
 
     def eventFilter(self, _watched, event) -> bool:  # noqa: N802
-        if event.type() != QEvent.Type.MouseButtonPress or event.button() != Qt.MouseButton.LeftButton:
+        if event.type() == QEvent.Type.Leave:
+            self._set_hover(None, False)
             return False
-        position = event.position().toPoint()
+        moving = event.type() == QEvent.Type.MouseMove
+        tooltip = event.type() == QEvent.Type.ToolTip
+        click = event.type() == QEvent.Type.MouseButtonPress and event.button() == Qt.MouseButton.LeftButton
+        if not (moving or tooltip or click):
+            return False
+        position = event.pos() if tooltip else event.position().toPoint()
         item = self._view.itemAt(position)
-        if item is None:
+        card = item.data(CARD_ROLE) if item is not None else None
+        if not isinstance(card, gallery.GalleryCard):
+            if moving:
+                self._set_hover(None, False)
             return False
-        card = item.data(CARD_ROLE)
         rect = self._view.visualItemRect(item).adjusted(1, 1, -1, -1)
-        if (
-            isinstance(card, gallery.GalleryCard)
-            and card.downloadable
-            and CardDelegate.button_rect(rect).contains(position)
-        ):
-            self._on_download(card)
+        tag = CardDelegate.tag_at(card, rect, self._view.font(), position)
+        download = card.downloadable and CardDelegate.button_rect(rect).contains(position)
+        if moving:
+            self._set_hover((card.model_id, tag) if tag is not None else None, tag is not None or download)
+            return False
+        if tag is not None:
+            if tooltip:
+                QToolTip.showText(event.globalPos(), f"Add tag: {tag}", self._view.viewport())
+            else:
+                self._on_tag(tag)
+            return True
+        if download:
+            if tooltip:
+                action = "Download this version" if len(card.options) == 1 else "Choose versions to download"
+                QToolTip.showText(event.globalPos(), action, self._view.viewport())
+            else:
+                self._on_download(card)
             return True
         return False
 
@@ -403,11 +523,15 @@ class GalleryTab(QObject):
         saved_families = set(preferences.get("families", ()))
         self._selected_families = tuple(key for key, _label in self._family_choices if key in saved_families)
         self._family_popup: QMenu | None = None
+        self._selected_tags: tuple[str, ...] = tuple(preferences.get("tags", ()))
+        self._keyword_tag_mode = preferences.get("keyword_tag_mode", "and")
+        self._tag_match_mode = preferences.get("tag_match_mode", "or")
+        self._search_session: gallery.GallerySearch | None = None
         self.cards: list[gallery.GalleryCard] = []
         self._cursor: str | None = None
         self._seen_cursors: set[str] = set()
-        self._has_more = False  # no listing until an explicit keyword search
-        self._empty_batches = 0
+        self._has_more = False  # no listing until keywords or tags are explicitly submitted
+        self._initial_pages_done = False
         self._paused_empty = False
         self._generation = 0
         self._loading = False
@@ -438,8 +562,9 @@ class GalleryTab(QObject):
         view.viewport().setAttribute(Qt.WidgetAttribute.WA_Hover, True)
         self._delegate = CardDelegate(view, self._pixmaps, state_of)
         self._delegate.download_requested.connect(self._download_card)
+        self._delegate.tag_requested.connect(self._add_tag)
         view.setItemDelegate(self._delegate)
-        self._card_action_filter = _CardActionFilter(view, self._download_card)
+        self._card_action_filter = _CardActionFilter(view, self._delegate, self._download_card, self._add_tag)
         view.viewport().installEventFilter(self._card_action_filter)
         self._spinner = _SpinningRing(view.viewport())
         self._spinner.hide()
@@ -463,6 +588,45 @@ class GalleryTab(QObject):
         form.galleryPeriodCombo.setCurrentIndex(max(0, period_index))
         form.gallerySearchEdit.setMaxLength(gallery.MAX_QUERY)
         form.gallerySearchEdit.setText(preferences.get("query", ""))
+        self._filter_row_mode: str | None = None
+        self._filter_row_resized = _Resized(self._layout_filter_row, form.browseTab)
+        form.browseTab.installEventFilter(self._filter_row_resized)
+        self._layout_filter_row()
+        host = form.galleryTagChipsSlot
+        tag_layout = QHBoxLayout(host)
+        tag_layout.setContentsMargins(0, 0, 0, 0)
+        self._tags = ValueChips(host)
+        self._tags.setObjectName("galleryTagValueChips")
+        self._tags.configure(
+            "text",
+            "Tags",
+            add_first=True,
+            control_height=23,
+            label=lambda value: value if len(value) <= 24 else value[:23] + "…",
+        )
+        tag_editor = self._tags.findChild(QLineEdit)
+        if tag_editor is not None:
+            tag_editor.setPlaceholderText("Add tag…")
+            tag_editor.setMaxLength(gallery.MAX_TAG_LENGTH)
+            tag_editor.setFixedWidth(140)
+        self._tags.setText("; ".join(self._selected_tags))
+        tag_layout.addWidget(self._tags)
+        self._tags.textChanged.connect(self._tags_changed)
+
+        # Designer owns the fixed controls; this controller owns only their behavior and persistence.
+        self._modes_host = form.galleryModesHost
+        self._mode_groups = {
+            "keyword_tag_mode": form.galleryKeywordTagModeGroup,
+            "tag_match_mode": form.galleryTagMatchModeGroup,
+        }
+        self._mode_buttons = {
+            "keyword_tag_mode": form.galleryKeywordTagModeButton,
+            "tag_match_mode": form.galleryTagMatchModeButton,
+        }
+        for key, button in self._mode_buttons.items():
+            button.clicked.connect(lambda _checked=False, setting=key: self._toggle_filter_mode(setting))
+        self._update_mode_controls()
+        form.gallerySearchButton.clicked.connect(self.search)
         form.galleryPeriodCombo.currentIndexChanged.connect(self._filters_changed)
         form.gallerySearchEdit.returnPressed.connect(self.search)
         form.gallerySearchEdit.textChanged.connect(self._keyword_changed)
@@ -506,18 +670,160 @@ class GalleryTab(QObject):
                     "sort": self.form.gallerySortCombo.currentText(),
                     "period": self.form.galleryPeriodCombo.currentData(),
                     "families": list(self._selected_families),
+                    "tags": list(self._selected_tags),
+                    "keyword_tag_mode": self._keyword_tag_mode,
+                    "tag_match_mode": self._tag_match_mode,
                 },
             )
         except (SettingsError, OSError):
             log.warning("Browse Civitai inputs could not be saved; settings file left unchanged")
             self.form.gallerySearchEdit.setToolTip("Search settings could not be saved; see Logs.")
         else:
-            self.form.gallerySearchEdit.setToolTip("Type keywords and press Enter.")
+            self.form.gallerySearchEdit.setToolTip("Type keywords and press Enter, or filter by tags.")
+
+    def _update_mode_controls(self) -> None:
+        """Keep saved choices while hiding operators that cannot affect this search."""
+        keyword = bool(self.form.gallerySearchEdit.text().strip())
+        visible = {
+            "keyword_tag_mode": keyword and bool(self._selected_tags),
+            "tag_match_mode": len(self._selected_tags) > 1,
+        }
+        for key, group in self._mode_groups.items():
+            mode = self._keyword_tag_mode if key == "keyword_tag_mode" else self._tag_match_mode
+            button = self._mode_buttons[key]
+            button.setText(mode.upper())
+            subject = "Search keywords and selected tags" if key == "keyword_tag_mode" else "Selected tags"
+            button.setAccessibleName(f"{subject}: {mode.upper()}")
+            button.setToolTip(f"{subject} use {mode.upper()}. Click to switch to {'OR' if mode == 'and' else 'AND'}.")
+            group.setVisible(visible[key])
+        self._modes_host.setVisible(any(visible.values()))
+        self.form.galleryTagsLabel.setToolTip(
+            f"Selected tags match {self._tag_match_mode.upper()}; keywords and tags use "
+            f"{self._keyword_tag_mode.upper()} when both are present."
+        )
+
+    def _toggle_filter_mode(self, key: str) -> None:
+        """Switch an operator, save it, and refresh only an already active Browse tab."""
+        if key == "keyword_tag_mode":
+            self._keyword_tag_mode = "or" if self._keyword_tag_mode == "and" else "and"
+        else:
+            self._tag_match_mode = "and" if self._tag_match_mode == "or" else "or"
+        self._update_mode_controls()
+        self._mark_preferences_changed()
+        if self._loaded and (self.form.gallerySearchEdit.text().strip() or self._selected_tags):
+            self.search()
 
     def _filters_changed(self, *_args) -> None:
         self._mark_preferences_changed()
-        if self._loaded and self.form.gallerySearchEdit.text().strip():
+        if self._loaded and (self.form.gallerySearchEdit.text().strip() or self._selected_tags):
             self.search()
+
+    def _add_tag(self, value: str) -> None:
+        """Add a card's exact tag to the filter without selecting or downloading its model."""
+        tag = value.strip()
+        if not tag:
+            return
+        if any(existing.casefold() == tag.casefold() for existing in self._selected_tags):
+            self.form.galleryStatus.setText("That tag is already selected.")
+            return
+        if len(self._selected_tags) >= gallery.MAX_TAGS:
+            self.form.galleryStatus.setText(f"Select up to {gallery.MAX_TAGS} tags.")
+            return
+        self._tags.add_values(tag)
+
+    def _tags_changed(self) -> None:
+        """Normalize typed chips and refresh a running search only after a tag is applied."""
+        unique: dict[str, str] = {}
+        for value in self._tags.values():
+            tag = value.strip()[: gallery.MAX_TAG_LENGTH]
+            if tag:
+                unique.setdefault(tag.casefold(), tag)
+        values = tuple(unique.values())
+        if len(values) > gallery.MAX_TAGS:
+            self._tags.setText("; ".join(self._selected_tags))
+            self.form.galleryStatus.setText(f"Select up to {gallery.MAX_TAGS} tags.")
+            return
+        if values != self._tags.values():
+            self._tags.setText("; ".join(values))
+            return
+        if values == self._selected_tags:
+            return
+        adding = len(values) > len(self._selected_tags)
+        self._selected_tags = values
+        self._update_mode_controls()
+        if adding:
+            editor = self._tags.findChild(QLineEdit)
+            if editor is not None:
+                editor.clear()
+        self._mark_preferences_changed()
+        if self._loaded:
+            self.search()
+
+    def _layout_filter_row(self) -> None:
+        """Keep filter labels readable and wrap controls when the Browse pane narrows."""
+        form = self.form
+        sort, families, period = form.gallerySortCombo, form.galleryFamilyCombo, form.galleryPeriodCombo
+        labels = (
+            gallery.SORTS,
+            (
+                "All families",
+                *(name for _, name in self._family_choices),
+                *(f"{count} families" for count in range(2, len(self._family_choices) + 1)),
+            ),
+            ("All time", "This year", "This month", "This week", "Today"),
+        )
+        # Measure the styled label area, not guessed QSS padding: Qt's combo style
+        # also reserves native label/arrow insets inside the stylesheet box.
+        for combo, options in zip((sort, families, period), labels, strict=True):
+            combo.ensurePolished()
+            option = QStyleOptionComboBox()
+            combo.initStyleOption(option)
+            text_width = max(option.fontMetrics.horizontalAdvance(label) for label in options) + 8
+            option.rect.setWidth(max(combo.sizeHint().width(), text_width))
+            field = combo.style().subControlRect(
+                QStyle.ComplexControl.CC_ComboBox, option, QStyle.SubControl.SC_ComboBoxEditField, combo
+            )
+            combo.setFixedWidth(option.rect.width() + max(0, text_width - field.width()))
+
+        row = form.gallerySearchRow
+        spacing = row.horizontalSpacing()
+        fixed = (sort, families, period)
+        fixed_widths = [widget.width() for widget in fixed]
+        search_width = form.gallerySearchButton.sizeHint().width()
+        available = max(0, form.browseTab.width() - 20)  # Browse form margins: 10px each side.
+        wide_width = form.gallerySearchEdit.minimumWidth() + sum(fixed_widths) + search_width + 4 * spacing
+        if available >= wide_width:
+            mode = "wide"
+            per_line = 3
+        else:
+            # Qt grid columns are shared across rows, including the Search button's column.
+            # Pack only as many fixed-width dropdowns as can fit beside that reserved column.
+            usable = max(0, available - search_width - spacing)
+            per_line = 1
+            for number in (3, 2):
+                if sum(fixed_widths[:number]) + number * spacing <= usable:
+                    per_line = number
+                    break
+            mode = f"wrapped-{per_line}"
+        if mode == self._filter_row_mode:
+            return
+        for widget in (form.gallerySearchEdit, *fixed, form.gallerySearchButton):
+            row.removeWidget(widget)
+        for column in range(5):
+            row.setColumnStretch(column, 0)
+        if mode == "wide":
+            row.addWidget(form.gallerySearchEdit, 0, 0)
+            for column, widget in enumerate(fixed, start=1):
+                row.addWidget(widget, 0, column)
+            row.addWidget(form.gallerySearchButton, 0, 4)
+            row.setColumnStretch(0, 1)
+        else:
+            row.addWidget(form.gallerySearchEdit, 0, 0, 1, 4)
+            row.addWidget(form.gallerySearchButton, 0, 4)
+            for index, widget in enumerate(fixed):
+                row.addWidget(widget, 1 + index // per_line, index % per_line)
+            row.setColumnStretch(3, 1)
+        self._filter_row_mode = mode
 
     def _update_family_summary(self) -> None:
         combo = self.form.galleryFamilyCombo
@@ -539,6 +845,14 @@ class GalleryTab(QObject):
         if self._family_popup is None:
             self._filters_changed()
 
+    def _set_family_menu_focus(self, opened: bool) -> None:
+        """Match the combo's focus border to its separate checkbox menu."""
+        combo = self.form.galleryFamilyCombo
+        combo.setProperty("menuOpen", opened)
+        combo.style().unpolish(combo)
+        combo.style().polish(combo)
+        combo.update()
+
     def _show_family_menu(self) -> None:
         """Keep a multi-checkbox popover open while users select several families."""
         combo = self.form.galleryFamilyCombo
@@ -546,6 +860,9 @@ class GalleryTab(QObject):
             return
         menu = QMenu(combo)
         self._family_popup = menu
+        # The checkbox menu is a separate QMenu, so QComboBox:on never activates.
+        # Preserve the full focus border while that menu owns keyboard focus.
+        self._set_family_menu_focus(True)
         initial_families = self._selected_families
 
         def reset() -> None:
@@ -578,6 +895,7 @@ class GalleryTab(QObject):
 
         def closed() -> None:
             self._family_popup = None
+            self._set_family_menu_focus(False)
             if self._selected_families != initial_families:
                 # One Civitai request after the user finishes multiple checkbox changes.
                 self._filters_changed()
@@ -610,15 +928,22 @@ class GalleryTab(QObject):
         self._view.doItemsLayout()
         self._load_visible_covers()
 
+    def _show_empty_state(self, message: str) -> None:
+        """Display a clear message in the gallery area when there are no cards to show."""
+        self.form.galleryEmptyState.setText(message)
+        self.form.galleryResultsStack.setCurrentWidget(self.form.galleryEmptyPage)
+
     def ensure_loaded(self) -> None:
         """Restore input state without implicitly replaying a network search on startup."""
         if not self._loaded:
             self._loaded = True
-            self.form.galleryStatus.setText(
-                "Press Enter to search Civitai."
-                if self.form.gallerySearchEdit.text().strip()
-                else "Enter keywords and press Enter to search Civitai."
+            prompt = (
+                "Press Enter or Search to browse Civitai."
+                if self.form.gallerySearchEdit.text().strip() or self._selected_tags
+                else "Enter keywords or add a tag to search Civitai."
             )
+            self.form.galleryStatus.setText(prompt)
+            self._show_empty_state(prompt)
 
     def shutdown(self) -> None:
         if self._preferences_timer.isActive():
@@ -640,7 +965,7 @@ class GalleryTab(QObject):
 
     # ---------------------------------------------------------------------------------------- continuous listing
     def search(self) -> None:
-        """Start only an explicitly requested keyword search; preserve existing downloads."""
+        """Start an explicit keyword and/or tag search; preserve existing downloads."""
         if self._runner.closed:
             return
         if self._preferences_timer.isActive():
@@ -649,8 +974,17 @@ class GalleryTab(QObject):
         self._generation += 1
         self._cursor = None
         self._seen_cursors.clear()
-        self._has_more = True
-        self._empty_batches = 0
+        self._search_session = gallery.GallerySearch(
+            self.form.gallerySearchEdit.text(),
+            self._selected_tags,
+            self.form.gallerySortCombo.currentText(),
+            self._selected_families,
+            self.form.galleryPeriodCombo.currentData(),
+            keyword_tag_mode=self._keyword_tag_mode,
+            tag_match_mode=self._tag_match_mode,
+        )
+        self._has_more = self._search_session.active
+        self._initial_pages_done = False
         self._paused_empty = False
         self.form.galleryContinueButton.setText("Search further")
         self.form.galleryContinueButton.hide()
@@ -664,15 +998,16 @@ class GalleryTab(QObject):
         self.form.galleryNote.hide()
         # Keep bounded cover caches across searches; no Civitai image is written to disk.
         self._busy(False)
-        if not self.form.gallerySearchEdit.text().strip():
-            self.form.galleryStatus.setText("Enter keywords and press Enter to search Civitai.")
-            self._loaded = True
-            self._has_more = False
+        if not self._has_more:
+            prompt = "Enter keywords or add a tag to search Civitai."
+            self.form.galleryStatus.setText(prompt)
+            self._show_empty_state(prompt)
             return
         self._fetch()
 
     def _keyword_changed(self, value: str) -> None:
         """Do not continue a previous query while the user is editing different keywords."""
+        self._update_mode_controls()
         self._mark_preferences_changed()
         if not self._loaded:
             return
@@ -680,7 +1015,9 @@ class GalleryTab(QObject):
             self.search()
         else:
             self._has_more = False
-            self.form.galleryStatus.setText("Press Enter to search Civitai.")
+            self.form.galleryStatus.setText("Press Enter or Search to browse Civitai.")
+            if not self.cards:
+                self._show_empty_state("Press Enter or Search to browse Civitai.")
             # A running request cannot be cancelled, but its result must not replace new-query results.
             self._generation += 1
             self._busy(False)
@@ -697,17 +1034,16 @@ class GalleryTab(QObject):
             self._spinner.hide()
 
     def _fetch(self) -> None:
-        """Fetch the next cursor batch. Only scrolling or an unfilled viewport advances."""
+        """Fetch one listing page when searching, scrolling or explicitly continuing."""
         if self._runner.closed or self._loading or not self._has_more:
             return
-        if not self.form.gallerySearchEdit.text().strip():
+        session = self._search_session
+        if session is None or not session.active:
             return
+        if not self.cards:
+            self.form.galleryResultsStack.setCurrentWidget(self._view)
         self._busy(True)
         generation = self._generation
-        query = self.form.gallerySearchEdit.text()
-        sort = self.form.gallerySortCombo.currentText()
-        family = self._selected_families
-        period = self.form.galleryPeriodCombo.currentData()
         cursor = self._cursor
         self.form.galleryStatus.setText(
             f"{len(self.cards)} LoRAs loaded · Loading more…" if self.cards else "Loading Civitai LoRAs…"
@@ -717,7 +1053,7 @@ class GalleryTab(QObject):
             def blocking():
                 client = civitai.new_client()
                 try:
-                    return gallery.list_page(client, query, sort, cursor, family=family, period=period)
+                    return session.next_page(client)
                 finally:
                     client.close()
 
@@ -732,6 +1068,8 @@ class GalleryTab(QObject):
         if failure is not None or result is None:
             message = str(failure) if isinstance(failure, civitai.CivitaiError) else "Civitai could not be reached."
             self.form.galleryStatus.setText(f"Could not load more LoRAs. {message}")
+            if not self.cards:
+                self._show_empty_state("Could not load Civitai results. Select Retry to try again.")
             self._paused_empty = True
             self.form.galleryContinueButton.setText("Retry")
             self.form.galleryContinueButton.show()
@@ -754,16 +1092,29 @@ class GalleryTab(QObject):
         new_cursor = result.next_cursor
         self._has_more = bool(new_cursor and new_cursor not in self._seen_cursors and new_cursor != cursor)
         self._cursor = new_cursor if self._has_more else None
-        existing = {card.model_id for card in self.cards}
+        positions = {card.model_id: index for index, card in enumerate(self.cards)}
+        added = 0
         for card in result.cards:
-            if card.model_id in existing:
-                continue
-            existing.add(card.model_id)
-            self.cards.append(card)
-            item = QListWidgetItem()
+            position = positions.get(card.model_id)
+            if position is None:
+                positions[card.model_id] = len(self.cards)
+                self.cards.append(card)
+                item = QListWidgetItem()
+                item.setSizeHint(QSize(self._delegate.side, self._delegate.side))
+                self._view.addItem(item)
+                added += 1
+            else:
+                previous = self.cards[position]
+                card = gallery.merge_cards(previous, card)
+                if card == previous:
+                    continue
+                added += len(card.options) - len(previous.options)
+                self.cards[position] = card
+                item = self._view.item(position)
             item.setData(CARD_ROLE, card)
-            item.setSizeHint(QSize(self._delegate.side, self._delegate.side))
-            self._view.addItem(item)
+            choice = "Download directly" if len(card.options) == 1 else "Choose download versions"
+            item.setData(Qt.ItemDataRole.AccessibleTextRole, f"{card.name}. {choice}. Tags: {', '.join(card.tags)}")
+            item.setToolTip(card.tooltip())
         self._fit()
         self._load_visible_covers()
         if result.withheld_note:
@@ -772,35 +1123,67 @@ class GalleryTab(QObject):
             )
             self.form.galleryNote.show()
         count = len(self.cards)
-        suffix = " · Scroll for more" if self._has_more else " · End of results"
-        self.form.galleryStatus.setText(f"{count} LoRAs loaded{suffix}" if count else "No supported LoRAs matched.")
         diagnostic_event(log, "gallery.listed", data={"count": len(result.cards), "total": count})
-        self._empty_batches = 0 if result.cards else self._empty_batches + 1
-        # Never spin forever over empty or filtered-out API pages without user input.
-        if self._empty_batches >= 3 and self._has_more:
+        self.form.galleryContinueButton.hide()
+        no_progress = added == 0
+        self._selection_changed()
+        session = self._search_session
+        if session is not None and session.initial_pending and self._has_more:
+            # Complete one initial page from each source before reporting a final empty search.
+            self.form.galleryStatus.setText(
+                f"{count} LoRAs loaded · Searching remaining sources…" if count else "Searching Civitai…"
+            )
+            QTimer.singleShot(0, self._fetch)
+            return
+        self._initial_pages_done = True
+        if not self._has_more:
+            self.form.galleryStatus.setText(f"{count} LoRAs loaded · End of results" if count else "No results.")
+            if not count:
+                self._show_empty_state("No results.")
+        elif no_progress:
+            # A filtered or duplicate-only batch need not move the scrollbar.
+            # Keep continuation available, but require an explicit request.
             self._paused_empty = True
             self.form.galleryContinueButton.setText("Search further")
             self.form.galleryContinueButton.show()
-            self.form.galleryStatus.setText(f"{count} LoRAs loaded. No new supported models in recent Civitai batches.")
-        self._selection_changed()
-        QTimer.singleShot(0, self._maybe_more)
+            self.form.galleryStatus.setText(
+                f"{count} LoRAs loaded · No new models or versions in this batch."
+                if count
+                else "No matching results yet. Search further to continue."
+            )
+            if not count:
+                self._show_empty_state("No matches yet. Select Search further to continue.")
+        elif self._view.verticalScrollBar().maximum() <= 0:
+            self.form.galleryContinueButton.setText("Search further")
+            self.form.galleryContinueButton.show()
+            self.form.galleryStatus.setText(f"{count} LoRAs loaded · More pages available")
+        else:
+            self.form.galleryStatus.setText(f"{count} LoRAs loaded · Scroll for more")
 
     def _continue_after_empty(self) -> None:
-        """Explicitly resume a rare run of empty filtered batches without creating infinite requests."""
-        self._empty_batches = 0
+        """Continue an empty/sparse listing only when the user explicitly requests more."""
         self._paused_empty = False
         self.form.galleryContinueButton.hide()
         self._fetch()
 
     def _on_scroll(self, *_args) -> None:
         self._load_visible_covers()
-        self._maybe_more()
+        if self._initial_pages_done:
+            self._maybe_more()
 
     def _maybe_more(self) -> None:
-        if self._loading or self._paused_empty or not self._has_more or self._runner.closed:
+        if (
+            not self._initial_pages_done
+            or self._loading
+            or self._paused_empty
+            or not self._has_more
+            or self._runner.closed
+        ):
             return
         bar = self._view.verticalScrollBar()
-        if bar.maximum() <= 0 or bar.value() >= bar.maximum() - max(bar.pageStep() * 2, 600):
+        # An unscrollable viewport never triggers another page automatically.
+        # The explicit Search further action handles sparse or empty results.
+        if bar.maximum() > 0 and bar.value() > 0 and bar.value() >= bar.maximum() - max(bar.pageStep() * 2, 600):
             self._fetch()
 
     # ------------------------------------------------------------------------------------- lazy bounded covers

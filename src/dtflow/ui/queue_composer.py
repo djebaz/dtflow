@@ -15,6 +15,7 @@ from PySide6.QtWidgets import (
     QDoubleSpinBox,
     QLabel,
     QLayout,
+    QLineEdit,
     QPushButton,
     QSizePolicy,
     QSpinBox,
@@ -138,6 +139,7 @@ class ValueChips(QWidget):
         self._convert: Callable[[object], str] | None = None
         self._edit_chip: Callable[[str], Sequence[LoRASelection]] | None = None
         self._lead = 0
+        self._control_height: int | None = None
         self._group: Callable[[str], tuple[str, str]] | None = None
         self._label: Callable[[str], str] | None = None
         self._replace_all = False
@@ -211,10 +213,15 @@ class ValueChips(QWidget):
         multi_weight: bool = False,
         edit_chip: Callable[[str], Sequence[LoRASelection]] | None = None,
         replace_all: bool = False,
+        add_first: bool = False,
+        control_height: int | None = None,
         group: Callable[[str], tuple[str, str]] | None = None,
         label: Callable[[str], str] | None = None,
     ) -> None:
-        """``search`` opens the shared searchable editor; ``choice`` is an editable list; ``int``/``float`` a box.
+        """``search`` opens the shared searchable editor; ``choice`` is an editable list; ``text`` a line edit.
+
+        ``add_first`` places the input and Add button ahead of chips, and ``control_height`` aligns their heights
+        with the chips for compact horizontal filters. Neither changes existing Queues composer defaults.
 
         With ``weights`` the search editor is the shared LoRA checkbox+slider editor, starting from ``initial()``; the
         checked ``(identifier, weight)`` pairs go to ``convert``, which returns the chip value (or several).
@@ -227,7 +234,8 @@ class ValueChips(QWidget):
         self._weights, self._families, self._convert, self._initial = weights, families, convert, initial
         self._edit_chip, self._replace_all, self._group = edit_chip, replace_all, group
         self._label = label
-        self._lead = 1 if group is not None else 0  # a grouped row keeps its button first, above the LoRA lines
+        self._control_height = control_height
+        self._lead = 2 if add_first and kind in ("choice", "text") else 1 if group is not None else 0
         self._editor_title, self._editor_hint, self._multi_weight = editor_title, editor_hint, multi_weight
         if self._input is not None:
             self._layout.removeWidget(self._input)
@@ -239,6 +247,10 @@ class ValueChips(QWidget):
             combo.setInsertPolicy(QComboBox.InsertPolicy.NoInsert)
             combo.lineEdit().returnPressed.connect(self._add_clicked)
             self._input = combo
+        elif kind == "text":
+            text_input = QLineEdit(self)
+            text_input.returnPressed.connect(self._add_clicked)
+            self._input = text_input
         elif kind in ("int", "float"):
             spin = QSpinBox(self) if kind == "int" else QDoubleSpinBox(self)
             if kind == "float":
@@ -252,9 +264,18 @@ class ValueChips(QWidget):
             self._layout.removeWidget(self._add)
             self._layout.addWidget(self._input)
             self._layout.addWidget(self._add)
-        if group is not None:
+        if add_first and self._input is not None:
+            self._layout.removeWidget(self._input)
+            self._layout.removeWidget(self._add)
+            self._layout.insertWidget(0, self._input)
+            self._layout.insertWidget(1, self._add)
+        elif group is not None:
             self._layout.removeWidget(self._add)
             self._layout.insertWidget(0, self._add)
+        if control_height is not None:
+            self._add.setFixedHeight(control_height)
+            if self._input is not None:
+                self._input.setFixedHeight(control_height)
         self._add.setEnabled(True)  # preview forms start with every control disabled until a controller wires it
         self._add.setText("Add" if self._input is not None else "Edit…" if replace_all else "Add…")
         self._add.setAccessibleName(f"{'Edit' if replace_all else 'Add'} {_noun(title)}")
@@ -352,6 +373,8 @@ class ValueChips(QWidget):
             text = self.fontMetrics().elidedText(full, Qt.TextElideMode.ElideRight, CHIP_TEXT_WIDTH)
         if self._edit_chip is not None:
             edit = QPushButton(text, self)
+            if self._control_height is not None:
+                edit.setFixedHeight(self._control_height)
             edit.setProperty("role", "valueChip")
             edit.setToolTip(f"Edit {hint}")
             edit.setAccessibleName(f"Edit {_noun(self._title)} {value}")
@@ -359,6 +382,8 @@ class ValueChips(QWidget):
             self._layout.insertWidget(self._lead + len(self._chips), edit)
             self._chips.append(edit)
         chip = QPushButton("×" if self._edit_chip is not None else f"{text}  ×", self)
+        if self._control_height is not None:
+            chip.setFixedHeight(self._control_height)
         chip.setProperty("role", "valueChip")
         chip.setToolTip(f"Remove {hint}")
         chip.setAccessibleName(f"Remove {_noun(self._title)} {value}")
@@ -369,6 +394,11 @@ class ValueChips(QWidget):
     def _add_clicked(self) -> None:
         if isinstance(self._input, QComboBox):
             self.add_value(self._input.currentText())
+        elif isinstance(self._input, QLineEdit):
+            value = self._input.text().strip()
+            if value:
+                self.add_value(value)
+                self._input.clear()
         elif isinstance(self._input, QSpinBox):
             self.add_value(str(self._input.value()))
         elif isinstance(self._input, QDoubleSpinBox):

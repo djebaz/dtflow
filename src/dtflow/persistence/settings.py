@@ -118,7 +118,15 @@ def _browse_preferences(raw: object) -> dict:
     if isinstance(query, str) and len(query) <= 100 and "\x00" not in query:
         values["query"] = query
     sort = raw.get("sort")
-    if sort in ("Most Downloaded", "Highest Rated", "Newest"):
+    if sort in (
+        "Most Downloaded",
+        "Highest Rated",
+        "Newest",
+        "Most Liked",
+        "Most Discussed",
+        "Most Collected",
+        "Most Images",
+    ):
         values["sort"] = sort
     period = raw.get("period")
     if period in ("AllTime", "Year", "Month", "Week", "Day"):
@@ -130,11 +138,25 @@ def _browse_preferences(raw: object) -> dict:
         and all(isinstance(key, str) and 0 < len(key) <= 32 for key in families)
     ):
         values["families"] = list(dict.fromkeys(families))
+    tags = raw.get("tags")
+    if (
+        isinstance(tags, list)
+        and len(tags) <= 8
+        and all(isinstance(tag, str) and 0 < len(tag.strip()) <= 200 and "\x00" not in tag for tag in tags)
+    ):
+        unique: dict[str, str] = {}
+        for tag in tags:
+            clean = tag.strip()
+            unique.setdefault(clean.casefold(), clean)
+        values["tags"] = list(unique.values())
+    for key in ("keyword_tag_mode", "tag_match_mode"):
+        if raw.get(key) in ("and", "or"):
+            values[key] = raw[key]
     return values
 
 
 def load_civitai_browse_preferences(state: Path) -> dict:
-    """Return saved keywords, ordering, period and selected DTFlow family keys, if present."""
+    """Return saved Browse inputs and AND/OR filter modes, if present."""
     return _browse_preferences(_read(state).get("civitai_browse"))
 
 
