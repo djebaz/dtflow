@@ -186,7 +186,8 @@ QComboBox:hover::drop-down {
   background: transparent;
   border-left-color: ${color.inputBorderHover};
 }
-QComboBox:on {
+QComboBox:on,
+QComboBox#galleryFamilyCombo[menuOpen="true"] {
   border-color: ${color.focus};
 }
 QComboBox:on::drop-down {
