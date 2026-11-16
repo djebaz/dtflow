@@ -531,7 +531,6 @@ class GalleryTab(QObject):
         self._seen_cursors: set[str] = set()
         self._has_more = False  # no listing until keywords or tags are explicitly submitted
         self._initial_pages_done = False
-        self._empty_batches = 0
         self._paused_empty = False
         self._generation = 0
         self._loading = False
@@ -894,7 +893,6 @@ class GalleryTab(QObject):
         )
         self._has_more = self._search_session.active
         self._initial_pages_done = False
-        self._empty_batches = 0
         self._paused_empty = False
         self.form.galleryContinueButton.setText("Search further")
         self.form.galleryContinueButton.hide()
@@ -1028,31 +1026,31 @@ class GalleryTab(QObject):
         suffix = " · Scroll for more" if self._has_more else " · End of results"
         self.form.galleryStatus.setText(f"{count} LoRAs loaded{suffix}" if count else "No supported LoRAs matched.")
         diagnostic_event(log, "gallery.listed", data={"count": len(result.cards), "total": count})
-        self._empty_batches = 0 if added else self._empty_batches + 1
-        # Newly discovered versions count as progress even when their model card already exists.
-        # Give each active OR stream an opportunity before pausing sparse searches.
-        limit = max(3, self._search_session.source_count if self._search_session is not None else 3)
-        if self._empty_batches >= limit and self._has_more:
-            self._paused_empty = True
+        # A duplicate-only or filtered-out page may leave the scrollbar unchanged.
+        # Always expose an explicit way to continue while further listing pages exist.
+        self.form.galleryContinueButton.hide()
+        no_progress = added == 0
+        if self._has_more and no_progress:
             self.form.galleryContinueButton.setText("Search further")
             self.form.galleryContinueButton.show()
-            self.form.galleryStatus.setText(f"{count} LoRAs loaded. No new supported models in recent Civitai batches.")
         self._selection_changed()
         session = self._search_session
-        if session is not None and session.initial_pending and self._has_more and not self._paused_empty:
-            # One API page from each source on initial Search, regardless of viewport height.
+        if session is not None and session.initial_pending and self._has_more:
+            # Finish one initial page per stream; do not page further to fill the viewport.
             QTimer.singleShot(0, self._fetch)
             return
         self._initial_pages_done = True
-        # A filtered search may have no scrollbar. Let the user request more explicitly
-        # rather than silently paging through all of Civitai to fill an empty viewport.
-        if self._has_more and self._view.verticalScrollBar().maximum() <= 0:
+        if self._has_more and no_progress:
+            self._paused_empty = True
+            self.form.galleryStatus.setText(
+                f"{count} LoRAs loaded. No new models or versions in the last Civitai batch."
+            )
+        elif self._has_more and self._view.verticalScrollBar().maximum() <= 0:
             self.form.galleryContinueButton.setText("Search further")
             self.form.galleryContinueButton.show()
 
     def _continue_after_empty(self) -> None:
-        """Explicitly resume a rare run of empty filtered batches without creating infinite requests."""
-        self._empty_batches = 0
+        """Continue an empty/sparse listing only when the user explicitly requests more."""
         self._paused_empty = False
         self.form.galleryContinueButton.hide()
         self._fetch()
