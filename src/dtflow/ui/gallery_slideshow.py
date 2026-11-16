@@ -1,6 +1,7 @@
 """Window-owned slideshow presentation over the existing bounded Detail viewer."""
 
 import math
+from dataclasses import replace
 from pathlib import Path
 
 from PySide6.QtCore import QEvent, QFile, QIODevice, QObject, QSignalBlocker, Qt, QTimer, Slot
@@ -17,7 +18,14 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from dtflow import gallery_limits
+from dtflow.services.gallery import locate_output, query_outputs
 from dtflow.ui.gallery_detail_preview import toggle_image_focus
+
+DIRECTIONS = ("forward", "backward", "new")
+DIRECTION_TEXT = {"forward": "Forward →", "backward": "Backward ←", "new": "New ✦"}
+DIRECTION_NAMES = {"forward": "Forward", "backward": "Backward", "new": "New"}
+SUCCESSOR_COUNT = 8  # following identities kept with the resume anchor in case the anchor itself disappears
 
 
 class GallerySlideshow(QObject):
@@ -32,6 +40,15 @@ class GallerySlideshow(QObject):
         self._held_keys = set()
         self._preview_number = 1
         self._seek_target = None
+        self.mode = "forward"
+        self._known_head: list[str] | None = None  # newest identities seen so far (bounded to one batch)
+        self._queue: list[str] = []  # new identities not shown yet, oldest arrival first
+        self._anchor: str | None = None  # picture on screen when the current run of new images began
+        self._anchor_following: list[str] = []
+        self._anchor_ordinal = 0
+        self._anchor_shift = 0
+        self._busy = False  # an identity lookup is in flight
+        self._epoch = 0  # bumped when a lookup or head read becomes obsolete
         self.deferred_query = None
         self.deferred_image = None
         self.deferred_retry = None
@@ -80,7 +97,7 @@ class GallerySlideshow(QObject):
         self.wheel_timer.setSingleShot(True)
         self.wheel_timer.setInterval(180)
         self.wheel_timer.timeout.connect(self._finish_interaction)
-        self.direction.toggled.connect(self._direction_changed)
+        self.direction.clicked.connect(self._cycle_direction)
         self._update_direction()
         self.position.valueChanged.connect(self._seek)
         self.position.sliderPressed.connect(self._begin_drag)
@@ -130,7 +147,13 @@ class GallerySlideshow(QObject):
         self.active = True
         with QSignalBlocker(self.button):
             self.button.setChecked(True)
-        gallery._apply_live(0)  # polling/Follow must not pull an automatically advanced selection away
+        self._reset_run()
+        self._known_head = None
+        # Polling/Follow must not pull an automatically advanced selection away; New keeps Live (no Follow)
+        # so arriving images are detected while the view never moves by itself.
+        gallery._apply_live(1 if self.new_available() else 0)
+        self._update_direction()
+        self._read_head()
         gallery.show_view("Detail")
         toggle_image_focus(gallery.page, True)
         self.header.hide()
@@ -162,6 +185,8 @@ class GallerySlideshow(QObject):
         if not self.active:
             return
         self.active = False
+        self._reset_run()
+        self._known_head = None
         self.wheel_timer.stop()
         self.scrubbing = self._dragging = False
         self._held_keys.clear()
@@ -226,38 +251,201 @@ class GallerySlideshow(QObject):
         )
         self.controls.raise_()
 
-    def _update_direction(self) -> None:
-        backward = self.direction.isChecked()
-        self.direction.setText("Backward ←" if backward else "Forward →")
-        self.direction.setAccessibleName(
-            "Slideshow direction: Backward" if backward else "Slideshow direction: Forward"
-        )
+    def new_available(self) -> bool:
+        """New relies on Newest first, where arrivals land at offset 0."""
+        sort = getattr(self.gallery, "sort", None)  # built after this object while the page initializes
+        return self.mode == "new" and (sort is None or sort.currentText() in ("Newest first", ""))
 
-    def _direction_changed(self, _checked: bool) -> None:
+    def _update_direction(self) -> None:
+        unavailable = self.mode == "new" and not self.new_available()
+        text = DIRECTION_TEXT[self.mode]
+        name = f"Slideshow direction: {DIRECTION_NAMES[self.mode]}"
+        if unavailable:
+            text += " (needs Newest first)"
+            name += " (unavailable, plays as Forward: needs Newest first sort)"
+        self.direction.setText(text)
+        self.direction.setAccessibleName(name)
+
+    def _set_mode(self, mode: str) -> None:
+        self.mode = mode
         self._update_direction()
         self.gallery._schedule_save()
         if self.active:
+            self._reset_run()
+            self._known_head = None
+            self.gallery._apply_live(1 if self.new_available() else 0)
+            self._read_head()
             self._reveal_controls()
             self.timer.start(self._milliseconds())
 
+    def _cycle_direction(self) -> None:
+        self._set_mode(DIRECTIONS[(DIRECTIONS.index(self.mode) + 1) % len(DIRECTIONS)])
+
     def preferences(self) -> dict:
         """Convenience settings only; playback/fullscreen state is never resume authority."""
-        return {"seconds": self.interval.value(), "backward": self.direction.isChecked()}
+        return {"seconds": self.interval.value(), "direction": self.mode}
 
     def restore_preferences(self, document: dict) -> None:
         stored = document.get("slideshow")
         if not isinstance(stored, dict):
             return
         seconds = stored.get("seconds")
-        backward = stored.get("backward")
+        direction = stored.get("direction")
+        if direction not in DIRECTIONS:
+            # Missing or invalid: the legacy boolean may still apply; otherwise Forward.
+            direction = "backward" if stored.get("backward") is True and "direction" not in stored else "forward"
         if type(seconds) in (int, float) and 0.5 <= seconds <= 8 and math.isfinite(seconds):
             with QSignalBlocker(self.interval), QSignalBlocker(self.seconds):
                 self.interval.setValue(seconds)
                 self.seconds.setValue(seconds)
-        if type(backward) is bool:
-            with QSignalBlocker(self.direction):
-                self.direction.setChecked(backward)
-            self._update_direction()
+        self.mode = direction
+        self._update_direction()
+
+    # --- New direction: detection, queue and resume -------------------------------------------------
+
+    def _reset_run(self) -> None:
+        self._epoch += 1
+        self._busy = False
+        self._queue.clear()
+        self._anchor = None
+        self._anchor_following = []
+        self._anchor_shift = 0
+
+    def _read_head(self) -> None:
+        """Read the newest batch (current filters, offset 0); the bounded unit for spotting arrivals."""
+        gallery = self.gallery
+        if not self.active or not self.new_available() or gallery.runner.closed:
+            return
+        try:
+            query = replace(gallery._query(offset=0), limit=gallery_limits.DEFAULT_BATCH)
+        except Exception:  # an invalid filter text simply means no detection this round
+            return
+        epoch = self._epoch
+
+        async def read():
+            page = await query_outputs(gallery.state_dir, query)
+            return None if page.snapshot_at else [item.identity for item in page.items]
+
+        def done(result, error):
+            if epoch != self._epoch or error is not None or result is None or not self.active:
+                return
+            self._head_seen(result)
+
+        gallery.runner.submit(read(), done)
+
+    def _head_seen(self, head: list[str]) -> None:
+        known = self._known_head
+        self._known_head = head
+        if known is None or not self.new_available():
+            return
+        seen = set(known)
+        arrived = []
+        for identity in head:  # only the leading run counts: a deletion pulling an old image in at the end is not new
+            if identity in seen:
+                break
+            arrived.append(identity)
+        if arrived:
+            if self._anchor is not None:
+                self._anchor_shift += len(arrived)
+            self._queue.extend(reversed(arrived))  # oldest arrival first
+
+    def refreshed(self) -> None:
+        """Called after each completed gallery read."""
+        if self.active and self.new_available() and not self.scrubbing:
+            self._read_head()
+
+    def drop_run(self) -> None:
+        """Manual navigation takes control: queue and anchor go, New continues from the chosen picture."""
+        if self._queue or self._anchor is not None or self._busy:
+            self._reset_run()
+
+    def _begin_run(self) -> None:
+        gallery = self.gallery
+        if self._anchor is not None:
+            return
+        self._anchor = gallery.selected_id
+        index = next((i for i, item in enumerate(gallery.items) if item.identity == self._anchor), -1)
+        self._anchor_ordinal = gallery.offset + index if index >= 0 else 0
+        self._anchor_following = [item.identity for item in gallery.items[index + 1 : index + 1 + SUCCESSOR_COUNT]]
+        self._anchor_shift = 0
+
+    def _lookup(self, identities: list[str], done) -> None:
+        """Resolve the first still-present identity to its ordinal under the current filters (bounded SQL)."""
+        gallery = self.gallery
+        self._busy = True
+        epoch = self._epoch
+        try:
+            query = replace(gallery._query(offset=0), limit=gallery_limits.DEFAULT_BATCH)
+        except Exception:
+            self._busy = False
+            return
+
+        async def work():
+            for rank, identity in enumerate(identities):
+                position = await locate_output(gallery.state_dir, query, identity)
+                if position is not None:
+                    return rank, position
+            return None
+
+        def finished(result, error):
+            if epoch != self._epoch or not self.active:
+                return
+            self._busy = False
+            done(None if error is not None else result)
+
+        gallery.runner.submit(work(), finished)
+
+    def _show_number(self, number: int) -> None:
+        self._seek_target = number
+        self.gallery.slideshow_seek(number)
+        self.sync_position()
+        self.timer.start(100)  # image_ready restarts the full dwell once the picture is decoded
+
+    def _take_new(self) -> bool:
+        """At an advance: show the next pending new image, or resume after the anchor. True when handled here."""
+        if not self.new_available():
+            return False
+        if self._queue:
+            self._begin_run()
+            identity = self._queue[0]
+
+            def shown(result):
+                if self._queue and self._queue[0] == identity:
+                    self._queue.pop(0)
+                if result is None:  # deleted or filtered out meanwhile: nothing to show, try the next advance step
+                    self.timer.start(0)
+                    return
+                self._show_number(result[1] + 1)
+
+            self._lookup([identity], shown)
+            return True
+        if self._anchor is not None:
+            self._resume()
+            return True
+        return False
+
+    def _resume(self) -> None:
+        gallery = self.gallery
+        candidates = [self._anchor, *self._anchor_following]
+        ordinal = self._anchor_ordinal + self._anchor_shift
+
+        def resumed(result):
+            if self._queue:  # another new image arrived while resolving: keep the run going
+                self.timer.start(0)
+                return
+            self._anchor = None
+            self._anchor_following = []
+            self._anchor_shift = 0
+            if result is None:  # nothing of the old neighbourhood is left: use the shifted ordinal
+                target = ordinal
+            else:
+                rank, position = result
+                target = position + 1 if rank == 0 else position  # a following item is itself the next picture
+            if target >= gallery.total:
+                target = 0
+            self._show_number(target + 1)
+
+        self._lookup(candidates, resumed)
 
     def sync_position(self) -> None:
         if not self.active or self.scrubbing or self.position.isSliderDown():
@@ -286,6 +474,7 @@ class GallerySlideshow(QObject):
                 self._preview_position(number)
                 return
             self._reveal_controls()
+            self.drop_run()
             self._seek_target = number
             self.gallery.slideshow_seek(number)
             self.sync_position()
@@ -465,13 +654,16 @@ class GallerySlideshow(QObject):
             or gallery._image_pending
             or gallery._pending_page_jump
             or gallery._slideshow_position is not None
+            or self._busy
         ):
             self.timer.start(100)
             return
         if not gallery.items:
             self.stop()
             return
-        self.navigate(-1 if self.direction.isChecked() else 1, reveal=False)
+        if self._take_new():
+            return
+        self.navigate(-1 if self.mode == "backward" else 1, reveal=False)
 
     def navigate(self, delta: int, *, reveal: bool = True) -> None:
         gallery = self.gallery
@@ -486,6 +678,7 @@ class GallerySlideshow(QObject):
             return
         if reveal:
             self._reveal_controls()
+            self.drop_run()
         gallery.slideshow_step(delta)
         # image_ready restarts the full dwell after decoding; a slow read/paging is only polled.
         self.timer.start(100 if gallery._loading or gallery._image_pending else self._milliseconds())

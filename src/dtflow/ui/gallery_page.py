@@ -2045,6 +2045,7 @@ class GalleryPage(QObject):
         self.offset = query.offset
         self.items = list(page.items)
         self.total = page.total
+        self.slideshow.refreshed()
         if following:
             self._page_scroll_target = "start"
             if self.mode == "Detail":
