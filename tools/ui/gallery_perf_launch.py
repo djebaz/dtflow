@@ -157,7 +157,7 @@ def enable_grid_progress_logging() -> None:
 
 
 def main(argv: list[str] | None = None) -> int:
-    """Launch native DTFlow with one benchmark profile and existing -x logs."""
+    """Launch native DTFlow with one benchmark profile and existing -x -perf logs."""
 
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--profile", type=Path, required=True, help="Profile JSON created by the benchmark driver.")
@@ -192,7 +192,7 @@ def main(argv: list[str] | None = None) -> int:
         enable_grid_progress_logging()
     from dtflow.cli import main as dtflow_main
 
-    cli = ["-x", "-q", str(args.logs), "gui", "-ml", str(ml), "-mc", str(mc), "-format", "jpg"]
+    cli = ["-x", "-perf", "-q", str(args.logs), "gui", "-ml", str(ml), "-mc", str(mc), "-format", "jpg"]
     if args.no_cache:
         cli.append("-nc")
     return dtflow_main(cli)

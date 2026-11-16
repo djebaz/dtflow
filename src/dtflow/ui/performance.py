@@ -11,7 +11,7 @@ from time import monotonic, monotonic_ns, thread_time_ns
 from PySide6.QtCore import QEvent, QObject, Qt, QTimer, Slot
 
 from dtflow.diagnostics import measurement, source_summary
-from dtflow.logging_setup import dev_enabled
+from dtflow.logging_setup import perf_enabled
 from dtflow.memory_diagnostics import enabled as memory_enabled, observe as memory_observe
 
 log = logging.getLogger(__name__)
@@ -98,7 +98,7 @@ def profile_slow_gui_callback(name: str):
     def decorate(callback):
         @wraps(callback)
         def wrapped(*args, **kwargs):
-            if not dev_enabled():
+            if not perf_enabled():
                 return callback(*args, **kwargs)
             wall_started = monotonic_ns()
             cpu_started = thread_time_ns()
@@ -153,7 +153,7 @@ class GuiHeartbeat(QObject):
         runner.shutdown_started.connect(self.stop)
         window.destroyed.connect(self.stop)
         window.installEventFilter(self)
-        if dev_enabled():
+        if perf_enabled():
             # The Qt timer cannot diagnose its own long event-loop starvation.
             # This passive thread samples safe Python frame names once per stall.
             Thread(target=self._watch_gui, name="dtflow-gui-watchdog", daemon=True).start()
@@ -197,7 +197,7 @@ class GuiHeartbeat(QObject):
             self._memory_idle_since = monotonic()
             self._memory_timer.start()
         self._execution_active = active
-        context = self._context() if dev_enabled() else None
+        context = self._context() if perf_enabled() else None
         scope = (context["workspace"], context["operation"]) if context else None
         if scope != self._scope:
             self._stats.flush(force=True)

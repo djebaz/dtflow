@@ -49,7 +49,7 @@ def test_queue_handoff_retries_only_latest_request_and_cancels_on_navigation_or_
     _form, gallery, runner, _records, _state = presentation
     submitted = []
     observations = []
-    monkeypatch.setattr(gallery_ui, "dev_enabled", lambda: True)
+    monkeypatch.setattr(gallery_ui, "perf_enabled", lambda: True)
     monkeypatch.setattr(gallery_ui, "measurement", lambda _log, name, **data: observations.append((name, data)))
     monkeypatch.setattr(gallery, "_submit_query", lambda *args, **kwargs: submitted.append(kwargs))
     gallery._loading = True

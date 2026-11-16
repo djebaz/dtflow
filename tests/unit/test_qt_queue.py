@@ -68,7 +68,7 @@ def test_queue_thumbnail_revalidates_cached_availability_and_owns_shutdown(qtbot
     runner = Runner()
     thumbnails = thumbnail_ui.QueueThumbnails(runner, tmp_path)
     observations = []
-    monkeypatch.setattr(thumbnail_ui, "dev_enabled", lambda: True)
+    monkeypatch.setattr(thumbnail_ui, "perf_enabled", lambda: True)
     monkeypatch.setattr(thumbnail_ui, "measurement", lambda _log, name, **data: observations.append((name, data)))
     now = [0.0]
     monkeypatch.setattr(thumbnail_ui, "monotonic", lambda: now[0])
