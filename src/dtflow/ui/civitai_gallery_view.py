@@ -1023,31 +1023,39 @@ class GalleryTab(QObject):
             )
             self.form.galleryNote.show()
         count = len(self.cards)
-        suffix = " · Scroll for more" if self._has_more else " · End of results"
-        self.form.galleryStatus.setText(f"{count} LoRAs loaded{suffix}" if count else "No supported LoRAs matched.")
         diagnostic_event(log, "gallery.listed", data={"count": len(result.cards), "total": count})
-        # A duplicate-only or filtered-out page may leave the scrollbar unchanged.
-        # Always expose an explicit way to continue while further listing pages exist.
         self.form.galleryContinueButton.hide()
         no_progress = added == 0
-        if self._has_more and no_progress:
-            self.form.galleryContinueButton.setText("Search further")
-            self.form.galleryContinueButton.show()
         self._selection_changed()
         session = self._search_session
         if session is not None and session.initial_pending and self._has_more:
-            # Finish one initial page per stream; do not page further to fill the viewport.
+            # Complete one initial page from each source before reporting a final empty search.
+            self.form.galleryStatus.setText(
+                f"{count} LoRAs loaded · Searching remaining sources…" if count else "Searching Civitai…"
+            )
             QTimer.singleShot(0, self._fetch)
             return
         self._initial_pages_done = True
-        if self._has_more and no_progress:
-            self._paused_empty = True
+        if not self._has_more:
             self.form.galleryStatus.setText(
-                f"{count} LoRAs loaded. No new models or versions in the last Civitai batch."
+                f"{count} LoRAs loaded · End of results" if count else "No results."
             )
-        elif self._has_more and self._view.verticalScrollBar().maximum() <= 0:
+        elif no_progress:
+            # A filtered or duplicate-only batch need not move the scrollbar.
+            # Keep continuation available, but require an explicit request.
+            self._paused_empty = True
             self.form.galleryContinueButton.setText("Search further")
             self.form.galleryContinueButton.show()
+            self.form.galleryStatus.setText(
+                f"{count} LoRAs loaded · No new models or versions in this batch."
+                if count else "No matching results yet. Search further to continue."
+            )
+        elif self._view.verticalScrollBar().maximum() <= 0:
+            self.form.galleryContinueButton.setText("Search further")
+            self.form.galleryContinueButton.show()
+            self.form.galleryStatus.setText(f"{count} LoRAs loaded · More pages available")
+        else:
+            self.form.galleryStatus.setText(f"{count} LoRAs loaded · Scroll for more")
 
     def _continue_after_empty(self) -> None:
         """Continue an empty/sparse listing only when the user explicitly requests more."""
