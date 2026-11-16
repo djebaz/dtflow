@@ -145,6 +145,11 @@ class GenerationService:
             self.backend.check_connection(), self.timeouts.connect + self.timeouts.inventory, "connectivity"
         )
 
+    def inventory_age(self) -> float | None:
+        """Seconds since the backend last refreshed its inventory; None when unknown or not offered."""
+        age = getattr(self.backend, "inventory_age", None)
+        return age() if callable(age) else None
+
     async def get_inventory(self, refresh: bool = False):
         return await self._bounded(self.backend.get_inventory(refresh=refresh), self.timeouts.inventory, "inventory")
 

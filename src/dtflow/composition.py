@@ -15,6 +15,7 @@ from dtflow.core.image_operations import ImageOperationPermit
 from dtflow.core.models import (
     MAX_QUEUE_CONCURRENCY,
     Backend,
+    BackendError,
     Credential,
     CredentialProvider,
     TimeoutPolicy,
@@ -55,6 +56,23 @@ class _SharedSecret:
     async def get(self) -> Credential | None:
         value = self._environ.get(SHARED_SECRET, "").strip()
         return Credential("environment", value) if value else None
+
+
+async def cloud_key_digest(saved: CredentialProvider | None, environ: Mapping[str, str] | None = None) -> str | None:
+    """Opaque identity of the key a new DT+ backend would use now, or None when none can be resolved.
+
+    Same precedence rule as ``create_backend``; used to decide whether a kept backend still belongs to the selected key.
+    The key itself is never returned or logged.
+    """
+    from dtflow.services.cloud_usage import key_identity
+
+    try:
+        credential = await _CloudCredentials(
+            os.environ if environ is None else environ, saved or _NoSavedCredentials()
+        ).get()
+    except BackendError:
+        return None
+    return key_identity(credential.secret.strip())[0]
 
 
 @dataclass(frozen=True, slots=True)

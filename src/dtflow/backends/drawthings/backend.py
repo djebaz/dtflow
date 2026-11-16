@@ -113,6 +113,7 @@ class DrawThingsBackend:
         self._active = 0
         self._lane = asyncio.Semaphore(self.max_concurrency)
         self._inventory: InventorySnapshot | None = None
+        self._inventory_at: float | None = None  # monotonic time of the last successful inventory refresh
         self._stale_reason: str | None = None
         self._model_specs: dict[str, dict] = {}
         self._echoed = False  # an Echo answered on this backend, whether or not it advertised descriptions
@@ -310,8 +311,15 @@ class DrawThingsBackend:
             secret_sent=secret_sent,
             endpoint=self.endpoint.label,
         )
+        self._inventory_at = time.monotonic()
         self._stale_reason = None
         return self._inventory
+
+    def inventory_age(self) -> float | None:
+        """Seconds since this backend last refreshed its inventory, or None when it holds none."""
+        if self._inventory is None or self._inventory_at is None or self._stale_reason is not None:
+            return None
+        return time.monotonic() - self._inventory_at
 
     async def get_file_identities(
         self, identifiers: tuple[str, ...], *, with_sha256: tuple[str, ...] = ()
