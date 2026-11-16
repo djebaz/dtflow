@@ -26,7 +26,7 @@ from dtflow._diagnostic_schema import (
     sanitize,
 )
 from dtflow._diagnostic_writer import Admission, CaptureHandler, DiagnosticListener, JsonlHandler
-from dtflow.diagnostics import ATTEMPT
+from dtflow.diagnostics import ATTEMPT, perf_requested
 
 __all__ = [
     "ATTEMPT",
@@ -37,6 +37,7 @@ __all__ = [
     "configured_directory",
     "default_directory",
     "dev_enabled",
+    "perf_enabled",
     "sanitize",
 ]
 LOGGER = "dtflow"
@@ -248,3 +249,8 @@ def _configure_logging(*, directory, dev, build, backend, session, report_error)
 def dev_enabled() -> bool:
     """Development mode changes diagnostic detail only."""
     return logging.getLogger(LOGGER).isEnabledFor(logging.DEBUG)
+
+
+def perf_enabled() -> bool:
+    """Performance measurements need both ``-x`` and ``-perf``; they change diagnostic detail only."""
+    return perf_requested() and dev_enabled()

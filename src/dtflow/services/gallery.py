@@ -13,7 +13,7 @@ from urllib.parse import urlsplit, urlunsplit
 from dtflow.core.gallery import GalleryDetail, GalleryItem, GalleryPage, GalleryQuery
 from dtflow.core.models import ValidationError
 from dtflow.diagnostics import measurement
-from dtflow.logging_setup import dev_enabled
+from dtflow.logging_setup import perf_enabled
 from dtflow.persistence import gallery as storage
 from dtflow.persistence import gallery_snapshot
 from dtflow.persistence.original_io import original_images_lock
@@ -153,7 +153,7 @@ async def query_outputs(state: Path, query: GalleryQuery | None = None) -> Galle
         page = GalleryPage(
             tuple(item_from_record(x, paths, state=state) for x in records), total, query.offset, query.limit
         )
-        if dev_enabled():
+        if perf_enabled():
             measurement(
                 log,
                 "gallery.query_worker",

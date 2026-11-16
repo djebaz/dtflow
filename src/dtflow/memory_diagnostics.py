@@ -14,11 +14,11 @@ from threading import get_ident
 from time import monotonic
 
 from dtflow.diagnostics import measurement
-from dtflow.logging_setup import development_mode
+from dtflow.logging_setup import perf_enabled
 
 
 def enabled(logger: logging.Logger) -> bool:
-    return development_mode() and logger.isEnabledFor(logging.DEBUG)
+    return perf_enabled() and logger.isEnabledFor(logging.DEBUG)
 
 
 @cache

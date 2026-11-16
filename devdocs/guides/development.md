@@ -4,7 +4,7 @@ The in-app disposable QLineEdit/font warm-up phases (`QLineEdit probe: ...`, `fi
 
 ### Measured startup results (PR #173, 2026-10-25)
 
-Owner Windows source runs of `uv run dtflow -x gui` (Qt 6.12.0, 96 DPI, DPR 1; the window was closed once up). The logs do not record the commit (`source_commit` unknown), only `source_modified`, so each row is tied to the head current when it was run. These are single-machine observations, not controlled cold/warm, packaged or cross-machine benchmarks; the first launch after a pause costs about 0.4–0.8 s more in the main form (cold OS caches).
+Owner Windows source runs of `uv run dtflow -x -perf gui` (Qt 6.12.0, 96 DPI, DPR 1; the window was closed once up). The logs do not record the commit (`source_commit` unknown), only `source_modified`, so each row is tied to the head current when it was run. These are single-machine observations, not controlled cold/warm, packaged or cross-machine benchmarks; the first launch after a pause costs about 0.4–0.8 s more in the main form (cold OS caches).
 
 | Head | Runs (s) | Notes |
 | --- | --- | --- |
@@ -190,7 +190,7 @@ model downloads or provider calls.
 
 ## Workflow and detector memory diagnostics
 
-Launch with `uv run dtflow -x gui` (or `--dev` in place of `-x`) to record memory checkpoints in the existing rotating `logs/dtflow-<session>.jsonl` stream. Packaged runs use their normal configured log directory. No separate memory log, model download, inference, forced GC or model unloading is started by the diagnostics. Normal mode does not collect these memory observations.
+Launch with `uv run dtflow -x -perf gui` (or `--dev --perf`) to record memory checkpoints in the existing rotating `logs/dtflow-<session>.jsonl` stream. Packaged runs (`DTFlow.exe -x -perf`) use their normal configured log directory. No separate memory log, model download, inference, forced GC or model unloading is started by the diagnostics. Normal mode does not collect these memory observations.
 
 - `workflow.memory`: before/after execution, approximately five-second running checkpoints with active task/detector counts, and detector-return checkpoints after the CPU worker returns. Run/node IDs identify local execution observations, not remote recovery authority.
 - `detector.memory`: source decode boundary, face-mask processing, cached-session reuse/load and inference checkpoints. Fixed model roles/methods, source dimensions, model-file byte counts and input/raw-output/float32-output tensor byte counts are safe scalar projections, never image/tensor contents or model paths. Raw and converted output counts may refer to shared storage and must not be added as independent physical allocations. Inference `elapsed_ms` includes the local call and observation overhead, not a pure model benchmark.
@@ -202,9 +202,9 @@ Queue-owned ordinary queues, workflows and scripts now skip unused preview image
 
 For an owner-selected observation, leave the application open for at least a minute after completion and inspect the session with the shared Logs reader. Do not replay uncertain work to obtain diagnostics. Existing source-run captures confirm counters and skipped-preview summaries, not a controlled performance win, final-head regression acceptance or a crash fix. The pre-existing Windows graphics-proxy heap-corruption investigation remains [#308](https://github.com/djebaz/dtflow/issues/308).
 
-## Images performance diagnostics (`-x --dev`)
+## Images performance diagnostics (`-x -perf`)
 
-Use the normal DTFlow launch command with `-x` (equivalent to `--dev`) to enable sanitized debug timing in the shared rotating `dtflow-<session>.jsonl` stream. **Without `-x`, development gallery measurements are not emitted.** The writer, shared JSONL readers and #104 benchmark migration are implemented in PR #105. See the [delivery audit](../plans/2026-10-19-structured-log-viewer.md) for ordinary CI evidence; repeated native replay, fault handling, precision parity and storage/policy acceptance remain [#107](https://github.com/djebaz/dtflow/issues/107).
+Use the normal DTFlow launch command with `-x -perf` (`--dev --perf`) to enable sanitized performance measurements in the shared rotating `dtflow-<session>.jsonl` stream: `ui.gui_gap`, `ui.gui_stall_sample`, `ui.callback_slow`, `ui.memory` and the other memory observations, the `gallery.*` measurements and `source_summary` aggregates, `queue.thumbnail_summary` and `app.provider_preloaded`. **Without both flags none of these measurements is emitted**, and without `-perf` the GUI heartbeat timer, its watchdog thread and the idle memory sampling do not start. `-x` alone keeps the other diagnostic detail. `-time` records and `app.startup_timings` do not depend on `-perf`. The writer, shared JSONL readers and #104 benchmark migration are implemented in PR #105. See the [delivery audit](../plans/2026-10-19-structured-log-viewer.md) for ordinary CI evidence; repeated native replay, fault handling, precision parity and storage/policy acceptance remain [#107](https://github.com/djebaz/dtflow/issues/107).
 
 New normal/development sessions produce JSONL only, asynchronously through the existing logging authority; automatic text/gallery CSV fanout is removed. Historical files stay untouched and are not converted or pruned as JSONL. Listener aggregates and source-side thumbnail/GUI summaries retain distinct populations and source windows; individual wheel receipts and GUI gaps >=100 ms remain visible. Admission rejection/overflow, failed writes, missing startup/segments or a missing close seal mean incomplete evidence, not zero stalls. The initial queue/capture/aggregation bounds are safety defaults, not measured performance. See the [implemented-source boundaries and counter policy](../architecture/structured-diagnostics.md#ownership-and-dependency-boundaries).
 
