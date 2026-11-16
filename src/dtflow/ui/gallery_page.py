@@ -88,6 +88,7 @@ from dtflow.services.gallery import (
     resolve_item_read,
 )
 from dtflow.ui.performance import PerfBatchStats
+from dtflow.ui.scroll_step import keep_own_wheel
 from dtflow.ui.activity_strip import activity_strip
 from dtflow.ui.button_focus import KeyboardFocusGuard
 from dtflow.ui.desktop_open import open_local_path
@@ -591,6 +592,8 @@ class GalleryPage(QObject):
         # the same top/left origin from the first row, not only at completion.
         self.cards_layout.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignTop)
         self.table = self._widget("galleryListTable", QTableWidget)
+        keep_own_wheel(self.grid_scroll)  # benchmarked wheel scrolling (gallery.scroll_intent) keeps its own step
+        keep_own_wheel(self.table)
         self.grid_viewport = self.grid_scroll.viewport()
         self.table_viewport = self.table.viewport()
         self.slider = self._widget("galleryThumbnailSizeSlider")
