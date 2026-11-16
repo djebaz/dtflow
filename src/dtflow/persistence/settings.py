@@ -1,6 +1,6 @@
-"""Shared application settings (the cloud concurrency maximum and the workflow concurrency defaults) in ``<state>/settings.json``.
+"""Shared application settings (the DT+, local and segmentation concurrency defaults, and UI preferences) in ``<state>/settings.json``.
 
-The setting is a user-selected client policy, not verified cloud entitlement. The file is credential-free, versioned
+The concurrency values are user-selected client policy, not verified cloud entitlement. The file is credential-free, versioned
 independently of the application and of the SQLite store, and written atomically. A newer schema is rejected rather
 than rewritten.
 """
@@ -15,7 +15,6 @@ from dtflow.core.models import MAX_QUEUE_CONCURRENCY, ValidationError
 from dtflow.persistence.runtime_environment import environment_key
 
 SCHEMA_VERSION = 1
-DEFAULT_CLOUD_CONCURRENCY = 4
 MAX_CLOUD_CONCURRENCY = MAX_QUEUE_CONCURRENCY
 
 
@@ -25,7 +24,7 @@ class SettingsError(ValidationError):
 
 def validate_concurrency(value: object) -> int:
     if type(value) is not int or not 1 <= value <= MAX_CLOUD_CONCURRENCY:
-        raise SettingsError(f"Cloud concurrency must be an integer in 1..{MAX_CLOUD_CONCURRENCY}.")
+        raise SettingsError(f"Concurrency must be an integer in 1..{MAX_CLOUD_CONCURRENCY}.")
     return value
 
 
@@ -69,17 +68,6 @@ def _write(state: Path, document: dict) -> Path:
         if temporary is not None:
             temporary.unlink(missing_ok=True)
     return target
-
-
-def load_cloud_concurrency(state: Path) -> int:
-    return validate_concurrency(_read(state).get("cloud_concurrency", DEFAULT_CLOUD_CONCURRENCY))
-
-
-def save_cloud_concurrency(state: Path, value: int) -> Path:
-    validate_concurrency(value)
-    document = _read(state)  # refuse to overwrite an unreadable or newer file
-    document["cloud_concurrency"] = value
-    return _write(state, document)
 
 
 # Downloads Auto-Prepare is a global opt-in for the selected DT+ Cloud account.
@@ -183,6 +171,14 @@ def load_workflow_defaults(state: Path) -> dict[str, int]:
         name: validate_concurrency(document.get(key, WORKFLOW_DEFAULTS[name]))
         for name, key in WORKFLOW_DEFAULT_KEYS.items()
     }
+
+
+def load_dtplus_concurrency(state: Path) -> int:
+    """The DT+ concurrency default (Connection page): the bound of workflow runs and of DT+ queues (#492).
+
+    Read each time a queue is started. An older ``cloud_concurrency`` key in the file is never read.
+    """
+    return validate_concurrency(_read(state).get(WORKFLOW_DEFAULT_KEYS["cloud"], WORKFLOW_DEFAULTS["cloud"]))
 
 
 def save_workflow_defaults(state: Path, values: dict[str, int]) -> Path:

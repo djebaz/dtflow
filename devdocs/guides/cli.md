@@ -59,7 +59,7 @@ uv run dtflow attempts                                            # inspect dura
 uv run dtflow gallery list -k 50                                  # bounded read-only saved-output page
 uv run dtflow gallery list -p "portrait" -o newest                # positive-prompt search and deterministic sort
 uv run dtflow gallery show OUTPUT_ID                              # inspect one output's safe recorded metadata
-uv run dtflow settings -j 2                                       # persist the cloud concurrency maximum (1-10, default 4)
+uv run dtflow settings                                            # show the DT+ concurrency default (set on the Connection page)
 ```
 
 See [queues and batch plans](queues.md) for queue commands and JSON plans. These examples include real-backend operations: select them deliberately, not as setup checks.

@@ -62,7 +62,7 @@ from dtflow.persistence.workflow_items import item_outcome as workflow_outcome
 QUEUE_STATES = ("paused", "queued", "running", "cancelled")
 UP_NEXT_ACTIONS = ("enqueue", "dequeue", "cancel", "earlier", "later")
 ITEM_STATES = ("pending", "running", "succeeded", "failed", "unknown", "save_failed", "cancelled")
-ACTIONS = ("pause", "resume", "cancel", "cap")
+ACTIONS = ("pause", "resume", "cancel")
 # Workflow queues only (#223): answered by the workflow runner, which takes them with their payloads
 # (``take_workflow_controls``); ``apply_controls`` leaves them pending for it.
 WORKFLOW_ACTIONS = ("workflow_branch", "workflow_retry")
@@ -319,7 +319,7 @@ class QueueMixin:
 
     def _queue_timing(self, queue_id: str) -> dict[str, Any]:
         db = self._db()
-        queue = db.execute("SELECT cap FROM queues WHERE queue_id=?", (queue_id,)).fetchone()
+        queue = db.execute("SELECT cap, kind FROM queues WHERE queue_id=?", (queue_id,)).fetchone()
         if queue is None:
             raise QueueError("Unknown queue.")
         started = db.execute(
@@ -332,7 +332,7 @@ class QueueMixin:
         ):
             counts[row["state"]] = row["n"]
         return {
-            "cap": queue["cap"],
+            "cap": _lane_bound(queue, MAX_QUEUE_CONCURRENCY),
             "started_at_utc": started["at_utc"] if started else None,
             "summary": counts,
             "running_started_at_utc": [
@@ -391,7 +391,7 @@ class QueueMixin:
                 "SELECT * FROM queue_controls WHERE queue_id=? AND applied_at_utc IS NULL ORDER BY control_id",
                 (queue_id,),
             ).fetchall():
-                action, payload = control["action"], json.loads(control["payload_json"])
+                action = control["action"]
                 if action in WORKFLOW_ACTIONS and queue["kind"] == KIND_WORKFLOW:
                     continue  # left pending for the workflow runner (take_workflow_controls)
                 if action in SCRIPT_ACTIONS and queue["kind"] == KIND_SCRIPT:
@@ -406,10 +406,6 @@ class QueueMixin:
                         "UPDATE queue_items SET state='cancelled', updated_at_utc=? WHERE queue_id=? AND state='pending'",
                         (now, queue_id),
                     )
-                elif (
-                    action == "cap" and type(payload.get("cap")) is int and 1 <= payload["cap"] <= MAX_QUEUE_CONCURRENCY
-                ):
-                    db.execute("UPDATE queues SET cap=? WHERE queue_id=?", (payload["cap"], queue_id))
                 elif action == "override":
                     # A control posted by an older version: unknown outcomes no longer block, so consume it silently.
                     db.execute(
@@ -423,7 +419,7 @@ class QueueMixin:
                     )
                     continue
                 applied.append(action)
-                self._event(db, queue_id, action, now, payload if action == "cap" else {})
+                self._event(db, queue_id, action, now, {})
                 db.execute(
                     "UPDATE queue_controls SET applied_at_utc=? WHERE control_id=?", (now, control["control_id"])
                 )
@@ -539,7 +535,7 @@ class QueueMixin:
     def _claim_queued(self, overlap_after: str | None = None, limit: int | None = None) -> str | None:
         with self._txn() as db:
             row = db.execute(
-                "SELECT queue_id, backend_key, cap FROM queues WHERE state='queued' ORDER BY up_next, created_at_utc"
+                "SELECT queue_id, backend_key, cap, kind FROM queues WHERE state='queued' ORDER BY up_next, created_at_utc"
                 " LIMIT 1"
             ).fetchone()
             if overlap_after is None:
@@ -560,7 +556,7 @@ class QueueMixin:
                     or tail["pending"]
                     or tail["backend_key"] != row["backend_key"]
                     or limit is None
-                    or self._reserved(db, row["backend_key"]) >= min(row["cap"], limit)
+                    or self._reserved(db, row["backend_key"]) >= _lane_bound(row, limit)
                 ):
                     return None
             now = self._now()
@@ -598,7 +594,7 @@ class QueueMixin:
                 raise QueueError("Unknown queue.")
             if queue["state"] != "running":
                 return None
-            if self._reserved(db, queue["backend_key"]) >= min(queue["cap"], limit):
+            if self._reserved(db, queue["backend_key"]) >= _lane_bound(queue, limit):
                 return None
             decode = {KIND_SCRIPT: script_request_from_record, KIND_WORKFLOW: workflow_request_from_record}.get(
                 queue["kind"], request_from_record
@@ -1063,8 +1059,6 @@ def post_control(directory: Path, queue_id: str, action: str, payload: dict[str,
     if action not in ACTIONS and action not in WORKFLOW_ACTIONS and action not in SCRIPT_ACTIONS:
         raise QueueError("Unknown queue action.")
     payload = payload or {}
-    if action == "cap" and not (type(payload.get("cap")) is int and 1 <= payload["cap"] <= MAX_QUEUE_CONCURRENCY):
-        raise QueueError(f"Queue concurrency must be an integer in 1..{MAX_QUEUE_CONCURRENCY}.")
     if action in WORKFLOW_ACTIONS:
         branch = payload.get("branch")
         if not (
@@ -1209,6 +1203,12 @@ def retry_item(directory: Path, queue_id: str, position: int) -> str:
     finally:
         connection.close()
     return how
+
+
+def _lane_bound(queue, limit: int) -> int:
+    """How many items of a queue may run together. Generation queues keep no maximum of their own (#492): the backend's
+    limit decides, and a ``cap`` saved by an older version is ignored. Script and workflow queues stay at their one."""
+    return min(queue["cap"], limit) if queue["kind"] in (KIND_SCRIPT, KIND_WORKFLOW) else limit
 
 
 def insert_queue(
