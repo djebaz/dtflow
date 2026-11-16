@@ -149,11 +149,14 @@ def _browse_preferences(raw: object) -> dict:
             clean = tag.strip()
             unique.setdefault(clean.casefold(), clean)
         values["tags"] = list(unique.values())
+    for key in ("keyword_tag_mode", "tag_match_mode"):
+        if raw.get(key) in ("and", "or"):
+            values[key] = raw[key]
     return values
 
 
 def load_civitai_browse_preferences(state: Path) -> dict:
-    """Return saved keywords, ordering, period, families and tag pills, if present."""
+    """Return saved Browse inputs and AND/OR filter modes, if present."""
     return _browse_preferences(_read(state).get("civitai_browse"))
 
 
