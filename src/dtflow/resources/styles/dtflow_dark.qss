@@ -2190,7 +2190,7 @@ ValueChips#galleryTagValueChips QPushButton#valueChipsAddButton {
   padding: 0 8px;
 }
 /* Override the global button minimum and padding: AND/OR must match 23px tag pills. */
-QPushButton#galleryModeToggle {
+QPushButton[role="galleryModeToggle"] {
   min-height: 0;
   max-height: 23px;
   padding: 0 7px;
@@ -2198,11 +2198,11 @@ QPushButton#galleryModeToggle {
   color: ${color.selectionText};
   border-color: ${color.selectionBorder};
 }
-QPushButton#galleryModeToggle:hover {
+QPushButton[role="galleryModeToggle"]:hover {
   background: ${color.selectionHover};
   border-color: ${color.focus};
 }
-QLabel#galleryModeCaption {
+QLabel[role="galleryModeCaption"] {
   font-size: ${type.small};
   color: ${color.secondary};
   padding: 0;
