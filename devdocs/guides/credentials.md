@@ -31,3 +31,13 @@ Saved secrets live only in Credential Manager, one account per key. The credenti
 ## Daily stats
 
 Counts are attributed to a key by an opaque digest recorded with each saved attempt. Every available key has a row for the day, even at zero, under the same name the Connection card uses. Images saved before key tracking began are shown in one separate line, since no key can be assigned to them.
+
+# Download credentials (Civitai)
+
+A Civitai token is separate from the DT+ API keys and is used only for downloads.
+
+- Connection → **Download credentials** (between DT+ credentials and Remembered folders) saves or removes one token in Windows Credential Manager (service `DTFlow`, account `civitai-token`). The field is masked and cleared after Save; there is no plaintext fallback, so without a vault Save is unavailable.
+- A small dot in the card header reports the connection: green when Civitai is reachable and accepts the token, red when the token is rejected, amber on a network or other failure, grey when no token is saved or nothing has been checked. It is checked once at startup and again after Save or Remove, with no polling.
+- The token is sent only as an `Authorization: Bearer` header to civitai.com and dropped on the first redirect to another host. It never appears in URLs, settings, SQLite, logs or exports; a pasted link carrying `?token=` is rewritten to the plain link before use.
+- `dtflow assets download` uses the saved token first, then `CIVITAI_TOKEN`, and says which one it used.
+- DT+ credentials are never sent to download sites.

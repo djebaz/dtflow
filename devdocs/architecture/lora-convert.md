@@ -38,9 +38,17 @@ The separate [q8p CLI experiment](lora-quantization.md) works on already convert
 | Z Image Turbo | verified | Swift reference, DT+ generation effect (refiner names unverified) |
 | Flux 1 | verified | Swift reference on three files, DT+ generation effect (owner report 2026-11-13) |
 | SD 1.x | verified | Swift reference on one file, DT+ generation effect (owner report 2026-11-13) |
-| SDXL | experimental, confirmation required | Converted files verified on DT+ and against iOS output (owner report 2026-11-13), but some SDXL LoRAs still fail to convert, so coverage is incomplete |
+| SDXL | verified (owner promotion 2026-11-15; no experimental confirmation) | Converted files verified on DT+ and against iOS output (owner report), but some SDXL LoRAs still fail to convert, so coverage is incomplete |
 
-Statuses live in the registry (`FamilySpec.status`), so the badge, CLI message and this table read one source.
+Statuses live in the registry (`FamilySpec.status`), so the badge, CLI message and this table read one source. The registry reads them from `data/families.json` (below).
+
+## Supported families file and downloaded sources (#463, #464, #475)
+
+- `data/families.json` is the single list of converter-supported families: key, label, exact architecture, status, an `experimental` flag that must be true exactly when the status is `experimental`, and provider label aliases (`aliases.civitai`: Civitai's `baseModel` wording). Runners and notes stay in code (`families/*.py`). The registry validates the whole file when it first loads and refuses it for a duplicate key, a label claimed by two families, a family without a runner, a runner without an entry, an unknown field or an exact architecture without a managed-name tag. `family_for_label(provider, label)` and `provider_labels(provider)` resolve aliases; nothing guesses a family from a filename. Adding a family is a JSON entry plus converter support.
+- Only a LoRA whose Civitai label is an alias of a listed family can be downloaded. `civitai.supported_family()` refuses any other label before any bytes are fetched, so the Downloads view, Browse Civitai and `dtflow assets download` share one gate ("Family not supported yet").
+- `services/lora_download.download_and_convert()` downloads and verifies the source, registers it, converts it through `convert_for_prepare` with the mapped family (F16, default short name from the existing filename helper) and, once the converted `.ckpt` is retained and verified, permanently deletes the `.safetensors`. A file the converter refuses (LoKr, LoHa, a mislabeled upload) keeps its source and ends as "downloaded, not convertible" with the reason; the detector's result is reported when it disagrees with the label. Nothing here uploads to DT+ or generates.
+- Provenance lives in the additive `lora_sources` table of `assets.sqlite3` (`persistence/lora_sources.py`, `services/lora_sources.py`), keyed by the source SHA-256, with no schema bump: readers treat a missing table as "no sources" and the first writer creates it. It keeps provider ids, version/file, names, creator, original filename, license permissions, tags, trigger words, Civitai's base-model label apart from DTFlow's classified family (with evidence), an optional user correction, conversion state and the link to the converted `.ckpt`. After a successful conversion the row stays, marked source file deleted. No token, signed URL or raw provider response is stored; `custom_loras.json` never holds provenance. Civitai trigger words also seed the content record only while it has none, so the Prepare editor offers them for confirmation.
+- Downloaded `.safetensors` bytes live in `<state>/lora_sources/<sha256>.safetensors` (staging in `.staging`), outside the `.ckpt`-only retained store. An orphan sweep removes only unreferenced files older than one hour.
 
 ## Evidence
 
