@@ -8,7 +8,7 @@ Open **Downloads** with the status-bar pill or **F9**. It opens on **Browse Civi
 
 ### Browse search matching (PR #480)
 
-Two independent, persistent AND/OR switches control keyword-versus-Tags matching and matching among selected tags. Their defaults are **AND** (Search / Tags) and **OR** (Between tags). A hidden, currently irrelevant toggle retains its saved choice. No Civitai listing starts merely from restoring preferences.
+Two independent, persistent AND/OR switches control keyword-versus-Tags matching and matching among selected tags. Their defaults are **AND** (Search / Tags) and **OR** (Between tags). A hidden, currently irrelevant toggle retains its saved choice. No Civitai listing starts merely from restoring preferences. Before any search, Browse invites the user to enter keywords or add a tag; with restored filters it asks the user to run Search. **No results** appears only after the listing is exhausted without any matching models. An empty or duplicate-only page with more results available instead offers **Search further**, and an API error offers **Retry**.
 
 - **Keywords only:** retrieve Civitai full-text matches through one `query` stream. DTFlow does not run a second `tag=<keyword>` lookup.
 - **Tags only:** **OR** includes models carrying any selected tag; **AND** requires all selected tags. OR uses one source per tag. AND uses one selected tag as the API source and checks the rest locally.
