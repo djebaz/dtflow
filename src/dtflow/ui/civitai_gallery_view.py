@@ -523,6 +523,8 @@ class GalleryTab(QObject):
         self._selected_families = tuple(key for key, _label in self._family_choices if key in saved_families)
         self._family_popup: QMenu | None = None
         self._selected_tags: tuple[str, ...] = tuple(preferences.get("tags", ()))
+        self._keyword_tag_mode = preferences.get("keyword_tag_mode", "and")
+        self._tag_match_mode = preferences.get("tag_match_mode", "or")
         self._search_session: gallery.GallerySearch | None = None
         self.cards: list[gallery.GalleryCard] = []
         self._cursor: str | None = None
@@ -605,6 +607,34 @@ class GalleryTab(QObject):
         self._tags.setText("; ".join(self._selected_tags))
         tag_layout.addWidget(self._tags)
         self._tags.textChanged.connect(self._tags_changed)
+
+        # The chip editor expands on the left; slim mode toggles stay at the far right.
+        self._modes_host = QWidget(form.galleryTagsRow)
+        modes_layout = QHBoxLayout(self._modes_host)
+        modes_layout.setContentsMargins(0, 0, 0, 0)
+        modes_layout.setSpacing(10)
+        self._mode_groups: dict[str, QWidget] = {}
+        self._mode_buttons: dict[str, QPushButton] = {}
+        for key, caption in (("keyword_tag_mode", "Search / Tags"), ("tag_match_mode", "Between tags")):
+            group = QWidget(self._modes_host)
+            row = QHBoxLayout(group)
+            row.setContentsMargins(0, 0, 0, 0)
+            row.setSpacing(5)
+            row.addWidget(QLabel(caption, group))
+            button = QPushButton(group)
+            button.setObjectName("galleryModeToggle")
+            button.setFixedHeight(23)
+            button.setMinimumWidth(45)
+            button.setCursor(Qt.CursorShape.PointingHandCursor)
+            button.clicked.connect(lambda _checked=False, setting=key: self._toggle_filter_mode(setting))
+            row.addWidget(button)
+            modes_layout.addWidget(group)
+            self._mode_groups[key] = group
+            self._mode_buttons[key] = button
+        form.galleryTagsLayout.addWidget(
+            self._modes_host, 0, Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignTop
+        )
+        self._update_mode_controls()
         form.gallerySearchButton.clicked.connect(self.search)
         form.galleryPeriodCombo.currentIndexChanged.connect(self._filters_changed)
         form.gallerySearchEdit.returnPressed.connect(self.search)
@@ -650,6 +680,8 @@ class GalleryTab(QObject):
                     "period": self.form.galleryPeriodCombo.currentData(),
                     "families": list(self._selected_families),
                     "tags": list(self._selected_tags),
+                    "keyword_tag_mode": self._keyword_tag_mode,
+                    "tag_match_mode": self._tag_match_mode,
                 },
             )
         except (SettingsError, OSError):
@@ -657,6 +689,38 @@ class GalleryTab(QObject):
             self.form.gallerySearchEdit.setToolTip("Search settings could not be saved; see Logs.")
         else:
             self.form.gallerySearchEdit.setToolTip("Type keywords and press Enter, or filter by tags.")
+
+    def _update_mode_controls(self) -> None:
+        """Keep saved choices while hiding operators that cannot affect this search."""
+        keyword = bool(self.form.gallerySearchEdit.text().strip())
+        visible = {
+            "keyword_tag_mode": keyword and bool(self._selected_tags),
+            "tag_match_mode": len(self._selected_tags) > 1,
+        }
+        for key, group in self._mode_groups.items():
+            mode = self._keyword_tag_mode if key == "keyword_tag_mode" else self._tag_match_mode
+            button = self._mode_buttons[key]
+            button.setText(mode.upper())
+            subject = "Search keywords and selected tags" if key == "keyword_tag_mode" else "Selected tags"
+            button.setAccessibleName(f"{subject}: {mode.upper()}")
+            button.setToolTip(f"{subject} use {mode.upper()}. Click to switch to {'OR' if mode == 'and' else 'AND'}.")
+            group.setVisible(visible[key])
+        self._modes_host.setVisible(any(visible.values()))
+        self.form.galleryTagsLabel.setToolTip(
+            f"Selected tags match {self._tag_match_mode.upper()}; keywords and tags use "
+            f"{self._keyword_tag_mode.upper()} when both are present."
+        )
+
+    def _toggle_filter_mode(self, key: str) -> None:
+        """Switch an operator, save it, and refresh only an already active Browse tab."""
+        if key == "keyword_tag_mode":
+            self._keyword_tag_mode = "or" if self._keyword_tag_mode == "and" else "and"
+        else:
+            self._tag_match_mode = "and" if self._tag_match_mode == "or" else "or"
+        self._update_mode_controls()
+        self._mark_preferences_changed()
+        if self._loaded and (self.form.gallerySearchEdit.text().strip() or self._selected_tags):
+            self.search()
 
     def _filters_changed(self, *_args) -> None:
         self._mark_preferences_changed()
@@ -695,6 +759,7 @@ class GalleryTab(QObject):
             return
         adding = len(values) > len(self._selected_tags)
         self._selected_tags = values
+        self._update_mode_controls()
         if adding:
             editor = self._tags.findChild(QLineEdit)
             if editor is not None:
@@ -837,6 +902,8 @@ class GalleryTab(QObject):
             self.form.gallerySearchEdit.text(), self._selected_tags,
             self.form.gallerySortCombo.currentText(), self._selected_families,
             self.form.galleryPeriodCombo.currentData(),
+            keyword_tag_mode=self._keyword_tag_mode,
+            tag_match_mode=self._tag_match_mode,
         )
         self._has_more = self._search_session.active
         self._empty_batches = 0
@@ -860,6 +927,7 @@ class GalleryTab(QObject):
 
     def _keyword_changed(self, value: str) -> None:
         """Do not continue a previous query while the user is editing different keywords."""
+        self._update_mode_controls()
         self._mark_preferences_changed()
         if not self._loaded:
             return
