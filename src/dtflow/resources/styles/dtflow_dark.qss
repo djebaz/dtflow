@@ -186,7 +186,8 @@ QComboBox:hover::drop-down {
   background: transparent;
   border-left-color: ${color.inputBorderHover};
 }
-QComboBox:on {
+QComboBox:on,
+QComboBox#galleryFamilyCombo[menuOpen="true"] {
   border-color: ${color.focus};
 }
 QComboBox:on::drop-down {
@@ -1106,20 +1107,30 @@ QWidget#GalleryDetailPage QPushButton[role="galleryMode"]:checked:pressed {
 QWidget#GalleryDetailPage QPushButton[role="galleryMode"]:focus {
   border-color: ${color.focus};
 }
-/* Generate keeps the shared select treatment within its mounted context panel. */
-QFrame#generationContextPanel QComboBox {
+/* Browse reuses Generate's explicit frame and padding treatment, introduced in #46. */
+QFrame#generationContextPanel QComboBox,
+QWidget#browseTab QComboBox {
   background: ${color.input};
   border: 1px solid ${color.border};
   border-radius: ${size.inputRadius};
   padding: 0 10px;
   min-height: 34px;
 }
-QFrame#generationContextPanel QComboBox:hover {
+QFrame#generationContextPanel QComboBox:hover,
+QWidget#browseTab QComboBox:hover:enabled {
   border-color: ${color.inputBorderHover};
 }
 QFrame#generationContextPanel QComboBox:focus,
-QFrame#generationContextPanel QComboBox:on {
+QFrame#generationContextPanel QComboBox:on,
+QWidget#browseTab QComboBox:focus,
+QWidget#browseTab QComboBox:on,
+QWidget#browseTab QComboBox[menuOpen="true"] {
   border-color: ${color.focus};
+}
+QWidget#browseTab QComboBox:disabled {
+  background: ${color.surface};
+  border-color: ${color.disabledBorder};
+  color: ${color.disabled};
 }
 
 /* Connection's contextRail is reparented into the shared workspace shell at runtime,
@@ -2179,6 +2190,35 @@ ValueChips[invalid="true"] QPushButton[role="valueChip"],
 ValueChips[invalid="true"] QPushButton#valueChipsAddButton {
   border-color: ${color.error};
 }
+
+/* Browse Civitai: align the tag adder and removable chips to the same compact height. */
+ValueChips#galleryTagValueChips QLineEdit#valueChipsInput {
+  min-height: 0;
+  padding: 0 7px;
+}
+ValueChips#galleryTagValueChips QPushButton#valueChipsAddButton {
+  min-height: 0;
+  padding: 0 8px;
+}
+/* Override the global button minimum and padding: AND/OR must match 23px tag pills. */
+QPushButton[role="galleryModeToggle"] {
+  min-height: 0;
+  max-height: 23px;
+  padding: 0 7px;
+  background: ${color.selection};
+  color: ${color.selectionText};
+  border-color: ${color.selectionBorder};
+}
+QPushButton[role="galleryModeToggle"]:hover {
+  background: ${color.selectionHover};
+  border-color: ${color.focus};
+}
+QLabel[role="galleryModeCaption"] {
+  font-size: ${type.small};
+  color: ${color.secondary};
+  padding: 0;
+}
+
 
 /* Queues items table: painted cells (queue_item_delegate.py); the row surface, hover and selection stay shared. */
 QTableView#queueItemsView { gridline-color: transparent; }

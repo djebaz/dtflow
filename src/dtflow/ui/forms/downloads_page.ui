@@ -98,33 +98,149 @@
       <property name="spacing"><number>8</number></property>
       <property name="leftMargin"><number>10</number></property><property name="topMargin"><number>10</number></property>
       <property name="rightMargin"><number>10</number></property><property name="bottomMargin"><number>10</number></property>
-      <item><layout class="QHBoxLayout" name="gallerySearchRow"><property name="spacing"><number>8</number></property>
-       <item><widget class="QLineEdit" name="gallerySearchEdit">
+      <item><layout class="QGridLayout" name="gallerySearchRow">
+       <property name="horizontalSpacing"><number>8</number></property>
+       <property name="verticalSpacing"><number>8</number></property>
+       <item row="0" column="0"><widget class="QLineEdit" name="gallerySearchEdit">
+        <property name="sizePolicy"><sizepolicy hsizetype="Expanding" vsizetype="Fixed"><horstretch>1</horstretch><verstretch>0</verstretch></sizepolicy></property>
+        <property name="minimumWidth"><number>140</number></property>
         <property name="toolTip"><string>Type keywords and press Enter.</string></property>
         <property name="placeholderText"><string>Search…</string></property>
         <property name="clearButtonEnabled"><bool>true</bool></property>
         <property name="accessibleName"><string>Search Civitai LoRAs</string></property>
        </widget></item>
-       <item><widget class="QComboBox" name="gallerySortCombo">
+       <item row="0" column="1"><widget class="QComboBox" name="gallerySortCombo">
+        <property name="sizePolicy"><sizepolicy hsizetype="Fixed" vsizetype="Fixed"><horstretch>0</horstretch><verstretch>0</verstretch></sizepolicy></property>
         <property name="accessibleName"><string>Sort Civitai LoRAs</string></property>
        </widget></item>
-       <item><widget class="QComboBox" name="galleryFamilyCombo">
+       <item row="0" column="2"><widget class="QComboBox" name="galleryFamilyCombo">
+        <property name="sizePolicy"><sizepolicy hsizetype="Fixed" vsizetype="Fixed"><horstretch>0</horstretch><verstretch>0</verstretch></sizepolicy></property>
         <property name="accessibleName"><string>Filter Civitai LoRAs by family</string></property>
         <property name="toolTip"><string>Choose several supported families. All families clears the selection.</string></property>
        </widget></item>
-       <item><widget class="QComboBox" name="galleryPeriodCombo">
+       <item row="0" column="3"><widget class="QComboBox" name="galleryPeriodCombo">
+        <property name="sizePolicy"><sizepolicy hsizetype="Fixed" vsizetype="Fixed"><horstretch>0</horstretch><verstretch>0</verstretch></sizepolicy></property>
         <property name="accessibleName"><string>Filter Civitai LoRAs by period</string></property>
         <property name="toolTip"><string>The period the sort order counts.</string></property>
        </widget></item>
+       <item row="0" column="4"><widget class="QPushButton" name="gallerySearchButton">
+        <property name="sizePolicy"><sizepolicy hsizetype="Fixed" vsizetype="Fixed"><horstretch>0</horstretch><verstretch>0</verstretch></sizepolicy></property>
+        <property name="text"><string>Search</string></property>
+        <property name="role" stdset="0"><string>primary</string></property>
+        <property name="toolTip"><string>Search Civitai by keywords, selected tags, or both.</string></property>
+       </widget></item>
       </layout></item>
+      <item><widget class="QWidget" name="galleryTagsRow">
+       <layout class="QHBoxLayout" name="galleryTagsLayout">
+        <property name="spacing"><number>8</number></property>
+        <property name="leftMargin"><number>0</number></property>
+        <property name="topMargin"><number>0</number></property>
+        <property name="rightMargin"><number>0</number></property>
+        <property name="bottomMargin"><number>0</number></property>
+        <item><widget class="QLabel" name="galleryTagsLabel">
+         <property name="sizePolicy"><sizepolicy hsizetype="Fixed" vsizetype="Preferred"><horstretch>0</horstretch><verstretch>0</verstretch></sizepolicy></property>
+         <property name="text"><string>Tags</string></property>
+         <property name="toolTip"><string>Use the matching-mode controls on the right to combine keywords and selected tags.</string></property>
+        </widget></item>
+        <item><widget class="QWidget" name="galleryTagChipsSlot">
+         <property name="sizePolicy"><sizepolicy hsizetype="Expanding" vsizetype="Preferred"><horstretch>1</horstretch><verstretch>0</verstretch></sizepolicy></property>
+        </widget></item>
+        <item alignment="Qt::AlignRight|Qt::AlignTop"><widget class="QWidget" name="galleryModesHost">
+         <property name="sizePolicy"><sizepolicy hsizetype="Fixed" vsizetype="Fixed"><horstretch>0</horstretch><verstretch>0</verstretch></sizepolicy></property>
+         <property name="minimumSize"><size><width>0</width><height>23</height></size></property>
+         <property name="maximumSize"><size><width>16777215</width><height>23</height></size></property>
+         <layout class="QHBoxLayout" name="galleryModesLayout">
+          <property name="spacing"><number>10</number></property>
+          <property name="leftMargin"><number>0</number></property>
+          <property name="topMargin"><number>0</number></property>
+          <property name="rightMargin"><number>0</number></property>
+          <property name="bottomMargin"><number>0</number></property>
+           <item><widget class="QWidget" name="galleryKeywordTagModeGroup">
+            <property name="minimumSize"><size><width>0</width><height>23</height></size></property>
+            <property name="maximumSize"><size><width>16777215</width><height>23</height></size></property>
+            <layout class="QHBoxLayout" name="galleryKeywordTagModeLayout">
+             <property name="spacing"><number>5</number></property>
+             <property name="leftMargin"><number>0</number></property>
+             <property name="topMargin"><number>0</number></property>
+             <property name="rightMargin"><number>0</number></property>
+             <property name="bottomMargin"><number>0</number></property>
+             <item><widget class="QLabel" name="galleryKeywordTagModeCaption">
+              <property name="minimumSize"><size><width>0</width><height>23</height></size></property>
+              <property name="maximumSize"><size><width>16777215</width><height>23</height></size></property>
+              <property name="role" stdset="0"><string>galleryModeCaption</string></property>
+              <property name="text"><string>Search / Tags</string></property>
+             </widget></item>
+             <item><widget class="QPushButton" name="galleryKeywordTagModeButton">
+              <property name="minimumSize"><size><width>45</width><height>23</height></size></property>
+              <property name="maximumSize"><size><width>16777215</width><height>23</height></size></property>
+              <property name="cursor"><cursorShape>PointingHandCursor</cursorShape></property>
+              <property name="role" stdset="0"><string>galleryModeToggle</string></property>
+              <property name="text"><string>AND</string></property>
+             </widget></item>
+            </layout>
+           </widget></item>
+           <item><widget class="QWidget" name="galleryTagMatchModeGroup">
+            <property name="minimumSize"><size><width>0</width><height>23</height></size></property>
+            <property name="maximumSize"><size><width>16777215</width><height>23</height></size></property>
+            <layout class="QHBoxLayout" name="galleryTagMatchModeLayout">
+             <property name="spacing"><number>5</number></property>
+             <property name="leftMargin"><number>0</number></property>
+             <property name="topMargin"><number>0</number></property>
+             <property name="rightMargin"><number>0</number></property>
+             <property name="bottomMargin"><number>0</number></property>
+             <item><widget class="QLabel" name="galleryTagMatchModeCaption">
+              <property name="minimumSize"><size><width>0</width><height>23</height></size></property>
+              <property name="maximumSize"><size><width>16777215</width><height>23</height></size></property>
+              <property name="role" stdset="0"><string>galleryModeCaption</string></property>
+              <property name="text"><string>Between tags</string></property>
+             </widget></item>
+             <item><widget class="QPushButton" name="galleryTagMatchModeButton">
+              <property name="minimumSize"><size><width>45</width><height>23</height></size></property>
+              <property name="maximumSize"><size><width>16777215</width><height>23</height></size></property>
+              <property name="cursor"><cursorShape>PointingHandCursor</cursorShape></property>
+              <property name="role" stdset="0"><string>galleryModeToggle</string></property>
+              <property name="text"><string>OR</string></property>
+             </widget></item>
+            </layout>
+           </widget></item>
+         </layout>
+        </widget></item>
+       </layout>
+      </widget></item>
       <item><widget class="QLabel" name="galleryNote">
        <property name="wordWrap"><bool>true</bool></property>
       </widget></item>
-      <item><widget class="QListWidget" name="galleryList">
-       <property name="accessibleName"><string>Civitai LoRAs</string></property>
+      <item><widget class="QStackedWidget" name="galleryResultsStack">
        <property name="minimumHeight"><number>220</number></property>
-       <property name="editTriggers"><set>QAbstractItemView::NoEditTriggers</set></property>
-       <property name="horizontalScrollBarPolicy"><enum>Qt::ScrollBarAlwaysOff</enum></property>
+       <property name="currentIndex"><number>1</number></property>
+       <widget class="QListWidget" name="galleryList">
+        <property name="accessibleName"><string>Civitai LoRAs</string></property>
+        <property name="minimumHeight"><number>220</number></property>
+        <property name="editTriggers"><set>QAbstractItemView::NoEditTriggers</set></property>
+        <property name="horizontalScrollBarPolicy"><enum>Qt::ScrollBarAlwaysOff</enum></property>
+       </widget>
+       <widget class="QWidget" name="galleryEmptyPage">
+        <layout class="QVBoxLayout" name="galleryEmptyLayout">
+         <property name="leftMargin"><number>16</number></property>
+         <property name="topMargin"><number>0</number></property>
+         <property name="rightMargin"><number>16</number></property>
+         <property name="bottomMargin"><number>0</number></property>
+         <item><spacer name="galleryEmptyTopSpacer">
+          <property name="orientation"><enum>Qt::Vertical</enum></property>
+          <property name="sizeHint" stdset="0"><size><width>20</width><height>20</height></size></property>
+         </spacer></item>
+         <item><widget class="QLabel" name="galleryEmptyState">
+          <property name="text"><string>Enter keywords or add a tag to search Civitai.</string></property>
+          <property name="alignment"><set>Qt::AlignCenter</set></property>
+          <property name="wordWrap"><bool>true</bool></property>
+          <property name="role" stdset="0"><string>secondary</string></property>
+         </widget></item>
+         <item><spacer name="galleryEmptyBottomSpacer">
+          <property name="orientation"><enum>Qt::Vertical</enum></property>
+          <property name="sizeHint" stdset="0"><size><width>20</width><height>20</height></size></property>
+         </spacer></item>
+        </layout>
+       </widget>
       </widget></item>
       <item><widget class="QWidget" name="galleryVersionsBox">
        <layout class="QVBoxLayout" name="galleryVersionsLayout">
@@ -172,12 +288,12 @@
         <property name="enabled"><bool>false</bool></property>
        </widget></item>
        <item><widget class="QLabel" name="galleryStatus">
-        <property name="text"><string>Opens when you visit this tab.</string></property>
+        <property name="text"><string>Enter keywords or add a tag to search Civitai.</string></property>
         <property name="role" stdset="0"><string>secondary</string></property>
        </widget></item>
        <item><widget class="QPushButton" name="galleryContinueButton">
         <property name="text"><string>Search further</string></property>
-        <property name="toolTip"><string>Continue searching after multiple Civitai batches without supported LoRAs.</string></property>
+        <property name="toolTip"><string>Load another Civitai results page, or retry after a failed request.</string></property>
        </widget></item>
        <item><spacer name="galleryActionSpacer"><property name="orientation"><enum>Qt::Horizontal</enum></property>
         <property name="sizeHint" stdset="0"><size><width>20</width><height>20</height></size></property></spacer></item>
