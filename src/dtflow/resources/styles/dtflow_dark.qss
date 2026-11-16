@@ -163,13 +163,6 @@ QComboBox {
   padding: ${size.inputRadius} 34px ${size.inputRadius} 7px;
   combobox-popup: 0;
 }
-/* Keep Browse filter frames inside the widget clip, including their side borders.
-   Styled label measurement includes this inset; no separate focus line is painted. */
-QComboBox#gallerySortCombo,
-QComboBox#galleryFamilyCombo,
-QComboBox#galleryPeriodCombo {
-  margin: 1px;
-}
 QComboBox::drop-down {
   subcontrol-origin: padding;
   subcontrol-position: top right;
@@ -1114,20 +1107,30 @@ QWidget#GalleryDetailPage QPushButton[role="galleryMode"]:checked:pressed {
 QWidget#GalleryDetailPage QPushButton[role="galleryMode"]:focus {
   border-color: ${color.focus};
 }
-/* Generate keeps the shared select treatment within its mounted context panel. */
-QFrame#generationContextPanel QComboBox {
+/* Browse reuses Generate's explicit frame and padding treatment, introduced in #46. */
+QFrame#generationContextPanel QComboBox,
+QWidget#browseTab QComboBox {
   background: ${color.input};
   border: 1px solid ${color.border};
   border-radius: ${size.inputRadius};
   padding: 0 10px;
   min-height: 34px;
 }
-QFrame#generationContextPanel QComboBox:hover {
+QFrame#generationContextPanel QComboBox:hover,
+QWidget#browseTab QComboBox:hover:enabled {
   border-color: ${color.inputBorderHover};
 }
 QFrame#generationContextPanel QComboBox:focus,
-QFrame#generationContextPanel QComboBox:on {
+QFrame#generationContextPanel QComboBox:on,
+QWidget#browseTab QComboBox:focus,
+QWidget#browseTab QComboBox:on,
+QWidget#browseTab QComboBox[menuOpen="true"] {
   border-color: ${color.focus};
+}
+QWidget#browseTab QComboBox:disabled {
+  background: ${color.surface};
+  border-color: ${color.disabledBorder};
+  color: ${color.disabled};
 }
 
 /* Connection's contextRail is reparented into the shared workspace shell at runtime,
