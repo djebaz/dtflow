@@ -179,19 +179,13 @@ class LoraAssetPanel:
         self._catalogue = catalogue if catalogue is not None else Catalogue(self._state)
         self._bind_after_list: str | None = None  # identifier to bind once the registry list has been refreshed
         self._add_when_bound = False  # a Prepare also adds the LoRA to the list; a plain add never needs to
-        probe = LoraWeightRow("", 1.0, page)  # styled like a real row: the theme decides the spin box height
-        probe.hide()
-        self._row_height = probe.sizeHint().height()
-        probe.setParent(None)
-        probe.deleteLater()
-        page.loraList.setFixedHeight(
-            max(1, round(LIST_HEIGHT / self._row_height)) * self._row_height + 2 * page.loraList.frameWidth()
-        )  # whole rows
+        self._row_height = 0
         page.addLoraButton.clicked.connect(self.add)
         page.removeLoraButton.clicked.connect(self.remove)
         page.checkLorasButton.clicked.connect(self.check)
         page.prepareAssetButton.clicked.connect(self.prepare)
         page.prepareAssetButton.setToolTip(UPLOAD_NOTICE)
+        self._render_loras()  # sizes the list before the first selection
         self.sync_backend()
         self.refresh_assets()
 
@@ -421,16 +415,36 @@ class LoraAssetPanel:
         labels = self.family_labels()
         lora_list = self.page.loraList
         lora_list.clear()
-        for index, item in enumerate(self.loras):
+        rows = []
+        for item in self.loras:
             entry = QListWidgetItem()
-            entry.setSizeHint(QSize(0, self._row_height))
             lora_list.addItem(entry)
             row = LoraWeightRow(_display_label(item.identifier), item.weight)
             row.activated.connect(lambda row=row: self._row_activated(row))
             row.weight_changed.connect(lambda value, row=row: self._weight_edited(self._row_index(row), value))
             lora_list.setItemWidget(entry, row)
             row.spin.setEnabled(getattr(self, "_weights_enabled", True))
+            rows.append((entry, row))
+        self._fit_rows([row for _, row in rows])
+        for index, (entry, row) in enumerate(rows):
+            entry.setSizeHint(QSize(0, self._row_height))
             self._describe_row(index, entry, row, labels)
+
+    def _fit_rows(self, rows: list[LoraWeightRow]) -> None:
+        """Row height = what the themed spin box needs, measured once the theme is applied; the list is about
+        ``LIST_HEIGHT`` px of whole rows (so a row is never clipped on any font or scaling)."""
+        probe = rows[0] if rows else LoraWeightRow("", 1.0, self.page)
+        if not rows:
+            probe.hide()
+        probe.ensurePolished()
+        probe.spin.ensurePolished()
+        height = max(probe.sizeHint().height(), probe.spin.sizeHint().height() + 2)
+        if not rows:
+            probe.deleteLater()
+        if height != self._row_height or not self.page.loraList.minimumHeight():
+            self._row_height = height
+            lora_list = self.page.loraList
+            lora_list.setFixedHeight(max(1, round(LIST_HEIGHT / height)) * height + 2 * lora_list.frameWidth())
 
     def _row_index(self, row: LoraWeightRow) -> int:
         """List row that holds ``row``, or -1 once it was replaced by a redraw."""
