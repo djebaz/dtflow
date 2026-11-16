@@ -14,7 +14,7 @@ import time
 from collections.abc import Callable
 from pathlib import Path
 
-from PySide6.QtCore import Qt, QTimer
+from PySide6.QtCore import QSize, Qt, QTimer
 from PySide6.QtWidgets import QListWidgetItem, QWidget
 from shiboken6 import isValid
 
@@ -70,6 +70,7 @@ from dtflow.ui.activity_bar import clock
 from dtflow.ui.activity_strip import activity_strip
 from dtflow.ui.file_dialogs import QFileDialog
 from dtflow.ui.latest_relay import LatestRelay
+from dtflow.ui.lora_weight_row import ROW_HEIGHT, VISIBLE_ROWS, LoraWeightRow
 from dtflow.ui.lora_selection_editor import NOT_ON_KEY, _display_label, edit_lora_selection
 from dtflow.ui.prepare_lora_editor import PrepareBatchEditor
 from dtflow.ui.runner import AsyncRunner
@@ -178,6 +179,7 @@ class LoraAssetPanel:
         self._catalogue = catalogue if catalogue is not None else Catalogue(self._state)
         self._bind_after_list: str | None = None  # identifier to bind once the registry list has been refreshed
         self._add_when_bound = False  # a Prepare also adds the LoRA to the list; a plain add never needs to
+        page.loraList.setFixedHeight(VISIBLE_ROWS * ROW_HEIGHT + 2 * page.loraList.frameWidth())  # whole rows
         page.addLoraButton.clicked.connect(self.add)
         page.removeLoraButton.clicked.connect(self.remove)
         page.checkLorasButton.clicked.connect(self.check)
@@ -211,6 +213,9 @@ class LoraAssetPanel:
         cloud = self._backend()[0] == "cloud"
         for name in ("addLoraButton", "removeLoraButton", "checkLorasButton"):
             getattr(self.page, name).setEnabled(enabled)
+        self._weights_enabled = enabled
+        for index in range(self.page.loraList.count()):
+            self.page.loraList.itemWidget(self.page.loraList.item(index)).spin.setEnabled(enabled)
         self.page.prepareAssetButton.setEnabled(enabled and cloud and not self._q8p_running)
         refresh = getattr(self.page.window(), "_managed_lora_render", None)
         if refresh is not None:
@@ -407,19 +412,70 @@ class LoraAssetPanel:
 
     def _render_loras(self) -> None:
         labels = self.family_labels()
-        self.page.loraList.clear()
-        for item in self.loras:
-            text = f"{_display_label(item.identifier)} @ {item.weight:g}"
-            if not self._candidate_compatible(item.identifier):
-                text += f" · incompatible with {self._checkpoint_version}"
-            entry = QListWidgetItem(text)
-            detail = (
-                f"{item.identifier}\nWeight: {item.weight:g}\nArchitecture: {labels.get(item.identifier, 'Unknown')}"
-            )
-            if item.identifier in self._receipts:
-                detail += f"\nConfirmed receipt: {self._receipts[item.identifier]}"
-            entry.setToolTip(detail)  # precise identifiers remain available on hover
-            self.page.loraList.addItem(entry)
+        lora_list = self.page.loraList
+        lora_list.clear()
+        for index, item in enumerate(self.loras):
+            entry = QListWidgetItem()
+            entry.setSizeHint(QSize(0, ROW_HEIGHT))
+            lora_list.addItem(entry)
+            row = LoraWeightRow(_display_label(item.identifier), item.weight)
+            row.activated.connect(lambda row=row: self._row_activated(row))
+            row.weight_changed.connect(lambda value, row=row: self._weight_edited(self._row_index(row), value))
+            lora_list.setItemWidget(entry, row)
+            row.spin.setEnabled(getattr(self, "_weights_enabled", True))
+            self._describe_row(index, entry, row, labels)
+
+    def _row_index(self, row: LoraWeightRow) -> int:
+        """List row that holds ``row``, or -1 once it was replaced by a redraw."""
+        lora_list = self.page.loraList
+        for index in range(lora_list.count()):
+            if lora_list.itemWidget(lora_list.item(index)) is row:
+                return index
+        return -1
+
+    def _row_activated(self, row: LoraWeightRow) -> None:
+        index = self._row_index(row)
+        if index >= 0:
+            self.page.loraList.setCurrentRow(index)  # Remove acts on the row being edited
+
+    def _describe_row(self, index: int, entry: QListWidgetItem, row: LoraWeightRow, labels=None) -> None:
+        """Row text and tooltip of ``self.loras[index]``; the weight itself is the spin box."""
+        item = self.loras[index]
+        labels = labels if labels is not None else self.family_labels()
+        text = _display_label(item.identifier)
+        if not self._candidate_compatible(item.identifier):
+            text += f" · incompatible with {self._checkpoint_version}"
+        row.label.setFullText(text)
+        detail = f"{item.identifier}\nWeight: {item.weight:g}\nArchitecture: {labels.get(item.identifier, 'Unknown')}"
+        if item.identifier in self._receipts:
+            detail += f"\nConfirmed receipt: {self._receipts[item.identifier]}"
+        row.setToolTip(detail)  # precise identifiers remain available on hover
+        entry.setToolTip(detail)
+        entry.setData(Qt.ItemDataRole.AccessibleTextRole, f"{_display_label(item.identifier)} @ {item.weight:g}")
+
+    def _weight_edited(self, index: int, value: float) -> None:
+        """A weight spin box changed: validate like the picker, update the selection in place and tell dependants."""
+        lora_list = self.page.loraList
+        if not 0 <= index < len(self.loras):
+            return
+        entry = lora_list.item(index)
+        row = lora_list.itemWidget(entry)
+        previous = self.loras[index]
+        weight = round(value, 2)
+        try:
+            if self._is_busy():
+                raise ValidationError("A request is running; LoRA weights cannot change now.")
+            changed = LoRASelection(previous.identifier, weight)
+        except ValidationError as exc:
+            row.set_weight(previous.weight)  # the previous weight stays
+            self._show(self.page.compatibilityStatusLabel, Presentation("error", "LoRAs not changed", str(exc)))
+            return
+        if changed == previous:
+            return
+        self.loras = self.loras[:index] + (changed,) + self.loras[index + 1 :]
+        self._describe_row(index, entry, row)
+        entry.setData(Qt.ItemDataRole.UserRole, weight)  # itemChanged: the compute-units estimate follows
+        self._show(self.page.compatibilityStatusLabel, Presentation("unknown", "Compatibility not checked.", ""))
 
     def choices(self) -> list[tuple[str, float | None]]:
         """(identifier, catalogue weight) of every LoRA offered for selection, custom-LoRA records included."""

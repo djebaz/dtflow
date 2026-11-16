@@ -56,6 +56,7 @@ from dtflow.services import civitai_gallery as gallery
 from dtflow.ui.gallery_loading import _SpinningRing
 from dtflow.ui.queue_composer import ValueChips
 from dtflow.ui.runner import AsyncRunner
+from dtflow.ui.scroll_step import WHEEL_STEP_PX
 
 log = logging.getLogger(__name__)
 
@@ -555,7 +556,9 @@ class GalleryTab(QObject):
         view.setSpacing(0)
         view.setSelectionMode(QAbstractItemView.SelectionMode.MultiSelection)
         view.setVerticalScrollMode(QAbstractItemView.ScrollMode.ScrollPerPixel)
-        view.verticalScrollBar().setSingleStep(24)  # smaller wheel increments than Qt's card-sized automatic step
+        view.verticalScrollBar().setSingleStep(
+            WHEEL_STEP_PX
+        )  # smaller wheel increments than Qt's card-sized automatic step
         view.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOn)
         view.setFocusPolicy(Qt.FocusPolicy.NoFocus)
         view.setMouseTracking(True)
