@@ -202,11 +202,37 @@
       <item><widget class="QLabel" name="galleryNote">
        <property name="wordWrap"><bool>true</bool></property>
       </widget></item>
-      <item><widget class="QListWidget" name="galleryList">
-       <property name="accessibleName"><string>Civitai LoRAs</string></property>
+      <item><widget class="QStackedWidget" name="galleryResultsStack">
        <property name="minimumHeight"><number>220</number></property>
-       <property name="editTriggers"><set>QAbstractItemView::NoEditTriggers</set></property>
-       <property name="horizontalScrollBarPolicy"><enum>Qt::ScrollBarAlwaysOff</enum></property>
+       <property name="currentIndex"><number>1</number></property>
+       <widget class="QListWidget" name="galleryList">
+        <property name="accessibleName"><string>Civitai LoRAs</string></property>
+        <property name="minimumHeight"><number>220</number></property>
+        <property name="editTriggers"><set>QAbstractItemView::NoEditTriggers</set></property>
+        <property name="horizontalScrollBarPolicy"><enum>Qt::ScrollBarAlwaysOff</enum></property>
+       </widget>
+       <widget class="QWidget" name="galleryEmptyPage">
+        <layout class="QVBoxLayout" name="galleryEmptyLayout">
+         <property name="leftMargin"><number>16</number></property>
+         <property name="topMargin"><number>0</number></property>
+         <property name="rightMargin"><number>16</number></property>
+         <property name="bottomMargin"><number>0</number></property>
+         <item><spacer name="galleryEmptyTopSpacer">
+          <property name="orientation"><enum>Qt::Vertical</enum></property>
+          <property name="sizeHint" stdset="0"><size><width>20</width><height>20</height></size></property>
+         </spacer></item>
+         <item><widget class="QLabel" name="galleryEmptyState">
+          <property name="text"><string>Enter keywords or add a tag to search Civitai.</string></property>
+          <property name="alignment"><set>Qt::AlignCenter</set></property>
+          <property name="wordWrap"><bool>true</bool></property>
+          <property name="role" stdset="0"><string>secondary</string></property>
+         </widget></item>
+         <item><spacer name="galleryEmptyBottomSpacer">
+          <property name="orientation"><enum>Qt::Vertical</enum></property>
+          <property name="sizeHint" stdset="0"><size><width>20</width><height>20</height></size></property>
+         </spacer></item>
+        </layout>
+       </widget>
       </widget></item>
       <item><widget class="QWidget" name="galleryVersionsBox">
        <layout class="QVBoxLayout" name="galleryVersionsLayout">
@@ -254,12 +280,12 @@
         <property name="enabled"><bool>false</bool></property>
        </widget></item>
        <item><widget class="QLabel" name="galleryStatus">
-        <property name="text"><string>Opens when you visit this tab.</string></property>
+        <property name="text"><string>Enter keywords or add a tag to search Civitai.</string></property>
         <property name="role" stdset="0"><string>secondary</string></property>
        </widget></item>
        <item><widget class="QPushButton" name="galleryContinueButton">
         <property name="text"><string>Search further</string></property>
-        <property name="toolTip"><string>Continue searching after multiple Civitai batches without supported LoRAs.</string></property>
+        <property name="toolTip"><string>Load another Civitai results page, or retry after a failed request.</string></property>
        </widget></item>
        <item><spacer name="galleryActionSpacer"><property name="orientation"><enum>Qt::Horizontal</enum></property>
         <property name="sizeHint" stdset="0"><size><width>20</width><height>20</height></size></property></spacer></item>
