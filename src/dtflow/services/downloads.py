@@ -21,7 +21,7 @@ from dtflow.services import civitai
 from dtflow.services.lora_convert.errors import ConversionCancelled
 from dtflow.services.lora_convert.registry import FamilySpec
 from dtflow.services.lora_download import convert_downloaded
-from dtflow.services.lora_sources import list_sources, remove_source
+from dtflow.services.lora_sources import list_sources, remove_source, sweep_orphans
 from dtflow.services.lora_store import LoraStore
 from dtflow.services.lora_naming import LoraPrepareMetadata
 
@@ -230,6 +230,16 @@ async def prepared_contents_for_key(state: Path, credential_id: str) -> frozense
         return await registry.confirmed_lora_contents(credential_id)
     finally:
         await registry.aclose()
+
+
+async def startup_cleanup(state: Path) -> None:
+    """App-startup housekeeping: stale download staging files, then unreferenced ``lora_sources/`` files older than the
+    grace period. Best effort; a failure is logged without file names and never reaches the caller."""
+    try:
+        await asyncio.to_thread(civitai.cleanup_staging, state)
+        await sweep_orphans(state)
+    except Exception as exc:  # noqa: BLE001 - housekeeping must never stop the app
+        log.warning("Download startup cleanup failed: %s", type(exc).__name__)
 
 
 async def load_items(state: Path) -> list[DownloadItem]:

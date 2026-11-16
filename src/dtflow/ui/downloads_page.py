@@ -208,6 +208,13 @@ class DownloadsPage(QObject):
             self.form.downloadsListSummary.setText(text)
 
     # ----------------------------------------------------------------------------------------------- page lifecycle
+    def start_cleanup(self) -> None:
+        """Once at app startup: remove stale download staging files and unreferenced source files, off the GUI thread."""
+        try:
+            self._runner.submit(engine.startup_cleanup(self._state), lambda _result, _error: None)
+        except RuntimeError:  # the runner is already shutting down
+            pass
+
     def activate(self) -> None:
         """The page was opened: restore the durable rows once, clear the pill's finished/failed marks."""
         self.finished_unseen = self.failed_unseen = 0
