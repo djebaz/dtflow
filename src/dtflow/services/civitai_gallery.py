@@ -323,8 +323,9 @@ def list_page(
     period: str | None = None,
     tag: str | None = None,
     selected_tags: tuple[str, ...] = (),
+    tag_match_mode: str = "or",
 ) -> GalleryPage:
-    """One page of the gallery (blocking), optionally filtered by explicit selected tags."""
+    """One page of the gallery, with optional local AND/OR checks for selected tags."""
     body = civitai.get_listing(
         client, listing_query(query, sort, cursor, limit, family=family, period=period, tag=tag)
     )
@@ -336,9 +337,10 @@ def list_page(
             item
             for item in items
             if isinstance(item.get("tags"), list)
-            and any(
-                isinstance(name, str) and name.casefold() in selected
-                for name in item["tags"]
+            and (
+                selected.issubset({name.casefold() for name in item["tags"] if isinstance(name, str)})
+                if tag_match_mode == "and"
+                else any(isinstance(name, str) and name.casefold() in selected for name in item["tags"])
             )
         ]
     cards = tuple(card for card in (_card(item, family) for item in items) if card is not None)
@@ -356,17 +358,18 @@ class _ListingStream:
 
     query: str
     tag: str | None
+    check_tags: bool = True
     cursor: str | None = None
     seen: set[str] = field(default_factory=set)
     finished: bool = False
 
 
 class GallerySearch:
-    """Bounded OR discovery: one 100-model API page from one source per scroll/fetch.
+    """Bounded keyword/tag discovery: at most one 100-model API page per fetch.
 
-    Civitai has distinct query and tag parameters, with no documented OR operator between them.
-    Text searches and tag-name searches therefore use independent cursors. An explicit tag filter
-    narrows the union. We interleave source pages, not claim a single global sort order.
+    Civitai has no documented multi-tag operator. OR uses a stream per selected tag; AND
+    anchors to one tag and checks the others locally. A keyword is found through the API's
+    full-text query or its exact tag lookup. Independent cursors mean merged sort is approximate.
     """
 
     def __init__(
@@ -376,8 +379,13 @@ class GallerySearch:
         sort: str,
         family: tuple[str, ...],
         period: str | None,
+        *,
+        keyword_tag_mode: str = "and",
+        tag_match_mode: str = "or",
     ):
         self.sort, self.family, self.period = sort, family, period
+        self.keyword_tag_mode = keyword_tag_mode if keyword_tag_mode in ("and", "or") else "and"
+        self.tag_match_mode = tag_match_mode if tag_match_mode in ("and", "or") else "or"
         keyword = " ".join(query.split())[:MAX_QUERY]
         unique: dict[str, str] = {}
         for value in tags:
@@ -385,16 +393,20 @@ class GallerySearch:
             if tag:
                 unique.setdefault(tag.casefold(), tag)
         self.tags = tuple(unique.values())[:MAX_TAGS]
-        if keyword:
-            if self.tags:
-                # Each selected tag gets a query AND tag request. The keyword-as-tag stream
-                # covers tag-name matches too; its results are narrowed to selected tags.
-                self._streams = [_ListingStream(keyword, tag) for tag in self.tags]
+        anchors = self.tags[:1] if self.tag_match_mode == "and" else self.tags
+        if keyword and self.tags:
+            if self.keyword_tag_mode == "and":
+                # Both keyword sources must also satisfy the selected-tag group.
+                self._streams = [_ListingStream(keyword, tag) for tag in anchors]
                 self._streams.append(_ListingStream("", keyword))
             else:
-                self._streams = [_ListingStream(keyword, None), _ListingStream("", keyword)]
+                # Keyword sources are unrestricted; the tag-group sources are checked locally.
+                self._streams = [_ListingStream(keyword, None, False), _ListingStream("", keyword, False)]
+                self._streams.extend(_ListingStream("", tag) for tag in anchors)
+        elif keyword:
+            self._streams = [_ListingStream(keyword, None), _ListingStream("", keyword)]
         else:
-            self._streams = [_ListingStream("", tag) for tag in self.tags]
+            self._streams = [_ListingStream("", tag) for tag in anchors]
         self._index = 0
         self._page = 0
 
@@ -423,7 +435,8 @@ class GallerySearch:
             family=self.family,
             period=self.period,
             tag=source.tag,
-            selected_tags=self.tags,
+            selected_tags=self.tags if source.check_tags else (),
+            tag_match_mode=self.tag_match_mode,
         )
         self._index = (index + 1) % len(self._streams)
         if source.cursor is not None:
