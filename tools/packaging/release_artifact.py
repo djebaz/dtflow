@@ -26,6 +26,8 @@ def verify(commit: str, tag: str) -> dict:
     if not artifact.is_file() or artifact.stat().st_size == 0:
         raise ValueError("Expected stamped Windows x64 executable is missing or empty.")
     archive = CArchiveReader(str(artifact))
+    if not any(name.replace("\\", "/") == "kmeans1d/version.txt" for name in archive.toc):
+        raise ValueError("Bundled kmeans1d/version.txt is missing; rebuild with kmeans1d package data.")
     pyz_name = next(name for name, entry in archive.toc.items() if entry[-1] == "z")
     stamp = archive.open_embedded_archive(pyz_name).extract("dtflow._buildinfo")
     # Read the code object's constants, never execute bundled application code.
