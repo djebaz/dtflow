@@ -54,7 +54,7 @@ from dtflow.core.models import (
     eligible_model_ids,
 )
 from dtflow.core.tasks import settle
-from dtflow.diagnostics import event as diagnostic_event
+from dtflow.diagnostics import event as diagnostic_event, timing_enabled, timing_level
 
 log = logging.getLogger(__name__)
 GENERATE_METHOD = "/ImageGenerationService/GenerateImage"
@@ -384,7 +384,7 @@ class DrawThingsBackend:
         diagnostic_event(
             log,
             "backend.api_completed",
-            level=logging.DEBUG,
+            level=timing_level(),
             data={
                 "transport": "grpc",
                 "operation": "FilesExist",
@@ -565,6 +565,7 @@ class DrawThingsBackend:
                             data={"transport": "grpc", "backend": self.backend_id},
                         )
                         first_response = True
+                        first_content = timing_enabled()
                         async for response in stream:
                             if first_response:
                                 first_response = False
@@ -579,6 +580,22 @@ class DrawThingsBackend:
                                     },
                                 )
                                 emit("preparing", stage="backend_response_received")
+                            if first_content:
+                                observed = self._content_fields(response)
+                                if observed:
+                                    # ``-time`` only: when the server first sent anything but an acknowledgement.
+                                    first_content = False
+                                    diagnostic_event(
+                                        log,
+                                        "backend.generation_first_content",
+                                        level=logging.INFO,
+                                        data={
+                                            "transport": "grpc",
+                                            "backend": self.backend_id,
+                                            "wait_ms": round((time.monotonic() - request_sent_at) * 1000),
+                                            "fields": observed,
+                                        },
+                                    )
                             self._log_response(response)
                             if response.chunk_state == image_service.ChunkState.MORE_CHUNKS:
                                 raise self._reject(request, "chunked_output_unsupported", stage, finals)
@@ -683,7 +700,7 @@ class DrawThingsBackend:
         diagnostic_event(
             log,
             "backend.api_completed",
-            level=logging.DEBUG,
+            level=timing_level(),
             data={
                 "transport": "grpc",
                 "operation": "GenerateImage",
@@ -702,6 +719,22 @@ class DrawThingsBackend:
             CompletionEvidence("OK", True),
             warnings,
         )
+
+    @staticmethod
+    def _content_fields(response) -> list[str]:
+        """Fixed names of what a response carries besides an acknowledgement; never its values."""
+        found = []
+        if response.signposts:
+            found.append("signposts")
+        if response.current_signpost:
+            found.append("signpost_" + betterproto.which_one_of(response.current_signpost, "signpost")[0])
+        if response.preview_image:
+            found.append("preview")
+        if response.generated_images:
+            found.append("images")
+        if response.download_size:
+            found.append("download_size")
+        return found
 
     @staticmethod
     def _log_response(response) -> None:
@@ -808,7 +841,7 @@ class DrawThingsBackend:
             diagnostic_event(
                 log,
                 "backend.api_completed",
-                level=logging.DEBUG,
+                level=timing_level(),
                 data={
                     "transport": "grpc",
                     "operation": "connect",
@@ -848,7 +881,7 @@ class DrawThingsBackend:
         diagnostic_event(
             log,
             "backend.api_completed",
-            level=logging.DEBUG,
+            level=timing_level(),
             data={
                 "transport": "grpc",
                 "operation": "Echo",

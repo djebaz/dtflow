@@ -24,7 +24,7 @@ from dtflow.core.models import (
     SubmissionStage,
     ValidationError,
 )
-from dtflow.diagnostics import api_error_data, cloud_key_data, event
+from dtflow.diagnostics import api_error_data, cloud_key_data, event, timing_level
 from dtflow.services.cloud_usage import key_identity
 
 log = logging.getLogger(__name__)
@@ -188,7 +188,7 @@ class CloudAuth:
             event(
                 log,
                 "backend.credentials_resolved",
-                level=logging.DEBUG,
+                level=timing_level(),
                 data={"elapsed_ms": (self._clock() - resolving) * 1000},
             )
             if credential is None or not credential.secret.strip():
@@ -386,7 +386,7 @@ class CloudAuth:
                     event(
                         log,
                         "backend.api_completed",
-                        level=logging.DEBUG,
+                        level=timing_level(),
                         data={
                             "transport": "http",
                             "operation": path.strip("/").replace("/", "."),

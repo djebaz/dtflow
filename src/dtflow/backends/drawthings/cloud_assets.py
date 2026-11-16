@@ -22,7 +22,7 @@ import httpx
 
 from dtflow.backends.drawthings.cloud_auth import CloudAuth
 from dtflow.backends.drawthings.errors import api_error, diagnostics
-from dtflow.diagnostics import api_error_data, asset_ref_data, event
+from dtflow.diagnostics import api_error_data, asset_ref_data, event, timing_level
 from dtflow.core.models import (
     AssetContent,
     AssetNegotiation,
@@ -646,7 +646,7 @@ async def upload_signed(
             event(
                 logging.getLogger(__name__),
                 "backend.api_completed",
-                level=logging.DEBUG,
+                level=timing_level(),
                 data={
                     "transport": "http",
                     "operation": "asset_storage_put",

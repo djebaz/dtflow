@@ -10,9 +10,7 @@ dispatched) instead of the desktop blocking it for the window's lifetime.
 import asyncio
 import hashlib
 import logging
-import re
 import secrets
-from time import monotonic
 from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, replace
@@ -66,6 +64,7 @@ from dtflow.services.lora_auto_naming import normalize_previous_retained
 from dtflow.services.lora_naming import LoraPrepareMetadata, ManagedName, occupied_from_snapshot
 from dtflow.services.image_preparation import prepare_image_files, validate_prepared_inputs
 from dtflow.services.preflight import apply_trigger_prefixes
+from dtflow.services.timeline import GenerationTimeline
 
 log = logging.getLogger(__name__)
 
@@ -276,90 +275,6 @@ async def script_asset_choices(state: Path, backend_name: str) -> tuple[Prepared
         return await registry.resolve_prepared(selected)
     finally:
         await registry.aclose()
-
-
-# Fixed, privacy-safe stage names a generation timeline may record. Anything else (for example LoRA names carried by
-# asset events) is ignored, so the record never holds names, paths, prompts or credentials.
-TIMELINE_STAGES = frozenset(
-    {
-        "binding_assets",
-        "opening_session",
-        "backend_created",
-        "store_opened",
-        "backend_opened",
-        "session_ready",
-        "inventory_refreshed",
-        "preflight_done",
-        "validating_image_inputs",
-        "validating_request",
-        "validating_assets",
-        "restoring_assets",
-        "checking_loras",
-        "checking_output_storage",
-        "creating_attempt",
-        "waiting_buffer_budget",
-        "saving_image_snapshot",
-        "recording_submission_state",
-        "resolving_model",
-        "preparing_image_inputs",
-        "resolving_credentials",
-        "encoding_request",
-        "wire_validated",
-        "waiting_execution_lane",
-        "connecting_backend",
-        "preparing_grpc_metadata",
-        "waiting_backend_response",
-        "backend_response_received",
-        "retrying",
-    }
-)
-_PROGRESS_STAGE = re.compile(r"[a-z_]{1,40}")
-
-
-class GenerationTimeline:
-    """When each fixed stage of one generation was first seen, in milliseconds since Generate was requested.
-
-    It wraps the caller's event sink (``sink``), adds marks from the session functions, and writes one INFO
-    ``generation.timeline`` record when the generation settles. It only observes: events are forwarded unchanged.
-    """
-
-    def __init__(self, backend: str, inner: EventSink | None):
-        self.backend = backend
-        self.inner = inner
-        self.started = monotonic()
-        self.marks: dict[str, int] = {}
-
-    def mark(self, name: str) -> None:
-        if name in TIMELINE_STAGES or name in _FIXED_KINDS or name.startswith("progress_"):
-            self.marks.setdefault(name, round((monotonic() - self.started) * 1000))
-
-    def sink(self, event: BackendEvent) -> None:
-        if event.kind == "preparing":
-            if event.stage in TIMELINE_STAGES:
-                self.mark(event.stage)
-        elif event.kind in _FIXED_KINDS:
-            self.mark(event.kind)
-        elif event.kind == "progress" and event.stage and _PROGRESS_STAGE.fullmatch(event.stage):
-            self.mark("progress_" + event.stage)
-        if self.inner is not None:
-            self.inner(event)
-
-    def finish(self, failure: BaseException | None) -> None:
-        """One record per generation; ``outcome`` is saved, failed or cancelled, with the safe failure code if any."""
-        data: dict = {"backend": self.backend, "total_ms": round((monotonic() - self.started) * 1000)}
-        if failure is None:
-            data["outcome"] = "saved"
-        elif isinstance(failure, asyncio.CancelledError):
-            data["outcome"] = "cancelled"
-        else:
-            data["outcome"] = "failed"
-            if isinstance(failure, BackendError):
-                data["code"] = failure.failure.code
-        data.update({name + "_ms": value for name, value in self.marks.items()})
-        diagnostic_event(log, "generation.timeline", level=logging.INFO, data=data)
-
-
-_FIXED_KINDS = frozenset({"submission_possible", "preview", "artifact_received", "terminal"})
 
 
 async def _timed(selection: BackendSelection, on_event: EventSink | None, body):

@@ -4,8 +4,10 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import os
 import sqlite3
+from time import monotonic
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import closing
 from dataclasses import asdict
@@ -23,6 +25,7 @@ from dtflow.core.models import (
 )
 from dtflow.core.request_records import upgraded_request_record
 from dtflow.core.tasks import settle
+from dtflow.diagnostics import event as diagnostic_event, timing_enabled
 from dtflow.persistence.queues import QUEUE_SCHEMA, QueueMixin, add_kind, add_lanes, add_up_next, migrate_script_runs
 
 # 1: attempts only. 2: queues. 3: request v2. 4: up next. 5: script kind. 6: script child slots. 7: cloud usage.
@@ -42,6 +45,9 @@ CLOUD_USAGE_SCHEMA = """CREATE TABLE IF NOT EXISTS cloud_usage (
     credential_id TEXT NOT NULL,
     key_hint TEXT
 )"""
+
+
+log = logging.getLogger(__name__)
 
 
 class PersistenceError(RuntimeError):
@@ -123,6 +129,15 @@ class SQLiteAttempts(QueueMixin):
             raise PersistenceError("SQLite needs an official WAL-reset fix (3.51.3+ or a supported backport).")
         if str(self.directory).startswith("\\\\"):
             raise PersistenceError("Execution state requires a local filesystem, not a UNC share.")
+        began = last = monotonic()
+        laps: dict[str, int] = {}
+
+        def lap(name: str) -> None:
+            nonlocal last
+            now = monotonic()
+            laps[name + "_ms"] = round((now - last) * 1000)
+            last = now
+
         self.directory.mkdir(parents=True, exist_ok=True)
         self._lock = (self.directory / "owner.lock").open("a+b")
         try:
@@ -131,6 +146,7 @@ class SQLiteAttempts(QueueMixin):
             self._lock.close()
             self._lock = None
             raise StateBusyError("Another process owns this execution state directory.") from exc
+        lap("lock")
         try:
             connection = sqlite3.connect(self.directory / "attempts.sqlite3", timeout=2.0)
             self._connection = connection
@@ -153,6 +169,7 @@ class SQLiteAttempts(QueueMixin):
                 with closing(sqlite3.connect(copy)) as destination:
                     connection.backup(destination)
             # One transaction covers creation or migration and ownership reconciliation: failure keeps the old state.
+            lap("connect_pragmas")
             connection.execute("BEGIN IMMEDIATE")
             try:
                 connection.execute("""CREATE TABLE IF NOT EXISTS attempts (
@@ -204,11 +221,22 @@ class SQLiteAttempts(QueueMixin):
                     updated_at_utc=? WHERE state='prepared'""",
                     (now,),
                 )
+                lap("schema_and_recovery")
                 self.reconcile(connection, now, self.directory)
+                lap("reconcile")
                 # A recovered owner never replays previously submitted script children.
                 # No earlier process can still own this DB under owner.lock.
                 connection.execute("UPDATE queue_items SET lanes_json=NULL WHERE lanes_json IS NOT NULL")
                 connection.execute("COMMIT")
+                lap("commit")
+                if timing_enabled():
+                    # ``-time`` only: where opening the attempts store spends its time (no paths or values).
+                    diagnostic_event(
+                        log,
+                        "persistence.store_open_timing",
+                        level=logging.INFO,
+                        data={"total_ms": round((monotonic() - began) * 1000), **laps},
+                    )
             except BaseException:
                 connection.execute("ROLLBACK")
                 raise

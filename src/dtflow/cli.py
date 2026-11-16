@@ -24,7 +24,7 @@ from dtflow.core.models import (
     TimeoutPolicy,
     ValidationError,
 )
-from dtflow.diagnostics import event as diagnostic_event
+from dtflow.diagnostics import event as diagnostic_event, set_timing
 from dtflow.gallery_limits import add_arguments as add_gallery_limit_arguments
 from dtflow.gallery_limits import resolve as resolve_gallery_limits
 from dtflow.logging_setup import LoggingSetupError, configure_logging
@@ -68,6 +68,13 @@ def parser() -> argparse.ArgumentParser:
     )
     command.add_argument("-v", "--version", action="version", version=display_identity())
     command.add_argument("-x", "--dev", action="store_true", help="Add sanitized diagnostic detail to the log file.")
+    command.add_argument(
+        "-time",
+        "--time",
+        action="store_true",
+        help="Add timing detail to the log file: per-generation stage timings (also for queues, scripts and "
+        "workflows), connection, token, Echo and store-open durations, and short digests of the prompt and settings.",
+    )
     command.add_argument("-q", "--logs", type=Path, help="Log directory (default: repository logs/ or per-user data).")
     add_gallery_limit_arguments(command)
     commands = command.add_subparsers(dest="command", required=True)
@@ -1025,6 +1032,7 @@ def start_logging(args: argparse.Namespace):
 def main(argv: list[str] | None = None) -> int:
     startup.mark("python imports")
     args = parser().parse_args(argv)
+    set_timing(args.time)
     from dtflow.persistence import thumbnail_cache
     from dtflow.persistence.gallery_snapshot import configure
 
