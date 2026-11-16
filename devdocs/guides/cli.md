@@ -143,6 +143,14 @@ uv run dtflow assets reconcile ASSET_ID
 
 `assets prepare -f/--file FILE` explicitly prepares a converted LoRA and keeps a verified local copy under `<state>/lora_files/`. A confirmed receipt is reusable under its own DT+ API key without a routine BYOM check. First use under another key checks that key's bucket and restores only positively missing bytes; a relevant rejected generation may trigger one bounded recovery probe. Unknown or authentication failures never authorize uploads. The managed files persist until removed through Connection > Custom LoRAs or `dtflow assets files [--remove SHA256]` (removes only the retained local copy). `-n/--name` selects an identifier instead of the filename. List and Show inspect the local registry without network access; these receipts are not complete remote account inventory. Reconcile is a metadata-only check under the current credential, never an upload. Bind a confirmed receipt with `-z/--asset ASSET_ID` on cloud generation or queue creation, alongside the matching `-l/--lora ID:WEIGHT`. Binding itself never uploads; the selected key's confirmed reference is used directly after its first verification, with the above bounded restoration when needed. Receipt bindings are not exported in generation configurations. See the [cloud integration contract](../architecture/cloud-integration.md) for protocol and uncertainty details.
 
+## Civitai downloads
+
+```bash
+uv run dtflow assets download VERSION_ID_OR_CIVITAI_LINK [--file-id FILE_ID]
+```
+
+Resolves a Civitai version id or a civitai.com model or download link to one concrete version and `.safetensors` file, downloads it and converts it to a managed Draw Things `.ckpt`, through the same service as the Downloads view. It never uploads to DT+: Prepare stays a separate explicit step. A model link without a version, or a version with several files, prints the choices instead of picking one; pass a link with `?modelVersionId=` or `--file-id`. A LoRA whose Civitai base model is not a listed supported family is refused before any bytes are fetched. A file the converter refuses is kept and reported as downloaded, not convertible. The token comes from the Download credentials card of the app when one is saved, else from the `CIVITAI_TOKEN` environment variable; the output names the source used (`saved token`, `CIVITAI_TOKEN` or `none`), never the token. Gated or early-access files need a token that has the account's permission; a token never bypasses those permissions.
+
 ## Script analysis and engine self-check
 
 `dtflow script <file>` parses a Draw Things script (never runs it) and lists the facade calls it finds; syntax checking
