@@ -834,6 +834,14 @@ class GalleryTab(QObject):
         if self._family_popup is None:
             self._filters_changed()
 
+    def _set_family_menu_focus(self, opened: bool) -> None:
+        """Match the combo's focus border to its separate checkbox menu."""
+        combo = self.form.galleryFamilyCombo
+        combo.setProperty("menuOpen", opened)
+        combo.style().unpolish(combo)
+        combo.style().polish(combo)
+        combo.update()
+
     def _show_family_menu(self) -> None:
         """Keep a multi-checkbox popover open while users select several families."""
         combo = self.form.galleryFamilyCombo
@@ -841,6 +849,9 @@ class GalleryTab(QObject):
             return
         menu = QMenu(combo)
         self._family_popup = menu
+        # The checkbox menu is a separate QMenu, so QComboBox:on never activates.
+        # Preserve the full focus border while that menu owns keyboard focus.
+        self._set_family_menu_focus(True)
         initial_families = self._selected_families
 
         def reset() -> None:
@@ -873,6 +884,7 @@ class GalleryTab(QObject):
 
         def closed() -> None:
             self._family_popup = None
+            self._set_family_menu_focus(False)
             if self._selected_families != initial_families:
                 # One Civitai request after the user finishes multiple checkbox changes.
                 self._filters_changed()
