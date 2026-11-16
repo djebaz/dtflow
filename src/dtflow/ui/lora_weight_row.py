@@ -5,8 +5,7 @@ from PySide6.QtWidgets import QDoubleSpinBox, QHBoxLayout, QLabel, QWidget
 
 from dtflow.ui.search_select import LORA_WEIGHT_MAX, LORA_WEIGHT_MIN, LORA_WEIGHT_STEP
 
-ROW_HEIGHT = 22  # px: the list's height is a whole number of these rows (10 rows, twice the former ~5 lines of text)
-VISIBLE_ROWS = 10
+LIST_HEIGHT = 220  # px, about: twice the former 110; the list is the whole number of rows nearest to this
 SPIN_WIDTH = 74
 
 
@@ -40,14 +39,16 @@ class LoraWeightRow(QWidget):
     def __init__(self, name: str, weight: float, parent: QWidget | None = None):
         super().__init__(parent)
         layout = QHBoxLayout(self)
-        layout.setContentsMargins(6, 0, 2, 0)
+        layout.setContentsMargins(6, 1, 2, 1)
         layout.setSpacing(6)
         self.label = _ElidedLabel(self)
         self.spin = QDoubleSpinBox(self)
         self.spin.setObjectName("loraRowWeight")
         self.spin.setDecimals(2)
         self.spin.setSingleStep(LORA_WEIGHT_STEP)  # one wheel notch on a focused spin box is exactly one step
-        self.spin.setFixedSize(SPIN_WIDTH, ROW_HEIGHT - 2)
+        # The theme gives spin boxes input padding and a minimum height; a compact one keeps rows short on any font.
+        self.spin.setStyleSheet("QDoubleSpinBox#loraRowWeight { min-height: 0; padding: 0 4px; }")
+        self.spin.setFixedWidth(SPIN_WIDTH)
         self.spin.setKeyboardTracking(False)  # typed digits apply on Enter or focus loss, never half-typed
         self.spin.setAccessibleName(f"{name} weight")
         self.set_weight(weight)

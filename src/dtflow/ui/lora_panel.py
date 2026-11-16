@@ -70,7 +70,7 @@ from dtflow.ui.activity_bar import clock
 from dtflow.ui.activity_strip import activity_strip
 from dtflow.ui.file_dialogs import QFileDialog
 from dtflow.ui.latest_relay import LatestRelay
-from dtflow.ui.lora_weight_row import ROW_HEIGHT, VISIBLE_ROWS, LoraWeightRow
+from dtflow.ui.lora_weight_row import LIST_HEIGHT, LoraWeightRow
 from dtflow.ui.lora_selection_editor import NOT_ON_KEY, _display_label, edit_lora_selection
 from dtflow.ui.prepare_lora_editor import PrepareBatchEditor
 from dtflow.ui.runner import AsyncRunner
@@ -179,7 +179,14 @@ class LoraAssetPanel:
         self._catalogue = catalogue if catalogue is not None else Catalogue(self._state)
         self._bind_after_list: str | None = None  # identifier to bind once the registry list has been refreshed
         self._add_when_bound = False  # a Prepare also adds the LoRA to the list; a plain add never needs to
-        page.loraList.setFixedHeight(VISIBLE_ROWS * ROW_HEIGHT + 2 * page.loraList.frameWidth())  # whole rows
+        probe = LoraWeightRow("", 1.0, page)  # styled like a real row: the theme decides the spin box height
+        probe.hide()
+        self._row_height = probe.sizeHint().height()
+        probe.setParent(None)
+        probe.deleteLater()
+        page.loraList.setFixedHeight(
+            max(1, round(LIST_HEIGHT / self._row_height)) * self._row_height + 2 * page.loraList.frameWidth()
+        )  # whole rows
         page.addLoraButton.clicked.connect(self.add)
         page.removeLoraButton.clicked.connect(self.remove)
         page.checkLorasButton.clicked.connect(self.check)
@@ -416,7 +423,7 @@ class LoraAssetPanel:
         lora_list.clear()
         for index, item in enumerate(self.loras):
             entry = QListWidgetItem()
-            entry.setSizeHint(QSize(0, ROW_HEIGHT))
+            entry.setSizeHint(QSize(0, self._row_height))
             lora_list.addItem(entry)
             row = LoraWeightRow(_display_label(item.identifier), item.weight)
             row.activated.connect(lambda row=row: self._row_activated(row))
