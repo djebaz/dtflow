@@ -11,7 +11,7 @@ from PySide6.QtWidgets import QAbstractItemView, QAbstractScrollArea, QScrollAre
 
 from dtflow.ui.app_filters import install_app_filter
 
-WHEEL_STEP_PX = 24  # single step of the vertical scroll bar: smaller increments than Qt's item-sized automatic step
+WHEEL_STEP_PX = 12  # single step of the vertical scroll bar: smaller increments than Qt's item-sized automatic step
 _OWN_WHEEL = "ownWheelScrolling"  # a view with its own benchmarked wheel handling sets this True and is left alone
 
 
