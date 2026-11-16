@@ -2189,6 +2189,24 @@ ValueChips#galleryTagValueChips QPushButton#valueChipsAddButton {
   min-height: 0;
   padding: 0 8px;
 }
+/* Override the global button minimum and padding: AND/OR must match 23px tag pills. */
+QPushButton#galleryModeToggle {
+  min-height: 0;
+  max-height: 23px;
+  padding: 0 7px;
+  background: ${color.selection};
+  color: ${color.selectionText};
+  border-color: ${color.selectionBorder};
+}
+QPushButton#galleryModeToggle:hover {
+  background: ${color.selectionHover};
+  border-color: ${color.focus};
+}
+QLabel#galleryModeCaption {
+  font-size: ${type.small};
+  color: ${color.secondary};
+  padding: 0;
+}
 
 
 /* Queues items table: painted cells (queue_item_delegate.py); the row surface, hover and selection stay shared. */
