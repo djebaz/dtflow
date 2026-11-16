@@ -370,7 +370,7 @@ class CardDelegate(QStyledItemDelegate):
 
 
 class _Resized(QObject):
-    """Refits the card size when the grid's viewport changes width."""
+    """Invoke a layout callback when its watched widget is resized."""
 
     def __init__(self, callback, parent: QObject):
         super().__init__(parent)
@@ -587,6 +587,10 @@ class GalleryTab(QObject):
         form.galleryPeriodCombo.setCurrentIndex(max(0, period_index))
         form.gallerySearchEdit.setMaxLength(gallery.MAX_QUERY)
         form.gallerySearchEdit.setText(preferences.get("query", ""))
+        self._filter_row_mode: str | None = None
+        self._filter_row_resized = _Resized(self._layout_filter_row, form.browseTab)
+        form.browseTab.installEventFilter(self._filter_row_resized)
+        self._layout_filter_row()
         host = form.galleryTagChipsSlot
         tag_layout = QHBoxLayout(host)
         tag_layout.setContentsMargins(0, 0, 0, 0)
@@ -753,6 +757,62 @@ class GalleryTab(QObject):
         self._mark_preferences_changed()
         if self._loaded:
             self.search()
+
+    def _layout_filter_row(self) -> None:
+        """Keep filter labels readable and wrap controls when the Browse pane narrows."""
+        form = self.form
+        sort, families, period = form.gallerySortCombo, form.galleryFamilyCombo, form.galleryPeriodCombo
+        labels = (
+            gallery.SORTS,
+            ("All families", *(name for _, name in self._family_choices),
+             *(f"{count} families" for count in range(2, len(self._family_choices) + 1))),
+            ("All time", "This year", "This month", "This week", "Today"),
+        )
+        # Shared QSS: 7px left padding, 34px arrow/padding, 1px border on each side.
+        # Keep a few extra pixels for font rounding and the full focus border.
+        for combo, options in zip((sort, families, period), labels, strict=True):
+            text_width = max(combo.fontMetrics().horizontalAdvance(label) for label in options)
+            combo.setFixedWidth(max(combo.sizeHint().width(), text_width + 7 + 34 + 2 + 8))
+
+        row = form.gallerySearchRow
+        spacing = row.horizontalSpacing()
+        fixed = (sort, families, period)
+        fixed_widths = [widget.width() for widget in fixed]
+        search_width = form.gallerySearchButton.sizeHint().width()
+        available = max(0, form.browseTab.width() - 20)  # Browse form margins: 10px each side.
+        wide_width = form.gallerySearchEdit.minimumWidth() + sum(fixed_widths) + search_width + 4 * spacing
+        if available >= wide_width:
+            mode = "wide"
+            per_line = 3
+        else:
+            # Qt grid columns are shared across rows, including the Search button's column.
+            # Pack only as many fixed-width dropdowns as can fit beside that reserved column.
+            usable = max(0, available - search_width - spacing)
+            per_line = 1
+            for number in (3, 2):
+                if sum(fixed_widths[:number]) + number * spacing <= usable:
+                    per_line = number
+                    break
+            mode = f"wrapped-{per_line}"
+        if mode == self._filter_row_mode:
+            return
+        for widget in (form.gallerySearchEdit, *fixed, form.gallerySearchButton):
+            row.removeWidget(widget)
+        for column in range(5):
+            row.setColumnStretch(column, 0)
+        if mode == "wide":
+            row.addWidget(form.gallerySearchEdit, 0, 0)
+            for column, widget in enumerate(fixed, start=1):
+                row.addWidget(widget, 0, column)
+            row.addWidget(form.gallerySearchButton, 0, 4)
+            row.setColumnStretch(0, 1)
+        else:
+            row.addWidget(form.gallerySearchEdit, 0, 0, 1, 4)
+            row.addWidget(form.gallerySearchButton, 0, 4)
+            for index, widget in enumerate(fixed):
+                row.addWidget(widget, 1 + index // per_line, index % per_line)
+            row.setColumnStretch(3, 1)
+        self._filter_row_mode = mode
 
     def _update_family_summary(self) -> None:
         combo = self.form.galleryFamilyCombo
