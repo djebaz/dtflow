@@ -8,6 +8,8 @@ Open **Downloads** with the status-bar pill or **F9**. It opens on **Browse Civi
 
 ### Browse search matching (PR #480)
 
+Sort, Families and Time reserve label space using Qt's styled combo text rectangle rather than estimated stylesheet padding. Families reserves a stable width for all supported single-family labels and count summaries; the filter row wraps when space is limited. Windows label clipping and focus-border appearance still require owner visual acceptance.
+
 Two independent, persistent AND/OR switches control keyword-versus-Tags matching and matching among selected tags. Their defaults are **AND** (Search / Tags) and **OR** (Between tags). A hidden, currently irrelevant toggle retains its saved choice. No Civitai listing starts merely from restoring preferences. Before any search, Browse shows a **centered message in the empty grid** inviting the user to enter keywords or add a tag; with restored filters it asks the user to run Search. The same empty-grid panel shows **No results** only after the listing is exhausted without matching models. An empty or duplicate-only page with more results instead shows **No matches yet** in the grid and offers **Search further**; an API error shows a retry message and offers **Retry**. The gallery displays the loading spinner during an active request, and switches back to cards as soon as matches are found.
 
 - **Keywords only:** retrieve Civitai full-text matches through one `query` stream. DTFlow does not run a second `tag=<keyword>` lookup.

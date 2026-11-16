@@ -41,6 +41,7 @@ from PySide6.QtWidgets import (
     QScrollArea,
     QStyle,
     QStyledItemDelegate,
+    QStyleOptionComboBox,
     QToolTip,
     QTableWidgetItem,
     QVBoxLayout,
@@ -771,11 +772,18 @@ class GalleryTab(QObject):
             ),
             ("All time", "This year", "This month", "This week", "Today"),
         )
-        # Shared QSS: 7px left padding, 34px arrow/padding, 1px border on each side.
-        # Keep a few extra pixels for font rounding and the full focus border.
+        # Measure the styled label area, not guessed QSS padding: Qt's combo style
+        # also reserves native label/arrow insets inside the stylesheet box.
         for combo, options in zip((sort, families, period), labels, strict=True):
-            text_width = max(combo.fontMetrics().horizontalAdvance(label) for label in options)
-            combo.setFixedWidth(max(combo.sizeHint().width(), text_width + 7 + 34 + 2 + 8))
+            combo.ensurePolished()
+            option = QStyleOptionComboBox()
+            combo.initStyleOption(option)
+            text_width = max(option.fontMetrics.horizontalAdvance(label) for label in options) + 8
+            option.rect.setWidth(max(combo.sizeHint().width(), text_width))
+            field = combo.style().subControlRect(
+                QStyle.ComplexControl.CC_ComboBox, option, QStyle.SubControl.SC_ComboBoxEditField, combo
+            )
+            combo.setFixedWidth(option.rect.width() + max(0, text_width - field.width()))
 
         row = form.gallerySearchRow
         spacing = row.horizontalSpacing()
