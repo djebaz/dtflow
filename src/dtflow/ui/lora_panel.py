@@ -444,7 +444,9 @@ class LoraAssetPanel:
         if height != self._row_height or not self.page.loraList.minimumHeight():
             self._row_height = height
             lora_list = self.page.loraList
-            lora_list.setFixedHeight(max(1, round(LIST_HEIGHT / height)) * height + 2 * lora_list.frameWidth())
+            lora_list.ensurePolished()
+            margins = lora_list.contentsMargins()  # frame and theme border, known once the theme is applied
+            lora_list.setFixedHeight(max(1, round(LIST_HEIGHT / height)) * height + margins.top() + margins.bottom())
 
     def _row_index(self, row: LoraWeightRow) -> int:
         """List row that holds ``row``, or -1 once it was replaced by a redraw."""
