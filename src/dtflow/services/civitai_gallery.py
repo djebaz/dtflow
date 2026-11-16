@@ -398,8 +398,9 @@ class GallerySearch:
     """Bounded keyword/tag discovery: at most one 100-model API page per fetch.
 
     Civitai has no documented multi-tag operator. OR uses a stream per selected tag; AND
-    anchors to one tag and checks the others locally. A keyword is found through the API's
-    full-text query or its exact tag lookup. Independent cursors mean merged sort is approximate.
+    anchors to one tag and checks the others locally. With explicit tags and keyword AND,
+    use only the combined query/tag listing; keyword-only discovery retains the separate
+    tag-name lookup. Independent cursors mean merged sort is approximate.
     """
 
     def __init__(
@@ -426,9 +427,8 @@ class GallerySearch:
         anchors = self.tags[:1] if self.tag_match_mode == "and" else self.tags
         if keyword and self.tags:
             if self.keyword_tag_mode == "and":
-                # Both keyword sources must also satisfy the selected-tag group.
+                # One query+tag stream per selected tag (one total when a single tag is selected).
                 self._streams = [_ListingStream(keyword, tag) for tag in anchors]
-                self._streams.append(_ListingStream("", keyword))
             else:
                 # Keyword sources are unrestricted; the tag-group sources are checked locally.
                 self._streams = [_ListingStream(keyword, None, False), _ListingStream("", keyword, False)]
@@ -447,6 +447,11 @@ class GallerySearch:
     @property
     def active(self) -> bool:
         return any(not stream.finished for stream in self._streams)
+
+    @property
+    def initial_pending(self) -> bool:
+        """Fetch each stream's first page once; subsequent pages require a user action."""
+        return self.active and self._page < len(self._streams)
 
     def next_page(self, client: httpx.Client) -> GalleryPage:
         """Advance one stream by at most one API request; preserve its cursor on failure."""
