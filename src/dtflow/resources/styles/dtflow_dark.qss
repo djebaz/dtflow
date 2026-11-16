@@ -222,6 +222,12 @@ QPushButton {
   min-height: ${size.controlContent};
   padding: ${size.radius} 10px;
 }
+/* Managed library actions stay compact inside ordinary table rows. */
+QWidget#managedLoraActions QPushButton {
+  font-size: ${type.small};
+  min-height: 18px;
+  padding: 1px 6px;
+}
 QPushButton:hover {
   background-color: ${color.buttonHover};
   border-color: ${color.buttonBorderHover};
@@ -1621,6 +1627,10 @@ QTableView::item {
   border-bottom: 1px solid ${color.sectionBorder};
   padding: 5px 7px;
 }
+/* Embedded library actions need the full row height, not the default text-cell vertical inset. */
+QTableWidget#retainedLorasTable::item {
+  padding: 0px 7px;
+}
 QTableView::item:hover { background: ${color.buttonHover}; }
 
 QWidget#GalleryDetailPage QPushButton[role="galleryDisclosure"]:checked:hover { background: ${color.accentHover}; }
@@ -2179,6 +2189,7 @@ ValueChips#galleryTagValueChips QPushButton#valueChipsAddButton {
   min-height: 0;
   padding: 0 8px;
 }
+
 
 /* Queues items table: painted cells (queue_item_delegate.py); the row surface, hover and selection stay shared. */
 QTableView#queueItemsView { gridline-color: transparent; }
@@ -2742,8 +2753,7 @@ QListWidget#dtStorageList::item:selected {
   border-bottom: 1px solid ${color.selectionBorder};
 }
 
-/* Collapsible LoRA management in the existing Connections center column. */
-QToolButton#customLorasDisclosure,
+/* Credential disclosure in the left Connection rail; center sections use matching native tool buttons. */
 QToolButton#downloadCredentialsDisclosure {
   background: transparent;
   border: 0;
@@ -2752,7 +2762,5 @@ QToolButton#downloadCredentialsDisclosure {
   min-width: 20px;
   min-height: 20px;
 }
-QToolButton#customLorasDisclosure:hover,
 QToolButton#downloadCredentialsDisclosure:hover { background: ${color.buttonHover}; }
-QToolButton#customLorasDisclosure:focus,
 QToolButton#downloadCredentialsDisclosure:focus { border: 1px solid ${color.focus}; }

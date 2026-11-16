@@ -173,6 +173,9 @@ mask-poc = [
     { name = "onnxruntime" },
     { name = "pillow" },
 ]
+quantization = [
+    { name = "kmeans1d" },
+]
 
 [package.metadata]
 requires-dist = [
@@ -205,6 +208,7 @@ mask-poc = [
     { name = "onnxruntime", specifier = ">=1.31.1,<2" },
     { name = "pillow", specifier = ">=13.0.0,<14" },
 ]
+quantization = [{ name = "kmeans1d", specifier = "==0.5.1" }]
 
 [[package]]
 name = "execnet"
@@ -415,6 +419,29 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/43/4b/674af6ef2f97d56f0ab5153bf0bfa28ccb6c3ed4d1babf4305449668807b/keyring-25.7.0.tar.gz", hash = "sha256:fe01bd85eb3f8fb3dd0405defdeac9a5b4f6f0439edbb3149577f244a2e8245b", size = 63516, upload-time = "2025-11-16T16:26:09.482Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/81/db/e655086b7f3a705df045bf0933bdd9c2f79bb3c97bfef1384598bb79a217/keyring-25.7.0-py3-none-any.whl", hash = "sha256:be4a0b195f149690c166e850609a477c532ddbfbaed96a404d4e43f8d5e2689f", size = 39160, upload-time = "2025-11-16T16:26:08.402Z" },
+]
+
+[[package]]
+name = "kmeans1d"
+version = "0.5.1"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/9b/90/78c99ce504734edf37c4410cfda0e06dd711fdeb520c1ed1bf53b2311f30/kmeans1d-0.5.1.tar.gz", hash = "sha256:b052406fbdc80770cd9f50da16e4b13b19eed04ddae21076bf19443f7d16dbe5", size = 9471, upload-time = "2026-11-01T10:39:32.854Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/b7/12/84bf3ed9c9f4d1cf296fe26e71f405e54a8c4d706db1135bd927856f32e5/kmeans1d-0.5.1-cp312-abi3-macosx_10_13_universal2.whl", hash = "sha256:e617ff7977cfc291929259c9ffd5279a8a9c437a454a388a4694e3699019c473", size = 27732, upload-time = "2026-11-01T10:39:18.664Z" },
+    { url = "https://files.pythonhosted.org/packages/02/ec/6470ffbacd734550621a215d33b83d52ed3060bad505605bfbf88f2e2e4c/kmeans1d-0.5.1-cp312-abi3-manylinux_2_34_aarch64.whl", hash = "sha256:5c1d7c125390d78bce751ef7960fa5790b15e62f28972ea9c931d5635de745e3", size = 117235, upload-time = "2026-11-01T10:39:19.736Z" },
+    { url = "https://files.pythonhosted.org/packages/32/5a/90aa2a992663e900c9e10b68302efed2d30ecf03a7a1968b5698708501e6/kmeans1d-0.5.1-cp312-abi3-manylinux_2_34_x86_64.whl", hash = "sha256:62a9c038ebd656b1ad6f715aee8f8218811a25a17292ffc128aa6b1a6aceb874", size = 119147, upload-time = "2026-11-01T10:39:20.901Z" },
+    { url = "https://files.pythonhosted.org/packages/e2/35/32fbe44575776f10251b7b96959ac961c6de61c7020093c01631e398200d/kmeans1d-0.5.1-cp312-abi3-win_amd64.whl", hash = "sha256:a805cd38c2ca6f5ff3efbfccbcc83b1f7b41119b97760615ffa00a4ee605477d", size = 18457, upload-time = "2026-11-01T10:39:22.137Z" },
+    { url = "https://files.pythonhosted.org/packages/38/32/b982382b99c279200ff35500eb40c6a783db3de2aa6eb3a6b94ba2455ce2/kmeans1d-0.5.1-cp312-abi3-win_arm64.whl", hash = "sha256:8a16ceb33aef528d235644f9dedb9265d7f216cae0f79ae8c15257e2fb9f8bd9", size = 16423, upload-time = "2026-11-01T10:39:22.934Z" },
+    { url = "https://files.pythonhosted.org/packages/2f/3c/63320d194664082228b3afec39c6b302f31781e3f2558154222fe6b84f39/kmeans1d-0.5.1-cp315-abi3.abi3t-macosx_10_15_universal2.whl", hash = "sha256:89bd50e3abc5d751d0bca2d40031cb6427207260e6e2c5eabefa3ccc65d6105f", size = 28091, upload-time = "2026-11-01T10:39:23.862Z" },
+    { url = "https://files.pythonhosted.org/packages/a1/e9/4f617eee791208967a53f75907e909e88f38b6cc3d2493fc608b50869f52/kmeans1d-0.5.1-cp315-abi3.abi3t-manylinux_2_34_aarch64.whl", hash = "sha256:79387a87885a756adeacde96c3a261d8b91631c8f7d254226c34b441a7cd43a0", size = 117442, upload-time = "2026-11-01T10:39:24.716Z" },
+    { url = "https://files.pythonhosted.org/packages/e0/aa/6baa393dcb8911f8efabc5c90fb417cd864a385b3465faa07d74e582e8c8/kmeans1d-0.5.1-cp315-abi3.abi3t-manylinux_2_34_x86_64.whl", hash = "sha256:231cb6b8885159e32029db45eb8c9604d63b9c2b17f841d120d921a8372814a7", size = 119084, upload-time = "2026-11-01T10:39:25.634Z" },
+    { url = "https://files.pythonhosted.org/packages/31/bb/b7463bca4983f6d553beff522afc95ad016daefb8e118847def437d9ee09/kmeans1d-0.5.1-cp315-abi3.abi3t-win_amd64.whl", hash = "sha256:f1a117061a2bff6f579d4b1143f1e758d4908952dcc1585149f67ef94f1ea9d5", size = 19025, upload-time = "2026-11-01T10:39:26.721Z" },
+    { url = "https://files.pythonhosted.org/packages/fe/63/4b9c7ea6f013314f3555048383649234eb6d755c877e3a131567f265963e/kmeans1d-0.5.1-cp315-abi3.abi3t-win_arm64.whl", hash = "sha256:da0f15d2b29dc133a7f735b5e59fe3b54c64de189bd6ee9bdad1b19f69397995", size = 16986, upload-time = "2026-11-01T10:39:27.442Z" },
+    { url = "https://files.pythonhosted.org/packages/74/11/41c7f4ab50b215e4af0bc9578f2ad4e16b297a0331d91a756e33b733708d/kmeans1d-0.5.1-cp32-abi3-macosx_10_9_universal2.whl", hash = "sha256:56f9f54d7df7c907babc9a972960e9215555feb69859d5f24bb4785da7ec1d8d", size = 27840, upload-time = "2026-11-01T10:39:28.368Z" },
+    { url = "https://files.pythonhosted.org/packages/1f/f8/f59bf312c950084442e762d19e7cfc4f18f689dc3f0a5c3729c8553259d4/kmeans1d-0.5.1-cp32-abi3-manylinux_2_34_aarch64.whl", hash = "sha256:24ec199f244cd5829afa2e81fa610b7a02628154c84d47a4c0acc08974202e7a", size = 117295, upload-time = "2026-11-01T10:39:29.32Z" },
+    { url = "https://files.pythonhosted.org/packages/36/1f/d7a2ab60be38339be17a6d663c7c3a41351862dcc470067ce30301716623/kmeans1d-0.5.1-cp32-abi3-manylinux_2_34_x86_64.whl", hash = "sha256:dabdfa09bad588b5cd4e27934659cdcb90224148835ab27f5ecb53f7861dce79", size = 119245, upload-time = "2026-11-01T10:39:30.442Z" },
+    { url = "https://files.pythonhosted.org/packages/e8/01/93aa545b9650312281f61f15f74ad80923ec4ac4d1469c1a4a8d5783cbfe/kmeans1d-0.5.1-cp32-abi3-win_amd64.whl", hash = "sha256:13f2fd1f6afb60d2f834ced4e9df259f87ef803ae2c0ee4d50319f079e8aaf99", size = 18450, upload-time = "2026-11-01T10:39:31.337Z" },
+    { url = "https://files.pythonhosted.org/packages/62/6e/236292d86a7f6c0aa7cb12d9b27c92a5a5f846bf0bc17a5341cd2df03839/kmeans1d-0.5.1-cp32-abi3-win_arm64.whl", hash = "sha256:e277a94b9c816ba0c9023b1bf2150b2e1800909b98ff7ed9c8ede4cf2ae7b903", size = 16413, upload-time = "2026-11-01T10:39:32.152Z" },
 ]
 
 [[package]]

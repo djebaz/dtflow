@@ -128,6 +128,10 @@ class LoraAssetPanel:
         self._runner, self._backend, self._saved = runner, backend_source, saved_source
         self._state, self._build, self._is_busy, self._set_busy = Path(state_dir), build_request, is_busy, set_busy
         self.choose_asset_file = _choose_asset_file
+        self._q8p_running = False
+        self._q8p_cancel = threading.Event()
+        self._q8p_relay: LatestRelay | None = None
+        runner.shutdown_started.connect(self._q8p_cancel.set)
         self.open_storage: Callable[..., None] = lambda **_: None  # the window mounts the shared overlay
         self.dismiss_storage: Callable[[], None] = lambda: None
         self.refresh_holdings: Callable[[], None] = lambda: None  # the window re-reads the key's stored list
@@ -207,8 +211,10 @@ class LoraAssetPanel:
         cloud = self._backend()[0] == "cloud"
         for name in ("addLoraButton", "removeLoraButton", "checkLorasButton"):
             getattr(self.page, name).setEnabled(enabled)
-        for name in ("prepareAssetButton",):
-            getattr(self.page, name).setEnabled(enabled and cloud)
+        self.page.prepareAssetButton.setEnabled(enabled and cloud and not self._q8p_running)
+        refresh = getattr(self.page.window(), "_managed_lora_render", None)
+        if refresh is not None:
+            refresh()
 
     def sync_backend(self) -> None:
         backend = self._backend()
@@ -603,6 +609,110 @@ class LoraAssetPanel:
         item = self.page.assetList.currentItem()
         return item.data(Qt.ItemDataRole.UserRole) if item is not None else None
 
+    def quantize_managed(self, identity: tuple[str, int], metadata: dict) -> None:
+        """Quantize one explicitly chosen managed row, preserving its original and cloud receipts."""
+        if self._q8p_running or self.preparing or self._is_busy() or self._runner.closed:
+            return
+        if self._prepare_editor is not None and self._prepare_editor.active():
+            return
+        self._q8p_cancel.clear()
+        self._q8p_running = True
+        self.set_enabled(not self._is_busy())
+        relay = LatestRelay(lambda values: self._quantize_progress(*values), self.page)
+        self._q8p_relay = relay
+        diagnostic_event(log, "lora_quantize.started", data={"action": "quantize"})
+        activity_strip(self.page).start(
+            "q8p", "Quantizing LoRA", stop=self._q8p_cancel.set, stop_text="Cancel conversion"
+        )
+
+        async def run():
+            from dtflow.services.managed_lora_quantization import quantize_managed
+
+            workers = [1]
+
+            def started(_detected_cpus, effective_workers):
+                workers[0] = effective_workers
+
+            def progress(done, total):
+                relay((done, total, workers[0]))
+
+            return await asyncio.to_thread(
+                quantize_managed,
+                self._state,
+                identity,
+                metadata,
+                progress,
+                on_start=started,
+                cancel=self._q8p_cancel,
+            )
+
+        self._runner.submit(run(), self._quantize_finished)
+
+    def _quantize_progress(self, done: int, total: int, workers: int) -> None:
+        """Present latest CPU progress on the GUI thread without blocking conversion."""
+        if not self._q8p_running:
+            return
+        percent = round(done * 100 / total) if total else 0
+        detail = f"{percent}% · {workers} CPU worker(s)"
+        activity_strip(self.page).update("q8p", done, total, detail=detail, stage="CPU q8p")
+
+    def _quantize_finished(self, result, failure) -> None:
+        """Settle the local conversion without touching cloud receipts or Prepare state."""
+        if self._q8p_relay is not None:
+            self._q8p_relay.close()
+            self._q8p_relay.deleteLater()
+            self._q8p_relay = None
+        self._q8p_running = False
+        self.set_enabled(not self._is_busy())
+        window = self.page.window()
+        window._managed_lora_refresh()
+        strip = activity_strip(self.page)
+        if failure is None:
+            result, retained = result
+            reduction = result["size_reduction_percent"]
+            workers = result["clustering"]["workers"]
+            detail = f"{retained.name} · {reduction}% smaller · {workers} CPU workers. Original preserved."
+            strip.complete("q8p", "q8p file saved", detail)
+            feedback = window._inline_feedback
+            if not feedback.active():
+                feedback.show("q8p saved in Custom LoRAs", detail, "info")
+                feedback.set_accept(
+                    "Prepare",
+                    lambda: (feedback.dismiss(), window._managed_lora_prepare((retained.sha256, retained.size))),
+                )
+            diagnostic_event(
+                log,
+                "lora_quantize.completed",
+                data={
+                    "action": "quantize",
+                    **asset_ref_data(sha256=retained.sha256, source_sha256=result["input"]["sha256"]),
+                    "output_bytes": result["output"]["file_bytes"],
+                    "seconds": result["seconds"],
+                    "workers": workers,
+                },
+            )
+            return
+        code = getattr(failure, "code", "local_error")
+        cancelled = code == "cancelled"
+        if cancelled:
+            detail = "Cancelled. No q8p was added to the managed library."
+        elif code != "local_error":
+            detail = str(failure)
+        else:
+            detail = "Local conversion or retention failed. Original preserved; refresh Custom LoRAs before retrying."
+        strip.complete(
+            "q8p",
+            "Conversion cancelled" if cancelled else "q8p conversion failed",
+            detail,
+            state="stopped" if cancelled else "warning",
+        )
+        diagnostic_event(
+            log,
+            "lora_quantize.interrupted" if cancelled else "lora_quantize.failed",
+            level=logging.WARNING,
+            data={"action": "quantize", "code": code},
+        )
+
     def auto_prepare_retained(
         self, path: str, metadata: LoraPrepareMetadata, on_result: Callable[[str], None]
     ) -> str | None:
@@ -617,6 +727,8 @@ class LoraAssetPanel:
             return "Prepare needs DT+ Cloud."
         if self._runner.closed:
             return "DTFlow is closing."
+        if self._q8p_running:
+            return "Local q8p conversion is running; prepare this download when it ends."
         if self._prepare_editor is not None and self._prepare_editor.active():
             return "Manual Prepare is open; prepare this download manually."
         if self.preparing and not self._auto_prepare_run:
@@ -646,7 +758,7 @@ class LoraAssetPanel:
         Returns None when the editor opened, otherwise the plain reason it did not."""
         if self._backend()[0] != "cloud":
             return "Prepare needs DT+ Cloud"
-        if self.preparing or self._is_busy():
+        if self.preparing or self._q8p_running or self._is_busy():
             return "Prepare is busy with other work; try again when it ends."
         if self._runner.closed or not paths:
             return "Prepare could not open."
@@ -657,7 +769,7 @@ class LoraAssetPanel:
         """File selection opens the actual in-window metadata editor; no upload occurs yet.
 
         ``files``: open on these files instead of asking with the file dialog."""
-        if self.preparing or self._is_busy() or self._runner.closed:
+        if self.preparing or self._q8p_running or self._is_busy() or self._runner.closed:
             return
         backend = self._backend()
         if backend[0] != "cloud":
@@ -668,7 +780,13 @@ class LoraAssetPanel:
             chosen = [chosen] if chosen else []
         if not chosen:
             return
-        if self._runner.closed or self._is_busy() or self._backend() != backend or revision != self._ownership_revision:
+        if (
+            self._runner.closed
+            or self._q8p_running
+            or self._is_busy()
+            or self._backend() != backend
+            or revision != self._ownership_revision
+        ):
             return
         # One row per file: spellings that differ only by case, a \\?\ prefix or a symlink are the same file.
         unique: dict[str, str] = {}
@@ -810,6 +928,11 @@ class LoraAssetPanel:
         converter_families = await asyncio.to_thread(supported_families)
         try:
             saved_triggers = await saved_lora_trigger_words(self._state)
+            for entry in conversions:
+                inherited = entry.get("quantization_metadata", {}).get("trigger_words")
+                identity = (entry.get("sha256"), entry.get("size"))
+                if inherited and not saved_triggers.get(identity):
+                    saved_triggers[identity] = inherited
             saved_unreadable = False
         except Exception:  # Prepare still works; but then no suggestion may replace what might be a saved value
             saved_triggers, saved_unreadable = {}, True

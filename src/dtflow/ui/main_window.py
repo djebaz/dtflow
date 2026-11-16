@@ -59,6 +59,7 @@ from dtflow.services.preflight import checkpoint_exact_version
 from dtflow.services.session import observe_key
 from dtflow.services.storage_probe import probe_content
 from dtflow.services.lora_store import LoraStore
+from dtflow.services.managed_lora_quantization import available_quantizations, library_formats, confirmed_contents
 from dtflow.services.connection import Presentation, check_connection, present_failure, present_status
 from dtflow.services.cloud_usage import key_identity
 from dtflow.services.credentials import (
@@ -204,6 +205,25 @@ class _LayoutGuard(QObject):
     def eventFilter(self, watched, event):
         if event.type() in self.events:
             self.callback()
+        return False
+
+
+class _DisclosureHeader(QObject):
+    """The whole section header toggles the existing keyboard-accessible disclosure."""
+
+    def __init__(self, button, parent):
+        super().__init__(parent)
+        self.button = button
+
+    def eventFilter(self, watched, event):
+        if (
+            event.type() == QEvent.Type.MouseButtonRelease
+            and event.button() == Qt.MouseButton.LeftButton
+            and not self.button.isHidden()
+            and self.button.isEnabled()
+        ):
+            self.button.click()
+            return True
         return False
 
 
@@ -620,18 +640,20 @@ class MainWindow:
         form.civitaiTokenEdit.returnPressed.connect(self.save_civitai_token)
         form.openDownloadsButton.clicked.connect(self._show_downloads)
         form.keySelectCombo.currentIndexChanged.connect(self.key_selected)
-        form.customLorasBoxContents.setVisible(False)
-        form.customLorasDisclosure.toggled.connect(self._toggle_custom_loras)
-        self._set_lora_disclosure_icon(False)
+        self._bind_connection_disclosures()
         form.importCustomLorasButton.clicked.connect(self.import_custom_loras)
         form.clearCustomLorasButton.clicked.connect(self.clear_custom_loras)
         form.removeRetainedLoraButton.clicked.connect(self.remove_retained_lora)
         table = form.retainedLorasTable
         table.verticalHeader().setVisible(False)
+        table.setIconSize(QSize(6, 6))  # Small status light; the full status cell keeps its tooltip hitbox.
         header = table.horizontalHeader()
-        for column in (0, 1, 2, 4):
+        for column in (0, 1, 2):
             header.setSectionResizeMode(column, QHeaderView.ResizeMode.ResizeToContents)
-        header.setSectionResizeMode(3, QHeaderView.ResizeMode.Stretch)
+        header.setSectionResizeMode(3, QHeaderView.ResizeMode.Fixed)
+        table.setColumnWidth(3, 32)
+        header.setSectionResizeMode(4, QHeaderView.ResizeMode.Fixed)
+        header.setSectionResizeMode(5, QHeaderView.ResizeMode.Stretch)
         table.itemSelectionChanged.connect(self._retained_lora_selection_changed)
         table.itemDoubleClicked.connect(lambda _item: self.edit_lora_metadata())
         form.editLoraMetadataButton.clicked.connect(self.edit_lora_metadata)
@@ -639,6 +661,15 @@ class MainWindow:
         self._lora_entries: list[dict] = []
         self._retained_normalized = False
         self._lora_names: dict[tuple[str, int], str] = {}
+        self._lora_prepared = frozenset()
+        self._lora_prepare_owner = None
+        self._lora_key_revision = 0
+        self._lora_cloud = form.backendCombo.currentText() == "cloud"
+        self._lora_formats = {}
+        self._lora_quantized = frozenset()
+        form._managed_lora_render = self._render_lora_table
+        form._managed_lora_refresh = lambda: self.refresh_custom_loras(background=True)
+        form._managed_lora_prepare = self._prepare_managed_lora
         self.lora_metadata_overlay = LoraMetadataOverlay(
             form.connectionWorkspaceScroll,
             self.runner,
@@ -1285,6 +1316,8 @@ class MainWindow:
     def _responsive_workspace(self) -> None:
         shell = self.shell
         narrow = self.form.width() < 1100
+        connection = self.form.workspaceStack.currentWidget() is self.form.connectionPage
+        rail_narrow = narrow or (connection and self.form.width() < 1300)
         logs = self.form.workspaceStack.currentWidget() is self.logs_marker
         images = self.form.workspaceStack.currentWidget() is self.images_page
         if self._logs_active != logs:
@@ -1349,11 +1382,13 @@ class MainWindow:
         # Logs and Images use the full-width center workspace, regardless of
         # whether the Images page changed during this navigation.
         shell.leftRail.setVisible(not images and not logs and not folded and not downloads)
-        hint_open = self._prompt_hints.open if hasattr(self, "_prompt_hints") else False
+        hint_open = self._prompt_hints.open if hasattr(self, "_prompt_hints") and not connection else False
         # The hint toggle can reveal the right rail at narrow widths, with Images still above it.
-        shell.rightRail.setVisible(not images and not logs and not downloads and (workflows or not narrow or hint_open))
+        shell.rightRail.setVisible(
+            not images and not logs and not downloads and (workflows or not rail_narrow or hint_open)
+        )
         self._place_images_header(
-            images=images, logs=logs, narrow=narrow and not workflows and not hint_open, downloads=downloads
+            images=images, logs=logs, narrow=rail_narrow and not workflows and not hint_open, downloads=downloads
         )
         if self._logs_form is not None:
             self._logs_form.logsBrandSlot.setVisible(logs)
@@ -2278,6 +2313,7 @@ class MainWindow:
             hints.entries, hints.records = result
 
         self._read_summary("lora_hints", read, delivered)
+        self._read_summary("lora_records", self._read_lora_records, self._lora_library_read)
 
     def _custom_loras_read(self, result, error) -> None:
         if self._removing_retained_lora:
@@ -2307,7 +2343,7 @@ class MainWindow:
         self._prompt_hints.refresh()
         self.workflows.prompt_hints.refresh()
         self._render_lora_table()  # the retained files show at once; metadata columns follow from a separate read
-        self._read_summary("lora_records", self._read_lora_records, self._lora_records_read)
+        self._read_summary("lora_records", self._read_lora_records, self._lora_library_read)
         self._read_summary("lora_families", self._read_lora_families, self._lora_families_read)
 
     def _read_lora_families(self):
@@ -2327,6 +2363,12 @@ class MainWindow:
         found = retained_families(self.state_dir, identities, verify=False)  # dispatch re-verifies the bytes itself
         for entry in entries:
             entry["detected_family"] = found.get((entry.get("sha256"), entry.get("size")))
+        formats = library_formats(self.state_dir, entries)
+        quantized = available_quantizations(self.state_dir, entries)
+        for entry in entries:
+            identity = (entry.get("sha256"), entry.get("size"))
+            entry["observed_format"] = formats.get(identity)
+            entry["has_q8p"] = identity in quantized
         diagnostic_event(
             log,
             "connection.retained_loras_slow_read",
@@ -2342,6 +2384,8 @@ class MainWindow:
         if error is not None or entries is None or self._removing_retained_lora:
             return
         self._lora_entries = entries
+        self._lora_formats = {(e.get("sha256"), e.get("size")): e.get("observed_format") for e in entries}
+        self._lora_quantized = frozenset((e.get("sha256"), e.get("size")) for e in entries if e.get("has_q8p"))
         self._render_lora_table()
 
     @staticmethod
@@ -2352,11 +2396,32 @@ class MainWindow:
         return asyncio.run(read())
 
     def _read_lora_records(self):
-        return self._read_lora_records_sync(self.state_dir)
+        revision = self._lora_key_revision
+
+        async def read():
+            records = await read_lora_rows(self.state_dir)
+            owner = await self._active_credential_id() if self._lora_cloud else None
+            prepared = await confirmed_contents(self.state_dir, owner[0]) if owner else frozenset()
+            return records, prepared, owner, revision
+
+        return asyncio.run(read())
+
+    def _lora_library_read(self, records, error) -> None:
+        if error is not None or records is None:
+            self._lora_prepared = frozenset()
+            self._lora_prepare_owner = None
+            self._render_lora_table()
+            return  # the table keeps showing the retained files without local metadata
+        records, prepared, owner, revision = records
+        if revision != self._lora_key_revision:
+            return
+        self._lora_prepared = prepared
+        self._lora_prepare_owner = owner
+        self._lora_records_read(records, None)
 
     def _lora_records_read(self, records, error) -> None:
         if error is not None or records is None:
-            return  # the table keeps showing the retained files without local metadata
+            return
         self._lora_records = records
         self.form._lora_hint_library.records = records
         self._prompt_hints.refresh()
@@ -2369,6 +2434,7 @@ class MainWindow:
 
     def _render_lora_table(self) -> None:
         records, entries = self._lora_records, self._lora_entries
+        entries_by_identity = {(e.get("sha256"), e.get("size")): e for e in entries}
         table = self.form.retainedLorasTable
         identity = self._selected_lora_identity()
         self._lora_names = {}
@@ -2380,18 +2446,28 @@ class MainWindow:
         table.setRowCount(len(rows))
         for row, (name, sha256, size, found) in enumerate(rows):
             record = records.get((sha256, size)) or {}
+            entry = entries_by_identity[(sha256, size)]
+            record = {
+                **entry.get("quantization_metadata", {}),
+                **{key: value for key, value in record.items() if value is not None and value != ""},
+            }
             version = record.get("family") or (found.family if found and found.family else None)
             architecture = FAMILY_LABELS.get(version, version) if version else "Unknown"
             if record.get("architecture_conflict"):
                 architecture += " (conflict)"
             short = record.get("short_name") or ""
             status = "Needs architecture" if not version else "Needs short name" if not short else "Ready"
+            status_level = "ok" if status == "Ready" else "warning"
+            if record.get("architecture_conflict"):
+                status, status_level = "Architecture conflict; review this LoRA's metadata.", "error"
+            elif "observed_format" in entry and entry["observed_format"] in (None, "Unknown"):
+                status, status_level = "Managed file missing, unreadable or unsupported.", "error"
             cells = (
                 short or "—",
                 architecture,
-                record.get("format_code") or "—",
+                self._lora_formats.get((sha256, size)) or record.get("format_code") or "—",
+                "",
                 record.get("trigger_words") or "—",
-                status,
             )
             tooltip = (
                 f"{name}\nFamily: {architecture} ({record.get('family_source') or (found.source if found else 'unknown')})\n"
@@ -2399,15 +2475,98 @@ class MainWindow:
                 "Remove deletes only this managed copy, not the original, remote asset, or history."
             )
             self._lora_names[(sha256, size)] = name
-            for column, text in enumerate(cells):
+            for column, text in zip((0, 1, 2, 3, 5), cells, strict=True):
                 item = QTableWidgetItem(text)
                 item.setToolTip(tooltip)
                 if column == 0:
                     item.setData(Qt.ItemDataRole.UserRole, (sha256, size))
+                elif column == 3:
+                    item.setIcon(QIcon(status_dot(status_level, 6)))
+                    item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+                    item.setToolTip(status)
+                    item.setData(Qt.ItemDataRole.AccessibleTextRole, status)
                 table.setItem(row, column, item)
+            self._lora_row_actions(row, (sha256, size), version, record)
             if (sha256, size) == identity:
                 table.selectRow(row)
         self._retained_lora_selection_changed()
+
+    def _lora_row_actions(self, row, identity, family, metadata) -> None:
+        panel = self.generation.lora
+        busy = (
+            panel.preparing
+            or panel._q8p_running
+            or panel._is_busy()
+            or self.runner.closed
+            or self._removing_retained_lora
+        )
+        host = load_ui(FORMS_DIR / "managed_lora_actions.ui", self.form.retainedLorasTable)
+        quantize = host.quantizeButton
+        eligible = self._lora_formats.get(identity) == "F16" and family in ("krea_2", "z_image", "sdxl_base_v0.9")
+        converted = identity in self._lora_quantized
+        quantize.setEnabled(eligible and not converted and not busy)
+        quantize.setToolTip(
+            "A verified q8p copy is already in this library."
+            if converted
+            else "Quantize this F16 LoRA locally; retain the q8p separately. No upload."
+            if eligible
+            else "Requires a supported raw F16 Krea 2, Z Image or SDXL LoRA."
+        )
+        quantize.clicked.connect(lambda _checked=False: panel.quantize_managed(identity, dict(metadata)))
+        prepare = host.prepareButton
+        prepare.setText("Prepared" if identity in self._lora_prepared else "Prepare")
+        prepare.setEnabled(
+            not busy
+            and identity not in self._lora_prepared
+            and self._lora_prepare_owner is not None
+            and self.form.backendCombo.currentText() == "cloud"
+        )
+        prepare.setToolTip(
+            "Selected-key local confirmation, not a live cloud check. Prepare opens the approval editor."
+        )
+        prepare.clicked.connect(lambda _checked=False: self._prepare_managed_lora(identity))
+        self.form.retainedLorasTable.setCellWidget(row, 4, host)
+        host.ensurePolished()
+        quantize.ensurePolished()
+        prepare.ensurePolished()
+        for button in (quantize, prepare):
+            button.setMinimumWidth(
+                max(button.sizeHint().width(), button.fontMetrics().horizontalAdvance(button.text()) + 20)
+            )
+        host.layout().activate()
+        # Header auto-sizing can underestimate embedded controls. Reserve their full styled widths explicitly.
+        required_width = quantize.minimumWidth() + prepare.minimumWidth() + host.layout().spacing() + 22
+        self.form.retainedLorasTable.setColumnWidth(4, max(self.form.retainedLorasTable.columnWidth(4), required_width))
+        self.form.retainedLorasTable.setRowHeight(
+            row,
+            max(
+                self.form.retainedLorasTable.verticalHeader().defaultSectionSize(),
+                host.sizeHint().height() + 2,
+                quantize.sizeHint().height() + 2,
+                prepare.sizeHint().height() + 2,
+            ),
+        )
+
+    def _prepare_managed_lora(self, identity) -> None:
+        async def verify():
+            store = LoraStore(self.state_dir)
+            retained = await asyncio.to_thread(store.find, *identity)
+            if retained is None:
+                raise ValidationError("This managed LoRA is no longer available.")
+            await asyncio.to_thread(store.verify, retained)
+            return retained
+
+        revision = self._lora_key_revision
+
+        def ready(retained, failure):
+            if failure is not None:
+                InlineNotice.error(
+                    self.form, "Cannot prepare LoRA", "The managed file is missing or changed. Refresh the library."
+                )
+            elif revision == self._lora_key_revision:
+                self._prepare_downloaded([str(retained.path)])
+
+        self.runner.submit(verify(), ready)
 
     def _selected_lora_identity(self) -> tuple[str, int] | None:
         table = self.form.retainedLorasTable
@@ -2447,27 +2606,72 @@ class MainWindow:
         self.form.statusBar().showMessage("LoRA metadata saved locally. Files and receipts unchanged.", 5000)
         self.refresh_custom_loras(background=True)
 
-    def _set_lora_disclosure_icon(self, expanded: bool) -> None:
+    def _bind_connection_disclosures(self) -> None:
+        """One full-header interaction for the center column; collapse is presentation only."""
+        sections = (
+            ("customLorasBoxHeader", "customLorasHeading", "customLorasBoxContents", "customLorasDisclosure"),
+            ("usageBoxHeader", "usageHeading", "usageBoxContents", "usageDisclosure"),
+            ("presetLibraryBoxHeader", "presetLibraryHeading", "presetLibraryBoxContents", "presetLibraryDisclosure"),
+            (
+                "cacheManagementBoxHeader",
+                "cacheManagementHeading",
+                "cacheManagementBoxContents",
+                "cacheManagementDisclosure",
+            ),
+            ("imageExportHeader", "imageExportHeading", "imageExportContents", "imageExportDisclosure"),
+        )
+        self._connection_header_guards = []
+        for header_name, heading_name, contents_name, button_name in sections:
+            header, heading, contents, button = (
+                getattr(self.form, name) for name in (header_name, heading_name, contents_name, button_name)
+            )
+            title = heading.text()
+            button.toggled.connect(
+                lambda expanded, c=contents, b=button, t=title: self._toggle_connection_section(c, b, t, expanded)
+            )
+            guard = _DisclosureHeader(button, header)
+            self._connection_header_guards.append(guard)
+            for widget in (header, heading):
+                widget.installEventFilter(guard)
+                widget.setCursor(Qt.CursorShape.PointingHandCursor)
+            self._toggle_connection_section(contents, button, title, False)
+
+    @staticmethod
+    def _toggle_connection_section(contents, button, title: str, expanded: bool) -> None:
+        contents.setVisible(expanded)
+        MainWindow._set_section_disclosure_icon(button, expanded)
+        button.setAccessibleName(f"{'Hide' if expanded else 'Show'} {title}")
+        button.setToolTip(f"{'Collapse' if expanded else 'Expand'} {title}")
+
+    @staticmethod
+    def _set_section_disclosure_icon(button, expanded: bool) -> None:
         """Shared chevrons (right = collapsed, down = expanded) instead of the platform arrow."""
         images = Path(__file__).parents[1] / "resources" / "images"
         name = "controls/chevron-down.svg" if expanded else "gallery/chevron-right.svg"
-        self.form.customLorasDisclosure.setIcon(QIcon(str(images / name)))
+        button.setIcon(QIcon(str(images / name)))
 
     def _toggle_custom_loras(self, expanded: bool) -> None:
         """Expand the existing Connections LoRA library only when needed."""
-        self.form.customLorasBoxContents.setVisible(expanded)
-        self._set_lora_disclosure_icon(expanded)
-        self.form.customLorasDisclosure.setAccessibleName("Hide custom LoRAs" if expanded else "Show custom LoRAs")
+        self._toggle_connection_section(
+            self.form.customLorasBoxContents, self.form.customLorasDisclosure, "Custom LoRAs", expanded
+        )
 
     def _retained_lora_selection_changed(self) -> None:
         selected = self._selected_lora_identity() is not None
-        self.form.removeRetainedLoraButton.setEnabled(not self._removing_retained_lora and selected)
+        busy = self.generation.lora._q8p_running or self.generation.lora.preparing
+        self.form.removeRetainedLoraButton.setEnabled(not self._removing_retained_lora and not busy and selected)
         self.form.editLoraMetadataButton.setEnabled(not self._removing_retained_lora and selected)
         self.form.dtStorageButton.setEnabled(not self._removing_retained_lora)
 
     def _forget_holdings(self) -> None:
         """The key or backend changed: hints and any read still in flight belong to the old one, so show unknown."""
         self._free_space_revision = self._free_space_revision + 1
+        self._lora_key_revision = getattr(self, "_lora_key_revision", 0) + 1
+        self._lora_cloud = self.form.backendCombo.currentText() == "cloud"
+        self._lora_prepare_owner = None
+        self._lora_prepared = frozenset()
+        self._render_lora_table()
+        self._read_summary("lora_records", self._read_lora_records, self._lora_library_read)
         self._free_space_again = False
         self.form.dtFreeSpaceLabel.setText("\u00a0")
         self.dt_free_meter.setVisible(False)
@@ -2580,7 +2784,7 @@ class MainWindow:
 
     def remove_retained_lora(self) -> None:
         """Click Remove or press Delete on a selected retained copy: no confirmation or other deletion."""
-        if self._removing_retained_lora:
+        if self._removing_retained_lora or self.generation.lora._q8p_running or self.generation.lora.preparing:
             return
         identity = self._selected_lora_identity()
         if identity is None:
@@ -2973,6 +3177,11 @@ class MainWindow:
             card.show()  # Reparenting hides QWidget; the same controls and progress survive.
         self.form.imageExportScopeLabel.setVisible(not inline)
         self.form.imageExportScopeCombo.setVisible(not inline)
+        # The shared Images export card remains open; returning restores Connection's disclosure state.
+        self.form.imageExportDisclosure.setVisible(not inline)
+        self.form.imageExportContents.setVisible(inline or self.form.imageExportDisclosure.isChecked())
+        for header in (self.form.imageExportHeader, self.form.imageExportHeading):
+            header.setCursor(Qt.CursorShape.ArrowCursor if inline else Qt.CursorShape.PointingHandCursor)
         self.gallery_detail.galleryExportScroll.setVisible(inline)
         button = self.gallery.export_button
         button.setChecked(inline)

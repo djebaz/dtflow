@@ -709,6 +709,34 @@ class LoraStore:
     def entries(self) -> list[dict]:
         return self._read()
 
+    def record_quantization(self, retained: RetainedFile, source: RetainedFile, metadata: dict) -> None:
+        """Record a verified local q8p derivation; never copy cloud receipts or alter the source entry."""
+        handle = self._locked()
+        try:
+            self.verify(source)
+            self.verify(retained)
+            files = self._read_recovering()
+            entry = next(
+                (item for item in files if (item.get("sha256"), item.get("size")) == (retained.sha256, retained.size)),
+                None,
+            )
+            if entry is None:
+                raise ValidationError("The quantized LoRA is no longer in the managed store.")
+            sources = entry.setdefault("quantized_from", [])
+            identity = {"sha256": source.sha256, "size": source.size}
+            if identity not in sources:
+                sources.append(identity)
+            entry.setdefault("quantization_metadata", metadata)
+            source_entry = next(
+                (item for item in files if (item.get("sha256"), item.get("size")) == (source.sha256, source.size)),
+                {},
+            )
+            if isinstance(source_entry.get("source_metadata"), dict):
+                entry.setdefault("source_metadata", source_entry["source_metadata"])
+            self._write(files)
+        finally:
+            handle.close()
+
     def present_identities(self) -> frozenset[tuple[str, int]]:
         """Indexed managed copies present on disk; metadata checks only, not content verification."""
         present = set()

@@ -134,7 +134,7 @@ jobs:
         env:
           RELEASE_TAG: ${{ inputs.release_tag }}
         run: |
-          uv sync --locked --no-dev
+          uv sync --locked --no-dev --group quantization
           if ($LASTEXITCODE) { throw "Locked sync failed." }
           uv lock --check
           if ($LASTEXITCODE) { throw "Lock consistency failed." }
@@ -149,7 +149,7 @@ jobs:
 
       - name: Build through the canonical GUI builder
         run: |
-          uv run --no-dev --with pyinstaller==6.22.3 python tools/packaging/build_exe.py
+          uv run --no-dev --group quantization --with pyinstaller==6.22.3 python tools/packaging/build_exe.py
           if ($LASTEXITCODE) { throw "GUI build failed." }
 
       - name: Verify bundled identity and write checksums/manifest

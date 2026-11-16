@@ -881,18 +881,19 @@
                   <widget class="QTableWidget" name="retainedLorasTable">
                    <property name="toolTip"><string>Local retained copies. Select one row to edit its metadata or press Delete to remove the retained copy only.</string></property>
                    <property name="accessibleName"><string>Custom LoRA library</string></property>
-                   <property name="minimumHeight"><number>96</number></property>
-                   <property name="maximumHeight"><number>168</number></property>
+                   <property name="minimumHeight"><number>420</number></property>
+                   <property name="maximumHeight"><number>420</number></property>
                    <property name="selectionMode"><enum>QAbstractItemView::SingleSelection</enum></property>
                    <property name="selectionBehavior"><enum>QAbstractItemView::SelectRows</enum></property>
                    <property name="editTriggers"><set>QAbstractItemView::NoEditTriggers</set></property>
                    <property name="showGrid"><bool>false</bool></property>
-                   <property name="columnCount"><number>5</number></property>
+                   <property name="columnCount"><number>6</number></property>
                    <column><property name="text"><string>Short name</string></property></column>
                    <column><property name="text"><string>Architecture</string></property></column>
                    <column><property name="text"><string>Format</string></property></column>
+                   <column><property name="text"><string/></property><property name="toolTip"><string>Local LoRA readiness: hover the colored indicator for details.</string></property></column>
+                   <column><property name="text"><string>Actions</string></property></column>
                    <column><property name="text"><string>Trigger words</string></property></column>
-                   <column><property name="text"><string>Status</string></property></column>
                   </widget>
                  </item>
                  <item>
@@ -921,7 +922,7 @@
             </widget>
            </item>
            <item>
-            <widget class="QGroupBox" name="usageBox">
+            <widget class="QGroupBox" name="usageBox"><property name="sizePolicy"><sizepolicy hsizetype="Preferred" vsizetype="Maximum"/></property>
              <property name="title"><string /></property>
              <property name="role" stdset="0"><string>sectionCard</string></property>
              <property name="accessibleName"><string>Local completed DT+ images</string></property>
@@ -932,8 +933,10 @@
               <item><widget class="QFrame" name="usageBoxHeader"><property name="role" stdset="0"><string>sectionHeader</string></property>
                <layout class="QHBoxLayout" name="usageBoxHeaderLayout"><property name="leftMargin"><number>10</number></property><property name="topMargin"><number>7</number></property><property name="rightMargin"><number>10</number></property><property name="bottomMargin"><number>7</number></property>
                 <item><widget class="QLabel" name="usageHeading"><property name="text"><string>Local completed images</string></property><property name="textRole" stdset="0"><string>panelHeading</string></property></widget></item>
-               </layout></widget></item>
-              <item><widget class="QWidget" name="usageBoxContents"><property name="role" stdset="0"><string>sectionContents</string></property>
+               <item><spacer name="usageDisclosureSpacer"><property name="orientation"><enum>Qt::Horizontal</enum></property><property name="sizeHint" stdset="0"><size><width>20</width><height>20</height></size></property></spacer></item>
+<item><widget class="QToolButton" name="usageDisclosure"><property name="toolButtonStyle"><enum>Qt::ToolButtonIconOnly</enum></property><property name="iconSize"><size><width>16</width><height>16</height></size></property><property name="checkable"><bool>true</bool></property><property name="checked"><bool>false</bool></property><property name="autoRaise"><bool>true</bool></property><property name="accessibleName"><string>Show local completed images</string></property></widget></item>
+</layout></widget></item>
+              <item><widget class="QWidget" name="usageBoxContents"><property name="visible"><bool>false</bool></property><property name="role" stdset="0"><string>sectionContents</string></property>
                <layout class="QVBoxLayout" name="usageLayout"><property name="leftMargin"><number>10</number></property><property name="topMargin"><number>8</number></property><property name="rightMargin"><number>10</number></property><property name="bottomMargin"><number>10</number></property><property name="spacing"><number>8</number></property>
                 <item><widget class="QLabel" name="usageTimezoneLabel"><property name="text"><string>Day resets at midnight in</string></property><property name="textRole" stdset="0"><string>caption</string></property><property name="buddy"><cstring>usageTimezoneCombo</cstring></property></widget></item>
                 <item><widget class="SearchableComboBox" name="usageTimezoneCombo"><property name="accessibleName"><string>Daily reset timezone</string></property><property name="toolTip"><string>Counts are recalculated locally from saved image times. Nothing is sent to DT+.</string></property></widget></item>
@@ -947,7 +950,7 @@
             </widget>
            </item>
            <item>
-            <widget class="QGroupBox" name="presetLibraryBox">
+            <widget class="QGroupBox" name="presetLibraryBox"><property name="sizePolicy"><sizepolicy hsizetype="Preferred" vsizetype="Maximum"/></property>
              <property name="title"><string /></property>
              <property name="role" stdset="0"><string>sectionCard</string></property>
              <property name="accessibleName"><string>Preset library</string></property>
@@ -958,8 +961,10 @@
               <item><widget class="QFrame" name="presetLibraryBoxHeader"><property name="role" stdset="0"><string>sectionHeader</string></property>
                <layout class="QHBoxLayout" name="presetLibraryBoxHeaderLayout"><property name="leftMargin"><number>10</number></property><property name="topMargin"><number>7</number></property><property name="rightMargin"><number>10</number></property><property name="bottomMargin"><number>7</number></property>
                 <item><widget class="QLabel" name="presetLibraryHeading"><property name="text"><string>Draw Things presets</string></property><property name="textRole" stdset="0"><string>panelHeading</string></property></widget></item>
-               </layout></widget></item>
-              <item><widget class="QWidget" name="presetLibraryBoxContents"><property name="role" stdset="0"><string>sectionContents</string></property>
+               <item><spacer name="presetLibraryDisclosureSpacer"><property name="orientation"><enum>Qt::Horizontal</enum></property><property name="sizeHint" stdset="0"><size><width>20</width><height>20</height></size></property></spacer></item>
+<item><widget class="QToolButton" name="presetLibraryDisclosure"><property name="toolButtonStyle"><enum>Qt::ToolButtonIconOnly</enum></property><property name="iconSize"><size><width>16</width><height>16</height></size></property><property name="checkable"><bool>true</bool></property><property name="checked"><bool>false</bool></property><property name="autoRaise"><bool>true</bool></property><property name="accessibleName"><string>Show Draw Things presets</string></property></widget></item>
+</layout></widget></item>
+              <item><widget class="QWidget" name="presetLibraryBoxContents"><property name="visible"><bool>false</bool></property><property name="role" stdset="0"><string>sectionContents</string></property>
                <layout class="QVBoxLayout" name="presetLibraryLayout"><property name="leftMargin"><number>10</number></property><property name="topMargin"><number>8</number></property><property name="rightMargin"><number>10</number></property><property name="bottomMargin"><number>10</number></property><property name="spacing"><number>8</number></property>
                 <item><widget class="QLabel" name="presetLibraryStatusLabel"><property name="text"><string>No imported presets.</string></property><property name="wordWrap"><bool>true</bool></property><property name="role" stdset="0"><string>secondary</string></property></widget></item>
                 <item><layout class="QVBoxLayout" name="presetLibraryButtons"><property name="spacing"><number>6</number></property>
@@ -971,7 +976,7 @@
             </widget>
            </item>
            <item>
-            <widget class="QGroupBox" name="cacheManagementBox">
+            <widget class="QGroupBox" name="cacheManagementBox"><property name="sizePolicy"><sizepolicy hsizetype="Preferred" vsizetype="Maximum"/></property>
              <property name="title"><string /></property>
              <property name="role" stdset="0"><string>sectionCard</string></property>
              <property name="accessibleName"><string>Disposable cache</string></property>
@@ -982,8 +987,10 @@
               <item><widget class="QFrame" name="cacheManagementBoxHeader"><property name="role" stdset="0"><string>sectionHeader</string></property>
                <layout class="QHBoxLayout" name="cacheManagementBoxHeaderLayout"><property name="leftMargin"><number>10</number></property><property name="topMargin"><number>7</number></property><property name="rightMargin"><number>10</number></property><property name="bottomMargin"><number>7</number></property>
                 <item><widget class="QLabel" name="cacheManagementHeading"><property name="text"><string>Disposable cache</string></property><property name="textRole" stdset="0"><string>panelHeading</string></property></widget></item>
-               </layout></widget></item>
-              <item><widget class="QWidget" name="cacheManagementBoxContents"><property name="role" stdset="0"><string>sectionContents</string></property>
+               <item><spacer name="cacheManagementDisclosureSpacer"><property name="orientation"><enum>Qt::Horizontal</enum></property><property name="sizeHint" stdset="0"><size><width>20</width><height>20</height></size></property></spacer></item>
+<item><widget class="QToolButton" name="cacheManagementDisclosure"><property name="toolButtonStyle"><enum>Qt::ToolButtonIconOnly</enum></property><property name="iconSize"><size><width>16</width><height>16</height></size></property><property name="checkable"><bool>true</bool></property><property name="checked"><bool>false</bool></property><property name="autoRaise"><bool>true</bool></property><property name="accessibleName"><string>Show disposable cache</string></property></widget></item>
+</layout></widget></item>
+              <item><widget class="QWidget" name="cacheManagementBoxContents"><property name="visible"><bool>false</bool></property><property name="role" stdset="0"><string>sectionContents</string></property>
                <layout class="QVBoxLayout" name="cacheManagementLayout"><property name="leftMargin"><number>10</number></property><property name="topMargin"><number>8</number></property><property name="rightMargin"><number>10</number></property><property name="bottomMargin"><number>10</number></property><property name="spacing"><number>8</number></property>
                 <item><widget class="QLabel" name="cacheStatusLabel"><property name="text"><string>Measuring cache…</string></property><property name="wordWrap"><bool>true</bool></property><property name="role" stdset="0"><string>secondary</string></property></widget></item>
                 <item><layout class="QGridLayout" name="cacheButtons"><property name="horizontalSpacing"><number>6</number></property><property name="verticalSpacing"><number>6</number></property>
@@ -1002,7 +1009,7 @@
               <property name="leftMargin"><number>0</number></property><property name="topMargin"><number>0</number></property>
               <property name="rightMargin"><number>0</number></property><property name="bottomMargin"><number>0</number></property>
               <item>
-            <widget class="QGroupBox" name="imageExportBox">
+            <widget class="QGroupBox" name="imageExportBox"><property name="sizePolicy"><sizepolicy hsizetype="Preferred" vsizetype="Maximum"/></property>
              <property name="title"><string /></property>
              <property name="role" stdset="0"><string>sectionCard</string></property>
              <property name="accessibleName"><string>Export saved images</string></property>
@@ -1013,8 +1020,10 @@
               <item><widget class="QFrame" name="imageExportHeader"><property name="role" stdset="0"><string>sectionHeader</string></property>
                <layout class="QHBoxLayout" name="imageExportHeaderLayout"><property name="leftMargin"><number>10</number></property><property name="topMargin"><number>7</number></property><property name="rightMargin"><number>10</number></property><property name="bottomMargin"><number>7</number></property>
                 <item><widget class="QLabel" name="imageExportHeading"><property name="text"><string>Export saved images</string></property><property name="textRole" stdset="0"><string>panelHeading</string></property></widget></item>
-               </layout></widget></item>
-              <item><widget class="QWidget" name="imageExportContents"><property name="role" stdset="0"><string>sectionContents</string></property>
+               <item><spacer name="imageExportDisclosureSpacer"><property name="orientation"><enum>Qt::Horizontal</enum></property><property name="sizeHint" stdset="0"><size><width>20</width><height>20</height></size></property></spacer></item>
+<item><widget class="QToolButton" name="imageExportDisclosure"><property name="toolButtonStyle"><enum>Qt::ToolButtonIconOnly</enum></property><property name="iconSize"><size><width>16</width><height>16</height></size></property><property name="checkable"><bool>true</bool></property><property name="checked"><bool>false</bool></property><property name="autoRaise"><bool>true</bool></property><property name="accessibleName"><string>Show export saved images</string></property></widget></item>
+</layout></widget></item>
+              <item><widget class="QWidget" name="imageExportContents"><property name="visible"><bool>false</bool></property><property name="role" stdset="0"><string>sectionContents</string></property>
                <layout class="QVBoxLayout" name="imageExportLayout"><property name="leftMargin"><number>10</number></property><property name="topMargin"><number>8</number></property><property name="rightMargin"><number>10</number></property><property name="bottomMargin"><number>10</number></property><property name="spacing"><number>8</number></property>
                 <item><widget class="QLabel" name="imageExportHint"><property name="text"><string>JPEG quality 95 with Windows-readable properties. Images go into your chosen folder; detected noise/blank can be sorted into subfolders. Originals stay untouched; JPEG is lossy and transparency becomes white.</string></property><property name="wordWrap"><bool>true</bool></property><property name="role" stdset="0"><string>secondary</string></property></widget></item>
                 <item><layout class="QGridLayout" name="imageExportOptionsLayout">
