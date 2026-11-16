@@ -1093,7 +1093,7 @@ class GalleryTab(QObject):
         bar = self._view.verticalScrollBar()
         # An unscrollable viewport never triggers another page automatically.
         # The explicit Search further action handles sparse or empty results.
-        if bar.maximum() > 0 and bar.value() >= bar.maximum() - max(bar.pageStep() * 2, 600):
+        if bar.maximum() > 0 and bar.value() > 0 and bar.value() >= bar.maximum() - max(bar.pageStep() * 2, 600):
             self._fetch()
 
     # ------------------------------------------------------------------------------------- lazy bounded covers
