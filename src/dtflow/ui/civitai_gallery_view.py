@@ -845,15 +845,22 @@ class GalleryTab(QObject):
         self._view.doItemsLayout()
         self._load_visible_covers()
 
+    def _show_empty_state(self, message: str) -> None:
+        """Display a clear message in the gallery area when there are no cards to show."""
+        self.form.galleryEmptyState.setText(message)
+        self.form.galleryResultsStack.setCurrentWidget(self.form.galleryEmptyPage)
+
     def ensure_loaded(self) -> None:
         """Restore input state without implicitly replaying a network search on startup."""
         if not self._loaded:
             self._loaded = True
-            self.form.galleryStatus.setText(
+            prompt = (
                 "Press Enter or Search to browse Civitai."
                 if self.form.gallerySearchEdit.text().strip() or self._selected_tags
                 else "Enter keywords or add a tag to search Civitai."
             )
+            self.form.galleryStatus.setText(prompt)
+            self._show_empty_state(prompt)
 
     def shutdown(self) -> None:
         if self._preferences_timer.isActive():
@@ -907,7 +914,9 @@ class GalleryTab(QObject):
         # Keep bounded cover caches across searches; no Civitai image is written to disk.
         self._busy(False)
         if not self._has_more:
-            self.form.galleryStatus.setText("Enter keywords or add a tag to search Civitai.")
+            prompt = "Enter keywords or add a tag to search Civitai."
+            self.form.galleryStatus.setText(prompt)
+            self._show_empty_state(prompt)
             return
         self._fetch()
 
@@ -922,6 +931,8 @@ class GalleryTab(QObject):
         else:
             self._has_more = False
             self.form.galleryStatus.setText("Press Enter or Search to browse Civitai.")
+            if not self.cards:
+                self._show_empty_state("Press Enter or Search to browse Civitai.")
             # A running request cannot be cancelled, but its result must not replace new-query results.
             self._generation += 1
             self._busy(False)
@@ -938,12 +949,14 @@ class GalleryTab(QObject):
             self._spinner.hide()
 
     def _fetch(self) -> None:
-        """Fetch the next cursor batch. Only scrolling or an unfilled viewport advances."""
+        """Fetch one listing page when searching, scrolling or explicitly continuing."""
         if self._runner.closed or self._loading or not self._has_more:
             return
         session = self._search_session
         if session is None or not session.active:
             return
+        if not self.cards:
+            self.form.galleryResultsStack.setCurrentWidget(self._view)
         self._busy(True)
         generation = self._generation
         cursor = self._cursor
@@ -970,6 +983,8 @@ class GalleryTab(QObject):
         if failure is not None or result is None:
             message = str(failure) if isinstance(failure, civitai.CivitaiError) else "Civitai could not be reached."
             self.form.galleryStatus.setText(f"Could not load more LoRAs. {message}")
+            if not self.cards:
+                self._show_empty_state("Could not load Civitai results. Select Retry to try again.")
             self._paused_empty = True
             self.form.galleryContinueButton.setText("Retry")
             self.form.galleryContinueButton.show()
@@ -1040,6 +1055,8 @@ class GalleryTab(QObject):
             self.form.galleryStatus.setText(
                 f"{count} LoRAs loaded · End of results" if count else "No results."
             )
+            if not count:
+                self._show_empty_state("No results.")
         elif no_progress:
             # A filtered or duplicate-only batch need not move the scrollbar.
             # Keep continuation available, but require an explicit request.
@@ -1050,6 +1067,8 @@ class GalleryTab(QObject):
                 f"{count} LoRAs loaded · No new models or versions in this batch."
                 if count else "No matching results yet. Search further to continue."
             )
+            if not count:
+                self._show_empty_state("No matches yet. Select Search further to continue.")
         elif self._view.verticalScrollBar().maximum() <= 0:
             self.form.galleryContinueButton.setText("Search further")
             self.form.galleryContinueButton.show()
