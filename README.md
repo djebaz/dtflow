@@ -40,7 +40,7 @@ Connection → Custom LoRAs offers experimental per-row **Quantize q8p** for sup
 
 ### Windows executable
 
-See [6.4.0 changes](devdocs/releases/v6.4.0.md); the published release and attached artifact identity establish availability.
+See [6.4.1 changes](devdocs/releases/v6.4.1.md); the published release and attached artifact identity establish availability.
 
 Published releases attach a single-file Windows GUI executable to
 [GitHub Releases](https://github.com/djebaz/dtflow/releases). Download it, verify it against the
