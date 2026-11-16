@@ -98,25 +98,33 @@
       <property name="spacing"><number>8</number></property>
       <property name="leftMargin"><number>10</number></property><property name="topMargin"><number>10</number></property>
       <property name="rightMargin"><number>10</number></property><property name="bottomMargin"><number>10</number></property>
-      <item><layout class="QHBoxLayout" name="gallerySearchRow"><property name="spacing"><number>8</number></property>
-       <item><widget class="QLineEdit" name="gallerySearchEdit">
+      <item><layout class="QGridLayout" name="gallerySearchRow">
+       <property name="horizontalSpacing"><number>8</number></property>
+       <property name="verticalSpacing"><number>8</number></property>
+       <item row="0" column="0"><widget class="QLineEdit" name="gallerySearchEdit">
+        <property name="sizePolicy"><sizepolicy hsizetype="Expanding" vsizetype="Fixed"><horstretch>1</horstretch><verstretch>0</verstretch></sizepolicy></property>
+        <property name="minimumWidth"><number>140</number></property>
         <property name="toolTip"><string>Type keywords and press Enter.</string></property>
         <property name="placeholderText"><string>Search…</string></property>
         <property name="clearButtonEnabled"><bool>true</bool></property>
         <property name="accessibleName"><string>Search Civitai LoRAs</string></property>
        </widget></item>
-       <item><widget class="QComboBox" name="gallerySortCombo">
+       <item row="0" column="1"><widget class="QComboBox" name="gallerySortCombo">
+        <property name="sizePolicy"><sizepolicy hsizetype="Fixed" vsizetype="Fixed"><horstretch>0</horstretch><verstretch>0</verstretch></sizepolicy></property>
         <property name="accessibleName"><string>Sort Civitai LoRAs</string></property>
        </widget></item>
-       <item><widget class="QComboBox" name="galleryFamilyCombo">
+       <item row="0" column="2"><widget class="QComboBox" name="galleryFamilyCombo">
+        <property name="sizePolicy"><sizepolicy hsizetype="Fixed" vsizetype="Fixed"><horstretch>0</horstretch><verstretch>0</verstretch></sizepolicy></property>
         <property name="accessibleName"><string>Filter Civitai LoRAs by family</string></property>
         <property name="toolTip"><string>Choose several supported families. All families clears the selection.</string></property>
        </widget></item>
-       <item><widget class="QComboBox" name="galleryPeriodCombo">
+       <item row="0" column="3"><widget class="QComboBox" name="galleryPeriodCombo">
+        <property name="sizePolicy"><sizepolicy hsizetype="Fixed" vsizetype="Fixed"><horstretch>0</horstretch><verstretch>0</verstretch></sizepolicy></property>
         <property name="accessibleName"><string>Filter Civitai LoRAs by period</string></property>
         <property name="toolTip"><string>The period the sort order counts.</string></property>
        </widget></item>
-       <item><widget class="QPushButton" name="gallerySearchButton">
+       <item row="0" column="4"><widget class="QPushButton" name="gallerySearchButton">
+        <property name="sizePolicy"><sizepolicy hsizetype="Fixed" vsizetype="Fixed"><horstretch>0</horstretch><verstretch>0</verstretch></sizepolicy></property>
         <property name="text"><string>Search</string></property>
         <property name="role" stdset="0"><string>primary</string></property>
         <property name="toolTip"><string>Search Civitai by keywords, selected tags, or both.</string></property>
