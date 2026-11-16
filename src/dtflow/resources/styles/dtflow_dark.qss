@@ -824,6 +824,10 @@ QListWidget:disabled {
 QListWidget::item {
   padding: 5px 6px;
 }
+/* Rows hold a widget (name and weight spin box): the item padding would shrink the widget inside its row. */
+QListWidget#loraList::item {
+  padding: 0;
+}
 QListWidget::item:hover {
   background: ${color.disabledBorder};
 }

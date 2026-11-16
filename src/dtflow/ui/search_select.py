@@ -17,6 +17,9 @@ from PySide6.QtWidgets import (
 
 from dtflow.ui.inline_feedback import feedback
 
+LORA_WEIGHT_STEP = 0.05  # one spin step, one arrow key and one mouse-wheel notch, in every LoRA weight spin box
+LORA_WEIGHT_MIN, LORA_WEIGHT_MAX = 0.0, 3.0
+
 
 def choose_searchable(
     parent: QWidget,
@@ -56,9 +59,9 @@ def choose_searchable(
     if weights is not None:
         weight = QDoubleSpinBox(editor)
         weight.setObjectName("inlineSelectionWeight")
-        weight.setRange(0.0, 3.0)
-        weight.setSingleStep(0.1)
-        weight.setDecimals(1)
+        weight.setRange(LORA_WEIGHT_MIN, LORA_WEIGHT_MAX)
+        weight.setSingleStep(LORA_WEIGHT_STEP)
+        weight.setDecimals(2)
         weight.setValue(1.0)
         weight.setAccessibleName("LoRA weight, 0.0 to 3.0")
         row.addWidget(QLabel("Weight", editor))

@@ -106,6 +106,7 @@ from dtflow.ui.runner import AsyncRunner
 from dtflow.ui.search_select import SearchableComboBox
 from dtflow.ui.system_trash import TRASH_NAME, trash_supported
 from dtflow.ui.theme import apply_native_dark_titlebar
+from dtflow.ui.scroll_step import WheelStepRule
 from dtflow.ui.wheel_guard import WheelGuard
 
 log = logging.getLogger(__name__)
@@ -275,6 +276,7 @@ class MainWindow:
         self.runner = runner or AsyncRunner(self.form)
         self._shutdown_guard = _ShutdownGuard(self.form)
         self._wheel_guard = WheelGuard(self.form)
+        self._wheel_step = WheelStepRule(self.form)
         self.runner.shutdown_started.connect(self._shutdown_guard.stop_timers)
         self.state_dir = Path(state_dir) if state_dir is not None else application_state_dir()
         self._saved.attach(self.state_dir / INDEX_FILE)
