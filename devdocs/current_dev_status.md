@@ -1,14 +1,21 @@
 # Current development status
 
-Updated 2026-11-16 for 6.4.0 preparation, from merged main `d14c0ece` through PR #480. [6.3.0](https://github.com/djebaz/dtflow/releases/tag/v6.3.0) is the published baseline. [6.4.0 notes](releases/v6.4.0.md) summarize the next release; the [release audit](plans/2026-11-16-release-6.4.0.md) holds historical checkpoints and exact-artifact gates.
+Updated 2026-11-16 for 6.4.1 preparation, from merged main `81d68eb7` through PR #498. [6.4.0](https://github.com/djebaz/dtflow/releases/tag/v6.4.0) is published. See [6.4.1 notes](releases/v6.4.1.md) and its [release audit](plans/2026-11-16-release-6.4.1.md) for the next release scope and build gates.
 
-## Delivered since 6.3.0
+## Delivered since 6.4.0
 
-- Downloads: saved Civitai credentials, bounded link/ID downloads, exact version/file choices, conversion/source provenance, Browse filters/tags/sorts, persistent independent AND/OR modes and explicitly enabled auto-prepare. Startup never replays a search; keyword-only search has no keyword-as-tag fallback. Duplicate cards merge version/file choices; independent streams do not promise global order.
-- Managed q8p: supported retained F16 inputs can be quantized into separate retained copies from Connection's per-row actions, with bounded multicore CPU work and progress/ETA. Originals remain untouched; Prepare uses the ordinary explicit editor. CLI and optional approximate-GPU Colab experiments remain separately evidenced.
-- DT+ storage: selected-key headroom, explicit deletion, Cloud only pills based on known managed files, stale-hint invalidation and Prepare recovery without losing the draft. Required missing custom LoRAs stop generation before submission if restoration cannot proceed.
-- Prepare/conversion: eligible version-aware reuse, training metadata/trigger suggestions, Krea 2 mapping fixes, alpha validation, meaningful provenance, abandoned owned-staging cleanup, hashing-pause callback repair and clearer partial failures/overlay lifecycle.
-- Desktop/tooling: collapsible Connection sections, larger managed library, readable narrow Logs filters, source check/test shortcuts, unified Preview/timeout diagnostics and notebook exclusions from Ruff. Automatic Actions starts remain paused for exhausted credits.
+- DT+ generation timelines, optional `-time` detail and one Echo per generation path; no measured generation-speed claim.
+- Performance measurements require `-x -perf`, independently of ordinary developer logging and `-time` detail.
+- Taller selected-LoRA list with per-row weights and consistent 0.05 wheel stepping.
+- Queue concurrency follows Connection's DT+ default at each start; separate queue controls and stored queue/recipe limits no longer govern dispatch.
+- Slideshow New direction shows arrivals next under Newest first sorting, then resumes forward playback.
+- Downloads runs bounded stale staging/orphan-source cleanup once at startup, off Qt; failed/refused conversion sources remain retained. Civitai documentation now covers tokens, permissions, file retention and recorded acceptance boundaries.
+
+## 6.4.0 foundations
+
+- Civitai Downloads/Browse, exact version/file choices, saved filters, optional auto-prepare and managed provenance; bounded search streams do not promise global sort order.
+- Managed multicore CPU q8p, DT+ storage/headroom/recovery, version-aware Prepare reuse, descriptive metadata and conversion/overlay reliability fixes.
+- The published 6.4.0 EXE includes the refreshed component catalogue and required kmeans1d package data. Its artifact acceptance does not automatically validate a new executable.
 
 ## Implemented phase map
 
@@ -21,9 +28,9 @@ Updated 2026-11-16 for 6.4.0 preparation, from merged main `d14c0ece` through PR
 
 ## Current validation and release gate
 
-- Owner full local suite before the metadata-only bump: 700 passed, 3 skipped in 190.65 s. Owner Fast preview saved 31/31 states; Browse acceptance additionally uses native smoke/screenshots. See the audit for exact source boundaries.
-- Owner accepted selected managed q8p conversion/provider workflows and improved CPU utilization; no universal quality, GPU equivalence or measured scheduler-speedup claim is made.
-- 6.4.0 uses the owner-run local Windows build path because Actions credits are exhausted. No CI/build workflow is dispatched. The canonical clean merged EXE, checksum/manifest and exact-artifact owner smoke remain required before tagging/publication.
+- Feature PRs record scoped owner Windows/DT+ smoke and Linux offline checks; the release audit identifies their scope. No final-release full-suite result is inferred from those earlier runs.
+- The 6.4.0 owner suite (700 passed, 3 skipped) and Fast previews (31/31) are historical evidence for that release, not 6.4.1 results.
+- 6.4.1 uses the owner-run local Windows build path because Actions credits remain exhausted. No workflow is dispatched; clean artifact identity/checksum/manifest and owner acceptance remain required before tagging/publication.
 
 ## Remaining hardening and compatibility
 
