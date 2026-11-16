@@ -67,9 +67,9 @@ override-dependencies = ["numpy==2.3.5", "pillow>=13.0.0,<14"]
 [tool.ruff]
 line-length = 120
 target-version = "py313"
+# Notebooks use interactive cell ordering and are outside repository Ruff lint/format checks.
 # Markerized notebook source is a round-trip text format, not an executable module.
-# Lint/format the generated notebook's code cells instead.
-extend-exclude = ["tools/colab/dtflow_lora_q8p.py"]
+extend-exclude = ["*.ipynb", "tools/colab/dtflow_lora_q8p.py"]
 
 [tool.ruff.lint]
 select = ["E", "F", "B", "TID251"]

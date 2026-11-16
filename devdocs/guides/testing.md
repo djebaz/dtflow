@@ -4,6 +4,8 @@ Run from the repository root after `uv sync`. Ordinary tests are offline and nev
 
 ## Offline validation
 
+Ruff lint and format checks exclude `.ipynb` notebooks and the markerized q8p notebook source. Notebook cell ordering is interactive; this exclusion does not validate notebook execution. Ordinary Python modules remain checked.
+
 ```bash
 uv lock --check
 uv run ruff check .
