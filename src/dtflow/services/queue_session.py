@@ -591,6 +591,7 @@ async def _dispatch_one(store, state, queue_id, policy, saved, out, on_settle, o
             data={
                 "backend": recorded["name"],
                 "command": "queue",
+                "concurrency": backend.capabilities.max_concurrency,
             },
         )
         if limits is not None:
