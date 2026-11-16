@@ -530,6 +530,7 @@ class GalleryTab(QObject):
         self._cursor: str | None = None
         self._seen_cursors: set[str] = set()
         self._has_more = False  # no listing until keywords or tags are explicitly submitted
+        self._initial_pages_done = False
         self._empty_batches = 0
         self._paused_empty = False
         self._generation = 0
@@ -911,6 +912,7 @@ class GalleryTab(QObject):
             tag_match_mode=self._tag_match_mode,
         )
         self._has_more = self._search_session.active
+        self._initial_pages_done = False
         self._empty_batches = 0
         self._paused_empty = False
         self.form.galleryContinueButton.setText("Search further")
@@ -1055,7 +1057,17 @@ class GalleryTab(QObject):
             self.form.galleryContinueButton.show()
             self.form.galleryStatus.setText(f"{count} LoRAs loaded. No new supported models in recent Civitai batches.")
         self._selection_changed()
-        QTimer.singleShot(0, self._maybe_more)
+        session = self._search_session
+        if session is not None and session.initial_pending and self._has_more and not self._paused_empty:
+            # One API page from each source on initial Search, regardless of viewport height.
+            QTimer.singleShot(0, self._fetch)
+            return
+        self._initial_pages_done = True
+        # A filtered search may have no scrollbar. Let the user request more explicitly
+        # rather than silently paging through all of Civitai to fill an empty viewport.
+        if self._has_more and self._view.verticalScrollBar().maximum() <= 0:
+            self.form.galleryContinueButton.setText("Search further")
+            self.form.galleryContinueButton.show()
 
     def _continue_after_empty(self) -> None:
         """Explicitly resume a rare run of empty filtered batches without creating infinite requests."""
@@ -1066,10 +1078,17 @@ class GalleryTab(QObject):
 
     def _on_scroll(self, *_args) -> None:
         self._load_visible_covers()
-        self._maybe_more()
+        if self._initial_pages_done:
+            self._maybe_more()
 
     def _maybe_more(self) -> None:
-        if self._loading or self._paused_empty or not self._has_more or self._runner.closed:
+        if (
+            not self._initial_pages_done
+            or self._loading
+            or self._paused_empty
+            or not self._has_more
+            or self._runner.closed
+        ):
             return
         bar = self._view.verticalScrollBar()
         if bar.maximum() <= 0 or bar.value() >= bar.maximum() - max(bar.pageStep() * 2, 600):
