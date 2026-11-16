@@ -1011,21 +1011,29 @@ class GalleryTab(QObject):
         new_cursor = result.next_cursor
         self._has_more = bool(new_cursor and new_cursor not in self._seen_cursors and new_cursor != cursor)
         self._cursor = new_cursor if self._has_more else None
-        existing = {card.model_id for card in self.cards}
+        positions = {card.model_id: index for index, card in enumerate(self.cards)}
         added = 0
         for card in result.cards:
-            if card.model_id in existing:
-                continue
-            existing.add(card.model_id)
-            added += 1
-            self.cards.append(card)
-            item = QListWidgetItem()
+            position = positions.get(card.model_id)
+            if position is None:
+                positions[card.model_id] = len(self.cards)
+                self.cards.append(card)
+                item = QListWidgetItem()
+                item.setSizeHint(QSize(self._delegate.side, self._delegate.side))
+                self._view.addItem(item)
+                added += 1
+            else:
+                previous = self.cards[position]
+                card = gallery.merge_cards(previous, card)
+                if card == previous:
+                    continue
+                added += len(card.options) - len(previous.options)
+                self.cards[position] = card
+                item = self._view.item(position)
             item.setData(CARD_ROLE, card)
             choice = "Download directly" if len(card.options) == 1 else "Choose download versions"
             item.setData(Qt.ItemDataRole.AccessibleTextRole, f"{card.name}. {choice}. Tags: {', '.join(card.tags)}")
             item.setToolTip(card.tooltip())
-            item.setSizeHint(QSize(self._delegate.side, self._delegate.side))
-            self._view.addItem(item)
         self._fit()
         self._load_visible_covers()
         if result.withheld_note:
@@ -1038,7 +1046,7 @@ class GalleryTab(QObject):
         self.form.galleryStatus.setText(f"{count} LoRAs loaded{suffix}" if count else "No supported LoRAs matched.")
         diagnostic_event(log, "gallery.listed", data={"count": len(result.cards), "total": count})
         self._empty_batches = 0 if added else self._empty_batches + 1
-        # Never spin forever over empty or filtered-out API pages without user input.
+        # Newly discovered versions count as progress even when their model card already exists.
         # Give each active OR stream an opportunity before pausing sparse searches.
         limit = max(3, self._search_session.source_count if self._search_session is not None else 3)
         if self._empty_batches >= limit and self._has_more:
