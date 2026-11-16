@@ -108,7 +108,7 @@ class QueuePopover(QObject):
         self.start_button.setEnabled(start)
         self.add_button.setEnabled(add)
         disclosure = self._queue.quick_disclosure(plan=self.plan_option.isChecked())
-        self.note_label.setText(f"{reason} Concurrency: {self._queue.quick_cap()}. {disclosure}")
+        self.note_label.setText(f"{reason} {disclosure}")
         count = self.label().removeprefix("Queue").strip(" ×")
         self.start_button.setText(f"Start now ({count})" if count else "Start now")
         # Wrapped labels need the height for the fixed width, which a plain size hint does not give.

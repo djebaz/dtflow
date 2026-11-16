@@ -320,22 +320,13 @@ async def test_queue_crash_boundaries_reconcile_without_replay(state, boundary, 
 
 
 @pytest.mark.asyncio
-async def test_cap_reduction_and_local_lane_policy(state):
-    """3B-O4: a lowered cap withholds dispatch until reservations fall below it; one-lane backends stay at one."""
+async def test_stored_cap_is_ignored_and_local_lane_policy(state):
+    """3B-O4: a cap saved by an older version never limits a generation queue (#492); one-lane backends stay at one."""
     backend = ScriptedBackend(4)
     async with Harness(state, backend) as h:
-        queue_id = await h.store.create_queue(BACKEND, 4, [item(n) for n in range(7)])
+        queue_id = await h.store.create_queue(BACKEND, 2, [item(n) for n in range(7)])
         run = h.run(queue_id)
-        await until(lambda: backend.started == [0, 1, 2, 3])
-        post_control(state, queue_id, "cap", {"cap": 2})
-        backend.release(0, 1)
-        await until(lambda: sorted(backend.completed) == [0, 1])
-        await asyncio.sleep(0.05)
-        assert backend.started == [0, 1, 2, 3] and backend.active == 2  # active work is never cancelled
-        backend.release(2)
-        await until(lambda: 4 in backend.started)
-        await asyncio.sleep(0.05)
-        assert backend.started == [0, 1, 2, 3, 4] and backend.active == 2  # refill only below the new cap
+        await until(lambda: backend.started == [0, 1, 2, 3])  # the backend's bound decides, not the saved 2
         backend.release(*range(7))
         final = await asyncio.wait_for(run, SETTLE)
         assert [x["state"] for x in final["items"]] == ["succeeded"] * 7 and backend.peak == 4
@@ -467,7 +458,7 @@ def test_queue_cli_add_start_controls_and_exit_codes(invoke):
     code, out, _ = invoke("start", cancelled)
     assert code == 3 and json.loads(out)["summary"]["cancelled"] == 2
     # An unknown outcome is settled as aborted: it fails the run (exit 3), blocks nothing and is not replayed.
-    lost = json.loads(invoke("add", "-b", "fake", "-p", "fixture", "-k", "2", "-j", "1", "-f", "lost")[1])["queue_id"]
+    lost = json.loads(invoke("add", "-b", "fake", "-p", "fixture", "-k", "2", "-f", "lost")[1])["queue_id"]
     code, out, err = invoke("start", lost)
     summary = json.loads(out)["summary"]
     assert code == 3 and summary["unknown"] == 2 and summary["pending"] == 0
@@ -476,4 +467,3 @@ def test_queue_cli_add_start_controls_and_exit_codes(invoke):
     # Invalid input never creates or controls anything.
     for bad in (("add", "-b", "fake", "-k", "0"), ("add", "-b", "local"), ("show", "missing"), ("pause", "missing")):
         assert invoke(*bad)[0] == 2
-    assert invoke("cap", lost, "-j", "11")[0] == 2

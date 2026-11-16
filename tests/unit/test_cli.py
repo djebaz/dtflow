@@ -125,7 +125,7 @@ def test_help_version_and_documented_options(capsys):
     generate = choices["generate"].format_help()
     for pair in ("-b, --backend", "-e, --endpoint", "-c, --config", "-u, --export", "-l, --lora", "-r, --prefix"):
         assert pair in generate
-    assert "-j, --jobs" in choices["settings"].format_help()
+    assert "--jobs" not in choices["settings"].format_help()
     assert "-nc, --no-cache" in choices["gui"].format_help() and cli.parser().parse_args(["gui", "-nc"]).no_cache
     assert cli.parser().parse_args(["gui"]).format == "jpg"
     for flag in ("-format", "--format"):
@@ -233,17 +233,15 @@ def test_models_filter_keeps_provenance_and_unknown_entries(invoke):
     assert json.loads(invoke("models", "-b", "fake")[1])["entries"][0]["kind"] == "model"
 
 
-def test_cloud_concurrency_setting_is_validated_persisted_and_versioned(invoke, tmp_path):
+def test_settings_shows_the_dtplus_default_and_ignores_the_old_queue_key(invoke, tmp_path):
     state = tmp_path / "state"
-    assert json.loads(invoke("settings")[1]) == {"cloud_concurrency": 4, "entitlement_verified": False}
-    assert json.loads(invoke("settings", "-j", "2")[1])["cloud_concurrency"] == 2
-    assert json.loads(invoke("settings")[1])["cloud_concurrency"] == 2
-    for bad in ("0", "11"):
-        assert invoke("settings", "-j", bad)[0] == 2
-    assert json.loads(invoke("settings")[1])["cloud_concurrency"] == 2
-    newer = '{"schema_version": 2, "cloud_concurrency": 3}\n'
+    assert json.loads(invoke("settings")[1]) == {"dtplus_concurrency": 10, "entitlement_verified": False}
+    state.mkdir(exist_ok=True)
+    (state / "settings.json").write_text('{"schema_version": 1, "cloud_concurrency": 3, "workflow_cloud": 6}\n')
+    assert json.loads(invoke("settings")[1])["dtplus_concurrency"] == 6
+    newer = '{"schema_version": 2, "workflow_cloud": 3}\n'
     (state / "settings.json").write_text(newer)
-    assert invoke("settings", "-j", "1")[0] == 2 and (state / "settings.json").read_text() == newer
+    assert invoke("settings")[0] == 2 and (state / "settings.json").read_text() == newer
 
 
 def test_logging_destination_failure_does_not_change_the_command(tmp_path, capsys):

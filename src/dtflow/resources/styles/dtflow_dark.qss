@@ -693,9 +693,6 @@ QAbstractSpinBox[invalid="true"],
 QListWidget[invalid="true"] {
   border: 1px solid ${color.error};
 }
-QSpinBox[level="elevated"] {
-  color: #d9b36a;
-}
 
 /* One selection language: the navy of the active navigation button, for lists, tables and item views alike. */
 QTableView::item:selected,

@@ -24,7 +24,6 @@ from PySide6.QtWidgets import QApplication, QFormLayout, QListWidgetItem, QMenu,
 
 from dtflow.core.models import BackendEvent, LoRASelection, ValidationError
 from dtflow.core.request_records import request_from_record
-from dtflow.persistence.settings import SettingsError, load_cloud_concurrency, validate_concurrency
 from dtflow.persistence.store import StateBusyError
 from dtflow.services.connection import Presentation, present_generation_failure
 from dtflow.services.dynamic_prompts import decode_runs
@@ -50,7 +49,6 @@ from dtflow.services.queue_session import (
     relaunch_queue,
     remove_queue,
     retry_queue_item,
-    set_concurrency,
     RELAUNCH_STATES,
 )
 from dtflow.services.session import bind_prepared, script_asset_choices, selection_for
@@ -85,14 +83,11 @@ from dtflow.ui.queue_model import ITEM_ID_ROLE, QueueItemModel
 from dtflow.ui.queue_thumbnails import HoverPreview, QueueThumbnails
 from dtflow.ui.queue_templates import QueueTemplates
 from dtflow.ui.queue_presenter import (
-    CONCURRENCY_HINT,
     FILTERS,
     item_counts,
     GROUPS,
-    NEW_CAP_HINT,
     STATUS_TEXT,
     QueueCountdown,
-    concurrency_level,
     controls,
     elapsed_text,
     eta_text,
@@ -162,8 +157,6 @@ WIRED_CONTROLS = (
     "clearQueuesButton",
     "clearPausedQueuesButton",
     "removeQueueButton",
-    "newQueueCapSpinBox",
-    "concurrencySpinBox",
     "queuePrimaryButton",
     "cancelQueueButton",
     "earlierQueueButton",
@@ -265,7 +258,6 @@ class QueuePage:
         self._draft = None  # immutable request/backend/receipts snapshot; Generate is only an explicit copy source
         self._draft_choices: dict = {}  # initial inventory suggestions, not a live view of later Generate edits
         self._draft_job = None
-        self._template_cap = False  # a loaded recipe's cap is local authoring state, never the shared cloud default
         self._authoring_reconstructed = False
         self._composing = False
         self.plan_hook: Callable[[], None] = lambda: None  # the Queue popover's trigger follows plan edits
@@ -282,13 +274,10 @@ class QueuePage:
         self._dispatch_started = False
         self._future = None
         self._reading = False
-        self._syncing = False
         self._detail: dict | None = None
         self._run_detail: dict | None = None  # the dispatched script queue's items, when it is not the selected one
         self._reading_run = False
         self._varied: dict[str, dict] = {}  # items never change after creation, so their variation is read once
-        self._shared_cap: int | None = None
-        self._shared_epoch = 0  # bumped by each save, so a read that started before it cannot undo it
         self._resume_fallback: str | None = None
         self._list_key: tuple | None = None
         self._output_folder: Path | None = None
@@ -325,10 +314,6 @@ class QueuePage:
         self._hover_preview = HoverPreview(items_view, self.model.thumbnails)
         for name in WIRED_CONTROLS:
             getattr(page, name).setEnabled(True)
-        page.concurrencySpinBox.setToolTip(CONCURRENCY_HINT)
-        page.concurrencyLabel.setToolTip(CONCURRENCY_HINT)
-        page.newQueueCapSpinBox.setToolTip(NEW_CAP_HINT)
-        page.newQueueCapLabel.setToolTip(NEW_CAP_HINT)
         refresh_icon = Path(__file__).parents[1] / "resources" / "images" / "gallery" / "refresh.svg"
         page.refreshQueuesButton.setIcon(QIcon(str(refresh_icon)))
         page.refreshQueuesButton.setIconSize(QSize(16, 16))
@@ -384,8 +369,6 @@ class QueuePage:
                 page.relaunchQueueButton.mapToGlobal(page.relaunchQueueButton.rect().bottomLeft())
             )
         )
-        page.concurrencySpinBox.valueChanged.connect(self._cap_changed)
-        page.newQueueCapSpinBox.valueChanged.connect(self._new_cap_changed)
         self.plan_model = QStandardItemModel(page)
         page.planTableView.setModel(self.plan_model)
         page.planTableView.setItemDelegate(TagCellDelegate(page.planTableView))
@@ -405,8 +388,6 @@ class QueuePage:
             page.queueComposer.layout().itemAt(0).layout(),  # the title row
             page.queueComposer.layout(),
             (
-                page.newQueueCapLabel,
-                page.newQueueCapSpinBox,
                 page.createQueueButton,
                 page.addQueueButton,
                 page.startQueueButton,
@@ -441,7 +422,7 @@ class QueuePage:
             page.composerSummaryBoxContents,
             [
                 getattr(page, f"composerSummary{name}Label")
-                for name in ("Backend", "Model", "Loras", "Items", "Varies", "Seeds", "Cap", "Note")
+                for name in ("Backend", "Model", "Loras", "Items", "Varies", "Seeds", "Note")
             ],
         )
         for name in PLAN_WIDGETS:
@@ -510,8 +491,7 @@ class QueuePage:
         if self._reading:
             return
         self._reading = True
-        epoch = self._shared_epoch
-        self._runner.submit(self._read(self._selected, tuple(self._varied)), lambda r, f: self._read_done(r, f, epoch))
+        self._runner.submit(self._read(self._selected, tuple(self._varied)), self._read_done)
         self._refresh_script_run()
 
     def _refresh_script_run(self) -> None:
@@ -548,24 +528,18 @@ class QueuePage:
         detail = None
         if selected and any(view["queue_id"] == selected for view in views):
             detail = (await read_queue_views(self._state, selected))[0]
-        try:
-            shared = await asyncio.to_thread(load_cloud_concurrency, self._state)
-        except SettingsError:
-            shared = None  # an unreadable settings file leaves the box as it is; saving reports the reason
-        return views, detail, shared
+        return views, detail
 
     @profile_slow_gui_callback("queue.read_done")
-    def _read_done(self, result, failure, epoch: int | None = None) -> None:
+    def _read_done(self, result, failure) -> None:
         self._reading = False
         if failure is not None:
             logging.getLogger(__name__).warning("Queue refresh failed (%s).", type(failure).__name__)
             self._message(present_generation_failure(failure))
             return
         previous_views, previous_detail = self._views, self._detail
-        previous_cap, previous_selected = self._shared_cap, self._selected
-        views, self._detail, shared = result
-        if epoch is None or epoch == self._shared_epoch:
-            self._shared_cap = shared
+        previous_selected = self._selected
+        views, self._detail = result
         for view in views:
             if view.get("varied") is not None:
                 self._varied[view["queue_id"]] = view["varied"]
@@ -609,7 +583,6 @@ class QueuePage:
             and self._views == previous_views
             and tuple(self._views) == tuple(previous_views)
             and self._detail == previous_detail
-            and self._shared_cap == previous_cap
             and self._selected == previous_selected
         ):
             # Skip redundant idle-only rendering. Live backend progress is not part of these snapshots:
@@ -660,8 +633,6 @@ class QueuePage:
                 at_bottom = position >= scrollbar.maximum() - 2
                 browser.setPlainText(shown)
                 scrollbar.setValue(scrollbar.maximum() if at_bottom else position)
-        self._show_cap(view)
-        self._show_new_cap()
         self._show_item()
         for name in ("queueInspectorEyebrow", "itemIdentityBox", "itemDetailsBox", "queueEventBrowser"):
             getattr(page, name).setVisible(not self._composing)  # evidence of the old queue is not about the new one
@@ -777,33 +748,6 @@ class QueuePage:
     @staticmethod
     def _editable(view: dict | None) -> bool:
         return view is not None and view["status"] in ("paused", "queued", "running")
-
-    def _show_cap(self, view: dict | None) -> None:
-        """The header box is this queue's own maximum; it is fixed once the queue has finished or was cancelled."""
-        spin = self.page.concurrencySpinBox
-        spin.setEnabled(self._editable(view))
-        if view is None:
-            return
-        self._syncing = True
-        spin.setValue(view["cap"])
-        self._syncing = False
-        self._set_level(spin, view["cap"])
-
-    def _show_new_cap(self) -> None:
-        """With cloud chosen, the new-queue maximum shows the shared cloud default; other providers keep the box."""
-        if self._template_cap or self._composer_backend()[0] != "cloud" or self._shared_cap is None:
-            return
-        spin = self.page.newQueueCapSpinBox
-        self._syncing = True
-        spin.setValue(self._shared_cap)
-        self._syncing = False
-        self._set_level(spin, self._shared_cap)
-
-    @staticmethod
-    def _set_level(spin, value: int) -> None:
-        spin.setProperty("level", concurrency_level(value))
-        spin.style().unpolish(spin)
-        spin.style().polish(spin)
 
     def _started(self, view: dict | None) -> bool:
         owns_view = bool(view and self._owns(view["queue_id"]))
@@ -1309,7 +1253,7 @@ class QueuePage:
             )
             if not isinstance(asset_ids, (list, tuple)) or any(type(value) is not str for value in asset_ids):
                 raise ValidationError("Stored queue asset selections are unreadable.")
-            return edited, view["backend"], tuple(asset_ids), view["cap"]
+            return edited, view["backend"], tuple(asset_ids)
 
         self._runner.submit(work(), self._edit_loaded)
 
@@ -1318,7 +1262,7 @@ class QueuePage:
             shown = Presentation("error", "Not loaded", str(failure))
             self._message(shown if isinstance(failure, ValidationError) else present_generation_failure(failure))
             return
-        result, backend, asset_ids, cap = result
+        result, backend, asset_ids = result
         if not self.templates.applying:
             self.templates.detach()
         self._authoring_reconstructed = bool(result.note)
@@ -1331,7 +1275,6 @@ class QueuePage:
             asset_ids,
             None,
         )
-        page.newQueueCapSpinBox.setValue(cap)
         self.open_composer()
         page.planModeCombo.setCurrentText(form.mode)
         page.planPromptsEdit.setPlainText(form.prompts)
@@ -1530,14 +1473,14 @@ class QueuePage:
         up_next = self.dispatching_here
 
         async def work():
-            new_id, cap = await relaunch_queue(
+            new_id = await relaunch_queue(
                 self._state,
                 queue_id,
                 new_seeds=new_seeds,
                 failed_only=failed_only,
                 up_next=up_next,
             )
-            return new_id, cap, (await read_queue_views(self._state, new_id))[0]["status"]
+            return new_id, (await read_queue_views(self._state, new_id))[0]["status"]
 
         self._runner.submit(work(), self._relaunched)
 
@@ -1547,7 +1490,7 @@ class QueuePage:
             failed = Presentation("error", "Not relaunched", str(failure))
             self._message(failed if isinstance(failure, ValidationError) else present_generation_failure(failure))
             return
-        queue_id, _, status = result
+        queue_id, status = result
         self._created_hook()
         self._composing = False
         self._select_after = queue_id
@@ -2109,7 +2052,6 @@ class QueuePage:
         page.composerSummaryItemsLabel.setText("—" if count is None else str(count))
         page.composerSummaryVariesLabel.setText(varies)
         page.composerSummarySeedsLabel.setText(seeds)
-        page.composerSummaryCapLabel.setText(str(page.newQueueCapSpinBox.value()))
         self._summary_fit.schedule()
 
     def _clear_summary(self) -> None:
@@ -2117,7 +2059,6 @@ class QueuePage:
         page = self.page
         for name in ("Model", "Loras", "Items", "Varies", "Seeds"):
             getattr(page, f"composerSummary{name}Label").setText("—")
-        page.composerSummaryCapLabel.setText(str(page.newQueueCapSpinBox.value()))
         self._summary_fit.schedule()
 
     def _schedule_preview(self, *, invalidate: bool = True) -> None:
@@ -2180,7 +2121,7 @@ class QueuePage:
                     return
                 plan, _table = planned
         source_form = PlanForm("Repeat") if quick and count is not None else self._plan_form()
-        count, cap = count or self.page.queueCountSpinBox.value(), self.page.newQueueCapSpinBox.value()
+        count = count or self.page.queueCountSpinBox.value()
         backend = {"name": name, "endpoint": endpoint, "scenario": "success", **self._simulation()}
         job = self._edit_source() if quick and source_form.mode == "Repeat" else self._draft_job
         composer_source = {
@@ -2198,19 +2139,18 @@ class QueuePage:
             drawn = plan
             if resolving is not None:
                 drawn = await asyncio.to_thread(self._resolve_only, *resolving)
-            queue_id, used = await self._create(
+            queue_id = await self._create(
                 backend,
                 request,
                 asset_ids,
                 count,
-                cap,
                 drawn,
                 job,
                 up_next=action == "add",
                 composer_source=composer_source,
             )
             status = (await read_queue_views(self._state, queue_id))[0]["status"] if action == "add" else None
-            return queue_id, used, status
+            return queue_id, status
 
         if quick:
             self._runner.submit(
@@ -2246,10 +2186,6 @@ class QueuePage:
         if self._live_run():
             return False, True, "Another process runs a queue: Add to queue starts this one after it."
         return True, False, "Start now creates the queue and starts it at once."
-
-    def quick_cap(self) -> int:
-        """The new queue's Max at once: the composer's value (the shared cloud default with cloud chosen)."""
-        return self.page.newQueueCapSpinBox.value()
 
     def quick_create(self, action: str, *, count: int | None) -> None:
         self.create(action, count=count, quick=True)
@@ -2484,7 +2420,7 @@ class QueuePage:
                 return
             self._quick_report(present_generation_failure(failure))
             return
-        queue_id, _, status = result
+        queue_id, status = result
         self._created_hook()
         if action == "start" and not self.dispatching_here and not self._activity.generating:
             self._dispatch(queue_id, resume_fallback=None)  # progress and results use the shared overlay
@@ -2556,7 +2492,6 @@ class QueuePage:
         request,
         asset_ids,
         count,
-        cap,
         plan: Plan | None = None,
         job=None,
         *,
@@ -2619,13 +2554,12 @@ class QueuePage:
                 preserve_outside=job.keep_outside,
                 plan=plan,
                 count=count,
-                cap=cap,
                 up_next=up_next,
                 receipts=receipts,
                 composer_source=composer_source,
             )
         items = expand_plan(request, plan, receipts=receipts) if plan is not None else expand_items(request, count)
-        return await create_queue(self._state, backend, items, cap, up_next=up_next, composer_source=composer_source)
+        return await create_queue(self._state, backend, items, up_next=up_next, composer_source=composer_source)
 
     # -- planning --------------------------------------------------------------------------------------------------
     def _plan_form(self) -> PlanForm:
@@ -2829,7 +2763,7 @@ class QueuePage:
                 return
             self._message(present_generation_failure(failure))
             return
-        queue_id, cap, status = result
+        queue_id, status = result
         self._created_hook()
         self._composing = False
         self._preview_timer.stop()
@@ -2851,7 +2785,7 @@ class QueuePage:
                 )
             )
         else:
-            self._message(Presentation("ok", "Queue created", f"Paused with a maximum of {cap} at once. Press Start."))
+            self._message(Presentation("ok", "Queue created", "Paused. Press Start."))
         self._render()
         self.refresh()
 
@@ -3173,42 +3107,4 @@ class QueuePage:
             self._message(present_generation_failure(failure))
             return
         self._message(Presentation("ok", "Queue removed", "Its attempts and saved images are kept."))
-        self.refresh()
-
-    # -- concurrency -----------------------------------------------------------------------------------------------
-    def _cap_changed(self, value: int) -> None:
-        """The header maximum posts a ``cap`` control for the selected queue only (active work is kept)."""
-        if self._syncing:
-            return
-        try:
-            validate_concurrency(value)
-        except ValidationError as exc:
-            self._message(Presentation("error", "Concurrency not changed", str(exc)))
-            return
-        self._set_level(self.page.concurrencySpinBox, value)
-        view = self._view()
-        if not self._editable(view):
-            return
-        self._runner.submit(set_concurrency(self._state, value, queue_id=view["queue_id"]), self._cap_done)
-
-    def _new_cap_changed(self, value: int) -> None:
-        """The new-queue maximum; with cloud chosen it is also saved as the shared default for new cloud queues."""
-        self.page.composerSummaryCapLabel.setText(str(value))
-        if self._syncing:
-            return
-        self._set_level(self.page.newQueueCapSpinBox, value)
-        self.templates.changed()
-        if self._template_cap:
-            return
-        if self._composer_backend()[0] != "cloud":
-            return
-        self._shared_epoch += 1
-        self._shared_cap = value
-        self._runner.submit(set_concurrency(self._state, value, save_shared=True), self._cap_done)
-
-    def _cap_done(self, value, failure) -> None:
-        """A saved maximum shows in its own box; only a refusal reaches the overlay."""
-        if failure is not None:
-            self._message(present_generation_failure(failure))
-            return
         self.refresh()

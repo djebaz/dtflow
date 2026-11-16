@@ -17,6 +17,7 @@ from uuid import uuid4
 from dtflow.composition import BackendSelection
 from dtflow.core.image_inputs import PreparedImageInputs
 from dtflow.core.models import (
+    MAX_QUEUE_CONCURRENCY,
     SEED_LIMIT,
     BackendEvent,
     CredentialProvider,
@@ -44,7 +45,7 @@ from dtflow.persistence.queues import (
     retry_item,
 )
 from dtflow.persistence.script_items import is_script_record, script_record, store_source
-from dtflow.persistence.settings import load_cloud_concurrency, save_cloud_concurrency, validate_concurrency
+from dtflow.persistence.settings import load_dtplus_concurrency
 from dtflow.persistence.settings import trigger_prefix_enabled
 from dtflow.persistence.store import SQLiteAttempts, StateBusyError, state_is_owned
 from dtflow.persistence.workflow_items import KIND_WORKFLOW, is_workflow_record
@@ -147,9 +148,9 @@ async def create_script_queue(
         await store.aclose()
 
 
-def default_cap(state: Path, backend_name: str) -> int:
-    """The shared cloud maximum for cloud queues; local and fake queues use the adapter's own bound (4)."""
-    return load_cloud_concurrency(state) if backend_name == "cloud" else 4
+# Generation queues keep no maximum of their own (#492): DT+ queues run as wide as the Connection page DT+ default,
+# local and fake queues as wide as the adapter allows. The stored column is only the widest value.
+STORED_CAP = MAX_QUEUE_CONCURRENCY
 
 
 OVERLAP_POLL = 0.5  # seconds between looks for a free slot at a queue boundary
@@ -159,11 +160,10 @@ async def create_queue(
     state: Path,
     backend: dict[str, Any],
     requests: list[ResolvedGenerationRequest],
-    cap: int | None = None,
     *,
     up_next: bool = False,
     composer_source: dict | None = None,
-) -> tuple[str, int]:
+) -> str:
     """Persist a paused queue of resolved items; contacts no backend and never uploads.
 
     While another owner holds the state (this window's running dispatch or generation, or a CLI dispatcher), the queue
@@ -173,15 +173,14 @@ async def create_queue(
     """
     if backend.get("name") == "local" and not backend.get("endpoint"):
         raise ValidationError("The local backend requires --endpoint HOST:PORT.")
-    cap = validate_concurrency(cap) if cap is not None else default_cap(state, backend["name"])
     store = SQLiteAttempts(state)
     try:
         await store.open()
-        return await store.create_queue(backend, cap, requests, composer_source=composer_source), cap
+        return await store.create_queue(backend, STORED_CAP, requests, composer_source=composer_source)
     except StateBusyError:
         return await asyncio.to_thread(
-            insert_queue, state, backend, cap, requests, up_next=up_next, composer_source=composer_source
-        ), cap
+            insert_queue, state, backend, STORED_CAP, requests, up_next=up_next, composer_source=composer_source
+        )
     finally:
         await store.aclose()
 
@@ -197,16 +196,15 @@ async def create_edit_queue(
     preserve_outside: bool,
     plan: Plan | None = None,
     count: int = 1,
-    cap: int | None = None,
     up_next: bool = False,
     receipts: tuple[PreparedAsset, ...] = (),
     composer_source: dict | None = None,
-) -> tuple[str, int]:
+) -> str:
     """Stage one prepared edit once and persist a paused queue of items that share it.
 
     The scope is checked now so an unsupported backend refuses before anything is staged; nothing is uploaded or
-    dispatched until Start, which is the consent (#244), and the staged inputs stay durable evidence. Returns
-    (queue id, cap).
+    dispatched until Start, which is the consent (#244), and the staged inputs stay durable evidence. Returns the
+    queue id.
     """
     operation = "inpaint" if prepared.mask is not None else "img2img"
     permit = session.owner_probe_permit(selection, base.model_id, operation, "queue-scope-check")
@@ -225,7 +223,7 @@ async def create_edit_queue(
         image_inputs=staged,
     )
     items = expand_items(edit, count) if plan is None else expand_plan(edit, plan, receipts=receipts)
-    return await create_queue(state, backend, items, cap, up_next=up_next, composer_source=composer_source)
+    return await create_queue(state, backend, items, up_next=up_next, composer_source=composer_source)
 
 
 # Items a relaunch with ``failed_only`` (and Retry item) takes again: settled without a saved image.
@@ -295,10 +293,9 @@ async def relaunch_queue(
     new_seeds: bool = False,
     failed_only: bool = False,
     positions: tuple[int, ...] | None = None,
-    cap: int | None = None,
     up_next: bool = False,
-) -> tuple[str, int]:
-    """Create a new paused (or up-next) queue from another queue's recorded item requests; returns (id, cap).
+) -> str:
+    """Create a new paused (or up-next) queue from another queue's recorded item requests; returns its id.
 
     The source queue, its items and attempts are only read: nothing is replayed, an unknown attempt stays unknown, and
     each new item gets its own identity and, when dispatched, its own attempt (a real and possibly billable
@@ -306,12 +303,12 @@ async def relaunch_queue(
     settled without a saved image. Staged edit items reuse their recorded inputs; Start is the consent and the
     dispatcher builds their exact-scope permit then; inputs that are gone refuse the relaunch.
     """
-    backend, source_cap, items = await asyncio.to_thread(read_queue_requests, Path(state), queue_id)
+    backend, _legacy_cap, items = await asyncio.to_thread(read_queue_requests, Path(state), queue_id)
     refuse_script_records(record for _, _, record in items)
     requests = await asyncio.to_thread(
         _relaunch_items, Path(state), queue_id, items, new_seeds=new_seeds, failed_only=failed_only, positions=positions
     )
-    return await create_queue(state, backend, requests, source_cap if cap is None else cap, up_next=up_next)
+    return await create_queue(state, backend, requests, up_next=up_next)
 
 
 async def retry_queue_item(state: Path, queue_id: str, position: int) -> str:
@@ -510,7 +507,7 @@ async def _dispatch_one(store, state, queue_id, policy, saved, out, on_settle, o
         selection = BackendSelection(
             recorded["name"],
             recorded.get("endpoint"),
-            load_cloud_concurrency(state) if recorded["name"] == "cloud" else 4,
+            load_dtplus_concurrency(state) if recorded["name"] == "cloud" else 4,
             recorded.get("scenario", "success"),
             recorded.get("delay", 0.0),
             recorded.get("previews", False),
@@ -661,17 +658,3 @@ async def clear_paused_queues(state: Path, queue_ids: tuple[str, ...], keep: tup
 async def remove_queue(state: Path, queue_id: str, keep: tuple[str, ...] = ()) -> None:
     """Delete one paused, finished or cancelled queue record (never attempts or outputs)."""
     await asyncio.to_thread(delete_queue, Path(state), queue_id, keep)
-
-
-async def set_concurrency(state: Path, value: int, *, queue_id: str | None = None, save_shared: bool = False) -> int:
-    """Validate a concurrency maximum (1..10) before anything is written or posted.
-
-    ``save_shared`` persists the shared cloud maximum used for new cloud queues; ``queue_id`` posts a ``cap`` control
-    for that queue (active work is never cancelled by it). The value is a client policy, not verified entitlement.
-    """
-    value = validate_concurrency(value)
-    if save_shared:
-        await asyncio.to_thread(save_cloud_concurrency, Path(state), value)
-    if queue_id is not None:
-        await post_queue_control(state, queue_id, "cap", {"cap": value})
-    return value

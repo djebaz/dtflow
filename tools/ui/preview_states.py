@@ -389,7 +389,7 @@ def render_inspector_fit_states(shell, out, category):
             # An unbroken model/LoRA identifier must wrap inside the actual New queue summary card.
             shell.queue.open_composer()
             shell.queue._preview_timer.stop()  # Freeze the offline fixture while inspecting layout.
-            summary_names = ("Backend", "Model", "Loras", "Items", "Varies", "Seeds", "Cap", "Note")
+            summary_names = ("Backend", "Model", "Loras", "Items", "Varies", "Seeds", "Note")
             summary_labels = [getattr(page, f"composerSummary{name}Label") for name in summary_names]
             previous_text = [label.text() for label in summary_labels]
             try:
@@ -1897,20 +1897,6 @@ def render_active_queue_states(shell, out):
         shell.generation.lora.set_loras(())
         queue.close_composer()
         queue._sync()
-        queue._syncing = True
-        page.concurrencySpinBox.setValue(10)
-        page.newQueueCapSpinBox.setValue(10)
-        queue._syncing = False
-        queue._set_level(page.concurrencySpinBox, 10)
-        snap("queues-36-max-at-once-ten")
-        queue._syncing = True
-        page.concurrencySpinBox.setValue(4)
-        page.newQueueCapSpinBox.setValue(4)
-        queue._syncing = False
-        queue._set_level(page.concurrencySpinBox, 4)
-        # Defensive validator refusal: the bounded spin box normally prevents values outside 1..10.
-        queue._cap_changed(11)
-        snap("queues-20-concurrency-refused")
         strip.finish("queue-message")
         present("finished", ["succeeded", "succeeded", "succeeded"])
         snap("queues-21-finished-table")

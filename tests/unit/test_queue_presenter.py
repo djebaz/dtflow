@@ -6,7 +6,6 @@ import pytest
 
 from dtflow.ui.queue_presenter import (
     QueueCountdown,
-    concurrency_level,
     controls,
     elapsed_text,
     estimate_remaining,
@@ -141,11 +140,10 @@ def test_rows_separate_outputs_from_metadata_and_summary_counts_settled():
     assert (summary.settled, summary.total, summary.succeeded, summary.level) == (3, 5, 2, "ok")
 
 
-def test_status_chip_and_concurrency_threshold():
+def test_status_chip():
     assert status_chip(view("running"), []) == ("ok", "Running")
     assert status_chip(view("queued"), ["q" * 32]) == ("secondary", "Up next 1")
     assert status_chip(view("finished", succeeded=1, unknown=1), []) == ("warning", "Finished")
-    assert [concurrency_level(v) for v in (1, 2, 3, 4)] == ["normal", "normal", "elevated", "elevated"]
 
 
 def test_a_dispatch_run_ends_with_the_outcome_that_happened():

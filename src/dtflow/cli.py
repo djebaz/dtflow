@@ -30,7 +30,7 @@ from dtflow.gallery_limits import resolve as resolve_gallery_limits
 from dtflow.logging_setup import LoggingSetupError, configure_logging
 from dtflow.persistence.assets import AssetRegistry
 from dtflow.persistence.queues import post_control, read_queues
-from dtflow.persistence.settings import load_cloud_concurrency, save_cloud_concurrency
+from dtflow.persistence.settings import load_dtplus_concurrency
 from dtflow.persistence.store import PersistenceError, SQLiteAttempts
 from dtflow.services.artifacts import atomic_write
 from dtflow.services.config import export_config, load_config, resolve_request
@@ -140,13 +140,6 @@ def parser() -> argparse.ArgumentParser:
             child.add_argument("-k", "--kind", choices=KINDS, help="Only list entries of this kind.")
         if name == "attempts":
             child.add_argument("-a", "--attempt", help="Inspect a single local attempt; never resubmit it.")
-        if name == "settings":
-            child.add_argument(
-                "-j",
-                "--jobs",
-                type=int,
-                help="Persist the cloud concurrency maximum (1-10, default 4; not entitlement).",
-            )
         if name == "generate":
             child.add_argument("-c", "--config", type=Path, help="Versioned generation config or prior metadata.json.")
             child.add_argument("-u", "--export", type=Path, help="Write the effective credential-free config here.")
@@ -458,7 +451,7 @@ async def run_workflow(args: argparse.Namespace) -> int:
 
 def add_queue_commands(commands) -> None:
     queue = commands.add_parser("queue", help=COMMAND_HELP["queue"])
-    canonical = ("add", "list", "show", "start", "pause", "resume", "cancel", "cap", "relaunch")
+    canonical = ("add", "list", "show", "start", "pause", "resume", "cancel", "relaunch")
     actions = queue.add_subparsers(dest="queue_command", required=True, metavar="{" + ",".join(canonical) + "}")
 
     def action(name: str, help_text: str, *, ident: bool = True) -> argparse.ArgumentParser:
@@ -507,9 +500,6 @@ def add_queue_commands(commands) -> None:
         action="store_true",
         help="Print the exact item table and count for --plan or --count, then stop; creates nothing.",
     )
-    add.add_argument(
-        "-j", "--jobs", type=int, help="Queue concurrency maximum, 1-10 (default: the cloud setting, else 4)."
-    )
     add_scenario_option(add)
     action("list", "List queues with item state counts.", ident=False)
     action("show", "Show one queue's items in queue order, with attempts, outputs and recorded events.")
@@ -526,10 +516,6 @@ def add_queue_commands(commands) -> None:
     # Hidden compatibility alias: unknown outcomes no longer block, so there is nothing left to override.
     action("override", "Deprecated no-op.")
     actions._choices_actions = [a for a in actions._choices_actions if a.dest in canonical]
-    cap = action("cap", "Change this queue's concurrency maximum; active work is never cancelled.")
-    cap.add_argument(
-        "-j", "--jobs", type=int, required=True, help="New maximum, 1-10 (the backend's own limit still applies)."
-    )
     relaunch = action(
         "relaunch",
         "Persist a new paused queue from this queue's recorded items; the original and its attempts are untouched.",
@@ -548,7 +534,6 @@ def add_queue_commands(commands) -> None:
         metavar="N",
         help="Only item N (queue position; repeatable).",
     )
-    relaunch.add_argument("-j", "--jobs", type=int, help="Concurrency maximum, 1-10 (default: the original queue's).")
 
 
 COMMAND_HELP = {
@@ -557,7 +542,7 @@ COMMAND_HELP = {
     "check": "Bounded non-generative connectivity/authentication check.",
     "models": "List backend inventory with provenance (models, LoRAs, controls, unknown entries).",
     "attempts": "Inspect durable attempts; unknown outcomes are never replayed.",
-    "settings": "Show or persist shared settings such as the cloud concurrency maximum.",
+    "settings": "Show shared settings: the DT+ concurrency default (set on the Connection page).",
     "assets": "Cloud LoRA assets: prepare (may upload, keeps a local copy), download (Civitai LoRA, converted locally, never uploads), files, list, show, reconcile. Local receipts are not remote inventory.",
     "queue": "Durable queues with rolling dispatch: add, list, show, start, pause, resume, cancel, cap, relaunch.",
     "script": "Analyze a Draw Things JavaScript script offline (never runs it), self-check the engine, or --run it.",
@@ -666,8 +651,8 @@ async def run_queue(args: argparse.Namespace) -> int:
             file=sys.stderr,
         )
         return EXIT_OK
-    if command in QUEUE_POSTED or command == "cap":
-        post_control(args.state, args.queue, command, {"cap": args.jobs} if command == "cap" else None)
+    if command in QUEUE_POSTED:
+        post_control(args.state, args.queue, command)
         print(json.dumps({"queue": args.queue, "posted": command, "applied_by": "dispatcher poll or next start"}))
         return EXIT_OK
     if command == "add":
@@ -677,23 +662,22 @@ async def run_queue(args: argparse.Namespace) -> int:
             return EXIT_OK
         requests = expand_plan(base, plan)
         backend = {"name": args.backend, "endpoint": args.endpoint, "scenario": args.scenario}
-        queue_id, cap = await create_queue(args.state, backend, requests, args.jobs)
-        created = {"queue_id": queue_id, "state": "paused", "items": len(requests), "cap": cap}
+        queue_id = await create_queue(args.state, backend, requests)
+        created = {"queue_id": queue_id, "state": "paused", "items": len(requests)}
         if plan.rng_seed is not None:
             created["rng_seed"] = plan.rng_seed
         print(json.dumps(created))
         return EXIT_OK
     if command == "relaunch":
-        queue_id, cap = await relaunch_queue(
+        queue_id = await relaunch_queue(
             args.state,
             args.queue,
             new_seeds=args.new_seeds,
             failed_only=args.failed,
             positions=tuple(args.item) if args.item else None,
-            cap=args.jobs,
         )
         items = sum(read_queues(args.state, queue_id)[0]["summary"].values())
-        print(json.dumps({"queue_id": queue_id, "state": "paused", "items": items, "cap": cap, "from": args.queue}))
+        print(json.dumps({"queue_id": queue_id, "state": "paused", "items": items, "from": args.queue}))
         return EXIT_OK
     # start: this process becomes the single dispatch owner for the state directory.
 
@@ -963,9 +947,7 @@ async def run(args: argparse.Namespace) -> int:
     request = None
     policy = TimeoutPolicy()
     if args.command == "settings":
-        if args.jobs is not None:
-            save_cloud_concurrency(args.state, args.jobs)
-        print(json.dumps({"cloud_concurrency": load_cloud_concurrency(args.state), "entitlement_verified": False}))
+        print(json.dumps({"dtplus_concurrency": load_dtplus_concurrency(args.state), "entitlement_verified": False}))
         return EXIT_OK
     if args.command == "generate":
         if args.scenario != "success" and args.backend != "fake":

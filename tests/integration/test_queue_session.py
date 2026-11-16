@@ -10,19 +10,16 @@ import pytest
 
 from dtflow.core.models import ResolvedGenerationRequest, ValidationError
 from dtflow.persistence.queues import request_from_record
-from dtflow.persistence.settings import SettingsError, load_cloud_concurrency
 from dtflow.persistence.store import SQLiteAttempts, StateBusyError
 from dtflow.services.planning import Plan, expand_plan
 from dtflow.services.queue_session import (
     create_queue,
-    default_cap,
     dispatch_queue,
     expand_items,
     post_queue_control,
     read_composer_source,
     read_queue_list,
     read_queue_views,
-    set_concurrency,
 )
 
 BACKEND = {"name": "fake", "endpoint": None, "scenario": "success"}
@@ -35,13 +32,13 @@ def base(seed=5):
 @pytest.mark.asyncio
 async def test_composer_source_is_atomic_and_shared_owner_safe(tmp_path):
     source = {"version": 1, "base": {"prompt": "a {cat|dog}"}, "form": {"variation": "Every combination"}}
-    queue_id, _ = await create_queue(tmp_path, BACKEND, expand_items(base(), 1), composer_source=source)
+    queue_id = await create_queue(tmp_path, BACKEND, expand_items(base(), 1), composer_source=source)
     assert await read_composer_source(tmp_path, queue_id) == source
     assert await read_composer_source(tmp_path, "missing") is None
     owner = SQLiteAttempts(tmp_path)
     await owner.open()
     try:
-        shared_id, _ = await create_queue(tmp_path, BACKEND, expand_items(base(), 1), composer_source=source)
+        shared_id = await create_queue(tmp_path, BACKEND, expand_items(base(), 1), composer_source=source)
         assert await read_composer_source(tmp_path, shared_id) == source
         with pytest.raises(ValidationError, match="1 MiB"):
             await create_queue(tmp_path, BACKEND, expand_items(base(), 1), composer_source={"text": "x" * 1_048_577})
@@ -70,8 +67,7 @@ def test_expand_items_numbers_seeds_and_validates_before_anything_is_created():
 @pytest.mark.asyncio
 async def test_create_read_dispatch_and_controls_round_trip(tmp_path):
     assert await read_queue_views(tmp_path) == ()  # no database yet: no queues, no error
-    queue_id, cap = await create_queue(tmp_path, BACKEND, expand_items(base(), 2))
-    assert cap == default_cap(tmp_path, "fake") == 4
+    queue_id = await create_queue(tmp_path, BACKEND, expand_items(base(), 2))
     (view,) = await read_queue_views(tmp_path)
     assert view["status"] == "paused" and [item["seed"] for item in view["items"]] == [5, 6]
     await post_queue_control(tmp_path, queue_id, "pause")
@@ -81,35 +77,15 @@ async def test_create_read_dispatch_and_controls_round_trip(tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_invalid_cap_and_local_without_endpoint_create_nothing(tmp_path):
-    with pytest.raises(ValidationError):
-        await create_queue(tmp_path, BACKEND, expand_items(base(), 1), 11)
+async def test_local_without_endpoint_creates_nothing(tmp_path):
     with pytest.raises(ValidationError, match="endpoint"):
         await create_queue(tmp_path, {"name": "local", "endpoint": None}, expand_items(base(), 1))
     assert not (tmp_path / "attempts.sqlite3").exists()
 
 
 @pytest.mark.asyncio
-async def test_concurrency_is_validated_before_anything_is_saved_or_posted(tmp_path):
-    queue_id, _ = await create_queue(tmp_path, BACKEND, expand_items(base(), 1))
-    for bad in (0, 11, True):
-        with pytest.raises(SettingsError):
-            await set_concurrency(tmp_path, bad, queue_id=queue_id, save_shared=True)
-    assert not (tmp_path / "settings.json").exists()
-    assert await set_concurrency(tmp_path, 3, queue_id=queue_id, save_shared=True) == 3
-    assert load_cloud_concurrency(tmp_path) == 3
-    assert await set_concurrency(tmp_path, 10, queue_id=queue_id, save_shared=True) == 10
-    assert load_cloud_concurrency(tmp_path) == 10
-    with sqlite3.connect(tmp_path / "attempts.sqlite3") as db:
-        assert db.execute("SELECT action, payload_json FROM queue_controls").fetchall() == [
-            ("cap", json.dumps({"cap": 3})),
-            ("cap", json.dumps({"cap": 10})),
-        ]
-
-
-@pytest.mark.asyncio
 async def test_a_second_dispatch_owner_is_refused_before_dispatching(tmp_path):
-    queue_id, _ = await create_queue(tmp_path, BACKEND, expand_items(base(), 1))
+    queue_id = await create_queue(tmp_path, BACKEND, expand_items(base(), 1))
     owner = SQLiteAttempts(tmp_path)
     await owner.open()
     try:
@@ -122,7 +98,7 @@ async def test_a_second_dispatch_owner_is_refused_before_dispatching(tmp_path):
 
 @pytest.mark.asyncio
 async def test_summary_timing_reads_successful_settlements_without_loading_items(tmp_path):
-    queue_id, _ = await create_queue(tmp_path, BACKEND, expand_items(base(), 3))
+    queue_id = await create_queue(tmp_path, BACKEND, expand_items(base(), 3))
     owner = SQLiteAttempts(tmp_path)
     await owner.open()
     try:
@@ -155,7 +131,7 @@ async def test_planned_requests_enter_the_queue_unchanged_and_are_restored_from_
     """6-O4: the persisted items equal the planner output; scheduling is inherited, not retested."""
     spec = Plan("cross", (("prompt", ("a", "b")), ("steps", (4, 8))), seed_policy="increment")
     requests = expand_plan(base(), spec)
-    queue_id, _ = await create_queue(tmp_path, BACKEND, requests)
+    queue_id = await create_queue(tmp_path, BACKEND, requests)
     with sqlite3.connect(tmp_path / "attempts.sqlite3") as db:
         stored = [
             request_from_record(json.loads(row[0]))
