@@ -55,7 +55,7 @@ def generate() -> bool:
     content = "\n".join(lines)
     if TARGET.is_file() and TARGET.read_text(encoding="utf-8") == content:
         return False
-    TARGET.write_text(content, encoding="utf-8")
+    TARGET.write_text(content, encoding="utf-8", newline="\n")
     return True
 
 
