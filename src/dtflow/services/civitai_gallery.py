@@ -398,9 +398,9 @@ class GallerySearch:
     """Bounded keyword/tag discovery: at most one 100-model API page per fetch.
 
     Civitai has no documented multi-tag operator. OR uses a stream per selected tag; AND
-    anchors to one tag and checks the others locally. With explicit tags and keyword AND,
-    use only the combined query/tag listing; keyword-only discovery retains the separate
-    tag-name lookup. Independent cursors mean merged sort is approximate.
+    anchors to one tag and checks the others locally. Keywords use Civitai's query
+    parameter only; selected tag pills use the tag parameter. Independent cursors
+    mean merged sort is approximate.
     """
 
     def __init__(
@@ -431,10 +431,10 @@ class GallerySearch:
                 self._streams = [_ListingStream(keyword, tag) for tag in anchors]
             else:
                 # Keyword sources are unrestricted; the tag-group sources are checked locally.
-                self._streams = [_ListingStream(keyword, None, False), _ListingStream("", keyword, False)]
+                self._streams = [_ListingStream(keyword, None, False)]
                 self._streams.extend(_ListingStream("", tag) for tag in anchors)
         elif keyword:
-            self._streams = [_ListingStream(keyword, None), _ListingStream("", keyword)]
+            self._streams = [_ListingStream(keyword, None)]
         else:
             self._streams = [_ListingStream("", tag) for tag in anchors]
         self._index = 0
