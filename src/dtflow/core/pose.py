@@ -11,6 +11,8 @@ from dtflow.core.models import ValidationError
 CONTROLS = (
     "controlnet_union_pro_flux_1_dev_1.0_q8p.ckpt",
     "controlnet_union_pro_flux_1_dev_2.0_q8p.ckpt",
+    "controlnet_union_pro_flux_1_dev_1.0_q5p.ckpt",
+    "controlnet_union_pro_flux_1_dev_2.0_q5p.ckpt",
 )
 MODELS = ("flux_1_dev_f16.ckpt", "flux_1_dev_q5p.ckpt", "flux_1_dev_q8p.ckpt")
 
