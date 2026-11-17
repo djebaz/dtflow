@@ -222,9 +222,14 @@ def build_generation_message(
         user=CLIENT_NAME,
     )
     override = custom_lora_override(request)
-    if override or model_spec:
+    control_nets = b""
+    if request.pose_control is not None:
+        from dtflow.core.pose import control_spec
+
+        control_nets = json.dumps([control_spec(request.pose_control.checkpoint)]).encode()
+    if override or model_spec or control_nets:
         message.override = image_service.MetadataOverride(
-            loras=override, models=json.dumps([model_spec]).encode() if model_spec else b""
+            loras=override, models=json.dumps([model_spec]).encode() if model_spec else b"", control_nets=control_nets
         )
     if shared_secret:
         message.shared_secret = shared_secret
