@@ -465,8 +465,8 @@ class DrawThingsBackend:
                         if self.backend_id != "drawthings-cloud" or self._image_inputs_loader is None:
                             raise ValidationError("Pose requires cloud with a managed input loader.")
                         if not self._inventory or not any(
-                            e.kind == "control" and e.identifier == request.pose_control.checkpoint
-                            and e.architecture == "flux1" for e in self._inventory.entries
+                            e.identifier == request.pose_control.checkpoint
+                            and e.availability == "listed_in_server_inventory" for e in self._inventory.entries
                         ):
                             raise ValidationError("DT+ does not advertise the selected pose control; refusing guidance loss.")
                         prepared = await settle(asyncio.to_thread(self._image_inputs_loader, request.image_inputs))

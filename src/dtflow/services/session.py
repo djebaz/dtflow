@@ -401,11 +401,11 @@ async def run_generation(
     # Real adapters accept only inventory-listed models, so the generation path refreshes inventory first.
     snapshot = await service.get_inventory(refresh=True)
     if request.pose_control is not None and not any(
-        entry.kind == "control" and entry.identifier == request.pose_control.checkpoint
-        and entry.architecture == "flux1" for entry in snapshot.entries
+        entry.identifier == request.pose_control.checkpoint
+        and entry.availability == "listed_in_server_inventory" for entry in snapshot.entries
     ):
         raise ValidationError(
-            "DT+ Echo does not advertise the selected Union control as flux1. No generation or upload was submitted. "
+            "DT+ does not list the selected Union control in its server inventory. No generation or upload was submitted. "
             "Catalogue/import support is not cloud availability; no backend substitution is permitted."
         )
     if timeline is not None:
