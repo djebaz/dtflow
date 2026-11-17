@@ -42,7 +42,7 @@ def add_commands(commands, add_request_options):
             add_request_options(child)
             child.set_defaults(endpoint=None, prefix=False)
             source = child.add_mutually_exclusive_group(required=True)
-            source.add_argument("-i", "--image", type=Path, help="Prepared OpenPose RGB body map, black background.")
+            source.add_argument("-im", "--image", type=Path, help="Prepared OpenPose RGB body map, black background.")
             source.add_argument("-ph", "--photo", type=Path, help="Explicit local ONNX extraction before submission.")
             child.add_argument("-co", "--control", choices=CONTROLS, required=True)
             child.add_argument("-cs", "--strength", type=float, required=True,
