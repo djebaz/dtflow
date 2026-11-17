@@ -211,6 +211,13 @@ def _fetch(entry: CatalogueEntry, folder: Path, report, cancel) -> Path:
 
 
 def _check_contract(entry: CatalogueEntry, path: Path) -> None:
+    if entry.role == "pose":
+        from dtflow.services.body_pose import DETECTOR, _pose_session
+
+        if entry != DETECTOR:
+            raise ValidationError("Only the pinned body pose model can be installed.")
+        _pose_session(person_selection._read_model(str(path)))
+        return
     try:
         roles = person_selection.classify_models([path])
     except Exception as exc:  # onnxruntime raises its own errors for a file that is not ONNX at all

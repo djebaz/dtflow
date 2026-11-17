@@ -14,7 +14,7 @@ def request_from_record(record: dict[str, Any]) -> ResolvedGenerationRequest:
             raise ValidationError("Stored request must be an object.")
         values = dict(record)
         version = values.get("schema_version", 1)
-        if type(version) is not int or version not in (1, 2):
+        if type(version) is not int or version not in (1, 2, 3):
             raise ValidationError("Unsupported stored-request schema.")
         if version == 1:
             if (
@@ -28,6 +28,12 @@ def request_from_record(record: dict[str, Any]) -> ResolvedGenerationRequest:
             raise ValidationError("Request v2 requires explicit operation, strength and input evidence.")
         if values.get("image_inputs") is not None:
             values["image_inputs"] = ImageInputSnapshot.from_record(values["image_inputs"])
+        if values.get("pose_control") is not None:
+            from dtflow.core.pose import PoseControl
+
+            pose = dict(values["pose_control"])
+            pose["evidence"] = tuple(tuple(pair) for pair in pose["evidence"])
+            values["pose_control"] = PoseControl(**pose)
         values["sampler_id"] = Sampler(values["sampler_id"])
         values["loras"] = tuple(LoRASelection(**item) for item in values["loras"])
         values["resolution_evidence"] = tuple(tuple(pair) for pair in values["resolution_evidence"])

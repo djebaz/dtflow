@@ -178,7 +178,7 @@ def resolve_request(
 
 def export_config(request: ResolvedGenerationRequest) -> dict[str, Any]:
     """The reusable, credential-free generation settings of a resolved request (no ids, evidence or backend)."""
-    if request.operation != "txt2img":
+    if request.operation != "txt2img" or request.pose_control is not None:
         raise ConfigError("Image-operation requests require managed inputs and cannot be exported as txt2img settings.")
     return {
         "schema": SCHEMA,
