@@ -24,6 +24,7 @@ from PySide6.QtWidgets import QApplication, QFormLayout, QListWidgetItem, QMenu,
 
 from dtflow.core.models import BackendEvent, LoRASelection, ValidationError
 from dtflow.core.request_records import request_from_record
+from dtflow.diagnostics import event as diagnostic_event
 from dtflow.persistence.store import StateBusyError
 from dtflow.services.connection import Presentation, present_generation_failure
 from dtflow.services.dynamic_prompts import decode_runs
@@ -121,6 +122,7 @@ from dtflow.ui.submit_shortcut import SubmitShortcut
 from dtflow.ui.queue_widgets import ENTRY_ROLE, HEADING_ROLE, QueueListDelegate
 from dtflow.ui.runner import AsyncRunner, EventRelay
 
+log = logging.getLogger(__name__)
 POLL_MS = 1000  # read interval while anything runs; the dispatch owner applies posted controls every 0.5 s
 IDLE_POLL_MS = 3000  # light summary polling while the tab is visible, so queues created elsewhere appear
 PLAN_WIDGETS = tuple(dict.fromkeys(ERROR_FIELDS.values()))
@@ -1658,7 +1660,19 @@ class QueuePage:
         models, versions = self._plan_models(choices)
         if not models and choices.get("family_versions"):  # no model anywhere: follow Generate's chosen family
             versions = [choices["family_versions"]]
-        return lora_offer(choices.get("loras", {}), choices.get("lora_versions", {}), versions)
+        offered = lora_offer(choices.get("loras", {}), choices.get("lora_versions", {}), versions)
+        diagnostic_event(
+            log,
+            "ui.queue_lora_picker",
+            data={
+                "offered": len(offered),
+                "total": len(choices.get("loras", {})),
+                "models": models,
+                "versions": [sorted(item) for item in versions],
+                "family": sorted(choices.get("family_versions") or ()),
+            },
+        )
+        return offered
 
     def _loras_notice(self) -> str | None:
         choices = self._choices()
