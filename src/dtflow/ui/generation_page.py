@@ -583,23 +583,21 @@ class GenerationPage:
         self._filter_samplers(keep=values.sampler)
 
     def _filter_samplers(self, keep: str | None = None) -> None:
-        """Offer the samplers that suit the selected model; a model with no profile offers all of them.
+        """Offer every sampler in every mode; the selected model's profile only steers the choice.
 
-        ``keep`` is a sampler the caller restores on purpose (a loaded configuration), so it stays selectable even when
-        the dataset would not suggest it. Otherwise an unsuitable current sampler switches to the model's recommended one.
+        When the model changes and the current sampler is not one the model's profile suits, the profile's recommended
+        sampler is selected, but the user can still pick any other one. ``keep`` is a sampler the caller restores on
+        purpose (a loaded configuration) and is never replaced.
         """
         page = self.page
         combo = page.samplerCombo
         model = page.modelCombo.currentText()
         entry = self._catalogue.checkpoint(model, include_unavailable=True) if model else None
         profile = profile_for(model, entry.base_model if entry else None) if model else None
-        allowed = [item.value for item in profile.samplers] if profile else list(SAMPLERS)
+        allowed = list(SAMPLERS)
         wanted = keep or combo.currentText()
-        if wanted not in allowed:
-            if keep:
-                allowed.append(keep)
-            elif profile:
-                wanted = profile.sampler.value
+        if not keep and profile and wanted not in [item.value for item in profile.samplers]:
+            wanted = profile.sampler.value
         if [combo.itemText(i) for i in range(combo.count())] != allowed:
             combo.blockSignals(True)
             combo.clear()
