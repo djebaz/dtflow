@@ -1554,8 +1554,19 @@ class MainWindow:
         self.generation.restore(document.get("form"), document.get("forms"))
         self.generation.inpaint.restore(document.get("edit"))
         self.generation.controlnet.restore(document.get("pose"))
-        if document.get("generate_mode") == "scripts":
-            QTimer.singleShot(0, self._show_scripts)  # after the window is built, like a click on Scripts
+        # Restore the Generate sub-mode, not the current workspace: startup always stays on Connection.
+        page = self.generation_page
+        mode_buttons = {
+            "text": page.textToImageModeButton,
+            "inpaint": page.inpaintModeButton,
+            "controlnet": page.controlnetModeButton,
+            "scripts": page.scriptsModeButton,
+        }
+        mode = document.get("generate_mode")
+        if mode in mode_buttons:
+            mode_buttons[mode].setChecked(True)
+            # Mount Scripts only when Generate is opened; no deferred navigation during startup.
+            self._scripts_active = mode == "scripts"
         diagnostic_event(
             log,
             "app.last_session_restored",
