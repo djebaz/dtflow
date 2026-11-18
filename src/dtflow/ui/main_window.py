@@ -2415,9 +2415,12 @@ class MainWindow:
         if self._removing_retained_lora:
             return
         # A failed or slow read leaves the retained files as painted; the extra rows simply stay absent.
-        self._lora_unretained = [] if error is not None or items is None else items
+        updated = [] if error is not None or items is None else items
+        changed = updated != self._lora_unretained
+        self._lora_unretained = updated
         self._update_retained_status()
-        self._render_lora_table()
+        if changed:
+            self._render_lora_table()
 
     def _read_lora_families(self):
         """Slow local work (hashes whole files), off the first paint: auto-naming once per run, then family detection."""
@@ -2996,6 +2999,9 @@ class MainWindow:
             self.refresh_custom_loras(background=True, rescan=False)  # reconcile a stale selection
             return
 
+        # Ignore older registry reads: their snapshots can predate this committed deletion.
+        self._summary_reads.pop("lora_unretained", None)
+        self._summary_reads.pop("lora_records", None)
         # Only registry rows changed: update the one visible row instead of rescanning or rebuilding all retained LoRAs.
         self._lora_unretained = [
             item for item in self._lora_unretained if (item["sha256"], item["size"]) != identity
