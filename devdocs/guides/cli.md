@@ -191,6 +191,45 @@ State is stored in `.dtflow/attempts.sqlite3` and outputs under `.dtflow/outputs
 
 The fake backend returns the bundled illustrative lighthouse, cropped and resampled to the requested dimensions, for `fake-fixture`, and a calibration grid for `fake-grid`. No model inference occurs. The CLI keeps seed 0 as a real seed; the desktop resolves 0 randomly on submission.
 
+## Experimental body pose (DT+ Cloud)
+
+`dtflow pose` is an experimental, CLI-only FLUX.1 Dev body-pose path. It runs on DT+ Cloud only; there is no local or fallback backend.
+
+| Command | Effect |
+|---|---|
+| `pose catalogue` | Offline: pinned detector, licence and control identifiers |
+| `pose install -a/--accept` | Downloads and verifies the AGPL-3.0 YOLO11n-pose ONNX detector; no inference |
+| `pose extract -i/--image PHOTO -o/--out MAP.png` | Local ONNX extraction only; saves the map and a matching `.pose.json`; never submits |
+| `pose generate` | Explicit DT+ submission; sends the pose map off-machine and may consume credits |
+| `pose retry -c/--config METADATA.json` | New explicit DT+ submission from the saved metadata and retained map; not remote recovery, may consume credits |
+
+`pose generate` takes `-b cloud` (required), the usual request options (`-p -n -m -s -w -y -i -g -a -l -z`), `-c/--config` (ordinary txt2img configuration), `-o/--out`, `-t/--timeout` and `-d/--state`, plus:
+
+| Option | Meaning |
+|---|---|
+| `-im/--image MAP` or `-ph/--photo PHOTO` | One required: a prepared OpenPose RGB body map on a black background, or a photograph extracted locally before submission |
+| `-co/--control NAME` | One pinned Union Pro control: `controlnet_union_pro_flux_1_dev_{1.0,2.0}_{q8p,q5p}.ckpt` |
+| `-cs/--strength` | Control weight in (0, 2]. This is not img2img denoising or text guidance. Full step range, mode Balanced |
+
+`-m` must be an exact FLUX.1 Dev `f16`, `q5p` or `q8p` checkpoint. A map or photograph whose aspect differs from the target size is fitted with centred black padding, never cropped or stretched. Extraction needs exactly one body and a complete torso; uncertain joints are omitted; no detailed face or fingers. Submission is refused before anything is sent if the control is not in the DT+ inventory under its exact name. JSON goes to stdout and progress to stderr; output metadata retains the control, strength and input map so `pose retry` does not depend on the original file path.
+
+Owner observation (single seed and prompt): with FLUX.1 Dev q5p and `controlnet_union_pro_flux_1_dev_1.0_q5p.ckpt`, strength 0.7 followed the pose very well, 0.5 did not, and 1.0 followed it but looked washed out. Union Pro 2.0 (q5p and q8p) did not follow the pose at 0.7 and is unverified. Pose adherence is never measured by dtflow; it needs owner observation.
+
+### PowerShell smoke
+
+```powershell
+uv run dtflow pose catalogue
+uv run dtflow pose install --accept
+uv run dtflow pose extract -i .\photo.png -o .\tmp\pose.png
+# baseline (same seed, no control), then two strengths
+uv run dtflow generate -b cloud -m flux_1_dev_q5p.ckpt -p "a person in a park, full body shot, natural light" -s 401474584 -w 768 -y 1024 -i 28 -g 4.5 -o .\tmp\base
+uv run dtflow pose generate -b cloud -m flux_1_dev_q5p.ckpt -p "a person in a park, full body shot, natural light" -s 401474584 -w 768 -y 1024 -i 28 -g 4.5 -im .\tmp\pose.png -co controlnet_union_pro_flux_1_dev_1.0_q5p.ckpt -cs 0.7 -o .\tmp\p07
+uv run dtflow pose generate ... -cs 1.0 -o .\tmp\p10
+uv run dtflow pose retry -b cloud -c <metadata.json of a pose run> -o .\tmp\retry
+```
+
+`tools/pose_smoke.py` runs the extraction, the baseline and several strengths in parallel and builds a side-by-side `sheet.png`; it submits nothing without `--submit`, which starts paid DT+ generations.
+
 ## Single-shot image-operation owner probe
 
 `edit` is the explicit acceptance harness for PR #64, not general image-operation support. Without `-r/--probe` it refuses before backend selection, file preparation or authentication. Each invocation requests one real generation, with no queue, plan, batch or retry. Generic `generate`, configuration reuse and `queue add` remain txt2img-only.
