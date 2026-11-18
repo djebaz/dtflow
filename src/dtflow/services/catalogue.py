@@ -163,6 +163,8 @@ _FAMILY_VERSIONS = {
     "flux_2": ("flux2", "flux2_4b", "flux2_9b"),
     "ltx_2": ("ltx2", "ltx2.3"),
     "anima": ("cosmos2.5_2b",),
+    "ernie_image": ("ernie_image",),
+    "hunyuan_video": ("hunyuan_video",),
 }
 
 
