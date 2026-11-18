@@ -13,7 +13,12 @@ Updated 2026-11-18 for 6.4.1 preparation and in-review PR #510; the merged-main 
 
 ## Unreleased: Controlnet mode (#503, PR #504)
 
-- Generate Controlnet mode: pose guidance from a photograph (local YOLO26n-pose ONNX) or a body map with Union Pro 1.0 on DT+ Cloud; control force, apply from / to, person pick, Gallery Use settings restore. Verified only for `flux_1_dev_q5p` with Union Pro 1.0 q5p at 0.7; other FLUX.1 checkpoints are "not verified". Queueing a pose is tracked in #505.
+- Generate Controlnet mode: pose guidance from a photograph (local YOLO26n-pose ONNX) or a body map with Union Pro 1.0 on DT+ Cloud; control force, apply from / to, person pick, Gallery Use settings restore. Verified only for `flux_1_dev_q5p` with Union Pro 1.0 q5p at 0.7; other FLUX.1 checkpoints are "not verified". Queueing a pose is implemented in draft PR #513 (#505), pending owner smoke and review.
+
+## Unreleased: Controlnet pose queues (#505, draft PR #513)
+
+- Images N, Repeat and Queue plans can retain one locally staged pose map and its DT+ Union control across individual single-image items. The queue dispatcher restores and verifies it before submission; Relaunch/Retry/Edit as new keep the pose evidence. No provider inference or owner acceptance was run by the agent.
+- **Pending validation:** owner Windows/DT+ smoke, saved-map failure/retry paths, and full CI. An unstaged live Controlnet source cannot yet be saved as a reusable queue template; existing queue/plan records preserve the staged pose.
 
 ## Unreleased: queue composer corrections (#507, PR #510)
 
