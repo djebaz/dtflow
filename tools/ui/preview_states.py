@@ -4268,7 +4268,12 @@ def render_controlnet_states(shell, state, capture):
     names = [f"Person {index + 1} · {score}" for index, score in enumerate(("92 %", "88 %", "61 %"))]
     people = tuple(PosePerson(name, box) for name, box in zip(names, boxes, strict=True))
     facts = "portrait-group.jpg\n1024 × 768 · EXIF-oriented · RGB8"
-    map_facts = "Map: 768 × 1024, fitted with black padding, no crop · Extracted in 0.4 s · 2 joints omitted"
+    map_facts = "Map: 768 × 1024, fitted with black padding, no crop · Extracted in 0.4 s · 2 joints omitted: left wrist, right ankle"
+    map_note = (
+        "Omitted joints: left wrist (low confidence), right ankle (outside the image).\nA joint is omitted when the "
+        "detector's confidence is under 0.5 or it lies outside the image. Omitted joints and the limbs that end on them "
+        "are not drawn, so the control gives no guidance there and the model decides freely."
+    )
     consent = controlnet_ui.CONSENT
 
     base = PoseView(blocker="Controlnet needs DT+ Cloud. Choose DT+ Cloud under Provider.")
@@ -4312,7 +4317,14 @@ def render_controlnet_states(shell, state, capture):
     strip.finish("controlnet-extract-fixture")
 
     one = replace(
-        ready, people=people[:1], selected=0, pose=pose_fixture_map(0), map_facts=map_facts, blocker="", notice=consent
+        ready,
+        people=people[:1],
+        selected=0,
+        pose=pose_fixture_map(0),
+        map_facts=map_facts,
+        map_note=map_note,
+        blocker="",
+        notice=consent,
     )
     editor.present(replace(one, view="Pose"))
     capture("controlnet-07-map-shown")

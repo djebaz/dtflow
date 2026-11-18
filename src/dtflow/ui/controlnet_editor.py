@@ -91,6 +91,7 @@ class PoseView:
     pose: QPixmap | None = None
     result: QPixmap | None = None
     map_facts: str = ""
+    map_note: str = ""
     extraction_error: str = ""
     controls: tuple[PoseControlChoice, ...] = (
         PoseControlChoice("Union Pro 1.0 q5p", True),
@@ -339,6 +340,7 @@ class ControlnetEditor(QObject):
         form.poseStrengthSpin.blockSignals(False)
         form.poseStrengthSpin.setEnabled(chosen is not None)
         self.facts.setText(view.extraction_error or view.map_facts)
+        self.facts.setToolTip(view.map_note)
         self._state(self.facts, "error" if view.extraction_error else "unknown")
         self.facts.setVisible(self.active and bool(self.facts.text()))
         self.reason.setText(" ".join(text for text in (view.blocker, view.notice) if text))
@@ -422,6 +424,7 @@ class ControlnetEditor(QObject):
             pose=self._pose_pixmap,
             result=self._result,
             map_facts=self._map_facts,
+            map_note=self._map_note(),
             extraction_error=self._extraction_error,
             controls=self._controls,
             control_index=self._control_index,
@@ -666,6 +669,21 @@ class ControlnetEditor(QObject):
 
         self.runner.submit(work(), done)
 
+    def _map_note(self):
+        """The tooltip of the map details: which joints were left out, why, and what that means for the result."""
+        evidence = self._map_evidence
+        if self._map is None or evidence.get("origin") == "prepared_map":
+            return ""
+        omitted = evidence.get("omitted_joints", "")
+        if not omitted:
+            return "Every joint was found with enough confidence (0.5 or more) and lies inside the image."
+        return (
+            f"Omitted joints: {omitted}.\n"
+            "A joint is omitted when the detector's confidence is under 0.5 or it lies outside the image. Omitted "
+            "joints and the limbs that end on them are not drawn, so the control gives no guidance there and the "
+            "model decides freely. Shoulders and hips must be found or the person is refused."
+        )
+
     def _facts(self, width, height):
         evidence = self._map_evidence
         parts = [f"Map: {width} × {height}, fitted with black padding, no crop"]
@@ -678,7 +696,13 @@ class ControlnetEditor(QObject):
                 pass
             missing = evidence.get("missing_joints")
             if missing is not None:
-                parts.append(f"{missing} joint{'s' if missing != '1' else ''} omitted")
+                omitted = evidence.get("omitted_joints", "")
+                names = ", ".join(item.split(" (")[0] for item in omitted.split(", ")) if omitted else ""
+                parts.append(
+                    f"{missing} joint{'s' if missing != '1' else ''} omitted" + (f": {names}" if names else "")
+                    if missing != "0"
+                    else "all 18 joints found"
+                )
         return " · ".join(parts)
 
     def download_detector(self):

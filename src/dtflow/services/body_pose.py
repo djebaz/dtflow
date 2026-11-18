@@ -45,6 +45,9 @@ PALETTE = (
 LIMBS = ((1, 2), (1, 5), (2, 3), (3, 4), (5, 6), (6, 7), (1, 8), (8, 9), (9, 10),
          (1, 11), (11, 12), (12, 13), (1, 0), (0, 14), (14, 16), (0, 15), (15, 17))
 ORDER = (0, None, 6, 8, 10, 5, 7, 9, 12, 14, 16, 11, 13, 15, 2, 1, 4, 3)
+JOINT_NAMES = ("nose", "neck", "right shoulder", "right elbow", "right wrist", "left shoulder", "left elbow",
+               "left wrist", "right hip", "right knee", "right ankle", "left hip", "left knee", "left ankle",
+               "right eye", "left eye", "right ear", "left ear")
 
 
 def _pose_session(data: bytes):
@@ -156,12 +159,14 @@ def body_map(content, detection: PoseDetection, person: int):
     candidate = next(candidate for candidate in detection.candidates if candidate.index == person)
     image = pixels._verified(content)
     joints = np.array(candidate.joints, dtype=np.float32)
-    points = []
-    for index in ORDER:
+    points, omitted = [], []
+    for slot, index in enumerate(ORDER):
         joint = (joints[5] + joints[6]) / 2 if index is None else joints[index]
         confidence = min(joints[5, 2], joints[6, 2]) if index is None else joint[2]
-        points.append(tuple(map(float, joint[:2])) if confidence >= 0.5 and
-                      0 <= joint[0] < image.width and 0 <= joint[1] < image.height else None)
+        inside = 0 <= joint[0] < image.width and 0 <= joint[1] < image.height
+        points.append(tuple(map(float, joint[:2])) if confidence >= 0.5 and inside else None)
+        if points[-1] is None:
+            omitted.append(f"{JOINT_NAMES[slot]} ({'outside the image' if confidence >= 0.5 else 'low confidence'})")
     if not all(points[i] is not None for i in (1, 2, 5, 8, 11)):
         raise ValidationError(
             f"Person {person}: shoulders or hips were not found with enough confidence. "
@@ -196,7 +201,7 @@ def body_map(content, detection: PoseDetection, person: int):
                 "detector_input": "640x640", "source_sha256": content.sha256,
                 "source_dimensions": f"{image.width}x{image.height}", "seconds": str(detection.seconds),
                 "person_selection": f"person_{person}_of_{len(detection.candidates)}", "joint_threshold": "0.5",
-                "missing_joints": str(missing), "topology": "openpose18_body_only"}
+                "missing_joints": str(missing), "omitted_joints": ", ".join(omitted), "topology": "openpose18_body_only"}
     event(log, "pose.extracted", data={"detector_sha256": DETECTOR.sha256, "seconds": detection.seconds,
                                      "missing_joints": missing})
     return result, evidence
