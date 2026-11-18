@@ -547,13 +547,13 @@ def pose_request(
 ) -> ResolvedGenerationRequest:
     """The txt2img request plus one pose control and its prepared map (schema 3), under a fresh input identity.
 
-    Shared by the CLI and the desktop. The checkpoint must be a FLUX.1 Dev one; nothing is submitted here."""
-    from dtflow.core.pose import is_flux_dev
+    Shared by the CLI and the desktop. The checkpoint must be a FLUX.1 one; nothing is submitted here."""
+    from dtflow.core.pose import is_flux1
 
     if request.operation != "txt2img":
         raise ValidationError("Pose guidance applies to text-to-image requests only.")
-    if not is_flux_dev(request.model_id):
-        raise ValidationError("Pose is restricted to FLUX.1 Dev checkpoints.")
+    if not is_flux1(request.model_id):
+        raise ValidationError("Pose is restricted to FLUX.1 checkpoints.")
     return replace(
         request,
         schema_version=3,

@@ -306,14 +306,14 @@ class ResolvedGenerationRequest:
         if type(self.schema_version) is not int or self.schema_version not in (2, 3):
             raise ValidationError("Unsupported resolved-request schema.")
         if self.pose_control is not None:
-            from dtflow.core.pose import PoseControl, is_flux_dev
+            from dtflow.core.pose import PoseControl, is_flux1
             from dtflow.core.image_inputs import ImageInputSnapshot
 
             if (
                 not isinstance(self.pose_control, PoseControl)
                 or self.schema_version != 3
                 or self.operation != "txt2img"
-                or not is_flux_dev(self.model_id)
+                or not is_flux1(self.model_id)
                 or not isinstance(self.image_inputs, ImageInputSnapshot)
                 or self.image_inputs.mask is not None
                 or self.image_inputs.preserve_outside
@@ -322,7 +322,7 @@ class ResolvedGenerationRequest:
                 or (self.batch_size, self.batch_count) != (1, 1)
             ):
                 raise ValidationError(
-                    "Pose requires request v3, a FLUX.1 Dev checkpoint, one output and retained RGB inputs."
+                    "Pose requires request v3, a FLUX.1 checkpoint, one output and retained RGB inputs."
                 )
         elif self.schema_version != 2:
             raise ValidationError("Request v3 requires pose control evidence.")
