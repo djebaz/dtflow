@@ -45,7 +45,7 @@ on:
         description: "Category mode only: canonical runtime views at fast level"
         type: choice
         default: lora
-        options: [connection, generate, lora, images, image-navigation, queues, shell, inpaint, logs, scripts, workflows]
+        options: [connection, generate, lora, images, image-navigation, queues, shell, inpaint, controlnet, logs, scripts, workflows]
       workflow:
         description: "Workflow JSON path for workflow mode (other modes use the bundled reference)"
         type: string

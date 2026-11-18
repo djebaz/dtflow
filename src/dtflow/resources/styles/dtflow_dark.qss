@@ -1110,6 +1110,7 @@ QWidget#GalleryDetailPage QPushButton[role="galleryMode"]:focus {
 }
 /* Browse reuses Generate's explicit frame and padding treatment, introduced in #46. */
 QFrame#generationContextPanel QComboBox,
+QFrame#poseGuidanceCard QComboBox,
 QWidget#browseTab QComboBox {
   background: ${color.input};
   border: 1px solid ${color.border};
@@ -1118,11 +1119,14 @@ QWidget#browseTab QComboBox {
   min-height: 34px;
 }
 QFrame#generationContextPanel QComboBox:hover,
+QFrame#poseGuidanceCard QComboBox:hover:enabled,
 QWidget#browseTab QComboBox:hover:enabled {
   border-color: ${color.inputBorderHover};
 }
 QFrame#generationContextPanel QComboBox:focus,
 QFrame#generationContextPanel QComboBox:on,
+QFrame#poseGuidanceCard QComboBox:focus,
+QFrame#poseGuidanceCard QComboBox:on,
 QWidget#browseTab QComboBox:focus,
 QWidget#browseTab QComboBox:on,
 QWidget#browseTab QComboBox[menuOpen="true"] {
@@ -2040,7 +2044,8 @@ QFrame[role="segmented"] QPushButton:disabled {
 QPushButton#modelsButton {
   padding-right: 26px;
 }
-QLabel#modelsBadge {
+QLabel#modelsBadge,
+QLabel#detectorBadge {
   min-height: 18px;
   max-height: 18px;
   min-width: 18px;
@@ -2053,23 +2058,27 @@ QLabel#modelsBadge {
   font-weight: ${type.weightStrong};
   padding: 0;
 }
-QLabel#modelsBadge[readiness="ok"] {
+QLabel#modelsBadge[readiness="ok"],
+QLabel#detectorBadge[readiness="ok"] {
   background: ${color.success};
   border-color: ${color.success};
   color: ${color.background};
 }
 QLabel#modelsBadge[readiness="missing"],
-QLabel#modelsBadge[readiness="checking"] {
+QLabel#modelsBadge[readiness="checking"],
+QLabel#detectorBadge[readiness="checking"] {
   background: ${color.warning};
   border-color: ${color.warning};
   color: ${color.background};
 }
-QLabel#modelsBadge[readiness="error"] {
+QLabel#modelsBadge[readiness="error"],
+QLabel#detectorBadge[readiness="error"] {
   background: ${color.error};
   border-color: ${color.error};
   color: ${color.background};
 }
-QLabel#modelsBadge[readiness="unknown"] {
+QLabel#modelsBadge[readiness="unknown"],
+QLabel#detectorBadge[readiness="unknown"] {
   background: ${color.surface};
   border-color: ${color.borderStrong};
   color: ${color.secondary};

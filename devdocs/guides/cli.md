@@ -193,13 +193,13 @@ The fake backend returns the bundled illustrative lighthouse, cropped and resamp
 
 ## Experimental body pose (DT+ Cloud)
 
-`dtflow pose` is an experimental, CLI-only FLUX.1 Dev body-pose path. It runs on DT+ Cloud only; there is no local or fallback backend.
+`dtflow pose` is an experimental FLUX.1 body-pose path. It runs on DT+ Cloud only; there is no local or fallback backend. The desktop offers the same path as [Controlnet mode](desktop.md#controlnet-mode-pose-guidance) and shares its code (`prepare_pose`, `pose_request` and `generate_pose_once`).
 
 | Command | Effect |
 |---|---|
 | `pose catalogue` | Offline: pinned detector, licence and control identifiers |
-| `pose install -a/--accept` | Downloads and verifies the AGPL-3.0 YOLO11n-pose ONNX detector; no inference |
-| `pose extract -i/--image PHOTO -o/--out MAP.png` | Local ONNX extraction only; saves the map and a matching `.pose.json`; never submits |
+| `pose install -a/--accept` | Downloads and verifies the AGPL-3.0 YOLO26n-pose ONNX detector (about 11.6 MiB); no inference. Installs again for anyone who has the older YOLO11n-pose file |
+| `pose extract -i/--image PHOTO -o/--out MAP.png [-pn/--person N]` | Local ONNX extraction only; saves the map and a matching `.pose.json`; never submits. `--person` picks one of several people (the 1-based number from the detector's list) |
 | `pose generate` | Explicit DT+ submission; sends the pose map off-machine and may consume credits |
 | `pose retry -c/--config METADATA.json` | New explicit DT+ submission from the saved metadata and retained map; not remote recovery, may consume credits |
 
@@ -209,9 +209,12 @@ The fake backend returns the bundled illustrative lighthouse, cropped and resamp
 |---|---|
 | `-im/--image MAP` or `-ph/--photo PHOTO` | One required: a prepared OpenPose RGB body map on a black background, or a photograph extracted locally before submission |
 | `-co/--control NAME` | One pinned Union Pro control: `controlnet_union_pro_flux_1_dev_{1.0,2.0}_{q8p,q5p}.ckpt` |
-| `-cs/--strength` | Control weight in (0, 2]. This is not img2img denoising or text guidance. Full step range, mode Balanced |
+| `-cs/--strength` | Control weight in (0, 2]. This is not img2img denoising or text guidance |
+| `-cm/--control-mode` | Draw Things control force: `Balanced` (default), `Prompt` or `Control` |
+| `-st/--start`, `-en/--end` | Where in the steps the control applies, 0 to 1 (default 0 and 1); the start must be before the end |
+| `-pn/--person N` | With `--photo`, the person to use when the photograph shows several |
 
-`-m` must be an exact FLUX.1 Dev `f16`, `q5p` or `q8p` checkpoint. A map or photograph whose aspect differs from the target size is fitted with centred black padding, never cropped or stretched. Extraction needs exactly one body and a complete torso; uncertain joints are omitted; no detailed face or fingers. Submission is refused before anything is sent if the control is not in the DT+ inventory under its exact name. JSON goes to stdout and progress to stderr; output metadata retains the control, strength and input map so `pose retry` does not depend on the original file path.
+`-m` must be a FLUX.1 family checkpoint (by the catalogue's family; a checkpoint the catalogue does not classify falls back to the `flux_1_` name prefix). Only FLUX.1 Dev q5p with Union Pro 1.0 q5p is verified; other FLUX.1 checkpoints are accepted for testing and are unverified. A map or photograph whose aspect differs from the target size is fitted with centred black padding, never cropped or stretched. Extraction needs exactly one body (or `--person N`) and shoulders and hips found with enough confidence (0.5); other uncertain joints are omitted and named in the extraction evidence (`omitted_joints`); the map is a body-only OpenPose skeleton with no hands, feet or detailed face. Submission is refused before anything is sent if the control is not in the DT+ inventory under its exact name. JSON goes to stdout and progress to stderr; output metadata retains the control, strength and input map so `pose retry` does not depend on the original file path.
 
 Owner observation (single seed and prompt): with FLUX.1 Dev q5p and `controlnet_union_pro_flux_1_dev_1.0_q5p.ckpt`, strength 0.7 followed the pose very well, 0.5 did not, and 1.0 followed it but looked washed out. Union Pro 2.0 (q5p and q8p) did not follow the pose at 0.7 and is unverified. Pose adherence is never measured by dtflow; it needs owner observation.
 

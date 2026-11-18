@@ -11,6 +11,10 @@ Updated 2026-11-16 for 6.4.1 preparation, from merged main `81d68eb7` through PR
 - Slideshow New direction shows arrivals next under Newest first sorting, then resumes forward playback.
 - Downloads runs bounded stale staging/orphan-source cleanup once at startup, off Qt; failed/refused conversion sources remain retained. Civitai documentation now covers tokens, permissions, file retention and recorded acceptance boundaries.
 
+## Unreleased: Controlnet mode (#503, PR #504)
+
+- Generate Controlnet mode: pose guidance from a photograph (local YOLO26n-pose ONNX) or a body map with Union Pro 1.0 on DT+ Cloud; control force, apply from / to, person pick, Gallery Use settings restore. Verified only for `flux_1_dev_q5p` with Union Pro 1.0 q5p at 0.7; other FLUX.1 checkpoints are "not verified". Queueing a pose is tracked in #505.
+
 ## 6.4.0 foundations
 
 - Civitai Downloads/Browse, exact version/file choices, saved filters, optional auto-prepare and managed provenance; bounded search streams do not promise global sort order.

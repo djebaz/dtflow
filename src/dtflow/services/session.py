@@ -394,15 +394,19 @@ async def run_generation(
     if request.pose_control is not None:
         if service.backend.capabilities.backend_id != "drawthings-cloud" or service.input_state is None:
             raise ValidationError("Pose requires an explicitly configured durable cloud session.")
-        if prepared_inputs is None or ImageInputSnapshot.from_prepared(
-            request.image_inputs.attempt_id, prepared_inputs, preserve_outside=False
-        ) != request.image_inputs:
+        if (
+            prepared_inputs is None
+            or ImageInputSnapshot.from_prepared(
+                request.image_inputs.attempt_id, prepared_inputs, preserve_outside=False
+            )
+            != request.image_inputs
+        ):
             raise ValidationError("Pose input evidence does not match the prepared map.")
     # Real adapters accept only inventory-listed models, so the generation path refreshes inventory first.
     snapshot = await service.get_inventory(refresh=True)
     if request.pose_control is not None and not any(
-        entry.identifier == request.pose_control.checkpoint
-        and entry.availability == "listed_in_server_inventory" for entry in snapshot.entries
+        entry.identifier == request.pose_control.checkpoint and entry.availability == "listed_in_server_inventory"
+        for entry in snapshot.entries
     ):
         raise ValidationError(
             "DT+ does not list the selected Union control in its server inventory. No generation or upload was submitted. "
@@ -540,6 +544,84 @@ async def generate_once(
             return await run_generation(service, bound, prefix=prefix, on_event=sink, timeline=timeline)
 
     return await _timed(selection, on_event, run)
+
+
+def pose_request(
+    request: ResolvedGenerationRequest, control, prepared: PreparedImageInputs, evidence: tuple
+) -> ResolvedGenerationRequest:
+    """The txt2img request plus one pose control and its prepared map (schema 3), under a fresh input identity.
+
+    Shared by the CLI and the desktop. The caller has checked the checkpoint family; nothing is submitted here."""
+    if request.operation != "txt2img":
+        raise ValidationError("Pose guidance applies to text-to-image requests only.")
+    return replace(
+        request,
+        schema_version=3,
+        pose_control=replace(control, evidence=evidence),
+        image_inputs=ImageInputSnapshot.from_prepared(uuid4().hex, prepared, preserve_outside=False),
+    )
+
+
+def _require_flux1(state: Path, model_id: str) -> None:
+    """Pose guidance is restricted to the FLUX.1 family; every path that submits a pose (desktop, CLI generate and
+    retry) passes through here, so none can skip the check."""
+    from dtflow.core.pose import is_flux1
+    from dtflow.services.catalogue import Catalogue
+
+    entry = Catalogue(state).checkpoint(model_id, include_unavailable=True)
+    if not is_flux1(model_id, entry.base_model if entry else None):
+        raise ValidationError("Pose is restricted to FLUX.1 checkpoints.")
+
+
+async def generate_pose_once(
+    selection: BackendSelection,
+    state: Path,
+    request: ResolvedGenerationRequest,
+    prepared_inputs: PreparedImageInputs,
+    *,
+    prefix: bool = False,
+    output: Path | None = None,
+    timeouts: TimeoutPolicy | None = None,
+    saved: CredentialProvider | None = None,
+    on_event: EventSink | None = None,
+    asset_ids: tuple[str, ...] = (),
+) -> GenerationOutcome:
+    """One explicit DT+ pose submission (a request built with ``pose_request``): the map leaves the machine and may
+    consume credits. No provider fallback; the input snapshot is the one the request records."""
+    if request.pose_control is None or request.image_inputs is None:
+        raise ValidationError("Pose generation requires a pose request with its prepared map.")
+    if selection.name != "cloud":
+        raise ValidationError("Pose experiments require explicit DT+ Cloud selection.")
+    await settle(asyncio.to_thread(_require_flux1, state, request.model_id))
+
+    async def run(timeline: GenerationTimeline) -> GenerationOutcome:
+        sink = timeline.sink
+        _preparation_event(sink, request, "binding_assets")
+        bound = await bind_prepared(state, selection.name, request, asset_ids)
+        _preparation_event(sink, bound, "opening_session")
+        async with open_session(
+            selection, state, output=output, timeouts=timeouts, saved=saved, timeline=timeline, pose_inputs=True
+        ) as service:
+            _preparation_event(sink, bound, "session_ready")
+            return await run_generation(
+                service, bound, prefix=prefix, on_event=sink, prepared_inputs=prepared_inputs, timeline=timeline
+            )
+
+    return await _timed(selection, on_event, run)
+
+
+async def retry_pose_once(
+    selection: BackendSelection,
+    state: Path,
+    request: ResolvedGenerationRequest,
+    **options,
+) -> GenerationOutcome:
+    """Explicit NEW submission from a recorded pose request: the retained map is read back, never rebuilt, and the
+    request gets a new identity with the same settings and seed. Not remote recovery; may consume credits."""
+    if request.pose_control is None or request.image_inputs is None:
+        raise ValidationError("Retry requires saved pose control settings.")
+    prepared = await settle(asyncio.to_thread(restore_image_inputs, state, request.image_inputs))
+    return await generate_pose_once(selection, state, replace(request, request_id=uuid4().hex), prepared, **options)
 
 
 async def generate_image_once(

@@ -1541,6 +1541,9 @@ class MainWindow:
             self.form.endpointEdit.setText(endpoint)
         self.generation.restore(document.get("form"), document.get("forms"))
         self.generation.inpaint.restore(document.get("edit"))
+        self.generation.controlnet.restore(document.get("pose"))
+        if document.get("generate_mode") == "scripts":
+            QTimer.singleShot(0, self._show_scripts)  # after the window is built, like a click on Scripts
         diagnostic_event(
             log,
             "app.last_session_restored",
@@ -1550,13 +1553,25 @@ class MainWindow:
             },
         )
 
+    def _generate_mode(self) -> str:
+        """The Generate sub-mode at this moment, for the next launch."""
+        page = self.generation_page
+        if page.scriptsModeButton.isChecked():
+            return "scripts"
+        for name, button in (("inpaint", page.inpaintModeButton), ("controlnet", page.controlnetModeButton)):
+            if button.isChecked():
+                return name
+        return "text"
+
     def _session_document(self) -> dict:
         return {
             "provider": self.form.backendCombo.currentText(),
             "endpoint": self.form.endpointEdit.text().strip(),
             "form": self.generation.form_document(),
             "forms": self.generation.forms_document(),
+            "generate_mode": self._generate_mode(),
             "edit": self.generation.inpaint.session_document(),
+            "pose": self.generation.controlnet.session_document(),
         }
 
     def _queue_images(self, count: int) -> None:

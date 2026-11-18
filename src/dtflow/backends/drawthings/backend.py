@@ -466,14 +466,25 @@ class DrawThingsBackend:
                             raise ValidationError("Pose requires cloud with a managed input loader.")
                         if not self._inventory or not any(
                             e.identifier == request.pose_control.checkpoint
-                            and e.availability == "listed_in_server_inventory" for e in self._inventory.entries
+                            and e.availability == "listed_in_server_inventory"
+                            for e in self._inventory.entries
                         ):
-                            raise ValidationError("DT+ does not advertise the selected pose control; refusing guidance loss.")
+                            raise ValidationError(
+                                "DT+ does not advertise the selected pose control; refusing guidance loss."
+                            )
                         prepared = await settle(asyncio.to_thread(self._image_inputs_loader, request.image_inputs))
-                        wire = await settle(asyncio.to_thread(
-                            build_generation_message, request, await self._secret(), base_version, spec,
-                            prepared=prepared, backend_id=self.backend_id, limits=limits,
-                        ))
+                        wire = await settle(
+                            asyncio.to_thread(
+                                build_generation_message,
+                                request,
+                                await self._secret(),
+                                base_version,
+                                spec,
+                                prepared=prepared,
+                                backend_id=self.backend_id,
+                                limits=limits,
+                            )
+                        )
                     else:
                         wire = build_generation_message(request, await self._secret(), base_version, spec)
                 else:
