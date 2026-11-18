@@ -961,6 +961,22 @@ class GenerationPage:
             "lora_versions": {name: self.lora._candidate_family(name) for name, _ in self.lora.all_choices()},
         }
 
+    def plan_models(self) -> dict:
+        """Every model the in-memory inventory knows, whatever family or filter Generate shows, with picker versions.
+
+        Generate's drop-down holds one browsing family; a Queues plan may cross several. Without an inventory yet
+        the drop-down's own entries are all there is. Never blocks or contacts a provider.
+        """
+        snapshot = self._inventory_snapshot
+        combo = self.page.modelCombo
+        listed = [combo.itemText(index) for index in range(combo.count())]
+        known = list(eligible_model_ids(snapshot)) if snapshot is not None else []
+        models = sorted(dict.fromkeys([*known, *listed]), key=str.casefold)
+        return {
+            "models": models,
+            "model_versions": {model: checkpoint_picker_versions(model, snapshot) for model in models},
+        }
+
     def queue_edit_job(self):
         """The current Inpaint edit for the Queues tab, or None outside Inpaint mode."""
         return self.inpaint.queue_job() if self.inpaint.active else None

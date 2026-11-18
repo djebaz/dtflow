@@ -483,6 +483,7 @@ class MainWindow:
             simulation_source=self.generation.simulation,
             created_hook=self.generation.queue_created,
             choices_source=self.generation.plan_choices,
+            models_source=self.generation.plan_models,
             generate_hook=self._show_generation,
             reuse_hook=self._reuse_queue_request,
             activity=self.activity,
@@ -497,7 +498,7 @@ class MainWindow:
         )
         self._prompt_hints.bind(
             self.queue_page.composerPromptHintsButton,
-            lambda: tuple(self.queue._draft[0].loras) if self.queue._draft is not None else (),
+            lambda: self.queue._fixed_loras() if self.queue._draft is not None else (),
             title="Queue LoRAs",
         )
         self.scripts.run_start = self.queue.start_script
