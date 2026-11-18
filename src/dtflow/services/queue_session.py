@@ -227,6 +227,28 @@ async def create_edit_queue(
     return await create_queue(state, backend, items, up_next=up_next, composer_source=composer_source)
 
 
+async def _check_pose_queue(
+    state: Path,
+    selection: BackendSelection,
+    items: list[ResolvedGenerationRequest],
+    control,
+    *,
+    saved: CredentialProvider | None,
+) -> None:
+    """Validate all models and the current server's control availability without staging or uploading."""
+    if selection.name != "cloud":
+        raise ValidationError("A pose queue requires DT+ Cloud.")
+    for item in items:
+        await settle(asyncio.to_thread(session._require_flux1, state, item.model_id))
+    async with session.open_session(selection, state, durable=False, saved=saved) as service:
+        inventory = await service.get_inventory(refresh=True)
+    if not any(
+        entry.identifier == control.checkpoint and entry.availability == "listed_in_server_inventory"
+        for entry in inventory.entries
+    ):
+        raise ValidationError("DT+ does not list the selected pose control; no map was staged or uploaded.")
+
+
 async def create_pose_queue(
     state: Path,
     backend: dict[str, Any],
@@ -258,15 +280,7 @@ async def create_pose_queue(
     items = expand_items(base, count) if plan is None else expand_plan(base, plan, receipts=receipts)
     if any((item.width_px, item.height_px) != (base.width_px, base.height_px) for item in items):
         raise ValidationError("A pose queue uses one fitted map size; remove size variations.")
-    for item in items:
-        await settle(asyncio.to_thread(session._require_flux1, state, item.model_id))
-    async with session.open_session(selection, state, durable=False, saved=saved) as service:
-        inventory = await service.get_inventory(refresh=True)
-    if not any(
-        entry.identifier == control.checkpoint and entry.availability == "listed_in_server_inventory"
-        for entry in inventory.entries
-    ):
-        raise ValidationError("DT+ does not list the selected pose control; no map was staged or uploaded.")
+    await _check_pose_queue(state, selection, items, control, saved=saved)
 
     prepared, map_evidence = await settle(
         asyncio.to_thread(fit_pose_map, content, dict(evidence), base.width_px, base.height_px)
@@ -280,6 +294,33 @@ async def create_pose_queue(
         # Edit as new must load the staged pose, not reconstruct a plain text-to-image base.
         composer_source = {**composer_source, "base": asdict(replace(pose, image_inputs=staged, prepared_assets=()))}
     return await create_queue(state, backend, final, up_next=up_next, composer_source=composer_source)
+
+
+async def create_saved_pose_queue(
+    state: Path,
+    backend: dict[str, Any],
+    selection: BackendSelection,
+    base: ResolvedGenerationRequest,
+    *,
+    saved: CredentialProvider | None = None,
+    plan: Plan | None = None,
+    count: int = 1,
+    up_next: bool = False,
+    receipts: tuple[PreparedAsset, ...] = (),
+    composer_source: dict | None = None,
+) -> str:
+    """Create a queue from a recorded pose without changing the retained map or submitting anything."""
+    if base.pose_control is None or base.image_inputs is None:
+        raise ValidationError("This request has no retained pose to queue.")
+    if backend.get("name") != "cloud":
+        raise ValidationError("The recorded pose requires DT+ Cloud; no queue was created.")
+    items = expand_items(base, count) if plan is None else expand_plan(base, plan, receipts=receipts)
+    await _check_pose_queue(state, selection, items, base.pose_control, saved=saved)
+    try:
+        await settle(asyncio.to_thread(restore_image_inputs, state, base.image_inputs))
+    except (ValidationError, OSError) as exc:
+        raise ValidationError(f"The retained pose map is unavailable: {exc}. No queue was created.") from exc
+    return await create_queue(state, backend, items, up_next=up_next, composer_source=composer_source)
 
 
 # Items a relaunch with ``failed_only`` (and Retry item) takes again: settled without a saved image.
