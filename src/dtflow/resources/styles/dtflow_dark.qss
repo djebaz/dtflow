@@ -1111,6 +1111,7 @@ QWidget#GalleryDetailPage QPushButton[role="galleryMode"]:focus {
 /* Browse reuses Generate's explicit frame and padding treatment, introduced in #46. */
 QFrame#generationContextPanel QComboBox,
 QComboBox#poseControlCombo,
+QComboBox#poseModeCombo,
 QWidget#browseTab QComboBox {
   background: ${color.input};
   border: 1px solid ${color.border};
@@ -1120,13 +1121,16 @@ QWidget#browseTab QComboBox {
 }
 QFrame#generationContextPanel QComboBox:hover,
 QComboBox#poseControlCombo:hover:enabled,
+QComboBox#poseModeCombo:hover:enabled,
 QWidget#browseTab QComboBox:hover:enabled {
   border-color: ${color.inputBorderHover};
 }
 QFrame#generationContextPanel QComboBox:focus,
 QFrame#generationContextPanel QComboBox:on,
 QComboBox#poseControlCombo:focus,
+QComboBox#poseModeCombo:focus,
 QComboBox#poseControlCombo:on,
+QComboBox#poseModeCombo:on,
 QWidget#browseTab QComboBox:focus,
 QWidget#browseTab QComboBox:on,
 QWidget#browseTab QComboBox[menuOpen="true"] {
