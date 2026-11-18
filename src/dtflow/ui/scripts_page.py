@@ -353,14 +353,15 @@ class ScriptsPage:
 
     def _build_center(self):
         ui = self.designer
-        self.text_mode, self.inpaint_mode, self.scripts_mode = (
+        self.text_mode, self.inpaint_mode, self.controlnet_mode, self.scripts_mode = (
             ui.textModeButton,
             ui.inpaintModeButton,
+            ui.controlnetModeButton,
             ui.scriptsModeButton,
         )
         self.mode_group = QButtonGroup(self.center)
         self.mode_group.setExclusive(True)
-        for button in (self.text_mode, self.inpaint_mode, self.scripts_mode):
+        for button in (self.text_mode, self.inpaint_mode, self.controlnet_mode, self.scripts_mode):
             self.mode_group.addButton(button)
         self.scripts_mode.setChecked(True)
         self.details_button = ui.scriptsInspectorToggle
