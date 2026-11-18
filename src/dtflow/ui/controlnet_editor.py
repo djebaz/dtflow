@@ -175,7 +175,7 @@ class ControlnetEditor(QObject):
         self.form.photoKindButton.clicked.connect(lambda: self._set_kind("photo"))
         self.form.mapKindButton.clicked.connect(lambda: self._set_kind("map"))
         self.form.posePeopleList.currentRowChanged.connect(self._list_selected)
-        self.canvas.personPicked.connect(self.form.posePeopleList.setCurrentRow)
+        self.canvas.personPicked.connect(lambda row: self.form.posePeopleList.setCurrentRow(row))
         self.canvas.sourceDropped.connect(self.load_source)
         self.form.poseControlCombo.currentIndexChanged.connect(self._control_changed)
         self.form.poseStrengthSpin.valueChanged.connect(self._strength_changed)
