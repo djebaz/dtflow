@@ -18,6 +18,8 @@ MODELS = ("flux_1_dev_f16.ckpt", "flux_1_dev_q5p.ckpt", "flux_1_dev_q8p.ckpt")
 # Only this checkpoint with Union Pro 1.0 q5p at 0.7 has been confirmed (#502). Other FLUX.1 variants may be tried and
 # are labelled "not verified"; a checkpoint moves here only when the owner confirms it.
 VERIFIED_MODELS = ("flux_1_dev_q5p.ckpt",)
+# Draw Things "Control Force" and the step range over which the control applies (fractions of the run).
+CONTROL_MODES = ("Balanced", "Prompt", "Control")
 
 
 def is_flux1(model_id: str, base_model: str | None = None) -> bool:
@@ -61,6 +63,9 @@ class PoseControl:
     strength: float
     input_type: str = "pose"
     evidence: tuple[tuple[str, str], ...] = ()
+    control_mode: str = "Balanced"
+    guidance_start: float = 0.0
+    guidance_end: float = 1.0
 
     def __post_init__(self):
         if self.checkpoint not in CONTROLS or self.input_type != "pose":
@@ -70,6 +75,13 @@ class PoseControl:
             raise ValidationError(
                 "Pose strength must be finite and greater than 0, at most 2; omit control for baseline."
             )
+        if self.control_mode not in CONTROL_MODES:
+            raise ValidationError("Pose control mode must be Balanced, Prompt or Control.")
+        for value in (self.guidance_start, self.guidance_end):
+            if type(value) not in (int, float) or not math.isfinite(value) or not 0 <= value <= 1:
+                raise ValidationError("Pose start and end must be between 0 and 1.")
+        if not self.guidance_start < self.guidance_end:
+            raise ValidationError("Pose start must be before its end.")
         from dtflow.core.models import validate_metadata
 
         validate_metadata(self.evidence)

@@ -7,7 +7,7 @@ from dataclasses import asdict
 from pathlib import Path
 
 from dtflow.core.models import TimeoutPolicy, ValidationError
-from dtflow.core.pose import CONTROLS, PoseControl
+from dtflow.core.pose import CONTROL_MODES, CONTROLS, PoseControl
 
 
 def add_commands(commands, add_request_options):
@@ -45,8 +45,12 @@ def add_commands(commands, add_request_options):
             source.add_argument("-ph", "--photo", type=Path, help="Explicit local ONNX extraction before submission.")
             child.add_argument("-pn", "--person", type=int, help="Person number when the photo shows several people.")
             child.add_argument("-co", "--control", choices=CONTROLS, required=True)
+            child.add_argument("-cm", "--control-mode", choices=CONTROL_MODES, default="Balanced",
+                               help="Draw Things control force: Balanced, Prompt (prompt leads) or Control (pose leads).")
+            child.add_argument("-st", "--start", type=float, default=0.0, help="Control start, 0..1 of the steps.")
+            child.add_argument("-en", "--end", type=float, default=1.0, help="Control end, 0..1 of the steps.")
             child.add_argument("-cs", "--strength", type=float, required=True,
-                               help="Control weight (0,2], NOT img2img denoising or text guidance; full step range, Balanced.")
+                               help="Control weight (0,2], NOT img2img denoising or text guidance.")
 
 
 async def run(args):
@@ -84,7 +88,9 @@ async def run(args):
         if request.pose_control is None:
             raise ValidationError("Retry requires saved pose control settings.")
     else:
-        control = PoseControl(args.control, args.strength)
+        control = PoseControl(
+            args.control, args.strength, control_mode=args.control_mode, guidance_start=args.start, guidance_end=args.end
+        )
         request = resolve_generation(args)
         # Validate the checkpoint family before reading a photograph or running ONNX.
         from dtflow.core.pose import is_flux1

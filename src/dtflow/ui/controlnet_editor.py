@@ -184,6 +184,8 @@ class ControlnetEditor(QObject):
         self.canvas.sourceDropped.connect(self.load_source)
         self.form.poseControlCombo.currentIndexChanged.connect(self._control_changed)
         self.form.poseStrengthSpin.valueChanged.connect(self._strength_changed)
+        self.form.poseStartSpin.valueChanged.connect(self._range_changed)
+        self.form.poseEndSpin.valueChanged.connect(self._range_changed)
         page.textToImageModeButton.toggled.connect(self.sync_mode)
         page.inpaintModeButton.toggled.connect(self.sync_mode)
         page.controlnetModeButton.toggled.connect(self.sync_mode)
@@ -338,7 +340,8 @@ class ControlnetEditor(QObject):
         form.poseStrengthSpin.blockSignals(True)
         form.poseStrengthSpin.setValue(view.strength)
         form.poseStrengthSpin.blockSignals(False)
-        form.poseStrengthSpin.setEnabled(chosen is not None)
+        for widget in (form.poseStrengthSpin, form.poseModeCombo, form.poseStartSpin, form.poseEndSpin):
+            widget.setEnabled(chosen is not None)
         self.facts.setText(view.extraction_error or view.map_facts)
         self.facts.setToolTip(view.map_note)
         self._state(self.facts, "error" if view.extraction_error else "unknown")
@@ -467,6 +470,25 @@ class ControlnetEditor(QObject):
         if 0 <= index < len(self._controls):
             self._control_index = index
             self.refresh()
+
+    def _set_range(self, mode, start, end):
+        """Apply a remembered control force and range; anything unusable keeps the current values."""
+        form = self.form
+        if isinstance(mode, str) and form.poseModeCombo.findText(mode) >= 0:
+            form.poseModeCombo.setCurrentText(mode)
+        numbers = all(isinstance(v, (int, float)) and not isinstance(v, bool) for v in (start, end))
+        if numbers and 0 <= start < end <= 1:
+            form.poseStartSpin.setMaximum(0.95)
+            form.poseEndSpin.setMinimum(0.05)
+            form.poseStartSpin.setValue(float(start))
+            form.poseEndSpin.setValue(float(end))
+            self._range_changed()
+
+    def _range_changed(self, *_):
+        """Keep the start before the end: each spin box stops one step short of the other."""
+        form = self.form
+        form.poseStartSpin.setMaximum(round(form.poseEndSpin.value() - 0.05, 2))
+        form.poseEndSpin.setMinimum(round(form.poseStartSpin.value() + 0.05, 2))
 
     def _strength_changed(self, value):
         self._strength = float(value)
@@ -739,7 +761,14 @@ class ControlnetEditor(QObject):
         if self.blocker() or self._map is None:
             return None
         choice = self._controls[self._control_index]
-        control = PoseControl(choice.checkpoint, self._strength)
+        form = self.form
+        control = PoseControl(
+            choice.checkpoint,
+            self._strength,
+            control_mode=form.poseModeCombo.currentText(),
+            guidance_start=round(form.poseStartSpin.value(), 2),
+            guidance_end=round(form.poseEndSpin.value(), 2),
+        )
         evidence = tuple(sorted((str(k), str(v)) for k, v in self._map_evidence.items()))
         return PoseJob(self._map, evidence, control)
 
@@ -761,6 +790,9 @@ class ControlnetEditor(QObject):
             "person": self._selected,
             "control": chosen,
             "strength": self._strength,
+            "control_mode": self.form.poseModeCombo.currentText(),
+            "start": self.form.poseStartSpin.value(),
+            "end": self.form.poseEndSpin.value(),
         }
 
     def restore(self, document):
@@ -771,6 +803,7 @@ class ControlnetEditor(QObject):
         if isinstance(strength, (int, float)) and not isinstance(strength, bool) and 0 < strength <= 2:
             self._strength = float(strength)
             self.form.poseStrengthSpin.setValue(self._strength)
+        self._set_range(document.get("control_mode"), document.get("start"), document.get("end"))
         paths = document.get("paths")
         if isinstance(paths, dict):
             self._paths = {k: v for k, v in paths.items() if k in ("photo", "map") and isinstance(v, str)}
@@ -827,6 +860,7 @@ class ControlnetEditor(QObject):
             self._filename = f"Retained map\n{content.width} × {content.height} · restored from the saved image"
             self._map_evidence = {str(k): str(v) for k, v in pose.get("evidence", ())}
             self._strength = float(pose["strength"])
+            self._set_range(pose.get("control_mode"), pose.get("guidance_start"), pose.get("guidance_end"))
             for index, choice in enumerate(self._controls):
                 if choice.checkpoint == pose.get("checkpoint"):
                     self._control_index = index
