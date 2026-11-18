@@ -41,6 +41,7 @@ from dtflow.logging_setup import configured_directory, development_mode
 from dtflow.paths import application_state_dir
 from dtflow.persistence.cache_coordination import CacheBusyError, CacheCleanupError, CacheSafetyError
 from dtflow.persistence.image_recycle import reconcile as reconcile_images
+from dtflow.persistence.store import PersistenceError
 from dtflow.persistence.last_session import load_last_session, save_last_session
 from dtflow.persistence.original_io import (
     OriginalImagesBusyError,
@@ -53,7 +54,7 @@ from dtflow.services.cache_management import CATEGORIES, cache_usage, purge_cach
 from dtflow.services.catalogue import Catalogue, FAMILY_LABELS, import_user_loras
 from dtflow.services.lora_family import retained_families
 from dtflow.services.lora_auto_naming import normalize_previous_retained
-from dtflow.services.lora_metadata_edit import read_lora_rows
+from dtflow.services.lora_metadata_edit import read_lora_rows, read_unretained_loras, remove_unretained_lora
 from dtflow.services.lora_naming import label_overrides, set_label_overrides
 from dtflow.services.preflight import checkpoint_picker_versions
 from dtflow.services.session import observe_key
@@ -522,6 +523,7 @@ class MainWindow:
         self.generation.inpaint._controls()
         self.scripts.text_mode.clicked.connect(lambda: self._leave_scripts(inpaint=False))
         self.scripts.inpaint_mode.clicked.connect(lambda: self._leave_scripts(inpaint=True))
+        self.scripts.controlnet_mode.clicked.connect(lambda: self._leave_scripts(inpaint=False, controlnet=True))
         # One-click Queue (#135): the same popover from the header and from Generate's prompt header.
         arrow = self.generation_page.queueGenerateButton
         self.queue_popover = QueuePopover(
@@ -662,6 +664,9 @@ class MainWindow:
         form.editLoraMetadataButton.clicked.connect(self.edit_lora_metadata)
         self._lora_records: dict[tuple[str, int], dict] = {}
         self._lora_entries: list[dict] = []
+        self._lora_unretained: list[dict] = []  # asset-registry LoRAs with no retained copy (#509)
+        self._lora_no_copy: set[tuple[str, int]] = set()
+        self._retained_stats = (0, 0)
         self._retained_normalized = False
         self._lora_names: dict[tuple[str, int], str] = {}
         self._lora_prepared = frozenset()
@@ -1092,11 +1097,18 @@ class MainWindow:
         if self.scripts.accept_inpaint_snapshot(source, mask, thumbnail):
             self._show_scripts()
 
-    def _leave_scripts(self, *, inpaint: bool) -> None:
+    def _leave_scripts(self, *, inpaint: bool, controlnet: bool = False) -> None:
         """Return to the canonical Generate form without resetting another workspace."""
         self._scripts_active = False
         self.scripts.drawer.hide()
-        target = self.generation_page.inpaintModeButton if inpaint else self.generation_page.textToImageModeButton
+        page = self.generation_page
+        target = (
+            page.controlnetModeButton
+            if controlnet
+            else page.inpaintModeButton
+            if inpaint
+            else page.textToImageModeButton
+        )
         target.setChecked(True)
         for stack in (self.shell.leftStack, self.shell.centerStack, self.shell.rightStack):
             stack.setCurrentIndex(1)
@@ -2350,12 +2362,8 @@ class MainWindow:
             else "No custom LoRA definitions imported."
         )
         self.form.clearCustomLorasButton.setEnabled(count > 0)
-        unit = "LoRA" if stored_count == 1 else "LoRAs"
-        self.form.retainedLorasStatusLabel.setText(
-            f"{stored_count} retained {unit} · {self._human_bytes(stored_bytes)} stored locally."
-            if stored_count
-            else "No locally retained LoRAs."
-        )
+        self._retained_stats = (stored_count, stored_bytes)
+        self._update_retained_status()
         self._lora_entries = entries
         self.form._lora_hint_library.entries = entries
         self._prompt_hints.refresh()
@@ -2363,6 +2371,34 @@ class MainWindow:
         self._render_lora_table()  # the retained files show at once; metadata columns follow from a separate read
         self._read_summary("lora_records", self._read_lora_records, self._lora_library_read)
         self._read_summary("lora_families", self._read_lora_families, self._lora_families_read)
+        self._read_summary("lora_unretained", self._read_unretained_loras, self._lora_unretained_read)
+
+    def _update_retained_status(self) -> None:
+        count, size = self._retained_stats
+        unit = "LoRA" if count == 1 else "LoRAs"
+        text = (
+            f"{count} retained {unit} · {self._human_bytes(size)} stored locally."
+            if count
+            else "No locally retained LoRAs."
+        )
+        missing = len(self._lora_unretained)
+        if missing:
+            text += f" {missing} with no local copy."
+        self.form.retainedLorasStatusLabel.setText(text)
+
+    def _read_unretained_loras(self):
+        async def read():
+            return await asyncio.wait_for(read_unretained_loras(self.state_dir), 20)
+
+        return asyncio.run(read())
+
+    def _lora_unretained_read(self, items, error) -> None:
+        if self._removing_retained_lora:
+            return
+        # A failed or slow read leaves the retained files as painted; the extra rows simply stay absent.
+        self._lora_unretained = [] if error is not None or items is None else items
+        self._update_retained_status()
+        self._render_lora_table()
 
     def _read_lora_families(self):
         """Slow local work (hashes whole files), off the first paint: auto-naming once per run, then family detection."""
@@ -2507,7 +2543,62 @@ class MainWindow:
             self._lora_row_actions(row, (sha256, size), version, record)
             if (sha256, size) == identity:
                 table.selectRow(row)
+        self._render_no_copy_rows(len(rows), set(entries_by_identity), identity)
         self._retained_lora_selection_changed()
+
+    def _render_no_copy_rows(self, first: int, retained: set, identity) -> None:
+        """Managed LoRAs the asset registry knows but the retained index does not: listed once, removable by records."""
+        table = self.form.retainedLorasTable
+        owner = self._lora_prepare_owner
+        rows = []
+        for item in self._lora_unretained:
+            key = (item["sha256"], item["size"])
+            if key in retained:
+                continue  # a retained copy wins; never listed twice
+            record = item.get("record") or {}
+            name = record.get("managed_identifier") or (item["names"][0] if item["names"] else record.get("short_name"))
+            rows.append((str(name or "Unnamed LoRA"), key, item, record))
+        rows.sort(key=lambda row: row[0].casefold())
+        self._lora_no_copy = {key for _, key, _, _ in rows}
+        table.setRowCount(first + len(rows))
+        for offset, (name, (sha256, size), item, record) in enumerate(rows):
+            row = first + offset
+            table.removeCellWidget(row, 4)
+            version = record.get("family")
+            architecture = FAMILY_LABELS.get(version, version) if version else "Unknown"
+            state = item["receipts"].get(owner[0]) if owner else None
+            if owner is None:
+                receipt = "No DT+ key is selected."
+            elif state is None:
+                receipt = "No receipt on the selected key."
+            else:
+                receipt = f"Receipt on the selected key: {state}."
+            status = f"No local copy. {receipt}"
+            tooltip = (
+                f"{name}\nNo local copy · {self._human_bytes(size)} · SHA-256 {sha256}\n{receipt}\n"
+                "Remove deletes only DTFlow's local records of this LoRA, not DT+ storage, saved results or history."
+            )
+            cells = (
+                record.get("short_name") or "—",
+                architecture,
+                record.get("format_code") or "—",
+                "",
+                record.get("trigger_words") or "—",
+            )
+            self._lora_names[(sha256, size)] = name
+            for column, text in zip((0, 1, 2, 3, 5), cells, strict=True):
+                cell = QTableWidgetItem(text)
+                cell.setToolTip(tooltip)
+                if column == 0:
+                    cell.setData(Qt.ItemDataRole.UserRole, (sha256, size))
+                elif column == 3:
+                    cell.setIcon(QIcon(status_dot("warning", 6)))
+                    cell.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+                    cell.setToolTip(status)
+                    cell.setData(Qt.ItemDataRole.AccessibleTextRole, status)
+                table.setItem(row, column, cell)
+            if (sha256, size) == identity:
+                table.selectRow(row)
 
     def _lora_row_actions(self, row, identity, family, metadata) -> None:
         panel = self.generation.lora
@@ -2678,6 +2769,12 @@ class MainWindow:
         selected = self._selected_lora_identity() is not None
         busy = self.generation.lora._q8p_running or self.generation.lora.preparing
         self.form.removeRetainedLoraButton.setEnabled(not self._removing_retained_lora and not busy and selected)
+        no_copy = self._selected_lora_identity() in self._lora_no_copy
+        self.form.removeRetainedLoraButton.setToolTip(
+            "Remove DTFlow's local records of the selected LoRA after confirmation. Nothing on DT+ is changed."
+            if no_copy
+            else "Remove the selected retained copy only, not the original, remote asset or history."
+        )
         self.form.editLoraMetadataButton.setEnabled(not self._removing_retained_lora and selected)
         self.form.dtStorageButton.setEnabled(not self._removing_retained_lora)
 
@@ -2807,6 +2904,9 @@ class MainWindow:
         identity = self._selected_lora_identity()
         if identity is None:
             return
+        if identity in self._lora_no_copy:
+            self._confirm_remove_unretained(identity)
+            return
         sha256, size = identity
         self._removing_retained_lora = True
         self.form.removeRetainedLoraButton.setEnabled(False)
@@ -2815,6 +2915,55 @@ class MainWindow:
             asyncio.to_thread(LoraStore(self.state_dir).remove, sha256, size),
             self._retained_lora_removed,
         )
+
+    def _confirm_remove_unretained(self, identity: tuple[str, int]) -> None:
+        """A LoRA with no local copy has only registry records: confirm in the window, then delete those alone."""
+        button = self.form.removeRetainedLoraButton
+        if self.inline.commit(button):
+            return
+        name = self._lora_names.get(identity, "this LoRA")
+
+        def proceed():
+            if self._removing_retained_lora:
+                return
+            self._removing_retained_lora = True
+            button.setEnabled(False)
+            self.form.retainedLorasTable.setEnabled(False)
+            self.runner.submit(
+                remove_unretained_lora(self.state_dir, *identity),
+                self._unretained_lora_removed,
+            )
+
+        confirm_action(
+            self.form,
+            button,
+            "Remove LoRA records",
+            f"Remove DTFlow's local records of {name}? Its managed name, short name, trigger words and "
+            "receipts are deleted and cannot be restored. DT+ storage, saved results, queues, workflows and "
+            "source files are not changed; Prepare can attach the file again later.",
+            proceed,
+            danger=True,
+            confirm_text="Remove",
+        )
+
+    def _unretained_lora_removed(self, removed, error) -> None:
+        self._removing_retained_lora = False
+        self.form.retainedLorasTable.setEnabled(True)
+        if error is not None:
+            known = isinstance(error, (ValidationError, PersistenceError))
+            InlineNotice.error(
+                self.form,
+                "LoRA records not removed",
+                f"{error} The records were left unchanged."
+                if known
+                else "The records could not be removed and were left unchanged.",
+            )
+        elif removed:
+            self.form.statusBar().showMessage(
+                "Local LoRA records removed. DT+ storage, saved results and history unchanged.", 5000
+            )
+        self.refresh_custom_loras(background=True)
+        self.generation.lora.refresh_assets()
 
     def _retained_lora_removed(self, removed, error) -> None:
         self._removing_retained_lora = False

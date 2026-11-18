@@ -422,6 +422,31 @@ Create one or import a local .js file.</string>
              </widget>
             </item>
             <item>
+             <widget class="QPushButton" name="controlnetModeButton">
+              <property name="text">
+               <string>Controlnet</string>
+              </property>
+              <property name="enabled">
+               <bool>true</bool>
+              </property>
+              <property name="accessibleName">
+               <string>Controlnet</string>
+              </property>
+              <property name="checkable">
+               <bool>true</bool>
+              </property>
+              <property name="segmentEdge" stdset="0">
+               <string>middle</string>
+              </property>
+              <property name="sizePolicy">
+               <sizepolicy hsizetype="Maximum" vsizetype="Fixed">
+                <horstretch>0</horstretch>
+                <verstretch>0</verstretch>
+               </sizepolicy>
+              </property>
+             </widget>
+            </item>
+            <item>
              <widget class="QPushButton" name="scriptsModeButton">
               <property name="text">
                <string>Scripts</string>
