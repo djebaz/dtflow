@@ -153,6 +153,9 @@ def parser() -> argparse.ArgumentParser:
             child.add_argument("-o", "--out", type=Path, help="Final output root (default: state directory/outputs).")
             add_scenario_option(child)
             child.add_argument("-t", "--timeout", type=float, default=600.0, help="Total backend deadline in seconds.")
+    from dtflow.pose_cli import add_commands as add_pose_commands
+
+    add_pose_commands(commands, add_request_options)
     script = commands.add_parser("script", help=COMMAND_HELP["script"], description=COMMAND_HELP["script"])
     script.add_argument(
         "file", type=Path, nargs="?", help="Script (.js) to analyze: parsed and scanned, never executed."
@@ -923,6 +926,10 @@ def run_script_command(args: argparse.Namespace) -> int:
 
 
 async def run(args: argparse.Namespace) -> int:
+    if args.command == "pose":
+        from dtflow.pose_cli import run as run_pose
+
+        return await run_pose(args)
     if args.command == "lora":
         from dtflow.lora_cli import run_command
 

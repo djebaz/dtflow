@@ -221,8 +221,15 @@ class GenerationService:
             )
             if expected != request.image_inputs:
                 raise ValueError("Prepared image inputs do not match the request.")
-        elif prepared_inputs is not None:
+        elif prepared_inputs is not None and request.pose_control is None:
             raise ValueError("Text-to-image cannot include prepared image inputs.")
+        if request.pose_control is not None:
+            if caps.backend_id != "drawthings-cloud" or self.input_state is None or prepared_inputs is None:
+                raise ValidationError("Pose requires a durable cloud session and prepared inputs.")
+            if ImageInputSnapshot.from_prepared(
+                request.image_inputs.attempt_id, prepared_inputs, preserve_outside=False
+            ) != request.image_inputs:
+                raise ValidationError("Pose inputs do not match the request.")
         unsupported = tuple(
             (name, code)
             for name, code, failed in (
@@ -357,7 +364,7 @@ class GenerationService:
             attempt_id = uuid4().hex
         elif not re.fullmatch(r"[0-9a-f]{32}", attempt_id):
             raise ValueError("A caller-named attempt id must be 32 lowercase hex characters.")
-        if image_operation:
+        if image_operation or request.pose_control is not None:
             request = replace(request, image_inputs=replace(request.image_inputs, attempt_id=attempt_id))
         ATTEMPT.set(attempt_id)
         preparation("creating_attempt")
@@ -403,7 +410,7 @@ class GenerationService:
             preparation("waiting_buffer_budget")
             await self.budget.acquire(reservation)
             reserved = True
-            if image_operation:
+            if image_operation or request.pose_control is not None:
                 preparation("saving_image_snapshot")
                 snapshot = await settle(
                     asyncio.to_thread(

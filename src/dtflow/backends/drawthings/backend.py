@@ -461,7 +461,21 @@ class DrawThingsBackend:
                     emit("preparing", stage="resolving_model")
                     spec = await self._model_spec(request.model_id)
                     emit("preparing", stage="encoding_request")
-                    wire = build_generation_message(request, await self._secret(), base_version, spec)
+                    if request.pose_control is not None:
+                        if self.backend_id != "drawthings-cloud" or self._image_inputs_loader is None:
+                            raise ValidationError("Pose requires cloud with a managed input loader.")
+                        if not self._inventory or not any(
+                            e.identifier == request.pose_control.checkpoint
+                            and e.availability == "listed_in_server_inventory" for e in self._inventory.entries
+                        ):
+                            raise ValidationError("DT+ does not advertise the selected pose control; refusing guidance loss.")
+                        prepared = await settle(asyncio.to_thread(self._image_inputs_loader, request.image_inputs))
+                        wire = await settle(asyncio.to_thread(
+                            build_generation_message, request, await self._secret(), base_version, spec,
+                            prepared=prepared, backend_id=self.backend_id, limits=limits,
+                        ))
+                    else:
+                        wire = build_generation_message(request, await self._secret(), base_version, spec)
                 else:
                     # Never refresh/derive cloud descriptions on this path. The
                     # exact published entry and digest were gated before open/auth.
