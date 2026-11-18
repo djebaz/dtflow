@@ -29,7 +29,8 @@ from dtflow.ui.file_dialogs import QFileDialog
 from dtflow.ui.model_download import is_downloading, start_pose_download
 from dtflow.ui.pose_canvas import PoseCanvas
 
-QUEUE_NOTE = "Controlnet requests cannot be queued."
+IMAGES_NOTE = "Controlnet makes one image per Generate; queuing a pose (Images, Repeat, plans) is planned in #505."
+QUEUE_NOTE = "Controlnet requests cannot be queued yet (planned in #505)."
 CONFIGURATION_NOTE = "Saving a configuration or preset covers text-to-image only: it would drop the pose."
 CONSENT = "The pose map is sent to DT+ Cloud and may use credits. Generate asks before the first use."
 DETECTOR_NOTE = "YOLO26n-pose · about 11.6 MiB · AGPL-3.0 · runs on this computer"
@@ -218,6 +219,8 @@ class ControlnetEditor(QObject):
         elif not self.page.inpaintModeButton.isChecked():
             self.page.resultPreviewLabel.setVisible(True)
             self.page.generateButton.setText("Generate image")
+            self.page.imagesSpinBox.setEnabled(True)
+            self.page.imagesSpinBox.setToolTip("")
         for name in ("saveConfigurationButton", "savePresetButton"):
             widget = getattr(self.page, name)
             if active:
@@ -259,6 +262,8 @@ class ControlnetEditor(QObject):
             generate.setToolTip("Choose a model first: Generate needs a checkpoint." if no_model else "")
         page.queueGenerateButton.setEnabled(False)
         page.queueGenerateButton.setToolTip(QUEUE_NOTE)
+        page.imagesSpinBox.setEnabled(False)
+        page.imagesSpinBox.setToolTip(IMAGES_NOTE)
 
     def _list_selected(self, row):
         self.canvas.select(row if row >= 0 else None)
