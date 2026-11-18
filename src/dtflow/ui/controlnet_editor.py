@@ -1,7 +1,7 @@
 """Controlnet mode of the Generate page: the Pose source and Pose guidance cards and the read-only pose canvas.
 
-Presentation only. ``present`` applies one ``PoseView`` to the real widgets; nothing here extracts, downloads or
-generates, and the Generate action stays disabled until that behaviour exists."""
+``ControlnetEditor`` owns the mode: ``present`` applies one ``PoseView`` to the real widgets, extraction, the detector
+download and map fitting run on workers, and Generate follows the reason line the view carries."""
 
 import asyncio
 from dataclasses import dataclass, field
@@ -131,6 +131,7 @@ class ControlnetEditor(QObject):
         self._result = None
         self._controls = ()
         self._control_index = 0
+        self._generate_tip = False  # Generate's tooltip is ours while in this mode and cleared on leaving
         self._wanted_control = None  # a remembered control, applied once the inventory lists it
         self._paths = {}  # the last photo and the last body map, kept apart so switching between them restores each
         self._pending_person = None
@@ -221,6 +222,9 @@ class ControlnetEditor(QObject):
             self.page.generateButton.setText("Generate image")
             self.page.imagesSpinBox.setEnabled(True)
             self.page.imagesSpinBox.setToolTip("")
+        if not active and self._generate_tip:
+            self._generate_tip = False
+            self.page.generateButton.setToolTip("")
         for name in ("saveConfigurationButton", "savePresetButton"):
             widget = getattr(self.page, name)
             if active:
@@ -251,6 +255,7 @@ class ControlnetEditor(QObject):
         reason = self._view.blocker
         no_model = controller is not None and controller._model_missing()
         dispatching = controller is not None and controller._activity.dispatching
+        self._generate_tip = True
         if reason:
             generate.setEnabled(False)
             generate.setToolTip(reason)
@@ -474,6 +479,7 @@ class ControlnetEditor(QObject):
     def _control_changed(self, index):
         if 0 <= index < len(self._controls):
             self._control_index = index
+            self._wanted_control = self._controls[index].checkpoint  # the user's last pick wins over a restored one
             self.refresh()
 
     def _set_range(self, mode, start, end):
@@ -539,7 +545,11 @@ class ControlnetEditor(QObject):
 
     def load_source(self, path):
         """Decode the chosen file on a worker; a photo then runs the detector, a body map is used as it is."""
-        if self.runner.closed or self._extracting or self._downloading:
+        if self.runner.closed:
+            return
+        if self._extracting or self._downloading:
+            self._source_error = "Wait for the current extraction or download to finish, then choose the image again."
+            self.refresh()
             return
         path = Path(path)
         kind = self._kind
@@ -865,7 +875,10 @@ class ControlnetEditor(QObject):
             self._filename = f"Retained map\n{content.width} × {content.height} · restored from the saved image"
             self._map_evidence = {str(k): str(v) for k, v in pose.get("evidence", ())}
             self._strength = float(pose["strength"])
-            self._set_range(pose.get("control_mode"), pose.get("guidance_start"), pose.get("guidance_end"))
+            start, end = pose.get("guidance_start"), pose.get("guidance_end")
+            self._set_range(
+                pose.get("control_mode") or "Balanced", 0.0 if start is None else start, 1.0 if end is None else end
+            )
             for index, choice in enumerate(self._controls):
                 if choice.checkpoint == pose.get("checkpoint"):
                     self._control_index = index

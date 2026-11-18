@@ -1127,6 +1127,8 @@ class GenerationPage:
         diagnostic_event(log, "generation.retry", level=logging.INFO, data={"backend": name})
         if self._activity.dispatching:
             if self.queue_behind is None or isinstance(edit, PoseJob):
+                reason = "A pose generation cannot wait behind a queue. Retry when the queue has finished."
+                self._status(Presentation("error", "Retry not started", reason))
                 return False
             self._status(Presentation("ok", "Retry queued behind the running queue", "The Queues page reports it."))
             self.queue_behind(retried, name, endpoint, asset_ids, edit)
