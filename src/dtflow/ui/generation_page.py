@@ -978,8 +978,10 @@ class GenerationPage:
         }
 
     def queue_edit_job(self):
-        """The current Inpaint edit for the Queues tab, or None outside Inpaint mode."""
-        return self.inpaint.queue_job() if self.inpaint.active else None
+        """The independent queue draft's Inpaint or pose input, never a mutable Generate reference."""
+        if self.inpaint.active:
+            return self.inpaint.queue_job()
+        return self.controlnet.job() if self.controlnet.active else None
 
     def request_for_queue(self, *, preview: bool = False):
         """The validated request, backend and bound receipts for a new queue; raises ``FormError`` after marking.
@@ -989,8 +991,8 @@ class GenerationPage:
         """
         if self.inpaint.active and self.inpaint.queue_job() is None:
             raise FormError("Choose a source image and paint or select the area to change first.", None)
-        if self.controlnet.active:
-            raise FormError("Controlnet requests cannot be queued: leave Controlnet mode to queue text to image.", None)
+        if self.controlnet.active and self.controlnet.job() is None:
+            raise FormError(self.controlnet.blocker() or "Choose a valid pose map and control first.", None)
         self._mark(None)
         self._snap_size()
         name, endpoint = self._backend()
@@ -1075,7 +1077,7 @@ class GenerationPage:
                 )
                 return False
         images = self.page.imagesSpinBox.value()
-        if edit is None and images > 1 and self.queue_images is not None:
+        if (edit is None or isinstance(edit, PoseJob)) and images > 1 and self.queue_images is not None:
             # One total: every picture is its own single-image queue item (Repeat expansion), so it has a row,
             # thumbnail, seed, status and Retry in Queues. The queue's creation validates the form.
             self.queue_images(images)
@@ -1146,9 +1148,8 @@ class GenerationPage:
         )
         diagnostic_event(log, "generation.retry", level=logging.INFO, data={"backend": name})
         if self._activity.dispatching:
-            if self.queue_behind is None or isinstance(edit, PoseJob):
-                reason = "A pose generation cannot wait behind a queue. Retry when the queue has finished."
-                self._status(Presentation("error", "Retry not started", reason))
+            if self.queue_behind is None:
+                self._status(Presentation("error", "Retry not started", "Queue submission is unavailable."))
                 return False
             self._status(Presentation("ok", "Retry queued behind the running queue", "The Queues page reports it."))
             self.queue_behind(retried, name, endpoint, asset_ids, edit)
@@ -1221,13 +1222,6 @@ class GenerationPage:
         """The window's queue dispatch owns the state lock: hand the request to the Queues page as a one-item queue
         that waits up next and starts by itself after the running queue (issue #125). Nothing is dispatched here."""
         if self.queue_behind is None:
-            return
-        if isinstance(edit, PoseJob):
-            self._status(
-                Presentation(
-                    "warning", "Controlnet cannot wait behind a queue", "Try again when the running queue has ended."
-                )
-            )
             return
         try:
             request, name, endpoint, asset_ids = self.request_for_queue()
