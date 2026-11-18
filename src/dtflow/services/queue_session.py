@@ -638,12 +638,7 @@ async def _dispatch_one(store, state, queue_id, policy, saved, out, on_settle, o
             )
         # Pose is txt2img with an image-input snapshot. It needs the durable loader even though
         # image_scopes contains only img2img/inpaint operations.
-        has_pose = False
-        if not workflow:
-            _, _, stored = await asyncio.to_thread(read_queue_requests, state, queue_id)
-            has_pose = any(
-                record.get("pose_control") is not None for _, _, record in stored if isinstance(record, dict)
-            )
+        has_pose = not workflow and any(item.get("pose_control") is not None for item in queue["items"])
         if has_pose and selection.name != "cloud":
             raise ValidationError("Pose items require DT+ Cloud; the queue was not dispatched.")
         image_options = {
