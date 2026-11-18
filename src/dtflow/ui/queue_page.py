@@ -1543,13 +1543,12 @@ class QueuePage:
     def quick_disclosure(self, *, plan: bool) -> str:
         name, _ = self._composer_backend() if plan else self._backend()
         source = "the new queue's draft and plan" if plan else "Generate's current request"
-        pose = (
-            (isinstance(self._draft_job, PoseJob) or self._draft[0].pose_control is not None)
-            if plan and self._draft is not None
-            else isinstance(self._edit_source(), PoseJob)
-            if not plan
-            else False
-        )
+        if plan:
+            pose = self._draft is not None and (
+                isinstance(self._draft_job, PoseJob) or self._draft[0].pose_control is not None
+            )
+        else:
+            pose = isinstance(self._edit_source(), PoseJob)
         if pose:
             return f"Uses {source}. Provider: {name}. Start sends the pose map to DT+ Cloud and may use credits."
         return f"Uses {source}. Provider: {name}. A cloud run may use credits."
