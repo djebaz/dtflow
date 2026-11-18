@@ -19,8 +19,8 @@ def add_commands(commands, add_request_options):
     catalogue.set_defaults(state=Path(".dtflow"))
     for name in ("install", "extract", "generate", "retry"):
         child = actions.add_parser(name, help={
-            "install": "Explicitly download and verify the AGPL-3.0 YOLO11n ONNX detector (no inference).",
-            "extract": "Offline extraction only: exactly one body; omit low-confidence joints, no detailed face/fingers.",
+            "install": "Explicitly download and verify the AGPL-3.0 YOLO26n-pose ONNX detector (no inference).",
+            "extract": "Offline extraction only: one body (exactly one found, or chosen with --person); omit low-confidence joints, no detailed face/fingers.",
             "generate": "Explicit DT+ submission; sends pose map off-machine and may consume credits.",
             "retry": "Explicit NEW cloud submission using retained settings/map; not remote recovery (may use credits).",
         }[name])
@@ -28,6 +28,7 @@ def add_commands(commands, add_request_options):
         if name == "extract":
             child.add_argument("-i", "--image", type=Path, required=True)
             child.add_argument("-o", "--out", type=Path, required=True, help="New PNG; matching .pose.json evidence is saved.")
+            child.add_argument("-pn", "--person", type=int, help="Person number when the photo shows several people.")
         if name == "install":
             child.add_argument("-a", "--accept", action="store_true", required=True,
                                help="Explicitly accept the displayed publisher licence and download the pinned ONNX.")
@@ -44,6 +45,7 @@ def add_commands(commands, add_request_options):
             source = child.add_mutually_exclusive_group(required=True)
             source.add_argument("-im", "--image", type=Path, help="Prepared OpenPose RGB body map, black background.")
             source.add_argument("-ph", "--photo", type=Path, help="Explicit local ONNX extraction before submission.")
+            child.add_argument("-pn", "--person", type=int, help="Person number when the photo shows several people.")
             child.add_argument("-co", "--control", choices=CONTROLS, required=True)
             child.add_argument("-cs", "--strength", type=float, required=True,
                                help="Control weight (0,2], NOT img2img denoising or text guidance; full step range, Balanced.")
@@ -64,7 +66,7 @@ async def run(args):
     if args.pose_action == "catalogue":
         print(json.dumps({"controls": CONTROLS, "detector": asdict(DETECTOR),
                           "cloud_application": "unverified; requires Echo-listed control and owner smoke",
-                          "selection": "one body after NMS; incomplete torso refused; missing joints omitted",
+                          "selection": "one body (exactly one found, or --person); incomplete torso refused; missing joints omitted",
                           "fit": "aspect preserving, centered black padding; no crop"}, indent=2))
         return 0
     if args.pose_action == "install":
@@ -73,7 +75,7 @@ async def run(args):
         print(json.dumps(report, indent=2))
         return 0
     if args.pose_action == "extract":
-        content, evidence = await asyncio.to_thread(extract_body, args.image, args.state)
+        content, evidence = await asyncio.to_thread(extract_body, args.image, args.state, args.person)
         print(json.dumps(await asyncio.to_thread(save_extraction, args.out, content, evidence), indent=2))
         return 0
     policy = TimeoutPolicy(total=args.timeout)
@@ -97,7 +99,7 @@ async def run(args):
             raise ValidationError("Pose is restricted to exact FLUX.1 Dev f16/q5p/q8p checkpoints.")
         prepared, evidence = await asyncio.to_thread(
             prepare_pose, args.photo or args.image, request.width_px, request.height_px,
-            photo=args.photo is not None, state=args.state,
+            photo=args.photo is not None, state=args.state, person=args.person,
         )
         request = replace(request, schema_version=3, pose_control=replace(control, evidence=evidence),
                           image_inputs=ImageInputSnapshot.from_prepared(uuid4().hex, prepared, preserve_outside=False))
