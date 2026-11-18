@@ -1,6 +1,6 @@
 # Current development status
 
-Updated 2026-11-16 for 6.4.1 preparation, from merged main `81d68eb7` through PR #498. [6.4.0](https://github.com/djebaz/dtflow/releases/tag/v6.4.0) is published. See [6.4.1 notes](releases/v6.4.1.md) and its [release audit](plans/2026-11-16-release-6.4.1.md) for the next release scope and build gates.
+Updated 2026-11-18 for 6.4.1 preparation and in-review PR #510; the merged-main baseline remains `81d68eb7` through PR #498. [6.4.0](https://github.com/djebaz/dtflow/releases/tag/v6.4.0) is published. See [6.4.1 notes](releases/v6.4.1.md) and its [release audit](plans/2026-11-16-release-6.4.1.md) for the next release scope and build gates.
 
 ## Delivered since 6.4.0
 
@@ -14,6 +14,11 @@ Updated 2026-11-16 for 6.4.1 preparation, from merged main `81d68eb7` through PR
 ## Unreleased: Controlnet mode (#503, PR #504)
 
 - Generate Controlnet mode: pose guidance from a photograph (local YOLO26n-pose ONNX) or a body map with Union Pro 1.0 on DT+ Cloud; control force, apply from / to, person pick, Gallery Use settings restore. Verified only for `flux_1_dev_q5p` with Union Pro 1.0 q5p at 0.7; other FLUX.1 checkpoints are "not verified". Queueing a pose is tracked in #505.
+
+## Unreleased: queue composer corrections (#507, PR #510)
+
+- **Edit as new queue…** exposes and edits inherited Fixed LoRAs, excludes varying LoRAs from reconstructed legacy bases, and avoids carrying obsolete DT+ bindings into the new draft. **Add model** reads all known inventory families, not the Generate family's picker.
+- Owner reports a successful smoke test and supplied Windows PowerShell output of **179 passed in 36.40s**. The test command, tested backend and executable identity were not provided; this is owner-reported evidence, not independent agent execution or final release acceptance. The Fixed LoRAs/weight-chip removal distinction is explicitly accepted by the owner.
 
 ## 6.4.0 foundations
 
