@@ -1546,7 +1546,9 @@ class QueuePage:
         pose = (
             (isinstance(self._draft_job, PoseJob) or self._draft[0].pose_control is not None)
             if plan and self._draft is not None
-            else isinstance(self._edit_source(), PoseJob) if not plan else False
+            else isinstance(self._edit_source(), PoseJob)
+            if not plan
+            else False
         )
         if pose:
             return f"Uses {source}. Provider: {name}. Start sends the pose map to DT+ Cloud and may use credits."

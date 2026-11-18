@@ -401,9 +401,7 @@ class QueueDispatcher:
                             asyncio.to_thread(restore_image_inputs, self.service.input_state, request.image_inputs)
                         )
                         if request.pose_control is not None:
-                            await settle(
-                                asyncio.to_thread(_require_flux1, self.service.input_state, request.model_id)
-                            )
+                            await settle(asyncio.to_thread(_require_flux1, self.service.input_state, request.model_id))
                             inventory = await self.service.get_inventory()
                             if not any(
                                 entry.identifier == request.pose_control.checkpoint
@@ -417,7 +415,9 @@ class QueueDispatcher:
                         raise BackendError(
                             BackendFailure(
                                 ErrorCategory.VALIDATION,
-                                "pose_inputs_unavailable" if request.pose_control is not None else "image_inputs_unavailable",
+                                "pose_inputs_unavailable"
+                                if request.pose_control is not None
+                                else "image_inputs_unavailable",
                                 str(exc),
                                 request.request_id,
                             )
