@@ -39,7 +39,8 @@
     "page.controlnet": [
       "controlnet-02-empty",
       "controlnet-07-map-shown",
-      "controlnet-08-several-people"
+      "controlnet-08-several-people",
+      "controlnet-18-result-shown"
     ],
     "page.queues": [
       "queues-11-running",

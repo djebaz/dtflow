@@ -45,6 +45,7 @@ class PoseView:
     people: tuple[PosePerson, ...] = ()
     selected: int | None = None
     pose: QPixmap | None = None
+    result: QPixmap | None = None
     map_facts: str = ""
     extraction_error: str = ""
     controls: tuple[PoseControlChoice, ...] = (
@@ -193,8 +194,11 @@ class ControlnetEditor(QObject):
         canvas.set_people([(person.label, person.box) for person in view.people], view.selected)
         if view.pose is not None:
             canvas.set_pose(view.pose)
-        canvas.set_view(view.view if view.pose is not None or view.view == "Source" else "Source")
+        canvas.set_result(view.result if view.result is not None else QPixmap())
+        shown = {"Pose": view.pose, "Result": view.result}.get(view.view, True)
+        canvas.set_view(view.view if shown is not None else "Source")
         canvas._view_buttons["Pose"].setEnabled(view.pose is not None)
+        canvas._view_buttons["Result"].setEnabled(view.result is not None)
         canvas.setEnabled(not busy)
         form.poseControlCombo.blockSignals(True)
         form.poseControlCombo.clear()

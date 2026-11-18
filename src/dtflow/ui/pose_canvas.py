@@ -1,4 +1,5 @@
-"""Read-only pose preview: the chosen source or the extracted body map, with the people found drawn on the source."""
+"""Read-only pose preview: the chosen source, the extracted body map or the latest result, with the people found
+drawn on the source."""
 
 from PySide6.QtCore import QPointF, QRectF, Qt, Signal
 from PySide6.QtGui import QColor, QFont, QPainter, QPen, QPixmap
@@ -7,7 +8,7 @@ from PySide6.QtWidgets import QFrame, QHBoxLayout, QPushButton
 from dtflow.ui.image_preview import ImagePreview
 from dtflow.ui.theme import load_tokens
 
-VIEWS = ("Source", "Pose")
+VIEWS = ("Source", "Pose", "Result")
 
 
 class PoseCanvas(ImagePreview):
@@ -22,6 +23,7 @@ class PoseCanvas(ImagePreview):
         super().__init__(parent)
         self._source = QPixmap()
         self._pose = QPixmap()
+        self._result = QPixmap()
         self._people = ()  # (label, (x0, y0, x1, y1)) in source pixels
         self._selected = None
         self._view = "Source"
@@ -66,8 +68,17 @@ class PoseCanvas(ImagePreview):
         self._pose = pixmap
         self._show()
 
+    def set_result(self, pixmap: QPixmap):
+        """Display-only: the latest generated image; the source and the map stay as they are."""
+        self._result = pixmap
+        self._show()
+
+    def has_result(self):
+        return not self._result.isNull()
+
     def clear_all(self):
-        self._source, self._pose, self._people, self._selected = QPixmap(), QPixmap(), (), None
+        self._source, self._pose, self._result = QPixmap(), QPixmap(), QPixmap()
+        self._people, self._selected = (), None
         self._view = "Source"
         self._view_buttons["Source"].setChecked(True)
         self._show()
@@ -91,7 +102,11 @@ class PoseCanvas(ImagePreview):
         self.viewChanged.emit(view)
 
     def _show(self):
-        pixmap = self._pose if self._view == "Pose" and not self._pose.isNull() else self._source
+        pixmap = self._source
+        if self._view == "Pose" and not self._pose.isNull():
+            pixmap = self._pose
+        elif self._view == "Result" and not self._result.isNull():
+            pixmap = self._result
         self._pixmap = pixmap
         self._fit = True
         self._sync()
@@ -120,7 +135,7 @@ class PoseCanvas(ImagePreview):
         super().mousePressEvent(event)
 
     def _shows_people(self):
-        return self._view == "Source" or self._pose.isNull()
+        return self._pixmap is self._source or self._pixmap.cacheKey() == self._source.cacheKey()
 
     def paintEvent(self, event):
         super().paintEvent(event)

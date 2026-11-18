@@ -204,6 +204,7 @@
     {"id": "controlnet-16-verified-default", "category": "controlnet", "subcategory": "editing", "fixture": "controlnet", "stage": "ready", "level": "s", "path": "controlnet-16-verified-default.png"},
     {"id": "controlnet-11-provider-refusal", "category": "controlnet", "subcategory": "editing", "fixture": "controlnet", "stage": "failure", "level": "m", "path": "controlnet-11-provider-refusal.png"},
     {"id": "controlnet-17-body-map-shown", "category": "controlnet", "subcategory": "editing", "fixture": "controlnet", "stage": "ready", "level": "m", "path": "controlnet-17-body-map-shown.png"},
+    {"id": "controlnet-18-result-shown", "category": "controlnet", "subcategory": "editing", "fixture": "controlnet", "stage": "results", "level": "f", "path": "controlnet-18-result-shown.png"},
     {"id": "inpaint-21-models-download-offered", "category": "inpaint", "subcategory": "selection", "fixture": "inpaint", "stage": "setup", "level": "m", "path": "inpaint-21-models-download-offered.png"},
     {"id": "inpaint-22-models-download-confirmation", "category": "inpaint", "subcategory": "selection", "fixture": "inpaint", "stage": "ready", "level": "m", "path": "inpaint-22-models-download-confirmation.png"},
     {"id": "inpaint-23-models-download-progress", "category": "inpaint", "subcategory": "selection", "fixture": "inpaint", "stage": "running", "level": "m", "path": "inpaint-23-models-download-progress.png"},

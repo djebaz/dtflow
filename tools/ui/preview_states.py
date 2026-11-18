@@ -4220,6 +4220,36 @@ def pose_fixture_map(person):
     return QPixmap.fromImage(image)
 
 
+def pose_fixture_result(person):
+    """Stand-in for a generated image: a filled figure in the picked pose on a plain 768 x 1024 backdrop."""
+    from PySide6.QtGui import QLinearGradient, QPen
+
+    map_width, map_height = POSE_MAP_SIZE
+    scale = min(map_width / POSE_FIXTURE_SIZE[0], map_height / POSE_FIXTURE_SIZE[1])
+    offset_y = (map_height - POSE_FIXTURE_SIZE[1] * scale) / 2
+    image = QImage(map_width, map_height, QImage.Format.Format_RGB32)
+    painter = QPainter(image)
+    painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+    gradient = QLinearGradient(0, 0, 0, map_height)
+    gradient.setColorAt(0, QColor("#c9b27c"))
+    gradient.setColorAt(1, QColor("#5b4b3a"))
+    painter.fillRect(image.rect(), gradient)
+    centre, top, size, raised = _pose_people()[person]
+    joints = {
+        name: QPointF(x * scale, y * scale + offset_y)
+        for name, (x, y) in _pose_joints(centre, top, size, raised).items()
+    }
+    painter.setPen(QPen(QColor("#2f4858"), size * scale * 0.09, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap))
+    for a, b in _POSE_LIMBS[:-1]:
+        painter.drawLine(joints[a], joints[b])
+    painter.setPen(Qt.PenStyle.NoPen)
+    painter.setBrush(QColor("#e8c9a8"))
+    radius = size * scale * 0.065
+    painter.drawEllipse(joints["head"], radius, radius * 1.15)
+    painter.end()
+    return QPixmap.fromImage(image)
+
+
 @fixture("controlnet")
 def render_controlnet_states(shell, state, capture):
     """Controlnet mode layouts only: PoseView presentations on the real widgets; no extraction, download or generation."""
@@ -4337,6 +4367,9 @@ def render_controlnet_states(shell, state, capture):
     feedback(page).show("Generation refused", refusal, "error")
     capture("controlnet-11-provider-refusal")
     shell.inline.dismiss()
+
+    editor.present(replace(chosen, control_index=0, strength=0.7, result=pose_fixture_result(1), view="Result"))
+    capture("controlnet-18-result-shown")
 
     mapped = replace(
         several,
