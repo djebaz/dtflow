@@ -407,6 +407,8 @@ def expand_plan(
     preview = edit and base.operation == "txt2img"
     if base.operation == "txt2img" and not edit and "strength" in varied:
         raise PlanError("Strength applies to staged image edits only.")
+    if base.pose_control is not None and "size" in varied:
+        raise PlanError("A pose queue shares one fitted map; size cannot vary.")
     if (edit or base.operation != "txt2img") and "size" in varied:
         raise PlanError("A staged edit is fitted to one size; size cannot vary.")
     total = plan_size(plan)
