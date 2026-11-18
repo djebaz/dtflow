@@ -2903,18 +2903,24 @@ class QueuePage:
             request,
             self._wildcards_dir,
             self._draft_job is not None and not isinstance(self._draft_job, PoseJob),
+            isinstance(self._draft_job, PoseJob) or request.pose_control is not None,
         )
 
     @staticmethod
-    def _compute_plan(form: PlanForm, request, folder: Path, edit: bool) -> tuple[Plan, PlanTable]:
+    def _compute_plan(form: PlanForm, request, folder: Path, edit: bool, pose: bool) -> tuple[Plan, PlanTable]:
         """Pure but for wildcard files: the drawn plan (what the summary and creation use) and its preview table."""
         plan = resolve_plan(bind_wildcards(build_plan(form), request.prompt, folder), request.prompt)
+        if pose and any(name == "size" for name, _ in plan.dimensions):
+            raise PlanError("A pose queue shares one fitted map; size cannot vary.")
         return plan, describe_plan(request, plan, edit=edit)
 
     @staticmethod
-    def _resolve_only(form: PlanForm, request, folder: Path, edit: bool) -> Plan:
+    def _resolve_only(form: PlanForm, request, folder: Path, edit: bool, pose: bool) -> Plan:
         """The drawn plan without the preview table: creation expands it itself."""
-        return resolve_plan(bind_wildcards(build_plan(form), request.prompt, folder), request.prompt)
+        plan = resolve_plan(bind_wildcards(build_plan(form), request.prompt, folder), request.prompt)
+        if pose and any(name == "size" for name, _ in plan.dimensions):
+            raise PlanError("A pose queue shares one fitted map; size cannot vary.")
+        return plan
 
     def _plan_failed(self, exc: ValidationError) -> None:
         """One place for a planning error: beside the plan, with the owning field marked."""
