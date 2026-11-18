@@ -187,6 +187,13 @@ def single_family_version(base_model: str | None) -> str | None:
     return versions[0] if len(versions) == 1 else None
 
 
+def catalogue_family_versions(base_model: str | None) -> frozenset[str]:
+    """Exact versions a catalogue family allows; empty when unknown."""
+    if base_model in _EXACT_BUNDLED_FAMILIES:
+        return frozenset((_EXACT_BUNDLED_FAMILIES[base_model],))
+    return frozenset(_FAMILY_VERSIONS.get(base_model or "", ()))
+
+
 def bundled_family_versions(model_id: str) -> frozenset[str]:
     """Exact versions a bundled checkpoint's catalogue family allows; empty when the family is unknown."""
     exact = bundled_exact_version(model_id)

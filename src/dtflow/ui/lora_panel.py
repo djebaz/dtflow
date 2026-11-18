@@ -589,8 +589,12 @@ class LoraAssetPanel:
             suggestions=dict(candidates),
             families=self.family_labels(),
             marks=marks,
-            notice=lora_offer_notice(
-                [self._checkpoint_name] if self._checkpoint_name else [], [self._checkpoint_versions]
+            notice=(
+                None  # a chosen family without a checkpoint filters too
+                if not self._checkpoint_name and self._checkpoint_versions
+                else lora_offer_notice(
+                    [self._checkpoint_name] if self._checkpoint_name else [], [self._checkpoint_versions]
+                )
             ),
             callback=apply_selection,
         )

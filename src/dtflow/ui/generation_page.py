@@ -41,7 +41,7 @@ from dtflow.core.models import (
 )
 from dtflow.diagnostics import event as diagnostic_event
 from dtflow.logging_setup import dev_enabled
-from dtflow.services.catalogue import Catalogue, FAMILY_LABELS
+from dtflow.services.catalogue import Catalogue, FAMILY_LABELS, catalogue_family_versions
 from dtflow.services.checkpoint_metadata import resolve_checkpoint_metadata
 from dtflow.services.connection import (
     Presentation,
@@ -1766,6 +1766,10 @@ class GenerationPage:
         include_cloud = self._backend()[0] == "local" and self.page.includeCloudCheck.isChecked()
         model = self._catalogue.checkpoint(checkpoint, include_unavailable=include_cloud)
         version = checkpoint_picker_versions(checkpoint, self._inventory_snapshot)
+        if not checkpoint:  # no checkpoint yet: follow the family chosen in the left panel
+            family = self.page.baseModelCombo.currentData()
+            if family and family != UNCLASSIFIED_FAMILY:
+                version = catalogue_family_versions(family)
         entries = (
             self._catalogue.compatible_loras(
                 checkpoint, domain=self._catalogue_domain(), include_unavailable=include_cloud
