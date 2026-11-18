@@ -430,18 +430,12 @@ def queue_edit_from_records(records) -> QueueEdit:
             if "lora_sets" in varying
             else [item for item in base.get("loras", ()) if item["identifier"] not in planned]
         )
-        # Resolved items can carry cloud receipts for the LoRAs moved into plan dimensions.
-        # Keep only bindings that still match the fixed base before validating the draft.
-        fixed_names = {item["identifier"] for item in base["loras"]}
-        bound = [item for item in base.get("prepared_assets", ()) if item["identifier"] in fixed_names]
-        base["prepared_assets"] = bound
+        # These are resolved items, not the original LoRA selection. The edit loader retains
+        # their receipt IDs separately, so the new queue can bind only its chosen LoRAs.
+        base["prepared_assets"] = []
         base["resolution_evidence"] = [
             pair for pair in base.get("resolution_evidence", ()) if pair[0] != "prepared_assets"
         ]
-        if bound:
-            base["resolution_evidence"].append(
-                ("prepared_assets", ",".join(item["receipt_id"] for item in bound))
-            )
     return QueueEdit(base, form, count, note)
 
 
