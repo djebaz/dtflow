@@ -2774,7 +2774,31 @@ class QueuePage:
         self._show(self.page.planCountLabel, level, sentence(readout_text(text)))
         if level != "ok":
             self.page.planTableView.hide()  # reject stale previews immediately on invalid inputs
-        self.page.startQueueButton.setText(f"Start now ({text})" if level == "ok" else "Start now")
+        pose = self._draft is not None and (
+            isinstance(self._draft_job, PoseJob) or self._draft[0].pose_control is not None
+        )
+        label = "Start pose now" if pose else "Start now"
+        self.page.startQueueButton.setText(f"{label} ({text})" if level == "ok" else label)
+        if pose:
+            self.page.startQueueButton.setToolTip(
+                "Start sends the staged pose map to DT+ Cloud and may consume credits."
+            )
+            self.page.addQueueButton.setToolTip(
+                "Save up next; when it starts, the pose map is sent to DT+ Cloud and may consume credits."
+            )
+            self.page.createQueueButton.setToolTip(
+                "Check DT+ inventory and save the map locally. Nothing is uploaded or generated until Start."
+            )
+        else:
+            self.page.startQueueButton.setToolTip(
+                "Creates the queue and starts it from this window. Real, possibly billable generation."
+            )
+            self.page.addQueueButton.setToolTip(
+                "Saves it up next: it starts by itself when the running queue ends."
+            )
+            self.page.createQueueButton.setToolTip(
+                "Saves the queue paused, also while another queue runs. Contacts no provider and uploads nothing."
+            )
         self._actions_fit.refit()
         self._schedule_preview()
         self.plan_hook()
