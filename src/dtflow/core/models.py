@@ -294,6 +294,7 @@ class ResolvedGenerationRequest:
     schema_version: int = 2
     strength: float = 1.0
     image_inputs: ImageInputSnapshot | None = None
+    pose_control: object | None = None
 
     def __post_init__(self) -> None:
         for name in ("request_id", "model_id"):
@@ -302,14 +303,33 @@ class ResolvedGenerationRequest:
                 raise ValidationError(f"{name} is required.")
         if not isinstance(self.prompt, str) or not isinstance(self.negative_prompt, str):
             raise ValidationError("Prompts must be strings.")
-        if type(self.schema_version) is not int or self.schema_version != 2:
+        if type(self.schema_version) is not int or self.schema_version not in (2, 3):
             raise ValidationError("Unsupported resolved-request schema.")
+        if self.pose_control is not None:
+            from dtflow.core.pose import MODELS, PoseControl
+            from dtflow.core.image_inputs import ImageInputSnapshot
+
+            if (
+                not isinstance(self.pose_control, PoseControl)
+                or self.schema_version != 3
+                or self.operation != "txt2img"
+                or self.model_id not in MODELS
+                or not isinstance(self.image_inputs, ImageInputSnapshot)
+                or self.image_inputs.mask is not None
+                or self.image_inputs.preserve_outside
+                or (self.width_px, self.height_px)
+                != (self.image_inputs.fit.target_width, self.image_inputs.fit.target_height)
+                or (self.batch_size, self.batch_count) != (1, 1)
+            ):
+                raise ValidationError("Pose requires request v3, exact FLUX.1 Dev, one output and retained RGB inputs.")
+        elif self.schema_version != 2:
+            raise ValidationError("Request v3 requires pose control evidence.")
         if self.operation not in ("txt2img", "img2img", "inpaint"):
             raise ValidationError("Unsupported image generation operation.")
         if type(self.strength) not in (int, float) or not math.isfinite(self.strength) or not 0 <= self.strength <= 1:
             raise ValidationError("strength must be finite in 0..1.")
         if self.operation == "txt2img":
-            if self.image_inputs is not None or self.strength != 1:
+            if (self.image_inputs is not None and self.pose_control is None) or self.strength != 1:
                 raise ValidationError("Text-to-image must have no image inputs and strength 1.")
         else:
             # Runtime import avoids the content-record -> ValidationError import cycle.

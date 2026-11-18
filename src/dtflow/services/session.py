@@ -301,6 +301,7 @@ async def open_session(
     image_permits: tuple[ImageOperationPermit, ...] = (),
     allow_image_probe: bool = False,
     timeline: GenerationTimeline | None = None,
+    pose_inputs: bool = False,
 ) -> AsyncIterator[GenerationService]:
     """Create, open and (always) close the selected backend and, when ``durable``, the state store.
 
@@ -311,7 +312,7 @@ async def open_session(
     policy = timeouts or TimeoutPolicy()
     if type(allow_image_probe) is not bool or not isinstance(image_permits, tuple):
         raise ValidationError("Image permits require an immutable tuple and explicit boolean probe policy.")
-    if (image_permits or allow_image_probe) and not durable:
+    if (image_permits or allow_image_probe or pose_inputs) and not durable:
         raise ValidationError("Image generation requires durable state ownership.")
     image_options = {}
     if image_permits or allow_image_probe:
@@ -322,6 +323,10 @@ async def open_session(
             "image_inputs_loader": lambda snapshot: restore_image_inputs(state, snapshot),
             "allow_image_probe": allow_image_probe,
         }
+    if pose_inputs:
+        if selection.name != "cloud":
+            raise ValidationError("Pose experiments require explicit DT+ Cloud selection.")
+        image_options["image_inputs_loader"] = lambda snapshot: restore_image_inputs(state, snapshot)
     backend = create_backend(selection, timeouts=policy, saved=saved, **image_options)
     if timeline is not None:
         timeline.mark("backend_created")
@@ -341,7 +346,7 @@ async def open_session(
             output or state / "outputs",
             timeouts=policy,
             assets=asset_validator(backend, state),
-            input_state=state if image_permits else None,
+            input_state=state if image_permits or pose_inputs else None,
         )
     finally:
         try:
@@ -384,10 +389,25 @@ async def run_generation(
             != request.image_inputs
         ):
             raise ValidationError("Prepared image inputs do not match the requested snapshot.")
-    elif prepared_inputs is not None:
+    elif prepared_inputs is not None and request.pose_control is None:
         raise ValidationError("Text-to-image cannot include prepared image inputs.")
+    if request.pose_control is not None:
+        if service.backend.capabilities.backend_id != "drawthings-cloud" or service.input_state is None:
+            raise ValidationError("Pose requires an explicitly configured durable cloud session.")
+        if prepared_inputs is None or ImageInputSnapshot.from_prepared(
+            request.image_inputs.attempt_id, prepared_inputs, preserve_outside=False
+        ) != request.image_inputs:
+            raise ValidationError("Pose input evidence does not match the prepared map.")
     # Real adapters accept only inventory-listed models, so the generation path refreshes inventory first.
     snapshot = await service.get_inventory(refresh=True)
+    if request.pose_control is not None and not any(
+        entry.identifier == request.pose_control.checkpoint
+        and entry.availability == "listed_in_server_inventory" for entry in snapshot.entries
+    ):
+        raise ValidationError(
+            "DT+ does not list the selected Union control in its server inventory. No generation or upload was submitted. "
+            "Catalogue/import support is not cloud availability; no backend substitution is permitted."
+        )
     if timeline is not None:
         timeline.mark("inventory_refreshed")
     if prefix:
