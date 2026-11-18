@@ -6,7 +6,7 @@ from pathlib import Path
 from PySide6.QtCore import QEvent, QFile, QIODevice, QObject, Qt
 from PySide6.QtGui import QKeySequence, QShortcut
 from PySide6.QtUiTools import QUiLoader
-from PySide6.QtWidgets import QLabel, QPushButton, QSizePolicy, QSlider, QWidget
+from PySide6.QtWidgets import QLabel, QPushButton, QSlider, QWidget
 
 from dtflow.core.models import LoRASelection
 from dtflow.services.lora_naming import display_label
@@ -155,6 +155,11 @@ def family_status(label: str) -> tuple[str, tuple[str, str, str] | None]:
     return (family, status) if status else (label, None)
 
 
+#: Fixed pill widths (px), so the status and "not on key" pills line up down the list.
+STATUS_PILL_WIDTH = 84
+KEY_PILL_WIDTH = 76
+
+
 def format_weight(weight: float) -> str:
     """Shortest exact digits, at least one decimal (``1.0``, ``0.65``)."""
     text = f"{weight:g}"
@@ -254,19 +259,7 @@ def edit_lora_selection(
         if row is None:
             return
         wanted = current_marks.get(name) == NOT_ON_KEY
-        pill = row.findChild(QLabel, "loraKeyPill")
-        if wanted and pill is None:
-            pill = QLabel("not on key", row)
-            pill.setObjectName("loraKeyPill")
-            pill.setProperty("state", "warning")
-            pill.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
-            status = row.findChild(QLabel, "loraStatusPill")  # the status pill stays left of this one
-            row.loraSelectionRowLayout.insertWidget(
-                row.loraSelectionRowLayout.indexOf(status) + 1 if status else 1, pill
-            )
-        elif not wanted and pill is not None:
-            row.loraSelectionRowLayout.removeWidget(pill)
-            pill.deleteLater()
+        row.findChild(QLabel, "loraKeyPill").setVisible(wanted)  # the slot stays, so the pills line up
         check = row.loraSelectionCheck
         family = family_status(families.get(name, "Unknown"))[0]
         check.setAccessibleName(
@@ -287,14 +280,22 @@ def edit_lora_selection(
         family = families.get(name, "Unknown")
         family_name, status = family_status(family)
         check.setText(shown(name) if status is not None else f"{shown(name)} · {family_name}")  # the pill says the rest
-        if status is not None:
-            text, state, explanation = status
-            status_pill = QLabel(text, row)
-            status_pill.setObjectName("loraStatusPill")
-            status_pill.setProperty("state", state)
-            status_pill.setToolTip(explanation)  # its own tooltip wins over the row's metadata card
-            status_pill.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
-            row.loraSelectionRowLayout.insertWidget(1, status_pill)
+        text, state, explanation = status or ("", "", "")
+        for slot, (pill_text, pill_state, width) in enumerate(
+            ((text, state, STATUS_PILL_WIDTH), ("not on key", "warning", KEY_PILL_WIDTH))
+        ):
+            pill = QLabel(pill_text, row)
+            pill.setObjectName("loraStatusPill" if slot == 0 else "loraKeyPill")
+            pill.setProperty("state", pill_state)
+            pill.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            pill.setFixedWidth(width)
+            policy = pill.sizePolicy()
+            policy.setRetainSizeWhenHidden(True)
+            pill.setSizePolicy(policy)
+            pill.setVisible(slot == 0 and status is not None)
+            if slot == 0:
+                pill.setToolTip(explanation)  # its own tooltip wins over the row's metadata card
+            row.loraSelectionRowLayout.insertWidget(1 + slot, pill)
         check.setChecked(checked)
         rows[name] = row
         sync_pill(name)
