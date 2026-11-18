@@ -15,7 +15,7 @@ from typing import Any
 from uuid import uuid4
 
 from dtflow.composition import BackendSelection
-from dtflow.core.image_inputs import PreparedImageInputs
+from dtflow.core.image_inputs import ImageContent, PreparedImageInputs
 from dtflow.core.models import (
     MAX_QUEUE_CONCURRENCY,
     SEED_LIMIT,
@@ -50,6 +50,7 @@ from dtflow.persistence.settings import trigger_prefix_enabled
 from dtflow.persistence.store import SQLiteAttempts, StateBusyError, state_is_owned
 from dtflow.persistence.workflow_items import KIND_WORKFLOW, is_workflow_record
 from dtflow.services import session
+from dtflow.services.body_pose import fit_pose_map
 from dtflow.services.assets import AssetService
 from dtflow.services.generation import GenerationService
 from dtflow.services.image_inputs import restore_image_inputs, snapshot_image_inputs
@@ -226,6 +227,61 @@ async def create_edit_queue(
     return await create_queue(state, backend, items, up_next=up_next, composer_source=composer_source)
 
 
+async def create_pose_queue(
+    state: Path,
+    backend: dict[str, Any],
+    selection: BackendSelection,
+    base: ResolvedGenerationRequest,
+    content: ImageContent,
+    evidence: tuple[tuple[str, str], ...],
+    control,
+    *,
+    saved: CredentialProvider | None = None,
+    plan: Plan | None = None,
+    count: int = 1,
+    up_next: bool = False,
+    receipts: tuple[PreparedAsset, ...] = (),
+    composer_source: dict | None = None,
+) -> str:
+    """Stage one verified pose map for a cloud queue; creation never uploads or generates.
+
+    Check the exact backend, FLUX.1 model family and Union control inventory before writing staged inputs.
+    Each item retains the same immutable map and control; Start is the generation/upload consent.
+    """
+    if selection.name != "cloud" or backend.get("name") != "cloud":
+        raise ValidationError("A pose queue requires DT+ Cloud; no queue was created.")
+    if base.pose_control is not None or base.operation != "txt2img" or base.image_inputs is not None:
+        raise ValidationError("New pose queues require plain text-to-image settings.")
+    if (base.batch_size, base.batch_count) != (1, 1):
+        raise ValidationError("A pose queue item generates exactly one image.")
+
+    items = expand_items(base, count) if plan is None else expand_plan(base, plan, receipts=receipts)
+    if any((item.width_px, item.height_px) != (base.width_px, base.height_px) for item in items):
+        raise ValidationError("A pose queue uses one fitted map size; remove size variations.")
+    for item in items:
+        await settle(asyncio.to_thread(session._require_flux1, state, item.model_id))
+    async with session.open_session(selection, state, durable=False, saved=saved) as service:
+        inventory = await service.get_inventory(refresh=True)
+    if not any(
+        entry.identifier == control.checkpoint and entry.availability == "listed_in_server_inventory"
+        for entry in inventory.entries
+    ):
+        raise ValidationError("DT+ does not list the selected pose control; no map was staged or uploaded.")
+
+    prepared, map_evidence = await settle(
+        asyncio.to_thread(fit_pose_map, content, dict(evidence), base.width_px, base.height_px)
+    )
+    pose = session.pose_request(base, control, prepared, map_evidence)
+    staged = await settle(
+        asyncio.to_thread(snapshot_image_inputs, state, pose.image_inputs.attempt_id, prepared, preserve_outside=False)
+    )
+    final = [replace(item, schema_version=3, pose_control=pose.pose_control, image_inputs=staged) for item in items]
+    if composer_source is not None:
+        # Edit as new must load the staged pose, not reconstruct a plain text-to-image base.
+        composer_source = {**composer_source, "base": asdict(replace(pose, image_inputs=staged, prepared_assets=()))}
+    return await create_queue(state, backend, final, up_next=up_next, composer_source=composer_source)
+
+
 # Items a relaunch with ``failed_only`` (and Retry item) takes again: settled without a saved image.
 RELAUNCH_STATES = ("failed", "unknown", "save_failed", "cancelled")
 
@@ -269,7 +325,7 @@ def _relaunch_items(
                 restore_image_inputs(state, request.image_inputs)
             except (ValidationError, OSError):
                 raise ValidationError(
-                    f"Item {position}'s staged edit inputs are no longer available; nothing was created."
+                    f"Item {position}'s staged image or pose inputs are no longer available; nothing was created."
                 ) from None
         changes: dict[str, Any] = {"request_id": uuid4().hex}
         if new_seeds:
@@ -332,7 +388,7 @@ async def retry_queue_item(state: Path, queue_id: str, position: int) -> str:
             await asyncio.to_thread(restore_image_inputs, Path(state), request.image_inputs)
         except (ValidationError, OSError):
             raise ValidationError(
-                f"Item {position}'s staged edit inputs are no longer available; nothing was retried."
+                f"Item {position}'s staged image or pose inputs are no longer available; nothing was retried."
             ) from None
     return await asyncio.to_thread(retry_item, Path(state), queue_id, position)
 
@@ -531,15 +587,18 @@ async def _dispatch_one(store, state, queue_id, policy, saved, out, on_settle, o
                 session.owner_probe_permit(selection, model, operation, evidence)
                 for model, operation, evidence in await store.image_scopes(queue_id)
             )
-        image_options = (
-            {
-                "image_permits": permits,
-                "image_inputs_loader": lambda snapshot: restore_image_inputs(state, snapshot),
-                "allow_image_probe": True,
-            }
-            if permits
-            else {}
-        )
+        # Pose is txt2img with an image-input snapshot. It needs the durable loader even though
+        # image_scopes contains only img2img/inpaint operations.
+        has_pose = False
+        if not workflow:
+            _, _, stored = await asyncio.to_thread(read_queue_requests, state, queue_id)
+            has_pose = any(record.get("pose_control") is not None for _, _, record in stored if isinstance(record, dict))
+        if has_pose and selection.name != "cloud":
+            raise ValidationError("Pose items require DT+ Cloud; the queue was not dispatched.")
+        image_options = {
+            **({"image_permits": permits, "allow_image_probe": True} if permits else {}),
+            **({"image_inputs_loader": lambda snapshot: restore_image_inputs(state, snapshot)} if permits or has_pose else {}),
+        }
         # A queue session covers ordinary queues, workflows and scripts; none consumes live preview images.
         backend = session.create_backend(selection, timeouts=policy, saved=saved, preview_images=False, **image_options)
         async with asyncio.timeout(policy.connect):
@@ -550,7 +609,7 @@ async def _dispatch_one(store, state, queue_id, policy, saved, out, on_settle, o
             out or state / "outputs",
             timeouts=policy,
             assets=session.asset_validator(backend, state),
-            input_state=state if permits else None,
+            input_state=state if permits or has_pose else None,
             preview_images=False,
         )
         if on_event is not None and isinstance(service.assets, AssetService):
