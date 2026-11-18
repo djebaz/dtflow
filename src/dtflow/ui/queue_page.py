@@ -1611,8 +1611,17 @@ class QueuePage:
         prompt = self.page.composerPromptEdit.toPlainText()
         if not prompt.strip():
             raise FormError("Enter a base prompt for the new queue.", "composerPromptEdit")
-        # The Fixed LoRAs row is the draft's LoRA list: what it shows is what every item starts from.
-        return replace(request, prompt=prompt, loras=self._fixed_loras()), name, endpoint, assets
+        # A changed fixed selection must not retain receipts for LoRAs that were removed.
+        loras = self._fixed_loras()
+        selected = {item.identifier for item in loras}
+        bound = tuple(item for item in request.prepared_assets if item.identifier in selected)
+        changes = {"prompt": prompt, "loras": loras}
+        if bound != request.prepared_assets:
+            evidence = tuple(pair for pair in request.resolution_evidence if pair[0] != "prepared_assets")
+            if bound:
+                evidence += (("prepared_assets", ",".join(item.receipt_id for item in bound)),)
+            changes.update(prepared_assets=bound, resolution_evidence=evidence)
+        return replace(request, **changes), name, endpoint, assets
 
     def copy_to_generate(self) -> None:
         try:
