@@ -129,6 +129,9 @@ class ControlnetEditor(QObject):
         self._result = None
         self._controls = ()
         self._control_index = 0
+        self._wanted_control = None  # a remembered control, applied once the inventory lists it
+        self._paths = {}  # the last photo and the last body map, kept apart so switching between them restores each
+        self._pending_person = None
         self._strength = 0.7
         self._notice = ""
         file = QFile(str(Path(__file__).with_name("forms") / "controlnet_editor.ui"))
@@ -443,7 +446,7 @@ class ControlnetEditor(QObject):
         """The Union Pro 1.0 controls the active DT+ inventory lists."""
         if self.controller is None:
             return
-        chosen = self._controls[self._control_index].checkpoint if self._controls else None
+        chosen = self._controls[self._control_index].checkpoint if self._controls else self._wanted_control
         self._controls = control_choices(self.controller._inventory_snapshot)
         self._control_index = next((i for i, c in enumerate(self._controls) if c.checkpoint == chosen), 0)
         self.refresh()
@@ -461,7 +464,12 @@ class ControlnetEditor(QObject):
         if kind == self._kind:
             return
         self._clear_source()
+        self._pending_person = None
         self._kind = kind
+        remembered = self._paths.get(kind)
+        if remembered and Path(remembered).is_file():
+            self.load_source(remembered)
+            return
         self.refresh()
 
     def _clear_source(self):
@@ -522,6 +530,7 @@ class ControlnetEditor(QObject):
             content, evidence = value
             self._clear_source()
             self._revision = revision + 1
+            self._paths[kind] = str(path)
             self._content, self._source_evidence = content, evidence
             self._source_pixmap = self._pixmap(content)
             name = path.name
@@ -541,6 +550,8 @@ class ControlnetEditor(QObject):
         if self._extracting or self._downloading:
             return
         self._clear_source()
+        self._paths.pop(self._kind, None)
+        self._pending_person = None
         self.refresh()
 
     def extract(self):
@@ -581,6 +592,9 @@ class ControlnetEditor(QObject):
             elif len(detection.candidates) == 1:
                 self._selected = 0
                 self._build_map(0)
+            elif self._pending_person is not None and self._pending_person < len(detection.candidates):
+                row, self._pending_person = self._pending_person, None
+                self._build_map(row)
             else:
                 self.refresh()
 
@@ -702,6 +716,47 @@ class ControlnetEditor(QObject):
             self._result = pixmap
             self.refresh()
             self.canvas.set_view("Result")
+
+    def session_document(self):
+        """What the next launch restores: mode, the photo and the body map paths, the person, control and strength.
+        The map is rebuilt from the files, as Inpaint reloads its source."""
+        chosen = self._controls[self._control_index].checkpoint if self._controls else None
+        return {
+            "mode": "controlnet" if self.active else "text",
+            "kind": self._kind,
+            "paths": dict(self._paths),
+            "person": self._selected,
+            "control": chosen,
+            "strength": self._strength,
+        }
+
+    def restore(self, document):
+        """Apply a remembered document; anything missing or unusable keeps the defaults."""
+        if not isinstance(document, dict):
+            return
+        strength = document.get("strength")
+        if isinstance(strength, (int, float)) and not isinstance(strength, bool) and 0 < strength <= 2:
+            self._strength = float(strength)
+            self.form.poseStrengthSpin.setValue(self._strength)
+        paths = document.get("paths")
+        if isinstance(paths, dict):
+            self._paths = {k: v for k, v in paths.items() if k in ("photo", "map") and isinstance(v, str)}
+        control = document.get("control")
+        if isinstance(control, str):
+            self._wanted_control = control
+            self._control_index = next((i for i, c in enumerate(self._controls) if c.checkpoint == control), 0)
+        kind = document.get("kind")
+        if kind in ("photo", "map"):
+            self._kind = kind
+        person = document.get("person")
+        self._pending_person = person if type(person) is int and person >= 0 else None
+        remembered = self._paths.get(self._kind)
+        if remembered and Path(remembered).is_file():
+            self.load_source(remembered)
+        else:
+            self.refresh()
+        if document.get("mode") == "controlnet":
+            self.page.controlnetModeButton.setChecked(True)
 
     def restore_record(self, document):
         """Gallery Reuse of a pose image: bring its control, strength and retained map back into this mode. The map is

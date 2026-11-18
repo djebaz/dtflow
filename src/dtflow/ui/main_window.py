@@ -1541,6 +1541,7 @@ class MainWindow:
             self.form.endpointEdit.setText(endpoint)
         self.generation.restore(document.get("form"), document.get("forms"))
         self.generation.inpaint.restore(document.get("edit"))
+        self.generation.controlnet.restore(document.get("pose"))
         diagnostic_event(
             log,
             "app.last_session_restored",
@@ -1557,6 +1558,7 @@ class MainWindow:
             "form": self.generation.form_document(),
             "forms": self.generation.forms_document(),
             "edit": self.generation.inpaint.session_document(),
+            "pose": self.generation.controlnet.session_document(),
         }
 
     def _queue_images(self, count: int) -> None:
