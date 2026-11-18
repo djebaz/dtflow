@@ -238,8 +238,8 @@ async def _check_pose_queue(
     """Validate all models and the current server's control availability without staging or uploading."""
     if selection.name != "cloud":
         raise ValidationError("A pose queue requires DT+ Cloud.")
-    for item in items:
-        await settle(asyncio.to_thread(session._require_flux1, state, item.model_id))
+    for model_id in dict.fromkeys(item.model_id for item in items):
+        await settle(asyncio.to_thread(session._require_flux1, state, model_id))
     async with session.open_session(selection, state, durable=False, saved=saved) as service:
         inventory = await service.get_inventory(refresh=True)
     if not any(
