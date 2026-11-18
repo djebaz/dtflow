@@ -348,7 +348,7 @@ class GenerationPage:
         for name in WIRED_CONTROLS:
             getattr(page, name).setEnabled(True)
         self._align_rail_labels()
-        page.samplerCombo.addItems(SAMPLERS)
+        page.samplerCombo.addItems(sorted(SAMPLERS))
         for label, value in (("All", "all"), ("Image", "image"), ("Video", "video")):
             page.generationDomainCombo.addItem(label, value)
         page.generationDomainCombo.currentIndexChanged.connect(self._catalogue_filter_changed)
@@ -594,7 +594,7 @@ class GenerationPage:
         model = page.modelCombo.currentText()
         entry = self._catalogue.checkpoint(model, include_unavailable=True) if model else None
         profile = profile_for(model, entry.base_model if entry else None) if model else None
-        allowed = list(SAMPLERS)
+        allowed = sorted(SAMPLERS)
         wanted = keep or combo.currentText()
         if not keep and profile and wanted not in [item.value for item in profile.samplers]:
             wanted = profile.sampler.value
