@@ -406,6 +406,12 @@ def architecture_shortcode(exact_architecture: str) -> str | None:
     return ARCHITECTURE_TAGS.get(exact_architecture)
 
 
+def shortcode_family(identifier: str) -> str | None:
+    """The exact architecture named by the #373 shortcode of a managed LoRA filename (Name_F1_lora_f16.ckpt)."""
+    match = _MANAGED_NAME.fullmatch(_basename(identifier))
+    return _TAG_ARCHITECTURES.get(match["tag"].casefold()) if match else None
+
+
 _CONVERTED_FORMAT_SUFFIX = re.compile(r"(?i)(?:^|[_\s.-])(?:lora[_\s.-]*)?(q8p|f16|fp16)\.ckpt$")
 
 

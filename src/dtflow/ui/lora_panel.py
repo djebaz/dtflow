@@ -45,7 +45,7 @@ from dtflow.services.lora_convert.errors import UnsupportedFamilyError, Unsuppor
 from dtflow.services.lora_convert_prepare import convert_for_prepare
 from dtflow.services.lora_digest import DigestCancelled, hash_file
 from dtflow.services.lora_family import DETECTABLE_FAMILIES, LoraFamily, detect_lora_family, validate_converted_lora
-from dtflow.services.lora_naming import LoraPrepareMetadata, display_label, lora_offer_notice
+from dtflow.services.lora_naming import LoraPrepareMetadata, display_label, lora_offer_notice, shortcode_family
 from dtflow.services.lora_store import LoraStore
 from dtflow.services.prepare_progress import (
     CONFIRMING,
@@ -296,7 +296,7 @@ class LoraAssetPanel:
         }
         if versions:
             return next(iter(versions)) if len(versions) == 1 else None
-        return self._inventory_families.get(name)
+        return self._inventory_families.get(name) or shortcode_family(name)
 
     def _candidate_compatible(self, name: str) -> bool:
         candidate = self._candidate_family(name)
@@ -391,6 +391,9 @@ class LoraAssetPanel:
         }
         for name, value in self._inventory_families.items():
             family.setdefault(name, f"{FAMILY_LABELS.get(value, value)} (provider)")
+        for name, _ in self._candidates:
+            if name not in family and (value := shortcode_family(name)):
+                family[name] = f"{FAMILY_LABELS.get(value, value)} (shortcode)"
         records: dict[str, list[dict]] = {}
         for (asset_id, name), record in self._records.items():
             if record.get("state") != "confirmed":
