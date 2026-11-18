@@ -28,6 +28,7 @@ from dtflow.diagnostics import event as diagnostic_event
 from dtflow.persistence.store import StateBusyError
 from dtflow.services.connection import Presentation, present_generation_failure
 from dtflow.services.dynamic_prompts import decode_runs
+from dtflow.services.preflight import checkpoint_picker_versions
 from dtflow.services.lora_naming import display_label, lora_offer, lora_offer_notice, relabel_text
 from dtflow.services.image_preparation import prepare_edit_inputs
 from dtflow.services.plan_errors import PlanError
@@ -1652,7 +1653,9 @@ class QueuePage:
         models = [m for m in self.page.planModelsEdit.values() if m] or [choices.get("model") or ""]
         models = [model for model in models if model]
         versions = choices.get("model_versions", {})
-        return models, [versions.get(model, frozenset()) for model in models]
+        # Generate lists versions only for the checkpoints in its current family view; a plan model outside it is
+        # resolved here from the bundled specs and catalogue.
+        return models, [versions.get(model) or checkpoint_picker_versions(model) for model in models]
 
     def _offered_loras(self) -> dict:
         """LoRA choices for the models this plan uses (Generate's checkpoint when none is chosen), as on Generate."""

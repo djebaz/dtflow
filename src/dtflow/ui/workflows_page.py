@@ -48,6 +48,7 @@ from dtflow.ui.file_dialogs import QFileDialog
 from dtflow.core import workflows as wf
 from dtflow.core.output_layout import identity_from_path
 from dtflow.core.models import LoRASelection, ValidationError
+from dtflow.services.preflight import checkpoint_picker_versions
 from dtflow.services.lora_naming import display_label, lora_offer, lora_offer_notice, relabel_text
 from dtflow.services import workflow_library as library
 from dtflow.services import lora_relink
@@ -1319,7 +1320,10 @@ class WorkflowsPage(QObject):
             loras = choices.get("loras") or {}
             node_model = choices.get("node_model")
             node_models = [node_model] if node_model and not str(node_model).startswith(PLACEHOLDER) else []
-            node_versions = [(choices.get("model_versions") or {}).get(model, frozenset()) for model in node_models]
+            node_versions = [
+                (choices.get("model_versions") or {}).get(model) or checkpoint_picker_versions(model)
+                for model in node_models
+            ]
             lora_notice = lora_offer_notice(node_models, node_versions)
             if node_models:
                 loras = lora_offer(loras, choices.get("lora_versions") or {}, node_versions)
