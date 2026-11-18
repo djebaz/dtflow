@@ -6,7 +6,7 @@ from pathlib import Path
 from PySide6.QtCore import QEvent, QFile, QIODevice, QObject, Qt
 from PySide6.QtGui import QKeySequence, QShortcut
 from PySide6.QtUiTools import QUiLoader
-from PySide6.QtWidgets import QLabel, QPushButton, QSizePolicy, QSlider, QWidget
+from PySide6.QtWidgets import QLabel, QPushButton, QSlider, QWidget
 
 from dtflow.core.models import LoRASelection
 from dtflow.services.lora_naming import display_label
@@ -112,6 +112,54 @@ class _ClickToAdd(QObject):
 NOT_ON_KEY = "needs re-attach"
 
 
+#: Status pill per family evidence: (pill text, state, hover explanation). Keys match the "(...)" source suffix that
+#: ``LoraAssetPanel.family_labels`` appends to the family, or the whole label for the unknown cases.
+_STATUS = {
+    "file": ("file", "ok", "Family detected from the LoRA file's tensors when it was prepared."),
+    "user selected": ("user", "ok", "You chose this family when preparing the LoRA."),
+    "user selected, conflicts with file": (
+        "user ≠ file",
+        "warning",
+        "You chose this family, but the file's tensors point to another one.",
+    ),
+    "unverified": ("unverified", "", "A receipt names this family from the backend, not checked against the file."),
+    "provider": ("provider", "ok", "The backend's inventory gives this LoRA this architecture."),
+    "catalogue": ("catalogue", "info", "The bundled catalogue lists this LoRA with this base model."),
+    "shortcode": ("shortcode", "", "The family tag in the managed filename (_F1_, _ZiT_, _Kr2_...)."),
+}
+_UNKNOWN_STATUS = {
+    "Unknown": (
+        "unknown",
+        "warning",
+        "No receipt on this key, no provider architecture, no catalogue entry and no shortcode.",
+    ),
+    "Unknown (file unclassified)": (
+        "unclassified",
+        "warning",
+        "A receipt exists, but no family could be found in the file.",
+    ),
+    "Unknown (conflicting receipts)": (
+        "conflicting",
+        "warning",
+        "Receipts for this name disagree on the family and none is bound to it.",
+    ),
+}
+
+
+def family_status(label: str) -> tuple[str, tuple[str, str, str] | None]:
+    """Split a family label ("Z-Image (file)", "Unknown (file unclassified)") into the family and its status pill."""
+    if label in _UNKNOWN_STATUS:
+        return "Unknown", _UNKNOWN_STATUS[label]
+    family, separator, rest = label.rpartition(" (")
+    status = _STATUS.get(rest.removesuffix(")")) if separator else None
+    return (family, status) if status else (label, None)
+
+
+#: Fixed pill widths (px), so the status and "not on key" pills line up down the list.
+STATUS_PILL_WIDTH = 84
+KEY_PILL_WIDTH = 76
+
+
 def format_weight(weight: float) -> str:
     """Shortest exact digits, at least one decimal (``1.0``, ``0.65``)."""
     text = f"{weight:g}"
@@ -129,6 +177,7 @@ def edit_lora_selection(
     marks: dict[str, str] | None = None,
     title: str = "Edit LoRAs",
     hint: str | None = None,
+    notice: str | None = None,
     multi_weight: bool = False,
 ) -> Callable[[dict[str, str]], None]:
     """Show every offered LoRA with a checkbox and a 0.0–3.0 weight slider; Apply replaces the selection once.
@@ -144,6 +193,8 @@ def edit_lora_selection(
     wheel_step = _WheelStep(editor)
     if hint:
         editor.loraSelectionHint.setText(hint)
+    if notice:  # why the list may show LoRAs of other families (family unknown), never silent
+        editor.loraSelectionHint.setText(f"{editor.loraSelectionHint.text()}\n{notice}")
     rows_layout = editor.loraSelectionRowsLayout
     empty = editor.loraSelectionEmpty
     suggestions = suggestions or {}
@@ -208,18 +259,9 @@ def edit_lora_selection(
         if row is None:
             return
         wanted = current_marks.get(name) == NOT_ON_KEY
-        pill = row.findChild(QLabel, "loraKeyPill")
-        if wanted and pill is None:
-            pill = QLabel("not on key", row)
-            pill.setObjectName("loraKeyPill")
-            pill.setProperty("state", "warning")
-            pill.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
-            row.loraSelectionRowLayout.insertWidget(1, pill)
-        elif not wanted and pill is not None:
-            row.loraSelectionRowLayout.removeWidget(pill)
-            pill.deleteLater()
+        row.findChild(QLabel, "loraKeyPill").setVisible(wanted)  # the slot stays, so the pills line up
         check = row.loraSelectionCheck
-        family = families.get(name, "Unknown")
+        family = family_status(families.get(name, "Unknown"))[0]
         check.setAccessibleName(
             f"Use {_display_label(name)}, family {family}" + (", not on the DT+ key" if wanted else "")
         )
@@ -236,14 +278,31 @@ def edit_lora_selection(
         row.setProperty("identifier", name)
         check, slider, label = row.loraSelectionCheck, row.loraSelectionSlider, row.loraSelectionWeight
         family = families.get(name, "Unknown")
-        check.setText(f"{shown(name)} · {family}")
+        family_name, status = family_status(family)
+        check.setText(shown(name) if status is not None else f"{shown(name)} · {family_name}")  # the pill says the rest
+        text, state, explanation = status or ("", "", "")
+        for slot, (pill_text, pill_state, width) in enumerate(
+            ((text, state, STATUS_PILL_WIDTH), ("not on key", "warning", KEY_PILL_WIDTH))
+        ):
+            pill = QLabel(pill_text, row)
+            pill.setObjectName("loraStatusPill" if slot == 0 else "loraKeyPill")
+            pill.setProperty("state", pill_state)
+            pill.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            pill.setFixedWidth(width)
+            policy = pill.sizePolicy()
+            policy.setRetainSizeWhenHidden(True)
+            pill.setSizePolicy(policy)
+            pill.setVisible(slot == 0 and status is not None)
+            if slot == 0:
+                pill.setToolTip(explanation)  # its own tooltip wins over the row's metadata card
+            row.loraSelectionRowLayout.insertWidget(1 + slot, pill)
         check.setChecked(checked)
         rows[name] = row
         sync_pill(name)
         suggestion = suggestions.get(name)
 
         def lead(name=name, family=family, suggestion=suggestion) -> str:
-            text = f"{name}\nFamily: {family}"
+            text = f"{name}\nFamily: {family_status(family)[0]}"
             if current_marks.get(name) == NOT_ON_KEY:
                 text += (
                     "\nNot on the selected DT+ key. It is restored automatically at generation and may use key storage."

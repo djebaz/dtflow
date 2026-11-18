@@ -406,6 +406,12 @@ def architecture_shortcode(exact_architecture: str) -> str | None:
     return ARCHITECTURE_TAGS.get(exact_architecture)
 
 
+def shortcode_family(identifier: str) -> str | None:
+    """The exact architecture named by the #373 shortcode of a managed LoRA filename (Name_F1_lora_f16.ckpt)."""
+    match = _MANAGED_NAME.fullmatch(_basename(identifier))
+    return _TAG_ARCHITECTURES.get(match["tag"].casefold()) if match else None
+
+
 _CONVERTED_FORMAT_SUFFIX = re.compile(r"(?i)(?:^|[_\s.-])(?:lora[_\s.-]*)?(q8p|f16|fp16)\.ckpt$")
 
 
@@ -667,17 +673,31 @@ def relabel_text(text: str) -> str:
     return _EMBEDDED_LEGACY.sub(lambda match: display_label(match.group(0)), text)
 
 
-def lora_offer(loras: dict, lora_versions: dict, model_versions: Sequence[str | None]) -> dict:
+def lora_offer(loras: dict, lora_versions: dict, model_versions: Sequence[Collection[str]]) -> dict:
     """The LoRAs to offer for the chosen checkpoints: those whose exact family matches one of the checkpoints'.
 
-    Like Generate's picker, nothing is hidden on a guess: with no checkpoint, or one whose family is unknown, every
-    LoRA stays; a LoRA whose family is unknown also stays. Saved selections are kept visible by the editors.
+    Nothing is hidden on a guess: with no checkpoint, or only checkpoints whose family is unknown, every LoRA stays
+    (``lora_offer_notice`` says why). A checkpoint of unknown family among known ones does not unfilter the others,
+    and a LoRA whose family is unknown also stays. Saved selections are kept visible by the editors.
     """
-    if not model_versions or any(version is None for version in model_versions):
+    wanted = set().union(*model_versions)
+    if not wanted:
         return dict(loras)
-    wanted = set(model_versions)
     return {
         name: weight
         for name, weight in loras.items()
         if (version := lora_versions.get(name)) is None or version in wanted
     }
+
+
+def lora_offer_notice(models: Sequence[str], model_versions: Sequence[Collection[str]]) -> str | None:
+    """Why a LoRA list may not follow the checkpoints (``None`` when every checkpoint's family is known)."""
+    if not models:
+        return "No checkpoint is chosen, so the LoRA list is not filtered by family."
+    unknown = [model for model, version in zip(models, model_versions, strict=True) if not version]
+    if not unknown:
+        return None
+    names = ", ".join(unknown)
+    if len(unknown) == len(models):
+        return f"The family of {names} is unknown, so the LoRA list is not filtered by family."
+    return f"The family of {names} is unknown: LoRAs for it cannot be filtered, only the other checkpoints' are."

@@ -24,10 +24,12 @@ from PySide6.QtWidgets import QApplication, QFormLayout, QListWidgetItem, QMenu,
 
 from dtflow.core.models import BackendEvent, LoRASelection, ValidationError
 from dtflow.core.request_records import request_from_record
+from dtflow.diagnostics import event as diagnostic_event
 from dtflow.persistence.store import StateBusyError
 from dtflow.services.connection import Presentation, present_generation_failure
 from dtflow.services.dynamic_prompts import decode_runs
-from dtflow.services.lora_naming import display_label, lora_offer, relabel_text
+from dtflow.services.preflight import checkpoint_picker_versions
+from dtflow.services.lora_naming import display_label, lora_offer, lora_offer_notice, relabel_text
 from dtflow.services.image_preparation import prepare_edit_inputs
 from dtflow.services.plan_errors import PlanError
 from dtflow.services.planning import Plan, PlanTable, describe_plan, expand_plan, new_rng_seed, plan_size, resolve_plan
@@ -121,6 +123,7 @@ from dtflow.ui.submit_shortcut import SubmitShortcut
 from dtflow.ui.queue_widgets import ENTRY_ROLE, HEADING_ROLE, QueueListDelegate
 from dtflow.ui.runner import AsyncRunner, EventRelay
 
+log = logging.getLogger(__name__)
 POLL_MS = 1000  # read interval while anything runs; the dispatch owner applies posted controls every 0.5 s
 IDLE_POLL_MS = 3000  # light summary polling while the tab is visible, so queues created elsewhere appear
 PLAN_WIDGETS = tuple(dict.fromkeys(ERROR_FIELDS.values()))
@@ -1646,16 +1649,40 @@ class QueuePage:
             if label is not None and field is not None:
                 label.setContentsMargins(0, 6 if isinstance(field, QPlainTextEdit) else 3, 0, 0)
 
+    def _plan_models(self, choices: dict) -> tuple[list[str], list[str | None]]:
+        models = [m for m in self.page.planModelsEdit.values() if m] or [choices.get("model") or ""]
+        models = [model for model in models if model]
+        versions = choices.get("model_versions", {})
+        # Generate lists versions only for the checkpoints in its current family view; a plan model outside it is
+        # resolved here from the bundled specs and catalogue.
+        return models, [versions.get(model) or checkpoint_picker_versions(model) for model in models]
+
     def _offered_loras(self) -> dict:
         """LoRA choices for the models this plan uses (Generate's checkpoint when none is chosen), as on Generate."""
         choices = self._choices()
-        models = [m for m in self.page.planModelsEdit.values() if m] or [choices.get("model") or ""]
-        versions = choices.get("model_versions", {})
-        return lora_offer(
-            choices.get("loras", {}),
-            choices.get("lora_versions", {}),
-            [versions.get(model) for model in models if model],
+        models, versions = self._plan_models(choices)
+        if not models and choices.get("family_versions"):  # no model anywhere: follow Generate's chosen family
+            versions = [choices["family_versions"]]
+        offered = lora_offer(choices.get("loras", {}), choices.get("lora_versions", {}), versions)
+        diagnostic_event(
+            log,
+            "ui.queue_lora_picker",
+            data={
+                "offered": len(offered),
+                "total": len(choices.get("loras", {})),
+                "models": models,
+                "versions": [sorted(item) for item in versions],
+                "family": sorted(choices.get("family_versions") or ()),
+            },
         )
+        return offered
+
+    def _loras_notice(self) -> str | None:
+        choices = self._choices()
+        models, versions = self._plan_models(choices)
+        if not models and choices.get("family_versions"):
+            return None
+        return lora_offer_notice(models, versions)
 
     def _configure_dimensions(self) -> None:
         page = self.page
@@ -1672,6 +1699,7 @@ class QueuePage:
             "LoRA",
             weights=self._offered_loras,
             families=lambda: self._choices().get("lora_families", {}),
+            notice=self._loras_notice,
             convert=self._lora_set_chip,
             label=self._lora_set_label,
             initial=self._generate_loras,
@@ -1683,6 +1711,7 @@ class QueuePage:
             "LoRA weight",
             weights=self._offered_loras,
             families=lambda: self._choices().get("lora_families", {}),
+            notice=self._loras_notice,
             initial=self._lora_weight_selection,
             convert=self._lora_weight_chips,
             editor_title="Edit LoRA weights",

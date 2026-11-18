@@ -132,7 +132,9 @@ def _records(path: Path) -> list[dict]:
 
 # These bundled family names are also exact Draw Things model version IDs.
 # Broad catalogue groups (SDXL, FLUX.2, Qwen Image) are not exact versions.
-_EXACT_BUNDLED_FAMILIES = frozenset(("z_image", "krea_2", "moss_image"))
+# Catalogue family -> exact version for families that map to exactly one: FLUX.1 files (dev, schnell, kontext, ...)
+# all run as "flux1".
+_EXACT_BUNDLED_FAMILIES = {"z_image": "z_image", "krea_2": "krea_2", "moss_image": "moss_image", "flux_1": "flux1"}
 
 
 @cache
@@ -142,8 +144,65 @@ def _bundled_exact_versions() -> dict[str, str]:
         for item in _records(CATALOGUE_DIR / name):
             family, filename = item.get("base_model"), item.get("file")
             if family in _EXACT_BUNDLED_FAMILIES and isinstance(filename, str):
-                versions.setdefault(filename, family)
+                versions.setdefault(filename, _EXACT_BUNDLED_FAMILIES[family])
     return versions
+
+
+# Catalogue family -> the exact versions its checkpoints can have, for families with no single one. Used only to
+# filter LoRA pickers when a checkpoint has no exact version of its own; preflight never reads it.
+_FAMILY_VERSIONS = {
+    "sdxl": ("sdxl_base_v0.9", "ssd_1b"),
+    "sd_1": ("v1",),
+    "sd_2": ("v2",),
+    "sd3": ("sd3", "sd3_large"),
+    "pixart": ("pixart",),
+    "hidream_i1": ("hidream_i1",),
+    "qwen_image": ("qwen_image", "qwen_image_2.1"),
+    "wan_2_1": ("wan_v2.1_1.3b", "wan_v2.1_14b"),
+    "wan_2_2": ("wan_v2.1_14b", "wan_v2.2_5b"),
+    "flux_2": ("flux2", "flux2_4b", "flux2_9b"),
+    "ltx_2": ("ltx2", "ltx2.3"),
+    "anima": ("cosmos2.5_2b",),
+    "ernie_image": ("ernie_image",),
+    "flux_3": ("flux3_5b",),
+    "minimax_h3": ("minimax_h3",),
+    "ideogram_4": ("ideogram_4",),
+    "hunyuan_video": ("hunyuan_video",),
+}
+
+
+@cache
+def _bundled_families() -> dict[str, str]:
+    families: dict[str, str] = {}
+    for name in ("Models_prime.json", "Models_niche.json"):
+        for item in _records(CATALOGUE_DIR / name):
+            family, filename = item.get("base_model"), item.get("file")
+            if isinstance(family, str) and isinstance(filename, str):
+                families.setdefault(filename, family)
+    return families
+
+
+def single_family_version(base_model: str | None) -> str | None:
+    """The one exact version a catalogue family stands for; None when it has several or is unknown."""
+    if base_model in _EXACT_BUNDLED_FAMILIES:
+        return _EXACT_BUNDLED_FAMILIES[base_model]
+    versions = _FAMILY_VERSIONS.get(base_model or "", ())
+    return versions[0] if len(versions) == 1 else None
+
+
+def catalogue_family_versions(base_model: str | None) -> frozenset[str]:
+    """Exact versions a catalogue family allows; empty when unknown."""
+    if base_model in _EXACT_BUNDLED_FAMILIES:
+        return frozenset((_EXACT_BUNDLED_FAMILIES[base_model],))
+    return frozenset(_FAMILY_VERSIONS.get(base_model or "", ()))
+
+
+def bundled_family_versions(model_id: str) -> frozenset[str]:
+    """Exact versions a bundled checkpoint's catalogue family allows; empty when the family is unknown."""
+    exact = bundled_exact_version(model_id)
+    if exact is not None:
+        return frozenset((exact,))
+    return frozenset(_FAMILY_VERSIONS.get(_bundled_families().get(model_id, ""), ()))
 
 
 def bundled_exact_version(model_id: str) -> str | None:

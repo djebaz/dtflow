@@ -55,7 +55,7 @@ from dtflow.services.lora_family import retained_families
 from dtflow.services.lora_auto_naming import normalize_previous_retained
 from dtflow.services.lora_metadata_edit import read_lora_rows
 from dtflow.services.lora_naming import label_overrides, set_label_overrides
-from dtflow.services.preflight import checkpoint_exact_version
+from dtflow.services.preflight import checkpoint_picker_versions
 from dtflow.services.session import observe_key
 from dtflow.services.storage_probe import probe_content
 from dtflow.services.lora_store import LoraStore
@@ -1000,7 +1000,7 @@ class MainWindow:
             "lora_families": choices.get("lora_families", {}),
             "listed_loras": tuple(e.identifier for e in snapshot.entries if e.kind == "lora") if snapshot else (),
             "lora_versions": choices.get("lora_versions", {}),
-            "model_versions": {model: checkpoint_exact_version(model, snapshot) for model in models},
+            "model_versions": {model: checkpoint_picker_versions(model, snapshot) for model in models},
             "backend": self.form.backendCombo.currentText(),
         }
 

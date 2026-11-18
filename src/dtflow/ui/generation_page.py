@@ -41,7 +41,7 @@ from dtflow.core.models import (
 )
 from dtflow.diagnostics import event as diagnostic_event
 from dtflow.logging_setup import dev_enabled
-from dtflow.services.catalogue import Catalogue, FAMILY_LABELS
+from dtflow.services.catalogue import Catalogue, FAMILY_LABELS, catalogue_family_versions
 from dtflow.services.checkpoint_metadata import resolve_checkpoint_metadata
 from dtflow.services.connection import (
     Presentation,
@@ -52,7 +52,7 @@ from dtflow.services.connection import (
 from dtflow.services.image_preparation import prepare_edit_inputs
 from dtflow.services.image_quality import assess_file
 from dtflow.services.lora_naming import relabel_text
-from dtflow.services.preflight import checkpoint_exact_version
+from dtflow.services.preflight import checkpoint_exact_version, checkpoint_picker_versions
 from dtflow.services import lora_relink
 from dtflow.services.body_pose import fit_pose_map
 from dtflow.services.presets import apply_preset, builtin_presets, load_presets, save_preset
@@ -553,6 +553,7 @@ class GenerationPage:
             self.page.baseModelCombo.clear()
         finally:
             self._updating_catalogue = False
+        self._filter_loras()
         self._write_inventory_stats()
 
     def _values(self) -> FormValues:
@@ -947,9 +948,12 @@ class GenerationPage:
             "lora_families": self.lora.family_labels(),  # display only; raw identifiers remain unchanged
             "receipts": self.lora.confirmed_receipts(),  # bound for LoRA sets that name a custom cloud LoRA
             "model": page.modelCombo.currentText().strip(),
+            "family_versions": self._chosen_family_versions()
+            if not page.modelCombo.currentText().strip()
+            else frozenset(),
             # Exact families (None = unknown) so Queues and Workflows can filter their LoRA pickers like Generate.
             "model_versions": {
-                page.modelCombo.itemText(index): checkpoint_exact_version(
+                page.modelCombo.itemText(index): checkpoint_picker_versions(
                     page.modelCombo.itemText(index), self._inventory_snapshot
                 )
                 for index in range(page.modelCombo.count())
@@ -1760,22 +1764,31 @@ class GenerationPage:
         """Re-resolve LoRA candidates after user-owned catalogue metadata changes."""
         self._filter_loras()
 
+    def _chosen_family_versions(self) -> frozenset[str]:
+        """Exact versions of the family chosen in the left panel, for when no checkpoint is selected."""
+        family = self.page.baseModelCombo.currentData()
+        if family and family != UNCLASSIFIED_FAMILY:
+            return catalogue_family_versions(family)
+        return frozenset()
+
     def _filter_loras(self) -> None:
         checkpoint = self.page.modelCombo.currentText().strip()
         include_cloud = self._backend()[0] == "local" and self.page.includeCloudCheck.isChecked()
         model = self._catalogue.checkpoint(checkpoint, include_unavailable=include_cloud)
-        version = checkpoint_exact_version(checkpoint, self._inventory_snapshot)
+        version = checkpoint_picker_versions(checkpoint, self._inventory_snapshot)
+        if not checkpoint:
+            version = self._chosen_family_versions()
         entries = (
             self._catalogue.compatible_loras(
                 checkpoint, domain=self._catalogue_domain(), include_unavailable=include_cloud
             )
-            if version is not None and model is not None and model.base_model is not None
+            if version and model is not None and model.base_model is not None
             else None
         )
         # Filter new choices only. Saved selections remain visible, and shared
         # preflight will reject a confirmed mismatch even if the UI is bypassed.
-        self.lora.set_candidates(entries, checkpoint_version=version)
-        if checkpoint and version is None:
+        self.lora.set_candidates(entries, checkpoint_versions=version, checkpoint=checkpoint)
+        if checkpoint and not version:
             self.lora.show_checkpoint_architecture_unknown()
 
     def _compute_units_estimate(self) -> ComputeUnitEstimate:
