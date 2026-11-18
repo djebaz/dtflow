@@ -6,6 +6,7 @@ Changes through 6.4.1 are consolidated in [DTFlow 6.4.1](v6.4.1.md). The publish
 
 ## Added
 
+- Controlnet pose generations can be queued with **Images N**, **Repeat**, and **New queue plan** (DT+ Cloud only): each item gets a separate seed and shares one staged pose map and Union control. Queue creation stays local; Start sends the map and may consume credits (PR #513, refs #505; owner smoke pending).
 - Generate has a Controlnet mode: generate from a photograph or a body map with a Union Pro 1.0 pose control on DT+ Cloud, with control force and apply from / to, a person pick for photographs, omitted joints named under the map and a Source / Pose / Result canvas. Only `flux_1_dev_q5p` with Union Pro 1.0 q5p at 0.7 is verified; other FLUX.1 checkpoints show "not verified". Gallery Use settings restores the pose.
 - Connection → Custom LoRAs lists managed LoRAs that have no retained local copy and lets you remove their local registry records after confirmation; remote DT+ storage and saved results are unchanged (#511).
 
@@ -19,6 +20,7 @@ Changes through 6.4.1 are consolidated in [DTFlow 6.4.1](v6.4.1.md). The publish
 
 ## Fixed
 
+- Queued pose items preserve their control and retained map across dispatch, Relaunch, Retry and Edit as new. Missing staged inputs fail explicitly instead of falling back to unguided text-to-image generation (PR #513; acceptance pending).
 - **Edit as new queue…** no longer silently carries unwanted fixed LoRAs from older plans; reconstructed drafts and manually removed fixed LoRAs discard obsolete DT+ receipt bindings without changing the source queue (PR #510).
 - Startup always opens on Connection; selecting Generate later opens its remembered sub-mode, including Scripts, without a startup redirect (#511).
 - Removing a registry-only LoRA updates the affected row without rescanning all retained LoRAs or rebuilding the entire table (#511).
