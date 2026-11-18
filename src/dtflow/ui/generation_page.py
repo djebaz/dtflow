@@ -553,6 +553,7 @@ class GenerationPage:
             self.page.baseModelCombo.clear()
         finally:
             self._updating_catalogue = False
+        self._filter_loras()
         self._write_inventory_stats()
 
     def _values(self) -> FormValues:
@@ -1774,7 +1775,7 @@ class GenerationPage:
         )
         # Filter new choices only. Saved selections remain visible, and shared
         # preflight will reject a confirmed mismatch even if the UI is bypassed.
-        self.lora.set_candidates(entries, checkpoint_version=version)
+        self.lora.set_candidates(entries, checkpoint_version=version, checkpoint=checkpoint)
         if checkpoint and version is None:
             self.lora.show_checkpoint_architecture_unknown()
 

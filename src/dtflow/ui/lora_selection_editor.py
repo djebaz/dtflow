@@ -129,6 +129,7 @@ def edit_lora_selection(
     marks: dict[str, str] | None = None,
     title: str = "Edit LoRAs",
     hint: str | None = None,
+    notice: str | None = None,
     multi_weight: bool = False,
 ) -> Callable[[dict[str, str]], None]:
     """Show every offered LoRA with a checkbox and a 0.0–3.0 weight slider; Apply replaces the selection once.
@@ -144,6 +145,8 @@ def edit_lora_selection(
     wheel_step = _WheelStep(editor)
     if hint:
         editor.loraSelectionHint.setText(hint)
+    if notice:  # why the list may show LoRAs of other families (family unknown), never silent
+        editor.loraSelectionHint.setText(f"{editor.loraSelectionHint.text()}\n{notice}")
     rows_layout = editor.loraSelectionRowsLayout
     empty = editor.loraSelectionEmpty
     suggestions = suggestions or {}

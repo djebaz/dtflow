@@ -45,7 +45,7 @@ from dtflow.services.lora_convert.errors import UnsupportedFamilyError, Unsuppor
 from dtflow.services.lora_convert_prepare import convert_for_prepare
 from dtflow.services.lora_digest import DigestCancelled, hash_file
 from dtflow.services.lora_family import DETECTABLE_FAMILIES, LoraFamily, detect_lora_family, validate_converted_lora
-from dtflow.services.lora_naming import LoraPrepareMetadata, display_label
+from dtflow.services.lora_naming import LoraPrepareMetadata, display_label, lora_offer_notice
 from dtflow.services.lora_store import LoraStore
 from dtflow.services.prepare_progress import (
     CONFIRMING,
@@ -176,6 +176,7 @@ class LoraAssetPanel:
         self._inventory_families: dict[str, str] = {}
         self._inventory_checkpoints: tuple[str, ...] = ()
         self._checkpoint_version: str | None = None
+        self._checkpoint_name = ""
         self._catalogue = catalogue if catalogue is not None else Catalogue(self._state)
         self._bind_after_list: str | None = None  # identifier to bind once the registry list has been refreshed
         self._add_when_bound = False  # a Prepare also adds the LoRA to the list; a plain add never needs to
@@ -265,9 +266,10 @@ class LoraAssetPanel:
         ]
         return tuple(dict.fromkeys(versions))
 
-    def set_candidates(self, entries, *, checkpoint_version: str | None = None) -> None:
+    def set_candidates(self, entries, *, checkpoint_version: str | None = None, checkpoint: str = "") -> None:
         """Offer only known-compatible LoRAs; keep selected mismatches visible for correction."""
         self._checkpoint_version = checkpoint_version
+        self._checkpoint_name = checkpoint
         if entries is None:
             self._candidates = list(getattr(self, "_inventory_candidates", ()))
         else:
@@ -572,6 +574,9 @@ class LoraAssetPanel:
             suggestions=dict(candidates),
             families=self.family_labels(),
             marks=marks,
+            notice=lora_offer_notice(
+                [self._checkpoint_name] if self._checkpoint_name else [], [self._checkpoint_version]
+            ),
             callback=apply_selection,
         )
 
