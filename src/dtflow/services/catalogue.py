@@ -132,7 +132,9 @@ def _records(path: Path) -> list[dict]:
 
 # These bundled family names are also exact Draw Things model version IDs.
 # Broad catalogue groups (SDXL, FLUX.2, Qwen Image) are not exact versions.
-_EXACT_BUNDLED_FAMILIES = frozenset(("z_image", "krea_2", "moss_image"))
+# Catalogue family -> exact version for families that map to exactly one: FLUX.1 files (dev, schnell, kontext, ...)
+# all run as "flux1".
+_EXACT_BUNDLED_FAMILIES = {"z_image": "z_image", "krea_2": "krea_2", "moss_image": "moss_image", "flux_1": "flux1"}
 
 
 @cache
@@ -142,7 +144,7 @@ def _bundled_exact_versions() -> dict[str, str]:
         for item in _records(CATALOGUE_DIR / name):
             family, filename = item.get("base_model"), item.get("file")
             if family in _EXACT_BUNDLED_FAMILIES and isinstance(filename, str):
-                versions.setdefault(filename, family)
+                versions.setdefault(filename, _EXACT_BUNDLED_FAMILIES[family])
     return versions
 
 
