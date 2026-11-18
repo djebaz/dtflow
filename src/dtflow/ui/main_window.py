@@ -2488,13 +2488,15 @@ class MainWindow:
         records, prepared, owner, revision = records
         if revision != self._lora_key_revision:
             return
+        changed = prepared != self._lora_prepared or owner != self._lora_prepare_owner
         self._lora_prepared = prepared
         self._lora_prepare_owner = owner
-        self._lora_records_read(records, None)
+        self._lora_records_read(records, None, force_render=changed)
 
-    def _lora_records_read(self, records, error) -> None:
+    def _lora_records_read(self, records, error, *, force_render: bool = False) -> None:
         if error is not None or records is None:
             return
+        changed = records != self._lora_records
         self._lora_records = records
         self.form._lora_hint_library.records = records
         self._prompt_hints.refresh()
@@ -2503,7 +2505,8 @@ class MainWindow:
         self.generation.lora.refresh_labels()
         self.gallery.refresh_lora_labels()
         self.queue_page.queueItemsView.viewport().update()  # painted LoRA names follow the saved short names
-        self._render_lora_table()
+        if changed or force_render:
+            self._render_lora_table()
 
     def _render_lora_table(self) -> None:
         """Batch cell replacement without repainting or firing selection callbacks for each row."""
@@ -2960,7 +2963,7 @@ class MainWindow:
             self.form.retainedLorasTable.setEnabled(False)
             self.runner.submit(
                 remove_unretained_lora(self.state_dir, *identity),
-                self._unretained_lora_removed,
+                lambda result, error: self._unretained_lora_removed(identity, result, error),
             )
 
         confirm_action(
@@ -2975,7 +2978,7 @@ class MainWindow:
             confirm_text="Remove",
         )
 
-    def _unretained_lora_removed(self, removed, error) -> None:
+    def _unretained_lora_removed(self, identity: tuple[str, int], removed, error) -> None:
         self._removing_retained_lora = False
         self.form.retainedLorasTable.setEnabled(True)
         if error is not None:
@@ -2987,12 +2990,43 @@ class MainWindow:
                 if known
                 else "The records could not be removed and were left unchanged.",
             )
-        elif removed:
-            self.form.statusBar().showMessage(
-                "Local LoRA records removed. DT+ storage, saved results and history unchanged.", 5000
+            self._retained_lora_selection_changed()
+            return
+        if not removed:
+            self.refresh_custom_loras(background=True, rescan=False)  # reconcile a stale selection
+            return
+
+        # Only registry rows changed: update the one visible row instead of rescanning or rebuilding all retained LoRAs.
+        self._lora_unretained = [
+            item for item in self._lora_unretained if (item["sha256"], item["size"]) != identity
+        ]
+        self._lora_no_copy.discard(identity)
+        self._lora_names.pop(identity, None)
+        self._lora_prepared = self._lora_prepared - {identity}
+        self._lora_records.pop(identity, None)
+
+        table = self.form.retainedLorasTable
+        with QSignalBlocker(table):
+            row = next(
+                (
+                    index
+                    for index in range(table.rowCount())
+                    if (cell := table.item(index, 0)) is not None
+                    and cell.data(Qt.ItemDataRole.UserRole) == identity
+                ),
+                None,
             )
-        self.refresh_custom_loras(background=True, rescan=False)
-        self.generation.lora.refresh_assets()
+            if row is not None:
+                table.removeRow(row)
+                if table.rowCount():
+                    table.selectRow(min(row, table.rowCount() - 1))
+        self._update_retained_status()
+        self._retained_lora_selection_changed()
+        self._lora_records_read(self._lora_records, None)  # update hints and labels without rebuilding the table
+        self.form.statusBar().showMessage(
+            "Local LoRA records removed. DT+ storage, saved results and history unchanged.", 5000
+        )
+        self.generation.lora.refresh_assets()  # the picker re-reads the registry off Qt
 
     def _retained_lora_removed(self, removed, error) -> None:
         self._removing_retained_lora = False
