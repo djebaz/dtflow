@@ -12,6 +12,7 @@ from PySide6.QtWidgets import QListWidgetItem
 from dtflow.core.models import ValidationError
 from dtflow.core.queue_authoring import QueueEdit
 from dtflow.services import queue_templates as service
+from dtflow.ui.controlnet_editor import PoseJob
 from dtflow.ui.inline_feedback import confirm_action, edit_text, feedback
 from dtflow.ui.prompt_tags import tag_spans, tagged_html
 
@@ -37,6 +38,10 @@ class QueueTemplates(QObject):
     def capture(self):
         q = self.queue
         request, backend, _, _ = q._composer_request(preview=True)
+        if isinstance(q._draft_job, PoseJob):
+            raise ValidationError(
+                "Save the pose queue first; a live Controlnet map has not been staged for a reusable template."
+            )
         if q._draft_job is not None:
             raise ValidationError("Templates support text-to-image only; image sources and masks are not portable.")
         recipe = service.Recipe(
