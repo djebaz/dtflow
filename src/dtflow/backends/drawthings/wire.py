@@ -154,9 +154,10 @@ def build_generation_message(
     if request.pose_control is not None:
         if backend_id != "drawthings-cloud" or prepared is None or image_permit is not None:
             raise _reject(request, "pose_not_configured", "Pose requires cloud and retained prepared inputs.")
-        if ImageInputSnapshot.from_prepared(
-            request.image_inputs.attempt_id, prepared, preserve_outside=False
-        ) != request.image_inputs:
+        if (
+            ImageInputSnapshot.from_prepared(request.image_inputs.attempt_id, prepared, preserve_outside=False)
+            != request.image_inputs
+        ):
             raise _reject(request, "pose_input_mismatch", "Pose input differs from the recorded snapshot.")
         transport = encode_image_inputs(prepared, limits)
     elif image_operation:
@@ -205,10 +206,16 @@ def build_generation_message(
         config.add_lora(wire_lora_name(request, selection.identifier), selection.weight, LORA_MODE)
     if request.pose_control is not None:
         config.add_control(
-            file=request.pose_control.checkpoint, weight=request.pose_control.strength,
-            guidance_start=0.0, guidance_end=1.0, no_prompt=False,
-            global_average_pooling=False, down_sampling_rate=1.0,
-            control_mode="Balanced", input_override="Pose", target_blocks=[],
+            file=request.pose_control.checkpoint,
+            weight=request.pose_control.strength,
+            guidance_start=request.pose_control.guidance_start,
+            guidance_end=request.pose_control.guidance_end,
+            no_prompt=False,
+            global_average_pooling=False,
+            down_sampling_rate=1.0,
+            control_mode=request.pose_control.control_mode,
+            input_override="Pose",
+            target_blocks=[],
         )
     configuration = config.to_fbs(request.seed)
     if "guidance_embed" in extras:
@@ -235,9 +242,11 @@ def build_generation_message(
         message.shared_secret = shared_secret
     if transport is not None:
         if request.pose_control is not None:
-            message.hints = [image_service.HintProto(
-                hint_type="pose", tensors=[image_service.TensorAndWeight(tensor=transport.image, weight=1.0)]
-            )]
+            message.hints = [
+                image_service.HintProto(
+                    hint_type="pose", tensors=[image_service.TensorAndWeight(tensor=transport.image, weight=1.0)]
+                )
+            ]
         else:
             message.image = transport.image
         if transport.mask is not None:
@@ -250,16 +259,19 @@ def build_generation_message(
                 request, "image_request_byte_limit", "Encoded image request exceeds the transport byte limit."
             )
         if request.pose_control is not None:
-            effective = (*effective, ("pose_tensor_sha256", transport.image.hex()),
-                         ("pose_cloud_acceptance", "unverified_owner_experiment"))
+            effective = (
+                *effective,
+                ("pose_tensor_sha256", transport.image.hex()),
+                ("pose_cloud_acceptance", "unverified_owner_experiment"),
+            )
         else:
             effective = (
-            *effective,
-            ("image_tensor_sha256", transport.image.hex()),
-            ("mask_tensor_sha256", transport.mask.hex() if transport.mask is not None else ""),
-            ("image_operation_evidence", image_permit.evidence_id),
-            ("image_operation_status", image_permit.status),
-            ("model_description_sha256", image_permit.model_description_sha256 or ""),
+                *effective,
+                ("image_tensor_sha256", transport.image.hex()),
+                ("mask_tensor_sha256", transport.mask.hex() if transport.mask is not None else ""),
+                ("image_operation_evidence", image_permit.evidence_id),
+                ("image_operation_status", image_permit.status),
+                ("model_description_sha256", image_permit.model_description_sha256 or ""),
             )
     return WireRequest(message, effective)
 
@@ -275,11 +287,15 @@ def verify_wire_configuration(
 
         control = raw.Controls(0) if raw.ControlsLength() == 1 else None
         if (
-            control is None or control.File().decode() != request.pose_control.checkpoint
+            control is None
+            or control.File().decode() != request.pose_control.checkpoint
             or not _same_float32(control.Weight(), request.pose_control.strength)
-            or control.InputOverride() != ControlInputType.Pose or control.ControlMode() != ControlMode.Balanced
-            or control.GuidanceStart() != 0 or control.GuidanceEnd() != 1
-            or control.GlobalAveragePooling() or control.DownSamplingRate() != 1
+            or control.InputOverride() != ControlInputType.Pose
+            or control.ControlMode() != getattr(ControlMode, request.pose_control.control_mode)
+            or not _same_float32(control.GuidanceStart(), request.pose_control.guidance_start)
+            or not _same_float32(control.GuidanceEnd(), request.pose_control.guidance_end)
+            or control.GlobalAveragePooling()
+            or control.DownSamplingRate() != 1
         ):
             raise _reject(request, "pose_wire_mismatch", "Serialized pose control differs from the resolved request.")
     expected = {

@@ -54,12 +54,15 @@ from dtflow.services.image_quality import assess_file
 from dtflow.services.lora_naming import relabel_text
 from dtflow.services.preflight import checkpoint_exact_version
 from dtflow.services import lora_relink
+from dtflow.services.body_pose import fit_pose_map
 from dtflow.services.presets import apply_preset, builtin_presets, load_presets, save_preset
 from dtflow.services.session import (
     InventoryDisplayMemory,
     generate_image_once,
     generate_once,
+    generate_pose_once,
     owner_probe_permit,
+    pose_request,
     read_attempt,
     selection_for,
 )
@@ -83,6 +86,7 @@ from dtflow.ui.generation_presenter import (
     values_from_request,
 )
 from dtflow.ui.inline_feedback import InlineNotice, edit_text
+from dtflow.ui.controlnet_editor import ControlnetEditor, PoseJob
 from dtflow.ui.inpaint_editor import EditJob, InpaintEditor
 from dtflow.ui.lora_panel import LoraAssetPanel
 from dtflow.ui.prompt_tags import style_prompt_tags
@@ -137,6 +141,7 @@ METADATA_LIMIT = 256_000
 WIRED_CONTROLS = (
     "textToImageModeButton",
     "inpaintModeButton",
+    "controlnetModeButton",
     "scriptsModeButton",
     "promptEdit",
     "promptHintsButton",
@@ -318,6 +323,7 @@ class GenerationPage:
         self._submitted_backend: str | None = None
         self._submitted_endpoint: str | None = None  # the running request's snapshot, not the form's current value
         self._run_edit = False
+        self._run_pose = False
         # The last submission exactly as sent (request, backend, endpoint, receipts, prefix, simulation, edit), for
         # Retry: it resends the recorded request with the same seed, never the form's current values (#240).
         self._last_submission: tuple | None = None
@@ -342,7 +348,7 @@ class GenerationPage:
         for name in WIRED_CONTROLS:
             getattr(page, name).setEnabled(True)
         self._align_rail_labels()
-        page.samplerCombo.addItems(SAMPLERS)
+        page.samplerCombo.addItems(sorted(SAMPLERS))
         for label, value in (("All", "all"), ("Image", "image"), ("Video", "video")):
             page.generationDomainCombo.addItem(label, value)
         page.generationDomainCombo.currentIndexChanged.connect(self._catalogue_filter_changed)
@@ -440,6 +446,9 @@ class GenerationPage:
         startup.mark("generate: inpaint editor")
         self.inpaint.attach(self)
         startup.mark("generate: inpaint attachment")
+        self.controlnet = ControlnetEditor(page, runner)
+        self.controlnet.attach(self)
+        startup.mark("generate: controlnet editor")
         page.textToImageModeButton.toggled.connect(self._sync_activity)
         page.inpaintModeButton.toggled.connect(self._sync_activity)
         self._update_compute_units()
@@ -574,23 +583,21 @@ class GenerationPage:
         self._filter_samplers(keep=values.sampler)
 
     def _filter_samplers(self, keep: str | None = None) -> None:
-        """Offer the samplers that suit the selected model; a model with no profile offers all of them.
+        """Offer every sampler in every mode; the selected model's profile only steers the choice.
 
-        ``keep`` is a sampler the caller restores on purpose (a loaded configuration), so it stays selectable even when
-        the dataset would not suggest it. Otherwise an unsuitable current sampler switches to the model's recommended one.
+        When the model changes and the current sampler is not one the model's profile suits, the profile's recommended
+        sampler is selected, but the user can still pick any other one. ``keep`` is a sampler the caller restores on
+        purpose (a loaded configuration) and is never replaced.
         """
         page = self.page
         combo = page.samplerCombo
         model = page.modelCombo.currentText()
         entry = self._catalogue.checkpoint(model, include_unavailable=True) if model else None
         profile = profile_for(model, entry.base_model if entry else None) if model else None
-        allowed = [item.value for item in profile.samplers] if profile else list(SAMPLERS)
+        allowed = sorted(SAMPLERS)
         wanted = keep or combo.currentText()
-        if wanted not in allowed:
-            if keep:
-                allowed.append(keep)
-            elif profile:
-                wanted = profile.sampler.value
+        if not keep and profile and wanted not in [item.value for item in profile.samplers]:
+            wanted = profile.sampler.value
         if [combo.itemText(i) for i in range(combo.count())] != allowed:
             combo.blockSignals(True)
             combo.clear()
@@ -801,6 +808,8 @@ class GenerationPage:
         self.lora.set_loras(values.loras, loaded=True)
         self._reuse_source_identity = source_identity
         self._config_name = None
+        if document.get("pose_control") is not None:
+            self.controlnet.restore_record(document)  # the pose goes back into Controlnet mode, never dropped
         self._status(
             Presentation(
                 "ok",
@@ -813,6 +822,17 @@ class GenerationPage:
         """Validate recorded settings before replacing the form, then submit them as a fresh request."""
         if self._busy or self._generating or self._activity.dispatching:
             return False
+        if document.get("pose_control") is not None:
+            self._status(
+                Presentation(
+                    "warning",
+                    "Cannot regenerate a pose image",
+                    "Use settings restores the pose into Controlnet mode; press Generate there.",
+                )
+            )
+            return False
+        if self.controlnet.active:
+            self.page.textToImageModeButton.setChecked(True)  # a plain request never carries the Controlnet pose
         values = self._saved_request_values(document)
         name, _ = self._backend()
         try:
@@ -893,6 +913,10 @@ class GenerationPage:
         self.page.queueGenerateButton.setToolTip(NO_MODEL_REASON if no_model else "")
         if hasattr(self, "inpaint"):
             self.inpaint.set_busy(blocked)  # Inpaint keeps its editor open and only gates Edit image
+        if hasattr(self, "controlnet"):
+            self.controlnet.set_busy(blocked)  # Controlnet follows its own reason line for Generate and Queue
+            if self.controlnet.active:
+                return
         if no_model:
             button.setToolTip(NO_MODEL_REASON)
         elif dispatching:
@@ -945,6 +969,8 @@ class GenerationPage:
         """
         if self.inpaint.active and self.inpaint.queue_job() is None:
             raise FormError("Choose a source image and paint or select the area to change first.", None)
+        if self.controlnet.active:
+            raise FormError("Controlnet requests cannot be queued: leave Controlnet mode to queue text to image.", None)
         self._mark(None)
         self._snap_size()
         name, endpoint = self._backend()
@@ -1021,6 +1047,13 @@ class GenerationPage:
                 )
             )
             return False
+        if edit is None and self.controlnet.active:
+            edit = self.controlnet.job()
+            if edit is None:
+                self._status(
+                    Presentation("warning", "Controlnet is not ready", self.controlnet.blocker() or "Nothing to send.")
+                )
+                return False
         images = self.page.imagesSpinBox.value()
         if edit is None and images > 1 and self.queue_images is not None:
             # One total: every picture is its own single-image queue item (Repeat expansion), so it has a row,
@@ -1059,7 +1092,7 @@ class GenerationPage:
             self._status(Presentation("error", "Invalid request", str(exc)))
             return False
         if edit is not None and request.batch_size * request.batch_count != 1:
-            self._status(Presentation("error", "Invalid request", "Edit image runs one image at a time."))
+            self._status(Presentation("error", "Invalid request", "Edit image and Controlnet run one image at a time."))
             return False
         self._reuse_source_identity = None
         self._submit(
@@ -1093,7 +1126,9 @@ class GenerationPage:
         )
         diagnostic_event(log, "generation.retry", level=logging.INFO, data={"backend": name})
         if self._activity.dispatching:
-            if self.queue_behind is None:
+            if self.queue_behind is None or isinstance(edit, PoseJob):
+                reason = "A pose generation cannot wait behind a queue. Retry when the queue has finished."
+                self._status(Presentation("error", "Retry not started", reason))
                 return False
             self._status(Presentation("ok", "Retry queued behind the running queue", "The Queues page reports it."))
             self.queue_behind(retried, name, endpoint, asset_ids, edit)
@@ -1107,7 +1142,8 @@ class GenerationPage:
         self.lora.dismiss_storage()
         self._submitted_backend, self._submitted_endpoint = name, endpoint
         self._request = request
-        self._run_edit = edit is not None
+        self._run_edit = isinstance(edit, EditJob)
+        self._run_pose = isinstance(edit, PoseJob)
         self._last_submission = (request, name, endpoint, tuple(asset_ids), prefix, simulation, edit)
         self._offer_retry(False)
         diagnostic_event(
@@ -1116,7 +1152,7 @@ class GenerationPage:
             level=logging.INFO,
             data={
                 "backend": name,
-                "operation": "inpaint" if edit else "txt2img",
+                "operation": "inpaint" if self._run_edit else "pose" if self._run_pose else "txt2img",
             },
         )
         diagnostic_event(
@@ -1154,7 +1190,7 @@ class GenerationPage:
             ),
         )
         self._sync_generate()
-        run = self._generate_edit if edit is not None else self._generate
+        run = self._generate_pose if self._run_pose else self._generate_edit if edit is not None else self._generate
         extra = (edit,) if edit is not None else ()
         self._future = self._runner.submit(
             run(name, endpoint, request, self._saved(), asset_ids, prefix, simulation, *extra),
@@ -1165,6 +1201,13 @@ class GenerationPage:
         """The window's queue dispatch owns the state lock: hand the request to the Queues page as a one-item queue
         that waits up next and starts by itself after the running queue (issue #125). Nothing is dispatched here."""
         if self.queue_behind is None:
+            return
+        if isinstance(edit, PoseJob):
+            self._status(
+                Presentation(
+                    "warning", "Controlnet cannot wait behind a queue", "Try again when the running queue has ended."
+                )
+            )
             return
         try:
             request, name, endpoint, asset_ids = self.request_for_queue()
@@ -1190,6 +1233,25 @@ class GenerationPage:
         selection = await asyncio.to_thread(selection_for, name, endpoint, self._state, **simulation)
         return await generate_once(
             selection, self._state, request, prefix=prefix, saved=saved, on_event=self._relay, asset_ids=asset_ids
+        )
+
+    async def _generate_pose(self, name, endpoint, request, saved, asset_ids, prefix, simulation, job):
+        """One explicit DT+ pose submission: the map is fitted to this request's size just now, so the submitted map
+        is the one the Pose view showed for it."""
+        selection = await asyncio.to_thread(selection_for, name, endpoint, self._state, **simulation)
+        prepared, evidence = await asyncio.to_thread(
+            fit_pose_map, job.content, dict(job.evidence), request.width_px, request.height_px
+        )
+        request = pose_request(request, job.control, prepared, evidence)
+        return await generate_pose_once(
+            selection,
+            self._state,
+            request,
+            prepared,
+            prefix=prefix,
+            saved=saved,
+            on_event=self._relay,
+            asset_ids=asset_ids,
         )
 
     async def _generate_edit(self, name, endpoint, request, saved, asset_ids, prefix, simulation, job):
@@ -1250,6 +1312,8 @@ class GenerationPage:
             self._present_progress(event_stage(event), event.completed, event.total)
         elif event.kind == "preview" and event.artifact and event.artifact.designation == Designation.PREVIEW:
             self._show_image(event.artifact.encoded, "preview")
+            if self._run_pose:  # the live preview of a pose run goes to the Controlnet canvas's Result view
+                self.controlnet.show_result(event.artifact.encoded)
             self._present_progress("Preview shown (not the final image)")
         elif event.kind in {"preparing", "submission_possible", "terminal"}:
             stage = {
@@ -1328,6 +1392,8 @@ class GenerationPage:
             self._show_image(outcome.final_image, "final", outcome.backend_id)
             if self._run_edit:  # only an edit's result belongs on the Inpaint canvas, whatever the mode is now
                 self.inpaint.show_result(outcome.final_image, outcome.output_paths[0] if outcome.output_paths else None)
+            elif self._run_pose:  # and a pose run's result on the Controlnet canvas
+                self.controlnet.show_result(outcome.final_image)
 
     def _quality_text(self, outcome) -> str:
         """Development mode: the export noise/blank detector's verdict on each saved output, also written to the log."""
@@ -1807,6 +1873,8 @@ class GenerationPage:
     def _show_inventory(self, snapshot: InventorySnapshot, how: str) -> None:
         self.lora.set_inventory(snapshot)
         self._inventory_snapshot = snapshot
+        if hasattr(self, "controlnet"):
+            self.controlnet.refresh_controls()
         self._catalogue.set_inventory(snapshot)
         self._inventory_how = how
         if self._inventory_error:

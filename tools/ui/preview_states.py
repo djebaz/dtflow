@@ -60,7 +60,7 @@ if sys.platform == "win32" and platform_name == "offscreen":
     # Offscreen Qt on Windows otherwise searches PySide6's empty font folder.
     os.environ.setdefault("QT_QPA_FONTDIR", str(Path(os.environ.get("WINDIR", r"C:\Windows")) / "Fonts"))
 
-from PySide6.QtCore import QCoreApplication, QEvent, QPoint, QRect, Qt  # noqa: E402
+from PySide6.QtCore import QCoreApplication, QEvent, QPoint, QPointF, QRect, Qt  # noqa: E402
 from PySide6.QtGui import QColor, QGuiApplication, QHelpEvent, QImage, QPainter, QPixmap, QTextDocument, QTextOption  # noqa: E402
 from PySide6.QtTest import QTest  # noqa: E402
 from PySide6.QtWidgets import (  # noqa: E402
@@ -136,7 +136,7 @@ class _FlowComplete(BaseException):
 
 
 FLOW_STOP = []  # ids the current stoppable group must still save; empty list means "run to the end"
-FLOW_FOLLOWERS = ("queue", "shell", "inpaint", "logs")  # later fixtures in the same window
+FLOW_FOLLOWERS = ("queue", "shell", "inpaint", "controlnet", "logs")  # later fixtures in the same window
 WORKSPACE_GROUPS = {
     "connection": ("connection-setup", "connection-outcomes", "connection-management", "connection-usage"),
     "generate": ("generate-configuration",),
@@ -4094,6 +4094,302 @@ def render_inpaint_states(shell, state, capture):
         strip.finish(key)
 
 
+POSE_FIXTURE_SIZE = (1024, 768)  # landscape source; the 768 x 1024 map is fitted with black padding, no crop
+POSE_MAP_SIZE = (768, 1024)
+# Joint offsets as (x, y) fractions of a figure's height, centred on the neck column; fixture drawing only.
+_POSE_JOINTS = {
+    "head": (0.0, 0.07),
+    "neck": (0.0, 0.15),
+    "l_shoulder": (-0.1, 0.17),
+    "r_shoulder": (0.1, 0.17),
+    "l_elbow": (-0.14, 0.32),
+    "r_elbow": (0.14, 0.32),
+    "l_wrist": (-0.13, 0.46),
+    "r_wrist": (0.13, 0.46),
+    "l_hip": (-0.06, 0.53),
+    "r_hip": (0.06, 0.53),
+    "l_knee": (-0.07, 0.74),
+    "r_knee": (0.07, 0.74),
+    "l_ankle": (-0.07, 0.95),
+    "r_ankle": (0.07, 0.95),
+}
+_POSE_LIMBS = (
+    ("neck", "r_shoulder"),
+    ("neck", "l_shoulder"),
+    ("r_shoulder", "r_elbow"),
+    ("r_elbow", "r_wrist"),
+    ("l_shoulder", "l_elbow"),
+    ("l_elbow", "l_wrist"),
+    ("neck", "r_hip"),
+    ("neck", "l_hip"),
+    ("r_hip", "r_knee"),
+    ("r_knee", "r_ankle"),
+    ("l_hip", "l_knee"),
+    ("l_knee", "l_ankle"),
+    ("neck", "head"),
+)
+_POSE_COLOURS = (
+    "#ff0000",
+    "#ff5500",
+    "#ffaa00",
+    "#ffff00",
+    "#aaff00",
+    "#55ff00",
+    "#00ff00",
+    "#00ff55",
+    "#00ffaa",
+    "#00ffff",
+    "#00aaff",
+    "#0055ff",
+    "#aa00ff",
+)
+
+
+def _pose_people():
+    """(centre x, top y, height, raised-arm) for three figures; synthetic shapes, not a photograph."""
+    return ((250, 90, 600, False), (560, 150, 540, True), (850, 330, 330, False))
+
+
+def _pose_joints(centre, top, height, raised):
+    joints = {name: (centre + dx * height, top + dy * height) for name, (dx, dy) in _POSE_JOINTS.items()}
+    if raised:  # right arm up, so the three poses differ
+        joints["r_elbow"] = (centre + 0.17 * height, top + 0.09 * height)
+        joints["r_wrist"] = (centre + 0.15 * height, top - 0.05 * height)
+    return joints
+
+
+def pose_fixture_source():
+    """Calibration scene with three simple figures; returns (pixmap, source-pixel boxes)."""
+    from PySide6.QtGui import QPen
+
+    width, height = POSE_FIXTURE_SIZE
+    image = QImage(width, height, QImage.Format.Format_RGB32)
+    image.fill(QColor("#7d8fa3"))
+    painter = QPainter(image)
+    painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+    painter.fillRect(0, int(height * 0.8), width, height, QColor("#8c7f6a"))
+    boxes = []
+    for index, (centre, top, size, raised) in enumerate(_pose_people()):
+        joints = _pose_joints(centre, top, size, raised)
+        body = QColor(("#4a6fa5", "#a5574a", "#5a8f6a")[index])
+        painter.setPen(QPen(body, size * 0.07, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap))
+        for a, b in _POSE_LIMBS[:-1]:
+            painter.drawLine(QPointF(*joints[a]), QPointF(*joints[b]))
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.setBrush(QColor("#e0b896"))
+        radius = size * 0.055
+        painter.drawEllipse(QPointF(*joints["head"]), radius, radius * 1.15)
+        xs = [x for x, _ in joints.values()]
+        ys = [y for _, y in joints.values()]
+        boxes.append(
+            (
+                max(0, int(min(xs) - size * 0.05)),
+                max(0, int(min(ys) - size * 0.08)),
+                min(width, int(max(xs) + size * 0.05)),
+                min(height, int(max(ys) + size * 0.04)),
+            )
+        )
+    painter.end()
+    return QPixmap.fromImage(image), boxes
+
+
+def pose_fixture_map(person):
+    """OpenPose-coloured body map of one fixture figure, fitted into 768 x 1024 with black padding."""
+    from PySide6.QtGui import QPen
+
+    map_width, map_height = POSE_MAP_SIZE
+    scale = min(map_width / POSE_FIXTURE_SIZE[0], map_height / POSE_FIXTURE_SIZE[1])
+    offset_y = (map_height - POSE_FIXTURE_SIZE[1] * scale) / 2
+    image = QImage(map_width, map_height, QImage.Format.Format_RGB32)
+    image.fill(QColor("#000000"))
+    painter = QPainter(image)
+    painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+    centre, top, size, raised = _pose_people()[person]
+    joints = {
+        name: QPointF(x * scale, y * scale + offset_y)
+        for name, (x, y) in _pose_joints(centre, top, size, raised).items()
+    }
+    for (a, b), colour in zip(_POSE_LIMBS, _POSE_COLOURS, strict=True):
+        painter.setPen(QPen(QColor(colour), 8, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap))
+        painter.drawLine(joints[a], joints[b])
+    painter.setPen(Qt.PenStyle.NoPen)
+    for index, name in enumerate(joints):
+        painter.setBrush(QColor(_POSE_COLOURS[index % len(_POSE_COLOURS)]))
+        painter.drawEllipse(joints[name], 6, 6)
+    painter.end()
+    return QPixmap.fromImage(image)
+
+
+def pose_fixture_result(person):
+    """Stand-in for a generated image: a filled figure in the picked pose on a plain 768 x 1024 backdrop."""
+    from PySide6.QtGui import QLinearGradient, QPen
+
+    map_width, map_height = POSE_MAP_SIZE
+    scale = min(map_width / POSE_FIXTURE_SIZE[0], map_height / POSE_FIXTURE_SIZE[1])
+    offset_y = (map_height - POSE_FIXTURE_SIZE[1] * scale) / 2
+    image = QImage(map_width, map_height, QImage.Format.Format_RGB32)
+    painter = QPainter(image)
+    painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+    gradient = QLinearGradient(0, 0, 0, map_height)
+    gradient.setColorAt(0, QColor("#c9b27c"))
+    gradient.setColorAt(1, QColor("#5b4b3a"))
+    painter.fillRect(image.rect(), gradient)
+    centre, top, size, raised = _pose_people()[person]
+    joints = {
+        name: QPointF(x * scale, y * scale + offset_y)
+        for name, (x, y) in _pose_joints(centre, top, size, raised).items()
+    }
+    painter.setPen(QPen(QColor("#2f4858"), size * scale * 0.09, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap))
+    for a, b in _POSE_LIMBS[:-1]:
+        painter.drawLine(joints[a], joints[b])
+    painter.setPen(Qt.PenStyle.NoPen)
+    painter.setBrush(QColor("#e8c9a8"))
+    radius = size * scale * 0.065
+    painter.drawEllipse(joints["head"], radius, radius * 1.15)
+    painter.end()
+    return QPixmap.fromImage(image)
+
+
+@fixture("controlnet")
+def render_controlnet_states(shell, state, capture):
+    """Controlnet mode layouts only: PoseView presentations on the real widgets; no extraction, download or generation."""
+    from dataclasses import replace
+
+    from dtflow.ui import controlnet_editor as controlnet_ui
+    from dtflow.ui.controlnet_editor import PosePerson, PoseView
+    from dtflow.ui.inline_feedback import feedback
+
+    page, editor = shell.generation_page, shell.generation.controlnet
+    shell.form.generationNavigationButton.click()
+    wait_for(lambda: page.controlnetModeButton.isEnabled())
+    shell.inline.dismiss()
+    page.controlnetModeButton.click()
+    source, boxes = pose_fixture_source()
+    names = [f"Person {index + 1} · {score}" for index, score in enumerate(("92 %", "88 %", "61 %"))]
+    people = tuple(PosePerson(name, box) for name, box in zip(names, boxes, strict=True))
+    facts = "portrait-group.jpg\n1024 × 768 · EXIF-oriented · RGB8"
+    map_facts = "Map: 768 × 1024, fitted with black padding, no crop · Extracted in 0.4 s · 2 joints omitted: left wrist, right ankle"
+    map_note = (
+        "Omitted joints: left wrist (low confidence), right ankle (outside the image).\nA joint is omitted when the "
+        "detector's confidence is under 0.5 or it lies outside the image. Omitted joints and the limbs that end on them "
+        "are not drawn, so the control gives no guidance there and the model decides freely."
+    )
+    consent = controlnet_ui.CONSENT
+
+    base = PoseView(blocker="Controlnet needs DT+ Cloud. Choose DT+ Cloud under Provider.")
+    editor.present(base)
+    capture("controlnet-01-disabled-backend")
+    editor.present(
+        replace(base, blocker="Controlnet needs a FLUX.1 Dev checkpoint (f16, q5p or q8p); the selected one is not.")
+    )
+    capture("controlnet-13-disabled-checkpoint")
+
+    empty = PoseView(blocker="Choose a photo or a body map first.", notice=consent)
+    editor.present(empty)
+    capture("controlnet-02-empty")
+    editor.present(replace(empty, kind="map", source=None))
+    capture("controlnet-12-body-map-empty")
+
+    loaded = replace(empty, source=source, source_facts=facts, blocker="Extract the pose first.")
+    missing = replace(loaded, detector="missing", blocker="Install the pose detector, or use a body map.")
+    editor.present(missing)
+    capture("controlnet-03-detector-missing")
+    strip = activity_strip(page)
+    strip.start(
+        "controlnet-detector-fixture",
+        "Download pose detector",
+        stop=lambda: None,
+        stop_text="Cancel download",
+        action_text="Cancel",
+    )
+    strip.update(
+        "controlnet-detector-fixture", 55, 100, detail="Downloading yolo26n-pose.onnx · 6.4 / 11.6 MiB", count="55%"
+    )
+    editor.present(replace(missing, detector="downloading", blocker="Downloading the pose detector…"))
+    capture("controlnet-05-detector-downloading")
+    strip.finish("controlnet-detector-fixture")
+
+    ready = replace(loaded, detector="ready")
+    strip.start("controlnet-extract-fixture", "Extract pose", stop=lambda: None, stop_text="", total=1)
+    strip.update("controlnet-extract-fixture", 0, 1, detail="Finding people…")
+    editor.present(replace(ready, extracting=True, blocker="Extracting the pose…"))
+    capture("controlnet-06-extracting")
+    strip.finish("controlnet-extract-fixture")
+
+    one = replace(
+        ready,
+        people=people[:1],
+        selected=0,
+        pose=pose_fixture_map(0),
+        map_facts=map_facts,
+        map_note=map_note,
+        blocker="",
+        notice=consent,
+    )
+    editor.present(replace(one, view="Pose"))
+    capture("controlnet-07-map-shown")
+    editor.present(replace(one, view="Source"))
+    capture("controlnet-14-one-person-source")
+
+    several = replace(
+        one,
+        people=people,
+        selected=1,
+        pose=pose_fixture_map(1),
+        blocker="",
+        view="Source",
+    )
+    editor.present(several)
+    capture("controlnet-08-several-people")
+    editor.present(replace(several, view="Pose"))
+    capture("controlnet-15-several-people-pose")
+
+    editor.present(
+        replace(
+            several,
+            selected=2,
+            pose=None,
+            map_facts="",
+            extraction_error="Person 3: shoulders and hips were not found with enough confidence. Pick another person or another photo.",
+            blocker="No pose to send yet.",
+        )
+    )
+    capture("controlnet-09-extraction-error")
+
+    chosen = replace(several, view="Pose", control_index=1, strength=0.9)
+    editor.present(chosen)
+    capture("controlnet-10-control-strength-chosen")
+    editor.present(replace(chosen, control_index=0, strength=0.7))
+    capture("controlnet-16-verified-default")
+
+    editor.present(replace(chosen, control_index=0, strength=0.7))
+    refusal = "DT+ Cloud refused the request: controlnet_union_pro_flux_1_dev_1.0_q5p.ckpt is not in your inventory."
+    editor.present(replace(chosen, control_index=0, strength=0.7, blocker=refusal))
+    feedback(page).show("Generation refused", refusal, "error")
+    capture("controlnet-11-provider-refusal")
+    shell.inline.dismiss()
+
+    editor.present(replace(chosen, control_index=0, strength=0.7, result=pose_fixture_result(1), view="Result"))
+    capture("controlnet-18-result-shown")
+
+    mapped = replace(
+        several,
+        kind="map",
+        people=(),
+        selected=None,
+        source=pose_fixture_map(1),
+        source_facts="pose-map.png\n768 × 1024 · OpenPose body map",
+        pose=pose_fixture_map(1),
+        view="Pose",
+        map_facts="Map: 768 × 1024 body map used as it is · no detection",
+        blocker="",
+        notice=consent,
+    )
+    editor.present(mapped)
+    capture("controlnet-17-body-map-shown")
+    page.textToImageModeButton.click()
+
+
 @fixture("logs")
 def render_logs_states(shell, capture):
     """Real Qt Logs presentations, including bounded paging and Follow inserts."""
@@ -4414,7 +4710,9 @@ def _render_selection(app, args):
                 dispose_window(app, unavailable.form)
         if wants("images"):
             render_initial_refresh_recovery(app, state, args.out)
-        if not any(needs_fixture(group) for group in ("generation-flow", "queue", "shell", "inpaint", "logs")):
+        if not any(
+            needs_fixture(group) for group in ("generation-flow", "queue", "shell", "inpaint", "controlnet", "logs")
+        ):
             render_scripts()
             return
         phase("main window")
@@ -4738,6 +5036,8 @@ def _render_selection(app, args):
                 render_shell_states(shell, capture)
             if wants("inpaint"):
                 render_inpaint_states(shell, state, capture)
+            if wants("controlnet"):
+                render_controlnet_states(shell, state, capture)
             if wants("logs"):
                 render_logs_states(shell, capture)
         except BaseException:

@@ -226,9 +226,12 @@ class GenerationService:
         if request.pose_control is not None:
             if caps.backend_id != "drawthings-cloud" or self.input_state is None or prepared_inputs is None:
                 raise ValidationError("Pose requires a durable cloud session and prepared inputs.")
-            if ImageInputSnapshot.from_prepared(
-                request.image_inputs.attempt_id, prepared_inputs, preserve_outside=False
-            ) != request.image_inputs:
+            if (
+                ImageInputSnapshot.from_prepared(
+                    request.image_inputs.attempt_id, prepared_inputs, preserve_outside=False
+                )
+                != request.image_inputs
+            ):
                 raise ValidationError("Pose inputs do not match the request.")
         unsupported = tuple(
             (name, code)

@@ -97,10 +97,12 @@ def test_core_and_services_have_no_provider_or_presentation_imports():
                 "image_preparation.py",
                 "person_selection.py",
                 "face_geometry.py",
+                "body_pose.py",
             )
             allow_numpy = directory == "services" and path.name in (
                 "person_selection.py",
                 "face_geometry.py",
+                "body_pose.py",
                 "lora_q8p_codec.py",
                 "lora_quantization.py",
             )  # numerical image and LoRA conversion services, not provider integrations
@@ -132,10 +134,12 @@ def test_only_the_draw_things_integration_imports_provider_libraries():
             ("services", "image_preparation.py"),
             ("services", "person_selection.py"),
             ("services", "face_geometry.py"),
+            ("services", "body_pose.py"),
         )
         allow_numpy = relative.parts in (
             ("services", "person_selection.py"),
             ("services", "face_geometry.py"),
+            ("services", "body_pose.py"),
             ("services", "lora_q8p_codec.py"),
             ("services", "lora_quantization.py"),
         ) or relative.parts[:2] == ("services", "lora_convert")  # the pure-Python LoRA converter needs numpy
