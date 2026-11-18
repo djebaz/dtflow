@@ -86,10 +86,13 @@ async def run(args):
     else:
         control = PoseControl(args.control, args.strength)
         request = resolve_generation(args)
-        # Validate exact checkpoint before reading a photograph or running ONNX.
+        # Validate the checkpoint family before reading a photograph or running ONNX.
         from dtflow.core.pose import is_flux1
 
-        if not is_flux1(request.model_id):
+        from dtflow.services.catalogue import Catalogue
+
+        entry = Catalogue(args.state).checkpoint(request.model_id, include_unavailable=True)
+        if not is_flux1(request.model_id, entry.base_model if entry else None):
             raise ValidationError("Pose is restricted to FLUX.1 checkpoints.")
         prepared, evidence = await asyncio.to_thread(
             prepare_pose, args.photo or args.image, request.width_px, request.height_px,

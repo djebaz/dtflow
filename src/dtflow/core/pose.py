@@ -20,8 +20,13 @@ MODELS = ("flux_1_dev_f16.ckpt", "flux_1_dev_q5p.ckpt", "flux_1_dev_q8p.ckpt")
 VERIFIED_MODELS = ("flux_1_dev_q5p.ckpt",)
 
 
-def is_flux1(model_id: str) -> bool:
-    """Any FLUX.1 family checkpoint (dev, schnell, krea, depth, de_distill, ...); other families are not."""
+def is_flux1(model_id: str, base_model: str | None = None) -> bool:
+    """Any FLUX.1 family checkpoint (dev, schnell, krea, depth, de_distill, ...); other families are not.
+
+    The catalogue's family of the checkpoint (``base_model``) decides when it is known; only an unclassified checkpoint
+    falls back to the ``flux_1_`` file-name prefix."""
+    if base_model:
+        return base_model == "flux_1"
     name = model_id.strip().lower()
     return name.startswith("flux_1_") and name.endswith(".ckpt")
 

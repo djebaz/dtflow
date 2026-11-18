@@ -375,12 +375,22 @@ class ControlnetEditor(QObject):
     def _backend(self):
         return self.controller._backend()[0] if self.controller is not None else ""
 
+    def _flux1(self):
+        """Whether the selected checkpoint belongs to the FLUX.1 family, by the catalogue's classification."""
+        model = self.page.modelCombo.currentText().strip()
+        entry = (
+            self.controller._catalogue.checkpoint(model, include_unavailable=True)
+            if self.controller is not None and model
+            else None
+        )
+        return is_flux1(model, entry.base_model if entry else None)
+
     def blocker(self) -> str:
         """Why Generate cannot start now; empty when it can. Backend and checkpoint come first, as they are the
         mode's own requirement."""
         if self._backend() != "cloud":
             return NO_BACKEND
-        if not is_flux1(self.page.modelCombo.currentText()):
+        if not self._flux1():
             return NO_CHECKPOINT
         if self._extracting:
             return "Extracting the pose…"
@@ -435,8 +445,7 @@ class ControlnetEditor(QObject):
                 for text in (
                     CONSENT if self._backend() == "cloud" else "",
                     UNVERIFIED_CHECKPOINT
-                    if self.page.modelCombo.currentText().strip() not in VERIFIED_MODELS
-                    and is_flux1(self.page.modelCombo.currentText())
+                    if self.page.modelCombo.currentText().strip() not in VERIFIED_MODELS and self._flux1()
                     else "",
                 )
                 if text
