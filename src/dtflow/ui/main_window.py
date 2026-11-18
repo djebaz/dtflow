@@ -2315,8 +2315,8 @@ class MainWindow:
             proceed,
         )
 
-    def refresh_custom_loras(self, *, background: bool = False) -> None:
-        """Read catalogue and managed-file usage away from Qt, including after navigation or removal."""
+    def refresh_custom_loras(self, *, background: bool = False, rescan: bool = True) -> None:
+        """Refresh LoRA rows; reuse inspected file details when removal did not change other files."""
         if self._removing_retained_lora:
             return
         self._summary_reads.pop("loras", None)
@@ -2328,7 +2328,9 @@ class MainWindow:
             store = LoraStore(self.state_dir)
             return len(Catalogue(self.state_dir).user_loras()), store.entries(), store.usage()
 
-        self._read_summary("loras", read, self._custom_loras_read)
+        self._read_summary(
+            "loras", read, lambda result, error: self._custom_loras_read(result, error, rescan=rescan)
+        )
 
     def _refresh_lora_hint_data(self) -> None:
         """Refresh presentation metadata off Qt after Prepare or metadata edits; never hash or call a provider."""
@@ -2345,7 +2347,7 @@ class MainWindow:
         self._read_summary("lora_hints", read, delivered)
         self._read_summary("lora_records", self._read_lora_records, self._lora_library_read)
 
-    def _custom_loras_read(self, result, error) -> None:
+    def _custom_loras_read(self, result, error, *, rescan: bool = True) -> None:
         if self._removing_retained_lora:
             return
         if error is not None:
@@ -2356,6 +2358,20 @@ class MainWindow:
             self.form.editLoraMetadataButton.setEnabled(False)
             return
         count, entries, (stored_count, stored_bytes) = result
+        if not rescan:
+            # Removing one LoRA leaves the inspection results for the remaining retained files unchanged.
+            previous = {(item.get("sha256"), item.get("size")): item for item in self._lora_entries}
+            for entry in entries:
+                old = previous.get((entry.get("sha256"), entry.get("size")), {})
+                for key in ("detected_family", "observed_format", "has_q8p"):
+                    if key in old:
+                        entry[key] = old[key]
+            self._lora_formats = {
+                (entry.get("sha256"), entry.get("size")): entry.get("observed_format") for entry in entries
+            }
+            self._lora_quantized = frozenset(
+                (entry.get("sha256"), entry.get("size")) for entry in entries if entry.get("has_q8p")
+            )
         self.form.customLorasStatusLabel.setText(
             f"{count} custom LoRA definition" + ("" if count == 1 else "s") + " imported."
             if count
@@ -2370,7 +2386,10 @@ class MainWindow:
         self.workflows.prompt_hints.refresh()
         self._render_lora_table()  # the retained files show at once; metadata columns follow from a separate read
         self._read_summary("lora_records", self._read_lora_records, self._lora_library_read)
-        self._read_summary("lora_families", self._read_lora_families, self._lora_families_read)
+        if rescan:
+            self._read_summary("lora_families", self._read_lora_families, self._lora_families_read)
+        else:
+            self._summary_reads.pop("lora_families", None)  # Discard an older scan's stale result.
         self._read_summary("lora_unretained", self._read_unretained_loras, self._lora_unretained_read)
 
     def _update_retained_status(self) -> None:
@@ -2487,6 +2506,17 @@ class MainWindow:
         self._render_lora_table()
 
     def _render_lora_table(self) -> None:
+        """Batch cell replacement without repainting or firing selection callbacks for each row."""
+        table = self.form.retainedLorasTable
+        table.setUpdatesEnabled(False)
+        try:
+            with QSignalBlocker(table):
+                self._fill_lora_table()
+        finally:
+            table.setUpdatesEnabled(True)
+        self._retained_lora_selection_changed()
+
+    def _fill_lora_table(self) -> None:
         records, entries = self._lora_records, self._lora_entries
         entries_by_identity = {(e.get("sha256"), e.get("size")): e for e in entries}
         table = self.form.retainedLorasTable
@@ -2544,7 +2574,6 @@ class MainWindow:
             if (sha256, size) == identity:
                 table.selectRow(row)
         self._render_no_copy_rows(len(rows), set(entries_by_identity), identity)
-        self._retained_lora_selection_changed()
 
     def _render_no_copy_rows(self, first: int, retained: set, identity) -> None:
         """Managed LoRAs the asset registry knows but the retained index does not: listed once, removable by records."""
@@ -2962,7 +2991,7 @@ class MainWindow:
             self.form.statusBar().showMessage(
                 "Local LoRA records removed. DT+ storage, saved results and history unchanged.", 5000
             )
-        self.refresh_custom_loras(background=True)
+        self.refresh_custom_loras(background=True, rescan=False)
         self.generation.lora.refresh_assets()
 
     def _retained_lora_removed(self, removed, error) -> None:
@@ -2972,7 +3001,7 @@ class MainWindow:
             InlineNotice.error(self.form, "Retained LoRA not removed", str(error))
         elif removed:
             self.form.statusBar().showMessage("Local retained LoRA removed. Remote and saved results unchanged.", 5000)
-        self.refresh_custom_loras(background=True)
+        self.refresh_custom_loras(background=True, rescan=False)
 
     def import_custom_loras(self) -> None:
         chosen, _ = QFileDialog.getOpenFileName(self.form, "Import custom LoRAs", str(self.state_dir), "JSON (*.json)")
