@@ -17,7 +17,7 @@ def add_commands(commands, add_request_options):
     catalogue.set_defaults(state=Path(".dtflow"))
     for name in ("install", "extract", "generate", "retry"):
         child = actions.add_parser(name, help={
-            "install": "Explicitly download and verify the AGPL-3.0 YOLO26m-pose ONNX detector (no inference).",
+            "install": "Explicitly download and verify the AGPL-3.0 YOLO26n-pose ONNX detector (no inference).",
             "extract": "Offline extraction only: one body (exactly one found, or chosen with --person); omit low-confidence joints, no detailed face/fingers.",
             "generate": "Explicit DT+ submission; sends pose map off-machine and may consume credits.",
             "retry": "Explicit NEW cloud submission using retained settings/map; not remote recovery (may use credits).",
