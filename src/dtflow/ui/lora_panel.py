@@ -28,7 +28,7 @@ from dtflow.core.models import (
 )
 from dtflow.diagnostics import asset_ref_data, event as diagnostic_event
 from dtflow.logging_setup import development_mode
-from dtflow.services.catalogue import Catalogue, FAMILY_LABELS, bundled_exact_version
+from dtflow.services.catalogue import Catalogue, FAMILY_LABELS, bundled_exact_version, single_family_version
 from dtflow.core.models import KeyHoldings
 from dtflow.services.dt_storage import reported_free_space, storage_refusal, storage_size
 from dtflow.services.storage_probe import probe_content
@@ -177,6 +177,7 @@ class LoraAssetPanel:
         self._inventory_checkpoints: tuple[str, ...] = ()
         self._checkpoint_versions: frozenset[str] = frozenset()  # exact versions the checkpoint allows; empty = unknown
         self._checkpoint_name = ""
+        self._catalogue_versions: dict[str, str] | None = None  # LoRA -> the one exact version its catalogue family has
         self._catalogue = catalogue if catalogue is not None else Catalogue(self._state)
         self._bind_after_list: str | None = None  # identifier to bind once the registry list has been refreshed
         self._add_when_bound = False  # a Prepare also adds the LoRA to the list; a plain add never needs to
@@ -272,6 +273,7 @@ class LoraAssetPanel:
         """Offer only known-compatible LoRAs; keep selected mismatches visible for correction."""
         self._checkpoint_versions = checkpoint_versions
         self._checkpoint_name = checkpoint
+        self._catalogue_versions = None  # user catalogue entries may have changed
         if entries is None:
             self._candidates = list(getattr(self, "_inventory_candidates", ()))
         else:
@@ -298,7 +300,13 @@ class LoraAssetPanel:
         }
         if versions:
             return next(iter(versions)) if len(versions) == 1 else None
-        return self._inventory_families.get(name) or shortcode_family(name)
+        if self._catalogue_versions is None:
+            self._catalogue_versions = {
+                entry.identifier: version
+                for entry in self._catalogue.lora_definitions()
+                if (version := single_family_version(entry.base_model))
+            }
+        return self._inventory_families.get(name) or self._catalogue_versions.get(name) or shortcode_family(name)
 
     def _candidate_compatible(self, name: str) -> bool:
         candidate = self._candidate_family(name)
