@@ -164,6 +164,9 @@ _FAMILY_VERSIONS = {
     "ltx_2": ("ltx2", "ltx2.3"),
     "anima": ("cosmos2.5_2b",),
     "ernie_image": ("ernie_image",),
+    "flux_3": ("flux3_5b",),
+    "minimax_h3": ("minimax_h3",),
+    "ideogram_4": ("ideogram_4",),
     "hunyuan_video": ("hunyuan_video",),
 }
 
