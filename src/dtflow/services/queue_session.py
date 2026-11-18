@@ -50,7 +50,6 @@ from dtflow.persistence.settings import trigger_prefix_enabled
 from dtflow.persistence.store import SQLiteAttempts, StateBusyError, state_is_owned
 from dtflow.persistence.workflow_items import KIND_WORKFLOW, is_workflow_record
 from dtflow.services import session
-from dtflow.services.body_pose import fit_pose_map
 from dtflow.services.assets import AssetService
 from dtflow.services.generation import GenerationService
 from dtflow.services.image_inputs import restore_image_inputs, snapshot_image_inputs
@@ -281,6 +280,9 @@ async def create_pose_queue(
     if any((item.width_px, item.height_px) != (base.width_px, base.height_px) for item in items):
         raise ValidationError("A pose queue uses one fitted map size; remove size variations.")
     await _check_pose_queue(state, selection, items, control, saved=saved)
+
+    # Only pose queue creation needs the image stack; ordinary queue imports remain light.
+    from dtflow.services.body_pose import fit_pose_map
 
     prepared, map_evidence = await settle(
         asyncio.to_thread(fit_pose_map, content, dict(evidence), base.width_px, base.height_px)
