@@ -29,10 +29,8 @@ from dtflow.ui.file_dialogs import QFileDialog
 from dtflow.ui.model_download import is_downloading, start_pose_download
 from dtflow.ui.pose_canvas import PoseCanvas
 
-IMAGES_NOTE = "Controlnet makes one image per Generate; queuing a pose (Images, Repeat, plans) is planned in #505."
-QUEUE_NOTE = "Controlnet requests cannot be queued yet (planned in #505)."
 CONFIGURATION_NOTE = "Saving a configuration or preset covers text-to-image only: it would drop the pose."
-CONSENT = "The pose map is sent to DT+ Cloud and may use credits. Generate asks before the first use."
+CONSENT = "Generate or Start sends the pose map to DT+ Cloud and may consume credits. Saving a queue stays local."
 DETECTOR_NOTE = "YOLO26n-pose · about 11.6 MiB · AGPL-3.0 · runs on this computer"
 NO_BACKEND = "Controlnet needs DT+ Cloud. Choose DT+ Cloud under Provider."
 NO_CHECKPOINT = "Controlnet needs a FLUX.1 checkpoint; the selected one is not."
@@ -247,7 +245,7 @@ class ControlnetEditor(QObject):
         self.sync_buttons()
 
     def sync_buttons(self):
-        """In Controlnet mode Generate follows the reason line; Add to queue is always held (no queue support)."""
+        """Pose uses the same Generate, Images and Queue submission actions as text-to-image."""
         if not self.active:
             return
         page, controller = self.page, self.controller
@@ -260,15 +258,15 @@ class ControlnetEditor(QObject):
             generate.setEnabled(False)
             generate.setToolTip(reason)
         elif dispatching:
-            generate.setEnabled(False)
-            generate.setToolTip("A queue is running in this window: Controlnet cannot wait behind it.")
+            generate.setEnabled(not self._busy and not no_model)
+            generate.setToolTip("Adds the pose as one up-next queue item; Start sends the map to DT+.")
         else:
             generate.setEnabled(not self._busy and not no_model)
             generate.setToolTip("Choose a model first: Generate needs a checkpoint." if no_model else "")
-        page.queueGenerateButton.setEnabled(False)
-        page.queueGenerateButton.setToolTip(QUEUE_NOTE)
-        page.imagesSpinBox.setEnabled(False)
-        page.imagesSpinBox.setToolTip(IMAGES_NOTE)
+        page.queueGenerateButton.setEnabled(not self._busy and not no_model and not reason)
+        page.queueGenerateButton.setToolTip(reason or "Create a pose Repeat or plan; Start sends its map to DT+.")
+        page.imagesSpinBox.setEnabled(True)
+        page.imagesSpinBox.setToolTip("Images above 1 create a Repeat queue with one pose-guided image per item.")
 
     def _list_selected(self, row):
         self.canvas.select(row if row >= 0 else None)
