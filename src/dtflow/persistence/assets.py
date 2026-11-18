@@ -759,6 +759,64 @@ class AssetRegistry:
             rows = db.execute("SELECT * FROM lora_records ORDER BY sha256, size").fetchall()
         return tuple(_record(row) for row in rows)
 
+    async def lora_holdings(self) -> tuple[dict[str, Any], ...]:
+        """Every LoRA content identity this registry knows, with the names and per-key receipt states held for it.
+
+        Read only: no provider call and no filesystem work. One row per (sha256, size), whether it is known through an
+        asset row, a key receipt or only a local metadata record."""
+        return await self._run(self._lora_holdings)
+
+    def _lora_holdings(self) -> tuple[dict[str, Any], ...]:
+        if not self.path.exists():
+            return ()
+        held: dict[tuple[str, int], dict[str, Any]] = {}
+
+        def entry(sha256: str, size: int) -> dict[str, Any]:
+            return held.setdefault(
+                (sha256, size), {"sha256": sha256, "size": size, "names": [], "receipts": {}, "record": None}
+            )
+
+        with closing(self._connect()) as db:
+            for row in db.execute(
+                "SELECT sha256, size, identifier FROM assets WHERE kind='lora' ORDER BY created_at_utc"
+            ):
+                names = entry(row["sha256"], row["size"])["names"]
+                if row["identifier"] not in names:
+                    names.append(row["identifier"])
+            for row in db.execute(
+                "SELECT a.sha256, a.size, k.identifier, k.credential_id, k.state FROM asset_key_receipts k "
+                "JOIN assets a ON a.asset_id=k.asset_id WHERE a.kind='lora' ORDER BY k.updated_at_utc"
+            ):
+                item = entry(row["sha256"], row["size"])
+                if row["identifier"] not in item["names"]:
+                    item["names"].append(row["identifier"])
+                item["receipts"][row["credential_id"]] = row["state"]
+            for row in db.execute("SELECT * FROM lora_records"):
+                entry(row["sha256"], row["size"])["record"] = _record(row)
+        return tuple(held.values())
+
+    async def delete_lora_content(self, sha256: str, size: int) -> bool:
+        """Delete only the local records of one LoRA content: receipts, operations, asset rows and the metadata row.
+
+        One transaction. Needs the writer lock. It never touches DT+ storage, files or any other table."""
+        return await self._run(self._write, self._delete_lora_content, sha256, size)
+
+    @staticmethod
+    def _delete_lora_content(db, sha256: str, size: int) -> bool:
+        ids = [
+            row["asset_id"]
+            for row in db.execute(
+                "SELECT asset_id FROM assets WHERE kind='lora' AND sha256=? AND size=?", (sha256, size)
+            )
+        ]
+        removed = 0
+        for asset_id in ids:
+            removed += db.execute("DELETE FROM asset_operations WHERE asset_id=?", (asset_id,)).rowcount
+            removed += db.execute("DELETE FROM asset_key_receipts WHERE asset_id=?", (asset_id,)).rowcount
+            removed += db.execute("DELETE FROM assets WHERE asset_id=?", (asset_id,)).rowcount
+        removed += db.execute("DELETE FROM lora_records WHERE sha256=? AND size=?", (sha256, size)).rowcount
+        return removed > 0
+
     # -- downloaded LoRA sources (additive table; readers treat a missing table as "no sources") ----------------------
 
     async def sources(self) -> tuple[dict[str, Any], ...]:

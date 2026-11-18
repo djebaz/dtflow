@@ -59,7 +59,7 @@ Pick the **fake** provider on the Connection page for an offline tour, or config
 Draw Things or DT+. The [desktop guide](devdocs/guides/desktop.md) covers connection setup,
 launch options and each workspace.
 
-At startup, DTFlow checks the restored connection once in the background. Its colored power icon at the far right of the bottom bar opens Connection and retains the last check result; it is not continuous monitoring. Images opens from the button above ordinary inspectors (above the centre on narrow windows), hidden in Images and Logs. Missing connection configuration stays unchecked, and startup never generates images or resumes queues.
+DTFlow always opens on **Connection** at startup. It remembers the last Generate sub-mode (Text to image, Inpaint, Controlnet or Scripts), but only opens that mode when you navigate to **Generate**; a remembered Scripts mode never redirects startup. DTFlow checks the restored connection once in the background. Its colored power icon at the far right of the bottom bar opens Connection and retains the last check result; it is not continuous monitoring. Images opens from the button above ordinary inspectors (above the centre on narrow windows), hidden in Images and Logs. Missing connection configuration stays unchecked, and startup never generates images or resumes queues.
 
 > Generating on local Draw Things or DT+ submits real work and may consume subscription credits.
 > DTFlow never switches backend or credential, uploads assets or enables pay-as-you-go on its own.
