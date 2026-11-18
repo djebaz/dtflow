@@ -32,7 +32,7 @@ from dtflow.ui.pose_canvas import PoseCanvas
 QUEUE_NOTE = "Controlnet requests cannot be queued."
 CONFIGURATION_NOTE = "Saving a configuration or preset covers text-to-image only: it would drop the pose."
 CONSENT = "The pose map is sent to DT+ Cloud and may use credits. Generate asks before the first use."
-DETECTOR_NOTE = "YOLO26n-pose · about 11.6 MiB · AGPL-3.0 · runs on this computer"
+DETECTOR_NOTE = "YOLO26m-pose · about 82.6 MiB · AGPL-3.0 · runs on this computer"
 NO_BACKEND = "Controlnet needs DT+ Cloud. Choose DT+ Cloud under Provider."
 NO_CHECKPOINT = "Controlnet needs a FLUX.1 Dev checkpoint; the selected one is not."
 UNVERIFIED_CHECKPOINT = "Not verified with this checkpoint: only FLUX.1 Dev q5p has been confirmed."
@@ -352,7 +352,7 @@ class ControlnetEditor(QObject):
             "ready": (DETECTOR_NOTE, "ok", "✓", "Pose detector installed"),
             "missing": (
                 "The pose detector is not installed. Download reads poses from photos; a body map works without it. "
-                "Pressing Download accepts the AGPL-3.0 licence of YOLO26n-pose (about 11.6 MiB, from its publisher).",
+                "Pressing Download accepts the AGPL-3.0 licence of YOLO26m-pose (about 82.6 MiB, from its publisher).",
                 "missing",
                 "0",
                 "Pose detector not installed",

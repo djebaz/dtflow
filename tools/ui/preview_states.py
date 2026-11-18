@@ -4298,7 +4298,7 @@ def render_controlnet_states(shell, state, capture):
         action_text="Cancel",
     )
     strip.update(
-        "controlnet-detector-fixture", 55, 100, detail="Downloading yolo26n-pose.onnx · 6.4 / 11.6 MiB", count="55%"
+        "controlnet-detector-fixture", 55, 100, detail="Downloading yolo26m-pose.onnx · 45 / 82.6 MiB", count="55%"
     )
     editor.present(replace(missing, detector="downloading", blocker="Downloading the pose detector…"))
     capture("controlnet-05-detector-downloading")

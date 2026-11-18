@@ -1,6 +1,6 @@
 """Worker-only COCO body extraction and OpenPose-18 maps; no implicit downloads or submission.
 
-YOLO26n-pose end2end ONNX: RGB /255, centered 640 letterbox, [1,300,57] rows of x1,y1,x2,y2,score,class and
+YOLO26m-pose end2end ONNX: RGB /255, centered 640 letterbox, [1,300,57] rows of x1,y1,x2,y2,score,class and
 17*(x,y,confidence) in letterboxed pixels; no NMS step (the export already did it).
 OpenPose body palette/topology follows controlnet_aux b1aac318b15c4e65a21bc516dc236ad4bf593d46.
 Only the first 17 limbs are drawn, as in its body renderer. No fingers or facial contours.
@@ -28,13 +28,13 @@ from dtflow.services.person_selection import _cpu_session, _letterbox, _read_mod
 
 log = logging.getLogger(__name__)
 DETECTOR = CatalogueEntry(
-    "pose", "YOLO26n body pose (COCO-17, AGPL-3.0)",
-    "https://github.com/ultralytics/assets/releases/download/v8.4.0/yolo26n-pose.onnx",
-    "93fc5e1d6b7690f33b4e1d60d6e9aec1cea14bdbc361bfae11778969be662078", 11.56,
+    "pose", "YOLO26m body pose (COCO-17, AGPL-3.0)",
+    "https://github.com/ultralytics/assets/releases/download/v8.4.0/yolo26m-pose.onnx",
+    "78fb1a7eeb7b593bf129402b423f97694472901ed370d99a593d058d89a20e58", 82.57,
     "Ultralytics AGPL-3.0", "https://github.com/ultralytics/ultralytics/blob/main/LICENSE",
     "https://github.com/ultralytics/assets/releases/tag/v8.4.0",
 )
-DETECTOR_BYTES = 12_125_856
+DETECTOR_BYTES = 86_584_953
 CONFIDENCE = 0.5
 MAX_CANDIDATES = 10
 PALETTE = (
@@ -54,7 +54,7 @@ def _pose_session(data: bytes):
         len(inputs) != 1 or inputs[0].shape != [1, 3, 640, 640] or inputs[0].type != "tensor(float)"
         or len(outputs) != 1 or outputs[0].shape != [1, 300, 57] or outputs[0].type != "tensor(float)"
     ):
-        raise ValidationError("Expected pinned YOLO26n-pose float32 [1,3,640,640] -> [1,300,57] end2end ONNX export.")
+        raise ValidationError("Expected pinned YOLO26m-pose float32 [1,3,640,640] -> [1,300,57] end2end ONNX export.")
     meta = session.get_modelmeta().custom_metadata_map
     try:
         keypoints = ast.literal_eval(meta.get("kpt_shape", ""))
