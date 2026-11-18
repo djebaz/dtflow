@@ -45,8 +45,24 @@ def run(label: str, command: list[str]) -> dict | None:
 
 
 def generation_args(args, job_state: Path, out: Path) -> list[str]:
-    common = ["-b", "cloud", "-d", str(job_state), "-o", str(out), "-p", args.prompt,
-              "-w", str(args.width), "-y", str(args.height), "-s", str(args.seed), "-t", str(args.timeout)]
+    common = [
+        "-b",
+        "cloud",
+        "-d",
+        str(job_state),
+        "-o",
+        str(out),
+        "-p",
+        args.prompt,
+        "-w",
+        str(args.width),
+        "-y",
+        str(args.height),
+        "-s",
+        str(args.seed),
+        "-t",
+        str(args.timeout),
+    ]
     if args.model:
         common += ["-m", args.model]
     if args.steps:
@@ -95,7 +111,9 @@ def main() -> int:
         if pose_map.exists():
             pose_map.unlink()
             pose_map.with_suffix(".pose.json").unlink(missing_ok=True)
-        report = run("extract", cli("pose", "extract", "-d", str(args.state), "-i", str(args.photo), "-o", str(pose_map)))
+        report = run(
+            "extract", cli("pose", "extract", "-d", str(args.state), "-i", str(args.photo), "-o", str(pose_map))
+        )
         if report is None:
             return 1
         print(f"map: {pose_map} (sha256 {report['map_sha256'][:12]})")
@@ -103,8 +121,17 @@ def main() -> int:
     jobs = {"baseline": cli("generate", *generation_args(args, args.out / "state_baseline", args.out / "baseline.png"))}
     for strength in args.strengths:
         name = f"pose_{strength:g}"
-        jobs[name] = cli("pose", "generate", *generation_args(args, args.out / f"state_{name}", args.out / f"{name}.png"),
-                         "-im", str(pose_map), "-co", args.control, "-cs", str(strength))
+        jobs[name] = cli(
+            "pose",
+            "generate",
+            *generation_args(args, args.out / f"state_{name}", args.out / f"{name}.png"),
+            "-im",
+            str(pose_map),
+            "-co",
+            args.control,
+            "-cs",
+            str(strength),
+        )
     for label, command in jobs.items():
         print(f"{label}: uv run dtflow {' '.join(command[3:])}")
     if not args.submit:

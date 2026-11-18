@@ -28,34 +28,90 @@ from dtflow.services.person_selection import _cpu_session, _letterbox, _read_mod
 
 log = logging.getLogger(__name__)
 DETECTOR = CatalogueEntry(
-    "pose", "YOLO26n body pose (COCO-17, AGPL-3.0)",
+    "pose",
+    "YOLO26n body pose (COCO-17, AGPL-3.0)",
     "https://github.com/ultralytics/assets/releases/download/v8.4.0/yolo26n-pose.onnx",
-    "93fc5e1d6b7690f33b4e1d60d6e9aec1cea14bdbc361bfae11778969be662078", 11.56,
-    "Ultralytics AGPL-3.0", "https://github.com/ultralytics/ultralytics/blob/main/LICENSE",
+    "93fc5e1d6b7690f33b4e1d60d6e9aec1cea14bdbc361bfae11778969be662078",
+    11.56,
+    "Ultralytics AGPL-3.0",
+    "https://github.com/ultralytics/ultralytics/blob/main/LICENSE",
     "https://github.com/ultralytics/assets/releases/tag/v8.4.0",
 )
 DETECTOR_BYTES = 12_125_856
 CONFIDENCE = 0.5
 MAX_CANDIDATES = 10
 PALETTE = (
-    (255, 0, 0), (255, 85, 0), (255, 170, 0), (255, 255, 0), (170, 255, 0), (85, 255, 0),
-    (0, 255, 0), (0, 255, 85), (0, 255, 170), (0, 255, 255), (0, 170, 255), (0, 85, 255),
-    (0, 0, 255), (85, 0, 255), (170, 0, 255), (255, 0, 255), (255, 0, 170), (255, 0, 85),
+    (255, 0, 0),
+    (255, 85, 0),
+    (255, 170, 0),
+    (255, 255, 0),
+    (170, 255, 0),
+    (85, 255, 0),
+    (0, 255, 0),
+    (0, 255, 85),
+    (0, 255, 170),
+    (0, 255, 255),
+    (0, 170, 255),
+    (0, 85, 255),
+    (0, 0, 255),
+    (85, 0, 255),
+    (170, 0, 255),
+    (255, 0, 255),
+    (255, 0, 170),
+    (255, 0, 85),
 )
-LIMBS = ((1, 2), (1, 5), (2, 3), (3, 4), (5, 6), (6, 7), (1, 8), (8, 9), (9, 10),
-         (1, 11), (11, 12), (12, 13), (1, 0), (0, 14), (14, 16), (0, 15), (15, 17))
+LIMBS = (
+    (1, 2),
+    (1, 5),
+    (2, 3),
+    (3, 4),
+    (5, 6),
+    (6, 7),
+    (1, 8),
+    (8, 9),
+    (9, 10),
+    (1, 11),
+    (11, 12),
+    (12, 13),
+    (1, 0),
+    (0, 14),
+    (14, 16),
+    (0, 15),
+    (15, 17),
+)
 ORDER = (0, None, 6, 8, 10, 5, 7, 9, 12, 14, 16, 11, 13, 15, 2, 1, 4, 3)
-JOINT_NAMES = ("nose", "neck", "right shoulder", "right elbow", "right wrist", "left shoulder", "left elbow",
-               "left wrist", "right hip", "right knee", "right ankle", "left hip", "left knee", "left ankle",
-               "right eye", "left eye", "right ear", "left ear")
+JOINT_NAMES = (
+    "nose",
+    "neck",
+    "right shoulder",
+    "right elbow",
+    "right wrist",
+    "left shoulder",
+    "left elbow",
+    "left wrist",
+    "right hip",
+    "right knee",
+    "right ankle",
+    "left hip",
+    "left knee",
+    "left ankle",
+    "right eye",
+    "left eye",
+    "right ear",
+    "left ear",
+)
 
 
 def _pose_session(data: bytes):
     session = _cpu_session(data)
     inputs, outputs = session.get_inputs(), session.get_outputs()
     if (
-        len(inputs) != 1 or inputs[0].shape != [1, 3, 640, 640] or inputs[0].type != "tensor(float)"
-        or len(outputs) != 1 or outputs[0].shape != [1, 300, 57] or outputs[0].type != "tensor(float)"
+        len(inputs) != 1
+        or inputs[0].shape != [1, 3, 640, 640]
+        or inputs[0].type != "tensor(float)"
+        or len(outputs) != 1
+        or outputs[0].shape != [1, 300, 57]
+        or outputs[0].type != "tensor(float)"
     ):
         raise ValidationError("Expected pinned YOLO26n-pose float32 [1,3,640,640] -> [1,300,57] end2end ONNX export.")
     meta = session.get_modelmeta().custom_metadata_map
@@ -146,7 +202,9 @@ def detect_people(content, state: Path) -> PoseDetection:
             PoseCandidate(index, float(row[4]), box, tuple((float(x), float(y), float(c)) for x, y, c in joints))
         )
     seconds = monotonic() - started
-    event(log, "pose.detected", data={"detector_sha256": DETECTOR.sha256, "seconds": seconds, "people": len(candidates)})
+    event(
+        log, "pose.detected", data={"detector_sha256": DETECTOR.sha256, "seconds": seconds, "people": len(candidates)}
+    )
     return PoseDetection(image.width, image.height, content.sha256, tuple(candidates), seconds)
 
 
@@ -185,8 +243,12 @@ def body_map(content, detection: PoseDetection, person: int):
         for degrees in range(0, 360, 5):
             theta = math.radians(degrees)
             x, y = length * math.cos(theta), 4 * math.sin(theta)
-            polygon.append(((x1 + x2) / 2 + x * math.cos(angle) - y * math.sin(angle),
-                            (y1 + y2) / 2 + x * math.sin(angle) + y * math.cos(angle)))
+            polygon.append(
+                (
+                    (x1 + x2) / 2 + x * math.cos(angle) - y * math.sin(angle),
+                    (y1 + y2) / 2 + x * math.sin(angle) + y * math.cos(angle),
+                )
+            )
         layer = canvas.copy()
         ImageDraw.Draw(layer).polygon(polygon, fill=PALETTE[i])
         canvas = Image.blend(canvas, layer, 0.6)
@@ -197,13 +259,24 @@ def body_map(content, detection: PoseDetection, person: int):
             draw.ellipse((x - 4, y - 4, x + 4, y + 4), fill=colour)
     result = pixels._content(canvas)
     missing = sum(p is None for p in points)
-    evidence = {"detector": DETECTOR.name, "detector_sha256": DETECTOR.sha256,
-                "detector_input": "640x640", "source_sha256": content.sha256,
-                "source_dimensions": f"{image.width}x{image.height}", "seconds": str(detection.seconds),
-                "person_selection": f"person_{person}_of_{len(detection.candidates)}", "joint_threshold": "0.5",
-                "missing_joints": str(missing), "omitted_joints": ", ".join(omitted), "topology": "openpose18_body_only"}
-    event(log, "pose.extracted", data={"detector_sha256": DETECTOR.sha256, "seconds": detection.seconds,
-                                     "missing_joints": missing})
+    evidence = {
+        "detector": DETECTOR.name,
+        "detector_sha256": DETECTOR.sha256,
+        "detector_input": "640x640",
+        "source_sha256": content.sha256,
+        "source_dimensions": f"{image.width}x{image.height}",
+        "seconds": str(detection.seconds),
+        "person_selection": f"person_{person}_of_{len(detection.candidates)}",
+        "joint_threshold": "0.5",
+        "missing_joints": str(missing),
+        "omitted_joints": ", ".join(omitted),
+        "topology": "openpose18_body_only",
+    }
+    event(
+        log,
+        "pose.extracted",
+        data={"detector_sha256": DETECTOR.sha256, "seconds": detection.seconds, "missing_joints": missing},
+    )
     return result, evidence
 
 
@@ -248,8 +321,13 @@ def fit_pose_map(content, evidence: dict, width: int, height: int):
     canvas = Image.new("RGB", (width, height), "black")
     canvas.paste(image.resize((fit.fitted_width, fit.fitted_height), Image.Resampling.LANCZOS), (fit.left, fit.top))
     evidence = dict(evidence)
-    evidence.update({"map_sha256": content.sha256, "preparation": "aspect_fit_black_padding_no_crop",
-                     "fit": json.dumps(asdict(fit), separators=(",", ":"))})
+    evidence.update(
+        {
+            "map_sha256": content.sha256,
+            "preparation": "aspect_fit_black_padding_no_crop",
+            "fit": json.dumps(asdict(fit), separators=(",", ":")),
+        }
+    )
     prepared = pixels.prepare_image_bytes(pixels._content(canvas).encoded, width, height)
     return prepared, tuple(sorted((str(k), str(v)) for k, v in evidence.items()))
 

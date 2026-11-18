@@ -394,15 +394,19 @@ async def run_generation(
     if request.pose_control is not None:
         if service.backend.capabilities.backend_id != "drawthings-cloud" or service.input_state is None:
             raise ValidationError("Pose requires an explicitly configured durable cloud session.")
-        if prepared_inputs is None or ImageInputSnapshot.from_prepared(
-            request.image_inputs.attempt_id, prepared_inputs, preserve_outside=False
-        ) != request.image_inputs:
+        if (
+            prepared_inputs is None
+            or ImageInputSnapshot.from_prepared(
+                request.image_inputs.attempt_id, prepared_inputs, preserve_outside=False
+            )
+            != request.image_inputs
+        ):
             raise ValidationError("Pose input evidence does not match the prepared map.")
     # Real adapters accept only inventory-listed models, so the generation path refreshes inventory first.
     snapshot = await service.get_inventory(refresh=True)
     if request.pose_control is not None and not any(
-        entry.identifier == request.pose_control.checkpoint
-        and entry.availability == "listed_in_server_inventory" for entry in snapshot.entries
+        entry.identifier == request.pose_control.checkpoint and entry.availability == "listed_in_server_inventory"
+        for entry in snapshot.entries
     ):
         raise ValidationError(
             "DT+ does not list the selected Union control in its server inventory. No generation or upload was submitted. "
@@ -617,9 +621,7 @@ async def retry_pose_once(
     if request.pose_control is None or request.image_inputs is None:
         raise ValidationError("Retry requires saved pose control settings.")
     prepared = await settle(asyncio.to_thread(restore_image_inputs, state, request.image_inputs))
-    return await generate_pose_once(
-        selection, state, replace(request, request_id=uuid4().hex), prepared, **options
-    )
+    return await generate_pose_once(selection, state, replace(request, request_id=uuid4().hex), prepared, **options)
 
 
 async def generate_image_once(
