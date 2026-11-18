@@ -286,7 +286,7 @@ def edit_lora_selection(
         check, slider, label = row.loraSelectionCheck, row.loraSelectionSlider, row.loraSelectionWeight
         family = families.get(name, "Unknown")
         family_name, status = family_status(family)
-        check.setText(f"{shown(name)} · {family_name}")
+        check.setText(shown(name) if status is not None else f"{shown(name)} · {family_name}")  # the pill says the rest
         if status is not None:
             text, state, explanation = status
             status_pill = QLabel(text, row)
