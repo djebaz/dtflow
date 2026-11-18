@@ -420,7 +420,23 @@ def queue_edit_from_records(records) -> QueueEdit:
             f"{name.removeprefix('weight:')}: {text(name)}" for name in varying if name.startswith("weight:")
         ),
     )
-    return QueueEdit(dict(records[0]), form, count, note)
+    base = dict(records[0])
+    if "lora_sets" in varying or any(name.startswith("weight:") for name in varying):
+        # The plan rebuilds these LoRAs (sets replace the stack, weights are listed): the base keeps only the LoRAs
+        # that did not vary, so removing a planned LoRA in the composer removes it from the new queue.
+        planned = {name.removeprefix("weight:") for name in varying if name.startswith("weight:")}
+        base["loras"] = (
+            []
+            if "lora_sets" in varying
+            else [item for item in base.get("loras", ()) if item["identifier"] not in planned]
+        )
+        # These are resolved items, not the original LoRA selection. The edit loader retains
+        # their receipt IDs separately, so the new queue can bind only its chosen LoRAs.
+        base["prepared_assets"] = []
+        base["resolution_evidence"] = [
+            pair for pair in base.get("resolution_evidence", ()) if pair[0] != "prepared_assets"
+        ]
+    return QueueEdit(base, form, count, note)
 
 
 def _product(distinct: dict[str, list], names: list[str]):
