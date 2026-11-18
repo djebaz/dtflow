@@ -136,6 +136,7 @@ class ValueChips(QWidget):
         self._custom: str | None = None
         self._weights: Callable[[], dict[str, float | None]] | None = None
         self._families: Callable[[], dict[str, str]] | None = None
+        self._notice: Callable[[], str | None] | None = None
         self._convert: Callable[[object], str] | None = None
         self._edit_chip: Callable[[str], Sequence[LoRASelection]] | None = None
         self._lead = 0
@@ -210,6 +211,7 @@ class ValueChips(QWidget):
         initial: Callable[[], Sequence[LoRASelection]] | None = None,
         editor_title: str | None = None,
         editor_hint: str | None = None,
+        notice: Callable[[], str | None] | None = None,
         multi_weight: bool = False,
         edit_chip: Callable[[str], Sequence[LoRASelection]] | None = None,
         replace_all: bool = False,
@@ -232,6 +234,7 @@ class ValueChips(QWidget):
         """
         self._kind, self._title, self._options, self._custom = kind, title, options, custom
         self._weights, self._families, self._convert, self._initial = weights, families, convert, initial
+        self._notice = notice
         self._edit_chip, self._replace_all, self._group = edit_chip, replace_all, group
         self._label = label
         self._control_height = control_height
@@ -430,6 +433,7 @@ class ValueChips(QWidget):
             selected=selected,
             suggestions=suggestions,
             families=self._families() if self._families is not None else None,
+            notice=self._notice() if self._notice is not None else None,
             multi_weight=self._multi_weight,
             callback=lambda chosen: apply(convert(chosen)),
             hint=self._editor_hint

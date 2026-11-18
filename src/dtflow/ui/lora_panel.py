@@ -28,7 +28,7 @@ from dtflow.core.models import (
 )
 from dtflow.diagnostics import asset_ref_data, event as diagnostic_event
 from dtflow.logging_setup import development_mode
-from dtflow.services.catalogue import Catalogue, FAMILY_LABELS, bundled_exact_version
+from dtflow.services.catalogue import Catalogue, FAMILY_LABELS, bundled_exact_version, single_family_version
 from dtflow.core.models import KeyHoldings
 from dtflow.services.dt_storage import reported_free_space, storage_refusal, storage_size
 from dtflow.services.storage_probe import probe_content
@@ -45,7 +45,7 @@ from dtflow.services.lora_convert.errors import UnsupportedFamilyError, Unsuppor
 from dtflow.services.lora_convert_prepare import convert_for_prepare
 from dtflow.services.lora_digest import DigestCancelled, hash_file
 from dtflow.services.lora_family import DETECTABLE_FAMILIES, LoraFamily, detect_lora_family, validate_converted_lora
-from dtflow.services.lora_naming import LoraPrepareMetadata, display_label
+from dtflow.services.lora_naming import LoraPrepareMetadata, display_label, lora_offer_notice, shortcode_family
 from dtflow.services.lora_store import LoraStore
 from dtflow.services.prepare_progress import (
     CONFIRMING,
@@ -175,7 +175,9 @@ class LoraAssetPanel:
         self._records: dict[tuple[str, str], dict] = {}
         self._inventory_families: dict[str, str] = {}
         self._inventory_checkpoints: tuple[str, ...] = ()
-        self._checkpoint_version: str | None = None
+        self._checkpoint_versions: frozenset[str] = frozenset()  # exact versions the checkpoint allows; empty = unknown
+        self._checkpoint_name = ""
+        self._catalogue_versions: dict[str, str] | None = None  # LoRA -> the one exact version its catalogue family has
         self._catalogue = catalogue if catalogue is not None else Catalogue(self._state)
         self._bind_after_list: str | None = None  # identifier to bind once the registry list has been refreshed
         self._add_when_bound = False  # a Prepare also adds the LoRA to the list; a plain add never needs to
@@ -265,9 +267,13 @@ class LoraAssetPanel:
         ]
         return tuple(dict.fromkeys(versions))
 
-    def set_candidates(self, entries, *, checkpoint_version: str | None = None) -> None:
+    def set_candidates(
+        self, entries, *, checkpoint_versions: frozenset[str] = frozenset(), checkpoint: str = ""
+    ) -> None:
         """Offer only known-compatible LoRAs; keep selected mismatches visible for correction."""
-        self._checkpoint_version = checkpoint_version
+        self._checkpoint_versions = checkpoint_versions
+        self._checkpoint_name = checkpoint
+        self._catalogue_versions = None  # user catalogue entries may have changed
         if entries is None:
             self._candidates = list(getattr(self, "_inventory_candidates", ()))
         else:
@@ -294,11 +300,17 @@ class LoraAssetPanel:
         }
         if versions:
             return next(iter(versions)) if len(versions) == 1 else None
-        return self._inventory_families.get(name)
+        if self._catalogue_versions is None:
+            self._catalogue_versions = {
+                entry.identifier: version
+                for entry in self._catalogue.lora_definitions()
+                if (version := single_family_version(entry.base_model))
+            }
+        return self._inventory_families.get(name) or self._catalogue_versions.get(name) or shortcode_family(name)
 
     def _candidate_compatible(self, name: str) -> bool:
         candidate = self._candidate_family(name)
-        return self._checkpoint_version is None or candidate is None or candidate == self._checkpoint_version
+        return not self._checkpoint_versions or candidate is None or candidate in self._checkpoint_versions
 
     # -- selection -------------------------------------------------------------------------------------------------
     def receipts(self) -> dict[str, str]:
@@ -389,6 +401,9 @@ class LoraAssetPanel:
         }
         for name, value in self._inventory_families.items():
             family.setdefault(name, f"{FAMILY_LABELS.get(value, value)} (provider)")
+        for name, _ in self.all_choices():  # includes custom LoRAs known only from receipts
+            if name not in family and (value := shortcode_family(name)):
+                family[name] = f"{FAMILY_LABELS.get(value, value)} (shortcode)"
         records: dict[str, list[dict]] = {}
         for (asset_id, name), record in self._records.items():
             if record.get("state") != "confirmed":
@@ -467,7 +482,7 @@ class LoraAssetPanel:
         labels = labels if labels is not None else self.family_labels()
         text = _display_label(item.identifier)
         if not self._candidate_compatible(item.identifier):
-            text += f" · incompatible with {self._checkpoint_version}"
+            text += f" · incompatible with {', '.join(sorted(self._checkpoint_versions))}"
         row.label.setFullText(text)
         detail = f"{item.identifier}\nWeight: {item.weight:g}\nArchitecture: {labels.get(item.identifier, 'Unknown')}"
         if item.identifier in self._receipts:
@@ -543,6 +558,8 @@ class LoraAssetPanel:
             "ui.lora_picker_marks",
             data={
                 "offered": len(candidates),
+                "checkpoint": self._checkpoint_name,
+                "versions": sorted(self._checkpoint_versions),
                 "marked": len(marks),
                 "records": len(self._records),
                 "holdings": self._holdings is not None,
@@ -572,6 +589,13 @@ class LoraAssetPanel:
             suggestions=dict(candidates),
             families=self.family_labels(),
             marks=marks,
+            notice=(
+                None  # a chosen family without a checkpoint filters too
+                if not self._checkpoint_name and self._checkpoint_versions
+                else lora_offer_notice(
+                    [self._checkpoint_name] if self._checkpoint_name else [], [self._checkpoint_versions]
+                )
+            ),
             callback=apply_selection,
         )
 
