@@ -610,6 +610,11 @@ QLabel#loraStatusPill[state="ok"] {
   border-color: ${color.statusOkBorder};
   color: ${color.success};
 }
+QLabel#loraStatusPill[state="info"] {
+  background: ${color.selection};
+  border-color: ${color.selectionBorder};
+  color: ${color.selectionText};
+}
 QLabel#loraStatusPill[state="warning"] {
   background: ${color.warningSurface};
   border-color: ${color.statusWarningBorder};
