@@ -1312,6 +1312,8 @@ class GenerationPage:
             self._present_progress(event_stage(event), event.completed, event.total)
         elif event.kind == "preview" and event.artifact and event.artifact.designation == Designation.PREVIEW:
             self._show_image(event.artifact.encoded, "preview")
+            if self._run_pose:  # the live preview of a pose run goes to the Controlnet canvas's Result view
+                self.controlnet.show_result(event.artifact.encoded)
             self._present_progress("Preview shown (not the final image)")
         elif event.kind in {"preparing", "submission_possible", "terminal"}:
             stage = {

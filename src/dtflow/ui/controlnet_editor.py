@@ -30,7 +30,7 @@ from dtflow.ui.model_download import is_downloading, start_pose_download
 from dtflow.ui.pose_canvas import PoseCanvas
 
 QUEUE_NOTE = "Controlnet requests cannot be queued."
-CONFIGURATION_NOTE = "Configurations and presets cover text-to-image only."
+CONFIGURATION_NOTE = "Saving a configuration or preset covers text-to-image only: it would drop the pose."
 CONSENT = "The pose map is sent to DT+ Cloud and may use credits. Generate asks before the first use."
 DETECTOR_NOTE = "YOLO26n-pose · about 11.6 MiB · AGPL-3.0 · runs on this computer"
 NO_BACKEND = "Controlnet needs DT+ Cloud. Choose DT+ Cloud under Provider."
@@ -211,7 +211,7 @@ class ControlnetEditor(QObject):
         elif not self.page.inpaintModeButton.isChecked():
             self.page.resultPreviewLabel.setVisible(True)
             self.page.generateButton.setText("Generate image")
-        for name in ("configurationCombo", "loadConfigurationButton", "saveConfigurationButton", "savePresetButton"):
+        for name in ("saveConfigurationButton", "savePresetButton"):
             widget = getattr(self.page, name)
             if active:
                 widget.setEnabled(False)
@@ -219,6 +219,9 @@ class ControlnetEditor(QObject):
             elif not self.page.inpaintModeButton.isChecked():
                 widget.setEnabled(True)
                 widget.setToolTip("")
+        if active:  # choosing a saved configuration only fills the settings; the pose stays as it is
+            for name in ("configurationCombo", "loadConfigurationButton"):
+                getattr(self.page, name).setEnabled(True)
         if active and self._wired:
             self.refresh()
         else:
