@@ -292,7 +292,13 @@ async def create_pose_queue(
     final = [replace(item, schema_version=3, pose_control=pose.pose_control, image_inputs=staged) for item in items]
     if composer_source is not None:
         # Edit as new must load the staged pose, not reconstruct a plain text-to-image base.
-        composer_source = {**composer_source, "base": asdict(replace(pose, image_inputs=staged, prepared_assets=()))}
+        source_base = replace(
+            pose,
+            image_inputs=staged,
+            prepared_assets=(),
+            resolution_evidence=tuple(pair for pair in pose.resolution_evidence if pair[0] != "prepared_assets"),
+        )
+        composer_source = {**composer_source, "base": asdict(source_base)}
     return await create_queue(state, backend, final, up_next=up_next, composer_source=composer_source)
 
 
