@@ -2339,9 +2339,7 @@ class MainWindow:
             store = LoraStore(self.state_dir)
             return len(Catalogue(self.state_dir).user_loras()), store.entries(), store.usage()
 
-        self._read_summary(
-            "loras", read, lambda result, error: self._custom_loras_read(result, error, rescan=rescan)
-        )
+        self._read_summary("loras", read, lambda result, error: self._custom_loras_read(result, error, rescan=rescan))
 
     def _refresh_lora_hint_data(self) -> None:
         """Refresh presentation metadata off Qt after Prepare or metadata edits; never hash or call a provider."""
@@ -3014,9 +3012,7 @@ class MainWindow:
         self._summary_reads.pop("lora_unretained", None)
         self._summary_reads.pop("lora_records", None)
         # Only registry rows changed: update the one visible row instead of rescanning or rebuilding all retained LoRAs.
-        self._lora_unretained = [
-            item for item in self._lora_unretained if (item["sha256"], item["size"]) != identity
-        ]
+        self._lora_unretained = [item for item in self._lora_unretained if (item["sha256"], item["size"]) != identity]
         self._lora_no_copy.discard(identity)
         self._lora_names.pop(identity, None)
         self._lora_prepared = self._lora_prepared - {identity}
@@ -3028,8 +3024,7 @@ class MainWindow:
                 (
                     index
                     for index in range(table.rowCount())
-                    if (cell := table.item(index, 0)) is not None
-                    and cell.data(Qt.ItemDataRole.UserRole) == identity
+                    if (cell := table.item(index, 0)) is not None and cell.data(Qt.ItemDataRole.UserRole) == identity
                 ),
                 None,
             )
