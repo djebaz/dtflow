@@ -1563,7 +1563,7 @@ class MainWindow:
             "scripts": page.scriptsModeButton,
         }
         mode = document.get("generate_mode")
-        if mode in mode_buttons:
+        if isinstance(mode, str) and mode in mode_buttons:
             mode_buttons[mode].setChecked(True)
             # Mount Scripts only when Generate is opened; no deferred navigation during startup.
             self._scripts_active = mode == "scripts"
