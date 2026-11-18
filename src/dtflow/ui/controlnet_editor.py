@@ -209,16 +209,12 @@ class ControlnetEditor(QObject):
         form.poseControlCombo.setEnabled(bool(view.controls))
         chosen = view.controls[view.control_index] if view.controls else None
         if chosen is None:
-            note, state = (
-                "No Union Pro 1.0 control is in your DT+ inventory. Generate cannot start without one.",
-                "error",
-            )
+            note = "No Union Pro 1.0 control is in your DT+ inventory. Generate cannot start without one."
         elif chosen.verified:
-            note, state = "Verified together with FLUX.1 Dev q5p on DT+ Cloud.", "ok"
+            note = "Verified together with FLUX.1 Dev q5p on DT+ Cloud."
         else:
-            note, state = "Not verified: only Union Pro 1.0 q5p with FLUX.1 Dev q5p has been confirmed.", "warning"
-        form.poseControlNote.setText(note)
-        self._state(form.poseControlNote, state)
+            note = "Not verified: only Union Pro 1.0 q5p with FLUX.1 Dev q5p has been confirmed."
+        form.poseControlCombo.setToolTip(note)
         form.poseStrengthSpin.setValue(view.strength)
         form.poseStrengthSpin.setEnabled(chosen is not None)
         self.facts.setText(view.extraction_error or view.map_facts)
@@ -243,7 +239,8 @@ class ControlnetEditor(QObject):
             "downloading": ("Downloading the pose detector…", "checking", "·", "Downloading the pose detector"),
             "unknown": ("Detector availability could not be checked.", "unknown", "?", "Detector availability unknown"),
         }[view.detector]
-        form.detectorStatus.setText(text)
+        form.detectorStatus.setText("" if view.detector == "ready" else text)
+        form.detectorStatus.setVisible(view.detector != "ready")
         form.detectorBadge.setText(glyph)
         form.detectorBadge.setProperty("readiness", state)
         form.detectorBadge.setAccessibleName(summary)
