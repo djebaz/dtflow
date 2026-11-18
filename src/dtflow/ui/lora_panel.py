@@ -558,6 +558,8 @@ class LoraAssetPanel:
             "ui.lora_picker_marks",
             data={
                 "offered": len(candidates),
+                "checkpoint": self._checkpoint_name,
+                "versions": sorted(self._checkpoint_versions),
                 "marked": len(marks),
                 "records": len(self._records),
                 "holdings": self._holdings is not None,
