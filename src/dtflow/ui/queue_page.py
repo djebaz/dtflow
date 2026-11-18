@@ -1655,11 +1655,17 @@ class QueuePage:
     def _offered_loras(self) -> dict:
         """LoRA choices for the models this plan uses (Generate's checkpoint when none is chosen), as on Generate."""
         choices = self._choices()
-        _, versions = self._plan_models(choices)
+        models, versions = self._plan_models(choices)
+        if not models and choices.get("family_versions"):  # no model anywhere: follow Generate's chosen family
+            versions = [choices["family_versions"]]
         return lora_offer(choices.get("loras", {}), choices.get("lora_versions", {}), versions)
 
     def _loras_notice(self) -> str | None:
-        return lora_offer_notice(*self._plan_models(self._choices()))
+        choices = self._choices()
+        models, versions = self._plan_models(choices)
+        if not models and choices.get("family_versions"):
+            return None
+        return lora_offer_notice(models, versions)
 
     def _configure_dimensions(self) -> None:
         page = self.page

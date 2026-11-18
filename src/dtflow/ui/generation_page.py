@@ -948,6 +948,9 @@ class GenerationPage:
             "lora_families": self.lora.family_labels(),  # display only; raw identifiers remain unchanged
             "receipts": self.lora.confirmed_receipts(),  # bound for LoRA sets that name a custom cloud LoRA
             "model": page.modelCombo.currentText().strip(),
+            "family_versions": self._chosen_family_versions()
+            if not page.modelCombo.currentText().strip()
+            else frozenset(),
             # Exact families (None = unknown) so Queues and Workflows can filter their LoRA pickers like Generate.
             "model_versions": {
                 page.modelCombo.itemText(index): checkpoint_picker_versions(
@@ -1761,15 +1764,20 @@ class GenerationPage:
         """Re-resolve LoRA candidates after user-owned catalogue metadata changes."""
         self._filter_loras()
 
+    def _chosen_family_versions(self) -> frozenset[str]:
+        """Exact versions of the family chosen in the left panel, for when no checkpoint is selected."""
+        family = self.page.baseModelCombo.currentData()
+        if family and family != UNCLASSIFIED_FAMILY:
+            return catalogue_family_versions(family)
+        return frozenset()
+
     def _filter_loras(self) -> None:
         checkpoint = self.page.modelCombo.currentText().strip()
         include_cloud = self._backend()[0] == "local" and self.page.includeCloudCheck.isChecked()
         model = self._catalogue.checkpoint(checkpoint, include_unavailable=include_cloud)
         version = checkpoint_picker_versions(checkpoint, self._inventory_snapshot)
-        if not checkpoint:  # no checkpoint yet: follow the family chosen in the left panel
-            family = self.page.baseModelCombo.currentData()
-            if family and family != UNCLASSIFIED_FAMILY:
-                version = catalogue_family_versions(family)
+        if not checkpoint:
+            version = self._chosen_family_versions()
         entries = (
             self._catalogue.compatible_loras(
                 checkpoint, domain=self._catalogue_domain(), include_unavailable=include_cloud
