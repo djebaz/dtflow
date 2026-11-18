@@ -83,6 +83,7 @@ from dtflow.ui.generation_presenter import (
     values_from_request,
 )
 from dtflow.ui.inline_feedback import InlineNotice, edit_text
+from dtflow.ui.controlnet_editor import ControlnetEditor
 from dtflow.ui.inpaint_editor import EditJob, InpaintEditor
 from dtflow.ui.lora_panel import LoraAssetPanel
 from dtflow.ui.prompt_tags import style_prompt_tags
@@ -137,6 +138,7 @@ METADATA_LIMIT = 256_000
 WIRED_CONTROLS = (
     "textToImageModeButton",
     "inpaintModeButton",
+    "controlnetModeButton",
     "scriptsModeButton",
     "promptEdit",
     "promptHintsButton",
@@ -440,6 +442,8 @@ class GenerationPage:
         startup.mark("generate: inpaint editor")
         self.inpaint.attach(self)
         startup.mark("generate: inpaint attachment")
+        self.controlnet = ControlnetEditor(page, runner)
+        startup.mark("generate: controlnet editor")
         page.textToImageModeButton.toggled.connect(self._sync_activity)
         page.inpaintModeButton.toggled.connect(self._sync_activity)
         self._update_compute_units()
@@ -893,6 +897,10 @@ class GenerationPage:
         self.page.queueGenerateButton.setToolTip(NO_MODEL_REASON if no_model else "")
         if hasattr(self, "inpaint"):
             self.inpaint.set_busy(blocked)  # Inpaint keeps its editor open and only gates Edit image
+        if hasattr(self, "controlnet"):
+            self.controlnet.sync_buttons()  # Controlnet holds Generate and Queue with its own reason
+            if self.controlnet.active:
+                return
         if no_model:
             button.setToolTip(NO_MODEL_REASON)
         elif dispatching:

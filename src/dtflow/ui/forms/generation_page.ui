@@ -1145,6 +1145,12 @@
             <property name="checkable"><bool>true</bool></property>
             <property name="autoExclusive"><bool>true</bool></property>
            </widget></item>
+           <item><widget class="QPushButton" name="controlnetModeButton">
+            <property name="segmentEdge" stdset="0"><string>middle</string></property>
+            <property name="text"><string>Controlnet</string></property>
+            <property name="checkable"><bool>true</bool></property>
+            <property name="autoExclusive"><bool>true</bool></property>
+           </widget></item>
            <item><widget class="QPushButton" name="scriptsModeButton">
             <property name="segmentEdge" stdset="0"><string>last</string></property>
             <property name="text"><string>Scripts</string></property>

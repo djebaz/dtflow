@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>ControlnetEditor</class>
+ <widget class="QWidget" name="controlnetEditor">
+  <layout class="QVBoxLayout" name="controlnetRootLayout">
+   <item><widget class="QFrame" name="poseSourceCard">
+    <property name="role" stdset="0"><string>card</string></property>
+    <layout class="QVBoxLayout" name="poseSourceLayout">
+     <item><widget class="QLabel" name="poseSourceTitle"><property name="text"><string>Pose source</string></property><property name="textRole" stdset="0"><string>section</string></property></widget></item>
+     <item><widget class="QFrame" name="poseKindSwitch"><property name="accessibleName"><string>Kind of pose source</string></property><property name="role" stdset="0"><string>segmented</string></property><layout class="QHBoxLayout" name="poseKindLayout"><item><widget class="QPushButton" name="photoKindButton"><property name="text"><string>Photo</string></property><property name="segmentEdge" stdset="0"><string>first</string></property><property name="toolTip"><string>A photograph: the pose is extracted locally from the person you pick.</string></property><property name="checkable"><bool>true</bool></property><property name="checked"><bool>true</bool></property><property name="autoExclusive"><bool>true</bool></property></widget></item><item><widget class="QPushButton" name="mapKindButton"><property name="text"><string>Body map</string></property><property name="segmentEdge" stdset="0"><string>last</string></property><property name="toolTip"><string>A prepared OpenPose body map (black background, coloured limbs): used as it is.</string></property><property name="checkable"><bool>true</bool></property><property name="autoExclusive"><bool>true</bool></property></widget></item></layout></widget></item>
+     <item><widget class="QLabel" name="poseThumbnail"><property name="minimumSize"><size><width>80</width><height>80</height></size></property><property name="maximumSize"><size><width>240</width><height>100</height></size></property></widget></item>
+     <item><widget class="QLabel" name="poseSourceFacts"><property name="text"><string>Choose a photo…</string></property><property name="wordWrap"><bool>true</bool></property></widget></item>
+     <item><widget class="QLabel" name="poseSourceError"><property name="wordWrap"><bool>true</bool></property><property name="state" stdset="0"><string>error</string></property></widget></item>
+     <item><widget class="QPushButton" name="choosePoseButton"><property name="text"><string>Choose image…</string></property></widget></item>
+     <item><widget class="QPushButton" name="poseFromImagesButton"><property name="text"><string>From Images</string></property><property name="enabled"><bool>false</bool></property><property name="toolTip"><string>In Images, select a saved image and press Use as pose source.</string></property></widget></item>
+     <item><widget class="QPushButton" name="removePoseButton"><property name="text"><string>Remove image</string></property></widget></item>
+     <item><widget class="QLabel" name="poseSourceLimits"><property name="text"><string>Up to 64 MiB / 16 MP. You can also drop an image on the canvas.</string></property><property name="wordWrap"><bool>true</bool></property><property name="textRole" stdset="0"><string>secondary</string></property></widget></item>
+    </layout>
+   </widget></item>
+   <item><widget class="QFrame" name="poseGuidanceCard">
+    <property name="role" stdset="0"><string>card</string></property>
+    <layout class="QVBoxLayout" name="poseGuidanceLayout">
+     <item><widget class="QLabel" name="poseGuidanceTitle"><property name="text"><string>Pose guidance</string></property><property name="textRole" stdset="0"><string>section</string></property></widget></item>
+     <item><widget class="QLabel" name="poseStep1Label"><property name="text"><string>1 · Detect</string></property><property name="wordWrap"><bool>true</bool></property><property name="textRole" stdset="0"><string>caption</string></property></widget></item>
+     <item><layout class="QHBoxLayout" name="poseFindRow"><item><widget class="QPushButton" name="extractPoseButton"><property name="text"><string>Extract pose</string></property><property name="toolTip"><string>Find the people in the photo and extract the pose of the one picked below. Runs on this computer.</string></property></widget></item>
+      <item><widget class="QLabel" name="detectorBadge"><property name="minimumSize"><size><width>18</width><height>18</height></size></property><property name="maximumSize"><size><width>18</width><height>18</height></size></property><property name="text"><string>0</string></property><property name="alignment"><set>Qt::AlignCenter</set></property><property name="accessibleName"><string>Pose detector not installed</string></property><property name="readiness" stdset="0"><string>missing</string></property></widget></item></layout></item>
+     <item><widget class="QPushButton" name="downloadDetectorButton"><property name="visible"><bool>false</bool></property><property name="text"><string>Download detector…</string></property><property name="accessibleName"><string>Download the pose detector</string></property><property name="toolTip"><string>Download YOLO26n-pose (about 11.6 MiB, AGPL-3.0) from its publisher after one confirmation. Nothing is downloaded before you confirm.</string></property></widget></item>
+     <item><widget class="QLabel" name="detectorStatus"><property name="wordWrap"><bool>true</bool></property><property name="textRole" stdset="0"><string>secondary</string></property></widget></item>
+     <item><widget class="QLabel" name="poseStep2Label"><property name="text"><string>2 · Choose person</string></property><property name="wordWrap"><bool>true</bool></property><property name="textRole" stdset="0"><string>caption</string></property></widget></item>
+     <item><widget class="QListWidget" name="posePeopleList"><property name="maximumSize"><size><width>16777215</width><height>86</height></size></property><property name="accessibleName"><string>People found. Select the one the pose is taken from.</string></property></widget></item>
+     <item><widget class="QLabel" name="poseStep3Label"><property name="text"><string>3 · Control and strength</string></property><property name="wordWrap"><bool>true</bool></property><property name="textRole" stdset="0"><string>caption</string></property></widget></item>
+     <item><widget class="QComboBox" name="poseControlCombo"><property name="accessibleName"><string>Pose control</string></property></widget></item>
+     <item><widget class="QLabel" name="poseControlNote"><property name="wordWrap"><bool>true</bool></property><property name="textRole" stdset="0"><string>secondary</string></property></widget></item>
+     <item><layout class="QHBoxLayout" name="poseStrengthRow"><item><widget class="QLabel" name="poseStrengthLabel"><property name="text"><string>Strength</string></property><property name="textRole" stdset="0"><string>caption</string></property></widget></item><item><widget class="QDoubleSpinBox" name="poseStrengthSpin"><property name="accessibleName"><string>Pose control strength</string></property><property name="toolTip"><string>Control weight, not denoising or text guidance.</string></property><property name="decimals"><number>2</number></property><property name="minimum"><double>0.050000000000000</double></property><property name="maximum"><double>2.000000000000000</double></property><property name="singleStep"><double>0.050000000000000</double></property><property name="value"><double>0.700000000000000</double></property></widget></item></layout></item>
+     <item><widget class="QLabel" name="poseStrengthNote"><property name="text"><string>Control weight, not denoising or text guidance. 0.7 is the suggested start: 0.5 did not follow the pose and 1.0 looked washed out.</string></property><property name="wordWrap"><bool>true</bool></property><property name="textRole" stdset="0"><string>secondary</string></property></widget></item>
+    </layout>
+   </widget></item>
+  </layout>
+ </widget>
+ <resources/>
+ <connections/>
+</ui>
