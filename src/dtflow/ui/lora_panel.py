@@ -401,7 +401,7 @@ class LoraAssetPanel:
         }
         for name, value in self._inventory_families.items():
             family.setdefault(name, f"{FAMILY_LABELS.get(value, value)} (provider)")
-        for name, _ in self._candidates:
+        for name, _ in self.all_choices():  # includes custom LoRAs known only from receipts
             if name not in family and (value := shortcode_family(name)):
                 family[name] = f"{FAMILY_LABELS.get(value, value)} (shortcode)"
         records: dict[str, list[dict]] = {}
