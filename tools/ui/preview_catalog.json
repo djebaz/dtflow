@@ -192,7 +192,6 @@
     {"id": "controlnet-02-empty", "category": "controlnet", "subcategory": "editing", "fixture": "controlnet", "stage": "empty", "level": "f", "path": "controlnet-02-empty.png"},
     {"id": "controlnet-12-body-map-empty", "category": "controlnet", "subcategory": "editing", "fixture": "controlnet", "stage": "empty", "level": "m", "path": "controlnet-12-body-map-empty.png"},
     {"id": "controlnet-03-detector-missing", "category": "controlnet", "subcategory": "provisioning", "fixture": "controlnet", "stage": "setup", "level": "m", "path": "controlnet-03-detector-missing.png"},
-    {"id": "controlnet-04-detector-confirmation", "category": "controlnet", "subcategory": "provisioning", "fixture": "controlnet", "stage": "setup", "level": "m", "path": "controlnet-04-detector-confirmation.png"},
     {"id": "controlnet-05-detector-downloading", "category": "controlnet", "subcategory": "provisioning", "fixture": "controlnet", "stage": "running", "level": "m", "path": "controlnet-05-detector-downloading.png"},
     {"id": "controlnet-06-extracting", "category": "controlnet", "subcategory": "editing", "fixture": "controlnet", "stage": "running", "level": "m", "path": "controlnet-06-extracting.png"},
     {"id": "controlnet-07-map-shown", "category": "controlnet", "subcategory": "editing", "fixture": "controlnet", "stage": "ready", "level": "f", "path": "controlnet-07-map-shown.png"},

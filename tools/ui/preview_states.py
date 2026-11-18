@@ -4257,7 +4257,7 @@ def render_controlnet_states(shell, state, capture):
 
     from dtflow.ui import controlnet_editor as controlnet_ui
     from dtflow.ui.controlnet_editor import PosePerson, PoseView
-    from dtflow.ui.inline_feedback import confirm_action, feedback
+    from dtflow.ui.inline_feedback import feedback
 
     page, editor = shell.generation_page, shell.generation.controlnet
     shell.form.generationNavigationButton.click()
@@ -4289,17 +4289,6 @@ def render_controlnet_states(shell, state, capture):
     missing = replace(loaded, detector="missing", blocker="Install the pose detector, or use a body map.")
     editor.present(missing)
     capture("controlnet-03-detector-missing")
-    confirm_action(
-        page,
-        editor.form.downloadDetectorButton,
-        "Download pose detector",
-        "DTFlow will download 1 model file (about 12 MiB) directly from its publisher, check its SHA-256 and model "
-        "contract, and use it for local pose detection. DTFlow does not redistribute it; its licence applies:\n"
-        "• yolo26n-pose.onnx (about 11.6 MiB) · Licence: AGPL-3.0 · https://www.gnu.org/licenses/agpl-3.0.html",
-        lambda: None,
-    )
-    capture("controlnet-04-detector-confirmation")
-    shell.inline.dismiss()
     strip = activity_strip(page)
     strip.start(
         "controlnet-detector-fixture",

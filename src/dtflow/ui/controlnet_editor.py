@@ -234,8 +234,8 @@ class ControlnetEditor(QObject):
         text, state, glyph, summary = {
             "ready": (DETECTOR_NOTE, "ok", "✓", "Pose detector installed"),
             "missing": (
-                "The pose detector is not installed. Download it to read poses from photos; "
-                "a prepared body map works without it.",
+                "The pose detector is not installed. Download reads poses from photos; a body map works without it. "
+                "Pressing Download accepts the AGPL-3.0 licence of YOLO26n-pose (about 11.6 MiB, from its publisher).",
                 "missing",
                 "0",
                 "Pose detector not installed",
