@@ -87,10 +87,10 @@ async def run(args):
         control = PoseControl(args.control, args.strength)
         request = resolve_generation(args)
         # Validate exact checkpoint before reading a photograph or running ONNX.
-        from dtflow.core.pose import MODELS
+        from dtflow.core.pose import is_flux_dev
 
-        if request.model_id not in MODELS:
-            raise ValidationError("Pose is restricted to exact FLUX.1 Dev f16/q5p/q8p checkpoints.")
+        if not is_flux_dev(request.model_id):
+            raise ValidationError("Pose is restricted to FLUX.1 Dev checkpoints.")
         prepared, evidence = await asyncio.to_thread(
             prepare_pose, args.photo or args.image, request.width_px, request.height_px,
             photo=args.photo is not None, state=args.state, person=args.person,

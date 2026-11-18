@@ -15,6 +15,16 @@ CONTROLS = (
     "controlnet_union_pro_flux_1_dev_2.0_q5p.ckpt",
 )
 MODELS = ("flux_1_dev_f16.ckpt", "flux_1_dev_q5p.ckpt", "flux_1_dev_q8p.ckpt")
+# Only this checkpoint with Union Pro 1.0 q5p at 0.7 has been confirmed (#502). Other FLUX.1 Dev variants may be tried and
+# are labelled "not verified"; a checkpoint moves here only when the owner confirms it.
+VERIFIED_MODELS = ("flux_1_dev_q5p.ckpt",)
+
+
+def is_flux_dev(model_id: str) -> bool:
+    """A FLUX.1 Dev family checkpoint (f16/q5p/q8p, depth, de_distill, ...); Schnell and other families are not."""
+    name = model_id.strip().lower()
+    return name.startswith("flux_1_") and "dev" in name and name.endswith(".ckpt")
+
 
 # community-models controlnets/union-pro-flux-1-dev-{1.0,2.0}/metadata.json (same revision as above). Draw Things builds
 # its control specification mapping from the request's MetadataOverride.controlNets, so the server applies a community
@@ -52,7 +62,9 @@ class PoseControl:
             raise ValidationError("Only the two pinned Union pose controls are offered by this experiment.")
         # A conservative POC subset of the native weight control, not denoising strength.
         if type(self.strength) not in (int, float) or not math.isfinite(self.strength) or not 0 < self.strength <= 2:
-            raise ValidationError("Pose strength must be finite and greater than 0, at most 2; omit control for baseline.")
+            raise ValidationError(
+                "Pose strength must be finite and greater than 0, at most 2; omit control for baseline."
+            )
         from dtflow.core.models import validate_metadata
 
         validate_metadata(self.evidence)

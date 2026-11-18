@@ -13,7 +13,7 @@ from PySide6.QtUiTools import QUiLoader
 from PySide6.QtWidgets import QLabel, QSizePolicy
 
 from dtflow.core.image_inputs import ImageContent, ImageInputSnapshot
-from dtflow.core.pose import CONTROLS, MODELS, PoseControl
+from dtflow.core.pose import CONTROLS, VERIFIED_MODELS, PoseControl, is_flux_dev
 from dtflow.core.tasks import settle
 from dtflow.services import image_preparation as pixels
 from dtflow.services.body_pose import (
@@ -34,7 +34,8 @@ CONFIGURATION_NOTE = "Saving a configuration or preset covers text-to-image only
 CONSENT = "The pose map is sent to DT+ Cloud and may use credits. Generate asks before the first use."
 DETECTOR_NOTE = "YOLO26n-pose · about 11.6 MiB · AGPL-3.0 · runs on this computer"
 NO_BACKEND = "Controlnet needs DT+ Cloud. Choose DT+ Cloud under Provider."
-NO_CHECKPOINT = "Controlnet needs a FLUX.1 Dev checkpoint (f16, q5p or q8p); the selected one is not."
+NO_CHECKPOINT = "Controlnet needs a FLUX.1 Dev checkpoint; the selected one is not."
+UNVERIFIED_CHECKPOINT = "Not verified with this checkpoint: only FLUX.1 Dev q5p has been confirmed."
 VERIFIED_CONTROL = "controlnet_union_pro_flux_1_dev_1.0_q5p.ckpt"
 IMAGE_FILTER = "Images (*.png *.jpg *.jpeg *.webp *.tif *.tiff *.bmp)"
 
@@ -374,7 +375,7 @@ class ControlnetEditor(QObject):
         mode's own requirement."""
         if self._backend() != "cloud":
             return NO_BACKEND
-        if self.page.modelCombo.currentText().strip() not in MODELS:
+        if not is_flux_dev(self.page.modelCombo.currentText()):
             return NO_CHECKPOINT
         if self._extracting:
             return "Extracting the pose…"
@@ -423,7 +424,17 @@ class ControlnetEditor(QObject):
             control_index=self._control_index,
             strength=self._strength,
             blocker=self.blocker(),
-            notice=CONSENT if self._backend() == "cloud" else "",
+            notice=" ".join(
+                text
+                for text in (
+                    CONSENT if self._backend() == "cloud" else "",
+                    UNVERIFIED_CHECKPOINT
+                    if self.page.modelCombo.currentText().strip() not in VERIFIED_MODELS
+                    and is_flux_dev(self.page.modelCombo.currentText())
+                    else "",
+                )
+                if text
+            ),
             view=self.canvas._view,
         )
         self.present(view)
